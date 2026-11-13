@@ -462,11 +462,11 @@ def test_max_entries_is_parsed_defensively(raw, expected):
 
 def test_a_result_computed_under_changed_labels_is_returned_but_not_stored(mem, tool, monkeypatch):
     reads = iter(["labels-before", "labels-after"])          # a label write lands while the tool runs
-    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda conn, cid, as_of: next(reads)))
+    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda ctx: next(reads)))
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
     result = mem.run("fake", FakeArgs, tool, ctx, {})
     assert result.data.total.value == 100.25 and len(mem) == 0      # served, never cached under the old key
-    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda conn, cid, as_of: "labels-after"))
+    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda ctx: "labels-after"))
     mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
     mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
     assert tool.calls == 2 and len(mem) == 1                         # stable labels: stored, then a hit
@@ -495,3 +495,24 @@ def test_an_id_set_by_hand_stays_as_a_fresh_call_returns_it(mem):
     mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
     hit = mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
     assert dump(hit) == dump(fresh) and hit.model_view["n"]["id"] == "n1"
+
+
+def test_with_labels_for_context_the_key_and_the_tools_share_one_label_read(mem, tool, monkeypatch):
+    """#68: labels.for_context(ctx) is the set the tools use, so the key reads it and a miss stores its
+    result without a second label read."""
+    from core.tools import cache as cache_mod
+
+    reads = []
+
+    def for_context(ctx):
+        reads.append(ctx.customer_id)
+        return {4711: "everyday_spending"}
+
+    monkeypatch.setattr(cache_mod.labels, "for_context", for_context, raising=False)
+    monkeypatch.setattr(cache_mod.labels, "basket_labels", lambda *a, **k: pytest.fail("no direct label read"))
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
+    mem.run("fake", FakeArgs, tool, ctx, {})
+    assert ctx.labels_key == labels_key_of({4711: "everyday_spending"}) and reads == ["CUST00860"]
+    assert len(mem) == 1                                     # stored: the tool used the key's labels
+    mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
+    assert tool.calls == 1 and reads == ["CUST00860", "CUST00860"]   # next request: one read, a hit

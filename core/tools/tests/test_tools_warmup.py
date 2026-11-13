@@ -37,7 +37,7 @@ def test_the_personas_are_the_four_of_personas_yaml():
 def test_warm_runs_every_call_once_and_then_serves_hits(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
     lines: list[str] = []
     rows = warmup.warm(cache, None, PERSONAS, ["en", "fi"], date(2026, 9, 30), out=lines.append, calls=FAKE_CALLS)
     assert len(rows) == 4 * 2 * 2 and len(lines) == len(rows)
@@ -126,7 +126,7 @@ class EvidenceConn:
 def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
     calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
     warmup.warm(cache, None, ["CUST00860"], ["en", "fi"], date(2026, 9, 30), out=lambda _: None, calls=calls)
     assert len(calls_made) == 2
@@ -142,7 +142,7 @@ def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
 def test_a_failed_evidence_check_does_not_stop_the_other_personas(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
     calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
     two = ["CUST00860", "CUST00493"]
     warmup.warm(cache, None, two, ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
