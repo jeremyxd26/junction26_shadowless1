@@ -32,8 +32,9 @@ All values in the examples are **illustrative**: they show shapes and consistent
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
 | Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language`, and `/api/ask` also accepts `auto` (detect from the message). Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. |
 | Dates | `YYYY-MM-DD`. Periods are inclusive at both ends. |
-| Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[].amount` is a signed contribution to a total. Raw transaction rows in evidence keep the bank sign: negative means money out. |
-| Numbers | **Every number in a response is a [Number object](#21-number).** The only exceptions are the raw transaction amounts in evidence rows, which are decimal strings (section 9). |
+| Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[]` entry carries a positive `amount` and an `operation` (`add` or `subtract`). Raw transaction rows in evidence keep the bank sign: negative means money out. |
+| Numbers | **Every number in a response is a [Number object](#21-number).** There are two exceptions. Raw transaction amounts in evidence rows are decimal strings (section 9). The `scenario` of an `open_whatif` action is a request payload that the app sends back to `/api/whatif` unchanged (section 8.1), so it may hold a plain number such as `change_pct`. |
+| Merchants | Merchants are anonymised in the dataset. The core gives each merchant a label without digits that is stable for that customer, for example "Grocery store A" or "Restaurant B". The same label appears in cards, evidence and answer texts. |
 | Ids | Opaque strings with a prefix: `CUST…` (customer, as in the dataset), `MRC-…` (merchant, as in the dataset), `ans_`, `conv_`, `card_`, `bill_`, `ev_` (evidence), `tx_` (transaction), `ins_` (insight). Ids `n1`, `n2`, … name numbers inside one answer. Do not parse ids. |
 | Enum keys and labels | Every enum value the user sees (basket, category, profile, cadence, …) arrives as a stable `key` plus a separate localised `label`. Renaming a label never changes the key. |
 | Baskets | `regular_essentials` ("Regular essentials"), `unexpected_necessities` ("Unexpected necessities"), `everyday_spending` ("Everyday spending"). These keys are shared with `docs/design/metrics.md`. |
@@ -56,10 +57,10 @@ Every number the coach shows is one of these objects. A number can always be tra
 | `unit` | enum | `eur`, `eur_per_day`, `eur_per_week`, `eur_per_month`, `eur_per_year`, `percent`, `percentile`, `count`, `days` |
 | `period` | [Period](#22-period) | The time span the number describes. |
 | `method` | string | The metric definition that produced it, `<metric_id>@<version>`, defined in `docs/design/metrics.md`. |
-| `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. It is `null` only for values the user typed in (`method` = `user_input@1`). |
+| `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. One ref backs exactly one number (one `method` and `value`), and the same number shown in several places carries the same ref. It is `null` only for values the user typed in (`method` = `user_input@1`). |
 | `label` | string | Short localised name, for example "Restaurants". |
 | `display` | string | Localised formatted value, for example `€312.80` or `312,80 €`. A plus sign is never added. Negative values show a minus. |
-| `id` | string | Present only inside `/api/ask` answers: the id used by text tokens (`n1`). |
+| `id` | string | Present wherever a text refers to the number with a token (`/api/ask` answers, overview insights). It is the id used in the token, for example `n1`, and is unique within one answer or insight. |
 
 <!-- example: shared.number -->
 ```json
@@ -119,7 +120,7 @@ Card-specific fields:
 
 | `type` | Fields | Example |
 |---|---|---|
-| `metric` | `primary` Number; `secondary` Number[]; `comparison` Comparison or null; `components` `{key, label, amount: Number}`[] (empty when not relevant) | `overview.response` (hero), `ask.json.response_fi` |
+| `metric` | `primary` Number; `secondary` Number[]; `comparison` Comparison or null; `components` `{key, label, operation: "add" or "subtract", amount: Number}`[] (empty when not relevant) | `overview.response` (hero), `ask.json.response_fi` |
 | `breakdown` | `display_hint` (`list`, `stacked_bar` or `time_series`); `total` Number; `comparison` Comparison or null; `items` `{key, label, amount: Number, share: Number or null, change: Number or null, flags: ("one_off" or "habit")[]}`[] | `overview.response`, `ask.sse.card` |
 | `bills` | `total` Number; `items` `{bill_id, label, category, cadence (weekly, monthly, quarterly, yearly or irregular), cadence_label, typical_amount: Number, last_paid, next_expected (date or null), confidence (high, medium or low), evidence_ref}`[] | `overview.response` |
 | `peer` | `you`, `peer_median`, `peer_p25`, `peer_p75`, `percentile` (all Number); `peer_group` `{key, label, size: Number, widened: bool}`; `note` | `card.peer` |
@@ -133,7 +134,7 @@ Actions:
 |---|---|---|
 | `open_evidence` | `label`, `evidence_ref` | Open the evidence sheet. |
 | `ask` | `label`, `prompt` | Send `prompt` to `/api/ask` in the same conversation. |
-| `open_whatif` | `label`, `scenario` | Open the what-if screen with this scenario (section 8). |
+| `open_whatif` | `label`, `scenario` (same shape as the `scenario` of a `/api/whatif` request, section 8.1) | Open the what-if screen with this scenario. |
 
 <!-- example: card.peer -->
 ```json
@@ -159,19 +160,19 @@ Actions:
   "peer_p25": {
     "value": 140.0, "unit": "eur",
     "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-    "method": "peer_quantile@1", "evidence_ref": "ev_q1s3u5w7y9a1",
+    "method": "peer_quantile@1", "evidence_ref": "ev_q2s4u6w8y0a2",
     "label": "Lower quarter", "display": "€140.00"
   },
   "peer_p75": {
     "value": 290.0, "unit": "eur",
     "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-    "method": "peer_quantile@1", "evidence_ref": "ev_q1s3u5w7y9a1",
+    "method": "peer_quantile@1", "evidence_ref": "ev_q3s5u7w9y1a3",
     "label": "Upper quarter", "display": "€290.00"
   },
   "percentile": {
     "value": 81, "unit": "percentile",
     "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-    "method": "peer_percentile@1", "evidence_ref": "ev_q1s3u5w7y9a1",
+    "method": "peer_percentile@1", "evidence_ref": "ev_q4s6u8w0y2a4",
     "label": "Your position", "display": "81st percentile"
   },
   "peer_group": {
@@ -180,7 +181,7 @@ Actions:
     "size": {
       "value": 214, "unit": "count",
       "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-      "method": "peer_group_size@1", "evidence_ref": "ev_q1s3u5w7y9a1",
+      "method": "peer_group_size@1", "evidence_ref": "ev_q5s7u9w1y3a5",
       "label": "People in the group", "display": "214"
     },
     "widened": false
@@ -206,7 +207,7 @@ Actions:
   },
   "items": [
     {
-      "merchant": { "id": "MRC-GRO-0035", "label": "Grocery store 0035" },
+      "merchant": { "id": "MRC-GRO-0035", "label": "Grocery store A" },
       "is_s_group": null,
       "price_index": {
         "value": 3.1, "unit": "percent",
@@ -223,17 +224,17 @@ Actions:
       "visits": {
         "value": 11, "unit": "count",
         "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-        "method": "visit_count@1", "evidence_ref": "ev_g7i9k1m3o5q7",
+        "method": "visit_count@1", "evidence_ref": "ev_g9i1k3m5o7q9",
         "label": "Visits", "display": "11"
       }
     },
     {
-      "merchant": { "id": "MRC-GRO-0012", "label": "Grocery store 0012" },
+      "merchant": { "id": "MRC-GRO-0012", "label": "Grocery store B" },
       "is_s_group": null,
       "price_index": {
         "value": -2.4, "unit": "percent",
         "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
-        "method": "store_price_index@1", "evidence_ref": "ev_p5r7t9v1x3z5",
+        "method": "store_price_index@1", "evidence_ref": "ev_p7r9t1v3x5z7",
         "label": "Price level vs average", "display": "-2.4%"
       },
       "your_spend": {
@@ -245,7 +246,7 @@ Actions:
       "visits": {
         "value": 3, "unit": "count",
         "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-        "method": "visit_count@1", "evidence_ref": "ev_g8i0k2m4o6q8",
+        "method": "visit_count@1", "evidence_ref": "ev_g0i2k4m6o8q0",
         "label": "Visits", "display": "3"
       }
     }
@@ -260,13 +261,13 @@ Actions:
     "low": {
       "value": 6.0, "unit": "eur_per_month",
       "period": { "start": "2026-10-01", "end": "2026-10-31", "label": "A typical month" },
-      "method": "store_switch_saving@1", "evidence_ref": "ev_p6r8t0v2x4z6",
+      "method": "store_switch_saving_low@1", "evidence_ref": "ev_p8r0t2v4x6z8",
       "label": "Low estimate", "display": "€6.00 a month"
     },
     "high": {
       "value": 24.0, "unit": "eur_per_month",
       "period": { "start": "2026-10-01", "end": "2026-10-31", "label": "A typical month" },
-      "method": "store_switch_saving@1", "evidence_ref": "ev_p6r8t0v2x4z6",
+      "method": "store_switch_saving_high@1", "evidence_ref": "ev_p9r1t3v5x7z9",
       "label": "High estimate", "display": "€24.00 a month"
     }
   },
@@ -316,7 +317,7 @@ Actions:
       "value": {
         "value": 56.7, "unit": "percent",
         "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-        "method": "basket_share@1", "evidence_ref": "ev_br1a3c5e7g9i",
+        "method": "basket_share@1", "evidence_ref": "ev_bs1a3c5e7g9i",
         "label": "Regular essentials share", "display": "56.7%"
       },
       "note": "Most of your money goes to costs you can plan for."
@@ -411,7 +412,7 @@ The home screen. It is fully deterministic: no AI model is called, and it reads 
 **Response fields:**
 - `customer_id`, `as_of`, `language`, `greeting`.
 - `ai_disclosure`: show it on the first chat screen.
-- `hero`: a `metric` card, safe to spend this week.
+- `hero`: a `metric` card, safe to spend this week. Its component keys and `estimate.text` are placeholders until `metrics.md` (#6) defines the formula. The shape stays.
 - `cards`: Card[] (spending baskets, bills before payday, and more later).
 - `insights`: Insight[].
 - `suggested_questions`: string[], sent to `/api/ask` when tapped. These are the partner's four questions.
@@ -450,7 +451,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       {
         "value": 37.28, "unit": "eur_per_day",
         "period": { "start": "2026-09-30", "end": "2026-10-04", "label": "Rest of this week" },
-        "method": "safe_to_spend_daily@1", "evidence_ref": "ev_s2t4w6y8a0c2",
+        "method": "safe_to_spend_daily@1", "evidence_ref": "ev_s3t5w7y9a1c3",
         "label": "Per day", "display": "€37.28 a day"
       }
     ],
@@ -459,6 +460,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       {
         "key": "available_balance",
         "label": "Money on your account",
+        "operation": "add",
         "amount": {
           "value": 1240.15, "unit": "eur",
           "period": { "start": "2026-09-30", "end": "2026-09-30", "label": "30 Sep 2026" },
@@ -469,21 +471,23 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       {
         "key": "bills_before_payday",
         "label": "Bills due before payday",
+        "operation": "subtract",
         "amount": {
-          "value": -905.0, "unit": "eur",
+          "value": 905.0, "unit": "eur",
           "period": { "start": "2026-09-30", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
           "method": "upcoming_bills_total@1", "evidence_ref": "ev_u6b8d0f2h4j6",
-          "label": "Upcoming bills", "display": "-€905.00"
+          "label": "Bills before payday", "display": "€905.00"
         }
       },
       {
         "key": "safety_buffer",
         "label": "Safety buffer",
+        "operation": "subtract",
         "amount": {
-          "value": -148.75, "unit": "eur",
+          "value": 148.75, "unit": "eur",
           "period": { "start": "2026-09-30", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
           "method": "safety_buffer@1", "evidence_ref": "ev_f8h0j2l4n6p8",
-          "label": "Buffer", "display": "-€148.75"
+          "label": "Buffer", "display": "€148.75"
         }
       }
     ],
@@ -521,7 +525,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "share": {
             "value": 56.7, "unit": "percent",
             "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-            "method": "basket_share@1", "evidence_ref": "ev_br1a3c5e7g9i",
+            "method": "basket_share@1", "evidence_ref": "ev_bs1a3c5e7g9i",
             "label": "Share of spending", "display": "56.7%"
           },
           "change": null,
@@ -539,7 +543,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "share": {
             "value": 18.1, "unit": "percent",
             "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-            "method": "basket_share@1", "evidence_ref": "ev_bi2b4d6f8h0j",
+            "method": "basket_share@1", "evidence_ref": "ev_bt2b4d6f8h0j",
             "label": "Share of spending", "display": "18.1%"
           },
           "change": null,
@@ -557,7 +561,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "share": {
             "value": 25.2, "unit": "percent",
             "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-            "method": "basket_share@1", "evidence_ref": "ev_bl3c5e7g9i1k",
+            "method": "basket_share@1", "evidence_ref": "ev_bu3c5e7g9i1k",
             "label": "Share of spending", "display": "25.2%"
           },
           "change": null,
@@ -837,7 +841,7 @@ The events of the example answer, one by one:
       "change_pct": {
         "id": "n4", "value": 18.9, "unit": "percent",
         "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September vs August 2026" },
-        "method": "spending_change_pct@1", "evidence_ref": "ev_m3o5q7s9u1w3",
+        "method": "spending_change_pct@1", "evidence_ref": "ev_m4o6q8s0u2w4",
         "label": "Change vs August", "display": "18.9%"
       },
       "tone": "worse",
@@ -998,7 +1002,7 @@ event: status
 data: {"stage":"tool","tool":"get_spending","label":"Looking at where your money went in September"}
 
 event: card
-data: {"card":{"card_id":"card_ans7f_01","type":"breakdown","title":"September compared with August","subtitle":"Biggest changes by category","evidence_ref":"ev_k3m5p7r9t1v3","estimate":null,"display_hint":"list","total":{"id":"n1","value":2315.6,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_k3m5p7r9t1v3","label":"Total spending","display":"€2,315.60"},"comparison":{"baseline":{"id":"n2","value":1948.2,"unit":"eur","period":{"start":"2026-08-01","end":"2026-08-31","label":"August 2026"},"method":"spending_total@1","evidence_ref":"ev_a2c4e6g8i0k2","label":"August spending","display":"€1,948.20"},"change":{"id":"n3","value":367.4,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_m3o5q7s9u1w3","label":"Change vs August","display":"€367.40"},"change_pct":{"id":"n4","value":18.9,"unit":"percent","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change_pct@1","evidence_ref":"ev_m3o5q7s9u1w3","label":"Change vs August","display":"18.9%"},"tone":"worse","label":"vs August 2026"},"items":[{"key":"Travel","label":"Travel","amount":{"id":"n5","value":240.0,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_t2v4x6z8b0d2","label":"Travel","display":"€240.00"},"share":null,"change":{"id":"n6","value":240.0,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_t3v5x7z9b1d3","label":"Travel, change vs August","display":"€240.00"},"flags":["one_off"]},{"key":"Restaurants","label":"Restaurants","amount":{"id":"n7","value":312.8,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_r7t9v1x3z5b7","label":"Restaurants","display":"€312.80"},"share":null,"change":{"id":"n8","value":91.7,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_r8t0v2x4z6b8","label":"Restaurants, change vs August","display":"€91.70"},"flags":["habit"]},{"key":"other","label":"Everything else","amount":{"id":"n9","value":1762.8,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_o1q3s5u7w9y1","label":"Everything else","display":"€1,762.80"},"share":null,"change":{"id":"n10","value":35.7,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_o2q4s6u8w0y2","label":"Everything else, change vs August","display":"€35.70"},"flags":[]}],"actions":[{"type":"open_evidence","label":"See September transactions","evidence_ref":"ev_k3m5p7r9t1v3"},{"type":"ask","label":"Spend 20% less on restaurants?","prompt":"What if I spend 20% less on restaurants?"}]}}
+data: {"card":{"card_id":"card_ans7f_01","type":"breakdown","title":"September compared with August","subtitle":"Biggest changes by category","evidence_ref":"ev_k3m5p7r9t1v3","estimate":null,"display_hint":"list","total":{"id":"n1","value":2315.6,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_k3m5p7r9t1v3","label":"Total spending","display":"€2,315.60"},"comparison":{"baseline":{"id":"n2","value":1948.2,"unit":"eur","period":{"start":"2026-08-01","end":"2026-08-31","label":"August 2026"},"method":"spending_total@1","evidence_ref":"ev_a2c4e6g8i0k2","label":"August spending","display":"€1,948.20"},"change":{"id":"n3","value":367.4,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_m3o5q7s9u1w3","label":"Change vs August","display":"€367.40"},"change_pct":{"id":"n4","value":18.9,"unit":"percent","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change_pct@1","evidence_ref":"ev_m4o6q8s0u2w4","label":"Change vs August","display":"18.9%"},"tone":"worse","label":"vs August 2026"},"items":[{"key":"Travel","label":"Travel","amount":{"id":"n5","value":240.0,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_t2v4x6z8b0d2","label":"Travel","display":"€240.00"},"share":null,"change":{"id":"n6","value":240.0,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_t3v5x7z9b1d3","label":"Travel, change vs August","display":"€240.00"},"flags":["one_off"]},{"key":"Restaurants","label":"Restaurants","amount":{"id":"n7","value":312.8,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_r7t9v1x3z5b7","label":"Restaurants","display":"€312.80"},"share":null,"change":{"id":"n8","value":91.7,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_r8t0v2x4z6b8","label":"Restaurants, change vs August","display":"€91.70"},"flags":["habit"]},{"key":"other","label":"Everything else","amount":{"id":"n9","value":1762.8,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_o1q3s5u7w9y1","label":"Everything else","display":"€1,762.80"},"share":null,"change":{"id":"n10","value":35.7,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_o2q4s6u8w0y2","label":"Everything else, change vs August","display":"€35.70"},"flags":[]}],"actions":[{"type":"open_evidence","label":"See September transactions","evidence_ref":"ev_k3m5p7r9t1v3"},{"type":"ask","label":"Spend 20% less on restaurants?","prompt":"What if I spend 20% less on restaurants?"}]}}
 
 event: numbers
 data: {"numbers":{"n1":{"id":"n1","value":2315.6,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September 2026"},"method":"spending_total@1","evidence_ref":"ev_k3m5p7r9t1v3","label":"Total spending","display":"€2,315.60"},"n3":{"id":"n3","value":367.4,"unit":"eur","period":{"start":"2026-09-01","end":"2026-09-30","label":"September vs August 2026"},"method":"spending_change@1","evidence_ref":"ev_m3o5q7s9u1w3","label":"Change vs August","display":"€367.40"}}}
@@ -1112,7 +1116,7 @@ A question in Finnish (`language: "auto"` detects `fi`):
         "change_pct": {
           "id": "n4", "value": 9.8, "unit": "percent",
           "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "syyskuu ja elokuu 2026" },
-          "method": "spending_change_pct@1", "evidence_ref": "ev_g6i8k0m2o4q6",
+          "method": "spending_change_pct@1", "evidence_ref": "ev_g1i3k5m7o9q1",
           "label": "Muutos elokuusta", "display": "9,8 %"
         },
         "tone": "neutral",
@@ -1253,13 +1257,13 @@ A deterministic scenario calculator for the what-if screen and its sliders. No A
   "saving_per_month": {
     "value": 53.68, "unit": "eur_per_month",
     "period": { "start": "2026-10-01", "end": "2027-09-30", "label": "Next 12 months" },
-    "method": "whatif_saving@1", "evidence_ref": "ev_w2y4a6c8e0g2",
+    "method": "whatif_saving@1", "evidence_ref": "ev_w3y5a7c9e1g3",
     "label": "You would save", "display": "€53.68 a month"
   },
   "saving_over_horizon": {
     "value": 644.16, "unit": "eur",
     "period": { "start": "2026-10-01", "end": "2027-09-30", "label": "Next 12 months" },
-    "method": "whatif_saving@1", "evidence_ref": "ev_w2y4a6c8e0g2",
+    "method": "whatif_saving_total@1", "evidence_ref": "ev_w4y6a8c0e2g4",
     "label": "Saved in 12 months", "display": "€644.16"
   },
   "assumptions": [
@@ -1273,7 +1277,7 @@ A deterministic scenario calculator for the what-if screen and its sliders. No A
     "label": "Estimate",
     "text": "Based on your typical restaurant month. The rest of your spending stays as it is."
   },
-  "evidence_ref": "ev_w2y4a6c8e0g2"
+  "evidence_ref": "ev_w3y5a7c9e1g3"
 }
 ```
 
@@ -1332,7 +1336,7 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
       "date": "2026-09-27",
       "time": "19:42",
       "category": "Restaurants",
-      "merchant": { "id": "MRC-RES-0112", "label": "Restaurant 0112" },
+      "merchant": { "id": "MRC-RES-0112", "label": "Restaurant A" },
       "mcc": "5812",
       "amount": "-24.50",
       "currency": "EUR"
@@ -1342,7 +1346,7 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
       "date": "2026-09-25",
       "time": "12:05",
       "category": "Restaurants",
-      "merchant": { "id": "MRC-RES-0047", "label": "Restaurant 0047" },
+      "merchant": { "id": "MRC-RES-0047", "label": "Restaurant B" },
       "mcc": "5814",
       "amount": "-11.90",
       "currency": "EUR"
@@ -1351,7 +1355,7 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
   "row_count": {
     "value": 14, "unit": "count",
     "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "September 2026" },
-    "method": "row_count@1", "evidence_ref": "ev_r7t9v1x3z5b7",
+    "method": "row_count@1", "evidence_ref": "ev_r6t8v0x2z4b6",
     "label": "Transactions", "display": "14"
   },
   "reconciles": true,

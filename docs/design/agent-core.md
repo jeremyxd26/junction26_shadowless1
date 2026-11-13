@@ -89,7 +89,7 @@ This document defines how the coach answers a question: which tools exist, what 
 | The model sees | The model never sees |
 |---|---|
 | The user's question, wrapped as data | Transaction rows, one by one |
-| The previous questions and answers of this conversation, with numbers masked | Merchant ids. It sees aliases such as `store_a` with a label such as "Grocery store A". |
+| The previous questions and answers of this conversation, with numbers masked | Merchant ids. It sees aliases such as `store_a` with the digit-free label the app also shows, such as "Grocery store A". |
 | A compact view of each tool result: number ids, values, units, labels, period labels and flags | `balance_after` series, timestamps, account ids |
 | Category, basket and profile labels | `customer_id`, postal code, exact age. It sees only coarse peer-group labels such as "Age 30-39, postal areas 005xx". |
 | The date `as_of` | Evidence refs and the evidence store |
@@ -126,7 +126,7 @@ When a tool produces a number, it also writes an **evidence spec**: the recipe n
 | `store_index` | Store, method, window | The index inputs at store level |
 | `input` | The value the user typed | Nothing more |
 
-- **Ref:** `ev_` plus the first 12 base32 characters of `sha256(canonical JSON of the spec)`. The same number for the same customer and `as_of` always gets the same ref, so refs are stable across restarts and repeated questions.
+- **Ref:** `ev_` plus 12 lowercase letters and digits taken from `sha256(canonical JSON of the spec)`. The spec includes the method, so **one ref backs exactly one number**. The same number for the same customer and `as_of` always gets the same ref, even when it is shown in several places, so refs are stable across restarts and repeated questions.
 - **Storage:** specs live in a small table `coach_evidence(ref primary key, customer_id, spec jsonb, created_at)`. Writes are idempotent.
 - **Resolution:** `GET /api/evidence/{ref}` loads the spec, checks that it belongs to the customer in the request (403 otherwise), and re-runs the spec query. If the rows do not reconcile with `value`, it returns `reconciles: false` and logs an error. An eval check fails on that (R2).
 - **Privacy:** for `peer_aggregate` the inputs are other customers, so the app gets the distribution and the recompute check runs inside the eval job only.
@@ -162,6 +162,8 @@ Period      = { start: date, end: date, label: string }   # resolved and clamped
 Filter      = { categories?: Category[], baskets?: Basket[], mcc_groups?: MccGroup[],
                 merchant?: MerchantAlias }
 MerchantAlias = "store_a" | "store_b" | ...          # mapped to merchant ids on the server (R3)
+                # Label: "<kind> <letter>", for example "Grocery store A", without digits and stable per
+                # customer (letters by spend rank up to as_of). Cards, evidence and answers all use it.
 Number, Comparison, Card = see contracts/api.md
 ```
 
@@ -207,7 +209,7 @@ get_recurring_bills(window?: "until_next_payday" | "next_30_days" | "all_active"
 
 get_safe_to_spend(horizon?: "this_week" | "until_next_payday")                      # default this_week
   -> { period: Period, safe_to_spend: Number, per_day: Number,
-       components: { key, label, amount: Number }[],        # keys and formula from metrics.md
+       components: { key, label, operation: "add" | "subtract", amount: Number }[],  # keys, formula: metrics.md
        status: "comfortable" | "tight" | "over", next_payday: date | null }
 
 run_what_if(scenario: Scenario, horizon?: "next_month" | "next_3_months" | "next_12_months")
@@ -249,6 +251,8 @@ The planner also gets three functions that touch no data:
 | `decline` | `kind`: `investment_advice`, `out_of_scope`, `other_person_data` or `unsafe` | Ends the turn with the fixed, localised refusal template for that kind, plus 2 or 3 example questions. No data tool runs (R7, R10). |
 | `ask_clarifying_question` | `question` (up to 140 characters), `options` (up to 3 short strings) | Ends the turn with `outcome: "clarify"`. The question passes the output validator. |
 | `finish` | none | Data collection is complete; go to the composer. The model may call it in the same turn as the data tools. |
+
+The tests for R6 and R10 say "no tool call". In this design, `decline` is a function call that reads no data, so the tests should read "no **data** tool call". This needs confirming with the research owner.
 
 ### 6.4 What the model receives from a tool (R3)
 
@@ -362,7 +366,7 @@ R12 says the model returns cards. In this design the cards are built by the serv
 ### 7.3 Numbers in text
 
 - **Tokens:** the composer writes `{{n3}}` wherever it means a number. The server replaces the token with the Number's `display` in the user's locale: Finnish `1 234,56 €` and `9,8 %`, English `€1,234.56` and `9.8%` (R14). The app receives both the tokenised `text` and `text_rendered` (contract, section 2.4).
-- **Dates and labels:** dates and periods appear in the text only as the labels that tools returned, for example "September 2026". When the user's period was relative ("last month"), the composer names the resolved period (R5).
+- **Dates:** the composer may write dates and periods in natural language, inflected as the language requires, for example "syyskuussa 2026" or "on 1 October". Their digits must come from dates the tools returned in this turn (section 7.4, rule 3). When the user's period was relative ("last month"), the composer names the resolved period (R5).
 
 ### 7.4 Output validator
 
@@ -370,13 +374,17 @@ The validator runs on every composer output. Any failure triggers the single ret
 
 1. The JSON matches `AnswerDraft`. Keywords such as `maxLength` are not enforced by Gemini (section 12), so the validator checks length itself: at most 120 words.
 2. Every `{{id}}` exists among this answer's numbers, and `cited` equals the set of tokens used.
-3. **No stray digits (R1):** first remove the tokens and the literal labels returned by tools in this turn (period labels, entity labels such as "Grocery store A"). If any digit is left, the output fails. This also blocks invented dates and percentages.
+3. **No stray digits (R1):** remove the `{{id}}` tokens, then look at every remaining run of digits. A run passes only if it is part of a date the tools returned in this turn: the day, month or year of a resolved period, or of a date field such as `next_expected`, or a digit run inside a period label. Anything else fails, including amounts, percentages and counts. Matching digit runs instead of whole label strings lets Finnish inflect month names ("syyskuussa 2026" against the label "syyskuu 2026"). Merchant labels contain no digits.
 4. The language of `text` matches the resolved language (R14).
 5. **Deny lists:** sensitive inferences such as health, pregnancy, religion or politics (R9); investment imperatives ("buy", "sell" next to an instrument word) (R7); promises ("guaranteed", "will save") on estimates (R13).
 6. No URLs, markdown links or HTML.
 7. `lesson_key` is in the lesson catalogue or null.
 
-**Residual risk:** a number written as a word ("twice as much") passes rule 3. The composer prompt forbids it, and the eval set samples for it.
+**Residual risks:**
+- A number written as a word ("twice as much") passes rule 3.
+- An invented number that happens to equal a date part, for example "1" or "2026", also passes.
+
+The composer prompt forbids both, and the eval set samples for them.
 
 ### 7.5 Cards
 
