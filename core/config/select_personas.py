@@ -1,12 +1,15 @@
-"""Select the three demo personas and compute their reference answers (issue #22).
+"""Select demo personas and compute their reference answers (issue #22).
 
 Usage:
     python core/config/select_personas.py                                  # screen, pick three
     python core/config/select_personas.py --from CUST00000 --to CUST01000
-    python core/config/select_personas.py --answers CUST00123,CUST00456,CUST00789 --out answers.json
+    python core/config/select_personas.py --answers CUST00860,CUST00493,CUST00349,CUST00849 --out answers.json
 
 Method: docs/design/personas.md. The metric numbers come from the unchanged files in core/metrics/
 (docs/design/metrics.md); this script only runs them and compares their output with the checks.
+The screening (taxi and dining-month checks, lead slot) is the scan as it was run. After the scan a
+product decision dropped the taxi criterion, made CUST00860 the lead and added CUST00849; the
+document records that. --answers computes the reference answers for any personas.
 
 Database limits (shared database, 2 GB RAM, 25 connections): one connection,
 statement_timeout 60s, customer ranges of at most 100 customers, at most 2,000 customers screened,
@@ -36,7 +39,8 @@ SCREEN_SQL = Path(__file__).with_name("select_personas.sql")
 BATCH = 100        # customers per range, the database limit
 MAX_CUSTOMERS = 2000
 PEER_MIN_N = 20    # app.peer_min_n of 06_peer_benchmark.sql: at least 20 other peers
-DINING = "mcc:5812,5813,5814"  # "dining out" as the demo question defines it
+DINING = "category:Restaurants"     # "dining out": the category, including non-card payments without MCC
+DINING_CARD = "mcc:5812,5813,5814"  # the MCC group restaurants: card payments only
 SLOTS = ("young_everyday", "midlife_essentials", "recent_unexpected")
 
 # First pass: customers with a taxi ride last month (every persona needs one). Uses the
@@ -74,14 +78,15 @@ WHERE customer_id = %(cid)s AND mcc = '4121'
 DIRECT_DINING = """
 SELECT to_char(date_trunc('month', tx_date), 'YYYY-MM') AS month, count(*) AS n, sum(-amount_eur) AS eur
 FROM transactions
-WHERE customer_id = %(cid)s AND mcc IN ('5812', '5813', '5814')
+WHERE customer_id = %(cid)s AND category = 'Restaurants'
   AND tx_date BETWEEN %(dining_start)s AND %(today)s
 GROUP BY 1 ORDER BY 1
 """
 DIRECT_DINING_WINDOW = """
-SELECT count(*) AS n, COALESCE(sum(-amount_eur), 0) AS eur
+SELECT count(*) AS n, COALESCE(sum(-amount_eur), 0) AS eur,
+       count(*) FILTER (WHERE mcc IS NULL) AS n_no_mcc, COALESCE(sum(-amount_eur) FILTER (WHERE mcc IS NULL), 0) AS eur_no_mcc
 FROM transactions
-WHERE customer_id = %(cid)s AND mcc IN ('5812', '5813', '5814')
+WHERE customer_id = %(cid)s AND category = 'Restaurants'
   AND tx_date BETWEEN %(win_start)s AND %(win_end)s AND tx_date <= %(today)s
 """
 
@@ -329,8 +334,8 @@ def answers(db: Db, cid: str, cells: dict) -> dict:
     a["safe_to_spend"] = db.one(METRICS / "03_safe_to_spend.sql", cid)[0]
     a["whatif_dining"] = (db.one(METRICS / "04_what_if.sql", cid,
                                  {"app.whatif": DINING, "app.whatif_pct": "20"}) or [None])[0]
-    a["whatif_restaurants"] = (db.one(METRICS / "04_what_if.sql", cid,
-                                      {"app.whatif": "category:Restaurants", "app.whatif_pct": "20"}) or [None])[0]
+    a["whatif_dining_card"] = (db.one(METRICS / "04_what_if.sql", cid,
+                                      {"app.whatif": DINING_CARD, "app.whatif_pct": "20"}) or [None])[0]
     a["profile"] = db.one(METRICS / "05_spender_profile.sql", cid)[0]
     a["direct_taxi"] = db.query(DIRECT_TAXI, {"cid": cid, **p})[0]
     a["direct_dining_window"] = db.query(DIRECT_DINING_WINDOW, {"cid": cid, **p})[0]
@@ -356,12 +361,13 @@ def print_answer(a: dict) -> None:
         print(f"  dining -20% ({w['selection']}): baseline {w['baseline_month_eur']}/month, saves "
               f"{w['saving_month_eur']}/month, {w['saving_week_eur']}/week, {w['saving_year_eur']}/year; "
               f"{w['n_tx']} tx, one-offs left out {w['one_off_excluded_eur']} ({w['n_one_off']})")
-    r = a["whatif_restaurants"]
+    r = a["whatif_dining_card"]
     if r:
-        print(f"    same with category:Restaurants: baseline {r['baseline_month_eur']}, {r['n_tx']} tx, "
+        print(f"    card payments only ({r['selection']}): baseline {r['baseline_month_eur']}, {r['n_tx']} tx, "
               f"one-offs {r['one_off_excluded_eur']} ({r['n_one_off']})")
     dw = a["direct_dining_window"]
-    print(f"    direct dining in the window: {dw['n']} tx, {dw['eur']} EUR; by month: "
+    print(f"    direct Restaurants in the window: {dw['n']} tx, {dw['eur']} EUR "
+          f"({dw['n_no_mcc']} without MCC, {dw['eur_no_mcc']} EUR); by month: "
           + ", ".join(f"{d['month']} {d['eur']} ({d['n']})" for d in a["direct_dining_by_month"]))
     print(f"  profile: {pr['profile']} {pr['traits']}, keep rate {pr['keep_rate_pct']}%, "
           f"everyday share {pr['everyday_share_pct']}%, regular share {pr['regular_share_pct']}%")
@@ -385,6 +391,11 @@ def main() -> None:
     result: dict = {"as_of": args.today}
     try:
         db = Db(date.fromisoformat(args.today))
+    except Exception as e:
+        # Never print a driver error from a connection attempt: psycopg and libpq repeat parts of a
+        # malformed DATABASE_URL in their messages, including the password.
+        sys.exit(f"{type(e).__name__}: could not connect; check DATABASE_URL")
+    try:
         if args.answers:
             result["answers"] = [answers(db, cid.strip(), cells) for cid in args.answers.split(",")]
             for a in result["answers"]:

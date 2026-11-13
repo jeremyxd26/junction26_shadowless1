@@ -1,22 +1,46 @@
 # Demo personas for the persona picker and the 60-second demo (issue #22).
 # Selection method, checks and reference answers: docs/design/personas.md.
-# Selected and verified by core/config/select_personas.py with DEMO_TODAY = 2026-09-30.
+# Values are for DEMO_TODAY = 2026-09-30; core/config/select_personas.py --answers recomputes them.
 #
 # The data is synthetic. display_name is invented (no surname); customer_id is the key.
 # Fields of the /api/personas contract (contracts/api.md, section 5): customer_id, display_name,
 # age_band, postal_area {code, label}, profile {key, label}, tagline, default_language.
 # Keys follow docs/design/metrics.md: age bands of section 6, profile keys of section 5.
 # profile is the output of core/metrics/05_spender_profile.sql on as_of; the API may recompute it.
+# Profile labels are the contract's ("Steady", "Everyday spender"). The contract has no label for
+# big_ticket yet, so "Big ticket" is a placeholder until it does.
+# Taglines carry no numbers (every number the app shows is a Number object from the metrics) and
+# state only what the data shows.
 # The extra fields (lead, age, demo_role, why, peer_group) are for the team and the eval set.
-# peer_group.comparable_others: other customers in the cell with comparable = true in the
-# metric_peer_flags mart (issue #21), as of 2026-09-30; the query is in docs/design/personas.md.
-# Taglines carry no numbers: every number the app shows is a Number object from the metrics.
+# peer_group.comparable_others comes from the precomputed mart metric_peer_flags of issue #21
+# (other customers in the cell with comparable = true, as of 2026-09-30). select_personas.py does
+# not reproduce it: the script only checks the cell size on the customers table.
 
 as_of: "2026-09-30"
 
 personas:
+  - customer_id: CUST00860
+    lead: true                       # the persona of the 60-second demo (product decision)
+    display_name: Sanna
+    age: 35
+    age_band: "35-44"
+    postal_area:
+      code: "00590"
+      label: Helsinki 00590
+    profile:
+      key: big_ticket
+      label: Big ticket
+    tagline: A large home and tech purchase in late September, on top of regular bills.
+    default_language: en
+    demo_role: recent_unexpected
+    why: >-
+      The clearest recent unexpected necessity: one Home & Tech purchase of 1,080.42 on 2026-09-28,
+      within the last 30 days, 9 times the customer's usual purchase in that category and a one-off
+      by the metrics rule, which also makes the profile big_ticket.
+    peer_group: {level: age_band+area3, age_band: "35-44", area3: "005", comparable_others: 118}
+
   - customer_id: CUST00493
-    lead: true                       # the persona of the 60-second demo
+    lead: false
     display_name: Marja
     age: 52
     age_band: "45-54"
@@ -26,13 +50,12 @@ personas:
     profile:
       key: steady
       label: Steady
-    tagline: High monthly housing costs in central Helsinki, takes taxis and eats out every month.
+    tagline: More than half of spending goes to housing; eats out every month.
     default_language: en
     demo_role: midlife_essentials
     why: >-
       Mid-life customer whose money goes mostly to regular essentials (77.4% of spending, housing
-      payment 1,209.05 a month); of the 3 candidates that meet every criterion it has the highest
-      essentials share: 3 taxi rides in August, dining out in every month, safe to spend 175.46.
+      payment 1,209.05 a month), with restaurant spending in every month from March to September.
     peer_group: {level: age_band+area3, age_band: "45-54", area3: "001", comparable_others: 121}
 
   - customer_id: CUST00349
@@ -45,32 +68,32 @@ personas:
       label: Espoo 02140
     profile:
       key: everyday_heavy
-      label: Everyday heavy
-    tagline: Young professional in Espoo who spends freely on eating out and fun.
+      label: Everyday spender
+    tagline: Almost a third of spending is everyday purchases, with restaurants the largest part.
     default_language: en
     demo_role: young_everyday
     why: >-
-      Young customer with the highest everyday-spending share among the passing under-35s with
-      status ok (30.1%, 736.87 a month, restaurants on top), so the dining-out what-if gives the
-      biggest saving of the three (58.62 a month).
+      The highest everyday-spending share among the passing under-35s with status ok (30.1%,
+      736.87 a month, Restaurants on top), so the dining-out what-if gives the largest saving of
+      the four (58.95 a month).
     peer_group: {level: age_band+area3, age_band: "25-34", area3: "021", comparable_others: 24}
 
-  - customer_id: CUST00860
+  - customer_id: CUST00849
     lead: false
-    display_name: Sanna
-    age: 35
-    age_band: "35-44"
+    display_name: Aleksi
+    age: 25
+    age_band: "25-34"
     postal_area:
-      code: "00590"
-      label: Helsinki 00590
+      code: "02250"
+      label: Espoo 02250
     profile:
-      key: big_ticket
-      label: Big ticket
-    tagline: Steady month to month, until a large home and tech purchase in September.
+      key: steady
+      label: Steady
+    tagline: Regular salary and housing bills; the balance dipped below zero several times since April.
     default_language: en
-    demo_role: recent_unexpected
+    demo_role: young_adult
     why: >-
-      Clear unexpected necessity in the last three months: one Home & Tech purchase of 1,080.42 on
-      2026-09-28, 9 times the customer's usual purchase in that category and a one-off by the
-      metrics rule, which also makes the profile big_ticket.
-    peer_group: {level: age_band+area3, age_band: "35-44", area3: "005", comparable_others: 118}
+      Young adult (25), the bank's focus group (product decision): a monthly salary of 2,088.35,
+      a keep rate of 9.4% and 20 transactions that left the balance below zero in the last 6 months,
+      yet a positive safe to spend of 166.84 this week.
+    peer_group: {level: age_band+area3, age_band: "25-34", area3: "022", comparable_others: 39}
