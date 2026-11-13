@@ -80,14 +80,27 @@ def sql_rows(conn, file_name, customer_id, settings=None):
     return [r for r in rows if r["customer_id"] == customer_id]
 
 
+class _PerCustomer(dict):
+    """Independent SQL rows, run once per customer on first use, so a run filtered to some customers
+    (the persona customers by default) never queries the others."""
+
+    def __init__(self, load):
+        super().__init__()
+        self._load = load
+
+    def __missing__(self, customer_id):
+        self[customer_id] = value = self._load(customer_id)
+        return value
+
+
 @pytest.fixture(scope="module")
 def profile_rows(conn):
-    return {cid: sql_rows(conn, config.PROFILE_FILE, cid)[0] for cid in EVERYONE}
+    return _PerCustomer(lambda cid: sql_rows(conn, config.PROFILE_FILE, cid)[0])
 
 
 @pytest.fixture(scope="module")
 def peer_rows(conn):
-    return {cid: {r["metric"]: r for r in sql_rows(conn, config.PEER_FILE, cid)} for cid in EVERYONE}
+    return _PerCustomer(lambda cid: {r["metric"]: r for r in sql_rows(conn, config.PEER_FILE, cid)})
 
 
 def dec(number):
@@ -95,11 +108,12 @@ def dec(number):
 
 
 def assert_displays_from_formatter(numbers, language="en"):
-    """Every display is exactly the formatter's output for its value and unit (the answer validator's rule)."""
+    """Every display is exactly the formatter's output for its value, unit and method (#111; the answer
+    validator's rule)."""
     numbers = [n for n in numbers if n is not None]
     assert numbers
     for n in numbers:
-        assert n.display == display(D(str(n.value)), n.unit, language), (n.method, n.display)
+        assert n.display == display(D(str(n.value)), n.unit, language, n.method), (n.method, n.display)
 
 
 def assert_reconciles(conn, customer_id, refs):
@@ -158,7 +172,8 @@ def test_profile_feature_details_of_cust00002(conn):
     assert features["n_tx_below_zero"].value == 11                       # metrics.md section 5
     assert features["everyday_tx_month"].value == 13.3                   # a rate keeps its decimal
     assert features["everyday_share_pct"].value == 25.3
-    assert_displays_from_formatter(features.values())                    # "13" for 13.3: the count formatter
+    assert features["everyday_tx_month"].display == "13.3 a month"       # contracts/api.md card.profile
+    assert_displays_from_formatter(features.values())
 
 
 @pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00860"])
@@ -288,7 +303,8 @@ def test_peer_card_and_model_view(conn):
     card = result.card
     assert card.type == "peer" and card.estimate["label"] == "Estimate"
     assert card.estimate["text"].startswith("Compared with at least 20 other customers")
-    assert card.percentile["value"] == 51 and card.percentile["display"] == "51.0%"
+    assert card.percentile["value"] == 51 and card.percentile["display"] == "51st percentile"
+    assert card.vs_median["display"] == "1.2% more"
     assert card.peer_group["label"] == "Age 35-44, postal area 005" and card.peer_group["size"]["value"] == 118
     assert card.evidence_ref == result.data.peer_median.evidence_ref
     assert card.you["display"] == "€3,010.59 a month"
@@ -300,18 +316,20 @@ def test_peer_card_and_model_view(conn):
 
 def test_peer_in_finnish(conn):
     result = get_peer_benchmark(ctx_for(conn, "CUST00860", "fi"), {"metric": "spend_total"})
-    assert result.data.percentile.display == "51,0 %"
+    assert result.data.percentile.display == "51. persentiili"
+    assert result.data.vs_median.display == "1,2 % enemmän"
     assert result.card.peer_group["label"] == "Ikä 35-44, postinumeroalue 005"
     d = result.data
     assert_displays_from_formatter([d.you, d.peer_median, d.percentile, d.vs_median], "fi")
 
 
-def test_negative_difference_shows_its_minus(conn, peer_rows):
-    # CUST00001 spends less than the group: the display carries the formatter's minus sign
+def test_negative_difference_says_less(conn, peer_rows):
+    # CUST00001 spends less than the group: the value is negative, the display says "less" (#111)
     row = peer_rows["CUST00001"]["spend_total"]
     assert row["vs_median_pct"] < 0
     vs = get_peer_benchmark(ctx_for(conn, "CUST00001"), {"metric": "spend_total"}).data.vs_median
-    assert vs.value < 0 and vs.display.startswith("-") and vs.display == display(row["vs_median_pct"], vs.unit)
+    assert vs.value < 0 and vs.display == "31.0% less"
+    assert vs.display == display(row["vs_median_pct"], vs.unit, "en", vs.method)
 
 
 # ---- timing (one call of each tool for one customer) ------------------------------------------------

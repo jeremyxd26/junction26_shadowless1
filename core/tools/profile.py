@@ -112,15 +112,6 @@ def _t(table: dict[str, tuple[str, str]], key: str, language: str, **kw) -> str:
     return config.label(table[key], language).format(**kw)
 
 
-def _feature_number(nb: NumberBuilder, key: str, value: Decimal, unit: Unit, period: Period, method: str,
-                    spec: dict[str, Any], label: str) -> Number:
-    # The display is always the formatter's output for value and unit (the answer validator requires it).
-    n = nb.number(value, unit, period, method, spec, label)
-    if key == "everyday_tx_month":  # a rate with one decimal: the value keeps it, as 05 returns it
-        return n.model_copy(update={"value": float(value)})
-    return n
-
-
 def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | None = None) -> ToolResult:
     if not isinstance(args, GetSpenderProfileArgs):
         GetSpenderProfileArgs.model_validate(args or {})
@@ -160,7 +151,7 @@ def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | N
             log.warning("monthly spending of the rows and of 05_spender_profile.sql differ for one customer")
         spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.PROFILE_FILE, column, {}, value,
                                     evidence.period_param(period))
-        numbers[key] = _feature_number(nb, key, value, unit, period, method, spec, label)
+        numbers[key] = nb.number(value, unit, period, method, spec, label)   # display from the formatter
 
     key = row["profile"]
     if key not in config.PROFILE_KEYS:
