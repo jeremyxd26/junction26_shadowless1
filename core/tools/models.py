@@ -125,7 +125,7 @@ class Period(BaseModel):
 class Number(BaseModel):
     """contracts/api.md 2.1. `id` is set by the per-answer registry, not by the tool."""
 
-    value: float
+    value: int | float  # counts stay integers
     unit: Unit
     period: Period
     method: str

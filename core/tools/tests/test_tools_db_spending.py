@@ -102,6 +102,55 @@ def test_every_evidence_ref_reconciles(conn, customer_id):
     assert kinds == {"transactions", "composite"}
 
 
+@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+def test_comparison_and_other_group_match_sql(conn, customer_id):
+    res = get_spending(ctx_for(conn, customer_id),
+                       {"period": {"preset": "last_month"}, "group_by": "category", "top_n": 3,
+                        "compare_to": "previous_period"})
+    spend = "category <> ALL(%s)"
+    aug, _ = sql_sum(conn, customer_id, date(2026, 8, 1), date(2026, 8, 31), spend, (list(NON_SPEND),))
+    jul, _ = sql_sum(conn, customer_id, date(2026, 7, 1), date(2026, 7, 31), spend, (list(NON_SPEND),))
+    cmp = res.data.comparison
+    assert (cmp.baseline.period.start, cmp.baseline.period.end) == (date(2026, 7, 1), date(2026, 7, 31))
+    assert as_dec(cmp.baseline) == jul
+    assert as_dec(cmp.change) == aug - jul
+    assert as_dec(cmp.change_pct) == ((aug - jul) / jul * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    assert cmp.tone.value == ("worse" if aug > jul else "better" if aug < jul else "neutral")
+    top, other = res.data.groups[:3], res.data.groups[3]
+    assert other.key == "other"
+    assert as_dec(other.amount) == aug - sum(as_dec(g.amount) for g in top)
+    jul_by_cat = dict(conn.execute(
+        """SELECT category, sum(-amount_eur) FROM transactions
+           WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s GROUP BY category""",
+        (customer_id, AS_OF, date(2026, 7, 1), date(2026, 7, 31)),
+    ).fetchall())
+    for g in top:
+        assert as_dec(g.change) == as_dec(g.amount) - Decimal(jul_by_cat.get(g.key, 0)), g.key
+
+
+def test_time_groupings_have_no_per_group_change(conn):
+    for group_by in ("month", "week"):
+        res = get_spending(ctx_for(conn, "CUST00007"),
+                           {"period": {"preset": "last_3_months"}, "group_by": group_by,
+                            "compare_to": "previous_period"})
+        assert res.data.comparison is not None
+        assert res.data.groups and all(g.change is None for g in res.data.groups), group_by
+        assert sum(as_dec(g.amount) for g in res.data.groups) == as_dec(res.data.total)
+    months = [g.key for g in get_spending(ctx_for(conn, "CUST00007"),
+                                          {"period": {"preset": "last_3_months"}, "group_by": "month"}).data.groups]
+    assert months == ["2026-07", "2026-08", "2026-09"]
+
+
+def test_tone_is_neutral_for_saving_and_counts_are_integers(conn):
+    res = get_spending(ctx_for(conn, "CUST00001"),
+                       {"period": {"preset": "last_month"}, "filter": {"categories": ["Invest Deposit"]},
+                        "compare_to": "same_period_last_year"})
+    assert res.data.comparison.tone.value == "neutral"
+    assert isinstance(res.data.tx_count.value, int)
+    assert isinstance(res.model_view["tx_count"]["value"], int)
+    assert re.search(r'"tx_count": \{"id": "n\d+", "value": \d+,', json.dumps(res.model_view))
+
+
 def test_evidence_pagination_and_rows(conn):
     res = get_spending(ctx_for(conn, "CUST00008"),
                        {"period": {"preset": "last_3_months"}, "filter": {"categories": ["Restaurants"]}})

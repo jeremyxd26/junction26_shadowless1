@@ -65,7 +65,7 @@ class _Numbers:
     def _number(self, value: Decimal, unit: Unit, period: Period, method: str, spec: dict, label: str) -> Number:
         ref = evidence.make_ref(spec)
         self.specs[ref] = spec
-        return Number(value=float(value), unit=unit, period=period, method=method, evidence_ref=ref,
+        return Number(value=int(value) if unit is Unit.COUNT else float(value), unit=unit, period=period, method=method, evidence_ref=ref,
                       label=label, display=display(value, unit, self.ctx.language))
 
     def transactions(self, sel: Selection, method: str, period: Period, label: str) -> tuple[Number, Decimal]:
@@ -153,11 +153,16 @@ def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap,
     return key, periods.period_label(max(monday, period.start), min(sunday, period.end), language)
 
 
-def _tone(change: Decimal, direction: str) -> Tone:
+def _tone(change: Decimal, sel: Selection) -> Tone:
+    """Colour hint only; metrics.md does not define tone for plain sums, so this is our rule:
+    more spending is worse, more income is better, anything else (saving, transfers) is neutral."""
     if change == 0:
         return Tone.NEUTRAL
-    more_is_better = direction == "in"
-    return Tone.BETTER if (change > 0) == more_is_better else Tone.WORSE
+    if sel.direction == "out" and set(sel.categories) <= config.SPEND_CATEGORIES:
+        return Tone.WORSE if change > 0 else Tone.BETTER
+    if sel.direction == "in" and set(sel.categories) <= config.INCOME_CATEGORIES:
+        return Tone.BETTER if change > 0 else Tone.WORSE
+    return Tone.NEUTRAL
 
 
 def _model_number(n: Number | None) -> dict[str, Any] | None:
@@ -215,7 +220,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
                                               {"current": (total, total_value), "baseline": baseline},
                                               Unit.PERCENT, period, change_label)[0])
             comparison = Comparison(baseline=reg(baseline[0]), change=reg(change[0]), change_pct=change_pct,
-                                    tone=_tone(change[1], base.direction), label=vs)
+                                    tone=_tone(change[1], base), label=vs)
 
     # ---- groups ----
     groups: list[SpendingGroup] = []
@@ -247,7 +252,8 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
                                          {"part": amount_n, "whole": (total, total_value)},
                                          Unit.PERCENT, period, _text("share", lang))[0])
             change_n = None
-            if base_sel is not None and baseline_period is not None:
+            # A month or week bucket has no counterpart in the baseline period, so no per-group change.
+            if base_sel is not None and baseline_period is not None and by not in TIME_GROUPINGS:
                 b_gsel = gsel.with_period(baseline_period.start, baseline_period.end)
                 b_amount = nb.transactions(b_gsel, config.METHODS["total"], baseline_period,
                                            f"{label}, {baseline_period.label}")
