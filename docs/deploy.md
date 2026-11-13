@@ -85,9 +85,9 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
    - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
-   - if either check fails, the deploy stops here and the running version stays untouched;
+   - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
    - renders the Caddy config and reloads Caddy;
@@ -246,7 +246,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   - `core/metrics/*.sql` (the metric SQL the tools run);
   - `core/config/*.yaml` (personas and benefit rules).
 
-  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new runtime path is added to `.dockerignore` only, and the completeness check catches a forgotten one before the switch.
+  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new file of a kind the completeness check already lists (`*.py` under `core/app`, `core/tools` or `core/agent`, `core/metrics/*.sql`, `core/config/*.yaml`) only needs its path in `.dockerignore`, and the check catches a forgotten one before the switch. A new **kind** of run-time file (for example `core/data/*.csv`) must be added to `.dockerignore` **and** to the `git ls-files` patterns of the completeness check in `deploy/remote-deploy.sh`; otherwise the check cannot see it.
 
 ## Setting up a new instance from scratch
 

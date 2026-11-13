@@ -97,26 +97,47 @@ prev=$(cat "$state/current" 2>/dev/null || echo none)
 echo "== building $sha (previous: $prev)"
 docker build --quiet --file deploy/Dockerfile --tag "shadowless1-core:$sha" . >/dev/null
 
+# A build refused before the switch is removed again (never the image of the running commit).
+drop_image() {
+  [[ $sha == "$prev" ]] || docker rmi "shadowless1-core:$sha" >/dev/null 2>&1 || true
+}
+
 echo "== image contents (must not hold .env, .git or tests)"
 listing=$(docker run --rm --entrypoint sh "shadowless1-core:$sha" -c 'cd /srv && find . -not -path "*/__pycache__*" | sort')
 echo "$listing" | grep -vE '^\./core/(metrics|tools)/.+\.(sql|py)$' | tr '\n' ' '
 echo "(+ $(grep -cE '^\./core/tools/.+\.py$' <<<"$listing") files in core/tools, $(grep -cE '^\./core/metrics/.+\.sql$' <<<"$listing") in core/metrics)"
 if grep -qE '(^|/)(\.env|\.git|tests)(/|$)' <<<"$listing"; then
   echo "refusing to deploy: the image contains .env, .git or tests" >&2
+  drop_image
   exit 1
 fi
 
 # Completeness check, before the switch. The expectation comes from the checkout, not from the
 # image: every tracked file the service imports or reads at run time must be in the image. A path
-# left out of /.dockerignore fails here, the running version stays untouched.
+# left out of /.dockerignore fails here, the running version stays untouched. A new kind of run-time
+# file (for example core/data/*.csv) must be added to these patterns as well as to /.dockerignore.
+# The list is built in the main shell, so a git failure stops the deploy instead of passing an empty
+# list; a list without core/app/main.py is refused too.
+if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' \
+                  'core/metrics/*.sql' 'core/config/*.yaml'); then
+  echo "refusing to deploy: cannot list the run-time files of the checkout" >&2
+  drop_image
+  exit 1
+fi
+expected=$(grep -vE '(^|/)tests/' <<<"$expected" || true)
+if ! grep -qxF core/app/main.py <<<"$expected"; then
+  echo "refusing to deploy: the list of run-time files from git is empty or lacks core/app/main.py" >&2
+  drop_image
+  exit 1
+fi
 missing=()
 while IFS= read -r f; do
   grep -qxF "./$f" <<<"$listing" || missing+=("$f")
-done < <(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/metrics/*.sql' \
-           'core/config/*.yaml' | grep -vE '(^|/)tests/')
+done <<<"$expected"
 if (( ${#missing[@]} )); then
   echo "refusing to deploy: ${#missing[@]} file(s) the service needs are not in the image (see /.dockerignore):" >&2
   printf '  %s\n' "${missing[@]:0:10}" >&2
+  drop_image
   exit 1
 fi
 echo "all run-time files of the checkout are in the image"
@@ -141,9 +162,10 @@ print(f"imports ok: core.app and {n - 1} modules of core.tools/core.agent")
 if ! import_out=$(docker run --rm --network none --entrypoint python "shadowless1-core:$sha" -c "$import_check" 2>&1); then
   echo "refusing to deploy: the image cannot import the application; last lines (masked):" >&2
   tail -8 <<<"$import_out" | mask >&2
+  drop_image
   exit 1
 fi
-echo "$import_out" | tail -1
+tail -1 <<<"$import_out" | mask
 
 # Switch the service to commit $1: its image and ITS unit file (from git, so a rollback never uses the
 # failed commit's unit). Every step returns its own error: `set -e` does not apply inside an `if`.
