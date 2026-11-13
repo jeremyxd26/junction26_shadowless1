@@ -2,9 +2,9 @@
 
 The core service runs from the `dev` branch on one small Verda instance in Finland. Every change is tested there before it reaches `main`.
 
-- **URL:** https://sentti.jeremyxd.dev (`/healthz`, `/readyz`, and later `/api/*`). The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
+- **URL:** https://sentti.jeremyxd.dev: the app at `/`, the core at `/api/*`, `/healthz` and `/readyz`. The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
 - **Deploy:** `bash deploy/dev.sh` deploys `origin/dev`.
-- **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is a plain 404 until the app is served from the same host. FastAPI's `/docs` is not exposed.
+- **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is the app: the static build of `app/` for the deployed commit, with client routes such as `/chat` falling back to `index.html`. A commit without `app/package.json` serves no app, and those paths answer 404. FastAPI's `/docs` is not exposed (`/docs` is an app route that falls back to the app).
 
 ## What runs where
 
@@ -24,7 +24,7 @@ The request travels like this:
 2. `git fetch` on the instance, using a read-only deploy key
 3. `docker build` on the instance
 4. systemd unit `shadowless1-core`: one container, one uvicorn worker, listening on `127.0.0.1:8000`
-5. Caddy on ports 80 and 443, which serves HTTPS and proxies to the container
+5. Caddy on ports 80 and 443, which serves HTTPS, proxies the core routes to the container and serves the app's static files from `/opt/shadowless1/app/current` (no Node on the request path)
 
 Nothing is uploaded from a developer's machine. The instance pulls the code itself, so `dev.sh` can only deploy commits that are pushed to GitHub.
 
@@ -85,12 +85,16 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
    - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
    - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
+   - **app build** (when the commit has `app/package.json`; see "The app" below). It runs in a throwaway `node:22.21.1-slim` container from the commit's tracked files and is checked for secrets. A failed build or a secret match stops the deploy here too, with nothing switched;
+   - makes sure `/var/lib/shadowless1/var` exists, the service's persistent `var/` (see "Service data");
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
+   - points `/opt/shadowless1/app/current` at the new app build, only now that the core is healthy (an atomic link swap). A commit without `app/package.json` removes the link;
    - renders the Caddy config and reloads Caddy;
+   - keeps the images and app builds of the current and the previous deploy and removes older ones;
    - records the deploy in `/opt/shadowless1/deploy.log`.
 3. Back on your machine, `dev.sh` checks `GET https://sentti.jeremyxd.dev/healthz` (override with `DEV_URL`) and fails unless it gets 200.
 
@@ -117,6 +121,34 @@ deployed c64837975d8c75f7438fdba08412482122fbfb80; local /healthz: {"status":"ok
 public check: https://sentti.jeremyxd.dev/healthz
 GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
+
+## The app
+
+`app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
+
+- `git archive <sha> app` gives the commit's tracked files only. A local `app/.env` never reaches the build.
+- They are built in a throwaway `node:22.21.1-slim` container: `npm ci && npm run build`, as uid 1000, with `--memory 2g`, `--cap-drop ALL` and `--security-opt no-new-privileges`. The container has network, because npm downloads the packages. npm's cache is kept in `/var/cache/shadowless1/npm`.
+- The container gets no service setting. Its only build setting is the public `VITE_API_MODE=live`, so the app calls `/api` on the same origin. Vite puts only `VITE_*` variables into the bundle.
+- Measured on this instance (4 vCPU) with the app of PR #75: 7 s with an empty npm cache, 6 s with a warm one. The build is about 0.3 MB in 3 files.
+- **Only plain files.** The build must hold nothing but regular files and directories; a symbolic link or anything else refuses the deploy. Caddy follows links, so a link left in the build by a package could otherwise publish any file Caddy can read, its TLS keys included.
+- **Secret check.** The secret-like settings of `/etc/shadowless1/core.env` (names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`) are searched for in all built files: the full value when it has at least 6 characters, and a URL's password and host. Any match refuses the deploy and prints the setting's name, never its value. Public settings such as a model name, CORS origins or a plain URL are not searched.
+- The result is installed as `/opt/shadowless1/app/<sha>` (root-owned, world-readable). The link `/opt/shadowless1/app/current` moves to it after the core passed `/healthz`, so a failed build, a failed check or a failed core start leaves the previous app and core serving. A commit whose build is already installed (a redeploy of the same commit, or a rollback to the previous one, whose build is kept) reuses it without npm, so the directory being served is never replaced.
+
+**Caching** (`deploy/Caddyfile`):
+- `/assets/*` holds Vite's content-hashed files: an existing file gets `Cache-Control: public, max-age=31536000, immutable`. A missing asset and the directory `/assets/` itself are a plain 404 with `no-store`, never `index.html`.
+- Every other path: `Cache-Control: no-cache`, so `index.html` is revalidated on every load and a deploy shows at once.
+
+A commit without `app/package.json` (any commit before PR #75 merged the app) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
+
+## Service data (`var/`)
+
+The core writes its own data under `var/` at the repository root, which is `/srv/var` in the container: the audit log, the daily model-call counter (#85) and the response and tool caches (#86). The container's file system is read-only, and this one directory is a bind mount from the host:
+
+| Host path | Container path | Owner, mode |
+|---|---|---|
+| `/var/lib/shadowless1/var` | `/srv/var` | uid 10001 (the container user `app`), `700` |
+
+The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
 
 ## Roll back
 
@@ -243,6 +275,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 - **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore`:
   - `core/requirements.txt`;
   - `core/app`, `core/tools` and `core/agent` (the service, the tools and the answer pipeline);
+  - `core/answer_text.py`, the one module outside those packages that they import (the answer pipeline shares it with the eval);
   - `core/metrics/*.sql` (the metric SQL the tools run);
   - `core/config/*.yaml` (personas and benefit rules).
 
