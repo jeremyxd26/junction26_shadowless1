@@ -118,7 +118,8 @@ f AS (
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'regular_essentials'), 0)          AS regular_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'unexpected_necessities'), 0)      AS unexpected_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'everyday_spending'), 0)           AS everyday_eur,
-           COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend' AND w.is_one_off), 0)        AS one_off_eur,
+           COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend' AND w.is_one_off
+                                             AND w.category <> 'Health'), 0)                   AS one_off_eur,  -- R9
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'everyday_spending'
                                              AND extract(isodow FROM w.tx_at) >= 6), 0)       AS everyday_weekend_eur,
            count(*) FILTER (WHERE w.basket = 'everyday_spending')                            AS everyday_n,

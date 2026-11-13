@@ -173,23 +173,29 @@ chosen AS (   -- most specific level whose group is big enough; "all" is the las
     WHERE r.peer_n >= COALESCE(NULLIF(current_setting('app.peer_min_n', true), ''), '20')::int
        OR r.peer_level = 'all'
     ORDER BY r.customer_id, r.metric, r.level_rank
+),
+final AS (   -- statistics are only given when the group is big enough and the customer is comparable
+    SELECT ch.*, gs.p25, gs.p50, gs.p75,
+           (ch.comparable AND ch.peer_n >= COALESCE(NULLIF(current_setting('app.peer_min_n', true), ''), '20')::int) AS shown
+    FROM chosen ch
+    LEFT JOIN group_stats gs USING (peer_level, peer_group, metric)
 )
-SELECT ch.customer_id,
-       ch.metric,
-       round(ch.value_month::numeric, 2)               AS you_month_eur,
-       round(gs.p50::numeric, 2)                       AS peer_median_month_eur,
-       round(gs.p25::numeric, 2)                       AS peer_p25_month_eur,
-       round(gs.p75::numeric, 2)                       AS peer_p75_month_eur,
-       round(100.0 * ch.n_less / NULLIF(ch.peer_n, 0), 0) AS percentile,   -- share of peers spending less
-       round(100 * (ch.value_month / NULLIF(gs.p50, 0) - 1)::numeric, 1) AS vs_median_pct,
-       ch.comparable,
-       ch.peer_level,
-       ch.peer_group,
-       ch.peer_n,
+SELECT f.customer_id,
+       f.metric,
+       round(f.value_month::numeric, 2)                                         AS you_month_eur,
+       CASE WHEN f.shown THEN round(f.p50::numeric, 2) END                      AS peer_median_month_eur,
+       CASE WHEN f.shown THEN round(f.p25::numeric, 2) END                      AS peer_p25_month_eur,
+       CASE WHEN f.shown THEN round(f.p75::numeric, 2) END                      AS peer_p75_month_eur,
+       CASE WHEN f.shown THEN round(100.0 * f.n_less / f.peer_n, 0) END         AS percentile,   -- share of peers spending less
+       CASE WHEN f.shown THEN round(100 * (f.value_month / NULLIF(f.p50, 0) - 1)::numeric, 1) END AS vs_median_pct,
+       f.shown,
+       f.comparable,
+       f.peer_level,
+       f.peer_group,
+       f.peer_n,
        p.win_start AS period_start,
        p.win_end   AS period_end
-FROM chosen ch
-LEFT JOIN group_stats gs USING (peer_level, peer_group, metric)
+FROM final f
 CROSS JOIN params p
-JOIN metric_list ml ON ml.metric = ch.metric
-ORDER BY ch.customer_id, ml.ord;
+JOIN metric_list ml ON ml.metric = f.metric
+ORDER BY f.customer_id, ml.ord;

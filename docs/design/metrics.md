@@ -93,7 +93,7 @@ CREATE TABLE basket_overrides (
 );
 ```
 
-In the prototypes the same shape is an empty `overrides` CTE, joined by `LEFT JOIN LATERAL … ORDER BY specificity LIMIT 1`. Output has `overridden` per transaction.
+In the prototypes the same shape is an empty `overrides` CTE, joined by `LEFT JOIN LATERAL … ORDER BY specificity LIMIT 1`; the per-transaction flag `overridden` lives in the `cls` CTE (the evidence query for a basket returns it). Tested with two rows for CUST00001 (category Travel → unexpected_necessities, MCC 7922 → regular_essentials): everyday spending fell from 399.99 to 328.82 a month, unexpected necessities rose from 409.17 to 466.65 and regular essentials from 1,278.77 to 1,292.46; the total stayed the same.
 
 **Output** (`02_baskets.sql`, one row per customer and basket): `month_avg_eur`, `month_avg_excl_one_off_eur`, `one_off_total_eur`, `n_one_off`, `share_pct` (of the customer's spend), `total_eur`, `n_tx`, `n_months`, `period_start`, `period_end`.
 
@@ -246,7 +246,7 @@ Features over the window (all per month unless noted):
 - `net_income` = (Salary + Other Income − Salary Sweep) / n_months
 - `spend` = spend flow / n_months; `saving` = Invest Deposit / n_months
 - `keep_rate` = (net_income − spend) / net_income, in % (investment deposits count as kept)
-- basket shares of spend; `one_off_share` of spend
+- basket shares of spend; `one_off_share`: one-off purchases outside Health as a share of spend (Health one-offs are left out so that health spending can never set a label, R9)
 - `everyday_weekend_pct`: share of everyday spending on Saturday or Sunday
 - `everyday_tx_month`, `everyday_avg_ticket_eur`, `top_everyday_category`
 - `months_out_over_in`: months where spend + saving exceeded income − sweep
@@ -264,7 +264,9 @@ Features over the window (all per month unless noted):
 
 **Traits** (any number): `salary_moved_elsewhere` (sweep > 50% of income), `went_below_zero` (n_tx_below_zero > 0), `regular_investor` (saving > 0), `weekend_spender` (weekend share ≥ 45%; an even spread is 29%), `frequent_small_purchases` (≥ 12 everyday purchases a month).
 
-The thresholds are fixed constants, set once from the sample's distribution (keep_rate p33 = 0.8%, p67 = 19.5%; everyday share p67 = 26.2%, p90 = 37.1%; one-off share p90 = 6.1%; weekend share p67 = 42.2%; everyday purchases a month p67 = 11.8). They do not depend on who is in the run. On the sample the labels split as stretched 29, steady 26, saver 24, everyday_heavy 12, big_ticket 8.
+The thresholds are fixed constants, set once from the sample's distribution (keep_rate p33 = 0.8%, p67 = 19.5%; everyday share p67 = 26.2%, p90 = 37.1%; one-off share p90 = 6.1%; weekend share p67 = 42.2%; everyday purchases a month p67 = 11.8). They do not depend on who is in the run. On the sample the labels split as stretched 29, steady 27, saver 24, everyday_heavy 12, big_ticket 7.
+
+**Two income figures.** `net_income_month_eur` here is what actually arrived on average (mean of Salary + Other Income − Sweep over the window: 2,388.42 for CUST00001). Safe to spend (section 3) uses `income_month_eur`, the median of the recurring salary series (2,364.88), because it plans the next month and should not count one-off income. The coach quotes the profile figure when describing the past and the safe-to-spend figure when planning.
 
 R9: no feature uses Health or health MCCs on their own; labels and traits contain no sensitive terms.
 
@@ -286,12 +288,12 @@ An estimate (R13): "people like you" are customers in the same age band and area
 
 - Age bands: 18–24, 25–34, 35–44, 45–54, 55–64, 65–74, 75+.
 - Areas: `area3` = first 3 digits of the postal code (30 areas in the data); `city` = first 2 digits (00 Helsinki, 01 Vantaa, 02 Espoo and Kauniainen).
-- Levels, most specific first: age band + area3 → age band + city → age band → all. The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). Small groups are never shown: this protects both statistics and privacy.
-- Customers with a monthly Salary Sweep never enter a peer group (their spending happens elsewhere), and their own rows say `comparable = false`; the coach does not show those.
+- Levels, most specific first: age band + area3 → age band + city → age band → all. The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). If even "all" has fewer, the row has `shown = false` and every peer statistic is NULL (a one-customer run returns `peer_n = 0`). Small groups are never shown: this protects both statistics and privacy.
+- Customers with a monthly Salary Sweep never enter a peer group (their spending happens elsewhere), and their own rows say `comparable = false` and `shown = false`, with NULL statistics.
 - Metrics (month averages over the window): total spend, the three baskets, and the categories Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing. **Health is not benchmarked** (R9).
 - `percentile` = share of the other peers in the group who spend less; `vs_median_pct` = you / peer median − 1.
 
-**Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `period_start`, `period_end`.
+**Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `period_start`, `period_end`. The coach uses a row only when `shown` is true.
 
 **Evidence.** The customer's rows for the metric; the peer group definition and its n. Peer rows themselves are never exposed.
 
@@ -305,7 +307,7 @@ An estimate (R13): "people like you" are customers in the same age band and area
 | CUST00001 | Restaurants | 56.86 | 177.01 | 14 | all (93) |
 | CUST00002 | total spend | 1,702.17 | 3,285.49 | 10 | age band 45–54 (30) |
 | CUST00002 | everyday spending | 430.29 | 778.19 | 17 | age band 45–54 (30) |
-| CUST00006 | total spend | 253.54 | 2,730.33 | – (comparable = false) | 35–44 + Helsinki (21) |
+| CUST00006 | total spend | 253.54 | not shown | not shown (comparable = false) | 35–44 + Helsinki (21) |
 
 ## 7. Grocery store price index and switch saving
 
@@ -375,19 +377,21 @@ Every file was run on the sample under `statement_timeout = '60s'` after rebasin
 
 | File | Rows | Time |
 |---|---|---|
-| 01_recurring.sql | 315 | 0.63 s |
+| 01_recurring.sql | 315 | 0.61 s |
 | 02_baskets.sql | 297 | 0.50 s |
-| 03_safe_to_spend.sql | 99 | 1.26 s |
-| 04_what_if.sql | 96 | 0.65 s |
-| 05_spender_profile.sql | 99 | 2.50 s |
-| 06_peer_benchmark.sql | 1,287 | 1.12 s |
-| 07_store_price_index.sql | 80 + 99 | 0.24 s |
+| 03_safe_to_spend.sql | 99 | 1.38 s |
+| 04_what_if.sql | 96 | 0.62 s |
+| 05_spender_profile.sql | 99 | 2.56 s |
+| 06_peer_benchmark.sql | 1,287 | 1.01 s |
+| 07_store_price_index.sql | 80 + 99 | 0.28 s |
 
 Times are wall-clock from a laptop client, including network round trips.
 
 - `EXPLAIN` of every statement that reads `transactions` shows an `Index Scan` on `tx_customer_time` (07: `tx_customer_category`) with the customer range as the `Index Cond`; no `Seq Scan on transactions` anywhere.
-- With `app.demo_today` set to 2026-09-14 and 2026-05-20 the window, statuses and results move as described in sections 2 and 3.
-- The worked numbers above are copied from these runs.
+- With `app.demo_today = 2026-09-14` all seven files run, and every period moves: the 6-month window becomes 2026-03-01 … 2026-08-31, the safe-to-spend week 2026-09-15 … 2026-09-21, the store index year 2025-09-15 … 2026-09-14. 01 and 03 were also checked at 2026-05-20 (late salary); see sections 2 and 3.
+- One-customer runs (`[CUST00006, CUST00007)`) return the same numbers as the sample run for files 01–05.
+- The override path was run with two rows (section 1).
+- The worked numbers above are copied from these runs. The runs used a psycopg 3 client (no psql on the machine): it sets the three `app.*` settings, runs the whole file in one call and prints the time and rows; `psql -f` gives the same result.
 
 ## 10. Open questions for Renat
 
