@@ -375,13 +375,15 @@ Every file was run on the sample under `statement_timeout = '60s'` after rebasin
 
 | File | Rows | Time |
 |---|---|---|
-| 01_recurring.sql | 315 | 0.65 s |
-| 02_baskets.sql | 297 | 0.61 s |
-| 03_safe_to_spend.sql | 99 | 1.32 s |
-| 04_what_if.sql | 96 | 0.68 s |
-| 05_spender_profile.sql | 99 | 2.36 s |
-| 06_peer_benchmark.sql | 1,287 | 0.91 s |
-| 07_store_price_index.sql | 80 + 99 | 0.25 s |
+| 01_recurring.sql | 315 | 0.63 s |
+| 02_baskets.sql | 297 | 0.50 s |
+| 03_safe_to_spend.sql | 99 | 1.26 s |
+| 04_what_if.sql | 96 | 0.65 s |
+| 05_spender_profile.sql | 99 | 2.50 s |
+| 06_peer_benchmark.sql | 1,287 | 1.12 s |
+| 07_store_price_index.sql | 80 + 99 | 0.24 s |
+
+Times are wall-clock from a laptop client, including network round trips.
 
 - `EXPLAIN` of every statement that reads `transactions` shows an `Index Scan` on `tx_customer_time` (07: `tx_customer_category`) with the customer range as the `Index Cond`; no `Seq Scan on transactions` anywhere.
 - With `app.demo_today` set to 2026-09-14 and 2026-05-20 the window, statuses and results move as described in sections 2 and 3.
