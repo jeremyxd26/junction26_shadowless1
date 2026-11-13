@@ -3,7 +3,7 @@ import { openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 type Size = 'inline' | 'md' | 'hero'
-type Tone = 'mint' | 'warning' | 'neutral'
+type Tone = 'mint' | 'warning' | 'neutral' | 'hero'
 
 const sizes: Record<Size, string> = {
   // Inline chips sit in running text: the pill is 32px high and an invisible
@@ -18,6 +18,15 @@ const tones: Record<Tone, string> = {
   mint: 'bg-mint-tint text-ink border-mint-line',
   warning: 'bg-warning-tint text-ink border-warning/40',
   neutral: 'bg-waiting-tint text-ink border-line-strong/40',
+  // White figures on the green safe-to-spend block (DESIGN.md).
+  hero: 'bg-transparent text-on-hero border-on-hero-muted/60',
+}
+
+const pressed: Record<Tone, string> = {
+  mint: 'hover:border-brand active:bg-mint-line',
+  warning: 'hover:border-brand active:bg-mint-line',
+  neutral: 'hover:border-brand active:bg-mint-line',
+  hero: 'hover:border-on-hero active:bg-on-hero/10',
 }
 
 interface Props {
@@ -41,7 +50,7 @@ export function NumberChip({ number, size = 'md', tone = 'mint' }: Props) {
   return (
     <button
       type="button"
-      className={`${className} cursor-pointer transition-colors duration-150 hover:border-brand active:bg-mint-line`}
+      className={`${className} cursor-pointer transition-colors duration-150 ${pressed[tone]}`}
       aria-label={`${number.label}: ${number.display}. ${t.chipHint}`}
       onClick={() => openEvidence(ref)}
     >

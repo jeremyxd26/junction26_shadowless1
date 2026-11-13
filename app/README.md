@@ -60,4 +60,4 @@ The static host must answer unknown paths (such as `/chat`) with `index.html`.
 
 ## Design tokens
 
-`src/styles/tokens.css` is a placeholder. When the design tokens of issue #65 land in `app/design/tokens.css`, import that file in `src/index.css` instead. The variable names match, and `@theme inline` in `src/index.css` maps them to Tailwind utilities (`bg-page`, `text-ink`, `bg-basket-everyday-tint`, …).
+The app uses `design/tokens.css` directly (rules in `DESIGN.md`). `src/index.css` imports it, and `@theme inline` there maps the colour, font, radius and shadow tokens to Tailwind utilities (`bg-page`, `text-ink`, `bg-hero`, `rounded-lg`, …), so a change in the token file changes the look without touching components. The font is Figtree (SIL OFL 1.1) from `@fontsource/figtree`, bundled with the app in weights 400, 500, 600 and 700.

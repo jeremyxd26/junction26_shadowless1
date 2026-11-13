@@ -1,5 +1,5 @@
 @import 'tailwindcss';
-@import './styles/tokens.css';
+@import '../design/tokens.css';
 
 /*
  * Map the token variables into Tailwind utilities (bg-page, text-ink, rounded-pill, ...).
@@ -17,8 +17,12 @@
   --color-ink-2: var(--color-ink-2);
   --color-muted: var(--color-muted);
   --color-on-deep: var(--color-on-deep);
+  --color-on-deep-muted: var(--color-on-deep-muted);
   --color-brand: var(--color-brand);
   --color-deep: var(--color-deep);
+  --color-hero: var(--color-hero);
+  --color-on-hero: var(--color-on-hero);
+  --color-on-hero-muted: var(--color-on-hero-muted);
   --color-mint: var(--color-mint);
   --color-mint-hover: var(--color-mint-hover);
   --color-mint-tint: var(--color-mint-tint);
@@ -38,6 +42,8 @@
   --color-waiting: var(--color-waiting);
   --color-waiting-tint: var(--color-waiting-tint);
   --font-sans: var(--font-sans);
+  --text-card-title: var(--text-card-title);
+  --text-card-title--line-height: var(--text-card-title--line-height);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
