@@ -163,6 +163,35 @@ def test_basket_rules_and_one_off():
     assert (by_id[27].flow, by_id[27].basket) == ("saving", None)
 
 
+# ---- database connection safety ---------------------------------------------------------------------
+
+FAKE_SECRET = "NotARealPassw0rd"
+
+
+@pytest.mark.parametrize("url", [
+    f"postgresql://someone:{FAKE_SECRET}%ZZ@db.invalid:5432/x?connect_timeout=1",   # bad percent escape
+    f" postgresql://someone:{FAKE_SECRET}@db.invalid:5432/x?connect_timeout=1",     # leading space
+    f"'postgresql://someone:{FAKE_SECRET}@@db.invalid/x?connect_timeout=1'",        # quotes, unencoded @
+])
+def test_connect_error_never_shows_the_url(monkeypatch, url):
+    import traceback
+
+    from core.tools import db
+
+    monkeypatch.setenv("DATABASE_URL", url)
+    with pytest.raises(db.DatabaseConnectError) as caught:
+        db.connect()
+    text = "".join(traceback.format_exception(caught.value))
+    assert FAKE_SECRET not in text and "db.invalid" not in text and "someone" not in text
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_connection_repr_shows_no_details():
+    from core.tools import db
+
+    assert repr(db.Db(object())) == "<database connection>"
+
+
 def test_mcc_groups_cover_disjoint_codes():
     codes = [c for group in config.MCC_GROUPS.values() for c in group]
     assert len(codes) == len(set(codes))

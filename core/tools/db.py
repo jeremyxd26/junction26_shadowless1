@@ -42,11 +42,41 @@ def database_url(required: bool = True) -> str | None:
     return url or None
 
 
-def connect() -> psycopg.Connection:
-    """Open the single connection the tools use, with the statement timeout set."""
-    conn = psycopg.connect(database_url(), autocommit=True)
+class DatabaseConnectError(RuntimeError):
+    """Connecting failed. The message never contains the driver's text, which can echo DATABASE_URL."""
+
+
+class Db:
+    """The tools' database handle: a psycopg connection whose repr shows no host, user or database.
+
+    Tracebacks (pytest prints function arguments) and logs therefore never reveal connection details.
+    Everything else is delegated to the psycopg connection.
+    """
+
+    def __init__(self, conn: psycopg.Connection) -> None:
+        self._conn = conn
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+    def __repr__(self) -> str:
+        return "<database connection>"
+
+
+def connect() -> Db:
+    """Open the single connection the tools use, with the statement timeout set.
+
+    Driver errors are not re-raised or chained: psycopg and libpq repeat parts of a malformed URL,
+    password included, in their messages. Only the exception class name and a fixed hint are kept.
+    """
+    try:
+        conn = psycopg.connect(database_url(), autocommit=True)
+    except Exception as exc:  # noqa: BLE001 - never surface the driver's message
+        raise DatabaseConnectError(
+            f"could not connect to the database ({type(exc).__name__}); check DATABASE_URL in .env"
+        ) from None
     conn.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT}'")
-    return conn
+    return Db(conn)
 
 
 def ensure_evidence_table(conn: psycopg.Connection) -> None:

@@ -12,7 +12,7 @@ from datetime import date
 
 import psycopg
 
-from core.tools.db import Tx, load_transactions
+from core.tools.db import Db, Tx, load_transactions
 from core.tools.models import Number
 
 
@@ -44,7 +44,7 @@ class NumberRegistry:
 class ToolContext:
     customer_id: str
     as_of: date
-    conn: psycopg.Connection
+    conn: Db | psycopg.Connection  # db.connect() returns Db, whose repr hides connection details
     language: str = "en"
     numbers: NumberRegistry = field(default_factory=NumberRegistry)
     _history: list[Tx] | None = field(default=None, repr=False)
