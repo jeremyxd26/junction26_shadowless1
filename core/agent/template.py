@@ -143,8 +143,65 @@ def _numbers_in(view: Any, label: str = "") -> list[tuple[str, str]]:
     return [(lab, number_id) for _, _, lab, number_id in sorted(found)]
 
 
+TAKEAWAY_SIZE = 4  # the main number and at most three supporting ones (issue #112); the rest stay in the cards
+NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
+BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
+BILL_PAYDAY = r"payday|pay day|salary|income|palkka|palkkapäivä|tulo"
+
+
+def _num(node: Any, label: str | None = None) -> tuple[str, str] | None:
+    if isinstance(node, dict) and {"id", "value", "unit"} <= node.keys() and isinstance(node.get("id"), str):
+        return (label or node.get("label") or "", node["id"])
+    return None
+
+
+def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> tuple[list[tuple[str, str]], list[str]]:
+    """The numbers one tool's answer cites, main number first, at most TAKEAWAY_SIZE, in the order of
+    agent-core.md section 6.2; and extra sentences without numbers (a date). A tool not listed here
+    gets its shallowest numbers."""
+    tool = view.get("tool")
+    q = question.lower()
+    picks: list[tuple[str, str] | None] = []
+    extra: list[str] = []
+    if tool == "get_spending":
+        comparison = view.get("comparison") or {}
+        picks.append(_num(view.get("total")))
+        if comparison:
+            picks += [_num(comparison.get("baseline")), _num(comparison.get("change")), _num(comparison.get("change_pct"))]
+        else:
+            picks.append(_num(view.get("tx_count")))
+            picks += [_num(g.get("amount"), g.get("label")) for g in view.get("groups") or []]
+    elif tool == "get_basket_breakdown":
+        picks.append(_num(view.get("total")))
+        picks += [_num(b.get("share"), b.get("label")) for b in view.get("baskets") or []]
+    elif tool == "get_safe_to_spend":
+        picks += [_num(view.get(k)) for k in ("safe_to_spend", "balance_limit", "budget_limit")]
+    elif tool == "run_what_if":
+        # The cut is the user's own number and stays out of the text.
+        picks += [_num(view.get(k)) for k in ("saving_per_month", "baseline_per_month", "saving_per_year")]
+    elif tool == "get_recurring_bills":
+        if re.search(BILL_PAYDAY, q):
+            picks += [_num(i.get("typical_month"), i.get("label")) for i in view.get("income") or []]
+            if isinstance(view.get("next_payday"), str):
+                extra.append(f"{pick(NEXT_PAYDAY, language)}: {_date(view['next_payday'], language)}.")
+        elif re.search(BILL_TYPICAL, q):
+            picks += [_num(b.get("typical_month"), b.get("label")) for b in view.get("bills") or []]
+        else:
+            picks.append(_num(view.get("upcoming_total")))
+            picks += [_num(b.get("due_until_payday"), b.get("label")) for b in view.get("bills") or []]
+    else:
+        picks = list(_numbers_in(view))
+    out = [p for p in picks if p is not None][:TAKEAWAY_SIZE]
+    return out, extra
+
+
+def _date(iso: str, language: str) -> str:
+    y, m, d = iso.split("-")
+    return iso if language == "en" else f"{int(d)}.{int(m)}.{y}"
+
+
 def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
-                   allowed: Any | None) -> dict[str, Any]:
+                   allowed: Any | None, question: str = "") -> dict[str, Any]:
     """An AnswerDraft built only from model views: '<period>. <label>: {{nK}}.' sentences.
 
     With `allowed` (validator.Allowed: the orchestrator knows the numbers' periods), any label or note
@@ -163,7 +220,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
         # would read as a date). Signed values keep their sign in the token's display.
         items = []
-        for label, number_id in _numbers_in(view):
+        chosen, extra = takeaway(view, question, language)
+        for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
             safe_label = label if label and ok(label) else ""
@@ -175,6 +233,7 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             head = f"{period}, {pick(MONTHLY_AVERAGE, language)}: "
         if items:
             sentences.append(head + "; ".join(items) + ".")
+        sentences += extra  # built from the view's own ISO dates (next payday): returned dates
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)

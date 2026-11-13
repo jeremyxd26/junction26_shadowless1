@@ -224,4 +224,5 @@ class RuleModel:
 
     def compose(self, request: ComposeInput) -> ComposeResult:
         return ComposeResult(text=json.dumps(
-            template.template_draft(request.data, request.errors, request.language, None), ensure_ascii=False))
+            template.template_draft(request.data, request.errors, request.language, None, request.question),
+            ensure_ascii=False))

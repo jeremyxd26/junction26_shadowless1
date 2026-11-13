@@ -45,6 +45,7 @@ sys.path.insert(1, str(Path(__file__).resolve().parents[2]))  # the repository r
 
 import expected  # noqa: E402  (core/eval/expected.py)
 from core import answer_text  # noqa: E402  (shared with the answer pipeline's validator)
+from derive import Deriver  # noqa: E402
 from sources import DATA_TOOLS, Answer, ApiSource, ReferenceSource  # noqa: E402
 
 # Text patterns no answer may contain.
@@ -65,7 +66,7 @@ def _iso(value) -> date | None:
         return None
 
 
-def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
+def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriver | None = None) -> list[str]:
     """The reasons this answer fails the case; empty when it passes. A reason starting with
     "unverified" means the source did not report what the check needs: that is a failure too."""
     if ans.error:
@@ -119,16 +120,31 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (objects)")
             elif not any(answer_text.shows(ans.text, str(x.get("display") or ""), dates, periods) for x in match):
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (text)")
-        # Any other Number object: only a number the user typed, declared as user input with the
-        # question's own mark ("20%" is a percent, never money).
+        # Any other Number object (issue #112):
+        # - a number the user typed passes only as user input with the question's own mark ("20%" is a
+        #   percent, never money);
+        # - any other number passes only if a tool call of this same answer returned it (the audit's
+        #   model views), and its value is checked against SQL wherever the case can derive it.
         typed = answer_text.scan_numbers(question, lang)
         for x in declared:
             if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"]) for n in wanted):
                 continue
-            from_question = any(abs(abs(float(x["value"])) - v) < 1e-9 and mark in answer_text.UNIT_MARKS.get(x["unit"], set())
-                                for v, mark in typed)
-            if not (x.get("method") == "user_input@1" and from_question):
-                fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} is not an expected value")
+            what = f"Number object {x.get('value')} {x.get('unit')}"
+            if x.get("method") == "user_input@1":
+                if not any(abs(abs(float(x["value"])) - v) < 1e-9 and mark in answer_text.UNIT_MARKS.get(x["unit"], set())
+                           for v, mark in typed):
+                    fails.append(f"R1: {what} is declared as user input but the question does not say it")
+                continue
+            if ans.tool_numbers is None:
+                fails.append(f"unverified: {what}: the source did not report what its tools returned")
+                continue
+            if not any(t.get("id") == x.get("id") and t.get("unit") == x["unit"]
+                       and answer_text.same_value(t["value"], x["value"], x["unit"]) for t in ans.tool_numbers):
+                fails.append(f"R1: {what} was not returned by a tool of this answer")
+                continue
+            problem = deriver.problem(case, x) if deriver is not None else None
+            if problem:
+                fails.append(f"R1: {problem}")
 
     for d in case.get("dates") or []:
         if d["value"] not in ans.dates:
@@ -186,6 +202,7 @@ def main() -> None:
              and (not args.case or c["id"] in args.case)]
     source = make_source(args, doc)
 
+    deriver = Deriver(str(doc["as_of"]))
     t0 = time.perf_counter()
     rows, per_tag = [], defaultdict(lambda: [0, 0, 0])
     for case in cases:
@@ -198,7 +215,7 @@ def main() -> None:
                 sys.exit(f"stopped at {case['id']}: a statement hit statement_timeout (60s)")
             except psycopg.Error as e:  # the driver text is not printed (it can repeat parts of DATABASE_URL)
                 sys.exit(f"stopped at {case['id']}: {type(e).__name__} (details hidden)")
-            fails = check(case, ans, lang, question)
+            fails = check(case, ans, lang, question, deriver)
             rows.append((case["id"], lang, fails))
             for tag in case["tags"] + [f"lang_{lang}"]:
                 per_tag[tag][0] += not fails

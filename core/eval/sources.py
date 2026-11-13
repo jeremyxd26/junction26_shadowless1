@@ -38,6 +38,9 @@ class Answer:
     labels: list[str] | None = None    # keys the answer reports (profile, what-if status); None = unknown
     tool_calls: list[str] | None = None  # tool and function names called; None = unknown
     error: str | None = None           # the source could not produce an answer (HTTP error, ...)
+    # The numbers the answer's tool calls returned (from the audit's model views): a declared number
+    # outside a case's list passes only if it is one of these. None = unknown.
+    tool_numbers: list[dict] | None = None
 
 
 # ---- reference source ------------------------------------------------------------------------------
@@ -144,7 +147,8 @@ class ReferenceSource:
             labels.append(value)
             parts.append(f"{label_of(item['name'])}: {label_of(value)}.")
         return Answer(text=" ".join(parts), outcome="answered", numbers=numbers, dates=dates, labels=labels,
-                      tool_calls=list(case.get("expected_tools") or []))
+                      tool_calls=list(case.get("expected_tools") or []),
+                      tool_numbers=[{"id": f"n{i + 1}", **n} for i, n in enumerate(numbers)])
 
 
 # ---- the coach's API --------------------------------------------------------------------------------
@@ -195,16 +199,28 @@ class ApiSource:
                 labels.append((card.get("profile") or {}).get("key"))
             if card.get("type") == "whatif":
                 labels.append((card.get("result") or {}).get("status"))
+        record = self._audit(resp.get("answer_id"))
+        tool_calls = tool_numbers = None
+        if record is not None:
+            tool_calls = [c.get("name") for turn in record.get("planner_turns") or [] for c in turn.get("calls") or []]
+            tool_numbers = [v for _, v in _walk(record.get("tool_outputs") or {})
+                            if isinstance(v, dict) and {"id", "value", "unit"} <= v.keys()]
         return Answer(text=resp.get("text_rendered") or resp.get("text") or "", outcome=resp.get("outcome"),
                       refusal_kind=(resp.get("refusal") or {}).get("kind"), numbers=numbers, dates=sorted(dates),
-                      labels=[x for x in labels if x], tool_calls=self._tool_calls(resp.get("answer_id")))
+                      labels=[x for x in labels if x], tool_calls=tool_calls, tool_numbers=tool_numbers)
 
-    def _tool_calls(self, answer_id: str | None) -> list[str] | None:
-        """Function names from the audit record; None when it cannot be read (the tool checks are skipped)."""
+    def _audit(self, answer_id: str | None) -> dict | None:
+        """The audit record (GET /api/audit/{id}, needs AUDIT_API=1); None when it cannot be read, so the
+        tool calls and tool numbers are unknown and those checks fail as "unverified"."""
         if not answer_id:
             return None
         try:
-            record = self._get_json(urllib.request.Request(f"{self.base}/api/audit/{answer_id}"))
+            return self._get_json(urllib.request.Request(f"{self.base}/api/audit/{answer_id}"))
         except Exception:
+            return None
+
+    def _tool_calls(self, answer_id: str | None) -> list[str] | None:
+        record = self._audit(answer_id)
+        if record is None:
             return None
         return [c.get("name") for turn in record.get("planner_turns") or [] for c in turn.get("calls") or []]
