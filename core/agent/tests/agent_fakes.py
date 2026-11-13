@@ -56,8 +56,8 @@ def db_down_tool(ctx, args: FakeArgs) -> ToolResult:
 
 
 class FakeData:
-    """Fake data access. With `capacity`, at most that many connections are out at once: a caller
-    with a timeout gets DataUnavailable when none is free in time, one without waits (like the pool)."""
+    """Fake data access. With `capacity`, at most that many connections are out at once:
+    connection() waits for one (like the pool), connection_if_free(wait) gives up after `wait`."""
 
     def __init__(self, customers=("CUST00860", "CUST00493"), down: bool = False, capacity: int | None = None) -> None:
         self.customers = set(customers)
@@ -73,13 +73,19 @@ class FakeData:
             raise DataUnavailable()
         return customer_id in self.customers
 
+    def connection(self):
+        return self._connect(5.0)
+
+    def connection_if_free(self, wait: float):
+        return self._connect(wait)
+
     @contextmanager
-    def connection(self, timeout: float | None = None):
+    def _connect(self, timeout: float):
         if self.down:
             raise DataUnavailable()
         with self._free:
             if self.capacity is not None and not self._free.wait_for(lambda: self.in_use < self.capacity,
-                                                                     timeout=5 if timeout is None else timeout):
+                                                                     timeout=timeout):
                 raise DataUnavailable()
             self.in_use += 1
             self.most_in_use = max(self.most_in_use, self.in_use)

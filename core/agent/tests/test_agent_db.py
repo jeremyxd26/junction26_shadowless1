@@ -28,9 +28,15 @@ class OneConnection:
     def customer_exists(self, customer_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM customers WHERE customer_id = %s", (customer_id,)).fetchone() is not None
 
+    def connection(self):
+        return self._connect(-1)
+
+    def connection_if_free(self, wait: float):
+        return self._connect(wait)
+
     @contextmanager
-    def connection(self, timeout: float | None = None):
-        if not self.lock.acquire(timeout=-1 if timeout is None else timeout):
+    def _connect(self, timeout: float):
+        if not self.lock.acquire(timeout=timeout):
             raise DataUnavailable()
         try:
             yield self.conn

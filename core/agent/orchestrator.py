@@ -104,10 +104,10 @@ class DataUnavailable(RuntimeError):
 class DataAccess(Protocol):
     def customer_exists(self, customer_id: str) -> bool: ...
 
-    def connection(self, timeout: float | None = None) -> AbstractContextManager[Any]:
-        """A connection, waiting at most `timeout` seconds (None: the default wait); raises
-        DataUnavailable when none can be had."""
-        ...
+    def connection(self) -> AbstractContextManager[Any]: ...
+
+    # Optional: `connection_if_free(wait)` gives a connection only if one is free within `wait`
+    # seconds and raises DataUnavailable otherwise. Without it, a turn's calls run one by one.
 
 
 def error_envelope(code: str, language: str) -> dict[str, Any]:
@@ -331,8 +331,8 @@ class Pipeline:
         """Run one turn's data calls; records come back in call order.
 
         Lanes take the calls in order. The first lane waits for its connection as usual; up to
-        MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S, so the
-        calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
+        MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S
+        (DataAccess.connection_if_free), so the calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
         a call that waits for the one before it (ids, cards and audit keys follow the call order) then
         always waits on a call that holds a connection and can finish."""
         records: list[dict[str, Any] | None] = [None] * len(pending)
@@ -345,14 +345,14 @@ class Pipeline:
             with lock:
                 return queue.popleft() if queue and not failures else None
 
-        def lane(wait: float | None) -> None:
+        def lane(spare: bool) -> None:
             while True:
                 with lock:
                     if not queue or failures:
                         return
                 taken = False
                 try:
-                    with self.data.connection(timeout=wait) as conn:
+                    with (self.data.connection_if_free(SPARE_WAIT_S) if spare else self.data.connection()) as conn:
                         i = take()
                         if i is None:
                             return
@@ -368,7 +368,7 @@ class Pipeline:
                         finally:
                             done[i].set()
                 except DataUnavailable as exc:
-                    if wait is None or taken:
+                    if not spare or taken:
                         with lock:
                             failures.append(exc)
                     return  # a spare lane without a free connection: the first lane runs the rest
@@ -377,12 +377,12 @@ class Pipeline:
                         failures.append(exc)
                     return
 
-        spares = [threading.Thread(target=lane, args=(SPARE_WAIT_S,), daemon=True)
-                  for _ in range(min(MAX_PARALLEL, len(pending)) - 1)]
+        lanes = min(MAX_PARALLEL, len(pending)) if hasattr(self.data, "connection_if_free") else 1
+        spares = [threading.Thread(target=lane, args=(True,), daemon=True) for _ in range(lanes - 1)]
         for t in spares:
             t.start()
         try:
-            lane(None)
+            lane(False)
         finally:
             for t in spares:
                 t.join()

@@ -16,7 +16,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -62,13 +62,20 @@ class PoolData:
     def __init__(self, app) -> None:
         self._app = app
 
+    def connection(self) -> AbstractContextManager[Any]:
+        return self._connect(CONNECTION_TIMEOUT_S)
+
+    def connection_if_free(self, wait: float) -> AbstractContextManager[Any]:
+        """A connection only if one is free within `wait` seconds (a second tool lane)."""
+        return self._connect(wait)
+
     @contextmanager
-    def connection(self, timeout: float | None = None) -> Iterator[Any]:
+    def _connect(self, timeout: float) -> Iterator[Any]:
         pool = self._app.state.pool
         if pool is None:
             raise DataUnavailable()
         try:
-            with pool.connection(timeout=CONNECTION_TIMEOUT_S if timeout is None else timeout) as conn:
+            with pool.connection(timeout=timeout) as conn:
                 yield conn
         except (PoolTimeout, psycopg.OperationalError):
             raise DataUnavailable() from None

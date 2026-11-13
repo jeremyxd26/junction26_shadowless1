@@ -282,3 +282,21 @@ def test_an_answer_never_queues_for_a_connection_another_request_holds(make_pipe
     assert data.most_in_use == 2
     assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2"]
     assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_data_access_without_connection_if_free_runs_the_calls_one_by_one(make_pipeline):
+    # A DataAccess with only connection() (the red-team tests' fake, for one) keeps working: no
+    # second lane, the same ids.
+    inner = FakeData(capacity=2)
+
+    class Plain:
+        def customer_exists(self, customer_id):
+            return inner.customer_exists(customer_id)
+
+        def connection(self):
+            return inner.connection()
+
+    tags, events, record = _ordered_run(make_pipeline, [0.05, 0.0], data=Plain())
+    assert inner.most_in_use == 1 and inner.connections == 2
+    assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2"]
+    assert dict(events)["done"]["outcome"] == "answered"
