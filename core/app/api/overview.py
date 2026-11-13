@@ -51,9 +51,10 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
     cards = [
         _card(get_basket_breakdown(ctx, {"period": {"preset": "last_6_months"}})),
         _card(get_recurring_bills(ctx, {"include_income": False})),
-        # EXTENSION POINT (contract 0.2, PR #61): review cards for spikes with a pending answer, and
-        # the safe-to-save card, are appended here.
     ]
+    # EXTENSION POINT (contract 0.2.0, section 6): `reviews` (at most one pending review card, #68)
+    # and `safe_to_save` (a safe_to_save card, #53/#55) are top-level fields, not entries of `cards`.
+    # They are added to the response below once their tools exist.
     insights: list[dict[str, Any]] = []  # EXTENSION POINT: insight tools (habit_trend, one_off, ...)
 
     return OverviewResponse.model_validate({

@@ -31,9 +31,17 @@ MODELS: dict[str, type[BaseModel]] = {
     "evidence.response_composite": schemas.EvidenceResponse,
 }
 
-# Contract fields the models do not implement yet, by example name. Contract 0.2 (PR #61) adds
-# review cards and safe to save to the overview; list their paths here until they are implemented.
-PENDING: dict[str, set[str]] = {}
+# Contract fields the models do not implement yet, by example name, with the issue that adds them.
+# Contract 0.2.0 added these to the overview. Whoever implements one removes it here:
+# test_pending_entries_are_still_missing fails while a field is both implemented and listed.
+PENDING: dict[str, set[str]] = {
+    "overview.response": {
+        "$.reviews",       # at most one pending review card (#68)
+        "$.safe_to_save",  # the safe_to_save card (#53/#55)
+    },
+}
+# Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
+PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
 
 
 def contract_text() -> str:
@@ -79,6 +87,16 @@ def test_example_matches_the_model_field_by_field(name):
     assert check(name, examples()[name]) == []
 
 
+def test_pending_entries_are_still_missing():
+    """A PENDING path must be in the contract example and still missing from the model."""
+    for name, paths in PENDING.items():
+        raw = examples()[name]
+        found = {m.split(":")[0] for m in mismatches(MODELS[name].model_validate(raw), raw)
+                 if "in the example, not in" in m}
+        assert paths <= found, f"{name}: {sorted(paths - found)} implemented or gone; remove from PENDING"
+    assert not PENDING_ERROR_CODES & literal_values(schemas.ErrorBody, "code"), "remove from PENDING_ERROR_CODES"
+
+
 def test_the_check_fails_on_an_unknown_field_and_on_a_missing_one():
     good = examples()["overview.response"]
     extra = copy.deepcopy(good)
@@ -119,7 +137,8 @@ def backticked(line_pattern: str) -> set[str]:
 
 def test_enums_match_the_contract_text():
     error_codes = set(re.findall(r"^\| \d{3} \| `([a-z_]+)` \|", contract_text(), re.M))
-    assert literal_values(schemas.ErrorBody, "code") == error_codes
+    assert PENDING_ERROR_CODES <= error_codes
+    assert literal_values(schemas.ErrorBody, "code") == error_codes - PENDING_ERROR_CODES
     assert literal_values(schemas.Persona, "age_band") == backticked(r"^\| Age bands \|") - {"metrics.md"}
     units = backticked(r"^\| `unit` \| enum \|") - {"unit"}
     assert typing.get_args(schemas.UnitName) == tuple(sorted(units, key=list(typing.get_args(schemas.UnitName)).index))

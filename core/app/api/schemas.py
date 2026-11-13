@@ -7,8 +7,9 @@ cannot drift from the contract silently.
 Fields the service sends that the contract does not define are dropped (`extra="ignore"`): tool
 cards carry extra data for the model (for example number ids and a bill's typical day).
 
-Contract 0.2 (PR #61) adds review cards and safe to save to the overview; see the EXTENSION POINT
-markers below and in overview.py.
+Contract 0.2.0 adds `reviews` (#68) and `safe_to_save` (#53/#55) to the overview, and the label
+endpoint's error codes (#68); see the EXTENSION POINT markers below and in overview.py, and PENDING
+in core/tests/test_api_contract.py.
 """
 
 from __future__ import annotations
@@ -217,7 +218,8 @@ class OverviewResponse(Model):
     cards: list[Card]
     insights: list[Insight]
     suggested_questions: list[str]
-    # EXTENSION POINT (contract 0.2, PR #61): review cards and safe to save are added here.
+    # EXTENSION POINT (contract 0.2.0): `reviews: list[ReviewCard]` (#68) and
+    # `safe_to_save: SafeToSaveCard` (#53/#55) are added here.
 
 
 # ---- GET /api/evidence/{ref} (section 9) -----------------------------------------------------------
