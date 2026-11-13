@@ -59,6 +59,20 @@ This is for Git Bash or another POSIX shell. In PowerShell, set `$env:DATABASE_U
 
 It runs 52 batches of 100 customers, printing one line per batch, and takes about 4 minutes. `--dry-run` lists the batches without touching the database, and `--from CUST01200` resumes after an interruption. Design: `docs/design/metrics.md`, section 8.
 
+## Eval
+
+The eval set checks that the coach states only correct numbers and refuses what it must refuse (rules R1 to R15 in `docs/design/research-bank-assistants.md`). The cases are in `core/eval/cases.yaml`: 49 cases for the four personas of `core/config/personas.yaml`, 64 questions in English and Finnish, every expected value with the SQL that produced it. The scripts read `DATABASE_URL` from the environment or from `.env`, and the peer cases need the metric marts above.
+
+```
+pip install -r core/requirements.txt
+python core/eval/run.py --source reference      # answers from SQL; must pass 100%
+python core/eval/expected.py --check            # the committed expected values equal a fresh regeneration
+```
+
+- `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
+- `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
+- After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
+
 ## License
 
 MIT
