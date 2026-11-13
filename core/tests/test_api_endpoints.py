@@ -327,6 +327,27 @@ def test_hero_is_the_tools_metric_card():
     assert "typical_day" not in dumped["cards"][1]["items"][0]         # extra tool fields are dropped
 
 
+def test_overview_through_the_tool_cache_is_the_same_and_runs_no_tool_twice(tool_cache_off, monkeypatch):
+    """#86: with the cache on, a second overview is served from it, byte-identical, and calls no tool."""
+    from core.tools.models import Args
+
+    class HeroArgs(Args):
+        pass
+
+    calls = []
+
+    def hero(ctx, args):
+        calls.append("hero")
+        return _stub_hero(ctx, args)
+
+    monkeypatch.setattr(tool_cache_off, "mode", "memory")
+    monkeypatch.setitem(overview.CACHEABLE, hero, ("stub_hero", HeroArgs))
+    first = overview.build(_ctx(), hero_tool=hero).model_dump_json()
+    second = overview.build(_ctx(), hero_tool=hero).model_dump_json()
+    assert first == second and calls == ["hero"]
+    assert tool_cache_off.stats.hits == 4 and tool_cache_off.stats.misses == 4   # hero, baskets, save, bills
+
+
 # ---- POST /api/whatif (no database: validation and the mapping of the tool's refusals) ------------
 
 WHATIF = {"customer_id": "CUST00860", "language": "en",

@@ -51,3 +51,15 @@ def real_database_url() -> str:
     if url is None:
         pytest.skip("DATABASE_URL is not set")
     return url.get_secret_value()
+
+
+@pytest.fixture(autouse=True)
+def tool_cache_off(monkeypatch):
+    """The service's global tool cache (#86) is off in these tests, so every tool runs as before; a test
+    that checks the cache turns it on in memory. Never the disk layer."""
+    from core.tools.cache import TOOL_CACHE
+
+    monkeypatch.setattr(TOOL_CACHE, "mode", "off")
+    TOOL_CACHE._memory.clear()
+    yield TOOL_CACHE
+    TOOL_CACHE._memory.clear()
