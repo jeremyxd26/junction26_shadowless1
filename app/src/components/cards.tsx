@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import type { Action, BreakdownCard, Insight, MetricCard, Num, ReviewCard, SafeToSpendStatus } from '../api/types.ts'
 import { navigate, openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
-import { EstimateBadge } from './EstimateBadge.tsx'
+import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
+import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
 /** Flat white card with a thin border, no shadow (DESIGN.md). */
@@ -64,12 +65,14 @@ export function HeroCard({ card }: { card: MetricCard }) {
   const { t } = useSettings()
   const status = card.status ?? 'ok'
   const reserve = card.components.find((component) => component.key === 'irregular_reserve')
+  const estimate = useEstimateToggle()
   return (
     <section className={HERO_BLOCK}>
       <div className="flex items-start justify-between gap-3">
         <h2 className="min-w-0 pt-3 text-sm font-semibold text-on-hero-muted">{card.title}</h2>
-        {card.estimate && <EstimateBadge estimate={card.estimate} onHero />}
+        {card.estimate && <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />}
       </div>
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} onHero />}
 
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         <NumberChip number={card.primary} size="hero" tone="hero" />
@@ -134,6 +137,7 @@ const BASKETS: Record<string, { icon: string; color: string; tint: string; bar: 
 /** The three baskets, always icon + label + colour; a pending purchase shows as a fourth, neutral row. */
 export function BasketsCard({ card }: { card: BreakdownCard }) {
   const items = card.items.filter((item) => item.key in BASKETS)
+  const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
@@ -141,8 +145,9 @@ export function BasketsCard({ card }: { card: BreakdownCard }) {
           <h2 className={CARD_TITLE}>{card.title}</h2>
           {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
         </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} />}
+        {card.estimate && <EstimateBadge estimate={card.estimate} control={estimate.control} />}
       </div>
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
 
       {/* Visual only: widths follow the API's share numbers; the numbers themselves are the chips below. */}
       <div aria-hidden="true" className="mt-4 flex h-3 w-full gap-0.5 overflow-hidden rounded-pill bg-sunken">
@@ -235,12 +240,14 @@ export function TokenText({ text, numbers }: { text: string; numbers: Record<str
 }
 
 export function InsightCard({ insight }: { insight: Insight }) {
+  const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
         <h3 className={CARD_TITLE}>{insight.title}</h3>
-        {insight.estimate && <EstimateBadge estimate={insight.estimate} />}
+        {insight.estimate && <EstimateBadge estimate={insight.estimate} control={estimate.control} />}
       </div>
+      {insight.estimate && estimate.open && <EstimateNote estimate={insight.estimate} id={estimate.id} />}
       <p className="mt-1 text-base leading-8 text-ink-2">
         <TokenText text={insight.text} numbers={insight.numbers} />
       </p>
