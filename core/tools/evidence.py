@@ -339,7 +339,9 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         from core.tools import metric_sql
 
         source = spec["source"]
-        rows = [r for r in metric_sql.run(conn, source["file"], customer_id, as_of, source["settings"])
+        if source["file"] != config.PEER_FILE:  # the file is fixed in code, never taken from a stored spec
+            raise ValueError("peer evidence must come from 06_peer_benchmark.sql")
+        rows = [r for r in metric_sql.run(conn, config.PEER_FILE, customer_id, as_of, source["settings"])
                 if r.get("customer_id") == customer_id and r.get("metric") == source["metric"]]
         row = rows[0] if len(rows) == 1 else None
         column = row.get(source["column"]) if row else None

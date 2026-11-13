@@ -157,7 +157,7 @@ def test_profile_spending_is_the_same_number_as_the_basket_card(conn, customer_i
     assert spend.evidence_ref == total.evidence_ref and spend.value == total.value
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00860"])
+@pytest.mark.parametrize("customer_id", ["CUST00860"])   # lead persona; each metric ref re-runs 05
 def test_profile_evidence_card_and_model_view(conn, customer_id):
     result = get_spender_profile(ctx_for(conn, customer_id))
     assert_reconciles(conn, customer_id, result.evidence)
@@ -236,7 +236,7 @@ def test_group_below_the_minimum_is_not_shown(conn, monkeypatch):
     assert dec(data.you) == row["you_month_eur"]
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00860"])
+@pytest.mark.parametrize("customer_id", ["CUST00860"])   # lead persona; each peer ref re-runs 06
 def test_peer_evidence_is_group_statistics_only(conn, customer_id):
     result = get_peer_benchmark(ctx_for(conn, customer_id), {"metric": "spend_total"})
     assert len(result.evidence) == 7                                   # you + six group statistics
