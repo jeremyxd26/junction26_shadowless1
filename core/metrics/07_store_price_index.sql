@@ -8,7 +8,10 @@
 -- Model: ln(ticket) = a_customer + b_merchant + e, over grocery card purchases of the last 365 days,
 -- fitted by alternating means on customer x merchant cells (sufficient statistics n, sum y, sum y^2),
 -- so the full-population version can run on a small precomputed cell table (metrics.md).
--- PROTOTYPE SCOPE: only customers inside the range shape the index.
+-- Cells: when core/marts/build.py has filled metric_grocery_cells for as_of = today, the index is
+-- fitted on the whole population from that table; otherwise it falls back to the customers inside the
+-- range, computed live. Result 2 always lists only the customers inside the range. The mart table must
+-- exist (core/marts/schema.sql); it may be empty.
 -- Two result sets: (1) one row per merchant, (2) one row per customer with the switch estimate.
 -- The data has ticket totals, not item prices: the index mixes price level and basket size.
 -- Uses one temporary table in the session (dropped at the end); nothing is written to shared tables.
@@ -21,7 +24,17 @@ CREATE TEMP TABLE store_cells AS
 WITH params AS (
     SELECT COALESCE(NULLIF(current_setting('app.demo_today', true), ''), '2026-09-30')::date AS today
 ),
-g AS (   -- grocery card purchases of the last 365 days, log ticket
+mart_ready AS (   -- the build for this "today" is complete: a flag row for every customer (each batch
+                 -- writes all three mart tables in one transaction); otherwise fall back to the range
+    SELECT (SELECT count(*) FROM metric_peer_flags f, params p WHERE f.as_of = p.today)
+           >= (SELECT count(*) FROM customers) AS ok
+),
+mart AS (   -- the precomputed cells of the whole population, if the build for this "today" is complete
+    SELECT m.customer_id, m.merchant_id, m.mcc, m.n, m.sy, m.syy, m.spend_eur
+    FROM metric_grocery_cells m, params p
+    WHERE m.as_of = p.today AND (SELECT ok FROM mart_ready)
+),
+g AS (   -- fallback: grocery card purchases of the last 365 days in the range, log ticket
     SELECT t.customer_id, t.merchant_id, t.mcc, -t.amount_eur AS ticket, ln(-t.amount_eur) AS y
     FROM transactions t, params p
     WHERE t.customer_id >= COALESCE(NULLIF(current_setting('app.customer_from', true), ''), 'CUST00000')
@@ -29,7 +42,10 @@ g AS (   -- grocery card purchases of the last 365 days, log ticket
       AND t.tx_date <= COALESCE(NULLIF(current_setting('app.demo_today', true), ''), '2026-09-30')::date
       AND t.tx_date >  p.today - 365
       AND t.category = 'Groceries' AND t.merchant_id IS NOT NULL AND t.amount_eur < 0
+      AND NOT (SELECT ok FROM mart_ready)
 )
+SELECT customer_id, merchant_id, mcc, n, sy, syy, spend_eur FROM mart
+UNION ALL
 SELECT customer_id, merchant_id, max(mcc) AS mcc, count(*) AS n, sum(y) AS sy, sum(y * y) AS syy,
        sum(ticket) AS spend_eur
 FROM g
@@ -38,47 +54,39 @@ GROUP BY 1, 2;
 DROP TABLE IF EXISTS pg_temp.store_index;
 
 CREATE TEMP TABLE store_index AS
-WITH c AS (SELECT * FROM store_cells),
--- Alternating means, starting from b = 0. Five rounds; the last column reports convergence.
+WITH c AS (SELECT customer_id, merchant_id, n, sy FROM store_cells),   -- narrow copy for the iterations
+-- Alternating means, starting from b = 0. Three rounds: on the full population the merchant effects
+-- then move by under 0.0001 (about 0.01 index points) per round; last_step reports it.
 a1 AS (SELECT customer_id, sum(sy) / sum(n) AS a FROM c GROUP BY 1),
 b1 AS (SELECT merchant_id, sum(sy - n * a) / sum(n) AS b FROM c JOIN a1 USING (customer_id) GROUP BY 1),
 a2 AS (SELECT customer_id, sum(sy - n * b) / sum(n) AS a FROM c JOIN b1 USING (merchant_id) GROUP BY 1),
 b2 AS (SELECT merchant_id, sum(sy - n * a) / sum(n) AS b FROM c JOIN a2 USING (customer_id) GROUP BY 1),
 a3 AS (SELECT customer_id, sum(sy - n * b) / sum(n) AS a FROM c JOIN b2 USING (merchant_id) GROUP BY 1),
 b3 AS (SELECT merchant_id, sum(sy - n * a) / sum(n) AS b FROM c JOIN a3 USING (customer_id) GROUP BY 1),
-a4 AS (SELECT customer_id, sum(sy - n * b) / sum(n) AS a FROM c JOIN b3 USING (merchant_id) GROUP BY 1),
-b4 AS (SELECT merchant_id, sum(sy - n * a) / sum(n) AS b FROM c JOIN a4 USING (customer_id) GROUP BY 1),
-a5 AS (SELECT customer_id, sum(sy - n * b) / sum(n) AS a FROM c JOIN b4 USING (merchant_id) GROUP BY 1),
-b5 AS (SELECT merchant_id, sum(sy - n * a) / sum(n) AS b FROM c JOIN a5 USING (customer_id) GROUP BY 1),
-resid AS (   -- residual sum of squares per merchant from the cell sums
-    SELECT c.merchant_id, sum(c.syy - 2 * (a5.a + b5.b) * c.sy + c.n * (a5.a + b5.b) ^ 2) AS ss
-    FROM c JOIN a5 USING (customer_id) JOIN b5 USING (merchant_id)
+m AS (   -- per merchant: visits, customers, residual sum of squares (from the cell sums), spend
+    SELECT sc.merchant_id, max(sc.mcc) AS mcc, sum(sc.n) AS n_visits, count(*) AS n_customers,
+           sum(sc.spend_eur) / sum(sc.n) AS avg_ticket_eur,
+           sum(sc.syy - 2 * (a3.a + b3.b) * sc.sy + sc.n * (a3.a + b3.b) ^ 2) AS ss
+    FROM store_cells sc JOIN a3 USING (customer_id) JOIN b3 USING (merchant_id)
     GROUP BY 1
 ),
-dof AS (
-    SELECT sum(n) - (SELECT count(DISTINCT customer_id) FROM c) - (SELECT count(DISTINCT merchant_id) FROM c) + 1 AS df,
-           sum(n) AS n_all
-    FROM c
+dof AS (   -- visits - customers - merchants + 1 (customer and merchant counts from the first round)
+    SELECT (SELECT sum(n_visits) FROM m) - (SELECT count(*) FROM a1) - (SELECT count(*) FROM b1) + 1 AS df
 ),
 -- Pooled residual SD. With no degrees of freedom left (tiny ranges) it is NULL: no interval, no flag.
 -- The standard error below ignores the uncertainty of the customer effects, so intervals are optimistic.
-sigma AS (SELECT CASE WHEN max(d.df) > 0 THEN sqrt(GREATEST(sum(r.ss), 0) / max(d.df)) END AS s
-          FROM resid r CROSS JOIN dof d),
+sigma AS (SELECT CASE WHEN d.df > 0 THEN sqrt(GREATEST((SELECT sum(ss) FROM m), 0) / d.df) END AS s
+          FROM dof d),
 centre AS (   -- visit-weighted mean merchant effect, so that index 0 % = the average visit
-    SELECT sum(c.n * b5.b) / sum(c.n) AS b_mean FROM c JOIN b5 USING (merchant_id)
-),
-m AS (
-    SELECT merchant_id, max(mcc) AS mcc, sum(n) AS n_visits, count(*) AS n_customers,
-           sum(spend_eur) / sum(n) AS avg_ticket_eur
-    FROM c GROUP BY 1
+    SELECT sum(m.n_visits * b3.b) / sum(m.n_visits) AS b_mean FROM m JOIN b3 USING (merchant_id)
 )
 SELECT m.merchant_id, m.mcc, m.n_visits, m.n_customers, m.avg_ticket_eur,
-       b5.b - ce.b_mean                       AS effect,
+       b3.b - ce.b_mean                       AS effect,
        sg.s / sqrt(m.n_visits)                AS se,
-       abs(b5.b - b4.b)                       AS last_step
+       abs(b3.b - b2.b)                       AS last_step
 FROM m
-JOIN b5 USING (merchant_id)
-JOIN b4 USING (merchant_id)
+JOIN b3 USING (merchant_id)
+JOIN b2 USING (merchant_id)
 CROSS JOIN centre ce
 CROSS JOIN sigma sg;
 
@@ -102,9 +110,11 @@ ORDER BY n_visits DESC, merchant_id;
 WITH params AS (
     SELECT COALESCE(NULLIF(current_setting('app.demo_today', true), ''), '2026-09-30')::date AS today
 ),
-home AS (
+home AS (   -- customers inside the range only
     SELECT DISTINCT ON (customer_id) customer_id, merchant_id, mcc, spend_eur, n
     FROM store_cells
+    WHERE customer_id >= COALESCE(NULLIF(current_setting('app.customer_from', true), ''), 'CUST00000')
+      AND customer_id <  COALESCE(NULLIF(current_setting('app.customer_to', true), ''), 'CUST00100')
     ORDER BY customer_id, spend_eur DESC, merchant_id
 ),
 alt AS (
