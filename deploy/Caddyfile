@@ -12,14 +12,21 @@
 __SITE__ {
 	encode gzip
 
-	# Security headers on every response (#102). HSTS without `preload`: the parent domain is shared.
-	# Deleting Server also removes the core's own `server: uvicorn` (a deletion is applied when the
-	# response is written).
+	# Security headers on every response (#102), Caddy's own errors included: set at once, before any
+	# handler runs. HSTS without `preload`: the parent domain is shared.
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
-		-Server
+	}
+	# Deleting Server also removes the core's own `server: uvicorn`. A deletion is applied when the
+	# response is written, so it is kept apart (it would defer the headers above too) and repeated for
+	# Caddy's own error responses below.
+	header -Server
+
+	handle_errors {
+		header -Server
+		respond "" {err.status_code}
 	}
 
 	# The core answers JSON only: nothing may load, run or frame it.
