@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from conftest import CANARY, FakeArgs, FakeData, audit_records, db_down_tool, failing_tool, registry, run
+from agent_fakes import CANARY, FakeArgs, FakeData, audit_records, db_down_tool, failing_tool, registry, run
 
 from core.agent.model import FunctionCall, ModelError, ScriptedModel
 from core.agent.registry import ToolSpec
@@ -190,7 +190,7 @@ def test_finnish_answer_with_finnish_formatting(make_pipeline):
 def test_independent_calls_of_one_turn_run_in_parallel(make_pipeline):
     import threading
 
-    from conftest import fake_spending
+    from agent_fakes import fake_spending
 
     barrier = threading.Barrier(2, timeout=5)
 

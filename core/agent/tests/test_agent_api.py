@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import AS_OF, FakeData, registry
+from agent_fakes import AS_OF, FakeData, registry
 from fastapi.testclient import TestClient
 
 from core.agent.api import Agent, AskLimits

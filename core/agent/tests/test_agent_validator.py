@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from conftest import AUG, FakeArgs, fake_spending
+from agent_fakes import AUG, FakeArgs, fake_spending
 from pydantic import BaseModel, ConfigDict
 
 from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names

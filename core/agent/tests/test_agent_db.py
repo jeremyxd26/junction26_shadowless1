@@ -8,7 +8,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 import pytest
-from conftest import AS_OF, audit_records, run
+from agent_fakes import AS_OF, audit_records, run
 
 from core.agent.audit import AuditLog
 from core.agent.orchestrator import Pipeline
