@@ -151,7 +151,7 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
         "metric", 180.26, "eur", "Safe to spend")
     assert e["method"]["doc"].endswith("metrics.md#3-safe-to-spend")
     assert (e["query"], e["row_count"], e["parts"]) == (None, None, [])
-    assert e["reconciles"] in (None, True)  # None until the #55 resolver re-runs the file here
+    assert e["reconciles"] is True  # the #55 resolver re-runs 03_safe_to_spend.sql for this customer
 
 
 def test_finnish_overview_has_the_same_numbers(client, lead_overview):
