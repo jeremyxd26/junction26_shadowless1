@@ -2,7 +2,7 @@
 
 **Version:** 0.1.0 (draft) · **Issue:** #5 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft. A contract change needs an approving review from the app owner before merge.
+**Status:** draft 0.1. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -54,7 +54,7 @@ Every number the coach shows is one of these objects. A number can always be tra
 | Field | Type | Meaning |
 |---|---|---|
 | `value` | number | The value. Money is in euros, rounded to cents. For `percent`, `12.5` means 12.5 %. |
-| `unit` | enum | `eur`, `eur_per_day`, `eur_per_week`, `eur_per_month`, `eur_per_year`, `percent`, `percentile`, `count`, `days` |
+| `unit` | enum | `eur`, `eur_per_day`, `eur_per_week`, `eur_per_month`, `eur_per_year`, `percent`, `percentile`, `count`, `days`, `months` |
 | `period` | [Period](#22-period) | The time span the number describes. |
 | `method` | string | The metric definition that produced it, `<metric_id>@<version>`, defined in `docs/design/metrics.md`. |
 | `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. One ref backs exactly one number (one `method` and `value`), and the same number shown in several places carries the same ref. It is `null` only for values the user typed in (`method` = `user_input@1`). |
@@ -794,7 +794,7 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 - `refused`: out of scope; see `refusal.kind`.
 - `fallback`: the AI model was unavailable, so the text is a template built from the tool results.
 
-`refusal.kind` is one of `investment_advice`, `out_of_scope`, `other_person_data` or `unsafe`.
+`refusal.kind` is one of `investment_advice`, `credit_decision` (for example "Will the bank approve my mortgage?"), `out_of_scope`, `other_person_data` or `unsafe`.
 
 The events of the example answer, one by one:
 

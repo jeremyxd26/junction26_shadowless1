@@ -181,6 +181,7 @@ The rules that turn a preset into dates (for example where a week starts) are de
 | `get_spender_profile` | "What kind of spender am I?" | `profile` | per trait, from #6 |
 | `get_peer_benchmark` | Comparison with people of the same age band and area | `peer` | `peer_median`, `peer_quantile`, `peer_percentile`, `peer_group_size` |
 | `compare_store_prices` | Grocery store price levels and the saving from switching | `stores` (`estimate` set) | `store_price_index`, `store_switch_saving` |
+| `down_payment_plan` (optional, post-MVP) | How much could I put aside for a down payment, and how long would it take | `metric` with components (`estimate` set) | from #6 |
 
 Typed signatures (`data` is what the tool returns besides the card):
 
@@ -240,7 +241,21 @@ compare_store_prices(period?: PeriodArg)                    # groceries only in 
 
 **Not in v1.** Two features are left out on purpose:
 - **Basket overrides:** #6 defines how a user can move a category or merchant to another basket. The tools already report `overrides_applied`, but the endpoint that stores an override is not part of this contract. Adding it is a follow-up issue.
-- **Mortgages:** whether the coach covers mortgages at all is an open product question (R8 is under discussion with Renat). The registry has no mortgage tool today, and this design neither adds one nor rules it out. A mortgage tool would be one registry entry plus one card type, with no change to the flow.
+- **Mortgages (decided, narrow scope):** R8 stays. The coach never predicts or scores a mortgage or credit decision. The only mortgage-related help is `down_payment_plan` below, an **optional post-MVP** tool. It answers "how much could I put aside for a down payment, and how long would it take" from the customer's own cash flow. Its formula belongs to `metrics.md`. It reads none of the mortgage tables.
+
+Optional post-MVP tool:
+
+```text
+down_payment_plan(target: { type: "amount", amount_eur: number }
+                        | { type: "price", price_eur: number, down_payment_share_pct: 0..100 },
+                  monthly_saving_eur?: number)              # default: the saving capacity from the user's own cash flow
+  -> { target_amount: Number,                               # eur; user_input@1 when typed, else derived from price and share
+       monthly_saving: Number,                              # eur_per_month; user_input@1 or from cash flow, with evidence
+       months_needed: Number,                               # unit months
+       reach_by: Period,                                    # from the first month after as_of until the target month
+       assumptions: string[] }
+  card: metric with components, estimate set (R13). Method ids and formula: metrics.md.
+```
 
 ### 6.3 Control functions
 
@@ -248,7 +263,7 @@ The planner also gets three functions that touch no data:
 
 | Function | Arguments | Effect |
 |---|---|---|
-| `decline` | `kind`: `investment_advice`, `out_of_scope`, `other_person_data` or `unsafe` | Ends the turn with the fixed, localised refusal template for that kind, plus 2 or 3 example questions. No data tool runs (R7, R10). |
+| `decline` | `kind`: `investment_advice`, `credit_decision`, `out_of_scope`, `other_person_data` or `unsafe` | Ends the turn with the fixed, localised refusal template for that kind, plus 2 or 3 example questions. No data tool runs (R7, R8, R10). |
 | `ask_clarifying_question` | `question` (up to 140 characters), `options` (up to 3 short strings) | Ends the turn with `outcome: "clarify"`. The question passes the output validator. |
 | `finish` | none | Data collection is complete; go to the composer. The model may call it in the same turn as the data tools. |
 
@@ -321,6 +336,8 @@ The planner chooses tools freely. The eval set (section 9) checks that each cano
 | What can I safely spend this week? | "What can I safely spend this week?" | `get_safe_to_spend`, `get_recurring_bills` |
 | How could I save more? | "How could I save more?" | `get_basket_breakdown`, `compare_store_prices`, `get_recurring_bills`, then `run_what_if` |
 | Specific follow-ups | "And restaurants?", "What if I cut that by 20%?" | `get_spending` with a filter, `run_what_if` |
+| Down payment (post-MVP) | "How long would it take to save a down payment?" | `down_payment_plan`, `get_recurring_bills` |
+| Credit decision | "Will the bank approve my mortgage?" | `decline(credit_decision)` |
 | Investment, other people, off topic | "Should I buy tech stocks?" | `decline` |
 
 ## 7. Conversation flow
@@ -417,7 +434,7 @@ The composer prompt forbids both, and the eval set samples for them.
 | Future or ambiguous periods | Clamping to `as_of`, resolved periods in every Number, period labels in the text | R5 |
 | Actions with side effects | Read-only registry, no free-text arguments | R6 |
 | Investment advice | `decline(investment_advice)`, a fixed template with general education and a pointer to an S-Pankki adviser, and a validator deny list. The user's own Invest Deposit and Withdraw history stays answerable. | R7 |
-| Credit decisions, mortgages | Open product question. Until it is decided, "Will I get a mortgage?" routes to `decline(out_of_scope)`. | R8 |
+| Credit decisions, mortgages | "Will the bank approve my mortgage?" and similar questions route to `decline(credit_decision)`: a fixed template that points to the bank's loan process. No tool scores creditworthiness, and the mortgage tables are not used to rate the user. Saving for a down payment is allowed through the post-MVP `down_payment_plan` tool, which uses only the user's own cash flow. | R8 |
 | Sensitive inferences | Profile traits and insights never use the Health category or health MCCs. Health appears only as an amount in a full breakdown or when asked about directly. Validator deny list. | R9 |
 | Off-topic questions | `decline(out_of_scope)` with 2 or 3 example questions. No data tool runs. | R10 |
 | Prompt injection | User text is wrapped and marked as data. Tool data holds no external free text (merchants are anonymised, then aliased). Tool arguments are schema-validated enums. The composer sees data in a quoted block. The validator does not depend on the model. Even a successful injection cannot switch customer, run SQL, see rows or emit an unvalidated number. | R11 |
@@ -566,7 +583,7 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 
 **For Renat (product):**
 1. **Personas:** which 3 customers to use, and are invented first names (Aino, Mikko, Leena) acceptable as labelled demo personas?
-2. **Mortgages:** in scope or not (R8)? The coordinator is raising this. Nothing in this design depends on the answer.
+2. **Mortgages:** decided. The scope is narrow and R8 stays (section 6.2). Still open: should `down_payment_plan` be built for the demo, or wait until after the MVP?
 3. **Salary Sweep:** the category's meaning is unknown. Should it show as income, as a transfer, or be hidden?
 4. **Finnish basket labels:** what is the official Finnish wording of "Regular essentials", "Unexpected necessities" and "Everyday spending"?
 5. **Health category (R9):** this design shows Health only as an amount in full breakdowns and never in insights or profiles. Is that the right reading?
@@ -586,7 +603,7 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 
 | Item | Section |
 |---|---|
-| Tool registry: names, typed arguments, typed outputs (spending, recurring bills, baskets, safe to spend, what-if, spender profile, peer benchmark, store prices) | 6.1, 6.2, 6.4; contract section 3 |
+| Tool registry: names, typed arguments, typed outputs (spending, recurring bills, baskets, safe to spend, what-if, spender profile, peer benchmark, store prices; plus the optional `down_payment_plan`) | 6.1, 6.2, 6.4; contract section 3 |
 | Every number as `{value, unit, period, method, evidence_ref}`, and how evidence is retrieved | 5; contract sections 2.1 and 9 |
 | Conversation flow: tool calls, then an answer with cards; follow-up questions; English and Finnish | 7.1 to 7.7; contract section 7 |
 | Guardrails: refusals, prompt-injection handling, never a number without a tool | 6.3, 7.4, 8 |
@@ -605,7 +622,7 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 | R5 Time stops at `DEMO_TODAY` | 4, 7.3 |
 | R6 Read-only tools | 4, 6.1 |
 | R7 No investment recommendation | 6.3, 7.1, 7.4, 8 |
-| R8 No credit decision | 6.2 (note), 8, 13 |
+| R8 No credit decision | 6.2, 6.3, 6.5, 8 |
 | R9 No sensitive inferences | 6.2, 7.4, 8 |
 | R10 Out of scope declined briefly | 6.3, 8 |
 | R11 Data is not instructions | 6.1, 7.2, 8 |
