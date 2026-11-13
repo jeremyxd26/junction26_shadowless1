@@ -200,8 +200,8 @@ def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: 
     method = f"{METRIC}.{column}@1"
     spec = evidence.peer_spec(ctx.customer_id, ctx.as_of, method, config.PEER_FILE, metric, column, settings,
                               value, period_param)
-    # The display is always the formatter's output for value and unit, sign included (the answer
-    # validator requires it); words such as "more" or "less" belong to the answer text.
+    # The display comes from the method-aware formatter (#111) through NumberBuilder: "51st percentile",
+    # "1.2% more" / "31.0% less" for the difference from the median, "118" for the group size.
     n = nb.number(value, unit, period, method, spec, label)
     if unit is Unit.PERCENTILE:   # a whole percentile stays an integer, as in contracts/api.md card.peer
         return n.model_copy(update={"value": int(value)})
