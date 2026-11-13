@@ -51,8 +51,8 @@ LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 DEFAULT_MODEL = "gemini-3.8-flash"
 # When the primary model stays overwhelmed (503 after two retries), one attempt goes to the other one.
 FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash"}
-# The organisers' account allows a limited number of requests a day for the whole team, and the dev
-# service is public: past this many requests today in the ledger, answers use the template.
+# The team's model account has a daily request limit, and the dev service is public: past this many
+# requests today in the ledger, answers use the template.
 DEFAULT_DAILY_BUDGET = 300
 OFF_SWITCH = ROOT / "var" / "model-off"   # while this file exists, no request is sent
 
