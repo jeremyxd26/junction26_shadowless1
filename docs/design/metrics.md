@@ -26,7 +26,7 @@ SET app.customer_to   = 'CUST00002';   -- exclusive; default CUST00100 (the 99-c
 \i core/metrics/03_safe_to_spend.sql
 ```
 
-For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only on the customer's own rows, so a one-customer run returns the same numbers as the sample run. Metrics 6 and 7 depend on who else is in the range (see their sections).
+For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only on the customer's own rows, so a one-customer run returns the same numbers as the sample run. Metrics 6 and 7 compare with the whole population when the marts of section 8 are built for that "today", and otherwise with the customers in the range (see their sections).
 
 **Time (R5).** No statement reads a transaction with `tx_date > DEMO_TODAY`. The bound sits directly in every `WHERE` on `transactions`.
 
@@ -300,17 +300,17 @@ An estimate (R13): "people like you" are customers in the same age band and area
 
 - Age bands: 18–24, 25–34, 35–44, 45–54, 55–64, 65–74, 75+.
 - Areas: `area3` = first 3 digits of the postal code (30 areas in the data); `city` = first 2 digits (00 Helsinki, 01 Vantaa, 02 Espoo and Kauniainen).
-- Levels, most specific first: age band + area3 → age band + city → age band → all. The area is widened first and the age band is given up last, because age explains spending more than the postal area (team-lead decision). The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). If even "all" has fewer, the row has `shown = false` and every peer statistic is NULL (a one-customer run returns `peer_n = 0`). Small groups are never shown: this protects both statistics and privacy.
+- Levels, most specific first: age band + area3 → age band + city → age band → all. The area is widened first and the age band is given up last, because age explains spending more than the postal area (team-lead decision). The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). If no level has enough, the row takes the coarsest level, with `shown = false` and every peer statistic NULL (for example a one-customer run without marts, `peer_n = 0`). Small groups are never shown: this protects both statistics and privacy.
 - Sweep customers (section 2.3) never enter a peer group (their spending happens elsewhere), and their own rows say `comparable = false` and `shown = false`, with NULL statistics.
 - Metrics (month averages over the window): total spend, the three baskets, and the categories Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing. **Health is not benchmarked** (R9).
 - `percentile` = share of the other peers in the group who spend less; `vs_median_pct` = you / peer median − 1.
 - Who is counted: `peer_median`, `peer_p25` and `peer_p75` describe the whole group, the customer included (one value among 21 or more moves them little, and the group statistics can then be computed once per group). `peer_n` and `percentile` count only the other members.
 
-**Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `period_start`, `period_end`. The coach uses a row only when `shown` is true.
+**Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `peer_source` (`marts` or `range`), `period_start`, `period_end`. The coach uses a row only when `shown` is true.
 
 **Evidence.** The customer's rows for the metric; the peer group definition and its n. Peer rows themselves are never exposed.
 
-**Who the peers are.** When the marts of section 8 hold rows for `as_of = today`, the peers are the whole population (5,100 customers; output column `peer_source = marts`). Every age band then has at least 130 customers, so the "all" level is never needed and the file reads only the age bands of the customers in the range. Without a build for that day the file falls back to the customers inside the range (`peer_source = range`); with 99 customers that mostly means age band or all. The customer's own values are always computed live. Statistics Finland's open Paavo data by postal code (median income, household size) could later refine "people like you"; it is not used here.
+**Who the peers are.** When the marts of section 8 hold rows for `as_of = today`, the peers are the whole population (5,100 customers; output column `peer_source = marts`). Every age band then has at least 121 comparable customers (75+ is the smallest), so the "all" level is never needed and the file reads only the age bands of the customers in the range. Without a build for that day the file falls back to the customers inside the range (`peer_source = range`); with 99 customers that mostly means age band or all. The customer's own values are always computed live. Statistics Finland's open Paavo data by postal code (median income, household size) could later refine "people like you"; it is not used here.
 
 On the full population, the sample's 1,287 rows split as: 1,079 compared within age band + area3, 143 within age band + city, and 65 not comparable (the 5 sweep customers × 13 metrics). 261 of the 5,100 customers are sweep customers.
 
@@ -346,7 +346,7 @@ Fitted by alternating means (3 rounds, starting from b = 0; on the full populati
 
 **Evidence.** The customer's grocery transactions at the two stores; the index's method and n.
 
-**What the sample shows (honest result).** 80 grocery merchants, 68 with 30+ visits. Index from −14.1% to +9.0% (SD 4.8 points), but the median 95% interval is ±10.0% (from ±3.1% for the busiest store to ±16.9%). **No store differs from average at |z| ≥ 3, and no customer gets a switch estimate**: on 99 customers the index is noise. The model converges (last step change 0.000000). The sample alone could not settle it, so the full population was run.
+**What the sample shows (honest result).** 80 grocery merchants, 68 with 30+ visits. Index from −14.1% to +9.0% (SD 4.8 points), but the median 95% interval is ±10.0% (from ±3.1% for the busiest store to ±16.9%). **No store differs from average at |z| ≥ 3, and no customer gets a switch estimate**: on 99 customers the index is noise. The model converges: with 5 rounds the last step was 0.000000; with the 3 rounds used now it is 0.00008 on the sample, about 0.008 index points. The sample alone could not settle it, so the full population was run.
 
 **Full population (the result the coach uses).** 203,680 customer × store cells from 5,100 customers, 80 grocery stores, each with 414 to 45,200 visits (all shown). The median 95% interval shrinks to ±1.45% (±0.45% to ±4.5%), as predicted. But the stores barely differ once the customer is taken into account: the index runs from −3.7% to +1.6% with a spread (SD) of 0.78 points, which is about the size of the noise. The −3.4% … +4.5% spread of the first raw check came from who shops where, not from the stores. **No store passes the |z| ≥ 3 rule, and no sample customer gets a switch estimate** (73 within_noise, 17 no_alternative, 9 already_lowest). At the looser 95% level, 2 of 80 stores differ, which is about what chance alone would produce (about 4).
 
@@ -394,7 +394,7 @@ Every file was run on the sample under `statement_timeout = '60s'` after rebasin
 | 06_peer_benchmark.sql (marts) | 1,287 | – | 14.88 s |
 | 07_store_price_index.sql (marts) | 80 + 99 | – | 8.64 s |
 
-Times are wall-clock from a laptop client, including network round trips. "Busy" runs happened while the database server was slowed by other work. Our own database had no other active session at the time, so the load came from the server itself. That load slows large reads 3–6× and occasionally up to 14× (05 once took 36.5 s on the sample).
+Times are wall-clock from a laptop client, including network round trips. "Busy" runs happened while the database was slow for a reason we could not identify: two snapshots showed no other active session in our database, but short queries from other sessions or load elsewhere on the server would not show there. In those periods large reads were 3–6× slower, and once 14× slower (05 took 36.5 s on the sample).
 
 **Per customer (the app's on-demand path)**, one customer per call, for CUST00001, CUST00002 and CUST00006:
 
@@ -410,7 +410,7 @@ Metrics 1–5 need no cache or mart for the demo: one customer reads a few hundr
 - With `app.demo_today = 2026-09-14` all seven files run, and every period moves: the 6-month window becomes 2026-03-01 … 2026-08-31, the safe-to-spend week 2026-09-15 … 2026-09-21, the store index year 2025-09-15 … 2026-09-14. 01 and 03 were also checked at 2026-05-20 (late salary); see sections 2 and 3.
 - One-customer runs (`[CUST00006, CUST00007)`) return the same numbers as the sample run for files 01–05.
 - The override path was run with two rows (section 1).
-- Marts (#21) were checked four ways. Spot check: CUST00001's May 2026 rows in `metric_customer_month` equal direct sums from `transactions` (Groceries 610.20 over 9 transactions, total spend 2,125.15 over 26). Re-running `build.py --from CUST05000` leaves all three row counts unchanged. A forced timeout (`--timeout-ms 5`) splits the batch, stops at the first half and names it, with the rows untouched. With `app.demo_today = 2026-09-14` (no build for that day), 06 and 07 fall back to the range (`peer_source = range`).
+- Marts (#21) were checked several ways. Spot check: CUST00001's May 2026 rows in `metric_customer_month` equal direct sums from `transactions` (Groceries 610.20 over 9 transactions, total spend 2,125.15 over 26). The basket rows, which go through the shared classification block, give the same month averages as section 1 (1,278.77 / 409.17 / 399.99). The README command was run as written in Git Bash on the last batch. Re-running `build.py --from CUST05000` leaves all three row counts unchanged. A forced timeout (`--timeout-ms 5`) splits the batch, stops at the first half and names it, with the rows untouched. With `app.demo_today = 2026-09-14` (no build for that day), 06 falls back to the range (`peer_source = range`), and so does 07 (856 visits at the busiest store, as on the sample; last step 0.00008).
 - The worked numbers above are copied from these runs. The runs used a psycopg 3 client (no psql on the machine): it sets the three `app.*` settings, runs the whole file in one call and prints the time and rows; `psql -f` gives the same result.
 
 ## 10. Open questions for Renat

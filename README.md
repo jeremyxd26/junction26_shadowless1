@@ -36,6 +36,8 @@ set -a && . ./.env && set +a      # build.py reads DATABASE_URL and DEMO_TODAY f
 python core/marts/build.py
 ```
 
+This is for Git Bash or another POSIX shell. In PowerShell, set `$env:DATABASE_URL` (and `$env:DEMO_TODAY` if it is not 2026-09-30) first, then run the same `python` line.
+
 It runs 52 batches of 100 customers, printing one line per batch, and takes about 4 minutes. `--dry-run` lists the batches without touching the database, and `--from CUST01200` resumes after an interruption. Design: `docs/design/metrics.md`, section 8.
 
 ## License

@@ -167,7 +167,7 @@ population AS (   -- everyone a customer can be compared with
     FROM cust_metric cm
     WHERE NOT (SELECT ok FROM mart_ready)
 ),
-level_list AS (   -- with the marts every age band has at least 130 customers, so "all" is only used
+level_list AS (   -- with the marts every age band has at least 121 comparable customers, so "all" is only used
                  -- by the range-only fallback
     SELECT v.peer_level, v.level_rank
     FROM (VALUES ('age_band+area3', 1), ('age_band+city', 2), ('age_band', 3), ('all', 4)) AS v (peer_level, level_rank)
