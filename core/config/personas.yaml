@@ -8,6 +8,8 @@
 # Keys follow docs/design/metrics.md: age bands of section 6, profile keys of section 5.
 # profile is the output of core/metrics/05_spender_profile.sql on as_of; the API may recompute it.
 # The extra fields (lead, age, demo_role, why, peer_group) are for the team and the eval set.
+# peer_group.comparable_others: other customers in the cell with comparable = true in the
+# metric_peer_flags mart (issue #21), as of 2026-09-30; the query is in docs/design/personas.md.
 # Taglines carry no numbers: every number the app shows is a Number object from the metrics.
 
 as_of: "2026-09-30"
@@ -24,12 +26,12 @@ personas:
     profile:
       key: steady
       label: Steady
-    tagline: Pays a big rent in central Helsinki, takes taxis and eats out every month.
+    tagline: High monthly housing costs in central Helsinki, takes taxis and eats out every month.
     default_language: en
     demo_role: midlife_essentials
     why: >-
-      Mid-life customer whose money goes mostly to regular essentials (77.4% of spending, rent
-      1,209.05 a month); of the 3 candidates that meet every criterion it has the highest
+      Mid-life customer whose money goes mostly to regular essentials (77.4% of spending, housing
+      payment 1,209.05 a month); of the 3 candidates that meet every criterion it has the highest
       essentials share: 3 taxi rides in August, dining out in every month, safe to spend 175.46.
     peer_group: {level: age_band+area3, age_band: "45-54", area3: "001", comparable_others: 121}
 

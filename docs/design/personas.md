@@ -15,7 +15,7 @@ Issue #22. Three customers from the synthetic dataset for the persona picker (`G
 | Role in the demo | mid-life, heavy regular essentials | young, high everyday spending | clear unexpected necessity in the last three months |
 | Profile (05) | `steady` | `everyday_heavy` | `big_ticket` |
 | Basket shares: regular / unexpected / everyday | **77.4%** / 6.8% / 15.7% | 58.5% / 11.3% / **30.1%** | 62.7% / **17.3%** / 19.9% |
-| What stands out | rent 1,209.05 a month in central Helsinki | 736.87 a month of everyday spending, restaurants on top | Home & Tech purchase of 1,080.42 on 2026-09-28, 9× the usual one |
+| What stands out | housing payment 1,209.05 a month in central Helsinki | 736.87 a month of everyday spending, restaurants on top | Home & Tech purchase of 1,080.42 on 2026-09-28, 9× the usual one |
 
 Display names are invented. The real `customer_id` stays the key.
 
@@ -35,7 +35,7 @@ Display names are invented. The real `customer_id` stays the key.
 | Months with dining out (MCC 5812/5813/5814) | 6 of 6 | ≥ 5 of 6 | `select_personas.sql` |
 | Salary detected as recurring (incoming) | yes | yes | `01_recurring.sql` |
 | Housing payment detected as recurring | yes | yes | `01_recurring.sql` |
-| *Housing paid in all 6 window months and in September* | yes | yes | `select_personas.sql` (so safe to spend never shows a skipped rent) |
+| *Housing paid in all 6 window months and in September* | yes | yes | `select_personas.sql` (so safe to spend never shows a skipped housing payment) |
 | *Salary received this month* | yes | yes | `03_safe_to_spend.sql`, `salary_status` |
 | *No Salary Sweep in the window* | yes | yes | `select_personas.sql` (a sweep customer is excluded from peer groups) |
 | Safe to spend on `DEMO_TODAY` | > 0 | > 0 | `03_safe_to_spend.sql` |
@@ -68,6 +68,7 @@ CUST00700..CUST00800  taxi 22  pass  5  lead  2  slots {'young_everyday': 8, 'mi
 CUST00800..CUST00900  taxi 31  pass 13  lead  3  slots {'young_everyday': 11, 'midlife_essentials': 67, 'recent_unexpected': 16}  60.99 s
 
 screened 9 ranges (CUST00000..CUST00900), 257 with a taxi ride last month, 78 pass every check (3 as lead)
+[table of the 78 passing candidates omitted here; the full output is in the PR of #22]
 failed checks among the customers with a taxi ride: {'dining<5_of_6': 144, 'housing_not_every_month': 41, 'peer_area3<20': 31, 'safe_to_spend<=0': 10, 'salary_sweep': 1}
 
 chosen:
@@ -105,6 +106,16 @@ The yield explains the relaxed rule for the other two personas: only about 1 cus
 | Largest unexpected necessity Jul–Sep (Health excluded) | Home & Tech 104.41 (2.5× median) | Home & Tech 98.98 (1.6×) | **Home & Tech 1,080.42 on 2026-09-28, 9.0× median, one-off** (tx 606016) |
 
 Eetu's cell (25-34 in 021xx, Espoo) has exactly 24 other comparable customers, enough for the 20-peer rule with a small margin. All three are `comparable = true` in `metric_peer_flags`.
+
+The script checks the cell size on `customers`. The comparable counts (and `peer_group.comparable_others` in `personas.yaml`) come from the mart of issue #21. Subtract 1 for the persona itself:
+
+```sql
+SELECT age_band, area3, count(*) AS members, count(*) FILTER (WHERE comparable) AS comparable
+FROM metric_peer_flags
+WHERE (age_band, area3) IN (('45-54', '001'), ('25-34', '021'), ('35-44', '005'))
+GROUP BY 1, 2;
+-- 25-34 021: 25 members, 25 comparable;  35-44 005: 124, 119;  45-54 001: 128, 122   (as_of 2026-09-30)
+```
 
 ## 4. Reference answers (eval set)
 

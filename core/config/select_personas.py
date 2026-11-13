@@ -379,21 +379,27 @@ def main() -> None:
     ap.add_argument("--pause", type=float, default=0.5, help="seconds between customer ranges")
     args = ap.parse_args()
 
-    db = Db(date.fromisoformat(args.today))
+    db = None
     cells: dict = {}
     t0 = time.perf_counter()
     result: dict = {"as_of": args.today}
     try:
+        db = Db(date.fromisoformat(args.today))
         if args.answers:
             result["answers"] = [answers(db, cid.strip(), cells) for cid in args.answers.split(",")]
             for a in result["answers"]:
                 print_answer(a)
         else:
             result.update(screen(db, args, cells))
-    except (psycopg.errors.QueryCanceled, psycopg.OperationalError) as e:
-        sys.exit(f"stopped at the first database error: {type(e).__name__}: {str(e).splitlines()[0]}")
+    except psycopg.errors.QueryCanceled:
+        sys.exit("stopped at the first database error: a statement hit statement_timeout (60s)")
+    except psycopg.OperationalError as e:
+        # The message of a connection error can contain the host, so only the class name is printed.
+        sys.exit(f"stopped at the first database error: {type(e).__name__} (details hidden)")
     finally:
-        print(f"-- {db.queries} queries, {db.seconds:.1f} s in the database, {time.perf_counter() - t0:.1f} s total")
+        if db:
+            print(f"-- {db.queries} queries, {db.seconds:.1f} s in the database, "
+                  f"{time.perf_counter() - t0:.1f} s total")
     if args.out:
         Path(args.out).write_text(json.dumps(result, default=str, indent=1), encoding="utf-8")
 
