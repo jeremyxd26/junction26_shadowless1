@@ -29,26 +29,39 @@ Two people build this project during a hackathon. Each person runs one **coordin
 - Contract changes need an approving review from the other person before merge.
 
 ## Branches, commits, PRs
-- Branch names: `<owner-prefix>/<issue>-<short-slug>`, for example `r/12-ingest-api`. Always branch from fresh `origin/main`.
+Two long-lived branches:
+- `main` is demo-ready. Only tested work gets here.
+- `dev` is integration. It is deployed to the dev environment and tested there.
+
+Flow for every change:
+1. Branch from fresh `origin/main`, never from `dev`. Name it `<owner-prefix>/<issue>-<short-slug>`, for example `r/12-ingest-api`.
+2. Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`.
+3. Open the PR into **`dev`**. Merge it with a **merge commit** (`gh pr merge <N> --merge`), not squash, and keep the branch.
+4. The dev environment is redeployed from `dev`, then the tests and the demo path are run there.
+5. If everything passes, open a second PR from the **same branch** into **`main`** and merge it with a merge commit. Delete the branch only after that.
+
+If a change breaks `dev`, fix it with a new branch from `main` and the same flow. Do not patch `dev` directly.
+
+Commits and PRs:
 - Commit messages: imperative summary plus `(#<issue>)`.
-- Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`.
+- No AI attribution anywhere: no `Co-Authored-By` trailer for an AI and no "Generated with" line in PRs. The authors are the people on the team.
 - Keep PRs small. The PR body contains:
   - `Closes #<N>`
   - what changed
   - **how it was verified, with the command output pasted**
   - risks and follow-ups
-- Merge with squash.
-- Never use `--no-verify`. If the local pre-commit check blocks a commit, fix the cause; if you can't, report it to your coordinator.
+- Never use `--no-verify`. If a local git check blocks a commit or a push, fix the cause; if you can't, report it to your coordinator.
 - Never:
-  - push to `main` directly
-  - rewrite `main` history
+  - push to `main` or `dev` directly (a local pre-push check blocks it)
+  - rewrite `main` or `dev` history
   - force-push or delete other people's branches
   - change git config (author identity)
 
 ## Definition of done
 - Every acceptance criterion is met.
 - Tests and the README run command pass, and their output is in the PR.
-- No secrets, no unrelated changes, and `main` still runs with one command.
+- No secrets, no unrelated changes, and the branch still runs with one command.
+- For the merge into `main`: the same change passed on the dev environment.
 
 Do not say "done" without this evidence.
 
