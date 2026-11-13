@@ -31,6 +31,8 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+import psycopg
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import expected  # noqa: E402  (core/eval/expected.py)
@@ -43,7 +45,8 @@ DENY = {
                               r"olet sairas|raskaana|uskonto\w*)\b",
     "R7 investment instruction": r"\b(you should (buy|sell|invest)|(buy|sell) (some |more )?(stocks?|shares?|funds?|"
                                  r"etfs?|bonds?|crypto\w*)|osta \w*(osake|rahasto)\w*)\b",
-    "R13 promise": r"\b(guaranteed?|will definitely|takuulla|taatusti)\b",
+    # "not a guarantee" and "isn't guaranteed" are fine; "this saving is guaranteed" is not.
+    "R13 promise": r"(?<!not )(?<!not a )(?<!no )(?<!n't )\bguarantee[ds]?\b|\b(will definitely|takuulla|taatusti)\b",
 }
 
 ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
@@ -75,13 +78,18 @@ def extract(text: str, lang: str) -> tuple[list[tuple[float, int]], list[str]]:
 
 
 def close(a: float, b: float, tol: float) -> bool:
-    """Magnitudes within tolerance. Signs are not compared: a change may be written as "less"."""
-    return abs(abs(a) - abs(b)) <= tol + 1e-9
+    """Signed values within tolerance (Number objects carry the sign of a change)."""
+    return abs(float(a) - float(b)) <= tol + 1e-9
+
+
+def close_text(a: float, b: float, tol: float) -> bool:
+    """Magnitudes within tolerance, for numbers read from text: "-€12.34" and "€12.34 less" both appear."""
+    return abs(abs(float(a)) - abs(float(b))) <= tol + 1e-9
 
 
 def token_matches(token: tuple[float, int], value: float) -> bool:
     t, decimals = token
-    return close(t, round(value, decimals), 0) or close(t, value, 0.005)
+    return close_text(t, round(value, decimals), 0) or close_text(t, value, 0.005)
 
 
 def allowed_dates(ans: Answer) -> set[str]:
@@ -114,7 +122,7 @@ def check(case: dict, ans: Answer, lang: str) -> list[str]:
         family = expected.UNIT_FAMILY[n["unit"]]
         in_objects = any(expected.UNIT_FAMILY.get(x.get("unit"), "") == family and close(x["value"], n["value"], n["tolerance"])
                          for x in ans.numbers)
-        in_text = any(close(t, n["value"], n["tolerance"]) for t, _ in tokens)
+        in_text = any(close_text(t, n["value"], n["tolerance"]) for t, _ in tokens)
         if not (in_objects and in_text):
             where = "objects" if not in_objects else "text"
             fails.append(f"missing {n['name']} = {n['value']} ({where})")
@@ -126,8 +134,8 @@ def check(case: dict, ans: Answer, lang: str) -> list[str]:
             if lab["value"] not in ans.labels:
                 fails.append(f"missing key {lab['name']} = {lab['value']}")
     for f in case.get("forbid") or []:
-        if any(close(x["value"], f["value"], f["tolerance"]) for x in ans.numbers) or \
-                any(close(t, f["value"], f["tolerance"]) for t, _ in tokens):
+        if any(x.get("unit") != "date" and close_text(x["value"], f["value"], f["tolerance"]) for x in ans.numbers) or \
+                any(close_text(t, f["value"], f["tolerance"]) for t, _ in tokens):
             fails.append(f"forbidden value {f['name']} = {f['value']} appears")
 
     # R1: no number in the text that is not a returned number or part of a returned date.
@@ -190,7 +198,12 @@ def main() -> None:
         for lang, question in case["question"].items():
             if args.lang != "all" and lang != args.lang:
                 continue
-            ans = source(case["persona"], question, lang)
+            try:
+                ans = source(case["persona"], question, lang)
+            except psycopg.errors.QueryCanceled:
+                sys.exit(f"stopped at {case['id']}: a statement hit statement_timeout (60s)")
+            except psycopg.Error as e:  # the driver text is not printed (it can repeat parts of DATABASE_URL)
+                sys.exit(f"stopped at {case['id']}: {type(e).__name__} (details hidden)")
             fails = check(case, ans, lang)
             rows.append((case["id"], lang, fails))
             for tag in case["tags"] + [f"lang_{lang}"]:
