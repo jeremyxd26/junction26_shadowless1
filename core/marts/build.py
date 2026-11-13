@@ -23,6 +23,7 @@ from the shared block in core/metrics/02_baskets.sql, so the marts always match 
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import os
 import re
 import sys
@@ -174,8 +175,16 @@ def main() -> None:
     args = parser.parse_args()
     if not 0 < args.timeout_ms <= 60000:
         parser.error("--timeout-ms must be between 1 and 60000")
+    if args.batch < 1:
+        parser.error("--batch must be at least 1")
+    if args.start >= args.end:
+        parser.error(f"--from ({cust(args.start)}) must come before --to ({cust(args.end)})")
 
     as_of = os.environ.get("DEMO_TODAY") or DEFAULT_TODAY
+    try:
+        date.fromisoformat(as_of)
+    except ValueError:
+        sys.exit("DEMO_TODAY must be a date like 2026-09-30")
     batches = [(lo, min(lo + args.batch, args.end)) for lo in range(args.start, args.end, args.batch)]
     print(f"as_of {as_of}: {len(batches)} batches of up to {args.batch} customers, "
           f"{cust(args.start)} to {cust(args.end)}", flush=True)
@@ -195,12 +204,20 @@ def main() -> None:
     inserts = [customer_month_sql(block), peer_flags_sql(block), GROCERY_CELLS_SQL]
     started = time.time()
     durations: list[tuple[float, str]] = []
+    # Driver error messages can contain parts of the connection string (a malformed DATABASE_URL is
+    # echoed back, password included), so no driver message is ever printed: only the class name.
     try:
-        with psycopg.connect(url, autocommit=True, application_name="marts-build") as conn:
+        conn = psycopg.connect(url, autocommit=True, application_name="marts-build")
+    except Exception as e:
+        sys.exit(f"stopped: could not connect ({type(e).__name__}); check DATABASE_URL")
+    current = "schema setup"
+    try:
+        with conn:
             conn.execute("SET statement_timeout = '60s'")
             conn.execute(SCHEMA.read_text(encoding="utf-8"))
             conn.execute(f"SET statement_timeout = {int(args.timeout_ms)}")
             for i, (lo, hi) in enumerate(batches, 1):
+                current = f"batch {i}/{len(batches)} {cust(lo)}-{cust(hi)}"
                 t0 = time.time()
                 counts = build_batch(conn, psycopg, lo, hi, as_of, inserts)
                 dt = time.time() - t0
@@ -211,6 +228,7 @@ def main() -> None:
                 if i < len(batches):
                     time.sleep(args.pause)
 
+            current = "final row counts"
             print(f"done: {len(batches)} batches in {time.time() - started:.0f}s; "
                   f"slowest {max(durations)[1]} {max(durations)[0]:.1f}s", flush=True)
             for table in TABLES:
@@ -219,8 +237,8 @@ def main() -> None:
     except BuildError as e:
         sys.exit(f"stopped: {e}")
     except psycopg.Error as e:
-        first_line = str(e).strip().splitlines()[0] if str(e).strip() else ""
-        sys.exit(f"stopped after {len(durations)} batches: {type(e).__name__}: {first_line}")
+        sys.exit(f"stopped at {current} after {len(durations)} completed batches: {type(e).__name__} "
+                 f"(SQLSTATE {getattr(e, 'sqlstate', None) or 'none'}); the driver's message is not printed")
 
 
 if __name__ == "__main__":

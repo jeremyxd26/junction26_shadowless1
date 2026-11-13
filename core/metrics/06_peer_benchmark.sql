@@ -141,14 +141,18 @@ cust_metric AS (   -- every customer gets every metric; no spending means 0
     CROSS JOIN metric_list ml
     LEFT JOIN sums s ON s.customer_id = k.customer_id AND s.metric = ml.metric
 ),
-mart_ready AS (   -- true when the marts were built for this "today"
-    SELECT EXISTS (SELECT 1 FROM metric_peer_flags f, params p WHERE f.as_of = p.today) AS ok
+mart_ready AS (   -- true only when the build for this "today" is complete: a flag row for every customer.
+                 -- Each batch writes all three mart tables in one transaction, so complete flags mean
+                 -- complete marts; a first or stopped build falls back to the range instead.
+    SELECT (SELECT count(*) FROM metric_peer_flags f, params p WHERE f.as_of = p.today)
+           >= (SELECT count(*) FROM customers) AS ok
 ),
 mart_flags AS (   -- mart customers in the age bands of the customers in the range: every peer level
                  -- below "all" stays inside one age band, and "all" is not needed with the marts
     SELECT f.*
     FROM metric_peer_flags f, params p
     WHERE f.as_of = p.today AND f.age_band IN (SELECT age_band FROM cust)
+      AND (SELECT ok FROM mart_ready)
 ),
 mart_sums AS (
     SELECT m.customer_id, m.metric, sum(m.value_eur) AS eur

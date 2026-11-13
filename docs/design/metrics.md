@@ -352,6 +352,8 @@ Fitted by alternating means (3 rounds, starting from b = 0; on the full populati
 
 **Conclusion.** Following the team-lead rule, the coach does **not** show a store index or a switch saving for this data. It says that the difference between grocery stores is not measurable from these transactions. 07 stays in place so the check can be re-run after a new data load.
 
+"Not measurable" in that sentence is plain language, not a status. It covers the API's switch statuses `within_noise`, `no_alternative` and `already_lowest`. The status `not_measurable` is narrower: no interval could be computed at all (no degrees of freedom left).
+
 **Worked numbers** (full population):
 
 | Customer | Home store (index) | Home spend / month | Lowest-index alternative (index) | Status | Saving |
@@ -372,7 +374,7 @@ The database has 2 GB RAM and 25 connections, and a full-table aggregate has res
 | `metric_peer_flags` | customer: age band, area3, city, comparable (not a sweep customer), n_months | 5,100 |
 | `metric_grocery_cells` | customer × grocery store over 365 days: n, Σ ln ticket, Σ ln² ticket, spend | 203,680 |
 
-Every row carries `as_of`, the DEMO_TODAY it was built for. 06 and 07 use the marts only when `as_of` equals their own "today", so a build for another day can never leak in. The three tables take 72 MB.
+Every row carries `as_of`, the DEMO_TODAY it was built for. 06 and 07 use the marts only when the build for their own "today" is **complete**: `metric_peer_flags` must hold at least as many rows for that `as_of` as `customers` has. Each batch writes all three tables in one transaction, so complete flags mean complete marts. During a first build for a new day, or after a stopped build, both files fall back to the range path, so partial statistics are never served and no customer silently loses a row. A build for another day can never leak in. The three tables take 72 MB.
 
 `core/marts/build.py` fills them in 52 batches of 100 customers, using one connection with `statement_timeout = 60s` and a pause between batches. Each batch is one transaction that deletes its range for that `as_of` and inserts it again, so batches are idempotent, and a run can resume with `--from CUSTxxxxx`. A batch that times out is split in half and each half is tried once; then the script stops and names the range. The classification SQL is read from the shared block in `02_baskets.sql`, so the marts cannot drift from metrics 1–6.
 
@@ -382,8 +384,6 @@ The first full build took 234 s for 52 batches. The slowest batch took 12.0 s, w
 
 Every file was run on the sample under `statement_timeout = '60s'` after rebasing onto `origin/main`, one connection at a time:
 
-| File | Rows | Time |
-|---|---|---|
 | File | Rows | Server idle | Server busy |
 |---|---|---|---|
 | 01_recurring.sql | 315 | 0.74 s | 2.07 s |
@@ -411,6 +411,8 @@ Metrics 1–5 need no cache or mart for the demo: one customer reads a few hundr
 - One-customer runs (`[CUST00006, CUST00007)`) return the same numbers as the sample run for files 01–05.
 - The override path was run with two rows (section 1).
 - Marts (#21) were checked several ways. Spot check: CUST00001's May 2026 rows in `metric_customer_month` equal direct sums from `transactions` (Groceries 610.20 over 9 transactions, total spend 2,125.15 over 26). The basket rows, which go through the shared classification block, give the same month averages as section 1 (1,278.77 / 409.17 / 399.99). The README command was run as written in Git Bash on the last batch. Re-running `build.py --from CUST05000` leaves all three row counts unchanged. A forced timeout (`--timeout-ms 5`) splits the batch, stops at the first half and names it, with the rows untouched. With `app.demo_today = 2026-09-14` (no build for that day), 06 falls back to the range (`peer_source = range`), and so does 07 (856 visits at the busiest store, as on the sample; last step 0.00008).
+- The complete-build gate was proven without touching the shared marts. In one session, a temp table named `metric_peer_flags` held only 2,599 of the 5,100 flags; unqualified names resolve to the session's temp schema first, so this simulates a stopped build. For CUST00001, 06 then returned `peer_source = range` instead of `marts`, and 07 fitted on the range (11 visits at the busiest store instead of 45,200). After dropping the temp table both used the marts again.
+- `build.py` never prints a driver message, because it can contain the connection string. A malformed URL (in quotes, or with a leading space) gives `stopped: could not connect (ProgrammingError); check DATABASE_URL`, and an unknown host gives the same with `OperationalError`; both were tested with a fake URL. A failure during a batch prints the batch, the error class and the SQLSTATE. `--batch 0`, `--from` after `--to` and a malformed `DEMO_TODAY` stop with a one-line message.
 - The worked numbers above are copied from these runs. The runs used a psycopg 3 client (no psql on the machine): it sets the three `app.*` settings, runs the whole file in one call and prints the time and rows; `psql -f` gives the same result.
 
 ## 10. Open questions for Renat

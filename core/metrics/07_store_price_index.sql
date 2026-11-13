@@ -24,10 +24,15 @@ CREATE TEMP TABLE store_cells AS
 WITH params AS (
     SELECT COALESCE(NULLIF(current_setting('app.demo_today', true), ''), '2026-09-30')::date AS today
 ),
-mart AS (   -- the precomputed cells of the whole population, if built for this "today"
+mart_ready AS (   -- the build for this "today" is complete: a flag row for every customer (each batch
+                 -- writes all three mart tables in one transaction); otherwise fall back to the range
+    SELECT (SELECT count(*) FROM metric_peer_flags f, params p WHERE f.as_of = p.today)
+           >= (SELECT count(*) FROM customers) AS ok
+),
+mart AS (   -- the precomputed cells of the whole population, if the build for this "today" is complete
     SELECT m.customer_id, m.merchant_id, m.mcc, m.n, m.sy, m.syy, m.spend_eur
     FROM metric_grocery_cells m, params p
-    WHERE m.as_of = p.today
+    WHERE m.as_of = p.today AND (SELECT ok FROM mart_ready)
 ),
 g AS (   -- fallback: grocery card purchases of the last 365 days in the range, log ticket
     SELECT t.customer_id, t.merchant_id, t.mcc, -t.amount_eur AS ticket, ln(-t.amount_eur) AS y
@@ -37,7 +42,7 @@ g AS (   -- fallback: grocery card purchases of the last 365 days in the range, 
       AND t.tx_date <= COALESCE(NULLIF(current_setting('app.demo_today', true), ''), '2026-09-30')::date
       AND t.tx_date >  p.today - 365
       AND t.category = 'Groceries' AND t.merchant_id IS NOT NULL AND t.amount_eur < 0
-      AND NOT EXISTS (SELECT 1 FROM mart)
+      AND NOT (SELECT ok FROM mart_ready)
 )
 SELECT customer_id, merchant_id, mcc, n, sy, syy, spend_eur FROM mart
 UNION ALL
