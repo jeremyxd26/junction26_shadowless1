@@ -173,7 +173,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         if head and view.get("monthly_average"):  # say that the amounts are averages, not one month
             head = f"{period}, {pick(MONTHLY_AVERAGE, language)}: "
         if items:
-            sentences.append(head + "; ".join(items) + ".")
+            # Each sentence starts with a capital: "…: 10. syyskuu 2026: …" would read as a date in the
+            # rendered text, "…: 10. Syyskuu 2026: …" does not (a day takes a lower-case month).
+            sentence = head + "; ".join(items) + "."
+            sentences.append(sentence[:1].upper() + sentence[1:])
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)

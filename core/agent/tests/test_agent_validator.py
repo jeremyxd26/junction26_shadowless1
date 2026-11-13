@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names
 from core.agent.toolset import KNOWN_TOOLS, default_registry
 from core.agent.validator import Allowed, validate
+from core.agent.validator import render as validator_render
 from core.tools.formatting import display
 from core.tools.models import Number, Unit
 
@@ -88,6 +89,25 @@ def test_tokens_glued_to_digits_units_or_dates_fail(text, lang):
 ])
 def test_rendered_check_keeps_good_drafts(text, lang):
     assert check_two(text, lang) == []
+
+
+def test_a_finnish_template_with_two_tools_passes_the_rendered_check():
+    # "…; Tapahtumat: 10. syyskuu 2026: …" would read as a date that was not returned; the template
+    # starts each sentence with a capital, and a day never takes a capitalised month.
+    from core.agent import template
+    from core.agent.validator import allowed_from
+    from core.tools.models import Period
+
+    sep = Period(start=date(2026, 9, 1), end=date(2026, 9, 30), label="syyskuu 2026")
+    fi = {k: n.model_copy(update={"display": display(Decimal(str(n.value)), n.unit, "fi")}) for k, n in
+          {"n1": N1, "n2": N2, "n3": N1.model_copy(update={"id": "n3", "period": sep, "evidence_ref": "ev_z"})}.items()}
+    views = [{"tool": "t", "period": "elokuu 2026", "total": {"id": "n1", "value": 147.64, "unit": "eur", "label": "Ravintolat"},
+              "tx_count": {"id": "n2", "value": 10, "unit": "count", "label": "Tapahtumat"}},
+             {"tool": "t", "period": "syyskuu 2026", "total": {"id": "n3", "value": 147.64, "unit": "eur", "label": "Ravintolat"}}]
+    allowed = allowed_from(fi.values(), views, date(2026, 9, 30))
+    draft = template.template_draft(views, [], "fi", allowed)
+    assert "10. Syyskuu 2026" in validator_render(draft["text"], fi)
+    assert validate(draft, language="fi", numbers=fi, allowed=allowed)[1] == []
 
 
 def test_token_rules():

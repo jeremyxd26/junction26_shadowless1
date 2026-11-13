@@ -26,8 +26,6 @@ def names(result):
     ("Mihin rahani menivät?", "fi", ["get_basket_breakdown"]),
     ("What can I safely spend this week?", "en", ["get_safe_to_spend"]),
     ("Paljonko minulla on turvallisesti käytettävissä tällä viikolla?", "fi", ["get_safe_to_spend"]),
-    ("How could I save more?", "en", ["get_basket_breakdown", "get_recurring_bills"]),
-    ("Miten voisin säästää enemmän?", "fi", ["get_basket_breakdown", "get_recurring_bills"]),
     ("How much could I save if I reduced dining out by 20%?", "en", ["run_what_if"]),
     ("Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?", "fi", ["run_what_if"]),
     ("What kind of spender am I?", "en", ["get_spender_profile", "get_peer_benchmark"]),
@@ -40,7 +38,7 @@ def test_brief_and_spending_questions_map_to_their_tools(question, lang, tools):
     assert result.recognised and names(result) == tools + ["finish"]
 
 
-def test_brief_question_details():
+def test_brief_question_details_and_what_if_args():
     assert plan("Where did my money go?").calls[0].args == {"period": {"preset": "last_6_months"}}
     restaurants_20 = {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}
     assert plan("How much could I save if I reduced dining out by 20%?").calls[0].args == restaurants_20
@@ -92,14 +90,22 @@ def clarify_text(result):
     return result.calls[0].args
 
 
-def test_a_cut_without_a_percentage_asks_how_much():
+@pytest.mark.parametrize("question,lang", [("How could I save more?", "en"), ("Miten voisin säästää enemmän?", "fi")])
+def test_what_if_without_a_category_is_left_to_the_next_planner(question, lang):
+    # No category and no cut: the rules plan no what-if; without another planner the user is asked.
+    result = plan(question, language=lang)
+    assert not result.recognised and names(result) == ["ask_clarifying_question"]
+    assert result.calls[0].args["options"]
+
+
+def test_what_if_cut_without_a_percentage_asks_how_much():
     result = plan("What if I cut restaurants a little?")
     assert result.recognised and "how much" in clarify_text(result)["question"].lower()
     result = plan("Entä jos vähentäisin vähän ravintoloita?", language="fi")
     assert result.recognised and "Kuinka paljon" in clarify_text(result)["question"]
 
 
-def test_an_mcc_is_not_replaced_by_a_category():
+def test_what_if_mcc_is_not_replaced_by_a_category():
     result = plan("What if I cut MCC 5411 by 30%?")
     assert not result.recognised and "run_what_if" not in names(result)
     result = plan("What if I cut taxis by 30%?")
@@ -114,7 +120,7 @@ def test_an_mcc_is_not_replaced_by_a_category():
     "What if I spent 20% less at the pharmacy?",
     "Entä jos vähentäisin terveysmenoja 20 %?",
 ])
-def test_a_health_selection_gets_the_refusal_alone(question):
+def test_what_if_health_selection_gets_the_refusal_alone(question):
     result = plan(question, language="fi" if "Entä" in question else "en")
     assert result.recognised and names(result) == ["decline"]
     assert result.calls[0].args == {"kind": "out_of_scope"}
@@ -125,17 +131,17 @@ def test_a_health_selection_gets_the_refusal_alone(question):
     "What if I cut restaurants by 0%?",
     "What if I cut restaurants by 12.5%?",
 ])
-def test_a_percentage_outside_1_to_100_asks_again_and_is_never_clamped(question):
+def test_what_if_percentage_outside_1_to_100_asks_again_and_is_never_clamped(question):
     result = plan(question)
     assert result.recognised and "how much" in clarify_text(result)["question"].lower()
 
 
-def test_two_categories_are_not_merged_into_one():
+def test_what_if_two_categories_are_not_merged_into_one():
     result = plan("What if I cut restaurants and groceries by 20%?")
     assert not result.recognised and "run_what_if" not in names(result)
 
 
-def test_the_what_if_clarify_options_are_answerable_by_the_rules():
+def test_what_if_clarify_options_are_answerable_by_the_rules():
     for lang in ("en", "fi"):
         result = plan("What if I cut it by 20%?", language=lang)
         options = clarify_text(result)["options"]
