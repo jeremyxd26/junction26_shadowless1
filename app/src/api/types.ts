@@ -1,5 +1,5 @@
-// Types for the parts of contracts/api.md (0.2.0) the app uses so far:
-// sections 1-6 (conventions, shared objects, cards, errors, personas, overview) and 9 (evidence).
+// Types for the parts of contracts/api.md (0.2.1) the app uses so far:
+// sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask) and 9 (evidence).
 // The app ignores fields it does not know (contract section 1), so these types list only what it reads.
 
 export type Language = 'en' | 'fi'
@@ -200,3 +200,56 @@ export interface EvidenceResponse {
 export interface ErrorEnvelope {
   error: { code: string; message: string; retryable: boolean }
 }
+
+// POST /api/ask (contract section 7).
+
+export interface AskRequest {
+  customer_id: string
+  conversation_id: string | null
+  /** At most 500 characters. */
+  message: string
+  language: Language | 'auto'
+}
+
+export type AskStage = 'understanding' | 'tool' | 'writing'
+
+export interface AskMeta {
+  answer_id: string
+  conversation_id: string
+  language: Language
+  as_of: string
+}
+
+export interface AskStatus {
+  /** `understanding`, `tool` or `writing`; an unknown stage is shown by its label only. */
+  stage: string
+  tool: string | null
+  label: string
+}
+
+export type AskOutcome = 'answered' | 'clarify' | 'refused' | 'fallback'
+
+export interface AskDone {
+  answer_id: string
+  outcome: AskOutcome | string
+  /** The full answer with number tokens; equals the concatenated deltas. */
+  text: string
+  /** Tokens replaced by `display`: for screen readers and copying. */
+  text_rendered: string
+  cited: string[]
+  follow_ups: string[]
+  lesson: { key: string; title: string; text: string } | null
+  refusal: { kind: string; label: string } | null
+  clarify: { question: string; options: string[] } | null
+  warnings: string[]
+}
+
+/** One validated event of the /api/ask stream (contract section 7.2). */
+export type AskEvent =
+  | { event: 'meta'; data: AskMeta }
+  | { event: 'status'; data: AskStatus }
+  | { event: 'card'; data: { card: Card } }
+  | { event: 'numbers'; data: { numbers: Record<string, Num> } }
+  | { event: 'delta'; data: { text: string } }
+  | { event: 'done'; data: AskDone }
+  | { event: 'error'; data: ErrorEnvelope }
