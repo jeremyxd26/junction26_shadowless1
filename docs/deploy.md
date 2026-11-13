@@ -2,7 +2,7 @@
 
 The core service runs from the `dev` branch on one small Verda instance in Finland. Every change is tested there before it reaches `main`.
 
-- **URL:** https://sentti.jeremyxd.dev: the app at `/` (once `app/` is on the deployed branch), the core at `/api/*`, `/healthz` and `/readyz`. The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
+- **URL:** https://sentti.jeremyxd.dev: the app at `/`, the core at `/api/*`, `/healthz` and `/readyz`. The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
 - **Deploy:** `bash deploy/dev.sh` deploys `origin/dev`.
 - **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is the app: the static build of `app/` for the deployed commit, with client routes such as `/chat` falling back to `index.html`. A commit without `app/package.json` serves no app, and those paths answer 404. FastAPI's `/docs` is not exposed (`/docs` is an app route that falls back to the app).
 
@@ -138,7 +138,7 @@ GET https://sentti.jeremyxd.dev/healthz -> 200
 - `/assets/*` holds Vite's content-hashed files: an existing file gets `Cache-Control: public, max-age=31536000, immutable`. A missing asset and the directory `/assets/` itself are a plain 404 with `no-store`, never `index.html`.
 - Every other path: `Cache-Control: no-cache`, so `index.html` is revalidated on every load and a deploy shows at once.
 
-A commit without `app/package.json` (today's `main` and `dev`, which hold only `app/DESIGN.md` and `app/design/`, until PR #75 is merged) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
+A commit without `app/package.json` (any commit before PR #75 merged the app) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
 
 ## Service data (`var/`)
 
