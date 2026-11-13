@@ -92,7 +92,7 @@ How numbers are checked (R1). The rule is an allowlist by subtraction in `core/a
 2. Remove every date expression that equals a date or period the tools returned. A date expression followed by € or % is not a date.
 3. If any digit is left (an invented amount, an id, a number glued to letters, an amount after a dash), the answer fails.
 
-Each declared Number object must also match an expected value: same unit, value within tolerance, same sign. A case may mark an expected value `required: false`: the answer may state it (for example the number of transactions next to a total) but need not. Money has a tolerance of 0.005, so a one-cent error fails. A number from the question passes only as a user-input object with the question's own mark: the "20%" of a what-if question is a percent, never money.
+Each declared Number object must also match an expected value: same unit, value within tolerance, same sign. A case may mark an expected value `required: false`: the answer may state it (for example the number of transactions next to a total) but need not. Money and percentages match only when the formatter shows them the same (45.915, shown as €45.92, is not 45.91), so a one-cent error fails; counts match exactly. A number from the question passes only as a user-input object with the question's own mark: the "20%" of a what-if question is a percent, never money.
 
 - **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.

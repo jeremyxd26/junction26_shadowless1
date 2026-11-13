@@ -82,10 +82,10 @@ DATE_PATTERNS = [
 #   ("€ 30"). A closing mark that follows an amount ("180,26 € 15.10.2026") is not leading: the
 #   currency sign is then itself preceded by a digit and an optional space.
 # - after: no letter, digit or mark glued to it, and no mark or unit word after one space
-#   ("1 €", "1 %", "1 euro", "1 EUR", "1 percent", "1 prosenttia").
+#   ("1 €", "1 %", "1 euro", "1 EUR", "1 e", "1 USD", "1 cent", "1 senttiä", "1 percent", "1 pct", "1 prosenttia").
 _LEADING_MARK = r"(?<!(?<!\d)(?<!\d )[€$] )"
 _BEFORE = rf"(?<![\w€$%.,{DASH_CLASS}]){_LEADING_MARK}"
-_UNIT_WORD = r"(?i:eur\b|euro\w*|percent\w*|per cent|prosent\w*)"
+_UNIT_WORD = r"(?i:eur\b|euro\w*|usd\b|e\b|cents?\b|sentti\w*|percent\w*|per cent|pct\b|prosent\w*)"
 _AFTER = rf"(?![\w€$%]|[.,]\d| ?[€$%]| {_UNIT_WORD})"
 DATE_RX = [(kind, re.compile(_BEFORE + p + _AFTER, re.I)) for kind, p in DATE_PATTERNS]
 
@@ -243,6 +243,18 @@ def formatted(value, unit: str, language: str) -> str:
 def _same(a: str, b: str) -> bool:
     # NFKC turns NBSP and NNBSP into spaces; the minus sign U+2212 is the same sign as a hyphen-minus.
     return normalise(a).replace("\u2212", "-") == normalise(b).replace("\u2212", "-")
+
+
+def same_value(a, b, unit: str) -> bool:
+    """Two values are the same number for the user: counts, days and months exactly; money and
+    percentages when the formatter shows them the same (no tolerance on the raw value, so 45.915,
+    shown as 45.92, is not 45.91)."""
+    if unit in ("count", "days", "months"):
+        return float(a) == float(b)
+    try:
+        return formatted(a, unit, "en") == formatted(b, unit, "en")
+    except (ValueError, ArithmeticError):
+        return False
 
 
 def display_matches(display: str, value: float, unit: str, language: str | None = None) -> bool:
