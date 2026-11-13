@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 from psycopg import pq
 
-from core.tools import metric_sql
+from core.tools import evidence, metric_sql
 
 AS_OF = date(2026, 9, 30)
 
@@ -42,12 +42,15 @@ class FakeConnection:
 
         return Cursor()
 
+    def set_configs(self) -> list[tuple[str, str]]:
+        """Every set_config call in sequence, as (name, value)."""
+        return [(params[0], params[1]) for sql, params in self.calls if sql.startswith("SELECT set_config")]
+
     def settings(self) -> dict[str, str]:
-        """The app.* settings in the order they were set; a later one wins, as in PostgreSQL."""
+        """The app.* settings in force at the end: a later set_config of a name wins, as in PostgreSQL."""
         out: dict[str, str] = {}
-        for sql, params in self.calls:
-            if sql.startswith("SELECT set_config"):
-                out[params[0].lower()] = params[1]   # PostgreSQL setting names ignore case
+        for name, value in self.set_configs():
+            out[name.lower()] = value   # PostgreSQL setting names ignore case
         return out
 
 
@@ -83,19 +86,82 @@ def test_malformed_names_are_refused_before_the_database(name):
 def test_a_normal_call_sets_the_one_customer_range_and_as_of():
     conn = FakeConnection()
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF, {"whatif": "category:Restaurants", "whatif_pct": "20"})
-    assert conn.settings() == {
-        "app.whatif": "category:Restaurants", "app.whatif_pct": "20",
-        "app.demo_today": "2026-09-30", "app.customer_from": "CUST00860", "app.customer_to": "CUST00861",
-    }
+    # the real sequence: the caller's settings, then the server's date and customer range
+    assert conn.set_configs() == [
+        ("app.whatif", "category:Restaurants"), ("app.whatif_pct", "20"),
+        ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
+    ]
     assert conn.calls[0] == ("BEGIN", None) and conn.calls[1][0] == "SET TRANSACTION READ ONLY"
     assert conn.calls[-1][0] == "<metric file>"
 
 
 def test_the_range_is_set_last_even_if_a_name_slipped_past_the_check(monkeypatch):
-    """Defence in depth: with the check disabled, the customer range and as_of still win."""
+    """Defence in depth: with the check disabled, the server's three set_config calls still come after
+    the caller's, so they are the ones in force (not only by a dict overwrite)."""
     monkeypatch.setattr(metric_sql, "check_settings", lambda settings: None)
     conn = FakeConnection()
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF,
                    {"customer_from": "CUST00000", "customer_to": "CUST99999", "demo_today": "2099-01-01"})
+    assert conn.set_configs() == [
+        ("app.customer_from", "CUST00000"), ("app.customer_to", "CUST99999"), ("app.demo_today", "2099-01-01"),
+        ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
+    ]
     s = conn.settings()
     assert (s["app.customer_from"], s["app.customer_to"], s["app.demo_today"]) == ("CUST00860", "CUST00861", "2026-09-30")
+
+
+# ---- evidence.resolve: a stored metric spec with a reserved or malformed setting is refused (403) ------
+
+class FakeEvidenceConnection:
+    """Answers the evidence store's load with one stored spec and records every statement."""
+
+    def __init__(self, owner: str, spec: dict):
+        self.owner, self.spec, self.calls = owner, spec, []
+
+    def execute(self, sql, params=None):
+        self.calls.append(sql)
+        conn = self
+
+        class Result:
+            def fetchone(self):
+                return (conn.owner, conn.spec) if sql == evidence.LOAD_SQL else None
+
+        return Result()
+
+
+def metric_spec(settings: dict) -> dict:
+    return {"v": 1, "kind": "metric", "customer_id": "CUST00860", "as_of": "2026-09-30",
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "source": {"file": "03_safe_to_spend.sql", "column": "safe_to_spend_7d_eur", "settings": settings},
+            "value": "180.26"}
+
+
+@pytest.mark.parametrize("settings", [
+    {"customer_from": "CUST00000"}, {"Customer_from": "CUST00000"}, {" demo_today": "2099-01-01"},
+    {"what-if": "x"}, {"app.whatif": "x"}, {"": "x"},
+])
+def test_resolve_refuses_a_stored_spec_with_a_reserved_or_malformed_setting(settings):
+    conn = FakeEvidenceConnection("CUST00860", metric_spec(settings))
+    with pytest.raises(evidence.EvidenceForbidden):
+        evidence.resolve(conn, "ev_0123456789ab", "CUST00860")
+    assert conn.calls == [evidence.LOAD_SQL]   # nothing ran after the spec was loaded
+
+
+def test_the_evidence_endpoint_answers_403_for_such_a_spec(monkeypatch):
+    """EvidenceForbidden is the API's 403 evidence_forbidden, not a 500."""
+    from fastapi.testclient import TestClient
+
+    from core.app.main import create_app
+    from core.app.settings import Settings
+
+    stored = FakeEvidenceConnection("CUST00860", metric_spec({"what-if": "x"}))
+
+    @contextmanager
+    def connection(request):
+        yield stored
+
+    monkeypatch.setattr("core.app.api.evidence.connection", connection)
+    monkeypatch.setattr("core.app.api.evidence.require_customer", lambda conn, customer_id: None)
+    with TestClient(create_app(Settings(_env_file=None)), raise_server_exceptions=False) as client:
+        response = client.get("/api/evidence/ev_0123456789ab", params={"customer_id": "CUST00860"})
+    assert response.status_code == 403 and response.json()["error"]["code"] == "evidence_forbidden"

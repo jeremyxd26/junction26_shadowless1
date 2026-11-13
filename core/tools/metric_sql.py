@@ -67,14 +67,16 @@ def run(conn: psycopg.Connection, file: str, customer_id: str, as_of: date,
     check_settings(settings)
     sql = (METRICS_DIR / file).read_text(encoding="utf-8")
     lo, hi = customer_range(customer_id)
-    # The caller's settings first and the customer range and as_of last, so they win even if a name
-    # ever slipped past check_settings (defence in depth, #122).
-    values = {**(settings or {}), "demo_today": as_of.isoformat(), "customer_from": lo, "customer_to": hi}
+    # The caller's settings first and the customer range and as_of last, in the sequence of set_config
+    # calls as well as in value: a later set_config of the same name wins in PostgreSQL, so the
+    # server's values win even if a name ever slipped past check_settings (defence in depth, #122).
+    server = [("demo_today", as_of.isoformat()), ("customer_from", lo), ("customer_to", hi)]
+    values = list((settings or {}).items()) + server
     own_transaction = conn.info.transaction_status == pq.TransactionStatus.IDLE
     with conn.transaction():
         if own_transaction:
             conn.execute("SET TRANSACTION READ ONLY")
-        for name, value in values.items():
+        for name, value in values:
             if not SETTING_NAME.fullmatch(name):
                 raise ValueError(f"bad setting name {name!r}")
             conn.execute("SELECT set_config(%s, %s, true)", (f"app.{name}", str(value)))
