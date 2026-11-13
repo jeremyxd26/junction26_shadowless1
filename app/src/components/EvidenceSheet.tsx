@@ -56,7 +56,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
             </h3>
             {evidence.row_count && (
               <span className="text-sm text-muted">
-                {evidence.row_count.label}: {evidence.row_count.display}
+                {evidence.row_count.label} <NumberChip number={evidence.row_count} size="inline" tone="neutral" />
               </span>
             )}
           </div>

@@ -132,7 +132,7 @@ export function BasketsCard({ card }: { card: BreakdownCard }) {
               <div className="min-w-0 flex-1">
                 <div className="flex min-h-10 items-center justify-between gap-2">
                   <span className={`font-semibold ${look.color}`}>{item.label}</span>
-                  {item.share && <span className="shrink-0 text-sm text-muted">{item.share.display}</span>}
+                  {item.share && <NumberChip number={item.share} size="inline" tone="neutral" />}
                 </div>
                 <NumberChip number={item.amount} />
               </div>

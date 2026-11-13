@@ -6,7 +6,7 @@ Stack: Vite, React, TypeScript and Tailwind CSS. The build is static. In product
 
 ## Run
 
-Node 20 or newer. From this folder:
+Node 20.19+ or 22.12+ (Vite's requirement). From this folder:
 
 ```
 npm ci
