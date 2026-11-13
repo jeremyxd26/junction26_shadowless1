@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client.ts'
 import { ApiError } from './api/errors.ts'
 import type { Language } from './api/types.ts'
@@ -12,6 +12,9 @@ import { useLoad, type Loaded } from './lib/useLoad.ts'
 import { setParams, useUrl } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 import { Overview } from './screens/Overview.tsx'
+
+/** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
+const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
 
 export default function App() {
   const { path, params } = useUrl()
@@ -41,7 +44,11 @@ export default function App() {
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
         <Header onLongPress={() => setPersonaSheet(true)} />
         <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-2">
-          {path === '/chat' ? (
+          {path === '/cards' && CardGallery ? (
+            <Suspense fallback={<LoadingBlock lines={6} />}>
+              <CardGallery />
+            </Suspense>
+          ) : path === '/chat' ? (
             <Chat question={params.get('q')} />
           ) : overview.status === 'ready' ? (
             <Overview overview={overview.data} />
