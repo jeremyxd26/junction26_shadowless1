@@ -80,7 +80,10 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     lang = ctx.language
     notes: list[str] = []
 
-    row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of)
+    # The cushion is passed explicitly (the documented default), so a session setting can never leak in
+    # and every evidence spec records it.
+    settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR}
+    row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         raise ValueError("no transactions up to as_of for this customer")
 
@@ -101,7 +104,6 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     reg = ctx.numbers.register
     values: dict[str, Decimal] = {}
     numbers: dict[str, Number] = {}
-    settings: dict[str, str] = {}  # 03 defaults (cushion 100 €); stored in each spec so evidence re-runs alike
     for key, column in config.SAFE_TO_SPEND_NUMBERS:
         value = metric_sql.decimal(row[column])
         method = f"{METRIC}.{column}@1"

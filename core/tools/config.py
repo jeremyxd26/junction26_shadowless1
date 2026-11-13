@@ -240,6 +240,7 @@ BILLS_TEXT: dict[str, tuple[str, str]] = {
 # (METHODS["bills_due"], the sum of the rounded per-bill amounts), so both cards show one value.
 
 SAFE_TO_SPEND_FILE = "03_safe_to_spend.sql"
+SAFE_TO_SPEND_CUSHION_EUR = "100"   # metrics.md section 10, decision 3 (configurable; 03's default)
 WHAT_IF_FILE = "04_what_if.sql"
 USER_INPUT_METHOD = "user_input@1"
 
