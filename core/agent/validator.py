@@ -7,10 +7,13 @@
    this answer (a number's period, a date field of a model view, or as_of); if any digit is left, the
    draft fails. Amounts, percentages and counts typed as digits fail in any locale format ("12.5%",
    "1 234,56 €", "−30"), and so do ids, IBANs and digits glued to letters. No sign or unit may be
-   written next to a token (the token's display carries its own).
+   written next to a token (the token's display carries its own). No number written in words either
+   (issue #123): a magnitude word anywhere, a cardinal next to a unit of money or percent, or a Unicode
+   number character other than a digit.
 4. The draft's language is the resolved language (R14).
 5. Deny lists: sensitive inferences (R9), investment instructions (R7), promises on estimates (R13).
-6. No URLs, markdown links, HTML, headings or code; at most two **bold** spans of emphasis.
+6. No URLs (any scheme, or "//host"), markdown links or images (inline or reference style, or a link
+   definition), HTML, headings or code; at most two **bold** spans of emphasis.
 7. `lesson_key` is in the lesson catalogue or null.
 """
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -54,7 +58,37 @@ MARKUP = {
     "html": re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>"),
     "heading": re.compile(r"(^|\n)\s*#"),
     "code": re.compile(r"`"),
+    # Issue #105: reference-style links and images ("[here][j]", "![chart][c]", "[x][]"), link
+    # definitions ("[c]: target"), URL schemes with or without "//", and protocol-relative "//host".
+    "reference_link": re.compile(r"\[[^\]\n]*\]\s?\[[^\]\n]*\]"),
+    "link_definition": re.compile(r"(^|\n)[ \t]{0,3}\[[^\]\n]+\]:"),
+    "url_scheme": re.compile(r"\b(java|vb)script\s*:|\b(data|file|mailto|tel|sms|ftp|blob|intent)\s*:(?=\S)|"
+                             r"\b[a-z][a-z0-9+.\-]*://", re.I),
+    "protocol_relative_link": re.compile(r"(^|[^\w:/])//[^\s/]"),
 }
+
+# Issue #123: numbers written as words (R1). A magnitude word states an amount anywhere; a cardinal
+# word does when a unit of money or percent follows it. Other uses stay allowed: "one-off", "no one",
+# "the next seven days", "yksin", "yhtä paljon". Any Unicode number character that is not a decimal
+# digit (Roman numerals, fractions, superscripts; categories No and Nl) is rejected: NFKC does not
+# turn them into digits, so the digit rule cannot see them.
+_EN_CARDINAL = (r"(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+                r"sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)"
+                r"([- ](one|two|three|four|five|six|seven|eight|nine))?")
+_FI_CARDINAL = (r"(nolla|yksi|yhden|kaksi|kahden|kahta|kolme|kolmen|kolmea|neljä|neljän|neljää|viisi|viiden|viittä|"
+                r"kuusi|kuuden|kuutta|seitsemän|seitsemää|kahdeksan|kahdeksaa|yhdeksän|yhdeksää|kymmenen|"
+                r"kymmentä|\w+toista|\w+kymmentä\w*)")
+_UNIT = r"(€|eur\b|euros?\b|euroa\b|euron\b|euroon\b|euroilla\b|cents?\b|senttiä\b|percent\b|per\s?cent\b|%|prosent\w*)"
+NUMBER_WORDS = re.compile(
+    r"\b(hundreds?|thousands?|millions?|billions?|trillions?)\b|"
+    r"\b\w*(sata|sataa|sadan|satoja|sadoin|tuhat|tuhatta|tuhannen|tuhansia|tuhansien)\b|"
+    r"\bmiljoon\w*|\bmiljard\w*|"
+    rf"\b({_EN_CARDINAL}|{_FI_CARDINAL})\s*{_UNIT}", re.I)
+
+
+def number_characters(text: str) -> list[str]:
+    """Unicode number characters other than decimal digits (categories No and Nl), such as "Ⅿ" or "½"."""
+    return [ch for ch in text if unicodedata.category(ch) in ("No", "Nl")]
 
 
 class AnswerDraft(BaseModel):
@@ -110,6 +144,12 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     for name, rx in MARKUP.items():
         if rx.search(text):
             errors.append(f"no {name.replace('_', ' ')} allowed")
+    words = TOKEN.sub(" ", text)
+    found = NUMBER_WORDS.search(words)
+    if found:
+        errors.append(f"a number written in words: '{found.group(0).strip()}'; cite every number as a {{{{id}}}} token")
+    if number_characters(words):
+        errors.append("a number character that is not a digit; cite every number as a {{id}} token")
     bold = text.count("**")
     if bold % 2 or bold // 2 > MAX_BOLD_SPANS or "*" in text.replace("**", ""):
         errors.append(f"at most {MAX_BOLD_SPANS} **bold** spans and no other emphasis")

@@ -27,6 +27,7 @@ from psycopg_pool import PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
+from core.agent import guard
 from core.agent.audit import AuditLog
 from core.agent.conversation import ConversationStore
 from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
@@ -242,7 +243,9 @@ async def ask(request: Request):
         body = AskBody.model_validate(await request.json())
     except (ValidationError, ValueError, TypeError):
         return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
-    message = body.message.strip()
+    # Empty after the input guard (only spaces, zero-width or bidi marks): 400 before any model call
+    # (issue #105). The length limit applies to the raw message.
+    message = guard.clean(body.message)
     if not message or len(body.message) > MAX_MESSAGE:
         return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
     allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
