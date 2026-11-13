@@ -12,12 +12,16 @@ import copy
 import json
 import re
 import typing
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from core.app.api import schemas
+from core.app.api import errors, schemas, texts
+from core.tools import config as tools_config
+from core.tools.formatting import display
+from core.tools.models import Unit
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
@@ -29,6 +33,19 @@ MODELS: dict[str, type[BaseModel]] = {
     "overview.response": schemas.OverviewResponse,
     "evidence.response": schemas.EvidenceResponse,
     "evidence.response_composite": schemas.EvidenceResponse,
+    "whatif.request": schemas.WhatIfRequest,
+    "whatif.request_basket": schemas.WhatIfRequest,
+    "whatif.response": schemas.WhatIfResponse,
+}
+
+# Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
+# version), as paths with [] for every list item, each with the value it would have in the example.
+# The check fills them into a copy of the example; test_additions_are_still_missing fails once the
+# contract carries one, so it is removed here.
+ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {
+    "evidence.response": {  # #79, Renat: rows carry their amount's display
+        "$.rows[].display": lambda row: display(Decimal(row["amount"]), Unit.EUR, "en"),
+    },
 }
 
 # Contract fields the models do not implement yet, by example name, with the issue that adds them.
@@ -42,6 +59,8 @@ PENDING: dict[str, set[str]] = {
 # `reviews` is implemented as an always-empty list; the review item shape and the label logic are #68.
 # Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
 PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
+# Error codes the service has ahead of the contract (agreed additions; the text follows in the next version).
+ERROR_CODE_ADDITIONS = {"not_found"}  # #79: an unknown route
 
 
 def contract_text() -> str:
@@ -72,7 +91,32 @@ def mismatches(inst: typing.Any, raw: typing.Any, path: str = "$") -> list[str]:
     return out
 
 
+def _split(path: str) -> tuple[list[str], str]:
+    """'$.rows[].display' -> (['rows', '[]'], 'display')."""
+    parts = re.findall(r"\[\]|[^.\[\]$]+", path)
+    return parts[:-1], parts[-1]
+
+
+def _parents(obj: typing.Any, parts: list[str]) -> typing.Iterator[dict]:
+    if not parts:
+        yield obj
+        return
+    head, rest = parts[0], parts[1:]
+    for child in (obj if head == "[]" else [obj[head]]):
+        yield from _parents(child, rest)
+
+
+def with_additions(name: str, raw: typing.Any) -> typing.Any:
+    out = copy.deepcopy(raw)
+    for path, value_of in ADDITIONS.get(name, {}).items():
+        parents, key = _split(path)
+        for parent in _parents(out, parents):
+            parent[key] = value_of(parent)
+    return out
+
+
 def check(name: str, raw: typing.Any) -> list[str]:
+    raw = with_additions(name, raw)
     inst = MODELS[name].model_validate(raw)
     pending = PENDING.get(name, set())
     return [m for m in mismatches(inst, raw) if m.split(":")[0] not in pending]
@@ -95,6 +139,20 @@ def test_pending_entries_are_still_missing():
                  if "in the example, not in" in m}
         assert paths <= found, f"{name}: {sorted(paths - found)} implemented or gone; remove from PENDING"
     assert not PENDING_ERROR_CODES & literal_values(schemas.ErrorBody, "code"), "remove from PENDING_ERROR_CODES"
+
+
+def test_additions_are_still_missing_from_the_contract():
+    """An ADDITIONS path must have parents in the example (so it is exercised) and not be there yet."""
+    for name, paths in ADDITIONS.items():
+        raw = examples()[name]
+        for path in paths:
+            parents, key = _split(path)
+            found = list(_parents(raw, parents))
+            assert found, f"{name}: {path} has nothing to attach to in the example"
+            assert all(key not in p for p in found), f"{name}: the contract has {path} now; remove it from ADDITIONS"
+        # without the addition the model refuses the example: the field is required, not optional
+        with pytest.raises(ValidationError):
+            MODELS[name].model_validate(raw)
 
 
 def test_the_check_fails_on_an_unknown_field_and_on_a_missing_one():
@@ -138,7 +196,9 @@ def backticked(line_pattern: str) -> set[str]:
 def test_enums_match_the_contract_text():
     error_codes = set(re.findall(r"^\| \d{3} \| `([a-z_]+)` \|", contract_text(), re.M))
     assert PENDING_ERROR_CODES <= error_codes
-    assert literal_values(schemas.ErrorBody, "code") == error_codes - PENDING_ERROR_CODES
+    assert not ERROR_CODE_ADDITIONS & error_codes, "the contract has it now: remove it from ERROR_CODE_ADDITIONS"
+    assert literal_values(schemas.ErrorBody, "code") == (error_codes - PENDING_ERROR_CODES) | ERROR_CODE_ADDITIONS
+    assert set(errors.STATUS) == literal_values(schemas.ErrorBody, "code") == set(texts.ERRORS)
     assert literal_values(schemas.Persona, "age_band") == backticked(r"^\| Age bands \|") - {"metrics.md"}
     units = backticked(r"^\| `unit` \| enum \|") - {"unit"}
     assert typing.get_args(schemas.UnitName) == tuple(sorted(units, key=list(typing.get_args(schemas.UnitName)).index))
@@ -148,3 +208,50 @@ def test_enums_match_the_contract_text():
     assert literal_values(schemas.BillItem, "status") <= bills_line
     kinds = re.search(r"`kind` is one of (.*?)\.", contract_text()).group(1)
     assert literal_values(schemas.Insight, "kind") == set(re.findall(r"`([^`]+)`", kinds))
+    whatif = contract_text().split("## 8. `POST /api/whatif`")[1].split("## 9.")[0]
+    assert literal_values(schemas.WhatIfResponse, "status") == set(re.findall(r"^- `([a-z_]+)`:", whatif, re.M))
+    request_fields = {"customer_id", "scenario", "language"}
+    kinds_table = set(re.findall(r"^\| `([a-z_]+)` \| ", whatif, re.M)) - request_fields
+    assert set(typing.get_args(schemas.SelectionKind)) == kinds_table
+
+
+# ---- every method id a tool can emit has a name and a unit (texts.METHODS) ---------------------------
+# The evidence view names each number's method and formats its value with the method's unit, so a tool
+# that emits a method id texts.METHODS does not know would show a guessed name and unit. The ids are
+# found in the tools' source: quoted ids such as "spending.total@1", and `f"{METRIC}.{column}@1"`
+# built from a config table iterated as `for key, column[, unit] in config.TABLE`.
+
+TOOLS = Path(__file__).resolve().parents[1] / "tools"
+QUOTED_METHOD_ID = re.compile(r"[\"']([a-z_]+\.[a-z0-9_]+@\d+)[\"']")
+TABLE_LOOP = re.compile(r"for\s+\w+,\s*column(?:,\s*\w+)?\s+in\s+config\.([A-Z_]+)")
+FSTRING_COLUMN = re.compile(r"f[\"']\{METRIC\}\.([a-z0-9_]+)@(\d+)[\"']")
+
+
+def emitted_method_ids() -> dict[str, str | None]:
+    """Method id -> the unit its config table gives (None when the table names none)."""
+    ids: dict[str, str | None] = {}
+    for path in sorted(TOOLS.glob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        for method in QUOTED_METHOD_ID.findall(src):
+            ids.setdefault(method, None)
+        metric = re.search(r"^METRIC = [\"']([a-z_]+)[\"']", src, re.M)
+        if metric is None or "{METRIC}." not in src:
+            continue
+        tables, columns = TABLE_LOOP.findall(src), FSTRING_COLUMN.findall(src)
+        assert tables or columns, f"{path.name} builds method ids in a way this scan cannot see; extend it"
+        for table in tables:
+            for row in getattr(tools_config, table):
+                ids[f"{metric.group(1)}.{row[1]}@1"] = row[2] if len(row) > 2 else None
+        for column, version in columns:
+            ids.setdefault(f"{metric.group(1)}.{column}@{version}", None)
+    return ids
+
+
+def test_every_method_id_a_tool_emits_has_a_name_and_a_unit():
+    ids = emitted_method_ids()
+    # the scan sees each kind of source: config.METHODS, a metric table, and an f-string column
+    assert {"spending.total@1", "what_if.saving_month_eur@1", "safe_to_spend.safe_to_spend_7d_eur@1"} <= set(ids)
+    missing = sorted(set(ids) - set(texts.METHODS))
+    assert missing == [], f"add these method ids to core/app/api/texts.py METHODS: {missing}"
+    wrong_unit = {m: (u, texts.METHODS[m].unit.value) for m, u in ids.items() if u and texts.METHODS[m].unit.value != u}
+    assert wrong_unit == {}, wrong_unit
