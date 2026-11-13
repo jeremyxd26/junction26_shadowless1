@@ -15,6 +15,7 @@ unbounded consumption).
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from contextlib import contextmanager
 from datetime import date
@@ -22,7 +23,10 @@ from decimal import Decimal
 
 import pytest
 
-pytest.importorskip("core.agent.orchestrator", reason="the answer pipeline (core/agent) is not on this branch yet")
+# Skip only when the answer pipeline is not on the branch; any other import error fails the run.
+# The module itself is checked: a leftover core/agent/__pycache__ makes core.agent a namespace package.
+if importlib.util.find_spec("core.agent") is None or importlib.util.find_spec("core.agent.orchestrator") is None:
+    pytest.skip("the answer pipeline (core/agent) is not on this branch yet", allow_module_level=True)
 
 from core.agent.audit import AuditLog  # noqa: E402
 from core.agent.model import FunctionCall, ScriptedModel  # noqa: E402
@@ -105,20 +109,23 @@ def calls_with_status(pipeline: Pipeline) -> list[tuple[str, str]]:
 
 # ---- A3: goal hijack and tool misuse (R4, R6; LLM06) -------------------------------------------
 
-@pytest.mark.parametrize("args", [
-    {"customer_id": OTHER},
-    {"filter": {"customer": OTHER}},
-    {"category": "Restaurants", "scope": [{"account_id": OTHER}]},
-    {"category": "Restaurants", "user_id": OTHER},
-    {"category": "Restaurants", "\u0441ustomer_id": OTHER},  # Cyrillic "\u0441": not caught by name, so by extra=forbid
-    {"category": "Restaurants", "as_of": "2027-01-01"},      # the model cannot move "today" either (R5)
+@pytest.mark.parametrize("args, status", [
+    # Customer keys at any depth are caught by name, before argument validation (R4).
+    ({"customer_id": OTHER}, "rejected: customer_argument_not_allowed"),
+    ({"filter": {"customer": OTHER}}, "rejected: customer_argument_not_allowed"),
+    ({"category": "Restaurants", "scope": [{"account_id": OTHER}]}, "rejected: customer_argument_not_allowed"),
+    ({"category": "Restaurants", "user_id": OTHER}, "rejected: customer_argument_not_allowed"),
+    # A look-alike key (Cyrillic "\u0441") escapes the name check; extra="forbid" rejects it instead.
+    ({"category": "Restaurants", "\u0441ustomer_id": OTHER}, "rejected: invalid_arguments"),
+    # The model cannot move "today" either (R5).
+    ({"category": "Restaurants", "as_of": "2027-01-01"}, "rejected: invalid_arguments"),
 ])
-def test_hijacked_planner_cannot_pick_a_customer_or_add_arguments(make, seen, args):
+def test_hijacked_planner_cannot_pick_a_customer_or_add_arguments(make, seen, args, status):
     model = ScriptedModel(plans=[[FunctionCall("spend", args)], [FunctionCall("finish")]], drafts=[])
     pipe = make(model)
     run(pipe)
     assert seen == []                                          # the tool never ran
-    assert all(status.startswith("rejected") for name, status in calls_with_status(pipe) if name == "spend")
+    assert [s for name, s in calls_with_status(pipe) if name == "spend"] == [status]
 
 
 @pytest.mark.parametrize("args", [None, [], "customer_id=CUST00002", 42])
@@ -316,3 +323,13 @@ def test_message_length_is_bounded(client):
 @pytest.mark.parametrize("message", ["\u200b\u200b\u200b", "\u2060\ufeff", "\u200e\u200f\u202e"])
 def test_an_invisible_message_is_rejected_before_the_model(client, message):
     assert ask(client, message=message).status_code == 400
+    assert client.model.plan_inputs == []
+
+
+@pytest.mark.xfail(strict=True, reason="demo mode serves every customer in the data, not only the personas; issue #101")
+def test_ask_serves_only_the_demo_personas(client):
+    """CUST00002 exists in the (fake) data but is not a persona of core/config/personas.yaml: it gets
+    the same 404 as an unknown customer, and the model is never called."""
+    r = ask(client, customer_id=OTHER)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "customer_not_found"
+    assert client.model.plan_inputs == []
