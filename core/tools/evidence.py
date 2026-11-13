@@ -36,6 +36,10 @@ class EvidenceForbidden(PermissionError):
     """The ref belongs to another customer (the API answers 403 evidence_forbidden)."""
 
 
+class EvidenceCollision(RuntimeError):
+    """Internal error: a ref is already stored with a different spec, so it would resolve to another number."""
+
+
 def canonical_json(spec: dict[str, Any]) -> str:
     return json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -98,14 +102,26 @@ VALUES (%s, %s, %s)
 ON CONFLICT (ref) DO NOTHING
 """
 LOAD_SQL = "SELECT customer_id, spec FROM coach_evidence WHERE ref = %s"
+READ_BACK_SQL = "SELECT ref, spec FROM coach_evidence WHERE ref = ANY(%s)"
 
 
 def write(conn: psycopg.Connection, specs: dict[str, dict[str, Any]]) -> None:
-    """Store specs by ref. Idempotent: an existing ref is left as it is."""
+    """Store specs by ref. Idempotent: an existing ref is left as it is.
+
+    The stored specs are read back afterwards. If a ref already holds a different spec (a hash
+    collision, or a spec format change without a version bump), EvidenceCollision is raised instead
+    of silently resolving that ref to another number.
+    """
     if not specs:
         return
     with conn.cursor() as cur:
         cur.executemany(INSERT_SQL, [(ref, s["customer_id"], Jsonb(s)) for ref, s in specs.items()])
+    stored = dict(conn.execute(READ_BACK_SQL, (list(specs),)).fetchall())
+    for ref, spec in specs.items():
+        if ref not in stored:
+            raise EvidenceCollision(f"evidence {ref} was not stored")
+        if canonical_json(stored[ref]) != canonical_json(spec):
+            raise EvidenceCollision(f"evidence {ref} is already stored with a different spec")
 
 
 def load(conn: psycopg.Connection, ref: str) -> tuple[str, dict[str, Any]]:

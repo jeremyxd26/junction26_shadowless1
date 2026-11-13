@@ -87,6 +87,51 @@ def test_ref_changes_with_customer_method_value_and_as_of():
     assert len(refs) == 5
 
 
+class _FakeStore:
+    """Stands in for the database in write(): keeps the first spec per ref, like ON CONFLICT DO NOTHING."""
+
+    def __init__(self):
+        self.rows = {}
+
+    def cursor(self):
+        store = self
+
+        class _Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def executemany(self, sql, params):
+                for ref, _customer, spec in params:
+                    store.rows.setdefault(ref, spec.obj)
+
+        return _Cur()
+
+    def execute(self, sql, params):
+        class _Res:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def fetchall(self):
+                return self._rows
+
+        return _Res([(r, self.rows[r]) for r in params[0] if r in self.rows])
+
+
+def test_evidence_write_detects_a_forced_collision():
+    store = _FakeStore()
+    spec_a = evidence.transactions_spec("CUST00001", date(2026, 9, 30), "spending.total@1", SEL, Decimal("42.10"))
+    spec_b = evidence.transactions_spec("CUST00001", date(2026, 9, 30), "spending.total@1", SEL, Decimal("99.99"))
+    ref = evidence.make_ref(spec_a)
+    evidence.write(store, {ref: spec_a})
+    evidence.write(store, {ref: spec_a})                     # same spec again: fine (idempotent)
+    with pytest.raises(evidence.EvidenceCollision):
+        evidence.write(store, {ref: spec_b})                 # forced: a different spec under the same ref
+    assert store.rows[ref] == spec_a                          # the stored spec is never overwritten
+
+
 def test_composite_formulas():
     v = {"current": Decimal("2315.60"), "baseline": Decimal("1948.20")}
     assert evidence.compute_formula("difference", v) == Decimal("367.40")

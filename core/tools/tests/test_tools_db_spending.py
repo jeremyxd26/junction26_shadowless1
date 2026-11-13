@@ -167,6 +167,17 @@ def test_evidence_pagination_and_rows(conn):
     assert all(r["merchant"] is None or not any(ch.isdigit() for ch in r["merchant"]["label"]) for r in seen)
 
 
+def test_evidence_collision_is_detected_in_the_store(conn):
+    res = get_spending(ctx_for(conn, "CUST00008"), {"period": {"preset": "last_month"}})
+    ref = res.data.total.evidence_ref
+    _, stored = evidence.load(conn, ref)
+    forged = dict(stored, value="0.01")                       # a different spec under an existing ref
+    with pytest.raises(evidence.EvidenceCollision):
+        evidence.write(conn, {ref: forged})
+    assert evidence.load(conn, ref)[1] == stored              # unchanged
+    assert evidence.resolve(conn, ref, "CUST00008").reconciles is True
+
+
 def test_evidence_of_another_customer_is_refused(conn):
     res = get_spending(ctx_for(conn, "CUST00008"), {"period": {"preset": "last_month"}})
     with pytest.raises(evidence.EvidenceForbidden):
