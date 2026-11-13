@@ -42,7 +42,7 @@ This document defines how the coach answers a question: which tools exist, what 
 
 | Item | Fact |
 |---|---|
-| Data | Tables `transactions`, `customers`, `mortgage_applications`, `mortgage_events` (schema in `core/ingest/schema.sql`, PR #2). 3.6M transactions, 5,100 customers, 2024-10-01 to 2026-09-30, 15 categories, 36 MCC codes, anonymised merchants. |
+| Data | Tables `transactions`, `customers`, `mortgage_applications`, `mortgage_events` (schema in `core/ingest/schema.sql`). 3.6M transactions, 5,100 customers, 2024-10-01 to 2026-09-30, 15 categories, 36 MCC codes, anonymised merchants. |
 | Transfers | An empty or `.` `merchant_id` or `mcc` means a non-card transfer. `transaction_type` is the economic purpose of the transaction (partner data dictionary). |
 | Today | `DEMO_TODAY`, default `2026-09-30`. Tools see nothing after it. |
 | Database | 2 GB RAM, 25 connections. One full-table aggregate restarted it once, so heavy aggregates are precomputed in batches by customer range with a `statement_timeout`. Pools stay tiny. |
