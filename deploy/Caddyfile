@@ -1,11 +1,13 @@
-# Reverse proxy in front of the core service (rendered to /etc/caddy/Caddyfile by deploy/remote-deploy.sh).
-# __SITE__ is replaced with the contents of /etc/shadowless1/site, one line that names the host(s):
+# Reverse proxy and static file server in front of the core service (rendered to /etc/caddy/Caddyfile by
+# deploy/remote-deploy.sh). __SITE__ is replaced with the contents of /etc/shadowless1/site, one line
+# that names the host(s):
 #   135-181-63-178.sslip.io                          automatic HTTPS (Let's Encrypt)
 #   135-181-63-178.sslip.io, sentti.jeremyxd.dev     several names; add one only after its DNS record
 #                                                    points at the instance (failed attempts hit rate limits)
 #   http://135-181-63-178.sslip.io                   plain HTTP, if no certificate can be issued
-# Only the API and the health checks reach the core service; everything else is a plain 404 until the
-# app is served from here.
+# The API and the health checks go to the core service. Every other path is the app: the static build
+# of app/ for the deployed commit (/opt/shadowless1/app/current, a link set by remote-deploy.sh). Client
+# routes such as /chat fall back to index.html. Without an app build those paths answer 404.
 __SITE__ {
 	encode gzip
 
@@ -14,7 +16,20 @@ __SITE__ {
 		reverse_proxy 127.0.0.1:8000
 	}
 
+	# Vite puts content-hashed files under /assets/: they never change, so they are cached for a year.
+	# A missing asset is a plain 404, never index.html (that would be cached as the asset).
+	handle /assets/* {
+		root * /opt/shadowless1/app/current
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else: a file of the build, or index.html for a client route. Revalidated on every load,
+	# so a deploy is picked up at once.
 	handle {
-		respond "Not found" 404
+		root * /opt/shadowless1/app/current
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
 	}
 }

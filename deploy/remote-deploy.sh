@@ -167,6 +167,91 @@ if ! import_out=$(docker run --rm --network none --entrypoint python "shadowless
 fi
 tail -1 <<<"$import_out" | mask
 
+# ---- the app (app/, a static Vite build) ------------------------------------------------------------
+# Built here, before the switch, in a throwaway Node container from the files of the commit (git
+# archive: tracked files only, never a local .env), with network for npm only and no service setting.
+# The only build setting is the public VITE_API_MODE=live (the app calls /api on the same origin).
+# The result is installed as $app_root/<sha>; the served link $app_root/current moves to it only after
+# the core passed its health check. No Node on the request path: Caddy serves the files.
+app_root=$state/app
+node_image=node:22.21.1-slim
+npm_cache=/var/cache/shadowless1/npm
+app_new=""
+
+# No secret or server-side setting may end up in the app build. Every service setting value of at least
+# 12 characters is searched for by its first 12 characters, and the password and host of a URL setting
+# in full. Prints "<matches> <values checked>", never a value.
+secret_matches() {   # $1: directory of the build, $2: the service settings file
+  python3 - "$1" "$2" <<'PY'
+import os, re, sys, urllib.parse
+root, settings = sys.argv[1], sys.argv[2]
+needles = []
+for line in open(settings, encoding="utf-8"):
+    m = re.match(r"\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$", line.rstrip("\r\n"))
+    if not m:
+        continue
+    value = m.group(1).strip().strip("\"'")
+    if len(value) >= 12:
+        needles.append(value[:12])
+    if "://" in value:
+        u = urllib.parse.urlsplit(value)
+        needles += [p for p in (u.password, u.hostname) if p and len(p) >= 6]
+data = b""
+for d, _, files in os.walk(root):
+    for f in files:
+        with open(os.path.join(d, f), "rb") as fh:
+            data += fh.read()
+print(sum(data.count(n.encode("utf-8")) for n in needles), len(needles))
+PY
+}
+
+echo "== app"
+if git cat-file -e "$sha:app/package.json" 2>/dev/null; then
+  app_work=$(mktemp -d "$state/app-build.XXXXXX")
+  trap 'rm -rf "$app_work"' EXIT
+  git archive "$sha" app | tar -x -C "$app_work"
+  install -d -o 1000 -g 1000 -m 755 "$npm_cache"
+  chown -R 1000:1000 "$app_work"
+  app_started=$(date +%s)
+  if ! docker run --rm --user 1000:1000 --memory 2g --pids-limit 512 \
+         --volume "$app_work/app:/app" --volume "$npm_cache:/home/node/.npm" --workdir /app \
+         --env VITE_API_MODE=live "$node_image" \
+         sh -c 'npm ci --no-audit --no-fund --loglevel=error && npm run build' > "$app_work/build.log" 2>&1 \
+     || [[ ! -f $app_work/app/dist/index.html ]]; then
+    echo "refusing to deploy: the app build failed (the running version stays untouched); last lines (masked):" >&2
+    tail -15 "$app_work/build.log" | mask >&2
+    drop_image
+    exit 1
+  fi
+  if ! secret_out=$(secret_matches "$app_work/app/dist" /etc/shadowless1/core.env) \
+     || ! [[ $secret_out =~ ^([0-9]+)\ ([0-9]+)$ ]]; then
+    echo "refusing to deploy: the secret check of the app build could not run" >&2
+    drop_image
+    exit 1
+  fi
+  secret_hits=${BASH_REMATCH[1]} secret_checked=${BASH_REMATCH[2]}
+  if (( secret_hits > 0 )); then
+    echo "refusing to deploy: the app build contains $secret_hits match(es) of service setting values" >&2
+    drop_image
+    exit 1
+  fi
+  install -d -m 755 "$app_root"
+  rm -rf "$app_root/$sha.new"
+  cp -r "$app_work/app/dist" "$app_root/$sha.new"
+  chown -R root:root "$app_root/$sha.new"
+  chmod -R u=rwX,go=rX "$app_root/$sha.new"
+  rm -rf "$app_root/$sha"
+  mv "$app_root/$sha.new" "$app_root/$sha"
+  app_new=$app_root/$sha
+  echo "app built in $(( $(date +%s) - app_started )) s: $(find "$app_new" -type f | wc -l) files; secret check: 0 matches for $secret_checked setting values"
+else
+  echo "this commit has no app/package.json: no app build, and outside the core routes the proxy answers 404"
+fi
+
+# The service's own data survives deploys and restarts: the unit mounts this directory at /srv/var.
+# Owned by the container user (uid 10001), nobody else can read it.
+install -d -o 10001 -g 10001 -m 700 /var/lib/shadowless1/var
+
 # Switch the service to commit $1: its image and ITS unit file (from git, so a rollback never uses the
 # failed commit's unit). Every step returns its own error: `set -e` does not apply inside an `if`.
 switch_to() {
@@ -209,6 +294,16 @@ fi
 echo "$sha" > "$state/current"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $sha previous=$prev" >> "$state/deploy.log"
 
+# The app follows the core: its link moves only now that the core of the same commit is healthy (an
+# atomic rename of a new link over the old one). A commit without app/ serves no app.
+if [[ -n $app_new ]]; then
+  ln -sfn "$app_new" "$app_root/current.new"
+  mv -T "$app_root/current.new" "$app_root/current"
+  echo "serving the app build of $sha"
+else
+  rm -f "$app_root/current"
+fi
+
 echo "== proxy"
 site=$(cat /etc/shadowless1/site)
 sed "s|__SITE__|$site|" deploy/Caddyfile > /etc/caddy/Caddyfile.new
@@ -220,6 +315,11 @@ if ! caddy_error=$(caddy validate --config /etc/caddy/Caddyfile.new --adapter ca
 fi
 mv /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile
 systemctl reload caddy
+
+# Keep the app builds of the current and the previous deploy; remove older ones.
+if [[ -d $app_root ]]; then
+  find "$app_root" -mindepth 1 -maxdepth 1 -type d ! -name "$sha" ! -name "$prev" -exec rm -rf {} +
+fi
 
 # Keep the images of the current and the previous deploy (for a quick rollback); remove older ones.
 docker images shadowless1-core --format '{{.Tag}}' | grep -vxE "current|$sha|$prev" \
