@@ -83,3 +83,4 @@ Do not say "done" without this evidence.
 - If a product question is unclear, ask your coordinator or human. Don't guess.
 - Write issues, PRs, commits and code comments in English.
 - Record significant decisions as one line each in `docs/process-log.md`: time, decision, why.
+- End every report to a human or to your coordinator with a short **Still in progress** section: unfinished items, who has them, their state (in progress / waiting for review / waiting for merge / blocked by what), and decisions needed from a human.
