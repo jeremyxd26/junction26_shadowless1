@@ -1,0 +1,65 @@
+"""Builds Number objects and the evidence spec behind each one; shared by every tool.
+
+`transactions()` numbers are computed by `selection.value_of` over the classified rows, so evidence
+resolution re-runs exactly the same code. `composite()` numbers are computed from other numbers by
+`evidence.compute_formula`.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+from core.tools import config, evidence
+from core.tools.formatting import display
+from core.tools.models import Number, Period, Unit
+from core.tools.selection import Selection, select, value_of
+
+DEFAULT_UNITS = {
+    config.METHODS["total"]: Unit.EUR,
+    config.METHODS["basket_total"]: Unit.EUR,
+    config.METHODS["n_tx"]: Unit.COUNT,
+    config.METHODS["row_count"]: Unit.COUNT,
+    config.METHODS["basket_month_avg"]: Unit.EUR_PER_MONTH,
+    config.METHODS["spend_month"]: Unit.EUR_PER_MONTH,
+    config.METHODS["typical_month"]: Unit.EUR_PER_MONTH,
+    config.METHODS["bill_due"]: Unit.EUR,
+    config.METHODS["bills_due"]: Unit.EUR,
+}
+
+
+def model_number(n: Number | None) -> dict[str, Any] | None:
+    """What the model may see of a Number: id, value, unit and label; no evidence ref (R3)."""
+    if n is None:
+        return None
+    return {"id": n.id, "value": n.value, "unit": n.unit.value, "label": n.label}
+
+
+class NumberBuilder:
+    """Collects the specs of every number a tool call produces (written once, at the end)."""
+
+    def __init__(self, ctx, rows) -> None:
+        self.ctx = ctx
+        self.rows = rows
+        self.specs: dict[str, dict[str, Any]] = {}
+
+    def number(self, value: Decimal, unit: Unit, period: Period, method: str, spec: dict, label: str) -> Number:
+        ref = evidence.make_ref(spec)
+        self.specs[ref] = spec
+        return Number(value=int(value) if unit is Unit.COUNT else float(value), unit=unit, period=period,
+                      method=method, evidence_ref=ref, label=label,
+                      display=display(value, unit, self.ctx.language))
+
+    def transactions(self, sel: Selection, method: str, period: Period, label: str, *,
+                     unit: Unit | None = None, params: dict[str, Any] | None = None) -> tuple[Number, Decimal]:
+        value = value_of(select(self.rows, sel), sel, method, params)
+        spec = evidence.transactions_spec(self.ctx.customer_id, self.ctx.as_of, method, sel, value, params)
+        return self.number(value, unit or DEFAULT_UNITS[method], period, method, spec, label), value
+
+    def composite(self, method: str, formula: str, parts: dict[str, tuple[Number, Decimal]], unit: Unit,
+                  period: Period, label: str, *, params: dict[str, Any] | None = None) -> tuple[Number, Decimal]:
+        values = {role: v for role, (_, v) in parts.items()}
+        value = evidence.compute_formula(formula, values, params)
+        spec = evidence.composite_spec(self.ctx.customer_id, self.ctx.as_of, method, formula,
+                                       {role: n.evidence_ref for role, (n, _) in parts.items()}, value, params)
+        return self.number(value, unit, period, method, spec, label), value

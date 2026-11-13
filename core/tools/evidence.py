@@ -18,7 +18,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from core.tools import aliases, config
+from core.tools import aliases, labels
 from core.tools.classify import classify
 from core.tools.db import load_transactions
 from core.tools.selection import Selection, select, value_of
@@ -48,8 +48,9 @@ def make_ref(spec: dict[str, Any]) -> str:
     return "ev_" + hashlib.sha256(canonical_json(spec).encode("utf-8")).hexdigest()[:12]
 
 
-def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection, value: Decimal) -> dict[str, Any]:
-    return {
+def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection, value: Decimal,
+                      params: dict[str, Any] | None = None) -> dict[str, Any]:
+    spec = {
         "v": SPEC_VERSION,
         "kind": "transactions",
         "customer_id": customer_id,
@@ -58,17 +59,23 @@ def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection
         "selection": sel.to_spec(),
         "value": str(value),
     }
+    if params:  # only when set (for example n_months), so refs of other numbers do not change
+        spec["params"] = params
+    return spec
 
 
 # Composite formulas: how a value is computed from its parts (all Decimal, rounded at the end).
+# A tuple fixes the roles and their order; None means any number of parts in the given order.
 FORMULAS = {
     "difference": ("current", "baseline"),     # current - baseline, cents
     "pct_change": ("current", "baseline"),     # (current - baseline) / baseline * 100, 1 decimal
     "share_pct": ("part", "whole"),            # part / whole * 100, 1 decimal
+    "scale": ("base",),                        # base * factor_num / factor_den, cents
+    "sum": None,                               # sum of all parts, cents
 }
 
 
-def compute_formula(formula: str, values: dict[str, Decimal]) -> Decimal:
+def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, Any] | None = None) -> Decimal:
     from core.tools.formatting import money, pct
 
     if formula == "difference":
@@ -77,21 +84,30 @@ def compute_formula(formula: str, values: dict[str, Decimal]) -> Decimal:
         return pct((values["current"] - values["baseline"]) / values["baseline"] * 100)
     if formula == "share_pct":
         return pct(values["part"] / values["whole"] * 100)
+    if formula == "scale":
+        p = params or {}
+        return money(values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"])))
+    if formula == "sum":
+        return money(sum(values.values(), Decimal("0")))
     raise ValueError(f"unknown formula {formula!r}")
 
 
 def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
-                   parts: dict[str, str], value: Decimal) -> dict[str, Any]:
-    return {
+                   parts: dict[str, str], value: Decimal, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    roles = FORMULAS[formula] or tuple(parts)
+    spec = {
         "v": SPEC_VERSION,
         "kind": "composite",
         "customer_id": customer_id,
         "as_of": as_of.isoformat(),
         "method": method,
         "formula": formula,
-        "parts": [{"role": role, "ref": parts[role]} for role in FORMULAS[formula]],
+        "parts": [{"role": role, "ref": parts[role]} for role in roles],
         "value": str(value),
     }
+    if params:  # only when set, so refs of other numbers do not change
+        spec["params"] = params
+    return spec
 
 
 # ---- store ---------------------------------------------------------------------------------------
@@ -192,17 +208,14 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
             part_values[part["role"]] = Decimal(part_spec["value"])
             parts.append({"role": part["role"], "ref": part["ref"], "method": part_spec["method"],
                           "value": part_spec["value"]})
-        recomputed = compute_formula(spec["formula"], part_values)
+        recomputed = compute_formula(spec["formula"], part_values, spec.get("params"))
         return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=recomputed == value)
 
     sel = Selection.from_spec(spec["selection"])
     history = load_transactions(conn, customer_id, as_of)
-    rows = select(classify(history, as_of), sel)
-    recomputed = value_of(rows, sel, spec["method"])
-    if spec["method"] == config.METHODS["total"]:
-        from core.tools.formatting import money
-
-        recomputed = money(recomputed)
+    overrides = labels.basket_labels(conn, customer_id, as_of)  # the same labels the tools used
+    rows = select(classify(history, as_of, overrides), sel)
+    recomputed = value_of(rows, sel, spec["method"], spec.get("params"))
     rows.sort(key=lambda c: (c.tx.tx_date, c.tx.tx_at, c.tx.id), reverse=True)
     offset = _cursor_offset(cursor)
     page = rows[offset:offset + limit]
