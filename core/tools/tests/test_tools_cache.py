@@ -363,3 +363,13 @@ def test_prepare_many_with_the_cache_off_still_runs_everything():
     expected = [tool(fresh_ctx, FakeArgs(amount=a)) for a in (1, 2, 3)]
     assert tool.calls == 6 and [dump(r) for r in results] == [dump(e) for e in expected]
     assert [r.data.total.id for r in results] == ["n1", "n4", "n6"]   # the shared count ref keeps n2
+
+
+def test_an_unwritable_cache_directory_keeps_the_memory_layer(tmp_path, tool):
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("a file where the cache directory should be")   # like a read-only file system
+    disk = ToolCache(mode="disk", directory=blocker / "cache")
+    first = disk.run("fake", FakeArgs, tool, ctx_for(), {})
+    second = disk.run("fake", FakeArgs, tool, ctx_for(), {})
+    assert tool.calls == 1 and dump(first) == dump(second) and disk.stats.hits == 1
+    assert disk.invalidate_customer("CUST00860") == 1

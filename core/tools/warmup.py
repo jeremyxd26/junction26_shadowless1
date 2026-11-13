@@ -4,9 +4,11 @@
     python -m core.tools.warmup --lang en --customers CUST00860
     python -m core.tools.warmup --list               # the plan, no database
 
-Run it at the end of a deploy (after the service restart) and by hand. It fills the disk layer of the
-tool cache (core/tools/cache.py, TOOL_CACHE=disk, var/cache), which the service reads on its first
-request. For each persona and language it calls the tools of the overview and of the four questions of
+Run it at the end of a deploy (after the service restart) and by hand, inside the service container,
+so it writes the sqlite file the service reads (/srv/var/cache, the persistent var/ of #78):
+`docker exec <service container> python -m core.tools.warmup || true`. It must never fail a deploy: a
+failed call is reported and skipped, and the exit code is only informative. It fills the disk layer of
+the tool cache (core/tools/cache.py, TOOL_CACHE=disk), which the service reads on its first request. For each persona and language it calls the tools of the overview and of the four questions of
 the challenge brief, with the same arguments the overview and the answer pipeline's question rules use,
 and prints the time and the source (computed or already cached) of every call.
 

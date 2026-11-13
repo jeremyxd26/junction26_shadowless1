@@ -8,10 +8,16 @@ and the code that computes them (agent-core.md section 6.1). The key holds all o
 - the code version is a hash of core/tools/*.py and core/metrics/*.sql, so a deploy never serves a
   result of older code.
 
+Correctness comes from the key alone: a changed label set, as_of or code version is a different key, so
+a stale entry is never served, whichever process wrote it. `invalidate_customer` only frees memory.
+
 Layers: an LRU in memory (bounded by entries) and, in mode `disk`, a small sqlite file under var/cache
 that the warm-up command (core/tools/warmup.py) fills and the service reads. Setting `TOOL_CACHE` is
 `off`, `memory` or `disk` (default); `TOOL_CACHE_MAX_ENTRIES` and `TOOL_CACHE_DIR` tune it. Settings
-come from the environment, else from the repository's .env.
+come from the environment, else from the repository's .env. In the service container the repository
+root is /srv and /srv/var is the persistent bind mount (#78), so the default directory is the right
+one there; the warm-up runs inside that container, so both processes share one sqlite file. If the
+directory cannot be written, the disk layer logs a warning and the memory layer still works.
 
 Number ids (n1, n2, ...) belong to one answer's registry, so a cached result is never handed out with
 the ids of the call that computed it. A miss runs the tool against a private registry and records the
@@ -394,7 +400,8 @@ class ToolCache:
             self._memory.popitem(last=False)
 
     def invalidate_customer(self, customer_id: str) -> int:
-        """Drop every entry of one customer (called after a label write). Returns the number dropped."""
+        """Drop every entry of one customer, after a label write. Memory hygiene only: the label set is
+        in the key, so the old entries could never be served again anyway. Returns the number dropped."""
         with self._lock:
             keys = [k for k, e in self._memory.items() if e.customer_id == customer_id]
             for k in keys:
