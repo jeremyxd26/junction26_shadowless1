@@ -9,7 +9,8 @@ const SIGN: Record<Component['operation'], string> = { add: '+', subtract: '−'
 
 /**
  * Components exactly as the API lists them: label, sign and chip. The app never adds
- * them up; `total` only repeats a number the API already sent (the headline).
+ * them up; `total` only repeats a number the API already sent (the headline), and the
+ * caller passes it only when that number is the rows' result.
  */
 function ComponentRows({ components, total }: { components: Component[]; total?: { label: string; number: Num } }) {
   return (
@@ -86,9 +87,14 @@ export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
           <span className="text-sm text-muted">{card.monthly.period.label}</span>
         </div>
 
-        {card.reason && <Reason reason={card.reason} />}
+        {/* "= monthly" only when it really is the result of the rows. When the month is clamped
+            to 0 (a reason is sent), the rows would not add up to it, so the reason explains the 0. */}
+        <ComponentRows
+          components={card.monthly_components}
+          total={!card.reason && card.monthly.value > 0 ? { label: card.title, number: card.monthly } : undefined}
+        />
 
-        <ComponentRows components={card.monthly_components} total={{ label: card.title, number: card.monthly }} />
+        {card.reason && <Reason reason={card.reason} />}
 
         {card.actions.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">

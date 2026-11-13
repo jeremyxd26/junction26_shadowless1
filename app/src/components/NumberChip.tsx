@@ -11,8 +11,8 @@ const sizes: Record<Size, string> = {
   inline:
     'relative min-h-8 px-2.5 text-[15px] leading-5 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
-  // Headline of a white card (safe to save): large, but fits "€12,345.67 a month" at 375 px.
-  lg: 'min-h-14 px-4 text-[30px] leading-9 tracking-tight',
+  // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
+  lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
   hero: 'min-h-16 px-5 text-[40px] leading-[44px] tracking-tight',
 }
 
