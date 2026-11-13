@@ -25,6 +25,18 @@ Settings:
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
+## Dev environment
+
+The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
+
+To deploy `origin/dev`, you need the instance SSH key at `~/.ssh/shadowless1_dev_ed25519`:
+
+```
+bash deploy/dev.sh
+```
+
+The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+
 ## Data
 
 **The shared team database is already loaded. Do not run the loader against it.** The loader is only for an empty database: a fresh instance or a local one. On a database where `transactions` already has rows, it refuses to run. A re-run with `--force` drops and recreates every table, so the data is gone for everyone for several minutes.
@@ -85,6 +97,15 @@ Each declared Number object must also match an expected value: same unit, value 
 - **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
 - **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
+
+## Tests
+
+From the repository root:
+```
+pip install -r core/requirements.txt
+pytest core/tools -q
+```
+The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
 
 ## License
 
