@@ -81,6 +81,11 @@ class BillsDueMismatch(RuntimeError):
     """Internal error: the shared bills-due Number and 03's bills_due_eur differ (they must be equal)."""
 
 
+class NoTransactions(ValueError):
+    """The customer has no transactions up to as_of, so there is nothing to compute (a ValueError, so
+    callers that caught ValueError before keep working)."""
+
+
 def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
     GetSafeToSpendArgs.model_validate(args or {}) if not isinstance(args, GetSafeToSpendArgs) else args
     lang = ctx.language
@@ -91,7 +96,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR}
     row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
-        raise ValueError("no transactions up to as_of for this customer")
+        raise NoTransactions("no transactions up to as_of for this customer")
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()
