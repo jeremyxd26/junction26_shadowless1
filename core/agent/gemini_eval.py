@@ -150,6 +150,9 @@ class PipelineSource:
             print(f"      [{row.outcome}] first card {row.first_card_ms} ms, first text {row.first_text_ms} ms, "
                   f"done {row.done_ms} ms; {calls}; tokens {row.prompt_tokens}/{row.thought_tokens}/"
                   f"{row.output_tokens}; ${row.cost_usd:.5f}\n      {row.text}", flush=True)
+            for attempt in record.get("composer_attempts") or []:
+                if attempt.get("validation") not in (None, "ok"):
+                    print(f"      rejected draft: {attempt.get('validation')}", flush=True)
 
         if error is not None or done is None:
             return Answer(text="", outcome="error", error=((error or {}).get("error") or {}).get("code", "no done event"))
