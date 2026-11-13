@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# local agent state
+.claude/worktrees/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# build / deps
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+.DS_Store
+Thumbs.db
+
+# partner datasets (partner terms, too large for git)
+data/
+*.csv

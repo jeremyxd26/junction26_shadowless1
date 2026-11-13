@@ -1,0 +1,31 @@
+{
+  "model": "opus",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    },
+    "claude-fable-5-2": {
+      "effortLevel": "high"
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash .claude/hooks/sync-env.sh",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash .claude/hooks/board.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
