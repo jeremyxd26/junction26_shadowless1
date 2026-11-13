@@ -1,7 +1,7 @@
 """Select demo personas and compute their reference answers (issue #22).
 
 Usage:
-    python core/config/select_personas.py                                  # screen, pick three
+    python core/config/select_personas.py                                  # the scan as it was run
     python core/config/select_personas.py --from CUST00000 --to CUST01000
     python core/config/select_personas.py --answers CUST00860,CUST00493,CUST00349,CUST00849 --out answers.json
 
@@ -341,9 +341,9 @@ def answers(db: Db, cid: str, cells: dict) -> dict:
     a["direct_dining_window"] = db.query(DIRECT_DINING_WINDOW, {"cid": cid, **p})[0]
     a["direct_dining_by_month"] = db.query(DIRECT_DINING, {"cid": cid, **p})
     s = a["screen"]
-    a["peer"] = {"peer_level": "age_band+area3", "peer_group": f"{s['age_band']} {s['area3']}",
-                 "cell_others": cell_others(db, s["age_band"], s["area3"], cells),
-                 "values": "pending: from 06_peer_benchmark.sql on the marts of #21"}
+    a["peer_cell_others"] = cell_others(db, s["age_band"], s["area3"], cells)
+    # 06 reads the marts of core/marts/build.py when they hold rows for this as_of (peer_source = marts).
+    a["peer"] = db.one(METRICS / "06_peer_benchmark.sql", cid)
     return a
 
 
@@ -371,7 +371,13 @@ def print_answer(a: dict) -> None:
           + ", ".join(f"{d['month']} {d['eur']} ({d['n']})" for d in a["direct_dining_by_month"]))
     print(f"  profile: {pr['profile']} {pr['traits']}, keep rate {pr['keep_rate_pct']}%, "
           f"everyday share {pr['everyday_share_pct']}%, regular share {pr['regular_share_pct']}%")
-    print(f"  peers {pe['peer_group']}: {pe['cell_others']} other customers in the cell; values {pe['values']}")
+    print(f"  peers ({a['peer_cell_others']} other customers in the cell on the customers table):")
+    for r in pe:
+        if r["metric"] in ("spend_total", "regular_essentials", "unexpected_necessities", "everyday_spending"):
+            print(f"    {r['metric']:<23} you {r['you_month_eur']:>8}  median {r['peer_median_month_eur']}  "
+                  f"p25 {r['peer_p25_month_eur']}  p75 {r['peer_p75_month_eur']}  percentile {r['percentile']}  "
+                  f"vs median {r['vs_median_pct']}%  {r['peer_level']} {r['peer_group']} n={r['peer_n']} "
+                  f"shown={r['shown']} source={r.get('peer_source')}")
 
 
 def main() -> None:
