@@ -25,10 +25,25 @@ Settings:
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+- `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `dev` and `main`: the tests without a database, the eval set and red-team regressions (no model calls), `ruff check .` (`pip install -r requirements-dev.txt`) and a gitleaks scan of the whole history (`.gitleaks.toml`). It uses no secrets.
+
+### Spike reviews and the demo reset
+
+The first `GET /api/overview/{customer_id}` of a customer with a qualifying spike creates a pending review in the `spike_reviews` table. The service creates that table if it is missing. While the review is pending, the purchase is "Waiting for your answer" (`unclassified`). `POST /api/baskets/label` stores the answer. Design: `docs/design/agent-core.md` section 7.8; contract: `contracts/api.md` sections 6 and 10.
+
+The answers live only in `spike_reviews`, on the shared database that the dev environment also uses. To start the demo again, delete the personas' reviews from any checkout whose `.env` points at that database. The script refuses to run without explicit customer ids:
+
+```
+python core/scripts/reset_reviews.py CUST00860                                  # Sanna
+python core/scripts/reset_reviews.py CUST00860 CUST00493 CUST00349 CUST00849    # the four personas
+python core/scripts/reset_reviews.py --dry-run CUST00860                        # show, delete nothing
+```
+
+Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
 
 ## Dev environment
 
@@ -111,6 +126,8 @@ pip install -r core/requirements.txt
 pytest core/tools -q
 ```
 The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
+
+The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 
 ## License
 

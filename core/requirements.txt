@@ -5,6 +5,7 @@ pydantic-settings>=2.16
 PyYAML>=6.0
 pydantic>=2.7
 pyyaml>=6.0
+tzdata>=2024.1  # Europe/Helsinki for the spike-review calendar week, also where the OS has no zoneinfo
 # tests (Starlette's TestClient is built on httpx2)
 pytest>=9.2
 httpx2>=2.16
