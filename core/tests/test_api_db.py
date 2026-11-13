@@ -61,7 +61,9 @@ def test_lead_overview_matches_the_reference_answers(lead_overview):
     assert baskets["total"]["value"] == 3010.59 and baskets["total"]["unit"] == "eur_per_month"
     housing = next(i for i in bills["items"] if i["bill_id"] == "bill_housing_payment")
     assert (housing["typical_month"]["value"], housing["status"]) == (836.65, "done_this_month")
-    assert sum(round(i["due_until_payday"]["value"], 2) for i in bills["items"]) == pytest.approx(bills["total"]["value"])
+    # metrics wins: the total is 03's rounded sum; the items are rounded each (0.01 apart at most each)
+    items = sum(i["due_until_payday"]["value"] for i in bills["items"])
+    assert abs(items - bills["total"]["value"]) <= 0.01 * len(bills["items"]) + 1e-9
 
 
 def test_overview_equals_the_tool_outputs(lead_overview):
