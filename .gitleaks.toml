@@ -1,0 +1,42 @@
+# gitleaks configuration (issues #82 and #83), used by the secret-scan job in .github/workflows/ci.yml:
+#   gitleaks git --config .gitleaks.toml --log-opts="--all" --redact .
+#
+# The built-in rules stay on. One rule is added for database URLs with a password, the kind of
+# secret this project actually has. Allowlists cover only synthetic test values, each with a reason.
+# Never add a real value here: a real hit means the secret is leaked and must be rotated.
+
+title = "shadowless1 secret scan"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "postgres-url-password"
+description = "PostgreSQL connection URL with a password"
+regex = '''postgres(?:ql)?://[^:/@\s"'`]+:([^@\s"'`]+)@'''
+secretGroup = 1
+keywords = ["postgres"]
+
+    [[rules.allowlists]]
+    # Synthetic passwords of the log-mask, settings and error-text canary tests, and of the URL-encoding examples in
+    # the deploy script and its docs. They prove that a URL never reaches a log or a response; none of
+    # them is or was a real credential.
+    description = "Synthetic passwords of the log-mask self-tests and the URL-encoding examples"
+    condition = "AND"
+    paths = [
+        '''^core/tests/(conftest|test_log_redaction|test_settings|test_api_endpoints)\.py$''',
+        '''^core/agent/tests/conftest\.py$''',
+        '''^core/tools/tests/test_tools_pure\.py$''',
+        '''^deploy/remote-deploy\.sh$''',
+        '''^docs/deploy\.md$''',
+    ]
+    regexes = [
+        '''^(not-a-real-password|SECRETPW%zz|SEC|PWMARKER|pw|p%40ss|p|p/ss|hunter2-secret|canary_pw|secret|\{FAKE_SECRET\}(%ZZ)?)$''',
+    ]
+
+[[allowlists]]
+description = "The synthetic constant of the log-mask self-test in core/tools/tests (never a real credential)."
+condition = "AND"
+paths = ['''^core/tools/tests/test_tools_pure\.py$''']
+regexTarget = "line"
+regexes = ['''FAKE_SECRET = "NotARealPassw0rd"''']
