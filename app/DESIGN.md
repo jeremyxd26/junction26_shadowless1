@@ -4,7 +4,7 @@ The design foundation for the Sentti money-coach module: a mobile web app, 375 p
 
 - Tokens: [`design/tokens.css`](design/tokens.css). These are CSS custom properties. Colour, type, radius, shadow and easing tokens use Tailwind v4 theme namespaces; spacing, durations, `--gutter` and `--tap-min` are mapped by hand.
 - Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.2.0. This file never redefines a field; it only says how to show one.
-- The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. The palette, components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
+- The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. Colour values follow that look closely (the greens, neutrals and page tint of S-mobiili); the components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
 
 Component code and screens are built in their own issues and follow these rules. Section 8 lists what is still owed by other issues.
 
@@ -14,7 +14,7 @@ Component code and screens are built in their own issues and follow these rules.
 3. **Fact and estimate never look the same.** An estimate always carries the "Estimate" badge.
 4. **Baskets are icon + label + colour, always together.** Colour is never the only signal.
 5. **The thumb zone.** The input and the main buttons sit at the bottom. Touch targets are at least 44 × 44 px.
-6. **Flat and calm.** White cards on a light green page, hairline borders, no drop shadows except on things that float.
+6. **Flat and calm, like S-mobiili.** White cards with a thin neutral border on a light green page, no shadows on cards. One strong green carries the brand; text is near black.
 7. **A friendly tone that never moralises.** See section 6.
 
 ## 2. Tokens
@@ -22,81 +22,89 @@ Component code and screens are built in their own issues and follow these rules.
 ### 2.1 Colour
 | Token | Value | Use |
 |---|---|---|
-| `--color-page` | `#F3F8F4` | Background behind everything |
-| `--color-surface` | `#FFFFFF` | Cards, sheets, inputs |
-| `--color-sunken` | `#EBF2ED` | Skeletons, bar tracks, the lesson box (inputs use `--color-surface`) |
-| `--color-line` | `#DCE6DF` | Decorative hairlines (card borders, row dividers) |
-| `--color-line-strong` | `#7B8F83` | Borders that carry meaning (inputs, secondary buttons); 3:1 on white |
-| `--color-ink` | `#0E3A25` | Primary text (dark green) |
-| `--color-ink-2` | `#26302A` | Long body text |
-| `--color-muted` | `#55635A` | Secondary text, captions, periods |
-| `--color-brand` | `#00703C` | Links, action chips, the term underline, the focus ring on light surfaces |
-| `--color-deep` | `#0B4A2E` | The "Sentti asks" card surface, the send button, user bubbles |
-| `--color-mint` / `-hover` | `#8DF29A` / `#5EE97A` | Primary button background (text is `--color-ink`) |
-| `--color-mint-tint` / `-line` | `#E4F5E8` / `#9FD8AB` | Number chips, suggested-question chips |
-| `--color-estimate` / `-tint` | `#0B6378` / `#E2F1F5` | The "Estimate" badge |
-| `--color-danger` / `-tint` | `#B3261E` / `#FDECEC` | Errors only, never spending |
-| `--color-warning` / `-tint` | `#8A5300` / `#FFF2DA` | Warnings |
-| `--color-up` / `--color-down` | `#00703C` / `#9A4A00` | Comparison tone, always with an arrow and words |
-| `--color-scrim` | `rgba(14,58,37,.38)` | Behind bottom sheets |
+| `--color-page` | `#EBF7EC` | Light green page behind everything |
+| `--color-surface` | `#FFFFFF` | Cards, sheets, inputs (flat, 1 px `--color-line` border) |
+| `--color-sunken` | `#F5F5F5` | Skeletons, bar tracks, the lesson box (inputs use `--color-surface`) |
+| `--color-line` | `#E6E6E6` | Thin neutral card border and row dividers (decorative) |
+| `--color-line-strong` | `#808080` | Borders that carry meaning (inputs, secondary buttons); 3:1 on white and on the page |
+| `--color-ink` | `#004628` | Key figures, takeaways, amounts (darkest green) |
+| `--color-ink-2` | `#1F1F1F` | Body text (near black) |
+| `--color-muted` | `#666666` | Meta text: captions, periods, dates |
+| `--color-brand` | `#007841` | Bold titles, row labels, chevrons, pictograms, links, action chips, the term underline, the focus ring on light surfaces |
+| `--color-deep` | `#004628` | The "Sentti asks" card surface, the send button, user bubbles |
+| `--color-hero` / `--color-on-hero` / `--color-on-hero-muted` | `#007841` / `#FFFFFF` / `#D2FCD5` | The safe-to-spend block: white figures on green |
+| `--color-on-deep` / `--color-on-deep-muted` | `#FFFFFF` / `#D2FCD5` | Text on `--color-deep` |
+| `--color-mint` / `-hover` | `#91FA9B` / `#49F37B` | Primary button background (text is `--color-ink`) |
+| `--color-mint-tint` / `-line` | `#D2FCD5` / `#99D59F` | Number chips, suggested-question chips |
+| `--color-estimate` / `-tint` | `#363636` / `#F5F5F5` | The "Estimate" badge: neutral and dashed, so it never looks like a basket |
+| `--color-danger` / `-tint` | `#B70000` / `#FFEDED` | Errors only, never spending |
+| `--color-warning` / `-tint` | `#885600` / `#FFF1D8` | Warnings (rare; the same amber as ☕️, always with an icon and words) |
+| `--color-up` / `--color-down` | `#007841` / `#885600` | Comparison tone, always with an arrow and words |
+| `--color-scrim` | `rgba(31,31,31,.40)` | Behind bottom sheets |
 
-**Baskets.** These are the keys from `contracts/api.md` section 1. The strong colour is used for text and bars; the tint is the chip and tile background.
+**Baskets.** These are the keys from `contracts/api.md` section 1. The hues come from the same palette as the rest of the app (green, teal, amber), so no basket looks foreign. The strong colour is used for text and bars; the tint is the chip and tile background.
 
 | Basket | Icon | Strong | Tint |
 |---|---|---|---|
-| `regular_essentials` "Regular essentials" | 🏠 | `--color-basket-essentials` `#2F5DA8` | `#E8EFFA` |
-| `unexpected_necessities` "Unexpected necessities" | 🔧 | `--color-basket-unexpected` `#9A4A00` | `#FFEFDA` |
-| `everyday_spending` "Everyday spending" | ☕️ | `--color-basket-everyday` `#A12D68` | `#FBE8F1` |
-| `unclassified` "Waiting for your answer" | ? | `--color-waiting` `#55635A` | `#EEF2EF` |
+| `regular_essentials` "Regular essentials" | 🏠 | `--color-basket-essentials` `#007841` | `#EBF7EC` |
+| `unexpected_necessities` "Unexpected necessities" | 🔧 | `--color-basket-unexpected` `#006E87` | `#E0F4FF` |
+| `everyday_spending` "Everyday spending" | ☕️ | `--color-basket-everyday` `#885600` | `#FFF1D8` |
+| `unclassified` "Waiting for your answer" | ? | `--color-waiting` `#666666` | `#F5F5F5` |
 
-The `unclassified` state is neutral: a dashed tile, grey text and a hatched bar. It appears only while a review is pending, and it is never an answer option.
+The 🏠 tint equals the page tint, so a 🏠 tile always sits on a white card, never directly on the page. The `unclassified` state is neutral: a dashed tile, grey text and a hatched bar. It appears only while a review is pending, and it is never an answer option.
 
 ### 2.2 Contrast (WCAG 2.x AA)
-Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, the focus ring) need 3:1. All 38 rows pass (34 distinct colour pairs; a pair used for two purposes is listed once per use). Ratios are computed from `tokens.css`.
+Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, focus rings, chevrons) need 3:1. All 44 rows pass (41 distinct colour pairs; a pair used for two purposes is listed once per use). Ratios are computed from `tokens.css`. `--color-brand` on `--color-deep` is only 1.97:1, so the focus ring on dark surfaces is `--color-mint`.
 
 | Foreground | Background | Use | Ratio | Needs |
 |---|---|---|---|---|
-| `--color-ink` `#0E3A25` | `--color-surface` `#FFFFFF` | Body text, titles | 12.72:1 | 4.5:1 |
-| `--color-ink` `#0E3A25` | `--color-page` `#F3F8F4` | Text on the page background | 11.84:1 | 4.5:1 |
-| `--color-ink-2` `#26302A` | `--color-surface` `#FFFFFF` | Long body text | 13.65:1 | 4.5:1 |
-| `--color-muted` `#55635A` | `--color-surface` `#FFFFFF` | Secondary text | 6.33:1 | 4.5:1 |
-| `--color-muted` `#55635A` | `--color-page` `#F3F8F4` | Secondary text on page | 5.89:1 | 4.5:1 |
-| `--color-muted` `#55635A` | `--color-sunken` `#EBF2ED` | Lesson box, skeleton labels | 5.56:1 | 4.5:1 |
-| `--color-brand` `#00703C` | `--color-surface` `#FFFFFF` | Links, action chips | 6.21:1 | 4.5:1 |
-| `--color-brand` `#00703C` | `--color-page` `#F3F8F4` | Links on page | 5.78:1 | 4.5:1 |
-| `--color-brand` `#00703C` | `--color-mint-tint` `#E4F5E8` | Brand text on mint tint | 5.48:1 | 4.5:1 |
-| `--color-ink` `#0E3A25` | `--color-mint` `#8DF29A` | Primary button | 9.27:1 | 4.5:1 |
-| `--color-ink` `#0E3A25` | `--color-mint-tint` `#E4F5E8` | Number chip, suggested-question chip | 11.22:1 | 4.5:1 |
-| `--color-estimate` `#0B6378` | `--color-estimate-tint` `#E2F1F5` | Estimate badge | 5.91:1 | 4.5:1 |
-| `--color-danger` `#B3261E` | `--color-danger-tint` `#FDECEC` | Error text | 5.72:1 | 4.5:1 |
-| `--color-warning` `#8A5300` | `--color-warning-tint` `#FFF2DA` | Warning text | 5.72:1 | 4.5:1 |
-| `--color-basket-essentials` `#2F5DA8` | `--color-basket-essentials-tint` `#E8EFFA` | 🏠 basket chip | 5.58:1 | 4.5:1 |
-| `--color-basket-unexpected` `#9A4A00` | `--color-basket-unexpected-tint` `#FFEFDA` | 🔧 basket chip | 5.55:1 | 4.5:1 |
-| `--color-basket-everyday` `#A12D68` | `--color-basket-everyday-tint` `#FBE8F1` | ☕️ basket chip | 5.80:1 | 4.5:1 |
-| `--color-waiting` `#55635A` | `--color-waiting-tint` `#EEF2EF` | Waiting chip | 5.60:1 | 4.5:1 |
-| `--color-waiting` `#55635A` | `--color-surface` `#FFFFFF` | Waiting row text | 6.33:1 | 4.5:1 |
-| `--color-on-deep` `#FFFFFF` | `--color-deep` `#0B4A2E` | Review card text | 10.33:1 | 4.5:1 |
-| `--color-on-deep-muted` `#BFE3CB` | `--color-deep` `#0B4A2E` | Review card secondary text | 7.41:1 | 4.5:1 |
-| `--color-mint` `#8DF29A` | `--color-deep` `#0B4A2E` | Question icon on review card (non-text) | 7.53:1 | 3:1 |
-| `--color-basket-essentials` `#2F5DA8` | `--color-surface` `#FFFFFF` | 🏠 bar (non-text) | 6.46:1 | 3:1 |
-| `--color-basket-unexpected` `#9A4A00` | `--color-surface` `#FFFFFF` | 🔧 bar (non-text) | 6.26:1 | 3:1 |
-| `--color-basket-everyday` `#A12D68` | `--color-surface` `#FFFFFF` | ☕️ bar (non-text) | 6.79:1 | 3:1 |
-| `--color-line-strong` `#7B8F83` | `--color-surface` `#FFFFFF` | Borders that carry meaning (non-text) | 3.44:1 | 3:1 |
-| `--color-brand` `#00703C` | `--color-surface` `#FFFFFF` | Focus ring, term underline (non-text) | 6.21:1 | 3:1 |
-| `--color-brand` `#00703C` | `--color-page` `#F3F8F4` | Focus ring on the page (non-text) | 5.78:1 | 3:1 |
-| `--color-mint` `#8DF29A` | `--color-deep` `#0B4A2E` | Focus ring on the review card, user bubble, send button (non-text) | 7.53:1 | 3:1 |
-| `--color-mint` `#8DF29A` | `--color-ink` `#0E3A25` | Focus ring on the toast (non-text) | 9.27:1 | 3:1 |
-| `--color-ink` `#0E3A25` | `--color-danger-tint` `#FDECEC` | Error card text | 11.14:1 | 4.5:1 |
-| `--color-surface` `#FFFFFF` | `--color-ink` `#0E3A25` | Toast text (white on ink) | 12.72:1 | 4.5:1 |
-| `--color-mint` `#8DF29A` | `--color-ink` `#0E3A25` | Toast Undo link | 9.27:1 | 4.5:1 |
-| `--color-surface` `#FFFFFF` | `--color-deep` `#0B4A2E` | User bubble, send icon | 10.33:1 | 4.5:1 |
-| `--color-down` `#9A4A00` | `--color-surface` `#FFFFFF` | "Worse" tone text | 6.26:1 | 4.5:1 |
-| `--color-up` `#00703C` | `--color-surface` `#FFFFFF` | "Better" tone text | 6.21:1 | 4.5:1 |
-| `--color-muted` `#55635A` | `--color-mint-tint` `#E4F5E8` | Muted text on mint tint | 5.58:1 | 4.5:1 |
-| `--color-ink` `#0E3A25` | `--color-estimate-tint` `#E2F1F5` | Open term highlight | 10.99:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-surface` `#FFFFFF` | Key figures, takeaways, amounts | 11.01:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-page` `#EBF7EC` | Key figures on the page | 9.99:1 | 4.5:1 |
+| `--color-ink-2` `#1F1F1F` | `--color-surface` `#FFFFFF` | Body text | 16.48:1 | 4.5:1 |
+| `--color-ink-2` `#1F1F1F` | `--color-page` `#EBF7EC` | Body text on the page | 14.95:1 | 4.5:1 |
+| `--color-muted` `#666666` | `--color-surface` `#FFFFFF` | Meta text | 5.74:1 | 4.5:1 |
+| `--color-muted` `#666666` | `--color-page` `#EBF7EC` | Meta text on the page | 5.21:1 | 4.5:1 |
+| `--color-muted` `#666666` | `--color-sunken` `#F5F5F5` | Lesson box, skeleton labels | 5.27:1 | 4.5:1 |
+| `--color-brand` `#007841` | `--color-surface` `#FFFFFF` | Bold titles, row labels, links, action chips | 5.58:1 | 4.5:1 |
+| `--color-brand` `#007841` | `--color-page` `#EBF7EC` | Titles and links on the page | 5.06:1 | 4.5:1 |
+| `--color-brand` `#007841` | `--color-mint-tint` `#D2FCD5` | Brand text on mint tint | 4.95:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-mint` `#91FA9B` | Primary button | 8.58:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-mint-hover` `#49F37B` | Primary button, hover | 7.55:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-mint-tint` `#D2FCD5` | Number chip, suggested-question chip | 9.77:1 | 4.5:1 |
+| `--color-on-hero` `#FFFFFF` | `--color-hero` `#007841` | Safe-to-spend figure on the green block | 5.58:1 | 4.5:1 |
+| `--color-on-hero-muted` `#D2FCD5` | `--color-hero` `#007841` | Secondary text on the green block | 4.95:1 | 4.5:1 |
+| `--color-on-deep` `#FFFFFF` | `--color-deep` `#004628` | Review card text, user bubble | 11.01:1 | 4.5:1 |
+| `--color-on-deep-muted` `#D2FCD5` | `--color-deep` `#004628` | Review card secondary text | 9.77:1 | 4.5:1 |
+| `--color-estimate` `#363636` | `--color-estimate-tint` `#F5F5F5` | Estimate badge | 11.08:1 | 4.5:1 |
+| `--color-estimate` `#363636` | `--color-surface` `#FFFFFF` | Estimate badge border/text on a card | 12.08:1 | 4.5:1 |
+| `--color-danger` `#B70000` | `--color-danger-tint` `#FFEDED` | Error text | 6.17:1 | 4.5:1 |
+| `--color-ink` `#004628` | `--color-danger-tint` `#FFEDED` | Error card body text | 9.75:1 | 4.5:1 |
+| `--color-warning` `#885600` | `--color-warning-tint` `#FFF1D8` | Warning text | 5.57:1 | 4.5:1 |
+| `--color-basket-essentials` `#007841` | `--color-basket-essentials-tint` `#EBF7EC` | 🏠 basket chip | 5.06:1 | 4.5:1 |
+| `--color-basket-unexpected` `#006E87` | `--color-basket-unexpected-tint` `#E0F4FF` | 🔧 basket chip | 5.18:1 | 4.5:1 |
+| `--color-basket-everyday` `#885600` | `--color-basket-everyday-tint` `#FFF1D8` | ☕️ basket chip | 5.57:1 | 4.5:1 |
+| `--color-waiting` `#666666` | `--color-waiting-tint` `#F5F5F5` | Waiting chip | 5.27:1 | 4.5:1 |
+| `--color-waiting` `#666666` | `--color-surface` `#FFFFFF` | Waiting row text | 5.74:1 | 4.5:1 |
+| `--color-up` `#007841` | `--color-surface` `#FFFFFF` | "Better" tone text | 5.58:1 | 4.5:1 |
+| `--color-down` `#885600` | `--color-surface` `#FFFFFF` | "Worse" tone text | 6.22:1 | 4.5:1 |
+| `--color-surface` `#FFFFFF` | `--color-ink` `#004628` | Toast text (white on ink) | 11.01:1 | 4.5:1 |
+| `--color-basket-essentials` `#007841` | `--color-surface` `#FFFFFF` | 🏠 bar (non-text) | 5.58:1 | 3:1 |
+| `--color-basket-unexpected` `#006E87` | `--color-surface` `#FFFFFF` | 🔧 bar (non-text) | 5.87:1 | 3:1 |
+| `--color-basket-everyday` `#885600` | `--color-surface` `#FFFFFF` | ☕️ bar (non-text) | 6.22:1 | 3:1 |
+| `--color-basket-essentials` `#007841` | `--color-sunken` `#F5F5F5` | 🏠 bar on its track (non-text) | 5.12:1 | 3:1 |
+| `--color-basket-unexpected` `#006E87` | `--color-sunken` `#F5F5F5` | 🔧 bar on its track (non-text) | 5.38:1 | 3:1 |
+| `--color-basket-everyday` `#885600` | `--color-sunken` `#F5F5F5` | ☕️ bar on its track (non-text) | 5.70:1 | 3:1 |
+| `--color-line-strong` `#808080` | `--color-surface` `#FFFFFF` | Meaningful borders (non-text) | 3.95:1 | 3:1 |
+| `--color-line-strong` `#808080` | `--color-page` `#EBF7EC` | Meaningful borders on the page (non-text) | 3.58:1 | 3:1 |
+| `--color-brand` `#007841` | `--color-surface` `#FFFFFF` | Focus ring, term underline, chevrons (non-text) | 5.58:1 | 3:1 |
+| `--color-brand` `#007841` | `--color-page` `#EBF7EC` | Focus ring on the page (non-text) | 5.06:1 | 3:1 |
+| `--color-mint` `#91FA9B` | `--color-deep` `#004628` | Focus ring on the review card, user bubble, send button (non-text) | 8.58:1 | 3:1 |
+| `--color-mint` `#91FA9B` | `--color-hero` `#007841` | Focus ring on the safe-to-spend block (non-text) | 4.35:1 | 3:1 |
+| `--color-mint` `#91FA9B` | `--color-ink` `#004628` | Focus ring on the toast (non-text) | 8.58:1 | 3:1 |
+| `--color-on-deep-muted` `#D2FCD5` | `--color-deep` `#004628` | Question icon on the review card (non-text) | 9.77:1 | 3:1 |
 
 ### 2.3 Type
-Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, then the system UI fonts). Every amount uses tabular figures (`font-variant-numeric: tabular-nums`), so counters never jitter.
+Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree, then the system UI fonts). It was chosen from three open fonts set side by side with the S-mobiili UI font (S Bonus UX, proprietary): Inter is wider and more technical; Nunito Sans is softer; Figtree is closest in width and letter shapes (two-storey a, round friendly bowls) and has tabular figures. Every amount uses tabular figures (`font-variant-numeric: tabular-nums`), so counters never jitter.
 
 | Token | Size / line height | Weight | Use |
 |---|---|---|---|
@@ -106,16 +114,16 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, th
 | `--text-answer` | 16 / 26 | 400 | Coach answer text (looser leading for longer reading) |
 | `--text-lg` | 18 / 26 | 600–700 | Sheet titles |
 | `--text-xl` | 20 / 28 | 700 | The takeaway line |
-| `--text-card-title` | 16 / 22 | 700 | Card titles |
+| `--text-card-title` | 17 / 22 | 700, `--color-brand` | Card titles and row labels (bold green, as in S-mobiili) |
 | `--text-review-amount` | 30 / 34 | 700, tabular | The amount on the review card (#35) |
 | `--text-2xl` | 24 / 30 | 700 | Greeting, secondary big numbers |
-| `--text-hero` | 40 / 44 | 700, −0.02em | Safe to spend |
+| `--text-hero` | 40 / 44 | 700, −0.02em, `--color-on-hero` | Safe to spend, white on the green block |
 | `--text-stage` | 56 / 60 | 700 | Projector mode (`[data-stage]`) |
 
 ### 2.4 Spacing, radii, elevation
 - **Spacing** has a 4 px base: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8` 32, `-10` 40. `--gutter` is 16 px, `--tap-min` is 44 px.
-- **Radii:** `--radius-sm` 8 (small tiles), `-md` 12 (basket tiles, boxes), `-lg` 16 (cards, answer buttons), `-xl` 20 (the review card), `-sheet` 24 (the top of bottom sheets), `-pill` (chips, buttons, inputs).
-- **Elevation:** surfaces are flat (`--shadow-none`), with a 1 px `--color-line` border. `--shadow-sheet` is only for bottom sheets. `--shadow-float` is only for the flying amount (#35), toasts and popovers.
+- **Radii** match the app's cards: `--radius-sm` 6 (small tags), `-md` 8 (basket tiles, boxes), `-lg` 12 (cards, list groups, answer buttons), `-xl` 16 (the hero block and the review card), `-sheet` 20 (the top of bottom sheets), `-pill` (all buttons, chips and inputs).
+- **Elevation:** cards are flat (`--shadow-none`): white, with a 1 px `--color-line` border, never a shadow. `--shadow-sheet` is only for bottom sheets. `--shadow-float` is only for the flying amount (#35), toasts and popovers.
 
 ### 2.5 Motion
 | Token | Value | Use |
@@ -142,7 +150,12 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, th
 
 ### Basket chip and basket row
 - **Chip:** a pill in the basket tint with a white circle holding the emoji, and the label in the strong colour (600).
-- **Row:** a 40 px tinted tile with the emoji, the label (600), and the amount on the right (700, tabular). A 6 px bar in the strong colour on a `--color-sunken` track runs under it. The period caption ("Monthly average, April to September 2026") sits under the list.
+- **Row:** a list row (see "List rows") with a 40 px tinted tile holding the emoji, the label (`--text-card-title`, bold `--color-brand`), and the amount on the right (700, tabular, `--color-ink`). A 6 px bar in the strong colour on a `--color-sunken` track runs under it. The period caption ("Monthly average, April to September 2026") sits under the list.
+
+### List rows
+- The S-mobiili pattern: an icon or tile on the left, a bold green label with a grey meta line under it, the value on the right, and a `--color-brand` chevron (›, 2 px stroke, 20 px) at the far right when the row opens something.
+- Rows sit in one white card with `--color-line` dividers between them; the whole row is the tap target (at least 56 px high).
+- Pictograms are our own outlined line icons in `--color-brand` (2 px stroke), never S-Pankki pictograms.
 
 ### Number chip (evidence)
 - A pill in `--color-mint-tint` with a 1 px `--color-mint-line` border, `--color-ink` text (600, tabular) and a small receipt mark.
@@ -153,18 +166,18 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, th
 
 ### Glossary term (#36)
 - The term is plain text with a 2 px dotted `--color-brand` underline, offset 4 px. It has no background, so it never looks like a number chip.
-- **Open term:** gets a light `--color-estimate-tint` highlight.
+- **Open term:** gets a light `--color-estimate-tint` (grey) highlight.
 - **Tap:** opens a short bottom sheet (at most about 46 % of the screen) with the definition and, when the glossary entry has one, the customer's own number as a number chip.
 
 ### Takeaway line
 `--text-xl`, 700, `--color-ink`: one per answer. An answer never shows more than 3 emphasised spans.
 
 ### Fact vs estimate
-- **Estimate:** a dashed `--color-estimate` pill with a "≈" glyph and `estimate.label`. It is a button that reveals `estimate.text`.
+- **Estimate:** a dashed, neutral `--color-estimate` pill on `--color-estimate-tint` with a "≈" glyph and `estimate.label`. On the green hero block it is drawn in `--color-on-hero` with a dashed `--color-on-hero-muted` border. It is a button that reveals `estimate.text`.
 - **Fact:** no badge, or a quiet "From your transactions" in `--color-muted`.
 
 ### Answer card
-- A white card with a 16 px radius and 16 px padding: the title (`--text-card-title`, 16/22, 700), the subtitle (xs, muted), and the estimate or fact marker top right.
+- A flat white card with a 12 px radius (`--radius-lg`), a 1 px `--color-line` border, no shadow and 16 px padding: the title (`--text-card-title`, bold `--color-brand`), the subtitle (xs, muted), and the estimate or fact marker top right.
 - `metric`, `breakdown` and `whatif` share this frame.
 - At most 2 card `actions`, shown as action chips under the explanation.
 
@@ -193,13 +206,15 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - `privacy_note` with a lock icon.
 
 ### Safe-to-spend widget
-- **Top:** the title and the "Estimate" badge.
-- **Middle:** the hero number (`--text-hero`) and the subtitle period. Then one sentence with "Free until payday" and the irregular reserve as number chips.
-- **Bottom:** the "How is this calculated?" link. It opens a sheet that writes `components` as a sentence formula, for example "balance − bills − essentials − reserve − cushion = free until payday".
-- **Safe to save** is a separate, lower card. It is never added to safe to spend.
+- **The green block** (like the S-mobiili Bonus hero): `--color-hero` background, `--radius-xl`, no border and no shadow. Everything on it is white or `--color-on-hero-muted`.
+- **Top:** the title in `--color-on-hero-muted` (`--text-sm`, 600) and the "Estimate" badge in its on-green form.
+- **Middle:** the hero number (`--text-hero`, `--color-on-hero`) and the subtitle period. Then one sentence with "Free until payday" and the irregular reserve as number chips (mint tint, `--color-ink` text, which stays AA on the chip).
+- **Bottom:** the "How is this calculated? ›" link in white with a white chevron. It opens a sheet that writes `components` as a sentence formula, for example "balance − bills − essentials − reserve − cushion = free until payday".
+- **Focus** on the block uses `--color-mint` (4.35:1).
+- **Safe to save** is a separate, lower white card. It is never added to safe to spend.
 
 ### "Sentti asks" review card (#35)
-- **Surface:** `--color-deep`, radius 20, a mint question icon and "Sentti asks". It must never look like an answer.
+- **Surface:** `--color-deep` (darker than the hero green), `--radius-xl`, a mint question icon and "Sentti asks". It must never look like an answer.
 - **Header row:** "Not sure" sits at the right. It only closes the card, with no API call.
 - **Contents:** the amount (`--text-review-amount`, 700, tabular); the date, category and merchant label; the question text. `question` is `{en, fi}`: show `question[language]`, the language of the request.
 - **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels are `options[].label[language]`.
@@ -263,12 +278,13 @@ Only MIT-compatible material goes into `app/`.
 
 | Item | Licence | Decision | Notes |
 |---|---|---|---|
-| Inter (typeface) | SIL OFL 1.1 | Use | Self-host through `@fontsource/inter`, whose package licence is also OFL-1.1. OFL is compatible with an MIT repository: keep the OFL text with the font files and do not sell the font on its own. |
+| Figtree (typeface) | SIL OFL 1.1 | Use | Self-host through `@fontsource/figtree` (package licence OFL-1.1). OFL is compatible with an MIT repository: keep the OFL text with the font files and do not sell the font on its own. |
+| Inter, Nunito Sans (typefaces) | SIL OFL 1.1 | Considered, not used | Compared with Figtree for #92; Figtree is closer to the S-mobiili UI font. |
 | shadcn/ui | MIT | Use | Components are copied in. |
 | Vercel AI Elements | Apache-2.0 | Use with care | Compatible. Keep `LICENSE`/`NOTICE` and mark modified files. Reportedly being deprecated in favour of shadcn/ui copy-in patterns (date not verified); prefer those. |
 | 21st.dev blocks | Per component, no default | Not used yet | Each block is checked before it is copied in, and its licence is added as a row here. A block with no stated licence ("unknown") is rejected. |
-| S Bonus UX / S Bonus Display | Proprietary (S Group) | Rejected | Replaced by Inter. |
-| S-Pankki / S-Group logos, icons, images | Proprietary | Rejected | None in the repo. Basket icons are system emoji, and line icons are our own inline SVG. |
+| S Bonus UX / S Bonus Display | Proprietary (S Group) | Rejected | Replaced by Figtree. |
+| S-Pankki / S-Group logos, pictograms, images | Proprietary | Rejected | None in the repo. Basket icons are system emoji, and line icons and chevrons are our own inline SVG. Colour values are not assets: they follow the public look of S-mobiili. |
 
 ## 8. Follow-ups (outside #65)
 - **Component code:** shadcn/ui-based components and the mapping of `tokens.css` into the Tailwind `@theme` arrive with the app shell and screen issues. They keep these variable names.
