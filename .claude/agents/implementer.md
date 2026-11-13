@@ -11,7 +11,7 @@ You implement exactly one task. It comes with an issue number, a goal and accept
 - Stay inside the task's scope and area. If you notice something else that is broken, put it in your report instead of fixing it.
 - Read the relevant code first and follow the existing patterns.
 - Make the acceptance criteria pass. Then run the project's checks: tests, plus the run command from the README. Capture their output.
-- Commit on your branch as `<summary> (#N)`. Do not push to `main` and do not change git config.
+- Commit on your branch as `<summary> (#N)`. Do not push to `main` or `dev` and do not change git config.
 - Report in 15 lines or fewer:
   - branch
   - files changed
