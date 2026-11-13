@@ -152,15 +152,36 @@ ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowle
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u caddy -n 50 --no-pager              # proxy and TLS
 ```
 
-The service writes only to the journal (the container runs with `--log-driver none`). Its access log lines contain client IP addresses. If a deploy fails, `remote-deploy.sh` prints the last 30 lines with a mask. The mask hides everything after a URL scheme up to the next space, `host=`/`user=`/`dbname=`/`password=`/`key=`/`token=` values, quoted host names and IP addresses. Check it with `bash deploy/remote-deploy.sh --self-test-mask`:
+The service writes only to the journal (the container runs with `--log-driver none`). Its access log lines contain client IP addresses. If a deploy fails, `remote-deploy.sh` prints the last 30 lines with a mask that errs on the side of hiding:
+- A credential-looking key (also inside names such as `GEMINI_API_KEY` or `DB_PASSWORD`) followed by `:` or `=` hides everything to the end of the line, quotes and spaces included.
+- A URL hides everything after its scheme.
+- A line with `something@host.domain` is hidden as a whole.
+- `Bearer` tokens, the word after `host`/`host name`/`server at`, host names with common top-level domains, and IPv4 and IPv6 addresses are replaced.
+
+`bash deploy/remote-deploy.sh --self-test-mask` masks the sample lines built into the script. It exits 1 if any secret of a sample survives, or if a plain log line changes. Its output (run locally and on the instance):
 
 ```
-postgresql://***
-error: postgresql://*** failed
-connection to server at "***" (x.x.x.x), port 5432 failed
-host=*** user=*** password=*** dbname=***
-GET /healthz?token=*** HTTP/1.1 from x.x.x.x:51234
-INFO:     Application startup complete.
+ok   *** (line hidden: credentials at a host)          <- postgresql://u:p@ss@db.example.com/x?sslmode=require
+ok   *** (line hidden: credentials at a host)          <- error: postgresql://u:p/ss@db.example.com:5432/x failed
+ok   connection to server at "***" (x.x.x.x), port 5432 failed
+ok   host=*** user=app password= ***
+ok   GEMINI_API_KEY= ***
+ok   MY_SERVICE_TOKEN= ***
+ok   APP_SECRET= ***
+ok   password = ***
+ok   PASSWORD: ***
+ok   api_key: ***
+ok   Authorization: ***
+ok   password= ***                                      <- password='s3 cret'
+ok   *** (line hidden: credentials at a host)          <- u:"pa ss word"@db.example.com
+ok   could not translate host name *** to address
+ok   ***                                                <- db.example.com alone on a line
+ok   connection to x:x::x refused
+ok   listening on x:x::x and x:x::x
+ok   GET /healthz?token= ***
+ok   INFO:     Application startup complete.
+ok   shadowless1-core.service: Main process exited, code=exited, status=1/FAILURE
+mask self-test passed
 ```
 
 The journal was checked after the real `DATABASE_URL` was set. Over 105 lines (a restart, the rollback test and a deploy), it contained no part of the URL: 0 matches for the full URL, host, user, password and `postgres://`.

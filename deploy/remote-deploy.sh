@@ -10,25 +10,69 @@
 #   remote-deploy.sh --self-test-mask        # print sample lines through the log mask and exit
 set -euo pipefail
 
-# Log mask for failure output: everything after a URL scheme up to the next space, key=value pairs
-# that name connection details or secrets, quoted host names and IPv4 addresses.
+# Log mask for failure output. It errs on the side of hiding:
+# - a credential-looking key (also inside names such as GEMINI_API_KEY or DB_PASSWORD) followed by
+#   ':' or '=' hides everything to the end of the line, quotes and spaces included;
+# - a URL hides everything after its scheme to the end of the line;
+# - a line with something@host.domain (credentials at a host) is hidden as a whole;
+# - 'Bearer <token>', the word after 'host', 'host name' or 'server at', host-like names with a
+#   common top-level domain, IPv4 and IPv6 addresses are replaced.
 mask() {
   sed -E \
-    -e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^[:space:]]*#\1***#g' \
-    -e 's#\b(host|hostaddr|user|dbname|password|passfile|sslpassword|secret|key|token)=[^[:space:]&]*#\1=***#Ig' \
-    -e 's#"[^"[:space:]]*\.[A-Za-z]{2,}"#"***"#g' \
-    -e 's#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#x.x.x.x#g'
+    -e 's#.*[^[:space:]]@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+.*#*** (line hidden: credentials at a host)#' \
+    -e 's#([A-Za-z][A-Za-z0-9+.-]*://).*#\1***#' \
+    -e 's#(^|[^A-Za-z0-9])([A-Za-z0-9_]*(password|passwd|pwd|secret|token|api[_-]?key|key|authorization|credentials?|cookie|dsn|database_url))(["'"'"']?[[:space:]]*[:=]).*#\1\2\4 ***#I' \
+    -e 's#(bearer)[[:space:]]+[^[:space:]]+#\1 ***#Ig' \
+    -e 's#(host name|hostname|server at|\bhost)([[:space:]]*[:=]?[[:space:]]*"?)[A-Za-z0-9._-]+#\1\2***#Ig' \
+    -e 's#\b[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.(com|net|org|io|dev|cloud|fi|eu|co|ai|tech|xyz|info)\b#***#Ig' \
+    -e 's#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#x.x.x.x#g' \
+    -e 's#\b([0-9A-Fa-f]{1,4}:){5,7}[0-9A-Fa-f]{1,4}\b#x:x::x#g' \
+    -e 's#([0-9A-Fa-f]{1,4}:){1,6}:([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,5})?#x:x::x#g' \
+    -e 's#(^|[^0-9A-Za-z]):(:[0-9A-Fa-f]{1,4}){1,7}#\1x:x::x#g'
 }
 
+# Self-test: each sample is masked and must not contain any of its secrets afterwards; the plain
+# log line must stay unchanged. Exits 1 if anything leaks.
 if [[ ${1:-} == --self-test-mask ]]; then
-  mask <<'EOF'
-postgresql://u:p@ss@db.example.com/x?sslmode=require
-error: postgresql://u:p/ss@db.example.com:5432/x failed
-connection to server at "db.example.com" (203.0.113.7), port 5432 failed
-host=db.example.com user=app password=s3cret dbname=core
-GET /healthz?token=abc HTTP/1.1 from 198.51.100.4:51234
-INFO:     Application startup complete.
+  failed=0
+  while IFS=$'\t' read -r sample secrets; do
+    [[ -z $sample ]] && continue
+    out=$(printf '%s\n' "$sample" | mask)
+    leak=""
+    IFS=';' read -ra parts <<<"$secrets"
+    for s in "${parts[@]}"; do
+      [[ $s == "=UNCHANGED" ]] && { [[ $out == "$sample" ]] || leak="(changed)"; continue; }
+      [[ -n $s && $out == *"$s"* ]] && leak+=" [$s]"
+    done
+    if [[ -n $leak ]]; then
+      echo "LEAK $out   <- still contains:$leak"; failed=1
+    else
+      echo "ok   $out"
+    fi
+  done <<'EOF'
+postgresql://u:p@ss@db.example.com/x?sslmode=require	p@ss;db.example.com
+error: postgresql://u:p/ss@db.example.com:5432/x failed	p/ss;db.example.com
+connection to server at "db.example.com" (203.0.113.7), port 5432 failed	db.example.com;203.0.113.7
+host=db.example.com user=app password=s3cret dbname=core	db.example.com;s3cret
+GEMINI_API_KEY=AIzaSyFAKE0000	AIzaSyFAKE0000
+MY_SERVICE_TOKEN=tok_abc123	tok_abc123
+APP_SECRET=sh_secret_9	sh_secret_9
+password = "s3cret"	s3cret
+PASSWORD:s3cret	s3cret
+api_key: "abc123key"	abc123key
+Authorization: Bearer eyJhbGciOiFAKE	eyJhbGciOiFAKE
+password='s3 cret'	s3;cret
+u:"pa ss word"@db.example.com	pa ss;word;db.example.com
+could not translate host name db.example.com to address	db.example.com
+db.example.com	db.example.com
+connection to 2001:db8::17 refused	2001:db8::17
+listening on ::1 and fe80::1ff:fe23:4567:890a	::1;fe80::1ff:fe23:4567:890a
+GET /healthz?token=abc HTTP/1.1 from 198.51.100.4:51234	token=abc;198.51.100.4
+INFO:     Application startup complete.	=UNCHANGED
+shadowless1-core.service: Main process exited, code=exited, status=1/FAILURE	=UNCHANGED
 EOF
+  if (( failed )); then echo "mask self-test FAILED"; exit 1; fi
+  echo "mask self-test passed"
   exit 0
 fi
 
