@@ -6,7 +6,7 @@ The design foundation for the Sentti money-coach module: a mobile web app, 375 p
 - Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.2.0. This file never redefines a field; it only says how to show one.
 - The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. The palette, components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
 
-**Status: draft.** Sections marked **TODO** are not final yet.
+Component code and screens are built in their own issues and follow these rules. Section 8 lists what is still owed by other issues.
 
 ## 1. Principles
 1. **One thought per screen.** 375 px, a 16 px gutter, no horizontal scroll. Details open in bottom sheets, not new pages.
@@ -240,7 +240,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - **Targets:** at least 44 px; inline chips get a padded hit area.
 - **Viewport:** `viewport-fit=cover`, safe-area padding on the composer and sheets, and height from `100dvh` minus `env(safe-area-inset-bottom)`.
 - **No service worker in production:** WKWebView does not run it. Mock data is for development only.
-- **Larger Text:** WKWebView ignores the system setting. **TODO:** decide on an in-app text-size option.
+- **Larger Text:** WKWebView ignores the system text-size setting. All sizes are in px tokens, so the layout must survive 200 % browser zoom and reflow at 320 px without horizontal scroll (WCAG 1.4.4, 1.4.10). An in-app text-size switch is a follow-up (section 8).
 
 ## 6. Tone of voice
 - Short, friendly, second person ("you"), no jargon. One idea per sentence.
@@ -256,12 +256,12 @@ Only MIT-compatible material goes into `app/`.
 | Inter (typeface) | SIL OFL 1.1 | Use | Self-host through `@fontsource/inter` (package MIT, font OFL). Keep the OFL text with the font files. |
 | shadcn/ui | MIT | Use | Components are copied in. |
 | Vercel AI Elements | Apache-2.0 | Use with care | Compatible. Keep `LICENSE`/`NOTICE` and mark modified files. Upstream announced its deprecation for the end of November 2026 in favour of shadcn/ui copy-in patterns; prefer those. |
-| 21st.dev blocks | Per component, no default | **TODO** | Check each block before use. "Unknown" means rejected. |
+| 21st.dev blocks | Per component, no default | Not used yet | Each block is checked before it is copied in, and its licence is added as a row here. A block with no stated licence ("unknown") is rejected. |
 | S Bonus UX / S Bonus Display | Proprietary (S Group) | Rejected | Replaced by Inter. |
 | S-Pankki / S-Group logos, icons, images | Proprietary | Rejected | None in the repo. Basket icons are system emoji, and line icons are our own inline SVG. |
 
-## 8. TODO
-- Final component code (shadcn/ui based) and the mapping of `tokens.css` into the Tailwind `@theme`.
-- Finnish basket names and glossary texts from the core (contract 0.2, #34).
-- The 21st.dev licence review once blocks are chosen.
-- An in-app text-size option for WKWebView (section 5).
+## 8. Follow-ups (outside #65)
+- **Component code:** shadcn/ui-based components and the mapping of `tokens.css` into the Tailwind `@theme` arrive with the app shell and screen issues. They keep these variable names.
+- **Finnish texts:** basket names and glossary definitions come from the core (contract 0.2, #34). The app shows them as received.
+- **21st.dev:** each block chosen later gets a row in the licence table (section 7) before it is used.
+- **Text size:** an in-app text-size switch for WKWebView (section 5).
