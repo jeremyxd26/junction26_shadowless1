@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -50,6 +51,43 @@ def test_valid_texts_pass(text, lang):
 ])
 def test_digits_outside_tokens_fail(text, lang):
     assert check(text, lang), text
+
+
+N2 = Number(id="n2", value=10, unit=Unit.COUNT, period=AUG, method="spending.tx_count@1", evidence_ref="ev_y",
+            label="Purchases", display=display(Decimal("10"), Unit.COUNT, "en"))
+
+
+def check_two(text, language="en"):
+    numbers = {"n1": N1, "n2": N2}
+    cited = sorted(set(re.findall(r"\{\{(n\d+)\}\}", text)))
+    return validate({"language": language, "text": text, "cited": cited, "lesson_key": None},
+                    language=language, numbers=numbers, allowed=ALLOWED)[1]
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("You made {{n2}}{{n2}} purchases.", "en"),               # "1010"
+    ("You made {{n2}}.{{n2}} purchases.", "en"),              # "10.10"
+    ("You made {{n2}},{{n2}} purchases.", "en"),              # "10,10"
+    ("You saved {{n2}}k in August 2026.", "en"),              # "10k"
+    ("That is {{n2}}x your usual month.", "en"),              # "10x"
+    ("You spent {{n2}} euros in August 2026.", "en"),         # a unit word turns a count into money
+    ("Restaurants were {{n2}} percent of August 2026.", "en"),
+    ("Ravintolat olivat {{n2}} prosenttia elokuussa 2026.", "fi"),
+    ("On {{n2}} August 2026 you spent {{n1}}.", "en"),        # a date that was not returned
+])
+def test_tokens_glued_to_digits_units_or_dates_fail(text, lang):
+    # Review of PR #104: the token-stripped check passed all of these; the rendered text does not.
+    assert check_two(text, lang), text
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("In August 2026 you spent {{n1}} on {{n2}} purchases.", "en"),
+    ("You spent {{n1}} ({{n2}} purchases) in August 2026.", "en"),
+    ("You spent {{n1}}, {{n2}} purchases.", "en"),
+    ("Elokuussa 2026 käytit {{n1}}; ostoksia oli {{n2}}.", "fi"),
+])
+def test_rendered_check_keeps_good_drafts(text, lang):
+    assert check_two(text, lang) == []
 
 
 def test_token_rules():
