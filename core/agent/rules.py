@@ -6,7 +6,8 @@ two calls as any model and sees only what a model sees (model.py): the question,
 declarations and model views. It never sees the customer id.
 
 The planner is table-driven and sized to what get_spending can answer. A question it cannot map
-gets a clarifying question, never a guess. The composer is the template draft (template.py).
+gets a clarifying question, never a guess: no tool argument is filled in with a value the user did not
+give (R1, design section 7.4; issue #142). The composer is the template draft (template.py).
 """
 
 from __future__ import annotations
@@ -142,19 +143,48 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     return args
 
 
-WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spend(ing)? less|spent half|half as much|less on|"
+WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent half|half as much|less on|"
            r"säästä\w*|vähentä\w*|vähemmän|puolet")
-PERCENT = r"(\d{1,3})\s?(?:%|percent|prosent\w*)"
+PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
+HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
+# A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
+HEALTH = (r"\bhealth(care)?\b|terveys\w*|terveyden\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
+          r"hammaslääk\w*|\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
+# A selection the rules do not map (an MCC, a merchant): never replaced by a category of their own.
+SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
+SAVE_MORE = r"save more|saving more|säästää enemmän|säästäisin enemmän|säästämään enemmän|säästöä enemmän"
 
 
-def plan_what_if(question: str) -> dict:
-    """run_what_if arguments: the category named in the question (dining out by default) and the cut
-    the user gave (20% by default, half = 50%)."""
+def plan_what_if(question: str) -> tuple[str, dict | None]:
+    """What the rules do with a what-if question. They never fill in a value the user did not give
+    (R1, design section 7.4; issue #142):
+    - ("health", None): a health selection (R9): the refusal alone, no other scenario;
+    - ("save_more", None): "How could I save more?" with no category and no cut;
+    - ("unmapped", None): not exactly one what-if category the rules know, or an MCC, merchant or
+      transport group: not recognised, so the next planner, or a clarifying question, takes it;
+    - ("amount", None): one category but no cut, or a cut outside 1..100 % or not whole: ask how much;
+    - ("run", args): run_what_if with that category and the user's own cut ("half" is 50 %)."""
     q = question.lower()
-    category = next((c for rx, c in CATEGORY_WORDS if re.search(rx, q) and c != "Invest Deposit"), "Restaurants")
-    m = re.search(PERCENT, q)
-    cut = int(m.group(1)) if m else 50 if re.search(r"half|puolet|puoleen", q) else 20
-    return {"selection": {"kind": "category", "value": category}, "cut_pct": max(1, min(cut, 100))}
+    if re.search(HEALTH, q):
+        return "health", None
+    categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
+    pct = re.search(PERCENT, q)
+    half = re.search(HALF, q)
+    if not categories and not pct and not half and re.search(SAVE_MORE, q):
+        return "save_more", None
+    if (len(categories) != 1 or re.search(SELECTION_CODE, q)
+            or any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS)):
+        return "unmapped", None
+    if pct:
+        value = float(pct.group(1).replace(",", "."))
+        if value != int(value) or not 1 <= value <= 100:
+            return "amount", None
+        cut = int(value)
+    elif half:
+        cut = 50
+    else:
+        return "amount", None
+    return "run", {"selection": {"kind": "category", "value": categories.pop()}, "cut_pct": cut}
 
 
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
@@ -170,8 +200,17 @@ BRIEF = [
      lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
     ("recurring_bills", r"\bbills?\b|payday|pay ?day|palkkapäivä|laskut|laskuni",
      lambda q, as_of: [("get_recurring_bills", {})]),
-    ("what_if", WHAT_IF, lambda q, as_of: [("run_what_if", plan_what_if(q))]),
+    ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
 ]
+# "How could I save more?" without a category or a cut: the design's tools for it (section 7.5) that
+# need no number from the user. A what-if needs the user's own cut, so it is not planned.
+SAVE_MORE_CALLS = [("get_basket_breakdown", {"period": {"preset": "last_6_months"}}), ("get_recurring_bills", {})]
+WHAT_IF_AMOUNT = ("By how much would you like to cut it? Ask again with a percentage, or say half.",
+                  "Kuinka paljon haluaisit vähentää? Kysy uudelleen prosentin kanssa tai sano puolet.")
+WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For example restaurants by half.",
+                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon? Esimerkiksi ravintoloita puoleen.")
+WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants by half?", "What if I cut groceries by half?"),
+                         ("Entä jos vähentäisin ravintoloita puoleen?", "Entä jos vähentäisin ruokaostoksia puoleen?"))
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
@@ -182,10 +221,16 @@ class RuleModel:
     model_id = "rules@1"
 
     def plan(self, request: PlanInput) -> PlanResult:
-        """Rules first: recognised=False means no rule matched, and the calls are the default clarifying
-        question. A decline, a NOT_YET answer and every data call are recognised answers."""
-        calls = self._calls(request)
-        return PlanResult(calls=calls, recognised=calls != self._default_clarify(request.language))
+        """Rules first: recognised=False means no rule matched, and the calls are a clarifying question
+        (the default one, or the what-if one for a selection the rules do not map). A decline, a
+        NOT_YET answer, a what-if amount question and every data call are recognised answers."""
+        calls, recognised = self._calls(request)
+        return PlanResult(calls=calls, recognised=recognised)
+
+    @staticmethod
+    def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
+        return [FunctionCall("ask_clarifying_question", {"question": template.pick(texts, lang),
+                                                         "options": list(template.pick(options, lang))})]
 
     @staticmethod
     def _default_clarify(lang: str) -> list[FunctionCall]:
@@ -193,13 +238,13 @@ class RuleModel:
             "question": template.pick(template.CLARIFY["question"], lang),
             "options": list(template.pick(template.CLARIFY["options"], lang))})]
 
-    def _calls(self, request: PlanInput) -> list[FunctionCall]:
+    def _calls(self, request: PlanInput) -> tuple[list[FunctionCall], bool]:
         if request.responses:  # round 2: the data is in; write the answer
-            return [FunctionCall("finish")]
+            return [FunctionCall("finish")], True
         q = request.question.lower()
         for kind, rx in DECLINE_RULES:
             if re.search(rx, q, re.I):
-                return [FunctionCall("decline", {"kind": kind})]
+                return [FunctionCall("decline", {"kind": kind})], True
         tools = {t["name"] for t in request.tools}
         lang = request.language
         as_of = date.fromisoformat(request.as_of)
@@ -209,18 +254,28 @@ class RuleModel:
                 continue
             # A what-if or bills question that names a period is still a what-if or bills question;
             # a plain spending question with a period goes to get_spending below.
-            if intent == "what_if" and spending is not None and not re.search(PERCENT + r"|half|puolet", q):
+            if intent == "what_if" and spending is not None and not re.search(PERCENT + "|" + HALF, q):
                 break
-            calls = [FunctionCall(name, args) for name, args in build(q, as_of) if name in tools]
+            if intent == "what_if":
+                kind, what_if = plan_what_if(q)
+                if kind == "health":
+                    return [FunctionCall("decline", {"kind": "out_of_scope"})], True
+                if kind == "unmapped":
+                    return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
+                if kind == "amount":
+                    return self._clarify(WHAT_IF_AMOUNT, ((), ()), lang), True
+                planned = SAVE_MORE_CALLS if kind == "save_more" else [("run_what_if", what_if)]
+            else:
+                planned = build(q, as_of)
+            calls = [FunctionCall(name, args) for name, args in planned if name in tools]
             if calls:
-                return calls + [FunctionCall("finish")]
-            return [FunctionCall("ask_clarifying_question", {
-                "question": template.pick(NOT_YET, lang), "options": list(template.pick(NOT_YET_OPTIONS, lang))})]
+                return calls + [FunctionCall("finish")], True
+            return self._clarify(NOT_YET, NOT_YET_OPTIONS, lang), True
         if "get_spending" in tools:
             args = plan_spending(request.question, date.fromisoformat(request.as_of))
             if args is not None:
-                return [FunctionCall("get_spending", args), FunctionCall("finish")]
-        return self._default_clarify(request.language)
+                return [FunctionCall("get_spending", args), FunctionCall("finish")], True
+        return self._default_clarify(request.language), False
 
     def compose(self, request: ComposeInput) -> ComposeResult:
         return ComposeResult(text=json.dumps(
