@@ -194,7 +194,6 @@ def test_composer_cannot_state_a_number_in_digits(make, text):
         assert bad not in d["text_rendered"]
 
 
-@pytest.mark.xfail(strict=True, reason="numbers written as words pass the digit check (R1); issue #123")
 @pytest.mark.parametrize("text", [
     "Your balance is one million euros.",
     "Saldosi on miljoona euroa.",
@@ -217,7 +216,6 @@ def test_composer_cannot_add_inline_links_images_or_html(text):
     assert check_text(text, ALLOWED)
 
 
-@pytest.mark.xfail(strict=True, reason="reference-style markdown links and images pass the validator; issue #105")
 @pytest.mark.parametrize("text", [
     "Your summary.\n\n![chart][c]\n\n[c]: //img.example/pixel.png",
     "Tap [here][j] for details.\n\n[j]: " + "java" + "script:alert(document.domain)",
@@ -319,7 +317,6 @@ def test_message_length_is_bounded(client):
     assert ask(client, message="a" * 500).status_code == 200
 
 
-@pytest.mark.xfail(strict=True, reason="a message of only invisible characters reaches the model; issue #105")
 @pytest.mark.parametrize("message", ["\u200b\u200b\u200b", "\u2060\ufeff", "\u200e\u200f\u202e"])
 def test_an_invisible_message_is_rejected_before_the_model(client, message):
     assert ask(client, message=message).status_code == 400
