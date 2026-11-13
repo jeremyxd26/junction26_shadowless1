@@ -12,7 +12,6 @@ import copy
 import json
 import re
 import typing
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,8 +19,6 @@ from pydantic import BaseModel, ValidationError
 
 from core.app.api import errors, schemas, texts
 from core.tools import config as tools_config
-from core.tools.formatting import display
-from core.tools.models import Unit
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
