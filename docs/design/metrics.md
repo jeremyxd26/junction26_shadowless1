@@ -38,10 +38,13 @@ For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only o
 
 | Flow | Categories | Counts as spending? |
 |---|---|---|
-| income | Salary, Other Income, Invest Withdraw | no |
+| income | Salary, Other Income | no |
+| own_savings_back | Invest Withdraw: the customer's own saving coming back, not income (section 2.3) | no |
 | saving | Invest Deposit | no (shown as saving) |
 | transfer | Salary Sweep | no (see 2.3) |
 | spend | all other categories | yes |
+
+The flow column of the shared classification block (`02_baskets.sql` to `06_peer_benchmark.sql`) and `core/tools/classify.py` use these labels. No metric filters on `income` or `own_savings_back`: income figures name their categories (Salary, Other Income) or use the recurring income series of section 2.
 
 **One-off (spike).** A purchase is a one-off if it is more than **5×** the customer's median purchase in the same category over the 365 days up to today, and the customer has at least 8 purchases in that category in those 365 days. One-offs stay in their basket totals but are excluded from "typical" baselines (what-if, everyday run-rate). On the sample (all 2 years, today 2026-09-30), 1,033 of 57,017 purchases are one-offs: Restaurants 585, Entertainment 224, Health 89, Lifestyle 59, Home & Tech 42, Travel 17, Transportation 11, Groceries 6.
 

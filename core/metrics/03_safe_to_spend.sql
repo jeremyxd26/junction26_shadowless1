@@ -67,7 +67,8 @@ cls AS (
            (o.basket IS NOT NULL) AS overridden
     FROM (
         SELECT tx.*,
-               CASE WHEN tx.category IN ('Salary', 'Other Income', 'Invest Withdraw') THEN 'income'
+               CASE WHEN tx.category IN ('Salary', 'Other Income') THEN 'income'
+                    WHEN tx.category = 'Invest Withdraw' THEN 'own_savings_back'  -- not income (metrics.md 2.3)
                     WHEN tx.category = 'Invest Deposit' THEN 'saving'
                     WHEN tx.category = 'Salary Sweep'   THEN 'transfer'
                     ELSE 'spend' END                                    AS flow,
