@@ -35,7 +35,7 @@ Two long-lived branches:
 
 Flow for every change:
 1. Branch from fresh `origin/main`, never from `dev`. Name it `<owner-prefix>/<issue>-<short-slug>`, for example `r/12-ingest-api`.
-2. Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`.
+2. Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`. Once the branch has been merged into `dev`, do not rebase or force-push it again: push fixes as new commits, so the later PR into `main` carries the same commits.
 3. Open the PR into **`dev`**. Merge it with a **merge commit** (`gh pr merge <N> --merge`), not squash, and keep the branch.
 4. The dev environment is redeployed from `dev`, then the tests and the demo path are run there.
 5. If everything passes, open a second PR from the **same branch** into **`main`** and merge it with a merge commit. Delete the branch only after that.
@@ -52,7 +52,7 @@ Commits and PRs:
   - risks and follow-ups
 - Never use `--no-verify`. If a local git check blocks a commit or a push, fix the cause; if you can't, report it to your coordinator.
 - Never:
-  - push to `main` or `dev` directly (a local pre-push check blocks it)
+  - push to `main` or `dev` directly (each machine installs a local pre-push check during setup; do not rely on it)
   - rewrite `main` or `dev` history
   - force-push or delete other people's branches
   - change git config (author identity)
