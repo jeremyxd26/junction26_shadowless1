@@ -1,0 +1,217 @@
+"""Evidence specs, refs and the evidence store (agent-core.md section 5.2, R2).
+
+A spec is the recipe that rebuilds one number: customer, as_of, method, the selection (or the
+input refs for a composite) and the value. The ref is `ev_` plus the first 12 hex characters of
+sha256 over the canonical JSON of the spec, so the same number always gets the same ref. Labels,
+display strings and language are not part of the spec: English and Finnish share refs.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
+from typing import Any
+
+import psycopg
+from psycopg.types.json import Jsonb
+
+from core.tools import aliases, config
+from core.tools.classify import classify
+from core.tools.db import load_transactions
+from core.tools.selection import Selection, select, value_of
+
+SPEC_VERSION = 1
+MAX_LIMIT = 200
+DEFAULT_LIMIT = 50
+
+
+class EvidenceNotFound(LookupError):
+    pass
+
+
+class EvidenceForbidden(PermissionError):
+    """The ref belongs to another customer (the API answers 403 evidence_forbidden)."""
+
+
+class EvidenceCollision(RuntimeError):
+    """Internal error: a ref is already stored with a different spec, so it would resolve to another number."""
+
+
+def canonical_json(spec: dict[str, Any]) -> str:
+    return json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def make_ref(spec: dict[str, Any]) -> str:
+    return "ev_" + hashlib.sha256(canonical_json(spec).encode("utf-8")).hexdigest()[:12]
+
+
+def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection, value: Decimal) -> dict[str, Any]:
+    return {
+        "v": SPEC_VERSION,
+        "kind": "transactions",
+        "customer_id": customer_id,
+        "as_of": as_of.isoformat(),
+        "method": method,
+        "selection": sel.to_spec(),
+        "value": str(value),
+    }
+
+
+# Composite formulas: how a value is computed from its parts (all Decimal, rounded at the end).
+FORMULAS = {
+    "difference": ("current", "baseline"),     # current - baseline, cents
+    "pct_change": ("current", "baseline"),     # (current - baseline) / baseline * 100, 1 decimal
+    "share_pct": ("part", "whole"),            # part / whole * 100, 1 decimal
+}
+
+
+def compute_formula(formula: str, values: dict[str, Decimal]) -> Decimal:
+    from core.tools.formatting import money, pct
+
+    if formula == "difference":
+        return money(values["current"] - values["baseline"])
+    if formula == "pct_change":
+        return pct((values["current"] - values["baseline"]) / values["baseline"] * 100)
+    if formula == "share_pct":
+        return pct(values["part"] / values["whole"] * 100)
+    raise ValueError(f"unknown formula {formula!r}")
+
+
+def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
+                   parts: dict[str, str], value: Decimal) -> dict[str, Any]:
+    return {
+        "v": SPEC_VERSION,
+        "kind": "composite",
+        "customer_id": customer_id,
+        "as_of": as_of.isoformat(),
+        "method": method,
+        "formula": formula,
+        "parts": [{"role": role, "ref": parts[role]} for role in FORMULAS[formula]],
+        "value": str(value),
+    }
+
+
+# ---- store ---------------------------------------------------------------------------------------
+
+INSERT_SQL = """
+INSERT INTO coach_evidence (ref, customer_id, spec)
+VALUES (%s, %s, %s)
+ON CONFLICT (ref) DO NOTHING
+"""
+LOAD_SQL = "SELECT customer_id, spec FROM coach_evidence WHERE ref = %s"
+READ_BACK_SQL = "SELECT ref, spec FROM coach_evidence WHERE ref = ANY(%s)"
+
+
+def write(conn: psycopg.Connection, specs: dict[str, dict[str, Any]]) -> None:
+    """Store specs by ref. Idempotent: an existing ref is left as it is.
+
+    The stored specs are read back afterwards. If a ref already holds a different spec (a hash
+    collision, or a spec format change without a version bump), EvidenceCollision is raised instead
+    of silently resolving that ref to another number.
+    """
+    if not specs:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(INSERT_SQL, [(ref, s["customer_id"], Jsonb(s)) for ref, s in specs.items()])
+    stored = dict(conn.execute(READ_BACK_SQL, (list(specs),)).fetchall())
+    for ref, spec in specs.items():
+        if ref not in stored:
+            raise EvidenceCollision(f"evidence {ref} was not stored")
+        if canonical_json(stored[ref]) != canonical_json(spec):
+            raise EvidenceCollision(f"evidence {ref} is already stored with a different spec")
+
+
+def load(conn: psycopg.Connection, ref: str) -> tuple[str, dict[str, Any]]:
+    row = conn.execute(LOAD_SQL, (ref,)).fetchone()
+    if row is None:
+        raise EvidenceNotFound(ref)
+    return row[0], row[1]
+
+
+# ---- resolve -------------------------------------------------------------------------------------
+
+@dataclass
+class Resolution:
+    ref: str
+    kind: str
+    method: str
+    value: Decimal
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    row_count: int | None = None
+    reconciles: bool | None = None
+    parts: list[dict[str, Any]] = field(default_factory=list)
+    next_cursor: str | None = None
+
+
+def _row(c, alias_map: aliases.AliasMap, language: str) -> dict[str, Any]:
+    t = c.tx
+    merchant = None
+    if t.merchant_id is not None:
+        merchant = {"id": t.merchant_id, "label": alias_map.for_merchant(t.merchant_id).label(language)}
+    return {
+        "tx_id": f"tx_{t.id}",
+        "date": t.tx_date.isoformat(),
+        "time": t.tx_at.strftime("%H:%M"),
+        "category": t.category,
+        "merchant": merchant,
+        "mcc": t.mcc,
+        "amount": f"{t.amount_eur:.2f}",
+        "currency": "EUR",
+    }
+
+
+def _cursor_offset(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    if not cursor.startswith("cur_") or not cursor[4:].isdigit():
+        raise ValueError("invalid cursor")
+    return int(cursor[4:])
+
+
+def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int = DEFAULT_LIMIT,
+            cursor: str | None = None, language: str = "en") -> Resolution:
+    """Load a ref, check it belongs to `customer_id`, re-run its spec and reconcile."""
+    if not 1 <= limit <= MAX_LIMIT:
+        raise ValueError(f"limit must be 1..{MAX_LIMIT}")
+    owner, spec = load(conn, ref)
+    if owner != customer_id or spec.get("customer_id") != customer_id:
+        raise EvidenceForbidden(ref)
+    value = Decimal(spec["value"])
+    as_of = date.fromisoformat(spec["as_of"])
+
+    if spec["kind"] == "composite":
+        part_values: dict[str, Decimal] = {}
+        parts = []
+        for part in spec["parts"]:
+            part_owner, part_spec = load(conn, part["ref"])
+            if part_owner != customer_id:
+                raise EvidenceForbidden(part["ref"])
+            part_values[part["role"]] = Decimal(part_spec["value"])
+            parts.append({"role": part["role"], "ref": part["ref"], "method": part_spec["method"],
+                          "value": part_spec["value"]})
+        recomputed = compute_formula(spec["formula"], part_values)
+        return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=recomputed == value)
+
+    sel = Selection.from_spec(spec["selection"])
+    history = load_transactions(conn, customer_id, as_of)
+    rows = select(classify(history, as_of), sel)
+    recomputed = value_of(rows, sel, spec["method"])
+    if spec["method"] == config.METHODS["total"]:
+        from core.tools.formatting import money
+
+        recomputed = money(recomputed)
+    rows.sort(key=lambda c: (c.tx.tx_date, c.tx.tx_at, c.tx.id), reverse=True)
+    offset = _cursor_offset(cursor)
+    page = rows[offset:offset + limit]
+    alias_map = aliases.build(history, as_of)
+    next_cursor = f"cur_{offset + limit}" if offset + limit < len(rows) else None
+    return Resolution(
+        ref, "transactions", spec["method"], value,
+        rows=[_row(c, alias_map, language) for c in page],
+        row_count=len(rows),
+        reconciles=recomputed == value,
+        next_cursor=next_cursor,
+    )

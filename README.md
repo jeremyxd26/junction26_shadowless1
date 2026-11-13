@@ -59,6 +59,15 @@ This is for Git Bash or another POSIX shell. In PowerShell, set `$env:DATABASE_U
 
 It runs 52 batches of 100 customers, printing one line per batch, and takes about 4 minutes. `--dry-run` lists the batches without touching the database, and `--from CUST01200` resumes after an interruption. Design: `docs/design/metrics.md`, section 8.
 
+## Tests
+
+From the repository root:
+```
+pip install -r core/requirements.txt
+pytest core/tools -q
+```
+The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
+
 ## License
 
 MIT
