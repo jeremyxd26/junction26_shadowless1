@@ -187,8 +187,7 @@ def test_composer_cannot_state_a_number_in_digits(make, text):
         assert bad not in d["text_rendered"]
 
 
-@pytest.mark.xfail(strict=True, reason="numbers written as words pass the digit check (R1): documented residual "
-                                       "risk, agent-core.md section 7.4")
+@pytest.mark.xfail(strict=True, reason="numbers written as words pass the digit check (R1); issue #123")
 @pytest.mark.parametrize("text", [
     "Your balance is one million euros.",
     "Saldosi on miljoona euroa.",
