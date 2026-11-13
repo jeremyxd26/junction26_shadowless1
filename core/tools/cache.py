@@ -37,7 +37,8 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
@@ -304,6 +305,57 @@ class ToolCache:
         with self._lock:
             self.stats.misses += 1
         return Prepared(entry, False, "tool", time.perf_counter() - t0)
+
+    def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
+                     extra_connection: Connector | None = None) -> list[Prepared]:
+        """Prepare several independent calls of one request; apply the results in list order.
+
+        Hits are served at once. Misses run on ctx.conn, and when there are two or more and
+        `extra_connection` gives a second connection, half of them run on that one in parallel
+        (the pool's limit is two connections). If the second connection is not available at once,
+        everything runs on ctx.conn. The customer's transactions are read once and shared.
+        """
+        out: list[Prepared | None] = [None] * len(calls)
+        if self.enabled:
+            self.ensure_labels_key(ctx)
+            for i, (name, args_model, _, args) in enumerate(calls):
+                out[i] = self.lookup(name, args_model, ctx, args)
+        misses = [i for i, p in enumerate(out) if p is None]
+
+        def run(lane: list[int], connection: Connector | None) -> None:
+            for i in lane:
+                name, args_model, fn, args = calls[i]
+                out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+
+        if len(misses) < 2 or extra_connection is None:
+            run(misses, None)
+            return out  # type: ignore[return-value]
+        if ctx._history is None:
+            ctx.history()   # one transactions read on ctx.conn, copied into every call's context
+        own, other = misses[0::2], misses[1::2]
+        with ExitStack() as stack:
+            try:
+                conn = stack.enter_context(extra_connection())
+            except Exception as exc:  # noqa: BLE001 - no second connection now: stay on the first one
+                log.info("tool cache: no second connection (%s); calls run one after another", type(exc).__name__)
+                run(misses, None)
+                return out  # type: ignore[return-value]
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(run, own, None), pool.submit(run, other, lambda: nullcontext(conn))]
+                for future in futures:
+                    future.result()
+        return out  # type: ignore[return-value]
+
+    def lookup(self, tool: str, args_model: type[BaseModel], ctx: ToolContext, args: Any = None) -> Prepared | None:
+        """The cached entry for this call, or None; never runs the tool. ctx.labels_key must be set."""
+        if not self.enabled or ctx.labels_key is None:
+            return None
+        t0 = time.perf_counter()
+        _, canonical = args_json(args_model, args)
+        found = self.get(self.key(ctx, tool, canonical), ctx.customer_id)
+        if found is None:
+            return None
+        return Prepared(found[0], True, found[1], time.perf_counter() - t0)
 
     # ---- storage ----
 

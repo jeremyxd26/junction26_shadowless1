@@ -272,3 +272,94 @@ def test_a_cached_view_never_holds_another_answers_ids(mem, tool):
     ids = {v["id"] for v in hit.model_view.values() if isinstance(v, dict)}
     assert ids == {"n1", "n2", "n3"}
     assert json.loads(hit.card.model_dump_json())["primary"]["id"] == "n1"
+
+
+# ---- several calls of one request (the overview) ------------------------------------------------------
+
+class SlowTool(FakeTool):
+    def __init__(self, seconds: float) -> None:
+        super().__init__()
+        self.seconds = seconds
+        self.conns: list = []
+
+    def __call__(self, ctx, args):
+        import time
+
+        time.sleep(self.seconds)
+        self.conns.append(ctx.conn)
+        return super().__call__(ctx, args)
+
+
+def many(tool, amounts=(1, 2, 3)):
+    return [("slow", FakeArgs, tool, {"amount": a}) for a in amounts]
+
+
+def request_ctx():
+    ctx = ctx_for()
+    ctx.conn = "request-connection"
+    ctx._history = []                     # already read for this request
+    return ctx
+
+
+def test_prepare_many_runs_misses_on_two_connections_and_keeps_the_order(mem):
+    import time
+    from contextlib import contextmanager
+
+    taken = []
+
+    @contextmanager
+    def second():
+        taken.append(1)
+        yield "second-connection"
+
+    tool = SlowTool(0.3)
+    ctx = request_ctx()
+    t0 = time.perf_counter()
+    prepared = mem.prepare_many(many(tool), ctx, extra_connection=second)
+    elapsed = time.perf_counter() - t0
+    results = [apply(p.entry, ctx) for p in prepared]
+    assert elapsed < 0.85 and taken == [1]                              # 3 x 0.3 s took about 2 x 0.3 s
+    assert set(tool.conns) == {"request-connection", "second-connection"}
+    fresh_ctx = request_ctx()
+    expected = [tool(fresh_ctx, FakeArgs(amount=a)) for a in (1, 2, 3)]
+    assert [dump(r) for r in results] == [dump(e) for e in expected]    # same ids as one after another
+
+
+def test_prepare_many_serves_hits_without_a_second_connection(mem):
+    from contextlib import contextmanager
+
+    tool = SlowTool(0.0)
+    mem.prepare_many(many(tool), request_ctx())
+    taken = []
+
+    @contextmanager
+    def second():
+        taken.append(1)
+        yield "second-connection"
+
+    prepared = mem.prepare_many(many(tool), request_ctx(), extra_connection=second)
+    assert [p.source for p in prepared] == ["memory"] * 3 and taken == [] and tool.calls == 3
+
+
+def test_prepare_many_without_a_free_connection_runs_one_after_another(mem):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def busy():
+        raise TimeoutError("pool busy")
+        yield
+
+    tool = SlowTool(0.0)
+    prepared = mem.prepare_many(many(tool), request_ctx(), extra_connection=busy)
+    assert [p.source for p in prepared] == ["tool"] * 3 and set(tool.conns) == {"request-connection"}
+
+
+def test_prepare_many_with_the_cache_off_still_runs_everything():
+    off = ToolCache(mode="off")
+    tool = SlowTool(0.0)
+    ctx = request_ctx()
+    results = [apply(p.entry, ctx) for p in off.prepare_many(many(tool), ctx)]
+    fresh_ctx = request_ctx()
+    expected = [tool(fresh_ctx, FakeArgs(amount=a)) for a in (1, 2, 3)]
+    assert tool.calls == 6 and [dump(r) for r in results] == [dump(e) for e in expected]
+    assert [r.data.total.id for r in results] == ["n1", "n4", "n6"]   # the shared count ref keeps n2
