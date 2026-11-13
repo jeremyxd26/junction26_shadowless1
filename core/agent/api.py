@@ -29,9 +29,8 @@ from starlette.concurrency import run_in_threadpool
 
 from core.agent.audit import AuditLog
 from core.agent.conversation import ConversationStore
-from core.agent.gemini import make_model
+from core.agent.gemini import make_agent_model
 from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
-from core.agent.rules import RuleModel
 from core.agent.toolset import default_registry
 
 router = APIRouter()
@@ -156,11 +155,12 @@ class Agent:
 
 
 def build_agent(app) -> Agent:
-    """The service's agent: the built-in tools, the Gemini model (the keyword model when no Gemini key
-    is set) and the app's pool. Tests put their own Agent on app.state.agent instead."""
+    """The service's agent: the built-in tools, the model (the rule planner first and Gemini for the
+    rest; the rule model alone when no Gemini key is set) and the app's pool. Tests put their own
+    Agent on app.state.agent instead."""
     data = PoolData(app)
     audit = AuditLog()
-    model = make_model(app.state.settings) or RuleModel()  # Gemini when GEMINI_API_KEY is set
+    model = make_agent_model(app.state.settings)  # rules first, then Gemini; the rule model without a key
     pipeline = Pipeline(default_registry(), model, data, as_of=app.state.settings.demo_today,
                         store=ConversationStore(), audit=audit)
     return Agent(pipeline=pipeline, data=data, audit=audit)

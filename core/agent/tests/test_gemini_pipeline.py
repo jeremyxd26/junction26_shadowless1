@@ -14,10 +14,12 @@ from datetime import date
 import pytest
 
 from core.agent.conversation import ConversationStore
-from core.agent.gemini import GeminiModel
-from core.agent.gemini_client import GeminiClient
+from core.agent.gemini import GeminiModel, RulesFirstModel, not_recognised
+from core.agent.gemini_client import GeminiClient, Ledger
+from core.agent.model import PlanInput
 from core.agent.orchestrator import AskRequest, Pipeline
 from core.agent.registry import Registry, ToolSpec
+from core.agent.rules import RuleModel
 from core.agent.tests.test_gemini_client import FakeTransport, api_error, call_response, text_response
 from core.tools.models import Number, Period, ToolResult, Unit
 from core.tools.spending import GetSpendingArgs
@@ -143,3 +145,80 @@ def test_a_composer_failure_answers_from_the_template(compose):
     assert done["outcome"] == "fallback"
     assert "€1,146.05" in done["text_rendered"] and "1146 euros" not in done["text_rendered"]
     assert len(audit.records[-1]["composer_attempts"]) == 3   # two model drafts, then the template
+
+
+# ---- the daily budget and the off switch (the dev service is public) -------------------------------
+
+def budget_pipeline(tmp_path, transport, budget: int):
+    p, audit = pipeline(transport)
+    p.model.client.ledger = Ledger(tmp_path / "requests.jsonl", budget, tmp_path / "model-off")
+    return p, audit
+
+
+def test_the_daily_budget_stops_requests_and_the_fallback_answers(tmp_path):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = budget_pipeline(tmp_path, transport, budget=2)
+    assert ask(p)["outcome"] == "answered"             # planner + composer: 2 requests
+    done = ask(p)
+    assert done["outcome"] == "fallback" and "€1,146.05" in done["text_rendered"]
+    assert len(transport.requests) == 2
+
+
+def test_a_restart_keeps_the_days_count(tmp_path):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = budget_pipeline(tmp_path, transport, budget=3)
+    ask(p)
+    restarted, _ = budget_pipeline(tmp_path, transport, budget=3)  # a new process, the same ledger file
+    assert restarted.model.client.ledger.today() == 2
+    assert ask(restarted)["outcome"] == "fallback"     # one request left: the planner; the composer is refused
+    assert len(transport.requests) == 3
+
+
+def test_the_off_switch_stops_requests_without_a_restart(tmp_path):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = budget_pipeline(tmp_path, transport, budget=100)
+    (tmp_path / "model-off").touch()
+    assert ask(p)["outcome"] == "fallback"
+    assert transport.requests == []
+    (tmp_path / "model-off").unlink()
+    assert ask(p)["outcome"] == "answered"
+
+
+# ---- rules first ----------------------------------------------------------------------------------------
+
+def rules_first(transport):
+    p, audit = pipeline(transport)
+    p.model = RulesFirstModel(RuleModel(), p.model)
+    return p, audit
+
+
+def test_a_recognised_question_is_planned_by_the_rules_and_costs_one_request():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = rules_first(transport)
+    done = ask(p)                                       # "How much did I spend on groceries last month?"
+    assert done["outcome"] == "answered"
+    assert transport.plan.requests == [] and len(transport.compose.requests) == 1
+    assert audit.records[-1]["model"]["planner_prompt"].startswith("rules-first: planner@")
+
+
+def test_a_rule_refusal_needs_no_request():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = rules_first(transport)
+    assert ask(p, "Should I put my savings into tech stocks?")["outcome"] == "refused"
+    assert transport.requests == []
+
+
+def test_an_unrecognised_question_goes_to_the_gemini_planner():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = rules_first(transport)
+    assert ask(p, "Tell me something useful about my groceries")["outcome"] == "answered"
+    assert len(transport.plan.requests) == 1 and len(transport.compose.requests) == 1
+
+
+def test_the_interim_signal_is_exactly_the_default_clarifying_question():
+    unknown = RuleModel().plan(PlanInput(question="Tell me something", language="fi", as_of="2026-09-30",
+                                         tools=[{"name": "get_spending"}]))
+    assert not_recognised(unknown)
+    spending = RuleModel().plan(PlanInput(question=QUESTION, language="en", as_of="2026-09-30",
+                                          tools=[{"name": "get_spending"}]))
+    assert not not_recognised(spending)

@@ -2,10 +2,11 @@
 
     python core/eval/run.py --source core.agent.gemini_eval:make_source --tag brief --persona CUST00860
     python core/eval/run.py --source core.agent.gemini_eval:make_source --tag red_team
-    GEMINI_MODEL=<id> ... overrides the pinned model; GEMINI_CACHE=off forces live calls.
+    GEMINI_MODEL=<id> ... overrides the pinned model; GEMINI_PLANNER=model makes Gemini plan every
+    question (the service plans recognised questions with the rule planner first).
 
-It runs the same Pipeline as POST /api/ask (registry from toolset.py, the conversation store, the
-validator, the template fallback), in process, on one database connection (statement_timeout 60s,
+It runs the same Pipeline and model as POST /api/ask (registry from toolset.py, make_agent_model, the
+conversation store, the validator, the template fallback), in process, on one database connection (statement_timeout 60s,
 reads of one customer at a time), and builds the eval's Answer the way the API source does. Each
 answer also gets a row with:
 - first card, first text (the first `delta` event: what the user sees start to appear) and done, in
@@ -13,7 +14,8 @@ answer also gets a row with:
 - the live latency of every model call (a cache hit reports the latency of the call that filled it);
 - tokens (prompt, thoughts, output) and the cost in USD.
 `stats()` adds averages per answer to the runner's summary line and prints the table first.
-Timings of a run with cache hits are not the demo's latency: use GEMINI_CACHE=off for those.
+A cache hit reports the latency of the request that filled it, so a repeated run reproduces the
+model timings without new requests; the database times are always measured anew.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ for p in (str(ROOT), str(ROOT / "core" / "eval")):
         sys.path.insert(0, p)
 
 from core.agent.conversation import ConversationStore  # noqa: E402
-from core.agent.gemini import GeminiModel, make_model  # noqa: E402
+from core.agent.gemini import make_agent_model  # noqa: E402
 from core.agent.orchestrator import AskRequest, Pipeline  # noqa: E402
 from core.agent.toolset import default_registry  # noqa: E402
 
@@ -99,10 +101,10 @@ def _walk(obj: Any) -> Iterator[Any]:
 
 
 class PipelineSource:
-    def __init__(self, as_of: str, model: GeminiModel | None = None, echo: bool = True) -> None:
+    def __init__(self, as_of: str, model: Any | None = None, echo: bool = True) -> None:
         self.as_of = date.fromisoformat(str(as_of))
-        self.model = model or make_model()
-        if self.model is None:
+        self.model = model or make_agent_model()
+        if not hasattr(self.model, "client"):
             sys.exit("GEMINI_API_KEY is not set")
         self.data = OneConnection()
         self.audit = MemoryAudit()

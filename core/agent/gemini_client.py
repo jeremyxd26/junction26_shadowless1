@@ -20,8 +20,12 @@ Around each call, within one deadline per call:
 - a timeout is not retried here (the pipeline retries a failed call once, then falls back);
 - a response that cannot be used (empty, cut at max_output_tokens, malformed function call)
   raises GeminiError with a short code; no request or response text is ever put in an error.
-Request budget: every request that goes to the network is appended to a ledger (JSON lines under
-var/, no prompt or response text), and a request that would pass the daily cap is not sent.
+Request budget (the dev service is public): every request that goes to the network is appended to a
+ledger (JSON lines under var/, no prompt or response text) and logged with the day's running total. A
+request that would pass the daily budget is not sent, and none is sent while the switch file exists
+(var/model-off): the call raises GeminiError("budget") or GeminiError("disabled"), and the pipeline
+answers from the rule planner and the template. Both are read on every call, so neither needs a
+restart; the ledger is a file, so a restart does not reset the count.
 Cache: on disk, keyed by a hash of the whole request (model, call kind, contents, config). Only
 usable responses are stored, and only their candidates, prompt feedback, usage and model version
 (no HTTP headers). Mode "replay" never reaches the network: a miss raises.
@@ -72,7 +76,7 @@ CACHE_FORMAT = 1
 class GeminiError(RuntimeError):
     """A call that produced nothing usable. `code` is short and never holds request or response text:
     timeout, rate_limited, server, network, http_<status>, empty, truncated, malformed_function_call,
-    budget, cache_miss, error."""
+    budget, disabled, cache_miss, error."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -144,12 +148,17 @@ class SdkTransport:
 
 class Ledger:
     """Counts the requests sent to the Gemini API per UTC day, in a JSON-lines file shared by every
-    process that uses the same path. Each line: time, call kind, model, result, latency, tokens."""
+    process that uses the same path. Each line: time, call kind, model, result, latency, tokens.
+    `off_switch`: while this file exists, no request is sent."""
 
-    def __init__(self, path: Path, daily_cap: int | None) -> None:
+    def __init__(self, path: Path, daily_cap: int | None, off_switch: Path | None = None) -> None:
         self.path = Path(path)
         self.daily_cap = daily_cap
+        self.off_switch = Path(off_switch) if off_switch is not None else None
         self._lock = threading.Lock()
+
+    def disabled(self) -> bool:
+        return self.off_switch is not None and self.off_switch.exists()
 
     def today(self) -> int:
         prefix = f'{{"ts": "{datetime.now(timezone.utc):%Y-%m-%d}'
@@ -162,7 +171,8 @@ class Ledger:
     def allow(self) -> bool:
         return self.daily_cap is None or self.today() < self.daily_cap
 
-    def add(self, kind: str, model: str, result: str, latency_ms: int, usage: CallUsage) -> None:
+    def add(self, kind: str, model: str, result: str, latency_ms: int, usage: CallUsage) -> int:
+        """Append one request; returns the day's count after it."""
         line = json.dumps({"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind,
                            "model": model, "result": result, "latency_ms": latency_ms,
                            "tokens": [usage.prompt_tokens, usage.thought_tokens, usage.output_tokens]})
@@ -173,6 +183,7 @@ class Ledger:
                     f.write(line + "\n")
         except OSError:
             log.warning("gemini request ledger not written")
+        return self.today()
 
 
 def cost_usd(model: str, prompt: int, thoughts: int, output: int) -> float:
@@ -342,7 +353,8 @@ class GeminiClient:
                 finish: str | None = None, error: str | None = None, network: bool = False) -> None:
         self.calls.append(CallRecord(kind, model, latency_ms, cached, usage, finish, error, network))
         if network and self.ledger is not None:
-            self.ledger.add(kind, model, error or "ok", latency_ms, usage)
+            total = self.ledger.add(kind, model, error or "ok", latency_ms, usage)
+            log.info("gemini request %d of %s today (%s %s, %s)", total, self.ledger.daily_cap, kind, model, error or "ok")
         log.info("gemini %s model=%s cached=%s latency_ms=%d tokens prompt=%d thoughts=%d output=%d "
                  "cost_usd=%.6f%s", kind, model, cached, latency_ms, usage.prompt_tokens,
                  usage.thought_tokens, usage.output_tokens, usage.cost_usd, f" error={error}" if error else "")
@@ -394,8 +406,12 @@ class GeminiClient:
             if paused:
                 self._record(kind, model, 0, CallUsage(), error=f"{code} (paused)")
                 raise GeminiError(code)
+            if self.ledger is not None and self.ledger.disabled():
+                self._record(kind, model, 0, CallUsage(), error="disabled")
+                raise GeminiError("disabled")
             if self.ledger is not None and not self.ledger.allow():
                 self._record(kind, model, 0, CallUsage(), error="budget")
+                log.warning("gemini daily budget of %s requests reached; answers use the template", self.ledger.daily_cap)
                 raise GeminiError("budget")
             remaining = deadline - self.clock()
             if remaining < MIN_ATTEMPT_S:

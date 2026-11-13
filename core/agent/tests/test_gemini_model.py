@@ -134,7 +134,7 @@ def test_prompts_are_files_with_versions():
 
 def settings(**kw):
     base = dict(gemini_api_key=None, gemini_model=None, gemini_cache="replay", gemini_cache_dir="unused",
-                gemini_fallback_model=None, gemini_daily_cap=10)
+                gemini_fallback_model=None, gemini_planner="rules_first", daily_budget=10)
     return SimpleNamespace(**{**base, **kw})
 
 
@@ -153,3 +153,22 @@ def test_the_model_can_be_overridden_and_the_fallback_turned_off():
     m = make_model(settings(gemini_api_key="test-key-not-real", gemini_model="gemini-3.1-pro-preview",
                             gemini_fallback_model="none"))
     assert m.model_id == "gemini-3.1-pro-preview" and m.client.fallback_model is None
+
+
+def test_the_service_model_is_rules_first_and_the_rule_model_without_a_key():
+    from core.agent.gemini import RulesFirstModel, make_agent_model
+    from core.agent.rules import RuleModel
+
+    assert isinstance(make_agent_model(settings()), RuleModel)
+    assert isinstance(make_agent_model(settings(gemini_api_key="test-key-not-real")), RulesFirstModel)
+    assert isinstance(make_agent_model(settings(gemini_api_key="test-key-not-real", gemini_planner="model")),
+                      GeminiModel)
+
+
+def test_a_daily_budget_of_zero_sends_nothing(tmp_path):
+    m = make_model(settings(gemini_api_key="test-key-not-real", gemini_cache="off", daily_budget=0),
+                   ledger_path=tmp_path / "requests.jsonl", off_switch=tmp_path / "off")
+    m.client.transport = FakeTransport(call_response())
+    with pytest.raises(ModelError) as exc:
+        m.plan(plan_input())
+    assert str(exc.value) == "budget" and m.client.transport.requests == []

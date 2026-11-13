@@ -26,13 +26,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.agent import template
 from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport
 from core.agent.model import (
     ComposeInput, ComposeResult, FunctionCall, FunctionResponse, ModelError, PlanInput, PlanResult, Usage,
 )
+from core.agent.rules import RuleModel
 from core.agent.validator import AnswerDraft
 
 log = logging.getLogger("core.agent.gemini")
@@ -50,9 +52,10 @@ LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 DEFAULT_MODEL = "gemini-3.8-flash"
 # When the primary model stays overwhelmed (503 after two retries), one attempt goes to the other one.
 FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash"}
-# The organisers' account allows a limited number of requests a day for the whole team; one process
-# stops calling the model past this many requests in its ledger today (answers then use the template).
-DEFAULT_DAILY_CAP = 300
+# The organisers' account allows a limited number of requests a day for the whole team, and the dev
+# service is public: past this many requests today in the ledger, answers use the template.
+DEFAULT_DAILY_BUDGET = 300
+OFF_SWITCH = ROOT / "var" / "model-off"   # while this file exists, no request is sent
 
 
 @dataclass(frozen=True)
@@ -219,11 +222,16 @@ class GeminiModel:
 # ---- settings and factory -----------------------------------------------------------------------------
 
 class GeminiSettings(BaseSettings):
-    """GEMINI_API_KEY; GEMINI_MODEL (default DEFAULT_MODEL; an override for experiments, never a -latest
-    alias); GEMINI_FALLBACK_MODEL (default from FALLBACK_MODELS; "none" turns it off); GEMINI_CACHE (on |
-    off | replay; default on); GEMINI_CACHE_DIR (default var/gemini-cache); GEMINI_DAILY_CAP (requests
-    a day in the ledger var/gemini-requests.jsonl; default DEFAULT_DAILY_CAP). Read from the environment
-    and the repository's .env, like core/app/settings.py."""
+    """Read from the environment and the repository's .env, like core/app/settings.py:
+    - GEMINI_API_KEY: without it the service runs the rule model only;
+    - GEMINI_MODEL: default DEFAULT_MODEL; an override for experiments, never a -latest alias;
+    - GEMINI_FALLBACK_MODEL: default from FALLBACK_MODELS; "none" turns it off;
+    - GEMINI_PLANNER: rules_first (default: the rule planner, Gemini only for questions it does not
+      recognise) or model (Gemini plans every question; used by the eval of the planner);
+    - GEMINI_CACHE: on (default), off, or replay; GEMINI_CACHE_DIR: default var/gemini-cache;
+    - MODEL_DAILY_BUDGET: requests to the Gemini API a UTC day, counted in var/gemini-requests.jsonl
+      (cache hits do not count); 0 turns the model off. While the file var/model-off exists, no request
+      is sent either: create it to stop the model at once, without a restart or a redeploy."""
 
     model_config = SettingsConfigDict(env_file=ROOT / ".env", env_file_encoding="utf-8", env_ignore_empty=True,
                                       extra="ignore")
@@ -231,16 +239,18 @@ class GeminiSettings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_MODEL
     gemini_fallback_model: str | None = None
+    gemini_planner: str = "rules_first"
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
-    gemini_daily_cap: int = DEFAULT_DAILY_CAP
+    daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
 
 
-def make_model(settings: Any | None = None, **client_options: Any) -> GeminiModel | None:
+def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGER, off_switch: Path = OFF_SWITCH,
+               **client_options: Any) -> GeminiModel | None:
     """A GeminiModel when GEMINI_API_KEY is set, else None (the service keeps the rule model).
 
     `settings` is any object with gemini_api_key and gemini_model (core.app.settings.Settings works); an
-    unset model id means DEFAULT_MODEL. The cache settings come from GeminiSettings when `settings`
+    unset model id means DEFAULT_MODEL. The other settings come from GeminiSettings when `settings`
     does not carry them."""
     env = GeminiSettings()
     s = settings or env
@@ -253,10 +263,62 @@ def make_model(settings: Any | None = None, **client_options: Any) -> GeminiMode
     cache = getattr(s, "gemini_cache", env.gemini_cache)
     cache_dir = getattr(s, "gemini_cache_dir", env.gemini_cache_dir)
     fallback = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model or FALLBACK_MODELS.get(model)
+    budget = getattr(s, "daily_budget", env.daily_budget)
     secret = key.get_secret_value() if isinstance(key, SecretStr) else str(key)
     transport = None if cache == "replay" else SdkTransport(secret)
     client = GeminiClient(model, transport, fallback_model=None if fallback == "none" else fallback, cache=cache,
                           cache_dir=None if cache == "off" else Path(cache_dir),
-                          ledger=Ledger(DEFAULT_LEDGER, getattr(s, "gemini_daily_cap", env.gemini_daily_cap)),
-                          **client_options)
+                          ledger=Ledger(ledger_path, budget, off_switch), **client_options)
     return GeminiModel(client)
+
+
+# ---- rules first --------------------------------------------------------------------------------------
+
+def not_recognised(result: PlanResult) -> bool:
+    """The rule planner did not recognise the question: its only call is the default clarifying question.
+    (Interim test until the rule planner marks this case itself; then only this function changes.)"""
+    if len(result.calls) != 1 or result.calls[0].name != "ask_clarifying_question":
+        return False
+    question = result.calls[0].args.get("question")
+    return question in template.CLARIFY["question"]
+
+
+class RulesFirstModel:
+    """The service's model: the rule planner first, Gemini for the rest.
+
+    plan: questions the rule planner recognises (the brief questions, common spending questions and
+    its refusals) are planned by the rules, without a model call; any other question goes to the
+    Gemini planner, and so do the later rounds of an answer the Gemini planner started.
+    compose: always Gemini; the pipeline falls back to the template when it fails.
+    So a recognised question costs one model call instead of two, and is faster by one model call."""
+
+    def __init__(self, rules: Any, model: GeminiModel) -> None:
+        self.rules = rules
+        self.model = model
+        self.client = model.client
+        self.model_id = model.model_id
+        self.planner_prompt = f"rules-first: {model.planner_prompt}"
+        self.composer_prompt = model.composer_prompt
+
+    def plan(self, request: PlanInput) -> PlanResult:
+        if any(isinstance(turn, dict) for turn in request.model_turns):
+            return self.model.plan(request)          # a later round of a Gemini-planned answer
+        result = self.rules.plan(request)
+        if not_recognised(result):
+            return self.model.plan(request)
+        return result
+
+    def compose(self, request: ComposeInput) -> ComposeResult:
+        return self.model.compose(request)
+
+
+def make_agent_model(settings: Any | None = None, **options: Any) -> Any:
+    """The model the service runs: RulesFirstModel over Gemini when a key is set (or Gemini alone when
+    GEMINI_PLANNER=model), else the rule model alone."""
+    gemini_model = make_model(settings, **options)
+    if gemini_model is None:
+        return RuleModel()
+    planner = getattr(settings, "gemini_planner", None) or GeminiSettings().gemini_planner
+    if planner == "model":
+        return gemini_model
+    return RulesFirstModel(RuleModel(), gemini_model)
