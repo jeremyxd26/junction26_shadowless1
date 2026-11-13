@@ -53,6 +53,7 @@ def test_lead_overview_matches_the_reference_answers(lead_overview):
     """docs/design/personas.md section 4 (Q1 baskets, profile spend per month) and the housing series."""
     o = lead_overview
     assert (o["customer_id"], o["as_of"], o["greeting"], o["hero"]) == (LEAD, "2026-09-30", "Hi Sanna", None)
+    assert o["reviews"] == [] and "safe_to_save" not in o
     baskets, bills = o["cards"]
     assert (baskets["type"], bills["type"]) == ("breakdown", "bills")
     got = {i["key"]: (i["amount"]["value"], i["share"]["value"]) for i in baskets["items"]}

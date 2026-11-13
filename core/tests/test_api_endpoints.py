@@ -187,6 +187,7 @@ def test_hero_is_null_while_the_switch_is_off():
     assert body.hero is None
     assert [c.type for c in body.cards] == ["breakdown", "bills"]
     assert body.greeting == "Hi Sanna" and len(body.suggested_questions) == 4 and body.insights == []
+    assert body.reviews == []  # contract 0.2.0: an empty list, not an absent field, until #68
 
 
 def test_hero_is_the_tools_metric_card_when_switched_on():

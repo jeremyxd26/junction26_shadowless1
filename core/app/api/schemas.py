@@ -15,7 +15,7 @@ in core/tests/test_api_contract.py.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -216,10 +216,11 @@ class OverviewResponse(Model):
     ai_disclosure: str
     hero: MetricCard | None  # null while the safe-to-spend tool is not available (see overview.HERO_TOOL)
     cards: list[Card]
+    # Always [] until the spike review exists: #68 narrows the item to its review card model.
+    reviews: list[dict[str, Any]]
     insights: list[Insight]
     suggested_questions: list[str]
-    # EXTENSION POINT (contract 0.2.0): `reviews: list[ReviewCard]` (#68) and
-    # `safe_to_save: SafeToSaveCard` (#53/#55) are added here.
+    # EXTENSION POINT (contract 0.2.0): `safe_to_save: SafeToSaveCard` (#53/#55) is added here.
 
 
 # ---- GET /api/evidence/{ref} (section 9) -----------------------------------------------------------

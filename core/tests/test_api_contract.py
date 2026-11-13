@@ -36,10 +36,10 @@ MODELS: dict[str, type[BaseModel]] = {
 # test_pending_entries_are_still_missing fails while a field is both implemented and listed.
 PENDING: dict[str, set[str]] = {
     "overview.response": {
-        "$.reviews",       # at most one pending review card (#68)
         "$.safe_to_save",  # the safe_to_save card (#53/#55)
     },
 }
+# `reviews` is implemented as an always-empty list; the review item shape and the label logic are #68.
 # Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
 PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
 

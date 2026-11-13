@@ -54,7 +54,8 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
     ]
     # EXTENSION POINT (contract 0.2.0, section 6): `reviews` (at most one pending review card, #68)
     # and `safe_to_save` (a safe_to_save card, #53/#55) are top-level fields, not entries of `cards`.
-    # They are added to the response below once their tools exist.
+    # `reviews` is [] until #68 fills it; `safe_to_save` is added once its tool exists.
+    reviews: list[dict[str, Any]] = []
     insights: list[dict[str, Any]] = []  # EXTENSION POINT: insight tools (habit_trend, one_off, ...)
 
     return OverviewResponse.model_validate({
@@ -65,6 +66,7 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
         "ai_disclosure": texts.pick(texts.AI_DISCLOSURE, lang),
         "hero": hero,
         "cards": cards,
+        "reviews": reviews,
         "insights": insights,
         "suggested_questions": [texts.pick(q, lang) for q in texts.SUGGESTED_QUESTIONS],
     })
