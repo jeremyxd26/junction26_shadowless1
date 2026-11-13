@@ -1,6 +1,6 @@
 # Core service image. Built on the dev instance from a git checkout (deploy/remote-deploy.sh);
 # the build context is limited by the allowlist in /.dockerignore.
-FROM python:3.11-slim
+FROM python:3.11.18-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

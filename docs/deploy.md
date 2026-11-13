@@ -36,29 +36,37 @@ Nothing is uploaded from a developer's machine. The instance pulls the code itse
 | OS volume, 50 GB NVMe at 0.20 USD per GB-month | about 0.014 USD/h |
 | **Total** | **about 0.062 USD/h, about 1.48 USD/day (about 45 USD/month)** |
 
-The account balance was 221.04 USD when the instance was created.
-
 **Billing runs until both the instance and its volume are deleted.** Shutting the instance down does not stop the charge.
 
-Delete both in one call. This needs `VERDA_CLIENT_ID` and `VERDA_CLIENT_SECRET` from `.env` exported in the shell; the token is never printed:
+Delete both in one call. This needs `VERDA_CLIENT_ID` and `VERDA_CLIENT_SECRET` from `.env` exported in the shell. Everything runs inside one Python process, so neither the secret nor the access token appears on a command line, in the process list, in shell history or in the output:
 
 ```bash
 set -a && . ./.env && set +a
-TOKEN=$(python - <<'EOF'
+python - <<'EOF'
 import json, os, urllib.request
-body = json.dumps({"grant_type": "client_credentials", "client_id": os.environ["VERDA_CLIENT_ID"],
-                   "client_secret": os.environ["VERDA_CLIENT_SECRET"]}).encode()
-req = urllib.request.Request("https://api.verda.com/v1/oauth2/token", data=body,
-                             headers={"Content-Type": "application/json"})
-print(json.load(urllib.request.urlopen(req))["access_token"])
+
+API = "https://api.verda.com/v1"
+
+def call(method, path, body=None, token=None):
+    req = urllib.request.Request(API + path, method=method, data=json.dumps(body).encode() if body else None,
+                                 headers={"Content-Type": "application/json"})
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    with urllib.request.urlopen(req) as r:
+        raw = r.read()
+        return r.status, json.loads(raw) if raw else None
+
+_, auth = call("POST", "/oauth2/token", {"grant_type": "client_credentials",
+                                         "client_id": os.environ["VERDA_CLIENT_ID"],
+                                         "client_secret": os.environ["VERDA_CLIENT_SECRET"]})
+token = auth["access_token"]
+status, result = call("PUT", "/instances", {"action": "delete", "id": ["eaaa3b3f-b9a6-4737-acb2-21450653f16f"],
+                                            "volume_ids": ["89a421bb-0c81-4479-bef8-24a075f70eaa"],
+                                            "delete_permanently": True}, token)
+print("delete:", status, result)
+print("instances left:", call("GET", "/instances", token=token)[1])   # expect []
+print("volumes left:", call("GET", "/volumes", token=token)[1])       # expect []
 EOF
-)
-curl -sS -X PUT https://api.verda.com/v1/instances \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  --data '{"action": "delete", "id": ["eaaa3b3f-b9a6-4737-acb2-21450653f16f"],
-           "volume_ids": ["89a421bb-0c81-4479-bef8-24a075f70eaa"], "delete_permanently": true}'
-curl -sS https://api.verda.com/v1/instances -H "Authorization: Bearer $TOKEN"   # expect []
-curl -sS https://api.verda.com/v1/volumes   -H "Authorization: Bearer $TOKEN"   # expect []
 ```
 
 In the console (https://console.verda.com), delete the instance and tick the option to delete its OS volume. Then check that the Volumes page is empty.
@@ -106,7 +114,9 @@ GET https://135-181-63-178.sslip.io/healthz -> 200
 
 ## Roll back
 
-If a new version does not pass `/healthz` within 30 s, `remote-deploy.sh` switches back to the previous image by itself and exits with an error.
+If a new version fails to start (`systemctl restart` fails), or does not pass `/healthz` within 30 s, `remote-deploy.sh` switches back to the previous commit by itself and exits with an error. It restores both that commit's image and **its** unit file, taken from git, so a broken unit change cannot break the rollback too.
+
+The deployed commit is recorded in `/opt/shadowless1/current` right after it passes `/healthz`, before the proxy step. So even if the Caddy config turns out invalid, which the script prints and stops on, the next deploy knows the right "previous".
 
 To go back by hand to the commit before the current one:
 
@@ -142,7 +152,16 @@ ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowle
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u caddy -n 50 --no-pager              # proxy and TLS
 ```
 
-The service writes only to the journal (the container runs with `--log-driver none`). Its access log lines contain client IP addresses. If a deploy fails, `remote-deploy.sh` prints the last 30 lines with URL credentials, `password=`/`key=`/`token=` values and IP addresses masked.
+The service writes only to the journal (the container runs with `--log-driver none`). Its access log lines contain client IP addresses. If a deploy fails, `remote-deploy.sh` prints the last 30 lines with a mask. The mask hides everything after a URL scheme up to the next space, `host=`/`user=`/`dbname=`/`password=`/`key=`/`token=` values, quoted host names and IP addresses. Check it with `bash deploy/remote-deploy.sh --self-test-mask`:
+
+```
+postgresql://***
+error: postgresql://*** failed
+connection to server at "***" (x.x.x.x), port 5432 failed
+host=*** user=*** password=*** dbname=***
+GET /healthz?token=*** HTTP/1.1 from x.x.x.x:51234
+INFO:     Application startup complete.
+```
 
 The journal was checked after the real `DATABASE_URL` was set. Over 105 lines (a restart, the rollback test and a deploy), it contained no part of the URL: 0 matches for the full URL, host, user, password and `postgres://`.
 
@@ -185,7 +204,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 - **Firewall:** `ufw` allows only 22, 80 and 443 (`ufw status`). Verda has no provider firewall for single instances.
 - **Container port:** the container's port is published on `127.0.0.1` only. Docker's published ports bypass `ufw`, so a public binding would be open to everyone.
 - **Container:** it runs as a non-root user, with a read-only file system, 1 GB memory and a pid limit.
-- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore` (`core/app`, `core/requirements.txt`). A new runtime path, for example SQL files the API reads, must be added there and in `deploy/Dockerfile`.
+- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore` (`core/app`, `core/requirements.txt`). A new runtime path, for example SQL files the API reads, must be added there and in `deploy/Dockerfile`. `remote-deploy.sh` refuses an image that contains a `tests` directory. So when `core/tools` goes in (issue #60), re-include it and then exclude its tests: `!core/tools/` followed by `core/tools/tests/` in `.dockerignore`. The later line wins.
 
 ## Setting up a new instance from scratch
 
