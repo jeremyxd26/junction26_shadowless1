@@ -44,7 +44,7 @@ export default function App() {
           {path === '/chat' ? (
             <Chat question={params.get('q')} />
           ) : overview.status === 'ready' ? (
-            <Overview overview={overview.data} />
+            <Overview overview={overview.data} onRefresh={overview.refresh} />
           ) : overview.status === 'error' || personas.status === 'error' ? (
             <ErrorBlock
               message={errorMessage(overview.status === 'error' ? overview.error : personas.status === 'error' ? personas.error : null)}

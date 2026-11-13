@@ -1,48 +1,302 @@
-import type { BreakdownCard, OverviewResponse } from '../api/types.ts'
-import { BasketsCard, HeroCard, HeroPending, InsightCard, ReviewPlaceholder } from '../components/cards.tsx'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { api } from '../api/client.ts'
+import { ApiError } from '../api/errors.ts'
+import type { BasketKey, LabelChange, LabelResponse, Num, OverviewResponse, ReviewCard } from '../api/types.ts'
+import { BasketsCard, HeroCard, HeroPending, InsightCard, type NumberMotion } from '../components/cards.tsx'
+import { ReviewAnswered, ReviewAsking, type ReviewError } from '../components/ReviewCard.tsx'
+import { Toast } from '../components/Toast.tsx'
+import { BASKETS } from '../lib/baskets.ts'
+import { applyChanges, isBasketsCard } from '../lib/changes.ts'
+import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { navigate } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
-function isBasketsCard(card: OverviewResponse['cards'][number]): card is BreakdownCard {
-  if (card.type !== 'breakdown' || !('items' in card)) return false
-  return (card as BreakdownCard).items.some((item) => item.key === 'regular_essentials')
+/** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
+type Phase = { kind: 'asking' } | { kind: 'answered'; basket: BasketKey } | { kind: 'not_sure' } | { kind: 'gone' }
+
+/**
+ * The numbers of the latest label response, shown over the overview until the overview
+ * refetched after it arrives. `refreshedFrom` is the overview on screen when that refetch was asked.
+ */
+interface Overlay {
+  seq: number
+  changes: LabelChange[]
+  refreshedFrom: OverviewResponse | null
 }
 
+interface Flight {
+  seq: number
+  basket: BasketKey
+  display: string
+}
+
+interface ToastState {
+  seq: number
+  text: string
+  rendered: string
+  numbers: Record<string, Num>
+  undo: boolean
+  retry: boolean
+}
+
+type Motion = NumberMotion & { seq: number }
+
+/** How long "was …" hints and the row tint stay after an answer (DESIGN.md). */
+const HINT_MS = 6000
+/** Keys whose "was …" hint is shown: the hero, its reserve and the basket the purchase moved to. */
+const HINTED = new Set(['safe_to_spend', 'irregular_reserve', 'regular_essentials', 'unexpected_necessities', 'everyday_spending'])
+
 /** The first screen: not an empty chat but this week's picture, then questions to ask. */
-export function Overview({ overview }: { overview: OverviewResponse }) {
-  const { t } = useSettings()
-  const baskets = overview.cards.find(isBasketsCard)
-  const review = overview.reviews[0]
+export function Overview({ overview, onRefresh }: { overview: OverviewResponse; onRefresh: () => void }) {
+  const { t, lang, customerId } = useSettings()
+  // The question asked when the screen opened. It stays here after the answer (the refetched
+  // overview no longer lists it) and comes back if the answer is undone while the review is open.
+  const [card] = useState<ReviewCard | null>(() => overview.reviews[0] ?? null)
+  const [phase, setPhase] = useState<Phase>({ kind: 'asking' })
+  const [closing, setClosing] = useState(false)
+  const [busy, setBusy] = useState<BasketKey | 'undo' | null>(null)
+  const [error, setError] = useState<ReviewError | null>(null)
+  const [overlay, setOverlay] = useState<Overlay | null>(null)
+  const [motion, setMotion] = useState<Motion | null>(null)
+  const [flight, setFlight] = useState<Flight | null>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
+  // The toast of an answer waits for the amount to land; `shownToast` is the run it belongs to.
+  const [shownToast, setShowToast] = useState<number | null>(null)
+
+  const seq = useRef(0)
+  const timers = useRef<number[]>([])
+  const lastRequest = useRef<BasketKey | null>(null)
+  const focusCard = useRef(false)
+  const cardRef = useRef<HTMLElement>(null)
+  const overviewRef = useRef(overview)
+  useEffect(() => {
+    overviewRef.current = overview
+  }, [overview])
+
+  const later = useCallback((ms: number, run: () => void) => {
+    timers.current.push(window.setTimeout(run, ms))
+  }, [])
+  useEffect(
+    () => () => {
+      for (const id of timers.current) window.clearTimeout(id)
+    },
+    [],
+  )
+
+  /** Refetch the overview in the background; the overlay gives way once the new data is here. */
+  const refreshAfter = useCallback(
+    (run: number) => {
+      setOverlay((current) =>
+        current && current.seq === run ? { ...current, refreshedFrom: overviewRef.current } : current,
+      )
+      onRefresh()
+    },
+    [onRefresh],
+  )
+
+  const labels = useMemo(() => {
+    const names: Record<string, string> = {}
+    if (card) names.unclassified = card.current_basket.label
+    return names
+  }, [card])
+  const overlayLive = overlay && !(overlay.refreshedFrom && overlay.refreshedFrom !== overview)
+  const view = useMemo(
+    () => (overlay && overlayLive ? applyChanges(overview, overlay.changes, labels) : overview),
+    [overview, overlay, overlayLive, labels],
+  )
+  const baskets = view.cards.find(isBasketsCard)
+
+  useEffect(() => {
+    if (!focusCard.current) return
+    focusCard.current = false
+    cardRef.current?.focus({ preventScroll: true })
+  }, [phase])
+
+  /** The flight's milestones: counters of the basket rows start, the amount lands, the pill is gone. */
+  const onFlight = useCallback(
+    (run: number, event: 'start' | 'land' | 'done') => {
+      if (event === 'start') {
+        setMotion((current) =>
+          current && current.seq === run
+            ? {
+                ...current,
+                counts: Object.fromEntries(
+                  Object.entries(current.counts).map(([key, count]) => [key, { ...count, run: true }]),
+                ),
+              }
+            : current,
+        )
+      } else if (event === 'land') {
+        // The waiting row folds away, then the toast comes up (so it never covers the fold).
+        later(250, () =>
+          setMotion((current) => (current && current.seq === run ? { ...current, waiting: 'leave' } : current)),
+        )
+        later(250 + 450, () => {
+          setMotion((current) => (current && current.seq === run ? { ...current, waiting: null } : current))
+          setShowToast(run)
+          refreshAfter(run)
+        })
+      } else {
+        setFlight((current) => (current && current.seq === run ? null : current))
+      }
+    },
+    [later, refreshAfter],
+  )
+
+  function apply(response: LabelResponse, asked: BasketKey | null) {
+    for (const id of timers.current) window.clearTimeout(id)
+    timers.current = []
+    const run = ++seq.current
+    const reduced = prefersReducedMotion()
+    const changes = response.changed ? response.changes : []
+    if (changes.length > 0) setOverlay({ seq: run, changes, refreshedFrom: null })
+
+    const answered = response.review_state === 'answered' && asked !== null
+    const basket = (response.label?.basket ?? asked) as BasketKey
+    const hasWaitingRow = document.querySelector('[data-amount-key="unclassified"]') !== null
+    const flies =
+      answered &&
+      !reduced &&
+      hasWaitingRow &&
+      changes.some((change) => change.key === 'unclassified') &&
+      changes.some((change) => change.key === basket)
+
+    const counts = Object.fromEntries(
+      changes.map((change) => [
+        change.key,
+        // Basket rows start counting when the amount leaves the waiting row.
+        { seq: run, from: change.before, run: !flies || !(change.key in BASKETS) },
+      ]),
+    )
+    const was = answered
+      ? Object.fromEntries(changes.filter((change) => HINTED.has(change.key)).map((change) => [change.key, change.before]))
+      : {}
+    setMotion({
+      seq: run,
+      counts,
+      was,
+      steady: answered && changes.length > 0 && !changes.some((change) => change.key === 'safe_to_spend'),
+      highlight: answered ? basket : null,
+      waiting: flies ? 'keep' : null,
+    })
+
+    setToast({
+      seq: run,
+      text: response.message.text,
+      rendered: response.message.text_rendered,
+      numbers: response.message.numbers,
+      undo: answered,
+      retry: false,
+    })
+    focusCard.current = true
+    if (answered) {
+      setPhase({ kind: 'answered', basket })
+      later(HINT_MS, () =>
+        setMotion((current) =>
+          current && current.seq === run ? { ...current, was: {}, steady: false, highlight: null } : current,
+        ),
+      )
+    } else if (response.review_state === 'pending') {
+      setPhase({ kind: 'asking' })
+    } else {
+      setPhase({ kind: 'gone' })
+    }
+
+    if (flies) {
+      setShowToast(null)
+      setFlight({ seq: run, basket, display: card?.amount.display ?? '' })
+    } else {
+      setShowToast(run)
+      later(reduced ? 0 : tokenMs('--duration-money', 900) + 100, () => refreshAfter(run))
+    }
+  }
+
+  async function send(basket: BasketKey | null) {
+    if (!card || !customerId || busy) return
+    lastRequest.current = basket
+    setBusy(basket ?? 'undo')
+    setError(null)
+    try {
+      const response = await api.label({ customer_id: customerId, tx_ref: card.tx_ref, basket, language: lang })
+      apply(response, basket)
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'tx_ref_not_found') {
+        // The review expired: remove the card quietly and show the overview as it is now.
+        setPhase({ kind: 'gone' })
+        setToast(null)
+        onRefresh()
+        return
+      }
+      // Nothing moved: the card (or the toast, for an undo) says so and offers a retry when it may help.
+      const message = caught instanceof ApiError ? caught.message : t.reviewSaveFailed
+      const retryable = caught instanceof ApiError ? caught.retryable : true
+      if (basket === null) {
+        const run = ++seq.current
+        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable })
+        setShowToast(run)
+      } else {
+        setError({ message, retryable })
+      }
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function notSure() {
+    setClosing(true)
+    later(prefersReducedMotion() ? 0 : tokenMs('--duration-base', 250), () => {
+      setClosing(false)
+      setPhase({ kind: 'not_sure' })
+      document.getElementById('baskets-title')?.focus({ preventScroll: true })
+    })
+  }
+
+  const visibleToast = toast && shownToast === toast.seq ? toast : null
 
   return (
-    <div className="flex flex-col gap-4 pb-4">
+    <div className={`flex flex-col gap-4 ${visibleToast ? 'pb-40' : 'pb-4'}`}>
       <div>
-        <p className="text-xl font-semibold text-ink">{overview.greeting}</p>
+        <p className="text-xl font-semibold text-ink">{view.greeting}</p>
         {/* The AI disclosure once, on the overview, in the API's words when it sends them. */}
-        <p className="mt-0.5 text-xs text-muted">{overview.ai_disclosure || t.disclosure}</p>
+        <p className="mt-0.5 text-xs text-muted">{view.ai_disclosure || t.disclosure}</p>
       </div>
-      {overview.hero ? <HeroCard card={overview.hero} /> : <HeroPending />}
-      {review && <ReviewPlaceholder card={review} />}
-      {baskets && <BasketsCard card={baskets} />}
+      {view.hero ? <HeroCard card={view.hero} motion={motion ?? undefined} /> : <HeroPending />}
 
-      {overview.insights.length > 0 && (
+      {card && phase.kind === 'asking' && (
+        <ReviewAsking
+          ref={cardRef}
+          card={card}
+          busy={busy === 'undo' ? null : busy}
+          error={error}
+          leaving={closing}
+          onAnswer={(basket) => void send(basket)}
+          onNotSure={notSure}
+          onRetry={() => void send(lastRequest.current)}
+        />
+      )}
+      {card && phase.kind === 'answered' && <ReviewAnswered ref={cardRef} card={card} basket={phase.basket} />}
+
+      {baskets && <BasketsCard card={baskets} motion={motion ?? undefined} />}
+
+      {view.insights.length > 0 && (
         <section aria-labelledby="insights-title" className="flex flex-col gap-3">
           <h2 id="insights-title" className="text-base font-semibold text-ink">
             {t.insightsTitle}
           </h2>
-          {overview.insights.map((insight) => (
+          {view.insights.map((insight) => (
             <InsightCard key={insight.insight_id} insight={insight} />
           ))}
         </section>
       )}
 
-      {overview.suggested_questions.length > 0 && (
+      {view.suggested_questions.length > 0 && (
         <section aria-labelledby="ask-title" className="mt-2">
           <h2 id="ask-title" className="text-base font-semibold text-ink">
             {t.askTitle}
           </h2>
           <ul className="mt-2 flex flex-wrap gap-2">
-            {overview.suggested_questions.map((question) => (
+            {view.suggested_questions.map((question) => (
               <li key={question}>
                 <button
                   type="button"
@@ -56,6 +310,126 @@ export function Overview({ overview }: { overview: OverviewResponse }) {
           </ul>
         </section>
       )}
+
+      {/* Screen readers hear the label response's message with its numbers written out. */}
+      <p role="status" className="sr-only">
+        {visibleToast?.rendered ?? ''}
+      </p>
+      {visibleToast && (
+        <Toast
+          text={visibleToast.text}
+          numbers={visibleToast.numbers}
+          onUndo={visibleToast.undo && busy === null ? () => void send(null) : undefined}
+          onRetry={visibleToast.retry ? () => void send(null) : undefined}
+          onClose={() => setToast(null)}
+        />
+      )}
+      {flight && <FlyingAmount flight={flight} onEvent={onFlight} />}
     </div>
+  )
+}
+
+const BASKET_COLOUR: Record<string, string> = {
+  regular_essentials: '--color-basket-essentials',
+  unexpected_necessities: '--color-basket-unexpected',
+  everyday_spending: '--color-basket-everyday',
+}
+
+/**
+ * The purchase amount, as a pill, flies from the "Waiting for your answer" row to the basket
+ * it was answered into (`--duration-flight`, `--ease-expressive`); its border turns to the
+ * basket's colour. Decoration only: hidden from screen readers, never shown with reduced motion.
+ */
+function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: number, event: 'start' | 'land' | 'done') => void }) {
+  const pill = useRef<HTMLSpanElement>(null)
+  const [landed, setLanded] = useState(false)
+  const { seq: run, basket } = flight
+
+  useLayoutEffect(() => {
+    const element = pill.current
+    const source = document.querySelector<HTMLElement>('[data-amount-key="unclassified"]')
+    const target = document.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
+    let cancelled = false
+    const animations: Animation[] = []
+    const waits: number[] = []
+
+    if (!element || !source || !target) {
+      onEvent(run, 'start')
+      onEvent(run, 'land')
+      onEvent(run, 'done')
+      return
+    }
+
+    const fly = () => {
+      if (cancelled) return
+      const from = source.getBoundingClientRect()
+      const to = target.getBoundingClientRect()
+      const width = element.offsetWidth
+      const height = element.offsetHeight
+      const x0 = from.right - width
+      const y0 = from.top + (from.height - height) / 2
+      const dx = to.right - width - x0
+      const dy = to.top + (to.height - height) / 2 - y0
+      element.style.left = `${x0}px`
+      element.style.top = `${y0}px`
+      element.style.visibility = 'visible'
+      onEvent(run, 'start')
+      const flightAnimation = element.animate(
+        [
+          { transform: 'translate(0, 0) scale(1)', borderColor: token('--color-waiting') },
+          { transform: `translate(${dx / 2 - 40}px, ${dy / 2}px) scale(1.08)`, offset: 0.5 },
+          { transform: `translate(${dx}px, ${dy}px) scale(1)`, borderColor: token(BASKET_COLOUR[basket]) },
+        ],
+        { duration: tokenMs('--duration-flight', 600), easing: token('--ease-expressive') || 'ease-in-out', fill: 'forwards' },
+      )
+      animations.push(flightAnimation)
+      flightAnimation.finished
+        .then(() => {
+          if (cancelled) return
+          setLanded(true)
+          onEvent(run, 'land')
+          const fade = element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, delay: 250, fill: 'forwards' })
+          animations.push(fade)
+          return fade.finished.then(() => {
+            if (!cancelled) onEvent(run, 'done')
+          })
+        })
+        .catch(() => undefined)
+    }
+
+    // On a short screen (375 × 812) the basket rows sit below the fold. Then the hero counts
+    // first, at the top, and only after that the page glides to the rows and the amount flies.
+    const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
+    const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
+    const hidden = rows.some((box) => !box || box.top < header || box.bottom > window.innerHeight)
+    if (hidden) {
+      waits.push(
+        window.setTimeout(() => {
+          if (cancelled) return
+          target.closest('li')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          waits.push(window.setTimeout(fly, 450))
+        }, tokenMs('--duration-money', 900)),
+      )
+    } else {
+      fly()
+    }
+    return () => {
+      cancelled = true
+      for (const id of waits) window.clearTimeout(id)
+      for (const animation of animations) animation.cancel()
+    }
+  }, [run, basket, onEvent])
+
+  return createPortal(
+    <span
+      ref={pill}
+      aria-hidden="true"
+      style={{ visibility: 'hidden' }}
+      className="pointer-events-none fixed left-0 top-0 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill border-2 border-waiting bg-surface py-1 pl-2 pr-3 text-[15px] font-bold tabular-nums text-ink shadow-float"
+    >
+      <span className="text-base">{landed ? BASKETS[basket]?.icon : '?'}</span>
+      {flight.display}
+    </span>,
+    document.body,
   )
 }

@@ -51,6 +51,7 @@
   --radius-sheet: var(--radius-sheet);
   --radius-pill: var(--radius-pill);
   --shadow-sheet: var(--shadow-sheet);
+  --shadow-float: var(--shadow-float);
 }
 
 html {
@@ -105,11 +106,71 @@ select {
   }
 }
 
+/* "Sentti asks" (#35) */
+.card-enter {
+  animation: card-enter var(--duration-base) var(--ease-entry);
+}
+.card-leave {
+  animation: card-leave var(--duration-base) var(--ease-exit) forwards;
+}
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes card-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.toast-in {
+  animation: sheet-rise var(--duration-base) var(--ease-entry);
+}
+/* A number that starts counting, or a hint that appears; also the only motion under reduced motion. */
+.motion-fade {
+  animation: sheet-fade var(--duration-fast) var(--ease-standard);
+}
+/* The waiting row: fades, then folds away after the answer; fades back in after an undo. */
+.row-leave {
+  overflow: hidden;
+  animation: row-leave 450ms var(--ease-exit) forwards;
+}
+.row-enter {
+  animation: sheet-fade var(--duration-base) var(--ease-entry);
+}
+@keyframes row-leave {
+  0% {
+    opacity: 1;
+    max-height: 120px;
+  }
+  50% {
+    opacity: 0;
+    max-height: 120px;
+  }
+  100% {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom-width: 0;
+  }
+}
+/* The waiting bar is hatched, never a basket colour. */
+.bar-hatched {
+  background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+  /* Numbers still cross-fade in 150 ms (DESIGN.md, motion). */
+  .motion-fade {
+    animation-duration: var(--duration-fast) !important;
   }
 }

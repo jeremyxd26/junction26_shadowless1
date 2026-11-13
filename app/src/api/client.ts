@@ -1,4 +1,11 @@
-import type { EvidenceResponse, Language, OverviewResponse, PersonasResponse } from './types.ts'
+import type {
+  EvidenceResponse,
+  LabelRequest,
+  LabelResponse,
+  Language,
+  OverviewResponse,
+  PersonasResponse,
+} from './types.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
 
 export type ApiMode = 'mock' | 'live'
@@ -10,15 +17,17 @@ export interface ApiClient {
   overview(customerId: string, lang: Language): Promise<OverviewResponse>
   /** `cursor` is the previous page's `next_cursor` (contract section 9). */
   evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
+  /** The customer's answer to a review card; `basket: null` undoes it (contract section 10). */
+  label(request: LabelRequest): Promise<LabelResponse>
 }
 
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
-  async function get<T>(path: string, params: Record<string, string>): Promise<T> {
-    const query = new URLSearchParams(params).toString()
+  // Default fetch credentials (same-origin), so the core's session cookie travels with every call.
+  async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
     let response: Response
     try {
-      response = await fetch(`${base}${path}?${query}`, { headers: { Accept: 'application/json' } })
+      response = await fetch(url, { ...init, headers: { Accept: 'application/json', ...init.headers } })
     } catch {
       throw new ApiError(0, { code: 'network', message: 'No connection. Try again.', retryable: true })
     }
@@ -43,6 +52,18 @@ function createLiveClient(base: string): ApiClient {
     return body as T
   }
 
+  function get<T>(path: string, params: Record<string, string>): Promise<T> {
+    return request<T>(`${base}${path}?${new URLSearchParams(params).toString()}`)
+  }
+
+  function post<T>(path: string, body: unknown): Promise<T> {
+    return request<T>(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
   return {
     mode: 'live',
     personas: (lang) => get<PersonasResponse>('/api/personas', { lang }),
@@ -54,6 +75,7 @@ function createLiveClient(base: string): ApiClient {
         lang,
         ...(cursor ? { cursor } : {}),
       }),
+    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest),
   }
 }
 
@@ -65,6 +87,7 @@ function createLazyMockClient(): ApiClient {
     personas: (lang) => client.then((mock) => mock.personas(lang)),
     overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
     evidence: (ref, customerId, lang, cursor) => client.then((mock) => mock.evidence(ref, customerId, lang, cursor)),
+    label: (labelRequest) => client.then((mock) => mock.label(labelRequest)),
   }
 }
 
