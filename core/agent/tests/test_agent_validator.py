@@ -58,8 +58,12 @@ N2 = Number(id="n2", value=10, unit=Unit.COUNT, period=AUG, method="spending.tx_
             label="Purchases", display=display(Decimal("10"), Unit.COUNT, "en"))
 
 
+N4 = Number(id="n4", value=500, unit=Unit.COUNT, period=AUG, method="spending.tx_count@1", evidence_ref="ev_w",
+            label="Visits", display=display(Decimal("500"), Unit.COUNT, "en"))
+
+
 def check_two(text, language="en"):
-    numbers = {"n1": N1, "n2": N2}
+    numbers = {"n1": N1, "n2": N2, "n4": N4}
     cited = sorted(set(re.findall(r"\{\{(n\d+)\}\}", text)))
     return validate({"language": language, "text": text, "cited": cited, "lesson_key": None},
                     language=language, numbers=numbers, allowed=ALLOWED)[1]
@@ -83,12 +87,43 @@ def test_tokens_glued_to_digits_units_or_dates_fail(text, lang):
 
 @pytest.mark.parametrize("text,lang", [
     ("In August 2026 you spent {{n1}} on {{n2}} purchases.", "en"),
-    ("You spent {{n1}} ({{n2}} purchases) in August 2026.", "en"),
-    ("You spent {{n1}}, {{n2}} purchases.", "en"),
+    ("You spent {{n1}} (over {{n2}} purchases) in August 2026.", "en"),
+    ("You spent {{n1}}, over {{n2}} purchases.", "en"),
+    ("August 2026: Restaurants: {{n1}}; Purchases: {{n2}}.", "en"),     # the template's list
+    ("Elokuu 2026: Ravintolat: {{n1}}; Ostokset: {{n2}}.", "fi"),
     ("Elokuussa 2026 käytit {{n1}}; ostoksia oli {{n2}}.", "fi"),
 ])
 def test_rendered_check_keeps_good_drafts(text, lang):
     assert check_two(text, lang) == []
+
+
+@pytest.mark.parametrize("text", [
+    "You made {{n2}} {{n4}} purchases.",            # "10 500" reads as ten thousand five hundred
+    "You made {{n2}}\u00a0{{n4}} purchases.",       # no-break space
+    "You made {{n2}}\u202f{{n4}} purchases.",       # narrow no-break space
+    "You made {{n2}}\u2009{{n4}} purchases.",       # thin space
+    "You made {{n2}}'{{n4}} purchases.",
+    "On {{n2}}/{{n2}} you paid.",                   # reads as a date
+    "At {{n2}}:{{n2}} you paid.",
+    "That is {{n2}}^{{n2}} purchases.",
+    "You spent {{n1}}/{{n2}} purchases.",
+    "You spent {{n1}}, {{n2}} purchases.",          # a list separator needs a word after it
+    "Purchases: {{n2}}‰ of the month.",             # per mille, like percent
+    "That is ×{{n2}} purchases.",
+    "That is {{n2}}× your usual month.",
+    "That is x{{n2}} purchases.",
+    "That is {{n2}} x your usual month.",
+    "Purchases: #{{n2}} this month.",
+    "Purchases: {{n2}}+ this month.",
+])
+def test_tokens_joined_by_marks_or_without_words_fail(text):
+    # Second review of PR #104.
+    assert check_two(text), text
+
+
+def test_a_word_with_an_x_next_to_a_token_is_fine():
+    assert check_two("The max was {{n1}} over {{n2}} purchases in August 2026.") == []
+    assert check_two("You spent {{n1}} on {{n2}} extra purchases in August 2026.") == []
 
 
 def test_a_finnish_template_with_two_tools_passes_the_rendered_check():
@@ -108,6 +143,25 @@ def test_a_finnish_template_with_two_tools_passes_the_rendered_check():
     draft = template.template_draft(views, [], "fi", allowed)
     assert "10. Syyskuu 2026" in validator_render(draft["text"], fi)
     assert validate(draft, language="fi", numbers=fi, allowed=allowed)[1] == []
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_the_template_never_puts_two_bare_tokens_together(lang):
+    # A number without a usable label is cited only as the first item after the period; elsewhere it
+    # is left out, so the template never writes "{{n1}}; {{n2}}".
+    from core.agent import template
+    from core.agent.validator import allowed_from
+
+    nums = {k: n.model_copy(update={"display": display(Decimal(str(n.value)), n.unit, lang)})
+            for k, n in {"n1": N1, "n2": N2, "n4": N4}.items()}
+    views = [{"tool": "t", "period": "August 2026" if lang == "en" else "elokuu 2026",
+              "a": {"id": "n1", "value": 147.64, "unit": "eur"}, "b": {"id": "n2", "value": 10, "unit": "count"},
+              "c": {"id": "n4", "value": 500, "unit": "count", "label": "Visits"}},
+             {"tool": "t", "x": {"id": "n2", "value": 10, "unit": "count"}}]
+    allowed = allowed_from(nums.values(), views, date(2026, 9, 30))
+    draft = template.template_draft(views, [], lang, allowed)
+    assert draft["cited"] == ["n1", "n4"]
+    assert validate(draft, language=lang, numbers=nums, allowed=allowed)[1] == []
 
 
 def test_token_rules():
