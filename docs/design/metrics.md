@@ -130,10 +130,12 @@ Cadence is monthly; no weekly or yearly series exists in this data (the yearly A
 |---|---|---|
 | several payments a month | `spread` | none (use pro rata) |
 | already paid this month | `done_this_month` | typical day next month (clamped to month end) |
-| not paid, today before typical day | `upcoming` | typical day this month |
-| income not paid, past typical day | `late` | last day of this month (or tomorrow if today is the last day) |
-| bill not paid, at most 7 days past typical day | `late` | tomorrow |
-| bill not paid, more than 7 days past | `skipped_this_month` | typical day next month |
+| not paid, today on or before the typical day | `upcoming` | typical day this month; tomorrow if today is the typical day |
+| income not paid, after the typical day | `late` | last day of this month (or tomorrow if today is the last day) |
+| bill not paid, 1 to 7 days after the typical day | `late` | tomorrow |
+| bill not paid, more than 7 days after | `skipped_this_month` | typical day next month |
+
+The typical day is compared as a date clamped to the month's end (day 31 in a 30-day month is the 30th). All of today's transactions are in the data, so a payment missing on its typical day is still `upcoming` and expected tomorrow; it becomes `late` the day after. Example: CUST00001 on 2026-05-15 (that month's salary came on the 29th): `upcoming`, expected 2026-05-16.
 
 - `late_share_12m` (salary): share of the last 12 months whose salary came on day 26 or later.
 
@@ -141,8 +143,12 @@ Cadence is monthly; no weekly or yearly series exists in this data (the yearly A
 
 **Evidence.** The series' transactions in the window (for typical amounts) plus `last_tx_id`.
 
-### 2.3 Salary Sweep (decision needed)
-Default here: a sweep is a **transfer**, not spending and not saving. It reduces the money available on this account (safe to spend uses income minus sweep), it is never reserved as a bill before payday (it follows the salary), and a customer with a monthly sweep is excluded from peer groups (section 6). Open question 1 asks what it really is.
+### 2.3 Salary Sweep and "sweep customers"
+A sweep is a **transfer**, not spending and not saving. It reduces the money available on this account (safe to spend uses income minus sweep), and it is never reserved as a bill before payday, because it follows the salary.
+
+**Sweep customer** has one definition everywhere: a Salary Sweep in **at least 4 of the 6 window months**, which is exactly a recurring `salary_sweep` series. It is used in three places: 03 nets the sweep series out of income; 05 gives the trait `salary_moved_elsewhere`; 06 leaves the customer out of every peer group. Open question 1 (what a sweep really is) is with the bank's people.
+
+**Income** means Salary + Other Income in every metric. Invest Withdraw is the customer's own saving coming back, so it is not income.
 
 **Worked numbers** (today 2026-09-30):
 
@@ -181,12 +187,12 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 ```
 
 - `balance`: the last `balance_after` on or before today, summed over the customer's accounts (`balance_tx_id`).
-- `bills_due`: every recurring outflow except Salary Sweep, due after today and on or before payday. A once-a-month bill counts its typical amount at its typical day in each month of the horizon. This month's unpaid bill counts as due tomorrow if at most 7 days late, and is taken as skipped if later. A bill paid several times a month counts `typical_month * N / 30.4375`. Investment deposits count (they are a commitment the user set up).
-- `income/month`, `sweep/month`, `committed/month`: sums of `typical_month_eur` of the recurring in-series, the salary_sweep series, and the other out-series.
-- `cushion`: `app.cushion_eur`, default **100 €** (open question 3).
+- `bills_due`: every recurring outflow except Salary Sweep, due after today and on or before payday. A once-a-month bill counts its typical amount at its typical day in each month of the horizon. This month's unpaid bill counts as due tomorrow if at most 7 days late, and is taken as skipped if later. A bill paid several times a month counts `typical_month * N / 30.4375`. A recurring investment deposit counts too (team-lead decision): it is the customer's own saving plan, and the explanation says so ("your monthly saving of X € is set aside").
+- `income/month`, `sweep/month`, `committed/month`: sums of `typical_month_eur` of the recurring salary and other-income series, the salary_sweep series, and the other out-series (investment deposits included).
+- `cushion`: `app.cushion_eur`, default **100 €**, configurable (team-lead decision).
 - `status`: `nothing_free` if the result is 0; `below_usual` if it is under the customer's usual everyday spending per 7 days (non-one-off, from the window); else `ok`.
 
-**Output** (`03_safe_to_spend.sql`, one row per customer): `safe_to_spend_7d_eur`, `binding_limit`, `balance_limit_7d_eur`, `budget_limit_7d_eur`, `free_until_payday_eur`, `free_month_eur`, `balance_eur`, `balance_tx_id`, `bills_due_eur`, `essentials_reserve_eur`, `irregular_reserve_eur`, `cushion_eur`, `next_payday`, `days_to_payday`, `salary_status`, `income_month_eur`, `sweep_month_eur`, `committed_month_eur`, `essentials_month_eur`, `irregular_month_eur`, `usual_everyday_7d_eur`, `status`, `week_start`, `week_end`.
+**Output** (`03_safe_to_spend.sql`, one row per customer): `safe_to_spend_7d_eur`, `binding_limit`, `balance_limit_7d_eur`, `budget_limit_7d_eur`, `free_until_payday_eur`, `free_month_eur`, `balance_eur`, `balance_tx_id`, `bills_due_eur`, `essentials_reserve_eur`, `irregular_reserve_eur`, `cushion_eur`, `next_payday`, `days_to_payday`, `salary_status`, `income_month_eur`, `sweep_month_eur`, `committed_month_eur`, `essentials_month_eur`, `irregular_month_eur`, `window_days`, `usual_everyday_7d_eur`, `status`, `week_start`, `week_end`.
 
 **Evidence.** Inputs: `balance_tx_id`; the recurring series of section 2; the basket rows of section 1 for the run-rates.
 
@@ -194,7 +200,9 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 - Payday tomorrow (N = 1): the balance limit spreads the free money over one day; the budget limit then usually binds.
 - Salary late this month: `salary_status = late`, payday = last day of the month (conservative).
 - Balance already below the reserves: `free_until_payday < 0` → 0, `nothing_free`.
-- No regular income: payday assumed in 30 days, `salary_status = no_regular_income`, budget limit 0 (no income), so the result is 0. The coach should say it cannot estimate.
+- Salary not paid on its typical day: still `upcoming`, payday tomorrow (N = 1); see the status table in section 2.
+- No salary series: payday assumed in 30 days, `salary_status = no_salary_series`. The budget limit still counts any other recurring income (Other Income in at least 4 of 6 months); with none it is 0, so the result is 0 and the coach should say it cannot estimate.
+- No history inside the window (first transaction in the current month): the row is still returned, with run-rates 0 and `window_days = 0`.
 - Sweep customers: income minus sweep is small, so the budget limit is small and usually binds.
 
 **Worked numbers** (today 2026-09-30, week 2026-10-01 … 2026-10-07, payday 2026-10-15, N = 15):
@@ -219,19 +227,21 @@ Checked with an earlier today: at 2026-09-14 CUST00001's salary is `upcoming`, p
 An estimate (R13): "if the next months look like the average of the last 6 complete months, cutting X by p% saves …".
 
 ```
-baseline_month = sum(out_eur) of the selection in the window, one-offs excluded / n_months
+baseline_month = sum(out_eur) of the selection in the window, one-offs and regular essentials excluded / n_months
 saving_month   = baseline_month * p / 100
 saving_week    = saving_month * 7 / 30.4375
 saving_year    = saving_month * 12
 ```
 
+**What may be cut** (team-lead decision): a what-if never proposes cutting `regular_essentials`. Those rows of a selection are left out of the baseline and shown in `regular_excluded_eur`. `everyday_spending` is the normal target. `unexpected_necessities` may be cut, but the row's `status` is `estimate_with_caveat` and the coach says these are needed costs that only sometimes can be reduced. A selection with nothing cuttable gets `status = not_offered` and zero savings: for example `category:Groceries`, which is all regular essentials.
+
 Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<key>` or `merchant:<id>`; default `category:Restaurants`. Cut `app.whatif_pct`, default 20. Examples: dining out −20% = `category:Restaurants`; taxis −50% = `mcc:4121` with 50; all everyday spending −10% = `basket:everyday_spending` with 10.
 
-**Output** (`04_what_if.sql`, one row per customer with spending in the selection): `selection`, `cut_pct`, `baseline_month_eur`, `saving_month_eur`, `saving_week_eur`, `saving_year_eur`, `n_tx`, `one_off_excluded_eur`, `n_one_off`, `n_months`, `period_start`, `period_end`. Method text for the card: "Average of your last 6 full months (one-off purchases left out), cut by p%".
+**Output** (`04_what_if.sql`, one row per customer with spending in the selection): `selection`, `cut_pct`, `status` (`estimate`, `estimate_with_caveat`, `not_offered`), `baseline_month_eur`, `saving_month_eur`, `saving_week_eur`, `saving_year_eur`, `n_tx`, `one_off_excluded_eur`, `n_one_off`, `regular_excluded_eur`, `n_months`, `period_start`, `period_end`. Method text for the card: "Average of your last 6 full months (one-off purchases left out), cut by p%".
 
-**Evidence.** Rows of the selection in the window with `is_one_off = false`.
+**Evidence.** Rows of the selection in the window with `is_one_off = false` and a basket other than `regular_essentials`.
 
-**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Cutting essentials is allowed by the formula, but the coach should only suggest cuts to everyday spending (open question 5).
+**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
 
 **Worked numbers** (dining out −20%):
 
@@ -244,28 +254,29 @@ Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<
 ## 5. Spender profile — "What kind of spender am I?"
 
 Features over the window (all per month unless noted):
-- `net_income` = (Salary + Other Income − Salary Sweep) / n_months
+- `net_income` = (income − Salary Sweep) / n_months, where income = Salary + Other Income (Invest Withdraw is not income; section 2.3)
 - `spend` = spend flow / n_months; `saving` = Invest Deposit / n_months
-- `keep_rate` = (net_income − spend) / net_income, in % (investment deposits count as kept)
+- `keep_rate` = (net_income − spend) / net_income, in % (investment deposits count as kept); only computed when net_income > 0
 - basket shares of spend; `one_off_share`: one-off purchases outside Health as a share of spend (Health one-offs are left out so that health spending can never set a label, R9)
 - `everyday_weekend_pct`: share of everyday spending on Saturday or Sunday
 - `everyday_tx_month`, `everyday_avg_ticket_eur`, `top_everyday_category`
-- `months_out_over_in`: months where spend + saving exceeded income − sweep
+- `months_out_over_in`: months where spend + saving exceeded that month's income − sweep (same income definition)
 - `n_tx_below_zero`: transactions that left the balance below 0
 
 **Primary label** (first rule that matches):
 
 | Order | Key | Rule |
 |---|---|---|
+| 0 | `not_enough_income_data` | net_income ≤ 0 or no income in the window (for example a sweep larger than the salary): no keep rate, so no spending verdict; the coach says the account does not show enough income |
 | 1 | `stretched` | keep_rate < 0 (spends more than comes in) |
 | 2 | `big_ticket` | one_off_share ≥ 5% |
 | 3 | `everyday_heavy` | everyday share ≥ 30% |
 | 4 | `saver` | keep_rate ≥ 20% |
 | 5 | `steady` | otherwise |
 
-**Traits** (any number): `salary_moved_elsewhere` (sweep > 50% of income), `went_below_zero` (n_tx_below_zero > 0), `regular_investor` (saving > 0), `weekend_spender` (weekend share ≥ 45%; an even spread is 29%), `frequent_small_purchases` (≥ 12 everyday purchases a month).
+**Traits** (any number of the five): `salary_moved_elsewhere` (a sweep customer, section 2.3), `went_below_zero` (n_tx_below_zero > 0), `regular_investor` (saving > 0), `weekend_spender` (weekend share ≥ 45%; an even spread is 29%), `frequent_small_purchases` (≥ 12 everyday purchases a month).
 
-The thresholds are fixed constants, set once from the sample's distribution (keep_rate p33 = 0.8%, p67 = 19.5%; everyday share p67 = 26.2%, p90 = 37.1%; one-off share p90 = 6.1%; weekend share p67 = 42.2%; everyday purchases a month p67 = 11.8). They do not depend on who is in the run. On the sample the labels split as stretched 29, steady 27, saver 24, everyday_heavy 12, big_ticket 7.
+The thresholds are fixed constants, set once from the sample's distribution (keep_rate p33 = 0.8%, p67 = 19.5%; everyday share p67 = 26.2%, p90 = 37.1%; one-off share p90 = 6.1%; weekend share p67 = 42.2%; everyday purchases a month p67 = 11.8). They do not depend on who is in the run. On the sample the labels split as stretched 29, steady 27, saver 24, everyday_heavy 12, big_ticket 7 (no sample customer is `not_enough_income_data`).
 
 **Two income figures.** `net_income_month_eur` here is what actually arrived on average (mean of Salary + Other Income − Sweep over the window: 2,388.42 for CUST00001). Safe to spend (section 3) uses `income_month_eur`, the median of the recurring salary series (2,364.88), because it plans the next month and should not count one-off income. The coach quotes the profile figure when describing the past and the safe-to-spend figure when planning.
 
@@ -289,10 +300,11 @@ An estimate (R13): "people like you" are customers in the same age band and area
 
 - Age bands: 18–24, 25–34, 35–44, 45–54, 55–64, 65–74, 75+.
 - Areas: `area3` = first 3 digits of the postal code (30 areas in the data); `city` = first 2 digits (00 Helsinki, 01 Vantaa, 02 Espoo and Kauniainen).
-- Levels, most specific first: age band + area3 → age band + city → age band → all. The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). If even "all" has fewer, the row has `shown = false` and every peer statistic is NULL (a one-customer run returns `peer_n = 0`). Small groups are never shown: this protects both statistics and privacy.
-- Customers with a monthly Salary Sweep never enter a peer group (their spending happens elsewhere), and their own rows say `comparable = false` and `shown = false`, with NULL statistics.
+- Levels, most specific first: age band + area3 → age band + city → age band → all. The area is widened first and the age band is given up last, because age explains spending more than the postal area (team-lead decision). The customer gets the first level with **at least 20 other peers** (`app.peer_min_n`). If even "all" has fewer, the row has `shown = false` and every peer statistic is NULL (a one-customer run returns `peer_n = 0`). Small groups are never shown: this protects both statistics and privacy.
+- Sweep customers (section 2.3) never enter a peer group (their spending happens elsewhere), and their own rows say `comparable = false` and `shown = false`, with NULL statistics.
 - Metrics (month averages over the window): total spend, the three baskets, and the categories Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing. **Health is not benchmarked** (R9).
 - `percentile` = share of the other peers in the group who spend less; `vs_median_pct` = you / peer median − 1.
+- Who is counted: `peer_median`, `peer_p25` and `peer_p75` describe the whole group, the customer included (one value among 21 or more moves them little, and the group statistics can then be computed once per group). `peer_n` and `percentile` count only the other members.
 
 **Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `period_start`, `period_end`. The coach uses a row only when `shown` is true.
 
@@ -322,9 +334,11 @@ ln(ticket) = a_customer + b_merchant + e
 
 Fitted by alternating means (5 rounds, starting from b = 0) on customer × merchant cells with sufficient statistics `n, Σy, Σy²`. The customer effect removes "this person buys big baskets"; `b_merchant` is what remains. Effects are centred so that the visit-weighted average store is 0%.
 
-- `index_pct = 100 × (exp(b) − 1)`; `se = σ / sqrt(n_visits)` with σ pooled from the residuals (degrees of freedom = visits − customers − merchants + 1); 95% interval shown.
+- `index_pct = 100 × (exp(b) − 1)`; `se = σ / sqrt(n_visits)` with σ pooled from the residuals (degrees of freedom = visits − customers − merchants + 1); 95% interval shown. If no degrees of freedom are left (a tiny range), σ is NULL: no interval, no flag, and switch status `not_measurable`.
+- Caveat: this standard error treats the customer effects as known. It ignores their own uncertainty, so the intervals are somewhat optimistic (too narrow); the strict |z| ≥ 3 rule below partly offsets that.
 - A store is shown only with 30+ visits. It is flagged as different from average only if |b| ≥ 3·se (with ~70 stores, 1.96·se would give about 3 false flags by chance).
-- **Switch saving.** For each customer: the home store (largest grocery spend in the 365 days) against the lowest-index store of the **same MCC** that the customer already uses (3+ visits) and that has 30+ visits overall. `ticket_gap = 1 − exp(−(b_home − b_alt))`. Only if `b_home − b_alt ≥ 3 × sqrt(se_home² + se_alt²)`: `est_saving_month = home_spend_month × ticket_gap`, status `estimate`. Otherwise saving 0 and status `within_noise`, `already_lowest` or `no_alternative`.
+- **Switch saving.** For each customer: the home store (largest grocery spend in the 365 days) against the lowest-index store of the **same MCC** that the customer already uses (3+ visits) and that has 30+ visits overall. `ticket_gap = 1 − exp(−(b_home − b_alt))`. Only if `b_home − b_alt ≥ 3 × sqrt(se_home² + se_alt²)`: `est_saving_month = home_spend_month × ticket_gap`, status `estimate`. Otherwise saving 0 and status `within_noise`, `already_lowest`, `not_measurable` or `no_alternative`.
+- **When the coach shows it** (team-lead decision): the store index and switch savings are shown only when the full-population run finds stores that pass the |z| ≥ 3 rule. Otherwise the coach says the difference between stores is not measurable from this data.
 
 **Output** (`07_store_price_index.sql`, two result sets). Per merchant: `merchant_id`, `mcc`, `n_visits`, `n_customers`, `avg_ticket_eur`, `index_pct`, `ci95_low_pct`, `ci95_high_pct`, `differs_from_average`, `shown`, `max_last_step` (convergence). Per customer: `home_merchant_id`, `home_index_pct`, `home_spend_month_eur`, `alt_merchant_id`, `alt_index_pct`, `ticket_gap_pct`, `ticket_gap_ci95_low_pct`, `status`, `est_saving_month_eur`, `period_start`, `period_end`.
 
@@ -378,13 +392,13 @@ Every file was run on the sample under `statement_timeout = '60s'` after rebasin
 
 | File | Rows | Time |
 |---|---|---|
-| 01_recurring.sql | 315 | 0.61 s |
-| 02_baskets.sql | 297 | 0.50 s |
-| 03_safe_to_spend.sql | 99 | 1.38 s |
+| 01_recurring.sql | 315 | 0.74 s |
+| 02_baskets.sql | 297 | 0.53 s |
+| 03_safe_to_spend.sql | 99 | 1.25 s |
 | 04_what_if.sql | 96 | 0.62 s |
-| 05_spender_profile.sql | 99 | 2.56 s |
+| 05_spender_profile.sql | 99 | 2.60 s |
 | 06_peer_benchmark.sql | 1,287 | 1.01 s |
-| 07_store_price_index.sql | 80 + 99 | 0.28 s |
+| 07_store_price_index.sql | 80 + 99 | 0.32 s |
 
 Times are wall-clock from a laptop client, including network round trips.
 
@@ -396,13 +410,15 @@ Times are wall-clock from a laptop client, including network round trips.
 
 ## 10. Open questions for Renat
 
-1. **Salary Sweep.** It is monthly for 5% of customers (the issue says yearly). Default: a transfer out of scope, excluded from peers. Is it "salary moved to another bank or account", or saving?
-2. **Basket edge cases.** Defaults: Home & Tech → unexpected necessities; Travel → everyday spending; taxi → everyday spending; parking and fuel → regular essentials. Change any?
-3. **Cushion** kept out of safe to spend: default 100 €. A fixed amount, or a share of monthly essentials?
-4. **Investment deposits** are reserved as a commitment in safe to spend (they protect saving). Should the coach instead count them as free money?
-5. **What-if scope.** Should the coach ever suggest cutting regular essentials (for example groceries), or only everyday spending?
-6. **Store switch.** On the sample the index is noise. Do we show the store index in the demo only after the full-population precompute, or leave it out?
-7. **Peer groups.** Minimum 20 peers. Is that acceptable for privacy, and do we want the Paavo income data?
+Decisions 2 to 7 were taken by the team lead and are the documented defaults; Renat can overrule them.
+
+1. **Salary Sweep. Open.** It is monthly for 5% of customers (the issue says yearly). Until the bank's people answer, it is treated as a transfer: netted out of income, and sweep customers are left out of peer groups (section 2.3).
+2. **Basket edge cases. Decided:** as proposed. Home & Tech (also its spikes) → unexpected necessities; Travel and taxi → everyday spending; parking and fuel → regular essentials.
+3. **Cushion. Decided:** 100 € by default, configurable with `app.cushion_eur`.
+4. **Investment deposits. Decided:** a recurring investment deposit is reserved in safe to spend. It is the customer's own saving plan, and the explanation says so.
+5. **What-if scope. Decided:** never propose cutting regular essentials; everyday spending is the target, unexpected necessities only with a caveat (section 4, implemented in `04_what_if.sql`).
+6. **Store switch. Decided:** shown only when the full-population run finds stores that pass the significance rule; otherwise the coach says the difference is not measurable.
+7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
 
 ## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)
 

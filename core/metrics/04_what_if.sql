@@ -9,6 +9,9 @@
 --   app.whatif_pct     how much to cut, in percent                      (default 20)
 -- One row per customer with spending in the selection. The result is an estimate: it assumes the
 -- coming months look like the average of the last 6 complete months, one-off spikes excluded.
+-- Team-lead rule: a what-if never proposes cutting regular_essentials. Those rows of the selection
+-- are left out of the baseline (shown in regular_excluded_eur); unexpected_necessities may be cut,
+-- with a caveat; everyday_spending is the normal target.
 
 SET statement_timeout = '60s';
 
@@ -118,23 +121,29 @@ selected AS (
 ),
 base AS (
     SELECT s.customer_id,
-           sum(s.out_eur) FILTER (WHERE NOT s.is_one_off) AS regular_eur,
-           sum(s.out_eur) FILTER (WHERE s.is_one_off)     AS one_off_eur,
-           count(*) FILTER (WHERE NOT s.is_one_off)       AS n_tx,
-           count(*) FILTER (WHERE s.is_one_off)           AS n_one_off
+           sum(s.out_eur) FILTER (WHERE NOT s.is_one_off AND s.basket <> 'regular_essentials') AS cuttable_eur,
+           sum(s.out_eur) FILTER (WHERE s.basket = 'regular_essentials')                       AS regular_excluded_eur,
+           sum(s.out_eur) FILTER (WHERE s.is_one_off AND s.basket <> 'regular_essentials')     AS one_off_eur,
+           count(*) FILTER (WHERE NOT s.is_one_off AND s.basket <> 'regular_essentials')       AS n_tx,
+           count(*) FILTER (WHERE s.is_one_off AND s.basket <> 'regular_essentials')           AS n_one_off,
+           bool_or(s.basket = 'unexpected_necessities' AND NOT s.is_one_off)                    AS has_unexpected
     FROM selected s
     GROUP BY 1
 )
 SELECT b.customer_id,
        w.sel_kind || ':' || w.sel_value                                         AS selection,
        w.pct                                                                    AS cut_pct,
-       round(COALESCE(b.regular_eur, 0) / m.n_months, 2)                        AS baseline_month_eur,
-       round(COALESCE(b.regular_eur, 0) / m.n_months * w.pct / 100, 2)          AS saving_month_eur,
-       round(COALESCE(b.regular_eur, 0) / m.n_months * w.pct / 100 * 7 / 30.4375, 2) AS saving_week_eur,
-       round(COALESCE(b.regular_eur, 0) / m.n_months * w.pct / 100 * 12, 2)     AS saving_year_eur,
+       CASE WHEN COALESCE(b.cuttable_eur, 0) = 0 THEN 'not_offered'             -- only regular essentials or one-offs
+            WHEN b.has_unexpected THEN 'estimate_with_caveat'                   -- includes needed but lumpy spending
+            ELSE 'estimate' END                                                 AS status,
+       round(COALESCE(b.cuttable_eur, 0) / m.n_months, 2)                       AS baseline_month_eur,
+       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100, 2)         AS saving_month_eur,
+       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100 * 7 / 30.4375, 2) AS saving_week_eur,
+       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100 * 12, 2)    AS saving_year_eur,
        b.n_tx,
        round(COALESCE(b.one_off_eur, 0), 2)                                     AS one_off_excluded_eur,
        b.n_one_off,
+       round(COALESCE(b.regular_excluded_eur, 0), 2)                            AS regular_excluded_eur,
        m.n_months,
        p.win_start AS period_start,
        p.win_end   AS period_end

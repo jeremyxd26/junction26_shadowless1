@@ -60,7 +60,10 @@ dof AS (
            sum(n) AS n_all
     FROM c
 ),
-sigma AS (SELECT sqrt(sum(r.ss) / max(d.df)) AS s FROM resid r CROSS JOIN dof d),
+-- Pooled residual SD. With no degrees of freedom left (tiny ranges) it is NULL: no interval, no flag.
+-- The standard error below ignores the uncertainty of the customer effects, so intervals are optimistic.
+sigma AS (SELECT CASE WHEN max(d.df) > 0 THEN sqrt(GREATEST(sum(r.ss), 0) / max(d.df)) END AS s
+          FROM resid r CROSS JOIN dof d),
 centre AS (   -- visit-weighted mean merchant effect, so that index 0 % = the average visit
     SELECT sum(c.n * b5.b) / sum(c.n) AS b_mean FROM c JOIN b5 USING (merchant_id)
 ),
@@ -88,7 +91,7 @@ SELECT merchant_id,
        round((100 * (exp(effect) - 1))::numeric, 1)               AS index_pct,
        round((100 * (exp(effect - 1.96 * se) - 1))::numeric, 1)   AS ci95_low_pct,
        round((100 * (exp(effect + 1.96 * se) - 1))::numeric, 1)   AS ci95_high_pct,
-       (abs(effect) >= 3 * se)                                    AS differs_from_average,  -- z >= 3: about 0.2 false flags in 70 stores
+       COALESCE(abs(effect) >= 3 * se, false)                     AS differs_from_average,  -- z >= 3: about 0.2 false flags in 70 stores
        (n_visits >= 30)                                           AS shown,
        round((SELECT max(last_step) FROM store_index)::numeric, 6) AS max_last_step
 FROM store_index
@@ -134,9 +137,10 @@ SELECT customer_id,
        round((100 * (1 - exp(-(diff - 1.96 * diff_se))))::numeric, 1) AS ticket_gap_ci95_low_pct,
        CASE WHEN alt_merchant_id IS NULL      THEN 'no_alternative'
             WHEN diff <= 0                   THEN 'already_lowest'
+            WHEN diff_se IS NULL             THEN 'not_measurable'
             WHEN diff < 3 * diff_se          THEN 'within_noise'
             ELSE 'estimate' END                                   AS status,
-       CASE WHEN alt_merchant_id IS NOT NULL AND diff >= 3 * diff_se
+       CASE WHEN alt_merchant_id IS NOT NULL AND diff > 0 AND diff >= 3 * diff_se
             THEN round((home_spend_month_eur * (1 - exp(-diff)))::numeric, 2)
             ELSE 0 END                                            AS est_saving_month_eur,
        (SELECT today - 364 FROM params)                           AS period_start,

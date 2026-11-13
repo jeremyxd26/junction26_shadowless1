@@ -150,7 +150,8 @@ levels AS (   -- the same row at each peer level, most specific first
     CROSS JOIN (VALUES ('age_band+area3', 1), ('age_band+city', 2), ('age_band', 3), ('all', 4)) AS l (peer_level, level_rank)
 ),
 peers AS (SELECT * FROM levels WHERE comparable),   -- sweepers never enter a peer group
-group_stats AS (
+group_stats AS (   -- median/p25/p75 of the whole group, the customer included (one value among 21+ moves
+                  -- them little); peer_n and percentile count only the other members
     SELECT peer_level, peer_group, metric, count(*) AS group_n,
            percentile_cont(0.25) WITHIN GROUP (ORDER BY value_month) AS p25,
            percentile_cont(0.50) WITHIN GROUP (ORDER BY value_month) AS p50,

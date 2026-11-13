@@ -116,23 +116,27 @@ done_this_month AS (
     WHERE c.tx_date >= date_trunc('month', p.today)
     GROUP BY 1, 2
 ),
-salary AS (   -- next payday: the salary series' next expected date (01_recurring.sql rule)
+salary AS (   -- next payday: the salary series' next expected date (01_recurring.sql rule; on the
+              -- typical day itself an unpaid salary is still 'upcoming' and expected tomorrow)
     SELECT r.customer_id,
            CASE
-               WHEN d.series_key IS NOT NULL THEN
-                   LEAST((date_trunc('month', p.today) + interval '1 month')::date + (r.typical_day - 1),
-                         (date_trunc('month', p.today) + interval '2 months' - interval '1 day')::date)
-               WHEN extract(day FROM p.today) < r.typical_day THEN
-                   LEAST(date_trunc('month', p.today)::date + (r.typical_day - 1),
-                         (date_trunc('month', p.today) + interval '1 month' - interval '1 day')::date)
-               ELSE GREATEST((date_trunc('month', p.today) + interval '1 month' - interval '1 day')::date, p.today + 1)
+               WHEN d.series_key IS NOT NULL THEN ty.typ_next
+               WHEN p.today <= ty.typ_this THEN GREATEST(ty.typ_this, p.today + 1)
+               ELSE GREATEST(ty.month_end, p.today + 1)
            END AS next_payday,
            CASE WHEN d.series_key IS NOT NULL THEN 'received_this_month'
-                WHEN extract(day FROM p.today) < r.typical_day THEN 'upcoming'
+                WHEN p.today <= ty.typ_this THEN 'upcoming'
                 ELSE 'late' END AS salary_status,
            round(r.typical_month_eur::numeric, 2) AS typical_salary_eur
     FROM recurring r
     CROSS JOIN params p
+    CROSS JOIN LATERAL (
+        SELECT LEAST(date_trunc('month', p.today)::date + (r.typical_day - 1),
+                     (date_trunc('month', p.today) + interval '1 month' - interval '1 day')::date)  AS typ_this,
+               LEAST((date_trunc('month', p.today) + interval '1 month')::date + (r.typical_day - 1),
+                     (date_trunc('month', p.today) + interval '2 months' - interval '1 day')::date) AS typ_next,
+               (date_trunc('month', p.today) + interval '1 month' - interval '1 day')::date          AS month_end
+    ) ty
     LEFT JOIN done_this_month d ON d.customer_id = r.customer_id AND d.series_key = r.series_key
     WHERE r.series_key = 'salary'
 ),
@@ -142,7 +146,7 @@ customers_in AS (
 horizon AS (
     SELECT ci.customer_id,
            COALESCE(s.next_payday, p.today + 30)               AS next_payday,
-           COALESCE(s.salary_status, 'no_regular_income')      AS salary_status,
+           COALESCE(s.salary_status, 'no_salary_series')       AS salary_status,
            s.typical_salary_eur,
            (COALESCE(s.next_payday, p.today + 30) - p.today)   AS days_to_payday
     FROM customers_in ci
@@ -183,9 +187,12 @@ bills AS (
                        AND r.series_key <> 'salary_sweep'), 0) AS bills_due_eur
     FROM horizon h
 ),
-budget AS (   -- typical month from the recurring series: income in, net of sweeps, minus committed outflows
+budget AS (   -- typical month from the recurring series: income (salary and other income; an investment
+              -- withdrawal is the customer's own saving, not income), net of sweeps, minus committed
+              -- outflows. A recurring investment deposit counts as committed: it is the customer's own
+              -- saving plan, and safe to spend protects it.
     SELECT h.customer_id,
-           COALESCE(sum(r.typical_month_eur) FILTER (WHERE r.direction = 'in'), 0)         AS income_month_eur,
+           COALESCE(sum(r.typical_month_eur) FILTER (WHERE r.series_key IN ('salary', 'other_income')), 0) AS income_month_eur,
            COALESCE(sum(r.typical_month_eur) FILTER (WHERE r.series_key = 'salary_sweep'), 0) AS sweep_month_eur,
            COALESCE(sum(r.typical_month_eur) FILTER (WHERE r.direction = 'out'
                                                        AND r.series_key <> 'salary_sweep'), 0) AS committed_month_eur
@@ -215,16 +222,19 @@ calc AS (
     SELECT h.customer_id, p.today, h.next_payday, h.salary_status, h.typical_salary_eur, h.days_to_payday,
            b.balance_eur, b.balance_tx_id, bl.bills_due_eur,
            bu.income_month_eur, bu.sweep_month_eur, bu.committed_month_eur,
-           COALESCE(rr.essentials_eur, 0) / rr.window_days AS essentials_per_day,
-           COALESCE(rr.irregular_eur, 0)  / rr.window_days AS irregular_per_day,
-           COALESCE(rr.everyday_eur, 0)    / rr.window_days AS everyday_per_day,
+           -- No history inside the window (a customer whose first transaction is in the current month):
+           -- the run-rates are 0 and window_days is 0, and the row is still returned.
+           COALESCE(rr.essentials_eur / NULLIF(rr.window_days, 0), 0) AS essentials_per_day,
+           COALESCE(rr.irregular_eur  / NULLIF(rr.window_days, 0), 0) AS irregular_per_day,
+           COALESCE(rr.everyday_eur   / NULLIF(rr.window_days, 0), 0) AS everyday_per_day,
+           COALESCE(rr.window_days, 0)                                AS window_days,
            COALESCE(NULLIF(current_setting('app.cushion_eur', true), ''), '100')::numeric AS cushion_eur
     FROM horizon h
     CROSS JOIN params p
     JOIN balance b USING (customer_id)
     JOIN bills bl USING (customer_id)
     JOIN budget bu USING (customer_id)
-    JOIN run_rates rr USING (customer_id)
+    LEFT JOIN run_rates rr USING (customer_id)
 ),
 limits AS (
     SELECT c.*,
@@ -265,6 +275,7 @@ SELECT customer_id,
        round(committed_month_eur, 2)      AS committed_month_eur,
        round(essentials_per_day * 30.4375, 2) AS essentials_month_eur,
        round(irregular_per_day * 30.4375, 2)  AS irregular_month_eur,
+       window_days,
        round(everyday_per_day * 7, 2)      AS usual_everyday_7d_eur,
        CASE WHEN LEAST(balance_limit_7d, budget_limit_7d) <= 0 THEN 'nothing_free'
             WHEN LEAST(balance_limit_7d, budget_limit_7d) < everyday_per_day * 7 THEN 'below_usual'

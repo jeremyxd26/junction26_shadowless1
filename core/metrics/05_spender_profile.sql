@@ -5,8 +5,10 @@
 --   app.customer_from  first customer_id of the range, inclusive        (default CUST00000)
 --   app.customer_to    end of the customer_id range, exclusive          (default CUST00100)
 -- One row per customer: the features over the last 6 complete months, then one primary label
--- chosen by the first matching rule, and up to two trait tags. No feature uses the Health
--- category or health MCCs on its own (rule R9): they only count inside the basket totals.
+-- chosen by the first matching rule, and any number of the five trait tags. No feature uses the
+-- Health category or health MCCs on its own (rule R9): they only count inside the basket totals.
+-- "Income" is Salary + Other Income; Invest Withdraw is the customer's own saving coming back and
+-- is not income. A "sweep customer" has a Salary Sweep in at least 4 of the 6 window months.
 
 SET statement_timeout = '60s';
 
@@ -97,9 +99,9 @@ months AS (   -- months covered by the customer's history inside the window (1..
 w AS (   -- the window's transactions
     SELECT c.* FROM cls c, params p WHERE c.tx_date BETWEEN p.win_start AND p.win_end
 ),
-monthly AS (   -- per calendar month: did spending plus saving exceed net income?
+monthly AS (   -- per calendar month: did spending plus saving exceed net income (income minus sweep)?
     SELECT customer_id, date_trunc('month', tx_date) AS month,
-           sum(amount_eur) FILTER (WHERE flow IN ('income', 'transfer'))  AS net_in,
+           sum(amount_eur) FILTER (WHERE category IN ('Salary', 'Other Income') OR flow = 'transfer') AS net_in,
            sum(out_eur)    FILTER (WHERE flow IN ('spend', 'saving'))     AS out_total
     FROM w GROUP BY 1, 2
 ),
@@ -111,8 +113,9 @@ top_everyday AS (
 ),
 f AS (
     SELECT w.customer_id, m.n_months,
-           sum(w.amount_eur) FILTER (WHERE w.category IN ('Salary', 'Other Income')) / m.n_months AS income_month,
+           COALESCE(sum(w.amount_eur) FILTER (WHERE w.category IN ('Salary', 'Other Income')), 0) / m.n_months AS income_month,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'transfer'), 0) / m.n_months         AS sweep_month,
+           count(DISTINCT date_trunc('month', w.tx_date)) FILTER (WHERE w.flow = 'transfer')   AS sweep_months,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend'), 0) / m.n_months            AS spend_month,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'saving'), 0) / m.n_months           AS saving_month,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'regular_essentials'), 0)          AS regular_eur,
@@ -137,7 +140,8 @@ g AS (
 ),
 h AS (
     SELECT g.*,
-           100 * (g.net_income_month - g.spend_month) / NULLIF(g.net_income_month, 0) AS keep_rate,
+           CASE WHEN g.net_income_month > 0          -- no keep rate without positive net income
+                THEN 100 * (g.net_income_month - g.spend_month) / g.net_income_month END AS keep_rate,
            100 * g.everyday_eur / NULLIF(g.spend_total, 0)                            AS everyday_share,
            100 * g.one_off_eur  / NULLIF(g.spend_total, 0)                            AS one_off_share,
            100 * g.everyday_weekend_eur / NULLIF(g.everyday_eur, 0)                   AS weekend_share,
@@ -147,13 +151,14 @@ h AS (
 SELECT h.customer_id,
        -- Primary label: first matching rule. Thresholds are fixed constants (calibrated once on the
        -- sample's percentiles, see metrics.md), so one customer's label never depends on who else is in the run.
-       CASE WHEN COALESCE(h.keep_rate, -1) < 0                           THEN 'stretched'
+       CASE WHEN h.keep_rate IS NULL                                     THEN 'not_enough_income_data'
+            WHEN h.keep_rate < 0                                         THEN 'stretched'
             WHEN COALESCE(h.one_off_share, 0) >= 5                       THEN 'big_ticket'
             WHEN COALESCE(h.everyday_share, 0) >= 30                     THEN 'everyday_heavy'
             WHEN h.keep_rate >= 20                                       THEN 'saver'
             ELSE 'steady' END                                            AS profile,
        array_remove(ARRAY[
-            CASE WHEN h.sweep_month > 0.5 * h.income_month THEN 'salary_moved_elsewhere' END,
+            CASE WHEN h.sweep_months >= 4 THEN 'salary_moved_elsewhere' END,   -- sweep customer
             CASE WHEN h.n_tx_below_zero > 0 THEN 'went_below_zero' END,
             CASE WHEN h.saving_month > 0 THEN 'regular_investor' END,
             CASE WHEN COALESCE(h.weekend_share, 0) >= 45 THEN 'weekend_spender' END,

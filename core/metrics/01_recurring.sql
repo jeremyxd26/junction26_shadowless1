@@ -97,32 +97,35 @@ SELECT r.customer_id,
        l.last_tx_id,
        COALESCE(tm.n_tx, 0)                             AS n_tx_this_month,
        round(COALESCE(tm.total_eur, 0), 2)              AS paid_this_month_eur,
+       -- Today's transactions are all in the data, so on the typical day itself an unpaid series is
+       -- still 'upcoming' and expected tomorrow; it is 'late' from the day after.
        CASE
            WHEN r.tx_per_month > 1 THEN 'spread'                     -- several per month: use pro rata
            WHEN tm.n_tx IS NOT NULL THEN 'done_this_month'
-           WHEN extract(day FROM p.today) < r.typical_day THEN 'upcoming'
+           WHEN p.today <= d.typ_this THEN 'upcoming'
            WHEN r.direction = 'in' THEN 'late'                        -- income: still expected by month end
-           WHEN extract(day FROM p.today) - r.typical_day <= 7 THEN 'late'   -- a bill a few days late
+           WHEN p.today - d.typ_this <= 7 THEN 'late'                 -- a bill up to 7 days late
            ELSE 'skipped_this_month'                                   -- a bill over 7 days late
        END                                              AS status,
        CASE
            WHEN r.tx_per_month > 1 THEN NULL
-           WHEN tm.n_tx IS NOT NULL
-             OR (r.direction = 'out' AND extract(day FROM p.today) - r.typical_day > 7) THEN
-               LEAST((p.month_start + interval '1 month')::date + (r.typical_day - 1),   -- next month, typical day
-                     (p.month_start + interval '2 months' - interval '1 day')::date)     -- clamped to month end
-           WHEN extract(day FROM p.today) < r.typical_day THEN
-               LEAST(p.month_start + (r.typical_day - 1),
-                     (p.month_start + interval '1 month' - interval '1 day')::date)
-           WHEN r.direction = 'in' THEN
-               GREATEST((p.month_start + interval '1 month' - interval '1 day')::date, p.today + 1)  -- by month end
-           ELSE p.today + 1                                                                  -- late bill: due now
+           WHEN tm.n_tx IS NOT NULL OR (r.direction = 'out' AND p.today - d.typ_this > 7) THEN d.typ_next
+           WHEN p.today <= d.typ_this THEN GREATEST(d.typ_this, p.today + 1)
+           WHEN r.direction = 'in' THEN GREATEST(d.month_end, p.today + 1)   -- late income: by month end
+           ELSE p.today + 1                                                  -- late bill: due now
        END                                              AS next_expected_date,
        round(lt.late_share_12m::numeric, 2)             AS late_share_12m,
        p.win_start                                      AS period_start,
        p.win_end                                        AS period_end
 FROM recurring r
 CROSS JOIN params p
+CROSS JOIN LATERAL (   -- the typical day as a date this month and next month, clamped to the month's end
+    SELECT LEAST(p.month_start + (r.typical_day - 1),
+                 (p.month_start + interval '1 month' - interval '1 day')::date)                    AS typ_this,
+           LEAST((p.month_start + interval '1 month')::date + (r.typical_day - 1),
+                 (p.month_start + interval '2 months' - interval '1 day')::date)                   AS typ_next,
+           (p.month_start + interval '1 month' - interval '1 day')::date                           AS month_end
+) d
 JOIN last_tx l ON l.customer_id = r.customer_id AND l.series_key = r.series_key
 LEFT JOIN this_month tm ON tm.customer_id = r.customer_id AND tm.series_key = r.series_key
 LEFT JOIN late lt ON lt.customer_id = r.customer_id AND r.series_key = 'salary'
