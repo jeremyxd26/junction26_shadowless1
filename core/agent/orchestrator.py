@@ -4,8 +4,10 @@
 2  plan: the model chooses functions (mode ANY). Planner errors: retry once, then the keyword
    planner (rules.py) and a template answer with outcome "fallback".
 3  tools: arguments are validated by the registry; a customer key at any depth, an unknown function
-   or bad arguments go back to the model as {"error": code}. Valid calls run one by one with a
-   database connection held only for the tool; each finished tool streams its card (at most 3).
+   or bad arguments go back to the model as {"error": code}. Valid calls run with a database
+   connection held only for the tool, two at a time when a second connection is free at once (else
+   one by one). Number ids, cards (at most 3) and audit keys follow the call order, not the order in
+   which the tools finish (design section 7.5), so a result is the same as in a sequential run.
 4  loop: at most 2 tool rounds and 6 data calls. decline or ask_clarifying_question ends the turn at
    once and no data tool of that turn runs (R6).
 5  compose: a fresh, tool-free call that sees model views only (R3).
@@ -18,12 +20,13 @@ A failure inside the stream becomes one `error` event; exception text never leav
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -47,7 +50,10 @@ log = logging.getLogger("uvicorn.error")
 MAX_ROUNDS = 2
 MAX_DATA_CALLS = 6
 MAX_CARDS = 3
-MAX_PARALLEL = 2   # the app's pool holds 2 connections (core/app/db.py)
+MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool connection each
+# A second lane runs only on a connection that is free at once, so one answer never queues for a
+# second connection that another request needs (core/app/db.py holds a small pool).
+SPARE_WAIT_S = 0.05
 
 ERRORS = {
     "data_unavailable": (("Your data can't be loaded right now. Please try again in a minute.",
@@ -70,6 +76,27 @@ class LockedNumberRegistry(NumberRegistry):
             return super().register(number)
 
 
+class _InCallOrder(NumberRegistry):
+    """One tool call's view of the answer's registry: its first registration waits until the calls
+    before it have finished, so ids follow the call order whichever call finishes first."""
+
+    def __init__(self, shared: NumberRegistry, before: threading.Event | None) -> None:
+        super().__init__()
+        self._shared = shared
+        self._before = before
+
+    def register(self, number):
+        if self._before is not None:
+            self._before.wait()
+        return self._shared.register(number)
+
+    def get(self, number_id):
+        return self._shared.get(number_id)
+
+    def all(self):
+        return self._shared.all()
+
+
 class DataUnavailable(RuntimeError):
     """The database cannot be reached or is too slow (503 data_unavailable / `error` event)."""
 
@@ -77,7 +104,10 @@ class DataUnavailable(RuntimeError):
 class DataAccess(Protocol):
     def customer_exists(self, customer_id: str) -> bool: ...
 
-    def connection(self) -> AbstractContextManager[Any]: ...
+    def connection(self, timeout: float | None = None) -> AbstractContextManager[Any]:
+        """A connection, waiting at most `timeout` seconds (None: the default wait); raises
+        DataUnavailable when none can be had."""
+        ...
 
 
 def error_envelope(code: str, language: str) -> dict[str, Any]:
@@ -298,30 +328,78 @@ class Pipeline:
 
     def _run_tools(self, ctx: ToolContext, pending: list[tuple[FunctionCall, Any]], lang: str, emit: Emit,
                    a: _Answer) -> list[dict[str, Any]]:
-        """Run one turn's data calls. Independent calls run in parallel, at most MAX_PARALLEL at a time
-        (one pool connection each); each gets its own context over the answer's shared number registry.
-        Records come back in call order; cards are sent as each tool finishes."""
-        if len(pending) <= 1:
-            return [self._run_tool(ctx, call, args, lang, emit, a) for call, args in pending]
+        """Run one turn's data calls; records come back in call order.
 
-        def one(item: tuple[FunctionCall, Any]) -> dict[str, Any]:
-            call, args = item
-            own = ToolContext(customer_id=ctx.customer_id, as_of=ctx.as_of, conn=None, language=ctx.language,
-                              numbers=ctx.numbers)
-            return self._run_tool(own, call, args, lang, emit, a)
+        Lanes take the calls in order. The first lane waits for its connection as usual; up to
+        MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S, so the
+        calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
+        a call that waits for the one before it (ids, cards and audit keys follow the call order) then
+        always waits on a call that holds a connection and can finish."""
+        records: list[dict[str, Any] | None] = [None] * len(pending)
+        done = [threading.Event() for _ in pending]
+        queue = deque(range(len(pending)))
+        lock = threading.Lock()
+        failures: list[BaseException] = []
 
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-            return list(pool.map(one, pending))  # re-raises DataUnavailable from any call
+        def take() -> int | None:
+            with lock:
+                return queue.popleft() if queue and not failures else None
 
-    def _run_tool(self, ctx: ToolContext, call: FunctionCall, args: Any, lang: str, emit: Emit, a: _Answer) -> dict[str, Any]:
+        def lane(wait: float | None) -> None:
+            while True:
+                with lock:
+                    if not queue or failures:
+                        return
+                taken = False
+                try:
+                    with self.data.connection(timeout=wait) as conn:
+                        i = take()
+                        if i is None:
+                            return
+                        taken = True
+                        try:
+                            call, args = pending[i]
+                            before = done[i - 1] if i else None
+                            own = dataclasses.replace(ctx, conn=conn, numbers=_InCallOrder(ctx.numbers, before))
+                            records[i] = self._run_tool(own, call, args, lang, emit, a, before)
+                            with a.lock:  # later calls reuse the customer's loaded history
+                                if ctx._history is None and own._history is not None:
+                                    ctx._history = own._history
+                        finally:
+                            done[i].set()
+                except DataUnavailable as exc:
+                    if wait is None or taken:
+                        with lock:
+                            failures.append(exc)
+                    return  # a spare lane without a free connection: the first lane runs the rest
+                except BaseException as exc:  # noqa: BLE001 - re-raised by the caller below
+                    with lock:
+                        failures.append(exc)
+                    return
+
+        spares = [threading.Thread(target=lane, args=(SPARE_WAIT_S,), daemon=True)
+                  for _ in range(min(MAX_PARALLEL, len(pending)) - 1)]
+        for t in spares:
+            t.start()
+        try:
+            lane(None)
+        finally:
+            for t in spares:
+                t.join()
+        if failures:
+            raise failures[0]
+        return [r for r in records if r is not None]
+
+    def _run_tool(self, ctx: ToolContext, call: FunctionCall, args: Any, lang: str, emit: Emit, a: _Answer,
+                  before: threading.Event | None = None) -> dict[str, Any]:
+        """Run one call on ctx.conn. Its card and audit entry are recorded only after the calls before
+        it (`before`), so the three surviving cards and the audit keys follow the call order."""
         spec = self.registry.tools[call.name]
         emit("status", {"stage": "tool", "tool": call.name, "label": template.pick(spec.status_label, lang)})
         t = self.clock()
         record: dict[str, Any] = {"name": call.name, "args": call.args}
         try:
-            with self.data.connection() as conn:  # held only while the tool runs
-                ctx.conn = conn
-                result = spec.fn(ctx, args)
+            result = spec.fn(ctx, args)
         except DataUnavailable:
             raise
         except (psycopg.OperationalError, PoolTimeout):
@@ -337,12 +415,14 @@ class Pipeline:
             record.update(status="ok", evidence=list(result.evidence))
             record["view"] = result.model_view
             card = spec.card_builder(result)
+            if before is not None:
+                before.wait()
             with a.lock:
                 a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
                 send = card is not None and len(a.cards) < MAX_CARDS
                 if send:
                     a.cards.append(card.card_id)
-            if send:  # as soon as the tool finishes, before the composer starts
+            if send:  # once the tool and the calls before it have finished, before the composer starts
                 emit("card", {"card": card.model_dump(mode="json")})
         finally:
             ctx.conn = None

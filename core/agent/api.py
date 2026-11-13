@@ -63,12 +63,12 @@ class PoolData:
         self._app = app
 
     @contextmanager
-    def connection(self) -> Iterator[Any]:
+    def connection(self, timeout: float | None = None) -> Iterator[Any]:
         pool = self._app.state.pool
         if pool is None:
             raise DataUnavailable()
         try:
-            with pool.connection(timeout=CONNECTION_TIMEOUT_S) as conn:
+            with pool.connection(timeout=CONNECTION_TIMEOUT_S if timeout is None else timeout) as conn:
                 yield conn
         except (PoolTimeout, psycopg.OperationalError):
             raise DataUnavailable() from None

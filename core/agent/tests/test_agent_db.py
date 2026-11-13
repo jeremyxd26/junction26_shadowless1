@@ -5,13 +5,14 @@ DATABASE_URL; the connection details and driver errors are never printed."""
 
 from __future__ import annotations
 
+import threading
 from contextlib import contextmanager
 
 import pytest
 from agent_fakes import AS_OF, audit_records, run
 
 from core.agent.audit import AuditLog
-from core.agent.orchestrator import Pipeline
+from core.agent.orchestrator import DataUnavailable, Pipeline
 from core.agent.rules import RuleModel
 from core.agent.toolset import default_registry
 from core.tools import db
@@ -22,13 +23,19 @@ CUSTOMER = "CUST00860"
 class OneConnection:
     def __init__(self, conn) -> None:
         self.conn = conn
+        self.lock = threading.Lock()  # one connection: one tool at a time
 
     def customer_exists(self, customer_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM customers WHERE customer_id = %s", (customer_id,)).fetchone() is not None
 
     @contextmanager
-    def connection(self):
-        yield self.conn
+    def connection(self, timeout: float | None = None):
+        if not self.lock.acquire(timeout=-1 if timeout is None else timeout):
+            raise DataUnavailable()
+        try:
+            yield self.conn
+        finally:
+            self.lock.release()
 
 
 @pytest.fixture(scope="module")
