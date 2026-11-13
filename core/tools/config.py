@@ -102,7 +102,9 @@ BASKET_LABELS: dict[str, tuple[str, str]] = {
     "regular_essentials": ("Regular essentials", "Säännölliset välttämättömät"),
     "unexpected_necessities": ("Unexpected necessities", "Odottamattomat välttämättömät"),
     "everyday_spending": ("Everyday spending", "Arjen kulutus"),
-    "unclassified": ("Unclassified", "Luokittelematon"),
+    # A purchase whose spike review is pending (contract 0.2.0, #68). The rules alone put no purchase of
+    # the dataset's categories here.
+    "unclassified": ("Waiting for your answer", "Odottaa vastaustasi"),
 }
 
 MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
@@ -340,4 +342,57 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     ),
     "mcc": ("purchases with MCC {codes}", "ostokset, MCC {codes}"),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}
+
+# ---- spike reviews (#68, contract 0.2.0 sections 3 and 10) ----------------------------------------
+# Fixed, reviewed templates: the AI model never writes them. The question, the option labels and the
+# Finnish effects are Renat's decision on issue #68 (they differ from the wording of contract 0.2.0,
+# which #34 corrects); "turvallisesti käytettävissä" is the Finnish term for safe to spend everywhere.
+# The question is filled in on the server: {amount} is the amount Number's display, {category} the
+# category label, {date} the purchase date, all in the card's language.
+PRODUCT_NAME = "Sentti"
+
+REVIEW_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("One question about a large purchase", "Yksi kysymys isosta ostoksesta"),
+    "question": ("{amount} at {category} on {date} — needed, or your choice?",
+                 "{amount} {category}, {date} — välttämätön hankinta vai oma valinta?"),
+    "option_unexpected_necessities": ("Needed", "Välttämätön"),
+    "option_everyday_spending": ("My choice", "Oma valinta"),
+    "effect_unexpected_necessities": (
+        "It counts as an unexpected necessity. {product} keeps a bigger reserve for surprises like this, so "
+        "your safe to spend goes down.",
+        "Se lasketaan välttämättömäksi yllätysmenoksi. {product} varaa jatkossa enemmän rahaa tällaisiin "
+        "yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee.",
+    ),
+    "effect_everyday_spending": (
+        "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this "
+        "month is higher than usual.",
+        "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta "
+        "arkikulutuksesi on tässä kuussa tavallista suurempi.",
+    ),
+    "why": (
+        "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+    ),
+    "amount": ("{category} purchase", "Ostos: {category}"),
+    "see_purchase": ("See the purchase", "Näytä ostos"),
+    "month_avg": ("{label}, monthly average", "{label}, kuukausikeskiarvo"),
+    # label confirmations (POST /api/baskets/label)
+    "done_unexpected_necessities": (
+        "Thanks. {product} now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
+        "Kiitos. {product} varaa nyt enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä "
+        "oleva summa on pienempi.",
+    ),
+    "done_everyday_spending": (
+        "Thanks. This counts as everyday spending, so your everyday spending this month is {amount} higher "
+        "than usual. Your safe to spend stays the same.",
+        "Kiitos. Tämä lasketaan arkikulutukseksi, joten arkikulutuksesi on tässä kuussa {amount} tavallista "
+        "suurempi. Turvallisesti käytettävissä oleva summa pysyy ennallaan.",
+    ),
+    "undone_pending": ("Undone. This purchase is waiting for your answer again.",
+                       "Peruttu. Tämä ostos odottaa taas vastaustasi."),
+    "undone_closed": ("Undone. This purchase is back in the group the rules give it.",
+                      "Peruttu. Tämä ostos on taas siinä ryhmässä, johon säännöt sen sijoittavat."),
+    "unchanged": ("Nothing changed: this answer is already saved.",
+                  "Mikään ei muuttunut: tämä vastaus on jo tallennettu."),
 }

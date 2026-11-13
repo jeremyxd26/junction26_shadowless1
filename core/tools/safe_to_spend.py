@@ -93,7 +93,10 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
 
     # The cushion is passed explicitly (the documented default), so a session setting can never leak in
     # and every evidence spec records it.
-    settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR}
+    # The customer's labels (#68) go in as app.tx_labels, so the metric SQL classifies a reviewed purchase
+    # like the tools do, and the evidence spec records them.
+    settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR,
+                **labels.metric_settings(labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))}
     row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         raise NoTransactions("no transactions up to as_of for this customer")
