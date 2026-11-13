@@ -83,7 +83,7 @@ def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader
         "method": spec["method"],
         "evidence_ref": ref,
         "label": _label_of(spec, language),
-        "display": display(value, info.unit, language),
+        "display": display(value, info.unit, language, spec["method"]),
     }
 
 
