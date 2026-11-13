@@ -18,7 +18,36 @@ _In progress._
 
 ## 4. EU and Finnish context
 
-_In progress._
+This is our reading of public texts. It is not legal advice; the bank's own compliance team decides.
+
+**EU AI Act (Regulation 2024/1689).** We used the Commission's AI Act Service Desk, which shows the consolidated text as at 27 July 2026, including the Digital Omnibus on AI amendments [L1–L5].
+- **Transparency (Art. 50(1)).** A system that talks to people must tell them they are interacting with an AI system, unless that is obvious [L1]. The Regulation applies in general from 2 August 2026 [L4]. FIN-FSA confirms that the transparency obligations take effect on 2.8.2026 [L12]. This obligation applies to the coach today → R14.
+- **Risk class.** Annex III point 5(b) lists as high-risk "AI systems intended to be used to evaluate the creditworthiness of natural persons or establish their credit score" [L2]. An Annex III system that profiles natural persons is always high-risk [L3]. For Annex III systems, the high-risk obligations apply from 2 December 2027 [L4].
+  - A budgeting coach that explains a customer's own spending is not on the Annex III list. If it scored creditworthiness or predicted loan approval, it would move into the high-risk class. The dataset includes mortgage applications, so this line has to be explicit → R8.
+- **AI literacy (Art. 4).** Providers and deployers must take measures to support the AI literacy of their staff [L5]. Chapters I and II have applied since 2 February 2025 [L4]. This concerns the bank's staff, not the coach's behaviour.
+
+**GDPR and the EDPB.** EDPB Guidelines 06/2020 on the interplay of PSD2 and the GDPR (version 2.0, adopted 15 December 2020) [L6] cover three points that matter for us:
+- **Sensitive data in transactions.** "Financial transactions can reveal sensitive information", for example health from medical bills, religion or politics from donations, and trade union membership from dues. "Profiling can create special category of data by inference" [L6, section 5.1]. Our data has pharmacy and doctor MCCs (#6) → R9.
+- **Data minimisation (Art. 5(1)(c)).** Controllers "should process no more personal data than what is necessary" [L6, section 6.1]. We send aggregates, not rows, to the LLM → R3.
+- **Automated decisions (Art. 22).** The EDPB gives the example of an "automatic refusal of an online credit application without any human intervention" as a decision people have the right not to be subject to [L6] → R8.
+
+**PSD2 and open banking.** PSD2 defines an account information service as "an online service to provide consolidated information on one or more payment accounts held by the payment service user with either another payment service provider or with more than one payment service provider" [L7].
+- In our reading, S-Pankki analysing its own customers' accounts in its own app is not an account information service. If the coach later pulls in accounts from other banks, the PSD2 rules for account information services apply.
+- The status and dates of PSD3 and the PSR are **unknown**: the Council press release could not be opened on 2026-11-13, and we did not rely on secondary reports.
+
+**Investment advice (MiFID II).** "Investment advice" means "the provision of personal recommendations to a client ... in respect of one or more transactions relating to financial instruments" [L8]. ESMA's supervisory briefing (11 July 2023) [L9] adds four points:
+- A recommendation is personal if it is "presented as suitable for that person" or "based on a consideration of the circumstances of that person" (para. 12).
+- "Simply giving objective information without making any comment, value judgement, or suggestion" is not a recommendation (para. 28).
+- A recommendation can also be "indirect, implicit" (para. 29).
+- The rules cover advice given "through an automated or semi-automated system used as a client-facing tool" (para. 24).
+
+So the coach can state facts and figures about the user's own money. It must not suggest, even implicitly, that the user buy, sell or hold a financial instrument → R7.
+
+**Finland (FIN-FSA / Finanssivalvonta).**
+- FIN-FSA's thematic review (27 June 2025) collects information "in preparing for market supervision duties under the EU Artificial Intelligence Act". It also found that "high-risk AI systems under the AI Act have already been deployed in the financial sector" [L10].
+- FIN-FSA expects AI use in the customer interface "to increase over the following years". It says companies must "devise AI strategies as well as ethical standards and comply with them" [L11].
+- FIN-FSA guidance specific to AI chatbots or AI-assisted financial advice: **unknown**. We found none on finanssivalvonta.fi on 2026-11-13.
+- How the Finnish Investment Services Act applies to an in-app coach: **unknown**; we did not check it.
 
 ## 5. Evaluation and monitoring
 
@@ -61,4 +90,18 @@ Each rule names a behaviour of the coach that can be observed, and how to test i
 
 ## Sources
 
-_In progress. Each entry: title, URL, accessed 2026-11-13._
+All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached from our network that day (TLS certificate error), so legal texts are cited from official EU mirrors: the Commission AI Act Service Desk, the EBA single rulebook Q&A and the ESMA interactive single rulebook.
+
+**Law and regulators**
+- [L1] EU AI Act, Article 50, AI Act Service Desk (European Commission). https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-50, accessed 2026-11-13.
+- [L2] EU AI Act, Annex III, AI Act Service Desk. https://ai-act-service-desk.ec.europa.eu/en/ai-act/annex-3, accessed 2026-11-13.
+- [L3] EU AI Act, Article 6, AI Act Service Desk. https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-6, accessed 2026-11-13.
+- [L4] EU AI Act, Article 113 (as amended by the Digital Omnibus on AI), AI Act Service Desk. https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-113, accessed 2026-11-13.
+- [L5] EU AI Act, Article 4, AI Act Service Desk. https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-4, accessed 2026-11-13.
+- [L6] EDPB, Guidelines 06/2020 on the interplay of the Second Payment Services Directive and the GDPR, version 2.0, 15 December 2020. https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202006_psd2_afterpublicconsultation_en.pdf, accessed 2026-11-13.
+- [L7] EBA Single Rulebook Q&A 2018_4098, which quotes the PSD2 Article 4(16) definition (answer published 13 September 2019). https://www.eba.europa.eu/single-rule-book-qa/qna/view/publicId/2018_4098, accessed 2026-11-13.
+- [L8] ESMA Interactive Single Rulebook, MiFID II Article 4, Definitions. https://www.esma.europa.eu/publications-and-data/interactive-single-rulebook/mifid-ii/article-4-definitions, accessed 2026-11-13.
+- [L9] ESMA35-43-3861, Supervisory briefing on understanding the definition of advice under MiFID II, 11 July 2023. https://www.esma.europa.eu/sites/default/files/2023-07/ESMA35-43-3861_Supervisory_briefing_on_understanding_the_definition_of_advice_under_MiFID_II.pdf, accessed 2026-11-13.
+- [L10] FIN-FSA, Thematic review of the use of AI in the financial sector, 27 June 2025. https://www.finanssivalvonta.fi/en/publications-and-press-releases/supervision-releases/2025/thematic-review-of-the-use-of-AI-in-the-financial-sector/, accessed 2026-11-13.
+- [L11] FIN-FSA press release, "FIN-FSA thematic review: financial sector organisations use AI in internal processes, utilisation in the customer interface increases", 27 June 2025. https://www.finanssivalvonta.fi/en/publications-and-press-releases/Press-release/2025/fin-fsa-thematic-review-financial-sector-organisations-use-ai-in-internal-processes-utilisation-in-the-customer-interface-increases/, accessed 2026-11-13.
+- [L12] Finanssivalvonta, "Uudet säännöt vahvistavat luottamusta tekoälyyn Euroopassa", 7 January 2026. https://www.finanssivalvonta.fi/tiedotteet-ja-julkaisut/verkkouutiset/2026/uudet-saannot-vahvistavat-luottamusta-tekoalyyn-euroopassa, accessed 2026-11-13.
