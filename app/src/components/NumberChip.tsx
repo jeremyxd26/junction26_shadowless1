@@ -7,7 +7,7 @@ type Tone = 'mint' | 'warning' | 'neutral'
 
 const sizes: Record<Size, string> = {
   // Inline chips sit in running text: the pill is 32px high and an invisible
-  // ::after extends the hit area to 44px.
+  // ::after extends the hit area to 44px. min-w-11 (on every size) keeps it 44px wide.
   inline:
     'relative min-h-8 px-2.5 text-[15px] leading-5 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
@@ -32,7 +32,7 @@ interface Props {
  */
 export function NumberChip({ number, size = 'md', tone = 'mint' }: Props) {
   const { t } = useSettings()
-  const className = `inline-flex items-center justify-center whitespace-nowrap rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
+  const className = `inline-flex min-w-11 items-center justify-center whitespace-nowrap rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
 
   if (!number.evidence_ref) {
     return <span className={className}>{number.display}</span>
