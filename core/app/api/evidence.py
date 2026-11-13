@@ -19,6 +19,7 @@ from fastapi import APIRouter, Path, Query, Request
 from core.tools import config, evidence, periods
 from core.tools.formatting import display
 from core.tools.models import Unit
+from core.tools.numbers import json_value
 from core.tools.selection import Selection
 
 from . import texts
@@ -67,17 +68,12 @@ def _label_of(spec: dict[str, Any], language: str) -> str:
     return texts.pick(info.name, language)
 
 
-def _json_value(value: Decimal, unit: Unit) -> int | float:
-    """A whole count as an integer; anything else (also a count with a decimal) as a float."""
-    return int(value) if unit is Unit.COUNT and value == value.to_integral_value() else float(value)
-
-
 def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader) -> dict[str, Any]:
     info = texts.method_info(spec["method"])
     value = Decimal(spec["value"])
     start, end = _period_of(spec, load)
     return {
-        "value": _json_value(value, info.unit),
+        "value": json_value(value, info.unit),
         "unit": info.unit.value,
         "period": {"start": start, "end": end, "label": periods.period_label(start, end, language)},
         "method": spec["method"],
@@ -109,9 +105,9 @@ def _peer_parts(parts: list[dict[str, Any]], period: dict[str, Any], language: s
         if p["role"] == "peer_n" and level in texts.PEER_LEVELS:
             label = f"{label} ({texts.pick(texts.PEER_LEVELS[level], language)})"
         out.append({"role": p["role"], "number": {
-            "value": _json_value(value, info.unit), "unit": info.unit.value, "period": period,
+            "value": json_value(value, info.unit), "unit": info.unit.value, "period": period,
             "method": p["method"], "evidence_ref": None, "label": label,
-            "display": display(value, info.unit, language)}})
+            "display": display(value, info.unit, language, p["method"])}})
     return out
 
 

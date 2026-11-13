@@ -258,15 +258,16 @@ def same_value(a, b, unit: str, method: str | None = None) -> bool:
         return False
 
 
-def display_matches(display: str, value: float, unit: str, language: str | None = None,
-                    method: str | None = None) -> bool:
+def display_matches(display: str, value: float, unit: str, language: str, method: str | None = None) -> bool:
     """A declared Number object's display is valid only if it EQUALS what the server's formatter
-    writes for its value, unit and method, in English or Finnish. A display is never free text, so no
-    suffix or unit word is parsed: "1 euro" on a count or "€45.91 a year" on a monthly value never
-    match, and "20.0%" for a cut the user typed (method user_input@1, shown as "20%") does not either."""
-    if unit not in UNIT_MARKS:
+    writes for its value, unit and method in the answer's own language. A display is never free text, so
+    no suffix or unit word is parsed: "1 euro" on a count or "€45.91 a year" on a monthly value never
+    match, and "20.0%" for a cut the user typed (method user_input@1, shown as "20%") does not either.
+    The language is required and only its form counts: "4,120" is 4120 in English but reads as 4.12 in
+    Finnish, so a Finnish answer must say "4 120" (review of #128)."""
+    if unit not in UNIT_MARKS or language not in ("en", "fi"):
         return False
     try:
-        return any(_same(display or "", formatted(value, unit, lang, method)) for lang in ("en", "fi"))
+        return _same(display or "", formatted(value, unit, language, method))
     except (ValueError, ArithmeticError):
         return False

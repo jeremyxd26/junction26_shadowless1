@@ -351,8 +351,10 @@ def test_a_count_next_to_a_currency_or_unit_word_fails(text, lang):
 ])
 def test_every_formatter_display_passes(value, unit, en, fi):
     assert answer_text.formatted(value, unit, "en") == en and answer_text.formatted(value, unit, "fi") == fi
-    for display in (en, fi, fi.replace(" ", NBSP), fi.replace(" ", NNBSP), en.replace("-", "\u2212")):
-        assert answer_text.display_matches(display, value, unit)
+    for display in (en, en.replace("-", "−")):
+        assert answer_text.display_matches(display, value, unit, "en")
+    for display in (fi, fi.replace(" ", NBSP), fi.replace(" ", NNBSP)):
+        assert answer_text.display_matches(display, value, unit, "fi")
 
 
 @pytest.mark.parametrize("display,value,unit", [
@@ -362,30 +364,46 @@ def test_every_formatter_display_passes(value, unit, en, fi):
     ("51", 51.0, "percentile"), ("118", 118, "days"),
 ])
 def test_displays_that_are_not_the_formatter_output_fail(display, value, unit):
-    assert not answer_text.display_matches(display, value, unit)
+    assert not answer_text.display_matches(display, value, unit, "en")
+    assert not answer_text.display_matches(display, value, unit, "fi")
+
+
+@pytest.mark.parametrize("display,value,unit,language,ok", [
+    ("4,120", 4120, "count", "en", True),
+    ("4 120", 4120, "count", "fi", True),
+    ("4,120", 4120, "count", "fi", False),     # reads as 4.12 in Finnish
+    ("4 120", 4120, "count", "en", False),
+    ("€180.26", 180.26, "eur", "fi", False),   # the English form in a Finnish answer
+    ("180,26 €", 180.26, "eur", "en", False),
+    ("12,5 %", 12.5, "percent", "en", False),
+    ("€180.26", 180.26, "eur", None, False),   # no language, no match
+])
+def test_only_the_answers_own_language_counts(display, value, unit, language, ok):
+    """Review of #128: the form of the stated language only, not either language's."""
+    assert answer_text.display_matches(display, value, unit, language) is ok
 
 
 # ---- #111: the check compares through the same method-aware formatter -----------------------------
 
-@pytest.mark.parametrize("display,value,unit,method,ok", [
-    ("20%", 20.0, "percent", "user_input@1", True),
-    ("20 %", 20.0, "percent", "user_input@1", True),
-    ("20.0%", 20.0, "percent", "user_input@1", False),
-    ("20.0%", 20.0, "percent", None, True),
-    ("72nd percentile", 72.0, "percentile", "peer_benchmark.percentile@1", True),
-    ("72. persentiili", 72.0, "percentile", "peer_benchmark.percentile@1", True),
-    ("72.0%", 72.0, "percentile", "peer_benchmark.percentile@1", False),
-    ("32.3% more", 32.3, "percent", "peer_benchmark.vs_median_pct@1", True),
-    ("31,0 % vähemmän", -31.0, "percent", "peer_benchmark.vs_median_pct@1", True),
-    ("-31.0%", -31.0, "percent", "peer_benchmark.vs_median_pct@1", False),
-    ("31.0% more", -31.0, "percent", "peer_benchmark.vs_median_pct@1", False),
-    ("14.2 a month", 14.2, "count", "spender_profile.everyday_tx_month@1", True),
-    ("14", 14.2, "count", "spender_profile.everyday_tx_month@1", False),
-    ("€0.00", -0.001, "eur", None, True),
-    ("-€0.00", -0.001, "eur", None, False),
+@pytest.mark.parametrize("display,value,unit,method,language,ok", [
+    ("20%", 20.0, "percent", "user_input@1", "en", True),
+    ("20 %", 20.0, "percent", "user_input@1", "fi", True),
+    ("20.0%", 20.0, "percent", "user_input@1", "en", False),
+    ("20.0%", 20.0, "percent", None, "en", True),
+    ("72nd percentile", 72.0, "percentile", "peer_benchmark.percentile@1", "en", True),
+    ("72. persentiili", 72.0, "percentile", "peer_benchmark.percentile@1", "fi", True),
+    ("72.0%", 72.0, "percentile", "peer_benchmark.percentile@1", "en", False),
+    ("32.3% more", 32.3, "percent", "peer_benchmark.vs_median_pct@1", "en", True),
+    ("31,0 % vähemmän", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "fi", True),
+    ("-31.0%", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "en", False),
+    ("31.0% more", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "en", False),
+    ("14.2 a month", 14.2, "count", "spender_profile.everyday_tx_month@1", "en", True),
+    ("14", 14.2, "count", "spender_profile.everyday_tx_month@1", "en", False),
+    ("€0.00", -0.001, "eur", None, "en", True),
+    ("-€0.00", -0.001, "eur", None, "en", False),
 ])
-def test_display_is_checked_with_the_numbers_method(display, value, unit, method, ok):
-    assert answer_text.display_matches(display, value, unit, method=method) is ok
+def test_display_is_checked_with_the_numbers_method(display, value, unit, method, language, ok):
+    assert answer_text.display_matches(display, value, unit, language, method=method) is ok
 
 
 def test_same_value_uses_the_method():

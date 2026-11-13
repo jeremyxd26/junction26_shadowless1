@@ -87,16 +87,22 @@ def _percent(text: str, fi: bool) -> str:
 
 
 def display(value: Decimal, unit: Unit, language: str = "en", method: str | None = None) -> str:
-    """The display string of a Number with this value, unit and method (see the module docstring)."""
-    value = Decimal(value)
+    """The display string of a Number with this value, unit and method (see the module docstring).
+
+    A value that is not a Decimal goes through its shortest text first (`2.675` stays 2.675 and shows
+    `€2.68`; `Decimal(2.675)` would be 2.67499…). A percentile outside 0..100 is a bug upstream and
+    raises ValueError instead of showing "-1st" or "101st percentile"."""
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
     fi = language == "fi"
     negative = value < 0
     magnitude = abs(value)
 
     if unit is Unit.PERCENTILE:
         n = int(magnitude.quantize(ONE, rounding=ROUND_HALF_UP))
-        sign = "-" if negative and n else ""
-        return f"{sign}{n}. persentiili" if fi else f"{sign}{ordinal_en(n)} percentile"
+        if (negative and n) or n > 100:
+            raise ValueError(f"a percentile is between 0 and 100, not {value}")
+        return f"{n}. persentiili" if fi else f"{ordinal_en(n)} percentile"
 
     if method == VS_MEDIAN_METHOD and unit is Unit.PERCENT:
         rounded = pct(magnitude)

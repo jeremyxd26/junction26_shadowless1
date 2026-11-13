@@ -67,22 +67,58 @@ def test_every_form_in_both_languages(value, unit, method, en, fi):
 ])
 def test_english_ordinals(n, text):
     assert ordinal_en(n) == text
-    assert display(Decimal(n), Unit.PERCENTILE) == f"{text} percentile"
+    if n <= 100:   # a percentile above 100 is refused (test_a_percentile_outside_0_to_100_is_refused)
+        assert display(Decimal(n), Unit.PERCENTILE) == f"{text} percentile"
 
 
 @pytest.mark.parametrize("value, unit, method, en, fi", [
+    # rounds to zero: no minus (and no sign on a positive near-zero either)
     ("-0.001", Unit.EUR, None, "€0.00", "0,00 €"),
+    ("0.004", Unit.EUR, None, "€0.00", "0,00 €"),
+    ("-0.0", Unit.EUR, None, "€0.00", "0,00 €"),
     ("-0.004", Unit.EUR_PER_MONTH, None, "€0.00 a month", "0,00 € / kk"),
     ("-0.04", Unit.PERCENT, None, "0.0%", "0,0 %"),
+    ("0.004", Unit.PERCENT, None, "0.0%", "0,0 %"),
+    ("-0.0", Unit.PERCENT, None, "0.0%", "0,0 %"),
     ("-0.0", Unit.PERCENT, USER_INPUT, "0%", "0 %"),
     ("-0.04", Unit.COUNT, None, "0.0", "0,0"),
     ("-0.4", Unit.PERCENTILE, None, "0th percentile", "0. persentiili"),
-    ("-0.005", Unit.EUR, None, "-€0.01", "-0,01 €"),   # rounds away from zero: a real minus
+    ("-0.4", Unit.DAYS, None, "0 days", "0 pv"),
+    # the smallest non-zero negative of each unit keeps its minus
+    ("-0.005", Unit.EUR, None, "-€0.01", "-0,01 €"),
+    ("-0.005", Unit.EUR_PER_MONTH, None, "-€0.01 a month", "-0,01 € / kk"),
+    ("-0.05", Unit.PERCENT, None, "-0.1%", "-0,1 %"),
+    ("-0.05", Unit.COUNT, None, "-0.1", "-0,1"),
+    ("-1", Unit.DAYS, None, "-1 day", "-1 pv"),
+    ("-1", Unit.MONTHS, None, "-1 month", "-1 kk"),
 ])
 def test_no_negative_zero(value, unit, method, en, fi):
-    """#93: a value that rounds to zero never shows a minus."""
+    """#93: a value that rounds to zero never shows a minus; one that does not round to zero keeps it."""
     assert display(Decimal(value), unit, "en", method) == en
     assert display(Decimal(value), unit, "fi", method) == fi
+
+
+@pytest.mark.parametrize("value", ["-0.5", "-1", "100.5", "101", "250"])
+def test_a_percentile_outside_0_to_100_is_refused(value):
+    with pytest.raises(ValueError, match="between 0 and 100"):
+        display(Decimal(value), Unit.PERCENTILE)
+
+
+def test_edges_of_the_percentile_range():
+    assert display(Decimal("0"), Unit.PERCENTILE) == "0th percentile"
+    assert display(Decimal("100.4"), Unit.PERCENTILE) == "100th percentile"
+    assert display(Decimal("-0.49"), Unit.PERCENTILE, "fi") == "0. persentiili"
+
+
+@pytest.mark.parametrize("value, unit, en", [
+    (2.675, Unit.EUR, "€2.68"),          # Decimal(2.675) would be 2.67499… and show €2.67
+    (1.005, Unit.EUR, "€1.01"),
+    (18.95, Unit.PERCENT, "19.0%"),
+    (14, Unit.COUNT, "14"),
+    (0.1 + 0.2, Unit.EUR, "€0.30"),
+])
+def test_a_float_goes_through_its_text(value, unit, en):
+    assert display(value, unit) == en
 
 
 CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "api.md"
@@ -121,34 +157,84 @@ def test_no_plus_sign_ever():
 
 
 # ---- no display string is built by hand -----------------------------------------------------------
-# Every `display=` keyword, `"display":` dict entry and `.display =` assignment in the service code
-# (core/tools and core/app) must be a call of the formatter, `display(...)`. The tools build their
-# Numbers through NumberBuilder.number, which always calls it.
+# Every way of setting a `display` in the service code (core/tools and core/app) must use a call of
+# core.tools.formatting.display: a `display=` keyword, a `"display":` dict entry, `x.display = …`,
+# `x["display"] = …`, an annotated assignment and `setattr(x, "display", …)`. An augmented assignment
+# (`x.display += …`) is always hand-built. Only the formatter itself counts, as imported in that file;
+# any other function or attribute named `display` does not. The tools build their Numbers through
+# NumberBuilder.number, which always calls it.
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = sorted(p for d in ("tools", "app") for p in (ROOT / d).rglob("*.py") if "tests" not in p.parts)
+FORMATTER = "core.tools.formatting"
 
 
-def _is_formatter_call(node: ast.AST) -> bool:
+def _formatter_names(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """The names this file binds to core.tools.formatting.display, and to the module itself."""
+    functions, modules = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == FORMATTER or (node.level and module == "formatting"):
+                functions |= {a.asname or a.name for a in node.names if a.name == "display"}
+            elif module == "core.tools" or (node.level and not module):
+                modules |= {a.asname or a.name for a in node.names if a.name == "formatting"}
+        elif isinstance(node, ast.Import):
+            modules |= {a.asname for a in node.names if a.name == FORMATTER and a.asname}
+    return functions, modules
+
+
+def _dotted(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return f"{_dotted(node.value)}.{node.attr}"
+    return ""
+
+
+def _is_formatter_call(node: ast.AST | None, functions: set[str], modules: set[str]) -> bool:
     if not isinstance(node, ast.Call):
         return False
     f = node.func
-    return (isinstance(f, ast.Name) and f.id == "display") or (isinstance(f, ast.Attribute) and f.attr == "display")
+    if isinstance(f, ast.Name):
+        return f.id in functions
+    if isinstance(f, ast.Attribute) and f.attr == "display":
+        return _dotted(f.value) in modules or _dotted(f.value) == FORMATTER
+    return False
+
+
+def _is_display_target(target: ast.AST) -> bool:
+    if isinstance(target, ast.Attribute):
+        return target.attr == "display"
+    if isinstance(target, ast.Subscript):
+        return isinstance(target.slice, ast.Constant) and target.slice.value == "display"
+    return False
 
 
 def hand_built_displays(source: str, name: str) -> list[str]:
+    tree = ast.parse(source)
+    functions, modules = _formatter_names(tree)
     out = []
-    for node in ast.walk(ast.parse(source)):
-        values = []
+    for node in ast.walk(tree):
+        values: list[ast.AST] = []
         if isinstance(node, ast.Call):
             values += [k.value for k in node.keywords if k.arg == "display"]
+            if (isinstance(node.func, ast.Name) and node.func.id == "setattr" and len(node.args) == 3
+                    and isinstance(node.args[1], ast.Constant) and node.args[1].value == "display"):
+                values.append(node.args[2])
         elif isinstance(node, ast.Dict):
             values += [v for k, v in zip(node.keys, node.values)
                        if isinstance(k, ast.Constant) and k.value == "display"]
         elif isinstance(node, ast.Assign):
-            if any(isinstance(t, ast.Attribute) and t.attr == "display" for t in node.targets):
+            if any(_is_display_target(t) for t in node.targets):
                 values.append(node.value)
-        out += [f"{name}:{v.lineno}" for v in values if not _is_formatter_call(v)]
+        elif isinstance(node, ast.AnnAssign):
+            if _is_display_target(node.target) and node.value is not None:
+                values.append(node.value)
+        elif isinstance(node, ast.AugAssign):
+            if _is_display_target(node.target):
+                out.append(f"{name}:{node.lineno}")   # always hand-built
+        out += [f"{name}:{v.lineno}" for v in values if not _is_formatter_call(v, functions, modules)]
     return out
 
 
@@ -158,8 +244,38 @@ def test_no_display_is_built_by_hand():
     assert found == [], f"build these displays with core.tools.formatting.display(value, unit, language, method): {found}"
 
 
-def test_the_check_finds_a_hand_built_display():
-    bad = 'Number(value=20, display=f"{pct}%")\nx = {"display": "20%"}\nn.display = str(v)\n'
-    good = 'Number(value=20, display=display(v, Unit.PERCENT, lang, method))\nx = {"display": formatting.display(v, u)}\n'
-    assert sorted(hand_built_displays(bad, "bad.py")) == ["bad.py:1", "bad.py:2", "bad.py:3"]
-    assert hand_built_displays(good, "good.py") == []
+BAD = """\
+from core.tools.formatting import display
+from other import render
+Number(value=20, display=f"{pct}%")
+x = {"display": "20%"}
+n.display = str(v)
+row["display"] = f"{amount} €"
+n.display: str = "€" + text
+n.display += " a month"
+setattr(n, "display", "20%")
+Number(value=20, display=render.display(v))
+Number(value=20, display=other_display(v))
+"""
+GOOD = """\
+from core.tools.formatting import display
+from core.tools import formatting
+from core.tools.formatting import display as fmt
+Number(value=20, display=display(v, Unit.PERCENT, lang, method))
+x = {"display": formatting.display(v, u)}
+row["display"] = fmt(v, Unit.EUR, lang)
+n.display: str = display(v, u)
+setattr(n, "display", formatting.display(v, u))
+"""
+
+
+def test_the_check_finds_every_form_of_a_hand_built_display():
+    found = sorted(hand_built_displays(BAD, "bad.py"), key=lambda s: int(s.split(":")[1]))
+    assert found == [f"bad.py:{n}" for n in range(3, 12)]
+    assert hand_built_displays(GOOD, "good.py") == []
+
+
+def test_a_display_function_not_from_the_formatter_does_not_count():
+    """A file that defines or imports some other `display` does not pass by its name alone."""
+    source = "def display(v):\n    return str(v)\nNumber(value=1, display=display(v))\n"
+    assert hand_built_displays(source, "x.py") == ["x.py:3"]
