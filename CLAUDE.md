@@ -21,9 +21,9 @@ Two people build this project during a hackathon. Each person runs one **coordin
 ## Areas and ownership
 | Area | Paths | Owner |
 |---|---|---|
-| core | (set at kickoff) | person A |
-| product | (set at kickoff) | person B |
-| contract | the shared interface/schema file(s) | both |
+| core | `core/` — data loading, spending baskets, deterministic tools, coach API | Renat (branch prefix `r/`) |
+| product | `app/` — mobile-first web app | Maxim (branch prefix `m/`) |
+| contract | `contracts/` — API contract between core and app | both |
 
 - Only change files in another person's area through an issue assigned to you, and say so in the PR.
 - Contract changes need an approving review from the other person before merge.
