@@ -1,1 +1,7 @@
-psycopg[binary]>=3.2
+psycopg[binary,pool]>=3.3
+fastapi>=0.162
+uvicorn>=0.54
+pydantic-settings>=2.16
+# tests (Starlette's TestClient is built on httpx2)
+pytest>=9.2
+httpx2>=2.16
