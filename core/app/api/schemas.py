@@ -214,7 +214,7 @@ class OverviewResponse(Model):
     language: Language
     greeting: str
     ai_disclosure: str
-    hero: MetricCard | None  # null while the safe-to-spend tool is not available (see overview.HERO_TOOL)
+    hero: MetricCard  # safe to spend in the next 7 days, from overview.HERO_TOOL (#79)
     cards: list[Card]
     # Always [] until the spike review exists: #68 narrows the item to its review card model.
     reviews: list[dict[str, Any]]
@@ -254,6 +254,9 @@ class EvidenceRow(Model):
     mcc: str | None
     amount: str  # decimal string with the bank sign (section 9)
     currency: Literal["EUR"]
+    # Contract addition (#79, Renat): the amount formatted like a Number's display, in the request
+    # language, so the client never formats a number. `amount` stays the exact decimal string.
+    display: str
 
 
 class Part(Model):
@@ -276,3 +279,48 @@ class EvidenceResponse(Model):
     parts: list[Part]
     next_cursor: str | None
     privacy_note: str
+
+
+# ---- POST /api/whatif (section 8) ----------------------------------------------------------------
+
+SelectionKind = Literal["category", "basket", "mcc", "merchant"]
+
+
+class WhatIfSelection(Model):
+    kind: SelectionKind
+    value: str = Field(min_length=1, max_length=100)
+
+
+class WhatIfScenarioRequest(Model):
+    selection: WhatIfSelection
+    cut_pct: int = Field(ge=1, le=100, strict=True)  # a whole number; "20" or 20.5 is a 400
+
+
+class WhatIfRequest(Model):
+    customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
+    scenario: WhatIfScenarioRequest
+    language: Language = "en"
+
+
+class WhatIfScenario(Model):
+    selection: WhatIfSelection  # for a merchant, the merchant id the app sent
+    cut_pct: Number
+    label: str
+
+
+class WhatIfResponse(Model):
+    customer_id: str
+    as_of: date
+    language: Language
+    scenario: WhatIfScenario
+    status: Literal["estimate", "estimate_with_caveat", "not_offered"]
+    baseline_per_month: Number
+    saving_per_month: Number
+    saving_per_week: Number
+    saving_per_year: Number
+    one_off_excluded: Number
+    regular_excluded: Number
+    assumptions: list[str]
+    caveats: list[str]
+    estimate: Estimate
+    evidence_ref: str

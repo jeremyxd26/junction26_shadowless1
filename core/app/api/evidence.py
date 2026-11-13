@@ -90,6 +90,11 @@ METRIC_SECTIONS = {  # core/metrics/<file> -> section of metrics.md that defines
 }
 
 
+def _rows(rows: list[dict[str, Any]], language: str) -> list[dict[str, Any]]:
+    """Each row's amount also as a localised display, formatted like a Number's (sign kept)."""
+    return [{**r, "display": display(Decimal(r["amount"]), Unit.EUR, language)} for r in rows]
+
+
 def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> EvidenceResponse:
     def load(ref: str) -> dict[str, Any]:
         return evidence.load(conn, ref)[1]
@@ -114,7 +119,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         period = {"start": start, "end": end, "label": periods.period_label(start, end, language)}
         body["query"] = {"categories": sel["categories"], "baskets": sel["baskets"], "mcc_groups": sel["mcc_groups"],
                          "merchant_id": sel["merchant_id"], "period": period}
-        body["rows"] = res.rows
+        body["rows"] = _rows(res.rows, language)
         body["reconciles"] = res.reconciles
         body["next_cursor"] = res.next_cursor
         # row_count is a Number with its own ref (contract section 9): a count over the same selection.
@@ -143,7 +148,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
             if not body["method"]["summary"]:
                 body["method"]["summary"] = f"core/metrics/{source['file']}: {source.get('column', '')}"
         body["reconciles"] = res.reconciles
-        body["rows"] = res.rows
+        body["rows"] = _rows(res.rows, language)
         body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
     return EvidenceResponse.model_validate(body)
 

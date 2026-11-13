@@ -12,12 +12,15 @@ import copy
 import json
 import re
 import typing
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
 from core.app.api import schemas
+from core.tools.formatting import display
+from core.tools.models import Unit
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
@@ -29,6 +32,19 @@ MODELS: dict[str, type[BaseModel]] = {
     "overview.response": schemas.OverviewResponse,
     "evidence.response": schemas.EvidenceResponse,
     "evidence.response_composite": schemas.EvidenceResponse,
+    "whatif.request": schemas.WhatIfRequest,
+    "whatif.request_basket": schemas.WhatIfRequest,
+    "whatif.response": schemas.WhatIfResponse,
+}
+
+# Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
+# version), as paths with [] for every list item, each with the value it would have in the example.
+# The check fills them into a copy of the example; test_additions_are_still_missing fails once the
+# contract carries one, so it is removed here.
+ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {
+    "evidence.response": {  # #79, Renat: rows carry their amount's display
+        "$.rows[].display": lambda row: display(Decimal(row["amount"]), Unit.EUR, "en"),
+    },
 }
 
 # Contract fields the models do not implement yet, by example name, with the issue that adds them.
@@ -72,7 +88,32 @@ def mismatches(inst: typing.Any, raw: typing.Any, path: str = "$") -> list[str]:
     return out
 
 
+def _split(path: str) -> tuple[list[str], str]:
+    """'$.rows[].display' -> (['rows', '[]'], 'display')."""
+    parts = re.findall(r"\[\]|[^.\[\]$]+", path)
+    return parts[:-1], parts[-1]
+
+
+def _parents(obj: typing.Any, parts: list[str]) -> typing.Iterator[dict]:
+    if not parts:
+        yield obj
+        return
+    head, rest = parts[0], parts[1:]
+    for child in (obj if head == "[]" else [obj[head]]):
+        yield from _parents(child, rest)
+
+
+def with_additions(name: str, raw: typing.Any) -> typing.Any:
+    out = copy.deepcopy(raw)
+    for path, value_of in ADDITIONS.get(name, {}).items():
+        parents, key = _split(path)
+        for parent in _parents(out, parents):
+            parent[key] = value_of(parent)
+    return out
+
+
 def check(name: str, raw: typing.Any) -> list[str]:
+    raw = with_additions(name, raw)
     inst = MODELS[name].model_validate(raw)
     pending = PENDING.get(name, set())
     return [m for m in mismatches(inst, raw) if m.split(":")[0] not in pending]
@@ -95,6 +136,20 @@ def test_pending_entries_are_still_missing():
                  if "in the example, not in" in m}
         assert paths <= found, f"{name}: {sorted(paths - found)} implemented or gone; remove from PENDING"
     assert not PENDING_ERROR_CODES & literal_values(schemas.ErrorBody, "code"), "remove from PENDING_ERROR_CODES"
+
+
+def test_additions_are_still_missing_from_the_contract():
+    """An ADDITIONS path must have parents in the example (so it is exercised) and not be there yet."""
+    for name, paths in ADDITIONS.items():
+        raw = examples()[name]
+        for path in paths:
+            parents, key = _split(path)
+            found = list(_parents(raw, parents))
+            assert found, f"{name}: {path} has nothing to attach to in the example"
+            assert all(key not in p for p in found), f"{name}: the contract has {path} now; remove it from ADDITIONS"
+        # without the addition the model refuses the example: the field is required, not optional
+        with pytest.raises(ValidationError):
+            MODELS[name].model_validate(raw)
 
 
 def test_the_check_fails_on_an_unknown_field_and_on_a_missing_one():
@@ -148,3 +203,8 @@ def test_enums_match_the_contract_text():
     assert literal_values(schemas.BillItem, "status") <= bills_line
     kinds = re.search(r"`kind` is one of (.*?)\.", contract_text()).group(1)
     assert literal_values(schemas.Insight, "kind") == set(re.findall(r"`([^`]+)`", kinds))
+    whatif = contract_text().split("## 8. `POST /api/whatif`")[1].split("## 9.")[0]
+    assert literal_values(schemas.WhatIfResponse, "status") == set(re.findall(r"^- `([a-z_]+)`:", whatif, re.M))
+    request_fields = {"customer_id", "scenario", "language"}
+    kinds_table = set(re.findall(r"^\| `([a-z_]+)` \| ", whatif, re.M)) - request_fields
+    assert set(typing.get_args(schemas.SelectionKind)) == kinds_table
