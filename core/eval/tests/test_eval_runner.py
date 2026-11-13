@@ -241,3 +241,56 @@ def test_unreachable_api_and_audit_fail_instead_of_crashing():
     ans = source("CUST00860", "What can I safely spend this week?", "en")
     assert ans.error and run.check(SAFE, ans, "en", "") == [f"source error: {ans.error}"]
     assert source._tool_calls("ans_x") is None  # the audit endpoint cannot be read: unknown, not empty
+
+
+# ---- third review: displays next to a unit, the dash class, look-alike digits, date order ---------
+
+TAXI = {
+    "id": "t-taxi", "persona": "CUST00860", "intent": "spending", "expect": "answered",
+    "question": {"en": "How much did I spend on taxis last month?", "fi": "Paljonko käytin takseihin viime kuussa?"},
+    "expected_tools": [], "tags": ["t"],
+    "numbers": [{"name": "taxi_total", "value": 52.84, "unit": "eur", "tolerance": 0.005},
+                {"name": "taxi_rides", "value": 1, "unit": "count", "tolerance": 0}],
+}
+AUG = {"start": "2026-08-01", "end": "2026-08-31"}
+
+
+def taxi_answer(text, lang="en"):
+    total = "€52.84" if lang == "en" else f"52,84{NBSP}€"
+    return Answer(text=text, outcome="answered", labels=[], tool_calls=[],
+                  numbers=[num(52.84, "eur", total, AUG), num(1, "count", "1", AUG)])
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("Taxis cost €52.84 over 1 ride, plus a tip 1 € each.", "en"),
+    ("Taxis cost €52.84 over 1 ride, that is 1 % of spending.", "en"),
+    (f"Takseihin meni 52,84{NBSP}€, 1 kyyti ja juomaraha 1 €.", "fi"),
+])
+def test_declared_count_cannot_be_reused_as_money_or_percent(text, lang):
+    fails_with(TAXI, taxi_answer(text, lang), lang, "R1")
+
+
+def test_display_after_a_colon_with_nbsp_is_removed():
+    ans = taxi_answer(f"Summa:{NBSP}52,84{NBSP}€, kyytejä: 1.", "fi")
+    assert run.check(TAXI, ans, "fi", TAXI["question"]["fi"]) == []
+    assert run.check(SAFE, fi_safe(f"Summa: 180,26{NBSP}€."), "fi", "") == []
+
+
+@pytest.mark.parametrize("text", ["Taxis cost €52.84 over 1 ride, and €⁵⁰ more.", "Taxis cost €52.84 over 1 ride, ⑤ times."])
+def test_look_alike_digits_fail(text):
+    fails_with(TAXI, taxi_answer(text), "en", "R1")
+
+
+def test_a_declared_count_inside_a_returned_range_does_not_break_the_date():
+    case = {"id": "t-r3", "persona": "CUST00849", "intent": "spending", "expect": "answered",
+            "question": {"en": "How much did I spend on restaurants in the last 3 months?"}, "expected_tools": [], "tags": ["t"],
+            "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005},
+                        {"name": "n", "value": 30, "unit": "count", "tolerance": 0, "required": False}]}
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    ans = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00. Transactions: 30.", outcome="answered",
+                 numbers=[num(1102.0, "eur", "€1,102.00", q3), num(30, "count", "30", q3)], labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == []
+    # The count is optional: an answer without it passes too.
+    ans2 = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00.", outcome="answered",
+                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(case, ans2, "en", case["question"]["en"]) == []

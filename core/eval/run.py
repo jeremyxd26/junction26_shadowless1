@@ -113,12 +113,16 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")
     else:
+        # `required: false` marks a value the answer may state but need not (for example a count of
+        # transactions next to a total); it is checked against SQL like any other expected value.
         wanted = case.get("numbers") or []
         for n in wanted:
+            if n.get("required", True) is False:
+                continue
             match = [x for x in declared if x["unit"] == n["unit"] and close(x["value"], n["value"], n["tolerance"])]
             if not match:
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (objects)")
-            elif not any(answer_text.remove_displays(ans.text, [str(x.get("display") or "")]) != ans.text for x in match):
+            elif not any(answer_text.shows(ans.text, str(x.get("display") or ""), dates, periods) for x in match):
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (text)")
         # Any other Number object: only a number the user typed, declared as user input with the
         # question's own mark ("20%" is a percent, never money).

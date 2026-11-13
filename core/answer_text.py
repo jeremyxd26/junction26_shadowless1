@@ -26,13 +26,15 @@ from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
 DASHES = "-‒–—−"          # hyphen-minus, figure dash, en dash, em dash, minus sign
 SPACES = "   "                       # space, NBSP, NNBSP
-_D = f"[{DASHES}]"
+DASH_CLASS = re.escape(DASHES)                # for use inside [...]: the hyphen escaped
+_D = f"[{DASH_CLASS}]"
 _S = f"[{SPACES}]"
 
 MONTHS_EN = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
@@ -67,9 +69,10 @@ DATE_PATTERNS = [
     ("month", rf"{_en('mn')}{_S}+(?P<y>\d{{4}})"),
     ("month", rf"{_fi('mn')}{_S}+(?P<y>\d{{4}})"),
 ]
-# Not part of a longer number or word, and not money or a percentage.
-_BEFORE = rf"(?<![\w€$%.,{DASHES}])"
-_AFTER = r"(?![\w€$%]|[.,]\d|" + _S + r"?[€$%])"
+# Not part of a longer number or word, not after a dash or minus, and not money or a percentage:
+# no mark glued before it or one space before it, none glued after it or one space after it.
+_BEFORE = rf"(?<![\w€$%.,{DASH_CLASS}])(?<![€$%] )"
+_AFTER = r"(?![\w€$%]|[.,]\d| ?[€$%])"
 DATE_RX = [(kind, re.compile(_BEFORE + p + _AFTER, re.I)) for kind, p in DATE_PATTERNS]
 
 
@@ -115,11 +118,18 @@ def _parse(kind: str, m: re.Match) -> tuple[date, date] | None:
         return None  # not a real date: its digits stay in the text
 
 
+def normalise(text: str) -> str:
+    """NFKC: look-alike digits (superscript, circled, full-width, ...) become ASCII digits, and NBSP and
+    NNBSP become plain spaces. Every text and display is normalised before it is read."""
+    return unicodedata.normalize("NFKC", text or "")
+
+
 def find_dates(text: str, dates: Iterable[date] = (), periods: Iterable[tuple[date, date]] = (), *,
                blank_all: bool = False) -> tuple[list[DateSpan], str]:
     """The date expressions of a text, each marked returned or not, and the text with the returned
     ones blanked out (all of them with blank_all). A date counts as returned if it is one of `dates`
     or a bound of a period; a month or a range only if it equals one of `periods`."""
+    text = normalise(text)
     dates = set(dates)
     periods = set(periods)
     bounds = dates | {d for p in periods for d in p}
@@ -144,11 +154,20 @@ def find_dates(text: str, dates: Iterable[date] = (), periods: Iterable[tuple[da
 
 
 def remove_displays(text: str, displays: Iterable[str]) -> str:
-    """Blank out each display string where it stands as a whole token (longest first)."""
-    for display in sorted({d for d in displays if d}, key=len, reverse=True):
-        rx = re.compile(_BEFORE + re.escape(display) + r"(?![\w€$%]|[.,]\d)")
+    """Blank out each display string where it stands as a whole token (longest first): not glued to a
+    letter or digit, not after a dash or minus, and with no € or % before or after it (with or
+    without one space), so a declared count "1" cannot be reused as "1 €" or "1 %"."""
+    text = normalise(text)
+    for display in sorted({normalise(d) for d in displays if d}, key=len, reverse=True):
+        rx = re.compile(_BEFORE + re.escape(display) + _AFTER)
         text = rx.sub(lambda m: " " * len(m.group(0)), text)
     return text
+
+
+def shows(text: str, display: str, dates: Iterable[date] = (), periods: Iterable[tuple[date, date]] = ()) -> bool:
+    """The display stands in the text as a whole token, outside the returned date expressions."""
+    _, rest = find_dates(text, dates, periods)
+    return remove_displays(rest, [display]) != normalise(rest)
 
 
 def leftover_digits(text: str, *, displays: Iterable[str] = (), dates: Iterable[date] = (),
@@ -156,8 +175,9 @@ def leftover_digits(text: str, *, displays: Iterable[str] = (), dates: Iterable[
     """Problems: date expressions that were not returned, then every run of digits that is left after
     removing the declared displays and the returned date expressions. Empty when the text is clean."""
     problems = []
-    text = remove_displays(text, displays)
+    # Dates first: a declared count such as "30" must not take the day out of "1 Jul – 30 Sep 2026".
     spans, text = find_dates(text, dates, periods)
+    text = remove_displays(text, displays)
     for span in spans:
         if not span.returned:
             problems.append(f"the date '{span.text}' was not returned by a tool")
@@ -168,7 +188,7 @@ def leftover_digits(text: str, *, displays: Iterable[str] = (), dates: Iterable[
 
 # ---- reading numbers ------------------------------------------------------------------------------
 
-NUMBER_RX = re.compile(rf"(?P<sign>[{DASHES}])?{_S}?(?P<pre>€{_S}?)?(?P<num>\d+(?:[{SPACES},.]\d+)*)(?P<post>{_S}?[€%])?")
+NUMBER_RX = re.compile(rf"(?P<sign>[{DASH_CLASS}])?{_S}?(?P<pre>€{_S}?)?(?P<num>\d+(?:[{SPACES},.]\d+)*)(?P<post>{_S}?[€%])?")
 
 
 def parse_number(raw: str, language: str) -> float:
@@ -180,7 +200,7 @@ def parse_number(raw: str, language: str) -> float:
 def parse_display(display: str, language: str) -> tuple[float, str | None] | None:
     """(signed value, mark) of a display string such as "€1,234.56", "-1 234,56 €", "18,9 %" or "3".
     The mark is "eur", "pct" or None. None when the string is not one number."""
-    m = re.fullmatch(rf"{_S}*" + NUMBER_RX.pattern + rf"{_S}*", display or "")
+    m = re.fullmatch(rf"{_S}*" + NUMBER_RX.pattern + rf"{_S}*", normalise(display))
     if not m:
         return None
     try:
