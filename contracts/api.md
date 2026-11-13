@@ -1,6 +1,6 @@
 # Core API contract
 
-**Version:** 0.2.0 (draft) · **Issues:** #5, #32, #33 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.2.1 (draft) · **Issues:** #5, #32, #33, #34 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
 **Status:** draft 0.1. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
@@ -16,7 +16,7 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 ## Contents
 
 1. [Conventions](#1-conventions)
-2. [Shared objects](#2-shared-objects): Number, Period, Comparison, text with number tokens
+2. [Shared objects](#2-shared-objects): Number, Period, Comparison, text with number tokens, glossary terms and emphasis
 3. [Cards](#3-cards)
 4. [Errors](#4-errors)
 5. [`GET /api/personas`](#5-get-apipersonas)
@@ -44,7 +44,8 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 | Merchants | Merchants are anonymised in the dataset. The core gives each merchant a label without digits that is stable for that customer, for example "Grocery store A" or "Restaurant B". The same label appears in cards, evidence and answer texts. |
 | Ids | Opaque strings with a prefix: `CUST…` (customer, as in the dataset), `MRC-…` (merchant, as in the dataset), `ans_`, `conv_`, `card_`, `bill_`, `ev_` (evidence), `tx_` (transaction), `ins_` (insight). Ids `n1`, `n2`, … name numbers inside one answer. Do not parse ids. |
 | Enum keys and labels | Every enum value the user sees (basket, category, profile, cadence, …) arrives as a stable `key` plus a separate localised `label`. Renaming a label never changes the key. |
-| Baskets | `regular_essentials` ("Regular essentials"), `unexpected_necessities` ("Unexpected necessities"), `everyday_spending` ("Everyday spending"). These keys are shared with `docs/design/metrics.md`. A purchase with a pending review is in a fourth state, `unclassified` ("Waiting for your answer", Finnish "Odottaa vastaustasi"), shown only while that review is pending (section 6). |
+| Baskets | `regular_essentials` ("Regular essentials"), `unexpected_necessities` ("Unexpected necessities"), `everyday_spending` ("Everyday spending"). These keys are shared with `docs/design/metrics.md`. A purchase with a pending review is in a fourth state, `unclassified` ("Waiting for your answer", Finnish "Odottaa vastaustasi"), shown only while that review is pending (section 6). Icon and colour token per basket: section 2.5. |
+| Name | The coach is called **Sentti**. It introduces itself by that name, in the AI disclosure and in its answers ("Sentti is an AI assistant …"). |
 | Categories | The 15 dataset categories, used as keys exactly as written: `Groceries`, `Restaurants`, `Transportation`, `Utilities`, `Entertainment`, `Health`, `Home & Tech`, `Housing`, `Lifestyle`, `Travel`, `Salary`, `Other Income`, `Invest Withdraw`, `Invest Deposit`, `Salary Sweep`. Following `metrics.md` section 0, the first 10 are spending. `Salary`, `Other Income` and `Invest Withdraw` are income. `Invest Deposit` is saving. `Salary Sweep` is a transfer, which is neither spending nor saving. |
 | Age bands | `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65-74`, `75+` (`metrics.md` section 6). |
 | Time windows | "Typical" and monthly averages use the last 6 complete calendar months (`2026-04-01` to `2026-09-30` for today `2026-09-30`). "This week" for safe to spend is the 7 days after today. The core resolves every window into explicit `period` dates. |
@@ -107,6 +108,45 @@ Coach texts (answers, insights) never contain digits typed by the AI model. Each
 - The app renders each token as a tappable chip that shows `display` and opens `GET /api/evidence/{evidence_ref}`.
 - Every text that carries tokens also comes in a `text_rendered` version with the tokens already replaced. Use it for copying, sharing and screen readers.
 
+### 2.5 Glossary terms and emphasis
+
+Sentti's answers teach as well as tell: financial terms in an answer are marked, and a tap shows a plain-language definition with the customer's own number. The AI model only marks a term from a fixed glossary (`core/config/glossary.yaml`, 19 terms in English and Finnish). It never writes a definition.
+
+**Term tokens.**
+- `{{t:key}}` stands for the glossary term `key` in its base form.
+- `{{t:key|surface form}}` stands for the term as it appears in the sentence. Finnish inflects nouns, for example `{{t:cushion|puskurin}}`. The surface form has no digits and no braces and is at most 40 characters.
+- Tokens match `\{\{t:([a-z_]+)(?:\|([^{}|0-9]{1,40}))?\}\}`.
+- The app renders the surface form, or `term` when there is none, as a tappable term (underlined, or in the basket's colour for a basket term). A tap opens the entry's `definition` and, when set, its `personal` line.
+
+**How the app gets the definitions: embedded in the answer.** Every answer carries a `terms` map with the entries its text uses, in the answer's language. A separate `GET /api/glossary` was considered and not chosen:
+- The definitions are personalised ("Your cushion is €100.00"), so they need the customer's numbers, resolved for this answer and with evidence.
+- Only the few terms used are sent, so the payload stays small.
+- A tap needs no extra request, and old answers in the chat keep their definitions.
+
+A glossary screen listing every term can be added later as its own endpoint without changing this.
+
+A glossary entry in `terms`:
+- `key`, `term`, `definition`;
+- `basket` (a basket key or `null`);
+- `personal`: `{text, numbers}` or `null`. `text` contains `{{n}}`, and `numbers` maps `n` to a Number object.
+
+**Emphasis rules** (enforced by the server):
+- **Bold:** at most one bold span (`**…**`) per answer, for the main takeaway.
+- **Limit:** at most 3 emphasised spans per answer in total, bold and term tokens together. Number chips do not count.
+- **Over the limit:** extra term tokens become plain words and an extra bold span loses its markers.
+- **Unknown keys:** a token with an unknown key becomes its plain surface form (or is dropped if it has none).
+- **Rendered text:** `text_rendered` has all tokens replaced and no `**` markers.
+
+**Basket presentation keys.** These are names only; the app owns the assets. They are the same in `core/config/glossary.yaml`.
+
+| Basket | Icon | Colour token |
+|---|---|---|
+| `regular_essentials` | `home` | `basket-regular` |
+| `unexpected_necessities` | `umbrella` | `basket-unexpected` |
+| `everyday_spending` | `shopping-bag` | `basket-everyday` |
+
+Wherever a basket is shown (breakdown items, review cards, basket terms), the app uses its icon and colour token.
+
 ---
 
 ## 3. Cards
@@ -118,7 +158,7 @@ Fields common to all cards:
 | Field | Type | Meaning |
 |---|---|---|
 | `card_id` | string | Unique within a response. |
-| `type` | enum | `metric`, `breakdown`, `bills`, `peer`, `stores`, `profile`, `whatif`, `review`, `safe_to_save` |
+| `type` | enum | `metric`, `breakdown`, `bills`, `peer`, `stores` (not offered in this version), `profile`, `whatif`, `review`, `safe_to_save`, `bonus` |
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
@@ -137,11 +177,20 @@ Card-specific fields:
 - **Pending:** `safe_to_spend.bill_due_eur` is not yet an output column of `03_safe_to_spend.sql`, which returns one row per customer. Issue #44 adds per-bill due amounts as a real output, and this method id names that future column.
 - The items' `due_until_payday` add up to `total`. | `overview.response` |
 | `peer` | `you`, `peer_median`, `peer_p25`, `peer_p75` (monthly averages), `percentile`, `vs_median` (all Number); `peer_group` `{level, label, size: Number, comparable: bool}`; `note`. `level` is `age_band+area3`, `age_band+city`, `age_band` or `all`: the most specific group with at least 20 other customers (`metrics.md` section 6). Without such a group, or for a customer whose salary is swept elsewhere, there is no peer card. Health is never benchmarked. | `card.peer` |
-| `stores` | `items` `{merchant: {id, label}, is_s_group (bool or null), price_index: Number, price_index_ci95: {low: Number, high: Number} or null, differs_from_average: bool, visits: Number}`[]; `switch` `{status, status_label, home: {id, label}, alternative: {id, label} or null, home_spend_month: Number, ticket_gap: Number or null, estimated_saving: Number or null}`; `caveats` string[]. `switch.status` is `estimate`, `within_noise`, `already_lowest`, `not_measurable` or `no_alternative`. Only `estimate` carries a gap and a saving (`metrics.md` section 7). | `card.stores` |
-| `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
+| `stores` | **Not offered in this version.** On the full population no store passes the significance rule, so Sentti says the difference is not measurable and sends no `stores` card. The app does not need to build it. The shape stays for a later version: `items` `{merchant: {id, label}, is_s_group (bool or null), price_index: Number, price_index_ci95: {low: Number, high: Number} or null, differs_from_average: bool, visits: Number}`[]; `switch` `{status, status_label, home: {id, label}, alternative: {id, label} or null, home_spend_month: Number, ticket_gap: Number or null, estimated_saving: Number or null}`; `caveats` string[]. `switch.status` is `estimate`, `within_noise`, `already_lowest`, `not_measurable` or `no_alternative`. Only `estimate` carries a gap and a saving (`metrics.md` section 7). | `card.stores` |
+| `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` and its English `label`:
+- `not_enough_income_data`: "Not enough income data"
+- `stretched`: "Stretched"
+- `big_ticket`: "Big-ticket buyer"
+- `everyday_heavy`: "Everyday spender"
+- `saver`: "Saver"
+- `steady`: "Steady"
+
+Finnish drafts, for native review: "Liian vähän tulotietoja", "Tiukilla", "Isojen ostosten tekijä", "Arkikuluttaja", "Säästäjä", "Tasainen". `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{alias, label}` or null (no merchant id; the label has no digits), `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now. While the review is pending this is always `unclassified` ("Waiting for your answer"): the purchase is in no basket total and not in the reserve.<br>- `question` `{en, fi}`: the question in both languages.<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` ("needed") and `everyday_spending` ("I chose it"). The three basket keys stay the only answer options; `unclassified` is never one.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response_pending` |
 | `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative.<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur` and `.save_reason_month_eur` are pending as SQL outputs (issue #53). `safe_to_spend.free_month_eur` and `.free_until_payday_eur` exist. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+| `bonus` | **S-Bonus, as a what-if only.** The customer's own grocery spending times the officially published Bonus scale (`docs/domain/s-group-benefits.md` section 4, `core/config/s_group_benefits.yaml`). No merchant is named or treated as an S-Group store. Fields:<br>- `share` (Number, `user_input@1`): the what-if share of grocery spending at S-Group, 100% unless the user picked another. It is always shown.<br>- `grocery_month` (Number): the customer's Groceries monthly average.<br>- `level` (Number, percent): the Bonus level reached.<br>- `bonus_month` and `payment_benefit_month` (Numbers).<br>- `assumptions` (string[]).<br><br>`estimate` is always set. The method ids `s_bonus.grocery_month_eur`, `s_bonus.level_pct`, `s_bonus.bonus_month_eur` and `s_bonus.payment_benefit_month_eur` are defined by that document's formula and computed by the core from the YAML; there is no SQL. | `card.bonus` |
 
 Actions:
 
@@ -846,6 +895,67 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
 }
 ```
 
+The `bonus` card for Sanna (values from the dataset: her Groceries average of April to September 2026, the default Bonus table):
+
+<!-- example: card.bonus -->
+```json
+{
+  "card_id": "card_bonus_01",
+  "type": "bonus",
+  "title": "S-Bonus: a what-if",
+  "subtitle": "If your grocery shopping were at S-Group",
+  "evidence_ref": "ev_bn3b5o7n9u1s",
+  "estimate": {
+    "label": "Estimate",
+    "text": "Your own grocery spending times the published Bonus table. No store in your data is named as S-Group."
+  },
+  "share": {
+    "value": 100, "unit": "percent",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "user_input@1", "evidence_ref": null,
+    "label": "Share of your grocery shopping (what-if)", "display": "100%"
+  },
+  "grocery_month": {
+    "value": 628.86, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "s_bonus.grocery_month_eur@1", "evidence_ref": "ev_bn1g3r5o7c9e",
+    "label": "Groceries, monthly average", "display": "€628.86 a month"
+  },
+  "level": {
+    "value": 3.5, "unit": "percent",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "s_bonus.level_pct@1", "evidence_ref": "ev_bn2l4e6v8e0l",
+    "label": "Bonus level", "display": "3.5%"
+  },
+  "bonus_month": {
+    "value": 22.01, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "s_bonus.bonus_month_eur@1", "evidence_ref": "ev_bn3b5o7n9u1s",
+    "label": "S-Bonus", "display": "€22.01 a month"
+  },
+  "payment_benefit_month": {
+    "value": 3.14, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "s_bonus.payment_benefit_month_eur@1", "evidence_ref": "ev_bn4p6a8y0b2e",
+    "label": "Payment benefit", "display": "€3.14 a month"
+  },
+  "assumptions": [
+    "You are the only shopper in your co-op household.",
+    "The default Bonus table applies (not the KPO or Koillismaan Osuuskauppa table).",
+    "You pay with an S-Etukortti Visa.",
+    "None of the shopping is alcohol, tobacco or lottery.",
+    "The share is a what-if, not where you shop today: no store in your data is known to be S-Group."
+  ],
+  "actions": [
+    {
+      "type": "ask",
+      "label": "What if only half were at S-Group?",
+      "prompt": "What would the S-Bonus be if half of my grocery shopping were at S-Group?"
+    }
+  ]
+}
+```
+
 ---
 
 ## 4. Errors
@@ -881,7 +991,11 @@ Every error response has the same envelope, and the `error` event inside the `/a
 
 ## 5. `GET /api/personas`
 
-Lists the demo customers the app can switch between. These are curated customers from the synthetic dataset. Display names are invented and labelled as demo personas. `age_band` uses the age bands from section 1, and `profile.key` uses the profile keys of the `profile` card (section 3).
+Lists the demo customers the app can switch between: the four personas of `core/config/personas.yaml`. Selection method and checks: `docs/design/personas.md`.
+- They are customers from the synthetic dataset. Display names are invented and labelled as demo personas.
+- `lead: true` marks the persona the demo opens with (Sanna).
+- `age_band` uses the age bands from section 1, and `profile` the keys and labels of the `profile` card (section 3).
+- The other examples in this contract use CUST00042 as an illustrative customer, except where marked as dataset values.
 
 **Request:** `GET /api/personas?lang=en`
 
@@ -892,30 +1006,43 @@ Lists the demo customers the app can switch between. These are curated customers
   "language": "en",
   "personas": [
     {
-      "customer_id": "CUST00042",
-      "display_name": "Aino",
-      "age_band": "25-34",
-      "postal_area": { "code": "00530", "label": "Helsinki 00530" },
-      "profile": { "key": "everyday_heavy", "label": "Everyday spender" },
-      "tagline": "Steady salary, rents in Helsinki, eats out often.",
+      "customer_id": "CUST00860",
+      "display_name": "Sanna",
+      "lead": true,
+      "age_band": "35-44",
+      "postal_area": { "code": "00590", "label": "Helsinki 00590" },
+      "profile": { "key": "big_ticket", "label": "Big-ticket buyer" },
+      "tagline": "A large home and tech purchase in late September, on top of regular bills.",
       "default_language": "en"
     },
     {
-      "customer_id": "CUST00017",
-      "display_name": "Mikko",
+      "customer_id": "CUST00493",
+      "display_name": "Marja",
+      "lead": false,
       "age_band": "45-54",
-      "postal_area": { "code": "02100", "label": "Espoo 02100" },
+      "postal_area": { "code": "00100", "label": "Helsinki 00100" },
       "profile": { "key": "steady", "label": "Steady" },
-      "tagline": "Predictable bills and a regular investment deposit.",
-      "default_language": "fi"
+      "tagline": "More than half of spending goes to housing; eats out every month.",
+      "default_language": "en"
     },
     {
-      "customer_id": "CUST00088",
-      "display_name": "Leena",
-      "age_band": "18-24",
-      "postal_area": { "code": "00100", "label": "Helsinki 00100" },
-      "profile": { "key": "stretched", "label": "Stretched" },
-      "tagline": "Part-time income; some months cost more than comes in.",
+      "customer_id": "CUST00349",
+      "display_name": "Eetu",
+      "lead": false,
+      "age_band": "25-34",
+      "postal_area": { "code": "02140", "label": "Espoo 02140" },
+      "profile": { "key": "everyday_heavy", "label": "Everyday spender" },
+      "tagline": "Almost a third of spending is everyday purchases, with restaurants the largest part.",
+      "default_language": "en"
+    },
+    {
+      "customer_id": "CUST00849",
+      "display_name": "Aleksi",
+      "lead": false,
+      "age_band": "25-34",
+      "postal_area": { "code": "02250", "label": "Espoo 02250" },
+      "profile": { "key": "steady", "label": "Steady" },
+      "tagline": "Regular salary and housing bills; the balance dipped below zero several times since April.",
       "default_language": "en"
     }
   ]
@@ -961,7 +1088,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
   "as_of": "2026-09-30",
   "language": "en",
   "greeting": "Hi Aino",
-  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions.",
+  "ai_disclosure": "Sentti is an AI assistant. Explanations are written by AI. The numbers are calculated from your transactions.",
   "hero": {
     "card_id": "card_sts_01",
     "type": "metric",
@@ -1356,7 +1483,7 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
   "as_of": "2026-09-30",
   "language": "en",
   "greeting": "Hi Sanna",
-  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions.",
+  "ai_disclosure": "Sentti is an AI assistant. Explanations are written by AI. The numbers are calculated from your transactions.",
   "hero": {
     "card_id": "card_sts_02",
     "type": "metric",
@@ -1751,8 +1878,9 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 | `status` | 0 or more times | `stage` (`understanding`, `tool` or `writing`), `tool` (tool name or null), `label` (localised progress text) |
 | `card` | 0 to 3 times, as soon as a tool finishes | `card` (section 3). The server, never the model, may add one `review` card when the answer's tools touched the spike's basket or category. If a review is pending, it adds that one and never a second; otherwise it may create the next within the weekly limit of section 6. The card counts towards the 3 cards. |
 | `numbers` | Before the first `delta` that uses them | `numbers`: a map from id to Number object |
+| `terms` | Before the first `delta` that uses them | `terms`: a map from glossary key to glossary entry (section 2.5). `done` lists the keys used in `cited_terms`, and the JSON response carries the full `terms` map. |
 | `delta` | 1 or more times | `text`: the next piece of the answer, with number tokens. A token is never split across two deltas. Append the pieces in order. In version 0.1 the core validates the whole answer first and then sends it sentence by sentence. Finer streaming may come later without a contract change. |
-| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with tokens), `text_rendered`, `cited` (number ids used), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below) |
+| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with number and term tokens and at most one bold span), `text_rendered`, `cited` (number ids used), `cited_terms` (glossary keys used; optional, added in 0.2.1), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below) |
 | `error` | Last, once, on failure | `error`: `{code, message, retryable}`, the same envelope as an HTTP error (section 4) |
 
 `outcome` is one of:
@@ -2121,6 +2249,204 @@ A question in Finnish (`language: "auto"` detects `fi`):
   "refusal": null,
   "clarify": null,
   "warnings": []
+}
+```
+
+### 7.4.1 Answers with glossary terms
+
+The same rules in English and in Finnish (section 2.5): one bold takeaway, at most 3 emphasised spans, and term tokens next to number tokens. Each answer carries the `terms` it uses, with Sanna's own numbers in the `personal` lines (values from the dataset).
+
+<!-- example: ask.json.request_terms -->
+```json
+{
+  "customer_id": "CUST00860",
+  "conversation_id": null,
+  "message": "What can I safely spend this week?",
+  "language": "auto"
+}
+```
+
+<!-- example: ask.json.response_terms -->
+```json
+{
+  "answer_id": "ans_3s5a7n9n1a3t",
+  "conversation_id": "conv_6s8a0n2n4a",
+  "language": "en",
+  "as_of": "2026-09-30",
+  "outcome": "answered",
+  "text": "**You can spend {{n1}} over the next week.** That is your {{t:safe_to_spend|safe to spend}}: what is left after your bills, a reserve for unexpected costs and a {{t:cushion|cushion}}, spread until payday.",
+  "text_rendered": "You can spend €221.58 over the next week. That is your safe to spend: what is left after your bills, a reserve for unexpected costs and a cushion, spread until payday.",
+  "cited": ["n1"],
+  "cited_terms": ["safe_to_spend", "cushion"],
+  "numbers": {
+    "n1": {
+      "id": "n1", "value": 221.58, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+      "label": "Safe to spend", "display": "€221.58"
+    }
+  },
+  "terms": {
+    "safe_to_spend": {
+      "key": "safe_to_spend",
+      "term": "Safe to spend",
+      "definition": "What you can spend in the next week and still pay your bills and keep a small cushion until payday.",
+      "basket": null,
+      "personal": {
+        "text": "Yours is {{n}} for the next week.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 221.58, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend", "display": "€221.58"
+          }
+        }
+      }
+    },
+    "cushion": {
+      "key": "cushion",
+      "term": "Cushion",
+      "definition": "A small amount Sentti always keeps aside, so that a surprise does not take your account below zero.",
+      "basket": null,
+      "personal": {
+        "text": "Your cushion is {{n}}.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 100.0, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+            "method": "safe_to_spend.cushion_eur@1", "evidence_ref": "ev_sn7c9u1s3h5n",
+            "label": "Cushion", "display": "€100.00"
+          }
+        }
+      }
+    }
+  },
+  "cards": [],
+  "follow_ups": ["Where did my money go?", "How could I save more?"],
+  "lesson": null,
+  "refusal": null,
+  "clarify": null,
+  "warnings": []
+}
+```
+
+<!-- example: ask.json.request_terms_fi -->
+```json
+{
+  "customer_id": "CUST00860",
+  "conversation_id": null,
+  "message": "Paljonko voin turvallisesti käyttää tällä viikolla?",
+  "language": "auto"
+}
+```
+
+<!-- example: ask.json.response_terms_fi -->
+```json
+{
+  "answer_id": "ans_4s6a8n0n2a4t",
+  "conversation_id": "conv_7s9a1n3n5a",
+  "language": "fi",
+  "as_of": "2026-09-30",
+  "outcome": "answered",
+  "text": "**Voit käyttää {{n1}} seuraavan viikon aikana.** Se on {{t:safe_to_spend|turvallinen käyttörahasi}}: se, mitä jää laskujen, yllätysmenojen varauksen ja {{t:cushion|puskurin}} jälkeen palkkapäivään asti.",
+  "text_rendered": "Voit käyttää 221,58 € seuraavan viikon aikana. Se on turvallinen käyttörahasi: se, mitä jää laskujen, yllätysmenojen varauksen ja puskurin jälkeen palkkapäivään asti.",
+  "cited": ["n1"],
+  "cited_terms": ["safe_to_spend", "cushion"],
+  "numbers": {
+    "n1": {
+      "id": "n1", "value": 221.58, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "seuraava viikko" },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+      "label": "Turvallinen käyttöraha", "display": "221,58 €"
+    }
+  },
+  "terms": {
+    "safe_to_spend": {
+      "key": "safe_to_spend",
+      "term": "Turvallinen käyttöraha",
+      "definition": "Raha, jonka voit käyttää seuraavan viikon aikana niin, että laskut tulevat maksetuiksi ja pieni puskuri säilyy palkkapäivään asti.",
+      "basket": null,
+      "personal": {
+        "text": "Sinulla se on seuraavalle viikolle {{n}}.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 221.58, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "seuraava viikko" },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Turvallinen käyttöraha", "display": "221,58 €"
+          }
+        }
+      }
+    },
+    "cushion": {
+      "key": "cushion",
+      "term": "Puskuri",
+      "definition": "Pieni summa, jonka Sentti pitää aina sivussa, jottei yllätys vie tiliäsi miinukselle.",
+      "basket": null,
+      "personal": {
+        "text": "Puskurisi on {{n}}.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 100.0, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "palkkapäivään 15.10. asti" },
+            "method": "safe_to_spend.cushion_eur@1", "evidence_ref": "ev_sn7c9u1s3h5n",
+            "label": "Puskuri", "display": "100,00 €"
+          }
+        }
+      }
+    }
+  },
+  "cards": [],
+  "follow_ups": ["Mihin rahani menivät?", "Miten voisin säästää enemmän?"],
+  "lesson": null,
+  "refusal": null,
+  "clarify": null,
+  "warnings": []
+}
+```
+
+The `terms` event of a stream, sent before the first `delta` that uses a term:
+
+<!-- example: ask.sse.terms -->
+```json
+{
+  "terms": {
+    "safe_to_spend": {
+      "key": "safe_to_spend",
+      "term": "Safe to spend",
+      "definition": "What you can spend in the next week and still pay your bills and keep a small cushion until payday.",
+      "basket": null,
+      "personal": {
+        "text": "Yours is {{n}} for the next week.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 221.58, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend", "display": "€221.58"
+          }
+        }
+      }
+    },
+    "cushion": {
+      "key": "cushion",
+      "term": "Cushion",
+      "definition": "A small amount Sentti always keeps aside, so that a surprise does not take your account below zero.",
+      "basket": null,
+      "personal": {
+        "text": "Your cushion is {{n}}.",
+        "numbers": {
+          "n": {
+            "id": "n", "value": 100.0, "unit": "eur",
+            "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+            "method": "safe_to_spend.cushion_eur@1", "evidence_ref": "ev_sn7c9u1s3h5n",
+            "label": "Cushion", "display": "€100.00"
+          }
+        }
+      }
+    }
+  }
 }
 ```
 

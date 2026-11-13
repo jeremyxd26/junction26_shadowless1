@@ -7,8 +7,8 @@
 # age_band, postal_area {code, label}, profile {key, label}, tagline, default_language.
 # Keys follow docs/design/metrics.md: age bands of section 6, profile keys of section 5.
 # profile is the output of core/metrics/05_spender_profile.sql on as_of; the API may recompute it.
-# Profile labels are the contract's ("Steady", "Everyday spender"). The contract has no label for
-# big_ticket yet, so "Big ticket" is a placeholder until it does.
+# Profile labels are the contract's ("Steady", "Everyday spender", "Big-ticket buyer"; contracts/api.md,
+# section 3, profile card).
 # Taglines carry no numbers (every number the app shows is a Number object from the metrics) and
 # state only what the data shows.
 # The extra fields (lead, age, demo_role, why, peer_group) are for the team and the eval set.
@@ -29,7 +29,7 @@ personas:
       label: Helsinki 00590
     profile:
       key: big_ticket
-      label: Big ticket
+      label: Big-ticket buyer
     tagline: A large home and tech purchase in late September, on top of regular bills.
     default_language: en
     demo_role: recent_unexpected

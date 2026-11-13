@@ -1,6 +1,8 @@
-# Coach agent core: design
+# Sentti, the coach: agent core design
 
-**Issue:** #5 · **Status:** draft for review · **API contract:** [contracts/api.md](../../contracts/api.md)
+**Issues:** #5, #33, #34 · **Status:** draft for review · **API contract:** [contracts/api.md](../../contracts/api.md)
+
+The coach is called **Sentti** (product decision, issue #34). It introduces itself by that name, in the AI disclosure ("Sentti is an AI assistant …") and in its answers. In this document "the coach" is the generic word for the same assistant.
 
 **Related:**
 - `docs/design/metrics.md` (issue #6): metric formulas and method ids. Not on `main` yet.
@@ -419,6 +421,10 @@ R12 says the model returns cards. In this design the cards are built by the serv
 
 - **Tokens:** the composer writes `{{n3}}` wherever it means a number. The server replaces the token with the Number's `display` in the user's locale: Finnish `1 234,56 €` and `9,8 %`, English `€1,234.56` and `9.8%` (R14). The app receives both the tokenised `text` and `text_rendered` (contract, section 2.4).
 - **Dates:** the composer may write dates and periods in natural language, inflected as the language requires, for example "syyskuussa 2026" or "on 1 October". Their digits must come from dates the tools returned in this turn (section 7.4, rule 3). When the user's period was relative ("last month"), the composer names the resolved period (R5).
+- **Glossary terms (#34):** the composer may mark a financial term as `{{t:key}}`, or `{{t:key|surface form}}` when the sentence inflects it, as Finnish does.
+  - **Fixed glossary:** `key` must come from `core/config/glossary.yaml`. The composer prompt lists the allowed keys with each term in the answer's language, plus one rule: mark only terms from this list, and never write a definition.
+  - **Definitions:** the server attaches the definitions and the customer's own number in the `personal` line from the glossary and the tools. They are not model text.
+  - **Emphasis:** at most one bold span (`**…**`) for the main takeaway, and at most 3 emphasised spans in total, bold and terms together (contract, section 2.5).
 
 ### 7.4 Output validator
 
@@ -431,6 +437,10 @@ The validator runs on every composer output. Any failure triggers the single ret
 5. **Deny lists:** sensitive inferences such as health, pregnancy, religion or politics (R9); investment imperatives ("buy", "sell" next to an instrument word) (R7); promises ("guaranteed", "will save") on estimates (R13).
 6. No URLs, markdown links or HTML.
 7. `lesson_key` is in the lesson catalogue or null.
+8. **Term tokens and emphasis.** These are repaired, not retried, because they cannot change a number:
+   - **Unknown key:** a term token whose key is not in the glossary is dropped. Its surface form stays as a plain word (if there is none, the token disappears), and the event is logged.
+   - **Over the limit:** beyond 3 emphasised spans, the extra term tokens (the last ones first) become plain words. A second bold span loses its markers. Both are logged.
+   - **Surface form:** it must not contain digits or braces, so it cannot smuggle in a number (R1).
 
 **Residual risks:**
 - A number written as a word ("twice as much") passes rule 3.

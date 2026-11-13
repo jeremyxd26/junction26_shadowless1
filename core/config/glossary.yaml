@@ -1,0 +1,190 @@
+# Glossary of Sentti's explanations (issue #34). Contract: contracts/api.md, section 2.5.
+#
+# The AI model may only mark a term with a token {{t:key}} (or {{t:key|surface form}}) whose key is
+# listed here; it never writes a definition. The server sends the entries an answer uses, in the
+# answer's language, with the customer's own number filled in where `personal` is set.
+#
+# Rules for every entry:
+# - Plain language for a young adult: one or two short sentences, no jargon, no digits in the
+#   definitions (customer numbers come only through `personal`, as a Number object).
+# - No investment or credit terms that could read as advice (R7). No sensitive categories (R9).
+# - `basket` is set where the term is one of the three baskets, together with its presentation keys
+#   (an icon name and a colour token; names only, the app owns the assets).
+# - `personal.method` names the metric output that fills {{n}} (method ids of contracts/api.md, 2.1);
+#   `personal.basket` narrows a per-basket output to one basket.
+# - Finnish texts are drafts for a native review (listed in the PR of issue #34).
+
+version: 1
+languages: [en, fi]
+
+terms:
+  - key: regular_essentials
+    basket: regular_essentials
+    presentation: {icon: home, colour: basket-regular}
+    term: {en: Regular essentials, fi: Säännölliset välttämättömät menot}
+    definition:
+      en: Costs you need and can plan for, like housing, bills, groceries and getting to work.
+      fi: Menot, joita tarvitset ja joihin voit varautua, kuten asuminen, laskut, ruoka ja työmatkat.
+    personal:
+      method: baskets.month_avg_eur@1
+      basket: regular_essentials
+      en: "Yours are {{n}} in a typical month."
+      fi: "Sinulla ne ovat tavallisena kuukautena {{n}}."
+
+  - key: unexpected_necessities
+    basket: unexpected_necessities
+    presentation: {icon: umbrella, colour: basket-unexpected}
+    term: {en: Unexpected necessities, fi: Välttämättömät yllätysmenot}
+    definition:
+      en: Costs you need but cannot plan to the month, like a broken laptop or a sudden repair. They come in lumps.
+      fi: Menot, joita tarvitset mutta joita et voi ajoittaa etukäteen, kuten rikkoutunut tietokone tai äkillinen korjaus. Ne tulevat kerralla.
+    personal:
+      method: baskets.month_avg_eur@1
+      basket: unexpected_necessities
+      en: "Yours average {{n}} a month."
+      fi: "Sinulla niitä on keskimäärin {{n}} kuukaudessa."
+
+  - key: everyday_spending
+    basket: everyday_spending
+    presentation: {icon: shopping-bag, colour: basket-everyday}
+    term: {en: Everyday spending, fi: Arkikulutus}
+    definition:
+      en: Spending you choose day by day, like eating out, going out, shopping, travel and taxis.
+      fi: Kulutus, josta päätät päivittäin, kuten ulkona syöminen, harrastukset, shoppailu, matkat ja taksit.
+    personal:
+      method: baskets.month_avg_eur@1
+      basket: everyday_spending
+      en: "Yours is {{n}} in a typical month."
+      fi: "Sinulla se on tavallisena kuukautena {{n}}."
+
+  - key: safe_to_spend
+    term: {en: Safe to spend, fi: Turvallinen käyttöraha}
+    definition:
+      en: What you can spend in the next week and still pay your bills and keep a small cushion until payday.
+      fi: Raha, jonka voit käyttää seuraavan viikon aikana niin, että laskut tulevat maksetuiksi ja pieni puskuri säilyy palkkapäivään asti.
+    personal:
+      method: safe_to_spend.safe_to_spend_7d_eur@1
+      en: "Yours is {{n}} for the next week."
+      fi: "Sinulla se on seuraavalle viikolle {{n}}."
+
+  - key: safe_to_save
+    term: {en: Safe to save, fi: Säästöön jäävä raha}
+    definition:
+      en: What a typical month leaves after bills, essentials, a reserve and your usual everyday spending.
+      fi: Raha, joka tavallisesta kuukaudesta jää jäljelle laskujen, välttämättömien menojen, varauksen ja tavallisen arkikulutuksen jälkeen.
+    personal:
+      method: safe_to_spend.safe_to_save_monthly_eur@1
+      en: "A typical month leaves you {{n}}."
+      fi: "Tavallinen kuukausi jättää sinulle {{n}}."
+
+  - key: recurring_bill
+    term: {en: Recurring bill, fi: Toistuva lasku}
+    definition:
+      en: A payment that comes back every month, like rent or electricity.
+      fi: Maksu, joka toistuu joka kuukausi, kuten vuokra tai sähkö.
+    personal:
+      method: safe_to_spend.bills_due_eur@1
+      en: "Your bills before payday add up to {{n}}."
+      fi: "Laskusi ennen palkkapäivää ovat yhteensä {{n}}."
+
+  - key: cushion
+    term: {en: Cushion, fi: Puskuri}
+    definition:
+      en: A small amount Sentti always keeps aside, so that a surprise does not take your account below zero.
+      fi: Pieni summa, jonka Sentti pitää aina sivussa, jottei yllätys vie tiliäsi miinukselle.
+    personal:
+      method: safe_to_spend.cushion_eur@1
+      en: "Your cushion is {{n}}."
+      fi: "Puskurisi on {{n}}."
+
+  - key: reserve
+    term: {en: Reserve, fi: Varaus}
+    definition:
+      en: Money set aside in advance for costs that will come, even if you do not know exactly when.
+      fi: Etukäteen sivuun pantu raha menoihin, jotka tulevat, vaikka et tiedä tarkalleen milloin.
+    personal:
+      method: safe_to_spend.irregular_reserve_eur@1
+      en: "Your reserve for unexpected costs until payday is {{n}}."
+      fi: "Varauksesi yllättäviin menoihin palkkapäivään asti on {{n}}."
+
+  - key: one_off
+    term: {en: One-off, fi: Kertaostos}
+    definition:
+      en: A purchase much larger than your usual ones in the same category. It is left out of your typical month.
+      fi: Ostos, joka on paljon tavallisia saman luokan ostoksiasi suurempi. Sitä ei lasketa tavalliseen kuukauteesi.
+
+  - key: median
+    term: {en: Median, fi: Mediaani}
+    definition:
+      en: The middle value. Half of the values are smaller and half are larger, so one very large purchase does not move it much.
+      fi: Keskimmäinen arvo. Puolet arvoista on pienempiä ja puolet suurempia, joten yksi iso ostos ei juuri muuta sitä.
+
+  - key: peer_group
+    term: {en: People like you, fi: Vertailuryhmä}
+    definition:
+      en: Customers of your age group who live in your area. You only ever see their totals, never anyone's purchases.
+      fi: Ikäryhmäsi asiakkaat, jotka asuvat samalla alueella. Näet vain heidän yhteenlasketut lukunsa, et koskaan kenenkään ostoksia.
+
+  - key: estimate
+    term: {en: Estimate, fi: Arvio}
+    definition:
+      en: A number calculated from your past spending. It shows what is likely, not what is certain.
+      fi: Luku, joka on laskettu aiemmasta kulutuksestasi. Se kertoo, mikä on todennäköistä, ei varmaa.
+
+  - key: what_if
+    term: {en: What-if, fi: Entä jos -laskelma}
+    definition:
+      en: A calculation of what would change if you did something differently, for example ate out less.
+      fi: Laskelma siitä, mikä muuttuisi, jos tekisit jotain toisin, esimerkiksi söisit harvemmin ulkona.
+
+  - key: payday
+    term: {en: Payday, fi: Palkkapäivä}
+    definition:
+      en: The day your salary usually arrives. Sentti plans the money you need until then.
+      fi: Päivä, jona palkkasi yleensä tulee. Sentti laskee, mitä tarvitset siihen asti.
+
+  - key: income
+    term: {en: Income, fi: Tulot}
+    definition:
+      en: Money that comes into your account regularly, such as your salary.
+      fi: Raha, joka tulee tilillesi säännöllisesti, kuten palkkasi.
+    personal:
+      method: safe_to_spend.income_month_eur@1
+      en: "Your typical income is {{n}} a month."
+      fi: "Tavalliset tulosi ovat {{n}} kuukaudessa."
+
+  - key: net_income
+    term: {en: Income that stays, fi: Tilille jäävät tulot}
+    definition:
+      en: Your income minus money that moves on to another account every month. It is what you actually have to use here.
+      fi: Tulosi miinus raha, joka siirtyy joka kuukausi toiselle tilille. Se on se, mitä sinulla todella on käytettävissä tällä tilillä.
+    personal:
+      method: spender_profile.net_income_month_eur@1
+      en: "Yours is {{n}} a month."
+      fi: "Sinulla niitä on {{n}} kuukaudessa."
+
+  - key: share
+    term: {en: Share, fi: Osuus}
+    definition:
+      en: How big one part is compared with the whole, shown as a percentage.
+      fi: Kuinka suuri yksi osa on koko summasta, prosentteina.
+
+  - key: bonus
+    term: {en: S-Bonus, fi: S-Bonus}
+    definition:
+      en: A monthly cashback that S-Group pays to co-op members, from one to five percent, depending on how much the household buys there in a month.
+      fi: Kuukausittainen palautus, jonka S-ryhmä maksaa osuuskaupan jäsenille, yhdestä viiteen prosenttiin sen mukaan, paljonko talous ostaa sieltä kuukaudessa.
+    personal:
+      method: s_bonus.bonus_month_eur@1
+      en: "If all your grocery shopping were at S-Group, it would be about {{n}} a month."
+      fi: "Jos kaikki ruokaostoksesi olisivat S-ryhmästä, se olisi noin {{n}} kuukaudessa."
+
+  - key: payment_benefit
+    term: {en: Payment benefit, fi: Maksutapaetu}
+    definition:
+      en: An extra half a percent back when you pay at S-Group with an S-Etukortti Visa or Debit card.
+      fi: Puolen prosentin lisäetu, kun maksat S-ryhmässä S-Etukortti Visa- tai Debit-kortilla.
+    personal:
+      method: s_bonus.payment_benefit_month_eur@1
+      en: "On your grocery shopping it would be about {{n}} a month."
+      fi: "Ruokaostoksistasi se olisi noin {{n}} kuukaudessa."
