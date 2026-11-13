@@ -4,9 +4,10 @@ One source of truth: the numbers are read from core/metrics/03_safe_to_spend.sql
 customer (core/tools/metric_sql.py); nothing of the formula is re-implemented here.
 - `safe_to_spend` is a composite: the smaller of the balance limit and the budget limit
   (formula `minimum`), so its evidence opens both limits.
-- `bills_due` is the very Number get_recurring_bills returns (same value, same evidence ref): the sum
-  of the rounded per-bill amounts, so the bills card and this card never disagree. 03 rounds the
-  unrounded sum instead; the two can differ by 0.01, which the contract allows for components.
+- `bills_due` comes only from recurring.bills_due_numbers, the one shared path that get_recurring_bills
+  uses too: one value and one evidence ref for both cards. Its value is computed like `bills_due_eur`
+  in 03 (the unrounded terms summed, rounded once; team-lead decision "metrics wins"), so it equals
+  03's column to the cent; the per-bill items of the bills card are rounded each.
 - Every other component and limit is a `metric` number whose evidence re-runs 03 for the customer.
 The customer and as_of come from ctx only (R4, R5); the result is an estimate (R13).
 """
@@ -21,7 +22,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from core.tools import bills, config, evidence, metric_sql, periods
+from core.tools import config, evidence, labels, metric_sql, periods, recurring
+from core.tools.classify import classify
 from core.tools.context import ToolContext
 from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
@@ -87,21 +89,22 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     if row is None:
         raise ValueError("no transactions up to as_of for this customer")
 
-    # Bills due before payday: the same Number as the bills card (one value, one evidence ref).
-    bills_result = bills.get_recurring_bills(ctx, {"include_income": False})
-    bills_data = bills_result.data
-    if bills_data.next_payday != row["next_payday"] or bills_data.salary_status != row["salary_status"]:
-        log.warning("payday of get_recurring_bills and 03_safe_to_spend.sql differ for one customer")
+    # Bills due before payday: only through the shared function (one value, one ref with the bills card).
+    history = ctx.history()
+    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    nb = NumberBuilder(ctx, rows)
+    reg = ctx.numbers.register
+    due = recurring.bills_due_numbers(ctx, nb)
+    if due.payday.date != row["next_payday"] or due.payday.salary_status != row["salary_status"]:
+        log.warning("payday of core.tools.recurring and 03_safe_to_spend.sql differ for one customer")
 
     week = Period(start=row["week_start"], end=row["week_end"], label=_t("next_7_days", lang))
-    until_payday = bills_data.due_period  # today + 1 .. payday, labelled like the bills card
+    until_payday = due.due_period  # today + 1 .. payday, labelled like the bills card
     today = Period(start=ctx.as_of, end=ctx.as_of, label=periods.period_label(ctx.as_of, ctx.as_of, lang))
     periods_by_key = {"free_until_payday": until_payday, "balance_limit": week, "budget_limit": week,
                       "balance": today, "essentials_reserve": until_payday,
                       "irregular_reserve": until_payday, "cushion": until_payday}
 
-    nb = NumberBuilder(ctx, [])
-    reg = ctx.numbers.register
     values: dict[str, Decimal] = {}
     numbers: dict[str, Number] = {}
     for key, column in config.SAFE_TO_SPEND_NUMBERS:
@@ -132,7 +135,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     elif row["salary_status"] == "late":
         notes.append(_t("note_late_salary", lang))
 
-    amounts = {**numbers, "bills_due": bills_data.upcoming_total}
+    amounts = {**numbers, "bills_due": due.total}
     components = [
         Component(key=key, label=_t(f"c_{key}", lang), operation="add" if key == "balance" else "subtract",
                   amount=reg(amounts[key]))
@@ -147,7 +150,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(
         tool=TOOL, data=data, card=_card(data, lang), notes=notes,
-        evidence=list(nb.specs) + [r for r in bills_result.evidence if r not in nb.specs],
+        evidence=list(nb.specs),
         model_view=_model_view(data, notes),
     )
 

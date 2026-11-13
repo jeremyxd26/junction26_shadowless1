@@ -107,8 +107,8 @@ def test_safe_to_spend_equals_03_and_the_worked_numbers(conn, customer_id):
     assert dec(comp["essentials_reserve"].amount) == row["essentials_reserve_eur"]
     assert dec(comp["irregular_reserve"].amount) == row["irregular_reserve_eur"]
     assert dec(comp["cushion"].amount) == row["cushion_eur"]
-    # bills due is the bills card's total (sum of rounded per-bill amounts); 03 rounds the unrounded sum
-    assert abs(dec(comp["bills_due"].amount) - row["bills_due_eur"]) <= D("0.01")
+    # bills due comes from recurring.bills_due_numbers, rounded like 03 ("metrics wins"): to the cent
+    assert dec(comp["bills_due"].amount) == row["bills_due_eur"]
     assert [c.operation for c in data.components] == ["add", "subtract", "subtract", "subtract", "subtract"]
 
     assert data.binding_limit == row["binding_limit"] == binding_limit(dec(data.balance_limit), dec(data.budget_limit))
@@ -125,7 +125,7 @@ def test_safe_to_spend_equals_03_and_the_worked_numbers(conn, customer_id):
 def test_components_add_up_to_free_until_payday(conn, customer_id):
     data = get_safe_to_spend(ctx_for(conn, customer_id)).data
     signed = sum((dec(c.amount) if c.operation == "add" else -dec(c.amount) for c in data.components), D("0"))
-    # each part is rounded on its own, and bills due follows the bills card (contracts/api.md 2.1)
+    # each of the five parts is rounded on its own (contracts/api.md 2.1)
     assert abs(signed - dec(data.free_until_payday)) <= D("0.02")
 
 
@@ -137,6 +137,14 @@ def test_bills_due_is_the_same_number_as_the_bills_card(conn, customer_id):
     bills_due = next(c.amount for c in safe.components if c.key == "bills_due")
     assert bills_due.evidence_ref == bills.upcoming_total.evidence_ref
     assert bills_due.value == bills.upcoming_total.value
+
+
+def test_lead_persona_bills_due_is_the_eval_reference(conn):
+    # personas.md Q3: CUST00860 bills due 928.50 (03_safe_to_spend.sql), the eval reference value
+    data = get_safe_to_spend(ctx_for(conn, "CUST00860")).data
+    bills_due = next(c.amount for c in data.components if c.key == "bills_due")
+    row = sql_row(conn, "03_safe_to_spend.sql", "CUST00860")[0]
+    assert dec(bills_due) == row["bills_due_eur"] == D("928.50")
 
 
 @pytest.mark.parametrize("customer_id", SAMPLE + ["CUST00860"])
@@ -171,6 +179,8 @@ def test_safe_to_spend_on_other_dates_equals_03(conn, as_of, salary_status, payd
     assert dec(data.free_until_payday) == row["free_until_payday_eur"]
     comp = {c.key: c for c in data.components}
     assert dec(comp["bills_due"].amount) == row["bills_due_eur"]          # metrics wins, to the cent
+    if as_of == date(2026, 5, 20):
+        assert dec(comp["bills_due"].amount) == D("278.36")               # the items add up to 278.37
     signed = sum((dec(c.amount) if c.operation == "add" else -dec(c.amount) for c in data.components), D("0"))
     assert abs(signed - dec(data.free_until_payday)) <= D("0.02")
     assert_reconciles(conn, "CUST00001", result.evidence)
