@@ -85,7 +85,9 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present). When the tools read metric SQL it must also hold `core/metrics/*.sql`. If not, the deploy stops here and the running version stays untouched;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet;
+   - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
+   - if either check fails, the deploy stops here and the running version stays untouched;
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
    - renders the Caddy config and reloads Caddy;
@@ -241,7 +243,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   - `core/metrics/*.sql` (the metric SQL the tools run);
   - `core/config/*.yaml` (personas and benefit rules).
 
-  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new runtime path is added to `.dockerignore` only, and the import check catches a forgotten one before the switch.
+  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new runtime path is added to `.dockerignore` only, and the completeness check catches a forgotten one before the switch.
 
 ## Setting up a new instance from scratch
 

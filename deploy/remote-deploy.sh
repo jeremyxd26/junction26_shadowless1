@@ -106,9 +106,23 @@ if grep -qE '(^|/)(\.env|\.git|tests)(/|$)' <<<"$listing"; then
   exit 1
 fi
 
+# Completeness check, before the switch. The expectation comes from the checkout, not from the
+# image: every tracked file the service imports or reads at run time must be in the image. A path
+# left out of /.dockerignore fails here, the running version stays untouched.
+missing=()
+while IFS= read -r f; do
+  grep -qxF "./$f" <<<"$listing" || missing+=("$f")
+done < <(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/metrics/*.sql' \
+           'core/config/*.yaml' | grep -vE '(^|/)tests/')
+if (( ${#missing[@]} )); then
+  echo "refusing to deploy: ${#missing[@]} file(s) the service needs are not in the image (see /.dockerignore):" >&2
+  printf '  %s\n' "${missing[@]:0:10}" >&2
+  exit 1
+fi
+echo "all run-time files of the checkout are in the image"
+
 # Import check, before the switch: the image must be able to import and build the application and
-# every module of the tools and the answer pipeline, and hold the metric SQL the tools read. A path
-# missing from /.dockerignore fails here, the running version stays untouched.
+# every module of the tools and the answer pipeline. An import error fails here as well.
 echo "== import check"
 import_check='
 import importlib, importlib.util, pkgutil
@@ -117,15 +131,11 @@ m.create_app()
 n = 1
 for pkg in ("core.tools", "core.agent"):
     if importlib.util.find_spec(pkg) is None:
-        continue  # not in this commit (yet)
+        continue  # no such package in this commit (the completeness check covers a left-out one)
     for info in pkgutil.walk_packages(importlib.import_module(pkg).__path__, pkg + "."):
         if ".tests" not in info.name:
             importlib.import_module(info.name)
             n += 1
-if importlib.util.find_spec("core.tools.metric_sql") is not None:
-    from core.tools import metric_sql
-    sql = sorted(p.name for p in metric_sql.METRICS_DIR.glob("*.sql"))
-    assert sql, "core/metrics/*.sql is missing from the image"
 print(f"imports ok: core.app and {n - 1} modules of core.tools/core.agent")
 '
 if ! import_out=$(docker run --rm --network none --entrypoint python "shadowless1-core:$sha" -c "$import_check" 2>&1); then
