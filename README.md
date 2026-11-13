@@ -25,6 +25,18 @@ Settings:
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
+## Dev environment
+
+The `dev` branch runs at **https://135-181-63-178.sslip.io** (`/healthz`, `/readyz`), on one Verda CPU instance in Finland at about 0.062 USD/h.
+
+To deploy `origin/dev`, you need the instance SSH key at `~/.ssh/shadowless1_dev_ed25519`:
+
+```
+bash deploy/dev.sh
+```
+
+The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+
 ## Data
 
 **The shared team database is already loaded. Do not run the loader against it.** The loader is only for an empty database: a fresh instance or a local one. On a database where `transactions` already has rows, it refuses to run. A re-run with `--force` drops and recreates every table, so the data is gone for everyone for several minutes.
