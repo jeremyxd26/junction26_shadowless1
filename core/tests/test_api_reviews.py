@@ -45,6 +45,7 @@ def assert_error(response, status, code):
     body(customer_id="customer-1"),
     body(language="sv"),
     body(tx_ref="x" * 65),
+    body(state="answered"),                                     # an unknown field
 ])
 def test_malformed_label_requests_are_400(payload):
     with no_db_client() as client:

@@ -367,6 +367,8 @@ class WhatIfResponse(Model):
 # ---- POST /api/baskets/label (section 10, #68) ------------------------------------------------------
 
 class LabelRequest(Model):
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 400, not silently dropped
+
     customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
     tx_ref: str = Field(max_length=64)
     # Required and nullable: null undoes the label. A value that is not a basket key is a 400; a basket

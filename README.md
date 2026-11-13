@@ -45,6 +45,8 @@ python core/scripts/reset_reviews.py --dry-run CUST00860                        
 
 Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
 
+**Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
+
 ## Dev environment
 
 The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
