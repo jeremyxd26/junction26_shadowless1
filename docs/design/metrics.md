@@ -487,6 +487,7 @@ An estimate (R13): "people like you" are customers in the same age band and area
 - Metrics (month averages over the window): total spend, the three baskets, and the categories Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing. **Health is not benchmarked** (R9).
 - `percentile` = share of the other peers in the group who spend less; `vs_median_pct` = you / peer median − 1.
 - Who is counted: `peer_median`, `peer_p25` and `peer_p75` describe the whole group, the customer included (one value among 21 or more moves them little, and the group statistics can then be computed once per group). `peer_n` and `percentile` count only the other members.
+- In the smallest group that is shown (21 members: 20 others and the customer), `percentile_cont` falls on whole positions (5, 10 and 15 of 0–20). Each of the three quantiles is then one member's exact monthly value, not an interpolation. It is still shown only as a group statistic, without any id, and no request can narrow the group further.
 
 **Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `peer_source` (`marts` or `range`), `period_start`, `period_end`. The coach uses a row only when `shown` is true.
 
