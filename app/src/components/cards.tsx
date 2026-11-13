@@ -6,12 +6,12 @@ import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
 /** Flat white card with a thin border, no shadow (DESIGN.md). */
-function CardShell({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function CardShell({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <section className={`rounded-lg border border-line bg-surface p-4 ${className}`}>{children}</section>
 }
 
 /** Card titles and row labels: 17/22, bold, brand green. */
-const CARD_TITLE = 'text-card-title font-bold text-brand'
+export const CARD_TITLE = 'text-card-title font-bold text-brand'
 
 function Chevron() {
   return (
@@ -21,7 +21,7 @@ function Chevron() {
   )
 }
 
-function ActionButton({ action, onHero = false }: { action: Action; onHero?: boolean }) {
+export function ActionButton({ action, onHero = false }: { action: Action; onHero?: boolean }) {
   const className = onHero
     ? 'inline-flex min-h-11 items-center gap-1 text-base font-semibold text-on-hero underline-offset-4 hover:underline'
     : 'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint'

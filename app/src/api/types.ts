@@ -117,11 +117,24 @@ export interface ReviewCard extends CardBase {
   why: string
 }
 
+/** Why a typical month leaves nothing (contract section 3, `safe_to_save.reason`). */
+export interface SafeToSaveReason {
+  kind: 'essentials_exceed_income' | 'largest_everyday_category' | string
+  category: { key: string; label: string } | null
+  amount: Num
+  /** Carries no digits; the app shows `amount` next to it. */
+  text: string
+}
+
+/** Contract section 3, card `safe_to_save`. `estimate` is always set. */
 export interface SafeToSaveCard extends CardBase {
   type: 'safe_to_save'
   monthly: Num
+  monthly_components: Component[]
   stock: Num
   stock_explanation: string
+  stock_components: Component[]
+  reason: SafeToSaveReason | null
 }
 
 /** Any card; the app renders the types it knows and skips the rest. */

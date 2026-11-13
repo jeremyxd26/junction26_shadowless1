@@ -18,6 +18,10 @@ const NEEDED = [
   'evidence.response_composite',
   'evidence.error',
   'error.response',
+  'card.safe_to_save',
+  'card.safe_to_save_aleksi',
+  'card.safe_to_save_zero',
+  'card.safe_to_save_everyday',
 ]
 
 const text = readFileSync(contractPath, 'utf8')
