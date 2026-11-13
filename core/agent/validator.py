@@ -7,7 +7,9 @@
    this answer (a number's period, a date field of a model view, or as_of); if any digit is left, the
    draft fails. Amounts, percentages and counts typed as digits fail in any locale format ("12.5%",
    "1 234,56 €", "−30"), and so do ids, IBANs and digits glued to letters. No sign or unit may be
-   written next to a token (the token's display carries its own).
+   written next to a token (the token's display carries its own). The same check then runs on the
+   rendered text, where only the cited displays may stand as whole tokens, so nothing glued to a
+   token passes.
 4. The draft's language is the resolved language (R14).
 5. Deny lists: sensitive inferences (R9), investment instructions (R7), promises on estimates (R13).
 6. No URLs, markdown links, HTML, headings or code; at most two **bold** spans of emphasis.
@@ -155,6 +157,14 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
         if language == "fi" and not re.search(r"[äöå]", stripped, re.I) and len(english_words) >= 3:
             errors.append("the text must be in Finnish")
     errors += check_text(draft.text, allowed)
+    if not unknown:
+        # Rule 3 again on the text the user reads: each token replaced by its display. A token glued to
+        # another token, a digit, a unit word or a month ("{{n2}}{{n2}}", "{{n2}}.{{n2}}", "{{n2}} euros",
+        # "On {{n2}} August 2026") leaves digits there that the token-stripped check cannot see.
+        rendered = answer_text.leftover_digits(render(draft.text, numbers),
+                                               displays=[numbers[i].display for i in set(used)],
+                                               dates=allowed.dates, periods=allowed.periods)
+        errors += [f"rendered text: {p}" for p in rendered if p not in errors]
     return draft, errors
 
 

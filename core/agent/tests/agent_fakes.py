@@ -5,18 +5,17 @@ unique name: every test directory has a module called `conftest`, so tests never
 from __future__ import annotations
 
 import sys
+import threading
 from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.agent.audit import AuditLog  # noqa: E402
 from core.agent.orchestrator import AskRequest, DataUnavailable, Pipeline  # noqa: E402
 from core.agent.registry import Registry, ToolSpec  # noqa: E402
 from core.tools.formatting import display  # noqa: E402
@@ -57,22 +56,46 @@ def db_down_tool(ctx, args: FakeArgs) -> ToolResult:
 
 
 class FakeData:
-    def __init__(self, customers=("CUST00860", "CUST00493"), down: bool = False) -> None:
+    """Fake data access. With `capacity`, at most that many connections are out at once:
+    connection() waits for one (like the pool), connection_if_free(wait) gives up after `wait`."""
+
+    def __init__(self, customers=("CUST00860", "CUST00493"), down: bool = False, capacity: int | None = None) -> None:
         self.customers = set(customers)
         self.down = down
         self.connections = 0
+        self.capacity = capacity
+        self.in_use = 0
+        self.most_in_use = 0
+        self._free = threading.Condition()
 
     def customer_exists(self, customer_id: str) -> bool:
         if self.down:
             raise DataUnavailable()
         return customer_id in self.customers
 
-    @contextmanager
     def connection(self):
+        return self._connect(5.0)
+
+    def connection_if_free(self, wait: float):
+        return self._connect(wait)
+
+    @contextmanager
+    def _connect(self, timeout: float):
         if self.down:
             raise DataUnavailable()
-        self.connections += 1
-        yield None
+        with self._free:
+            if self.capacity is not None and not self._free.wait_for(lambda: self.in_use < self.capacity,
+                                                                     timeout=timeout):
+                raise DataUnavailable()
+            self.in_use += 1
+            self.most_in_use = max(self.most_in_use, self.in_use)
+            self.connections += 1
+        try:
+            yield None
+        finally:
+            with self._free:
+                self.in_use -= 1
+                self._free.notify_all()
 
 
 def registry(*extra: ToolSpec) -> Registry:

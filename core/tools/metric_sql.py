@@ -18,10 +18,18 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from psycopg import pq
 
 METRICS_DIR = Path(__file__).resolve().parents[1] / "metrics"
-CUSTOMER_ID = re.compile(r"^CUST(\d{5})$")
-SETTING_NAME = re.compile(r"^[a-z_]+$")
+CUSTOMER_ID = re.compile(r"CUST([0-9]{5})")
+SETTING_NAME = re.compile(r"[a-z_]+")
+# Set by run() itself from its arguments; a caller's settings may never override them (the customer
+# range and as_of decide which rows a metric file reads).
+RESERVED_SETTINGS = frozenset({"demo_today", "customer_from", "customer_to"})
+
+
+def is_reserved_setting(name: str) -> bool:
+    return name in RESERVED_SETTINGS or name.startswith("customer_")
 
 
 def customer_range(customer_id: str) -> tuple[str, str]:
@@ -34,13 +42,25 @@ def customer_range(customer_id: str) -> tuple[str, str]:
 
 def run(conn: psycopg.Connection, file: str, customer_id: str, as_of: date,
         settings: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    """Run core/metrics/<file> for one customer and return the rows of its last result set."""
+    """Run core/metrics/<file> for one customer and return the rows of its last result set.
+
+    On an idle connection (the tools' and the API's connections are in autocommit mode) the file runs
+    in its own READ ONLY transaction, so nothing in it can write. Inside a caller's open transaction it
+    runs in a savepoint instead and the caller's transaction mode is left as it is: a read-only setting
+    made in a savepoint would stay in force for the rest of the caller's transaction.
+    """
     if "/" in file or "\\" in file or not file.endswith(".sql"):
         raise ValueError(f"not a metric file name: {file!r}")
+    for name in settings or {}:
+        if is_reserved_setting(name):
+            raise ValueError(f"setting {name!r} is reserved: run() sets it from its arguments")
     sql = (METRICS_DIR / file).read_text(encoding="utf-8")
     lo, hi = customer_range(customer_id)
     values = {"demo_today": as_of.isoformat(), "customer_from": lo, "customer_to": hi, **(settings or {})}
+    own_transaction = conn.info.transaction_status == pq.TransactionStatus.IDLE
     with conn.transaction():
+        if own_transaction:
+            conn.execute("SET TRANSACTION READ ONLY")
         for name, value in values.items():
             if not SETTING_NAME.fullmatch(name):
                 raise ValueError(f"bad setting name {name!r}")

@@ -12,7 +12,10 @@ WORKDIR /srv
 COPY core/requirements.txt core/requirements.txt
 RUN pip install -r core/requirements.txt
 
-COPY core/app core/app
+# Everything under core that /.dockerignore lets through: the service (core/app), the tools
+# (core/tools), the answer pipeline (core/agent, once it exists), the metric SQL the tools run
+# (core/metrics/*.sql) and the config files (core/config/*.yaml). No tests, data or scripts.
+COPY core core
 
 RUN useradd --system --uid 10001 --no-create-home app
 USER app
