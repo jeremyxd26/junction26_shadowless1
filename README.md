@@ -4,6 +4,8 @@
 
 Work in progress.
 
+How S-mobiili embeds Sentti, an embeddable web module (WebView): [docs/integration.md](docs/integration.md).
+
 ## Run
 
 The core service is a Python 3.11 FastAPI app. It reads its settings from environment variables, or from `.env` in the repository root (see `.env.example`). Without `DATABASE_URL` it still starts, and `/readyz` returns 503.
