@@ -30,6 +30,12 @@ HEALTH_MCCS = frozenset(config.MCC_GROUPS["health"])
 MCC_CODE = re.compile(r"[0-9]{4}")  # ASCII digits only (\d also matches other scripts' digits)
 
 
+class WhatIfRefused(ValueError):
+    """The tool refuses this selection for this customer: an MCC or merchant used for Health (R9), an
+    unknown merchant alias, or no spending in the window. A ValueError, so earlier callers keep working;
+    the API maps exactly this type to 422 invalid_scenario, and any other error stays a bug."""
+
+
 class WhatIfSelection(Args):
     kind: Literal["category", "basket", "mcc", "merchant"]
     value: str
@@ -120,18 +126,18 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
         # Beyond the known health MCCs: no code that this customer's own Health transactions use (R9).
         codes = set(sel.value.split(","))
         if any(t.mcc in codes and t.category == "Health" for t in ctx.history()):
-            raise ValueError("an MCC used for health spending cannot be a what-if selection (rule R9)")
+            raise WhatIfRefused("an MCC used for health spending cannot be a what-if selection (rule R9)")
     if sel.kind == "merchant":
         history = ctx.history()
         alias_map = aliases.build(history, ctx.as_of)
         try:
             merchant_id = alias_map.merchant_id(sel.value)
         except KeyError:
-            raise ValueError(f"unknown merchant alias {sel.value!r}") from None
+            raise WhatIfRefused(f"unknown merchant alias {sel.value!r}") from None
         # A health service by category or by a health MCC (the same list as for an MCC selection), R9.
         if any(t.merchant_id == merchant_id and (t.category == "Health" or t.mcc in HEALTH_MCCS)
                for t in history):
-            raise ValueError("a health service cannot be a what-if selection (rule R9)")
+            raise WhatIfRefused("a health service cannot be a what-if selection (rule R9)")
         sql_value = merchant_id
         alias_label = alias_map.for_merchant(merchant_id).label(lang)
 
@@ -139,7 +145,7 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     row = metric_sql.run_one(ctx.conn, config.WHAT_IF_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         # contracts/api.md section 8.1: no spending in the window at all -> 422 invalid_scenario
-        raise ValueError("invalid_scenario: the selection has no spending in the last 6 full months")
+        raise WhatIfRefused("invalid_scenario: the selection has no spending in the last 6 full months")
 
     window = Period(start=row["period_start"], end=row["period_end"],
                     label=periods.period_label(row["period_start"], row["period_end"], lang))

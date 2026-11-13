@@ -2,7 +2,7 @@ import type { Num } from '../api/types.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
-type Size = 'inline' | 'md' | 'hero'
+type Size = 'inline' | 'md' | 'lg' | 'hero'
 type Tone = 'mint' | 'warning' | 'neutral' | 'hero'
 
 const sizes: Record<Size, string> = {
@@ -11,6 +11,8 @@ const sizes: Record<Size, string> = {
   inline:
     'relative min-h-8 px-2.5 text-[15px] leading-5 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
+  // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
+  lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
   hero: 'min-h-16 px-5 text-[40px] leading-[44px] tracking-tight',
 }
 
