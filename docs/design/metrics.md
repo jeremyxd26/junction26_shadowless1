@@ -13,6 +13,7 @@ Prototypes: `core/metrics/01_recurring.sql` … `07_store_price_index.sql`. Each
 | 5 | Spender profile | What kind of spender am I? | `05_spender_profile.sql` |
 | 6 | Peer benchmark | What kind of spender am I? | `06_peer_benchmark.sql` |
 | 7 | Store price index and switch saving | How could I save more? | `07_store_price_index.sql` |
+| 11 | Down payment plan (optional, after the MVP) | How could I save more? | definition only |
 
 ## 0. Conventions shared by all metrics
 
@@ -402,6 +403,29 @@ Times are wall-clock from a laptop client, including network round trips.
 5. **What-if scope.** Should the coach ever suggest cutting regular essentials (for example groceries), or only everyday spending?
 6. **Store switch.** On the sample the index is noise. Do we show the store index in the demo only after the full-population precompute, or leave it out?
 7. **Peer groups.** Minimum 20 peers. Is that acceptable for privacy, and do we want the Paavo income data?
+
+## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)
+
+Answers "How much could I put aside for a down payment, and how long would it take?". An estimate (R13), definition only, no SQL prototype yet. It never predicts the bank's decision, never says whether a loan would be approved and never scores the user (R8). It does not recommend a product or where to keep the money (R7); for a mortgage it points to an S-Pankki adviser.
+
+**Inputs from the user:** `target_eur` (the down payment they aim for; the coach does not suggest a home price) and optionally `start_eur` (what they already have set aside; default 0, because account balances and investment holdings are not the same thing as savings set aside).
+
+```
+capacity_month   = net_income_month - spend_month            (section 5, same window: mean of the 6 complete months)
+                 = keep_rate * net_income_month               (investment deposits count as already put aside)
+capacity_plan    = capacity_month + sum(saving_month_eur of the what-if cuts the user picks)   (section 4)
+months_to_target = ceil((target_eur - start_eur) / capacity)  if capacity > 0, else "not reachable at this pace"
+```
+
+Also returned: the lowest and highest monthly keep in the window and how many months were negative, so the coach can say how steady the pace is. The output is a number object per value, with `period` = the window and `method` = "average of your last 6 full months of income minus spending".
+
+**Edge cases.**
+- Capacity ≤ 0: no months figure. The coach shows the what-if cuts that would make it positive.
+- `salary_moved_elsewhere` (Salary Sweep): the account does not show the whole income, so the plan is not estimated from it. The coach asks the user instead.
+- Under 6 months of history: use the months available and say so.
+- No interest, inflation, price or rate changes are modelled. The caveat says so in plain words.
+
+**Illustration** (CUST00001, window 2026-04 … 2026-09; the target is a made-up user input). Monthly keep was 285.98, 590.08, 602.90, −111.54, −133.58 and 569.15 (2 of 6 months negative), so `capacity_month` = 300.50, of which 230.01 is the existing monthly investment deposit. For a 20,000 € target from 0 the result is 67 months. With dining out −20% (+11.37 a month, section 4) it is 65 months. For CUST00002 the capacity is −73.77 a month, so the plan is not reachable at this pace. CUST00006 has a monthly sweep, so the plan is not estimated.
 
 ## Rule references
 
