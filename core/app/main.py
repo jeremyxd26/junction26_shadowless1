@@ -14,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
+from core.agent.api import router as ask_router
+
 from . import health
 from .db import MALFORMED, MAX_CONNECTIONS, NOT_SET, create_pool, valid_database_url
 from .settings import Settings
@@ -55,4 +57,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(ask_router)  # POST /api/ask (core/agent)
     return app
