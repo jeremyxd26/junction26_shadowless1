@@ -12,8 +12,27 @@
 __SITE__ {
 	encode gzip
 
+	# Security headers on every response (#102), Caddy's own errors included: set at once, before any
+	# handler runs. HSTS without `preload`: the parent domain is shared.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+	# Deleting Server also removes the core's own `server: uvicorn`. A deletion is applied when the
+	# response is written, so it is kept apart (it would defer the headers above too) and repeated for
+	# Caddy's own error responses below.
+	header -Server
+
+	handle_errors {
+		header -Server
+		respond "" {err.status_code}
+	}
+
+	# The core answers JSON only: nothing may load, run or frame it.
 	@core path /api/* /healthz /readyz
 	handle @core {
+		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 		reverse_proxy 127.0.0.1:8000
 	}
 
@@ -36,10 +55,14 @@ __SITE__ {
 	}
 
 	# Everything else: a file of the build, or index.html for a client route. Revalidated on every load,
-	# so a deploy is picked up at once.
+	# so a deploy is picked up at once. The app's CSP (app owner's needs on #102): its own scripts, styles
+	# and fonts only (the Vite build emits files, no inline script), images from itself or data: URIs (so
+	# rendered markdown cannot load an outside image), API calls to its own origin only. Framing only by
+	# its own origin: the S-mobiili WebView loads the module top-level and is not affected.
 	handle {
 		root * /opt/shadowless1/app/current
 		header Cache-Control "no-cache"
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 		try_files {path} /index.html
 		file_server
 	}
