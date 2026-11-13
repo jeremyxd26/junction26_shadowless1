@@ -1,5 +1,6 @@
 import type { EvidenceResponse, Language, OverviewResponse, PersonasResponse } from './types.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
+import { strings } from '../lib/i18n.ts'
 
 export type ApiMode = 'mock' | 'live'
 
@@ -12,48 +13,68 @@ export interface ApiClient {
   evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
 }
 
+type Body = Record<string, unknown>
+
+function isRecord(value: unknown): value is Body {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasArrays(body: Body, ...keys: string[]): boolean {
+  return keys.every((key) => Array.isArray(body[key]))
+}
+
+// The fields each screen reads without further checks. A body that lacks them is answered like
+// any other bad response (an error with "Try again"), not left to the error boundary.
+const isPersonas = (body: Body) => hasArrays(body, 'personas')
+const isOverview = (body: Body) =>
+  typeof body.greeting === 'string' &&
+  (body.hero == null || isRecord(body.hero)) &&
+  (body.safe_to_save == null || isRecord(body.safe_to_save)) &&
+  hasArrays(body, 'cards', 'reviews', 'insights', 'suggested_questions')
+const isEvidence = (body: Body) => isRecord(body.number) && isRecord(body.method) && hasArrays(body, 'rows', 'parts')
+
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
-  async function get<T>(path: string, params: Record<string, string>): Promise<T> {
-    const query = new URLSearchParams(params).toString()
+  async function get<T>(path: string, params: Record<string, string>, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    // Errors the app makes itself use the app's own texts; errors from the core come localised.
+    const t = strings(lang)
+    const query = new URLSearchParams({ ...params, lang }).toString()
     let response: Response
     try {
       response = await fetch(`${base}${path}?${query}`, { headers: { Accept: 'application/json' } })
     } catch {
-      throw new ApiError(0, { code: 'network', message: 'No connection. Try again.', retryable: true })
+      throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
     }
     const body: unknown = await response.json().catch(() => null)
     if (!response.ok) {
       if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
       throw new ApiError(response.status, {
         code: 'internal',
-        message: 'Something went wrong. Try again.',
+        message: t.errorRetry,
         retryable: response.status >= 500,
       })
     }
-    // A 200 that is not a JSON object (for example a static host answering /api with
-    // index.html) must not reach the screens as data.
-    if (typeof body !== 'object' || body === null) {
-      throw new ApiError(response.status, {
-        code: 'bad_response',
-        message: 'Something went wrong. Try again.',
-        retryable: true,
-      })
+    // A 200 that is not the expected JSON object (for example a static host answering /api with
+    // index.html, an array, or an object without the fields the screen reads) must not reach the
+    // screens as data.
+    if (!isRecord(body) || !isShape(body)) {
+      throw new ApiError(response.status, { code: 'bad_response', message: t.errorRetry, retryable: true })
     }
     return body as T
   }
 
   return {
     mode: 'live',
-    personas: (lang) => get<PersonasResponse>('/api/personas', { lang }),
+    personas: (lang) => get<PersonasResponse>('/api/personas', {}, lang, isPersonas),
     overview: (customerId, lang) =>
-      get<OverviewResponse>(`/api/overview/${encodeURIComponent(customerId)}`, { lang }),
+      get<OverviewResponse>(`/api/overview/${encodeURIComponent(customerId)}`, {}, lang, isOverview),
     evidence: (ref, customerId, lang, cursor) =>
-      get<EvidenceResponse>(`/api/evidence/${encodeURIComponent(ref)}`, {
-        customer_id: customerId,
+      get<EvidenceResponse>(
+        `/api/evidence/${encodeURIComponent(ref)}`,
+        { customer_id: customerId, ...(cursor ? { cursor } : {}) },
         lang,
-        ...(cursor ? { cursor } : {}),
-      }),
+        isEvidence,
+      ),
   }
 }
 

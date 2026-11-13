@@ -1,7 +1,7 @@
-import { useId, useState } from 'react'
 import type { Component, Num, SafeToSaveCard as SafeToSaveData, SafeToSaveReason } from '../api/types.ts'
 import { useSettings } from '../lib/settings.ts'
 import { ActionButton, CARD_TITLE, CardShell } from './cards.tsx'
+import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
 import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
@@ -63,8 +63,7 @@ function Reason({ reason }: { reason: SafeToSaveReason }) {
  */
 export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
   const { t } = useSettings()
-  const [estimateOpen, setEstimateOpen] = useState(false)
-  const estimateId = useId()
+  const estimate = useEstimateToggle()
   return (
     <div className="flex flex-col gap-3">
       <CardShell>
@@ -76,11 +75,11 @@ export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
           {card.estimate && (
             <EstimateBadge
               estimate={card.estimate}
-              control={{ open: estimateOpen, onToggle: () => setEstimateOpen((value) => !value), textId: estimateId }}
+              control={estimate.control}
             />
           )}
         </div>
-        {card.estimate && estimateOpen && <EstimateNote estimate={card.estimate} id={estimateId} />}
+        {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <NumberChip number={card.monthly} size="lg" />
