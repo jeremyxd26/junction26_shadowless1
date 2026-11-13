@@ -188,8 +188,9 @@ class Resolution:
     rows: list[dict[str, Any]] = field(default_factory=list)
     row_count: int | None = None
     reconciles: bool | None = None
-    parts: list[dict[str, Any]] = field(default_factory=list)
+    parts: list[dict[str, Any]] = field(default_factory=list)  # role, ref, method, value, spec
     next_cursor: str | None = None
+    spec: dict[str, Any] | None = None  # the stored spec, for callers that rebuild the Number
 
 
 def _row(c, alias_map: aliases.AliasMap, language: str) -> dict[str, Any]:
@@ -222,6 +223,7 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
     """Load a ref, check it belongs to `customer_id`, re-run its spec and reconcile."""
     if not 1 <= limit <= MAX_LIMIT:
         raise ValueError(f"limit must be 1..{MAX_LIMIT}")
+    offset = _cursor_offset(cursor)
     owner, spec = load(conn, ref)
     if owner != customer_id or spec.get("customer_id") != customer_id:
         raise EvidenceForbidden(ref)
@@ -237,9 +239,12 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
                 raise EvidenceForbidden(part["ref"])
             part_values[part["role"]] = Decimal(part_spec["value"])
             parts.append({"role": part["role"], "ref": part["ref"], "method": part_spec["method"],
-                          "value": part_spec["value"]})
-        recomputed = compute_formula(spec["formula"], part_values, spec.get("params"))
-        return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=recomputed == value)
+                          "value": part_spec["value"], "spec": part_spec})
+        try:
+            reconciles = compute_formula(spec["formula"], part_values, spec.get("params")) == value
+        except (ValueError, KeyError):  # a formula this version does not know: no check, not an error
+            reconciles = None
+        return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=reconciles, spec=spec)
 
     if spec["kind"] == "metric":  # #55: re-run the metric SQL file for this customer
         from core.tools import metric_sql
@@ -254,9 +259,11 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
     history = load_transactions(conn, customer_id, as_of)
     overrides = labels.basket_labels(conn, customer_id, as_of)  # the same labels the tools used
     rows = select(classify(history, as_of, overrides), sel)
-    recomputed = value_of(rows, sel, spec["method"], spec.get("params"))
+    try:
+        reconciles = value_of(rows, sel, spec["method"], spec.get("params")) == value
+    except (ValueError, KeyError):  # a method this version does not know: rows still shown, no check
+        reconciles = None
     rows.sort(key=lambda c: (c.tx.tx_date, c.tx.tx_at, c.tx.id), reverse=True)
-    offset = _cursor_offset(cursor)
     page = rows[offset:offset + limit]
     alias_map = aliases.build(history, as_of)
     next_cursor = f"cur_{offset + limit}" if offset + limit < len(rows) else None
@@ -264,6 +271,7 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         ref, "transactions", spec["method"], value,
         rows=[_row(c, alias_map, language) for c in page],
         row_count=len(rows),
-        reconciles=recomputed == value,
+        reconciles=reconciles,
         next_cursor=next_cursor,
+        spec=spec,
     )
