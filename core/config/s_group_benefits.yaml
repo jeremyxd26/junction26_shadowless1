@@ -1,0 +1,110 @@
+# S-Group Bonus and payment-benefit rules, plus the demo assumption about S-Group merchants.
+# Issue #4. Human-readable version with quotes and sources: docs/domain/s-group-benefits.md
+# Every rule cites a source id from that document (G1..G8), all accessed 2026-11-13.
+# Values marked `unknown` are not published on the official pages we opened.
+
+version: 1
+accessed: "2026-11-13"
+sources:
+  G1: https://s-ryhma.fi/en/about-us/business-operations
+  G2: https://s-etukortti.fi/en/bonus/bonus-tables
+  G3: https://s-etukortti.fi/bonus/bonustaulukot
+  G4: https://s-etukortti.fi/en/rules-of-the-co-op-membership-system   # valid as of 10 July 2026
+  G5: https://s-etukortti.fi/en/bonus
+  G6: https://www.abcasemat.fi/polttoaineet
+  G7: https://www.s-pankki.fi/fi/kortit/maksutapaetu/
+  G8: https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/miten-saan-maksutapaetua/
+
+bonus:
+  period: calendar_month                       # G4
+  paid_to: s_pankki_account_of_main_member     # G4, G5
+  paid_by_day_of_next_month: 10                # G4, G5
+  level_base: household_bonus_purchases_including_fuel   # G4, G5
+  percent_applies_to: month_purchases_excluding_fuel     # G4
+  # Our reading, not stated in words on the pages: the level is the highest row with
+  # min_monthly_purchases_eur <= level_base; below the lowest row the percent is 0.
+  level_rule: highest_row_at_or_below          # assumption (open question 1)
+  below_lowest_row_percent: 0                  # assumption (open question 1)
+  tables:
+    default:
+      applies_to: all cooperatives except Osuuskauppa KPO and Koillismaan Osuuskauppa   # G2
+      source: [G2, G3]
+      levels:                                  # min monthly purchases (EUR) -> Bonus percent
+        - {min_monthly_purchases_eur: 50,  percent: 1.0}
+        - {min_monthly_purchases_eur: 200, percent: 1.5}
+        - {min_monthly_purchases_eur: 300, percent: 2.0}
+        - {min_monthly_purchases_eur: 400, percent: 2.5}
+        - {min_monthly_purchases_eur: 500, percent: 3.0}
+        - {min_monthly_purchases_eur: 600, percent: 3.5}
+        - {min_monthly_purchases_eur: 700, percent: 4.0}
+        - {min_monthly_purchases_eur: 800, percent: 4.5}
+        - {min_monthly_purchases_eur: 900, percent: 5.0}
+    kpo:
+      applies_to: Osuuskauppa KPO              # G2
+      source: [G2]
+      levels:
+        - {min_monthly_purchases_eur: 1,   percent: 1.0}
+        - {min_monthly_purchases_eur: 200, percent: 1.5}
+        - {min_monthly_purchases_eur: 300, percent: 2.0}
+        - {min_monthly_purchases_eur: 400, percent: 2.5}
+        - {min_monthly_purchases_eur: 500, percent: 3.0}
+        - {min_monthly_purchases_eur: 600, percent: 3.5}
+        - {min_monthly_purchases_eur: 700, percent: 4.0}
+        - {min_monthly_purchases_eur: 800, percent: 4.5}
+        - {min_monthly_purchases_eur: 900, percent: 5.0}
+    koillismaa:
+      applies_to: Koillismaan Osuuskauppa      # G2 shows the heading only
+      levels: unknown
+  excluded_from_bonus:                         # G4, section 3.2.4; not visible in our data (no item level)
+    - tobacco and nicotine products
+    - beverages over 1.2% alcohol by volume and foods over 2.8%
+    - gambling and lottery products (most commission-based products)
+    - S Group gift cards (for the buyer)
+    - tax-free purchases
+    - purchases with a corporate card
+  fuel:
+    earns_percent_bonus: false                 # G4
+    counts_towards_level: true                 # G4, G5
+    refuelling_bonus:
+      unit: cents_per_litre                    # G4
+      max_cents_per_litre: 5                   # G6
+      cents_per_litre_by_level: unknown        # open question 2
+  ev_charging_at_abc_earns_bonus: true         # G4
+
+payment_benefit:                               # maksutapaetu
+  percent: 0.5                                 # G4, G7, G8
+  cards: [S-Etukortti Visa, S-Etukortti Debit] # G4; debit and credit side both count (G7)
+  where: S Group outlets and online stores in Finland   # G4, G7
+  base: purchase_total                         # G8 "pääsääntöisesti koko oston loppusummasta"
+  covers_items_excluded_from_bonus: unknown    # open question 3
+  excluded: [car purchases]                    # G8
+  household: all S-Etukortti Visa cards of the household count   # G7
+  paid_to: s_pankki_account_of_main_member     # G4, G8
+  paid_by_day_of_next_month: 10                # G4, G7
+
+# Our reading of which MCCs in the dataset are S-Group-type businesses (G1). An MCC alone
+# never proves a merchant belongs to S-Group; see demo_assumption.
+mcc_s_group_business:
+  "5411": {type: grocery,    earns_percent_bonus: true}
+  "5499": {type: grocery,    earns_percent_bonus: true}
+  "5541": {type: fuel,       earns_percent_bonus: false}   # Refuelling Bonus; counts towards level
+  "5542": {type: fuel,       earns_percent_bonus: false}   # unstaffed stations; same as 5541
+  "5812": {type: restaurant, earns_percent_bonus: true}    # alcohol share not visible in our data
+  "5814": {type: restaurant, earns_percent_bonus: true}
+  "5813": {type: restaurant, earns_percent_bonus: false}   # assumption: bar spend is mostly alcohol
+  "7011": {type: hotel,      earns_percent_bonus: true}
+# All other MCCs in the data map to "not S-Group" (including health MCCs, rule R9).
+
+demo_assumption:
+  is_assumption: true
+  why: >-
+    Merchants in the dataset are anonymised ids such as MRC-GRO-0035, so whether a merchant
+    belongs to S-Group is not in the data. In production the bank knows its own merchants.
+  s_group_merchant_rule:
+    mcc_in: ["5411", "5499", "5541", "5542", "5812", "5813", "5814", "7011"]
+    method: sha256_share                       # int(sha256(merchant_id).hexdigest()[:8], 16) / 2**32 < share
+    share: 0.5                                 # demo parameter, NOT S-Group's market share
+  no_merchant: null                            # is_s_group = null when the transaction has no merchant
+  card_product: S-Etukortti Visa               # every S-Group card purchase earns the payment benefit
+  household: one_customer_is_one_household
+  bonus_table: default
