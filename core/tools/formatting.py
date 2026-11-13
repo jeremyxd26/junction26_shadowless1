@@ -28,17 +28,31 @@ def _group(digits: str, sep: str) -> str:
     return sep.join(out)
 
 
+RATE_SUFFIX = {  # contracts/api.md example: "€1,180.21 a month"
+    Unit.EUR_PER_DAY: (" a day", " / pv"),
+    Unit.EUR_PER_WEEK: (" a week", " / vk"),
+    Unit.EUR_PER_MONTH: (" a month", " / kk"),
+    Unit.EUR_PER_YEAR: (" a year", " / v"),
+}
+COUNT_SUFFIX = {Unit.DAYS: (" days", " pv"), Unit.MONTHS: (" months", " kk")}
+
+
 def display(value: Decimal, unit: Unit, language: str = "en") -> str:
-    """`€1,234.56` / `1 234,56 €`, `18.9%` / `18,9 %`, counts as integers. No plus sign."""
+    """`€1,234.56` / `1 234,56 €`, `€1,180.21 a month` / `1 180,21 € / kk`, `18.9%` / `18,9 %`,
+    counts as integers, days and months with their unit. No plus sign."""
     negative = value < 0
     magnitude = abs(value)
     sign = "-" if negative else ""
+    fi = language == "fi"
     if unit is Unit.COUNT:
         return f"{sign}{int(magnitude)}"
+    if unit in COUNT_SUFFIX:
+        return f"{sign}{int(magnitude)}{COUNT_SUFFIX[unit][1 if fi else 0]}"
     if unit in (Unit.PERCENT, Unit.PERCENTILE):
         text = f"{pct(magnitude):.1f}"
-        return f"{sign}{text.replace('.', ',')} %" if language == "fi" else f"{sign}{text}%"
+        return f"{sign}{text.replace('.', ',')} %" if fi else f"{sign}{text}%"
     whole, frac = f"{money(magnitude):.2f}".split(".")
-    if language == "fi":
-        return f"{sign}{_group(whole, ' ')},{frac} €"
-    return f"{sign}€{_group(whole, ',')}.{frac}"
+    suffix = RATE_SUFFIX.get(unit, ("", ""))[1 if fi else 0]
+    if fi:
+        return f"{sign}{_group(whole, ' ')},{frac} €{suffix}"
+    return f"{sign}€{_group(whole, ',')}.{frac}{suffix}"
