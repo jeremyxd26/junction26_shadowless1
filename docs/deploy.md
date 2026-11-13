@@ -4,7 +4,7 @@ The core service runs from the `dev` branch on one small Verda instance in Finla
 
 - **URL:** https://sentti.jeremyxd.dev: the app at `/` (once `app/` is on the deployed branch), the core at `/api/*`, `/healthz` and `/readyz`. The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
 - **Deploy:** `bash deploy/dev.sh` deploys `origin/dev`.
-- **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is the app: the static build of `app/` for the deployed commit, with client routes such as `/chat` falling back to `index.html`. A commit without `app/` serves no app, and those paths answer 404. FastAPI's `/docs` is not exposed (`/docs` is an app route that falls back to the app).
+- **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is the app: the static build of `app/` for the deployed commit, with client routes such as `/chat` falling back to `index.html`. A commit without `app/package.json` serves no app, and those paths answer 404. FastAPI's `/docs` is not exposed (`/docs` is an app route that falls back to the app).
 
 ## What runs where
 
@@ -92,7 +92,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
    - makes sure `/var/lib/shadowless1/var` exists, the service's persistent `var/` (see "Service data");
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
-   - points `/opt/shadowless1/app/current` at the new app build, only now that the core is healthy (an atomic link swap). A commit without `app/` removes the link;
+   - points `/opt/shadowless1/app/current` at the new app build, only now that the core is healthy (an atomic link swap). A commit without `app/package.json` removes the link;
    - renders the Caddy config and reloads Caddy;
    - keeps the images and app builds of the current and the previous deploy and removes older ones;
    - records the deploy in `/opt/shadowless1/deploy.log`.
@@ -137,7 +137,7 @@ GET https://sentti.jeremyxd.dev/healthz -> 200
 - `/assets/*` holds Vite's content-hashed files: `Cache-Control: public, max-age=31536000, immutable`. A missing asset is a plain 404, never `index.html`.
 - Every other path: `Cache-Control: no-cache`, so `index.html` is revalidated on every load and a deploy shows at once.
 
-A commit without `app/` (today's `main` and `dev`, until PR #75 is merged) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
+A commit without `app/package.json` (today's `main` and `dev`, which hold only `app/DESIGN.md` and `app/design/`, until PR #75 is merged) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
 
 ## Service data (`var/`)
 

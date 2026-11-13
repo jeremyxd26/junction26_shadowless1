@@ -7,7 +7,8 @@
 #   http://135-181-63-178.sslip.io                   plain HTTP, if no certificate can be issued
 # The API and the health checks go to the core service. Every other path is the app: the static build
 # of app/ for the deployed commit (/opt/shadowless1/app/current, a link set by remote-deploy.sh). Client
-# routes such as /chat fall back to index.html. Without an app build those paths answer 404.
+# routes such as /chat fall back to index.html. Without an app build (a commit without app/package.json)
+# those paths answer 404.
 __SITE__ {
 	encode gzip
 
