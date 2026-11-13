@@ -1,5 +1,7 @@
 # shadowless1 — Junction 2026
 
+[![CI](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml)
+
 Work in progress.
 
 ## Run
@@ -24,6 +26,8 @@ Settings:
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `dev` and `main`: the tests without a database, the eval set and red-team regressions (no model calls), `ruff check .` (`pip install -r requirements-dev.txt`) and a gitleaks scan of the whole history (`.gitleaks.toml`). It uses no secrets.
 
 ## Dev environment
 
