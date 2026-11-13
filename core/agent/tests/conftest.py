@@ -14,7 +14,9 @@ HERE = str(Path(__file__).resolve().parent)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from agent_fakes import AS_OF, AuditLog, FakeData, Pipeline, registry  # noqa: E402
+from agent_fakes import AS_OF, FakeData, Pipeline, registry  # noqa: E402
+
+from core.agent.audit import AuditLog  # noqa: E402
 
 
 @pytest.fixture

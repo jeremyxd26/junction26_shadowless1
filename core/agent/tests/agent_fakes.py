@@ -10,13 +10,11 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.agent.audit import AuditLog  # noqa: E402
 from core.agent.orchestrator import AskRequest, DataUnavailable, Pipeline  # noqa: E402
 from core.agent.registry import Registry, ToolSpec  # noqa: E402
 from core.tools.formatting import display  # noqa: E402
