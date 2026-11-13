@@ -29,6 +29,7 @@ class CTx:
     is_subscription: bool
     basket: str | None     # None outside the spend flow
     mcc_group: str | None
+    overridden: bool = False  # the basket comes from a customer label, not from the rules
 
     @property
     def out_eur(self) -> Decimal:
@@ -107,8 +108,15 @@ def basket_of(t: Tx, flow: str, is_one_off: bool, is_subscription: bool) -> str 
     return "unclassified"
 
 
-def classify(history: list[Tx], as_of: date) -> list[CTx]:
-    """Classify every transaction up to as_of. Rows after as_of are dropped (R5)."""
+def classify(history: list[Tx], as_of: date, overrides: dict[int, str] | None = None) -> list[CTx]:
+    """Classify every transaction up to as_of. Rows after as_of are dropped (R5).
+
+    `overrides` maps a transaction id to the basket a customer chose (core.tools.labels; empty today).
+    It applies to spending transactions only and wins over the rules. This differs from the overrides
+    CTE in 02_baskets.sql, which matches a rule override by merchant, then MCC, then category (empty in
+    the prototypes): customer labels are per transaction, and a label may also be `unclassified`.
+    """
+    overrides = overrides or {}
     spikes = _spike_base(history, as_of)
     subscriptions = _subscriptions(history, as_of)
     out = []
@@ -123,12 +131,15 @@ def classify(history: list[Tx], as_of: date) -> list[CTx]:
             and -t.amount_eur > config.ONE_OFF_FACTOR * Decimal(str(median_12m))
         )
         is_sub = t.merchant_id is not None and t.merchant_id in subscriptions
+        rule_basket = basket_of(t, flow, is_one_off, is_sub)
+        overridden = flow == "spend" and t.id in overrides
         out.append(CTx(
             tx=t,
             flow=flow,
             is_one_off=is_one_off,
             is_subscription=is_sub,
-            basket=basket_of(t, flow, is_one_off, is_sub),
+            basket=overrides[t.id] if overridden else rule_basket,
             mcc_group=config.MCC_TO_GROUP.get(t.mcc) if t.mcc else None,
+            overridden=overridden,
         ))
     return out

@@ -14,14 +14,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from core.tools import aliases, config, evidence, periods
+from core.tools import aliases, config, evidence, labels, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.formatting import display, money
 from core.tools.models import (
     Action, Args, Card, CompareTo, Comparison, Direction, Filter, GroupBy, Number, Period, PeriodArg,
     Tone, ToolResult, Unit,
 )
+from core.tools.numbers import NumberBuilder
 from core.tools.selection import NONE_KEY, Selection, amount, group_key, select
 
 TOOL = "get_spending"
@@ -54,38 +54,7 @@ class SpendingData(BaseModel):
     groups: list[SpendingGroup]
 
 
-class _Numbers:
-    """Builds Number objects and collects the evidence spec behind each one."""
-
-    def __init__(self, ctx: ToolContext, rows) -> None:
-        self.ctx = ctx
-        self.rows = rows
-        self.specs: dict[str, dict[str, Any]] = {}
-
-    def _number(self, value: Decimal, unit: Unit, period: Period, method: str, spec: dict, label: str) -> Number:
-        ref = evidence.make_ref(spec)
-        self.specs[ref] = spec
-        return Number(value=int(value) if unit is Unit.COUNT else float(value), unit=unit, period=period, method=method, evidence_ref=ref,
-                      label=label, display=display(value, unit, self.ctx.language))
-
-    def transactions(self, sel: Selection, method: str, period: Period, label: str) -> tuple[Number, Decimal]:
-        picked = select(self.rows, sel)
-        if method == config.METHODS["total"]:
-            value = money(sum((c.out_eur if sel.direction == "out" else c.in_eur for c in picked), Decimal("0")))
-            unit = Unit.EUR
-        else:
-            value = Decimal(len(picked))
-            unit = Unit.COUNT
-        spec = evidence.transactions_spec(self.ctx.customer_id, self.ctx.as_of, method, sel, value)
-        return self._number(value, unit, period, method, spec, label), value
-
-    def composite(self, method: str, formula: str, parts: dict[str, tuple[Number, Decimal]], unit: Unit,
-                  period: Period, label: str) -> tuple[Number, Decimal]:
-        values = {role: v for role, (_, v) in parts.items()}
-        value = evidence.compute_formula(formula, values)
-        spec = evidence.composite_spec(self.ctx.customer_id, self.ctx.as_of, method, formula,
-                                       {role: n.evidence_ref for role, (n, _) in parts.items()}, value)
-        return self._number(value, unit, period, method, spec, label), value
+_Numbers = NumberBuilder  # shared builder (core/tools/numbers.py)
 
 
 def _text(key: str, language: str, **kw) -> str:
@@ -182,7 +151,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         notes.append(_text("note_clamped", lang, label=period.label))
 
     history = ctx.history()
-    rows = classify(history, ctx.as_of)
+    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
     alias_map = aliases.build(history, ctx.as_of)
     base = _base_selection(args, period, alias_map)
     nb = _Numbers(ctx, rows)
