@@ -34,6 +34,7 @@ STATUS = {
     "data_unavailable": 503,
     "llm_unavailable": 503,
     "internal": 500,
+    "not_found": 404,  # contract addition (#79): an unknown route; the contract has no generic code yet
 }
 RETRYABLE = {"rate_limited", "data_unavailable", "llm_unavailable", "internal"}
 
@@ -47,7 +48,10 @@ class ApiError(Exception):
 
 
 def language_of(request: Request) -> str:
-    return "fi" if request.query_params.get("lang") == "fi" else "en"
+    """The language of an error message: a POST endpoint sets `request.state.language` from its body
+    (contract section 1); otherwise the `lang` query parameter. A body that cannot be parsed stays en."""
+    language = getattr(request.state, "language", None) or request.query_params.get("lang")
+    return "fi" if language == "fi" else "en"
 
 
 def envelope(code: str, language: str, status: int | None = None,
@@ -66,10 +70,11 @@ async def _validation_error(request: Request, exc: RequestValidationError) -> JS
 
 
 async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    """Unknown routes (404), wrong methods (405) and other HTTP errors keep their status and get the
-    envelope instead of FastAPI's {"detail": ...}; the Allow header of a 405 is kept."""
+    """Unknown routes (404 `not_found`), wrong methods (405) and other HTTP errors keep their status and
+    get the envelope instead of FastAPI's {"detail": ...}; the Allow header of a 405 is kept."""
     status = exc.status_code
-    code = "rate_limited" if status == 429 else "internal" if status >= 500 else "invalid_request"
+    code = ("not_found" if status == 404 else "rate_limited" if status == 429
+            else "internal" if status >= 500 else "invalid_request")
     return envelope(code, language_of(request), status=status, headers=getattr(exc, "headers", None))
 
 
@@ -95,7 +100,8 @@ class CatchAll:
             await self.app(scope, receive, send_and_track)
         except Exception as exc:  # noqa: BLE001 - the point of this middleware
             request_id = uuid.uuid4().hex[:12]
-            log.error("unhandled error on %s (%s), request %s", scope.get("path"), type(exc).__name__, request_id)
+            # %r: the decoded path could carry a line break (%0d%0a) and forge a log line otherwise
+            log.error("unhandled error on %r (%s), request %s", scope.get("path"), type(exc).__name__, request_id)
             if started:  # a streamed response is already under way: nothing more can be sent
                 return
             response = envelope("internal", language_of(Request(scope)), headers={"X-Request-Id": request_id})

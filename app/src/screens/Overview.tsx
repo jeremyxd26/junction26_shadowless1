@@ -9,6 +9,7 @@ import { Toast } from '../components/Toast.tsx'
 import { BASKETS } from '../lib/baskets.ts'
 import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
+import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 import { navigate } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
@@ -278,6 +279,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       {card && phase.kind === 'answered' && <ReviewAnswered ref={cardRef} card={card} basket={phase.basket} />}
 
       {baskets && <BasketsCard card={baskets} motion={motion ?? undefined} />}
+      {view.safe_to_save && <SafeToSaveCard card={view.safe_to_save} />}
 
       {view.insights.length > 0 && (
         <section aria-labelledby="insights-title" className="flex flex-col gap-3">

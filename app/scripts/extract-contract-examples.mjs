@@ -22,6 +22,10 @@ const NEEDED = [
   'label.response_wanted',
   'label.response_undo',
   'label.error',
+  'card.safe_to_save',
+  'card.safe_to_save_aleksi',
+  'card.safe_to_save_zero',
+  'card.safe_to_save_everyday',
 ]
 
 const text = readFileSync(contractPath, 'utf8')

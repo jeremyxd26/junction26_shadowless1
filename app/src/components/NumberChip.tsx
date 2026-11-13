@@ -3,7 +3,7 @@ import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
-type Size = 'inline' | 'lead' | 'md' | 'hero'
+type Size = 'inline' | 'lead' | 'md' | 'lg' | 'hero'
 type Tone = 'mint' | 'warning' | 'neutral' | 'hero'
 
 const sizes: Record<Size, string> = {
@@ -14,6 +14,8 @@ const sizes: Record<Size, string> = {
   // In the review question (20px bold text): 36px pill, hit area extended to 44px.
   lead: 'relative min-h-9 px-3 text-[20px] leading-7 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
+  // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
+  lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
   hero: 'min-h-16 px-5 text-[40px] leading-[44px] tracking-tight',
 }
 

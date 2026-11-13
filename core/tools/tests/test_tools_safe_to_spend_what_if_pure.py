@@ -146,3 +146,36 @@ def test_metric_runner_refuses_reserved_settings(name):
     """The customer range and as_of come only from run()'s arguments, never from a caller's settings."""
     with pytest.raises(ValueError, match="reserved"):
         metric_sql.run(None, "03_safe_to_spend.sql", "CUST00001", date(2026, 9, 30), {name: "CUST00000"})
+
+
+# ---- hero card subtitle: the week's dates (#113) ------------------------------------------------------
+
+def _hero_card(start: date, end: date, language: str):
+    from core.tools import config
+    from core.tools.models import Number, Period, Unit
+    from core.tools.safe_to_spend import SafeToSpendData, _card
+
+    week = Period(start=start, end=end, label=config.label(config.SAFE_TO_SPEND_TEXT["next_7_days"], language))
+
+    def n(value: str) -> Number:
+        return Number(value=float(value), unit=Unit.EUR, period=week, method="safe_to_spend.safe_to_spend_7d_eur@1",
+                      evidence_ref="ev_0123456789ab", label="Safe to spend", display=f"€{value}")
+
+    data = SafeToSpendData(period=week, safe_to_spend=n("180.26"), free_until_payday=n("900.00"),
+                           balance_limit=n("400.00"), budget_limit=n("180.26"), binding_limit="budget",
+                           components=[], status="ok", next_payday=date(2026, 10, 15), salary_status="upcoming")
+    return _card(data, language)
+
+
+@pytest.mark.parametrize("start, end, language, subtitle", [
+    (date(2026, 10, 1), date(2026, 10, 7), "en", "1–7 Oct 2026"),                 # DEMO_TODAY 2026-09-30
+    (date(2026, 10, 1), date(2026, 10, 7), "fi", "1.–7.10.2026"),
+    (date(2026, 9, 29), date(2026, 10, 5), "en", "29 Sep – 5 Oct 2026"),           # across a month boundary
+    (date(2026, 9, 29), date(2026, 10, 5), "fi", "29.9.–5.10.2026"),
+    (date(2026, 12, 29), date(2027, 1, 4), "en", "29 Dec 2026 – 4 Jan 2027"),      # across a year boundary
+])
+def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
+    card = _hero_card(start, end, language)
+    assert card.subtitle == subtitle
+    assert card.primary.period.label == ("Seuraavat 7 päivää" if language == "fi" else "Next 7 days")
+    assert card.primary.method == "safe_to_spend.safe_to_spend_7d_eur@1" and card.primary.value == 180.26
