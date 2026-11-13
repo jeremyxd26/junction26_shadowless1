@@ -23,6 +23,7 @@ import type {
   ReviewCard,
 } from '../types.ts'
 import contract from './contract-examples.json'
+import { mockAsk } from './mockAsk.ts'
 
 const examples = contract.examples as unknown as {
   'personas.response': PersonasResponse
@@ -205,5 +206,6 @@ export function createMockClient(): ApiClient {
         // The contract shows only the first page of rows; any next page is empty and the last.
         return cursor ? { ...evidence, rows: [], next_cursor: null } : evidence
       }),
+    ask: mockAsk,
   }
 }

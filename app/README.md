@@ -14,6 +14,7 @@ npm run dev          # http://localhost:5173, mock data
 npm run build        # static bundle in dist/
 npm run lint
 npm run typecheck
+npm run test         # unit tests (vitest): the /api/ask stream parser on the contract's examples
 ```
 
 ### Mock and live mode
@@ -37,6 +38,7 @@ What mock mode has, and what it does not invent:
 - Personas: the contract's list, plus Sanna (CUST00860, the demo start) from `core/config/personas.yaml`.
 - Overviews: Sanna (pending review) and Aino (CUST00042). Other personas get the contract's `customer_not_found` error.
 - Evidence: the two contract examples; the safe-to-spend parts and the review purchase, built from the overview's own data. Other numbers show their method with a note that the contract has no example for them yet.
+- Chat (`POST /api/ask`): the contract's examples as a `text/event-stream` byte stream with realistic delays, read by the same parser as live mode. The contract's refusal question (or any question about stocks or investing), its clarify question ("How much did I spend?") and its Finnish question get their examples, turned into stream events; every other question gets the full stream example. `?mock=error` plays the error-stream example, `?mock=fallback` a fallback answer (the contract has no fallback example: it is the full stream's card with the contract's template line "Here is what I found for September." and the `llm_unavailable` warning), and `?mock=slow` makes every delay four times longer. Unknown personas get `customer_not_found` before the stream.
 - The examples are English only. With `?lang=fi`, the app's own texts and the review question switch to Finnish; the API texts stay as served.
 
 ## URLs
@@ -44,7 +46,8 @@ What mock mode has, and what it does not invent:
 | URL | Shows |
 |---|---|
 | `/` | Overview |
-| `/chat?q=<question>` | Chat (placeholder until the stream issue) |
+| `/chat` | Chat with Sentti on the `/api/ask` stream |
+| `/chat?q=<question>` | Chat that sends `<question>` at once (the overview's question chips), then drops `q` from the URL |
 | `?evidence=<ref>` | The evidence sheet over the current screen. Back closes it. |
 | `?persona=<customer_id>` | Demo persona. A long press on the header opens the persona and language switch. |
 | `?lang=en` or `?lang=fi` | Language |
