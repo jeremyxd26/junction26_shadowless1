@@ -25,6 +25,7 @@ def _enum(name: str, values) -> type[Enum]:
 Category = _enum("Category", config.CATEGORIES)
 Basket = _enum("Basket", config.BASKETS)
 MccGroup = _enum("MccGroup", config.MCC_GROUPS)
+PeerMetric = _enum("PeerMetric", config.PEER_METRICS)  # 06_peer_benchmark.sql metric_list; no Health (R9)
 
 
 class PeriodPreset(str, Enum):

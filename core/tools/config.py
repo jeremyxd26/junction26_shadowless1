@@ -76,6 +76,8 @@ METHODS = {
     "typical_month": "recurring.typical_month_eur@1",
     "bill_due": "safe_to_spend.bill_due_eur@1",
     "bills_due": "safe_to_spend.bills_due_eur@1",
+    # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
+    "peer_you": "peer_benchmark.you_month_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -249,6 +251,227 @@ WHAT_IF_FILE = "04_what_if.sql"
 USER_INPUT_METHOD = "user_input@1"
 # The only metric files a stored `metric` evidence spec may name; resolve() refuses any other file.
 METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
+
+# ---- get_spender_profile and get_peer_benchmark (#69) ----------------------------------------------
+# Numbers are read from core/metrics/05_spender_profile.sql and 06_peer_benchmark.sql for one customer
+# (core/tools/metric_sql.py). Method ids are `<metric>.<output column>@1` (agent-core.md section 6.2).
+# Labels, descriptions and notes carry no digits except the fixed "at least 20" of the peer estimate
+# text (contracts/api.md card.peer): every number is a Number object.
+
+PROFILE_FILE = "05_spender_profile.sql"
+PEER_FILE = "06_peer_benchmark.sql"
+PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
+
+PROFILE_KEYS = ("not_enough_income_data", "stretched", "big_ticket", "everyday_heavy", "saver", "steady")
+PROFILE_TRAITS = ("salary_moved_elsewhere", "went_below_zero", "regular_investor", "weekend_spender",
+                  "frequent_small_purchases")
+
+# Label thresholds of 05 (metrics.md section 5): fixed constants, in percent or purchases a month.
+PROFILE_THRESHOLDS = {
+    "big_ticket_one_off_share": 5,      # one_off_share >= 5
+    "everyday_heavy_share": 30,         # everyday share >= 30
+    "saver_keep_rate": 20,              # keep_rate >= 20 (stretched: keep_rate < 0)
+    "weekend_spender_share": 45,        # trait: everyday weekend share >= 45
+    "frequent_purchases_month": 12,     # trait: everyday purchases a month >= 12
+}
+
+# Profile features: (key, output column of 05, unit value). Keys are the feature names of metrics.md
+# section 5 where it names one (keep_rate, net_income, spend, saving, one_off_share), else the column.
+PROFILE_FEATURES = (
+    ("keep_rate", "keep_rate_pct", "percent"),
+    ("net_income", "net_income_month_eur", "eur_per_month"),
+    ("spend", "spend_month_eur", "eur_per_month"),
+    ("saving", "saving_month_eur", "eur_per_month"),
+    ("regular_share_pct", "regular_share_pct", "percent"),
+    ("unexpected_share_pct", "unexpected_share_pct", "percent"),
+    ("everyday_share_pct", "everyday_share_pct", "percent"),
+    ("one_off_share", "one_off_share_pct", "percent"),
+    ("everyday_weekend_pct", "everyday_weekend_pct", "percent"),
+    ("everyday_avg_ticket_eur", "everyday_avg_ticket_eur", "eur"),
+    ("everyday_tx_month", "everyday_tx_month", "count"),
+    ("months_out_over_in", "months_out_over_in", "months"),
+    ("n_tx_below_zero", "n_tx_below_zero", "count"),
+)
+# The features the profile card shows (the features that decided the label come first).
+PROFILE_CARD_FEATURES = ("keep_rate", "everyday_share_pct", "one_off_share", "everyday_weekend_pct",
+                         "everyday_tx_month")
+# Which feature each trait rests on (salary_moved_elsewhere rests on the sweep series, not a feature).
+TRAIT_FEATURES = {
+    "went_below_zero": "n_tx_below_zero",
+    "regular_investor": "saving",
+    "weekend_spender": "everyday_weekend_pct",
+    "frequent_small_purchases": "everyday_tx_month",
+}
+
+PROFILE_LABELS: dict[str, tuple[str, str]] = {   # contracts/api.md section 5 where it has one
+    "not_enough_income_data": ("Not enough income data", "Liian vähän tulotietoja"),
+    "stretched": ("Stretched", "Tiukilla"),
+    "big_ticket": ("Big ticket", "Isot hankinnat"),
+    "everyday_heavy": ("Everyday spender", "Arjen kuluttaja"),
+    "saver": ("Saver", "Säästäjä"),
+    "steady": ("Steady", "Tasainen"),
+}
+PROFILE_DESCRIPTIONS: dict[str, tuple[str, str]] = {
+    "not_enough_income_data": (
+        "This account shows too little income to say what kind of spender you are.",
+        "Tilillä näkyy liian vähän tuloja, jotta kulutustyyliäsi voisi arvioida.",
+    ),
+    "stretched": (
+        "Over your last six full months you spent more than came in.",
+        "Kuuden viimeisen täyden kuukauden aikana kulutit enemmän kuin sait tuloja.",
+    ),
+    "big_ticket": (
+        "Large one-off purchases make up a notable part of your spending.",
+        "Isot kertaostokset ovat merkittävä osa kulutustasi.",
+    ),
+    "everyday_heavy": (
+        "A large share of your money goes to everyday spending, such as eating out and entertainment.",
+        "Suuri osa rahoistasi menee arjen kulutukseen, kuten ulkona syömiseen ja viihteeseen.",
+    ),
+    "saver": (
+        "You keep a good part of what comes in.",
+        "Sinulle jää hyvä osa tuloistasi.",
+    ),
+    "steady": (
+        "Your spending stays within your income, without a heavy everyday share or large one-off purchases.",
+        "Kulutuksesi pysyy tulojesi rajoissa ilman suurta arjen kulutuksen osuutta tai isoja kertaostoksia.",
+    ),
+}
+TRAIT_LABELS: dict[str, tuple[str, str]] = {
+    "salary_moved_elsewhere": ("Salary moved elsewhere", "Palkka siirtyy muualle"),
+    "went_below_zero": ("Went below zero", "Saldo meni miinukselle"),
+    "regular_investor": ("Regular investor", "Säännöllinen sijoittaja"),
+    "weekend_spender": ("Weekend spender", "Viikonloppukuluttaja"),
+    "frequent_small_purchases": ("Many small purchases", "Paljon pieniä ostoksia"),
+}
+TRAIT_NOTES: dict[str, tuple[str, str]] = {
+    "salary_moved_elsewhere": (
+        "Most of your salary moves to another account each month, so this account shows only part of your money.",
+        "Suurin osa palkastasi siirtyy joka kuukausi toiselle tilille, joten tämä tili näyttää vain osan rahoistasi.",
+    ),
+    "went_below_zero": (
+        "Your balance went below zero at least once.",
+        "Saldosi meni ainakin kerran miinukselle.",
+    ),
+    "regular_investor": (
+        "You put money into investments.",
+        "Sijoitat rahaa.",
+    ),
+    "weekend_spender": (
+        "Much of your everyday spending happens at weekends.",
+        "Suuri osa arjen kulutuksestasi tapahtuu viikonloppuisin.",
+    ),
+    "frequent_small_purchases": (
+        "You make many small everyday purchases each month.",
+        "Teet joka kuukausi paljon pieniä arjen ostoksia.",
+    ),
+}
+PROFILE_FEATURE_LABELS: dict[str, tuple[str, str]] = {
+    "keep_rate": ("Kept from income", "Tuloista jäi"),
+    "net_income": ("Income a month", "Tulot kuukaudessa"),
+    "spend": ("Spending a month", "Kulutus kuukaudessa"),
+    "saving": ("Investments a month", "Sijoitukset kuukaudessa"),
+    "regular_share_pct": ("Regular essentials, share of spending", "Säännölliset välttämättömät, osuus kulutuksesta"),
+    "unexpected_share_pct": ("Unexpected necessities, share of spending",
+                             "Odottamattomat välttämättömät, osuus kulutuksesta"),
+    "everyday_share_pct": ("Everyday spending, share of spending", "Arjen kulutus, osuus kulutuksesta"),
+    "one_off_share": ("One-off purchases, share of spending", "Kertaostokset, osuus kulutuksesta"),
+    "everyday_weekend_pct": ("Everyday spending at weekends", "Arjen kulutus viikonloppuisin"),
+    "everyday_avg_ticket_eur": ("Average everyday purchase", "Keskimääräinen arjen ostos"),
+    "everyday_tx_month": ("Everyday purchases a month", "Arjen ostoksia kuukaudessa"),
+    "months_out_over_in": ("Months when more went out than came in", "Kuukaudet, joina menot ylittivät tulot"),
+    "n_tx_below_zero": ("Payments that took the balance below zero", "Maksut, jotka veivät saldon miinukselle"),
+}
+PROFILE_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("What kind of spender are you?", "Millainen kuluttaja olet?"),
+    "subtitle": ("Based on {label}", "Perustuu jaksoon {label}"),
+    "action_label": ("Compare with people like me", "Vertaa minua kaltaisiini"),
+    "action_prompt": ("How does my spending compare with people like me?",
+                      "Miten kulutukseni vertautuu kaltaisiini ihmisiin?"),
+    "note_no_income": (
+        "This account shows too little income for a verdict, so no keep rate is computed.",
+        "Tilillä näkyy liian vähän tuloja arvioon, joten tuloista jäävää osuutta ei lasketa.",
+    ),
+    "note_sweep": (
+        "Most of the salary moves to another account each month, so this account shows only part of the spending.",
+        "Suurin osa palkasta siirtyy joka kuukausi toiselle tilille, joten tämä tili näyttää vain osan kulutuksesta.",
+    ),
+}
+
+# Peer metrics: exactly the metric_list of 06 (Health is never benchmarked, R9).
+PEER_METRICS: tuple[str, ...] = (
+    "spend_total", "regular_essentials", "unexpected_necessities", "everyday_spending",
+    "Groceries", "Restaurants", "Transportation", "Entertainment", "Lifestyle", "Travel", "Home & Tech",
+    "Utilities", "Housing",
+)
+PEER_SENSITIVE = frozenset({"Health"})   # never benchmarked or singled out (R9)
+PEER_LEVELS = ("age_band+area3", "age_band+city", "age_band", "all")
+PEER_STATS = (  # (key, output column of 06, unit value): group statistics, evidence kind peer_aggregate
+    ("peer_median", "peer_median_month_eur", "eur_per_month"),
+    ("peer_p25", "peer_p25_month_eur", "eur_per_month"),
+    ("peer_p75", "peer_p75_month_eur", "eur_per_month"),
+    ("percentile", "percentile", "percentile"),
+    ("vs_median", "vs_median_pct", "percent"),
+    ("size", "peer_n", "count"),
+)
+CITY_LABELS: dict[str, tuple[str, str]] = {   # metrics.md section 6: first two digits of the postal code
+    "00": ("Helsinki", "Helsinki"),
+    "01": ("Vantaa", "Vantaa"),
+    "02": ("Espoo and Kauniainen", "Espoo ja Kauniainen"),
+}
+PEER_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("{what}: you and people like you", "{what}: sinä ja kaltaisesi"),
+    "subtitle": ("Monthly average, {label}", "Kuukausikeskiarvo, {label}"),
+    "spend_total": ("Total spending", "Kulutus yhteensä"),
+    "you": ("You", "Sinä"),
+    "peer_median": ("Typical for your group", "Tyypillinen ryhmässäsi"),
+    "peer_p25": ("Lower quarter", "Alaneljännes"),
+    "peer_p75": ("Upper quarter", "Yläneljännes"),
+    "percentile": ("Your position", "Sijaintisi"),
+    "vs_median": ("Compared with typical", "Verrattuna tyypilliseen"),
+    "size": ("Other people in the group", "Muita ryhmässä"),
+    "group_age_band+area3": ("Age {age}, postal area {area}", "Ikä {age}, postinumeroalue {area}"),
+    "group_age_band+city": ("Age {age}, {city}", "Ikä {age}, {city}"),
+    "group_city_other": ("postal codes starting {code}", "postinumerot alkavat {code}"),
+    "group_age_band": ("Age {age}", "Ikä {age}"),
+    "group_all": ("All customers", "Kaikki asiakkaat"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_age_band+area3": (
+        "Compared with at least 20 other customers of your age band and postal area. "
+        "Only group statistics are shown.",
+        "Verrattu vähintään 20 muuhun saman ikäryhmän ja postinumeroalueen asiakkaaseen. "
+        "Vain ryhmän tunnusluvut näytetään.",
+    ),
+    "estimate_age_band+city": (
+        "Compared with at least 20 other customers of your age band in your city. Only group statistics are shown.",
+        "Verrattu vähintään 20 muuhun saman ikäryhmän asiakkaaseen kaupungissasi. Vain ryhmän tunnusluvut näytetään.",
+    ),
+    "estimate_age_band": (
+        "Compared with at least 20 other customers of your age band. Only group statistics are shown.",
+        "Verrattu vähintään 20 muuhun saman ikäryhmän asiakkaaseen. Vain ryhmän tunnusluvut näytetään.",
+    ),
+    "estimate_all": (
+        "Compared with at least 20 other customers. Only group statistics are shown.",
+        "Verrattu vähintään 20 muuhun asiakkaaseen. Vain ryhmän tunnusluvut näytetään.",
+    ),
+    "note": (
+        "Only group statistics are shown, never another customer's transactions.",
+        "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
+    ),
+    "more": ("{pct} more", "{pct} enemmän"),
+    "less": ("{pct} less", "{pct} vähemmän"),
+    "reason_not_comparable": (
+        "Most of the salary moves to another account each month, so this account is not compared with others.",
+        "Suurin osa palkasta siirtyy joka kuukausi toiselle tilille, joten tätä tiliä ei verrata muihin.",
+    ),
+    "reason_group_too_small": (
+        "There are too few similar customers to compare with, so no comparison is shown.",
+        "Samankaltaisia asiakkaita on liian vähän vertailuun, joten vertailua ei näytetä.",
+    ),
+    "action_label": ("How could I spend less here?", "Miten voisin kuluttaa tähän vähemmän?"),
+    "action_prompt": ("How could I spend less on {what}?", "Miten voisin kuluttaa vähemmän: {what}?"),
+    "action_prompt_total": ("How could I save more?", "Miten voisin säästää enemmän?"),
+}
 
 SAFE_TO_SPEND_NUMBERS = (  # (key, output column) read from 03_safe_to_spend.sql as metric numbers
     ("free_until_payday", "free_until_payday_eur"),
