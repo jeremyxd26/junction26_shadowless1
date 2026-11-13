@@ -1,0 +1,427 @@
+"""A cache of tool results, so a repeated question or overview does not wait for the database.
+
+Tool results are deterministic for (customer, tool, validated arguments, as_of, language, label state)
+and the code that computes them (agent-core.md section 6.1). The key holds all of these:
+- the label state is `labels_key`: a hash of the customer's basket labels (core/tools/labels.py). It is
+  read once per request and kept on the ToolContext, so every tool call of the request shares it and
+  a label write changes the key at once;
+- the code version is a hash of core/tools/*.py and core/metrics/*.sql, so a deploy never serves a
+  result of older code.
+
+Layers: an LRU in memory (bounded by entries) and, in mode `disk`, a small sqlite file under var/cache
+that the warm-up command (core/tools/warmup.py) fills and the service reads. Setting `TOOL_CACHE` is
+`off`, `memory` or `disk` (default); `TOOL_CACHE_MAX_ENTRIES` and `TOOL_CACHE_DIR` tune it. Settings
+come from the environment, else from the repository's .env.
+
+Number ids (n1, n2, ...) belong to one answer's registry, so a cached result is never handed out with
+the ids of the call that computed it. A miss runs the tool against a private registry and records the
+numbers it registered, in order. Every use, hit or miss, registers those numbers in the answer's
+registry in the same order and rewrites the ids in a copy of the result. The result is therefore
+byte-identical to a fresh call in the same registry state, evidence refs included. The evidence specs
+behind those refs were written by the miss into coach_evidence, the same table a fresh call writes to.
+
+Safety: the customer is part of the key and is checked again on every read, so an entry of another
+customer is never returned. Only result classes of core.tools are restored from disk (JSON, no pickle).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib
+import json
+import logging
+import os
+import re
+import sqlite3
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+from core.tools import labels
+from core.tools.context import NumberRegistry, ToolContext
+from core.tools.models import Card, Number, ToolResult
+
+log = logging.getLogger(__name__)
+
+ROOT = Path(__file__).resolve().parents[2]
+MODES = ("off", "memory", "disk")
+DEFAULT_MODE = "disk"
+DEFAULT_MAX_ENTRIES = 512
+DEFAULT_MAX_DISK_ENTRIES = 5000
+DEFAULT_DIR = ROOT / "var" / "cache"
+DB_FILE = "tools.sqlite3"
+SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"))   # not recursive: tests are not code
+RESULT_MODULE_PREFIX = "core.tools."
+
+Connector = Callable[[], AbstractContextManager[Any]]
+
+
+# ---- settings and keys ------------------------------------------------------------------------------
+
+def setting(name: str, environ: dict[str, str] | None = None) -> str | None:
+    """A setting from the environment, else from the repository's .env (like core/tools/db.py)."""
+    env = os.environ if environ is None else environ
+    value = env.get(name)
+    if not value and environ is None:
+        env_file = ROOT / ".env"
+        if env_file.exists():
+            match = re.search(rf"^{re.escape(name)}=(.*)$", env_file.read_text(encoding="utf-8"), re.M)
+            value = match.group(1).strip().strip("\"'") if match else None
+    return value or None
+
+
+@lru_cache(maxsize=1)
+def code_version() -> str:
+    """Hash of the code that computes tool results; line endings normalised, so a checkout's
+    autocrlf does not matter."""
+    h = hashlib.sha256()
+    for folder, pattern in SOURCES:
+        for path in sorted((ROOT / folder).glob(pattern)):
+            h.update(path.relative_to(ROOT).as_posix().encode())
+            h.update(b"\0")
+            h.update(path.read_bytes().replace(b"\r\n", b"\n"))
+            h.update(b"\0")
+    return h.hexdigest()[:16]
+
+
+def label_set(basket_labels: dict[int, str]) -> list[list[Any]]:
+    """Sorted [tx_id, basket] pairs: labels.label_set when it exists (#68), else the same form here."""
+    own = getattr(labels, "label_set", None)
+    if own is not None:
+        return own(basket_labels)
+    return sorted([int(tx_id), basket] for tx_id, basket in basket_labels.items())
+
+
+def labels_key_of(basket_labels: dict[int, str]) -> str:
+    text = json.dumps(label_set(basket_labels), separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def args_json(args_model: type[BaseModel], args: Any) -> tuple[BaseModel, str]:
+    """Validate the arguments (invalid ones raise before anything runs) and give their canonical JSON."""
+    parsed = args if isinstance(args, args_model) else args_model.model_validate({} if args is None else args)
+    return parsed, json.dumps(parsed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+
+
+# ---- entries --------------------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Entry:
+    """A result computed against a private number registry, and the numbers it registered, in order."""
+
+    customer_id: str
+    tool: str
+    result: ToolResult
+    registered: tuple[tuple[str, Number], ...]
+
+
+@dataclass(frozen=True)
+class Prepared:
+    entry: Entry
+    hit: bool          # served from memory or disk
+    source: str        # "memory", "disk", "tool" or "off"
+    seconds: float
+
+
+def _remap(obj: Any, ids: dict[str, str], seen: set[int] | None = None) -> None:
+    """Rewrite number ids in place: Number objects, and number dicts (id + unit) in cards and views.
+
+    A copied result can hold the same object in several places (data.total is also card.primary), so
+    each object is rewritten once: an old id and a new id can look alike (n6 -> n9, n9 -> n12).
+    """
+    seen = set() if seen is None else seen
+    if isinstance(obj, (BaseModel, dict, list)):
+        if id(obj) in seen:
+            return
+        seen.add(id(obj))
+    if isinstance(obj, Number):
+        if obj.id is not None:
+            obj.id = ids[obj.id]   # every id of the result came from the private registry
+        return
+    if isinstance(obj, BaseModel):
+        for name in type(obj).model_fields:
+            _remap(getattr(obj, name), ids, seen)
+        for value in (obj.__pydantic_extra__ or {}).values():
+            _remap(value, ids, seen)
+    elif isinstance(obj, dict):
+        if isinstance(obj.get("id"), str) and "unit" in obj and obj["id"] in ids:
+            obj["id"] = ids[obj["id"]]
+        for value in obj.values():
+            _remap(value, ids, seen)
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            _remap(value, ids, seen)
+
+
+def apply(entry: Entry, ctx: ToolContext) -> ToolResult:
+    """The entry's result for this answer: its numbers registered in ctx.numbers, ids rewritten."""
+    if entry.customer_id != ctx.customer_id:
+        raise PermissionError("a cached result of another customer")
+    ids = {old: ctx.numbers.register(n.model_copy(update={"id": None})).id for old, n in entry.registered}
+    result = entry.result.model_copy(deep=True)
+    _remap(result, ids)
+    return result
+
+
+def _dump(entry: Entry) -> str | None:
+    """JSON for the disk layer, or None when the result class is not a core.tools model."""
+    data = entry.result.data
+    cls = type(data)
+    if not isinstance(data, BaseModel) or not cls.__module__.startswith(RESULT_MODULE_PREFIX) or "." in cls.__qualname__:
+        return None
+    return json.dumps({
+        "customer_id": entry.customer_id,
+        "tool": entry.tool,
+        "data_type": f"{cls.__module__}:{cls.__qualname__}",
+        "result": entry.result.model_dump(mode="json"),
+        "registered": [[old, n.model_dump(mode="json")] for old, n in entry.registered],
+    }, ensure_ascii=False, separators=(",", ":"))
+
+
+def _load(text: str) -> Entry:
+    p = json.loads(text)
+    module, _, name = p["data_type"].partition(":")
+    if not module.startswith(RESULT_MODULE_PREFIX):
+        raise ValueError("cached result class outside core.tools")
+    data_cls = getattr(importlib.import_module(module), name)
+    r = p["result"]
+    result = ToolResult(tool=r["tool"], data=data_cls.model_validate(r["data"]),
+                        card=Card.model_validate(r["card"]) if r["card"] is not None else None,
+                        notes=r["notes"], evidence=r["evidence"], model_view=r["model_view"])
+    registered = tuple((old, Number.model_validate(n)) for old, n in p["registered"])
+    return Entry(customer_id=p["customer_id"], tool=p["tool"], result=result, registered=registered)
+
+
+# ---- the cache ------------------------------------------------------------------------------------------
+
+@dataclass
+class Stats:
+    hits: int = 0
+    misses: int = 0
+    disk_hits: int = 0
+
+
+@dataclass
+class ToolCache:
+    mode: str = DEFAULT_MODE
+    max_entries: int = DEFAULT_MAX_ENTRIES
+    directory: Path = DEFAULT_DIR
+    max_disk_entries: int = DEFAULT_MAX_DISK_ENTRIES
+    stats: Stats = field(default_factory=Stats)
+    _memory: OrderedDict[str, Entry] = field(default_factory=OrderedDict, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _disk_ready: bool = field(default=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.mode not in MODES:
+            raise ValueError(f"TOOL_CACHE must be one of {MODES}")
+        if self.max_entries < 1:
+            raise ValueError("TOOL_CACHE_MAX_ENTRIES must be at least 1")
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> ToolCache:
+        mode = (setting("TOOL_CACHE", environ) or DEFAULT_MODE).strip().lower()
+        if mode not in MODES:   # never fail an import over a typo; serve fresh results instead
+            log.error("TOOL_CACHE must be one of %s; the tool cache is off", "/".join(MODES))
+            mode = "off"
+        max_entries = int(setting("TOOL_CACHE_MAX_ENTRIES", environ) or DEFAULT_MAX_ENTRIES)
+        directory = setting("TOOL_CACHE_DIR", environ)
+        path = Path(directory) if directory else DEFAULT_DIR
+        if not path.is_absolute():
+            path = ROOT / path
+        return cls(mode=mode, max_entries=max_entries, directory=path)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode != "off"
+
+    # ---- keys ----
+
+    @staticmethod
+    def labels_key(conn: Any, customer_id: str, as_of) -> str:
+        """Read the customer's label state (one small query once #68 lands) and hash it."""
+        return labels_key_of(labels.basket_labels(conn, customer_id, as_of))
+
+    def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
+        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`)."""
+        if ctx.labels_key is None:
+            with _connected(ctx, connection):
+                ctx.labels_key = self.labels_key(ctx.conn, ctx.customer_id, ctx.as_of)
+        return ctx.labels_key
+
+    @staticmethod
+    def key(ctx: ToolContext, tool: str, canonical_args: str) -> str:
+        parts = [code_version(), ctx.customer_id, tool, canonical_args, ctx.as_of.isoformat(), ctx.language,
+                 ctx.labels_key]
+        return hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    # ---- calls ----
+
+    def run(self, tool: str, args_model: type[BaseModel], fn: Callable[[ToolContext, Any], ToolResult],
+            ctx: ToolContext, args: Any = None, connection: Connector | None = None) -> ToolResult:
+        """Call a tool through the cache. With the cache off this is exactly `fn(ctx, args)`."""
+        if not self.enabled:
+            parsed, _ = args_json(args_model, args)
+            with _connected(ctx, connection):
+                return fn(ctx, parsed)
+        return apply(self.prepare(tool, args_model, fn, ctx, args, connection).entry, ctx)
+
+    def prepare(self, tool: str, args_model: type[BaseModel], fn: Callable[[ToolContext, Any], ToolResult],
+                ctx: ToolContext, args: Any = None, connection: Connector | None = None) -> Prepared:
+        """Find or compute the entry; thread-safe, so independent calls can be prepared in parallel and
+        then applied in a fixed order. A hit needs no connection once ctx.labels_key is known."""
+        t0 = time.perf_counter()
+        parsed, canonical = args_json(args_model, args)
+        private = replace(ctx, numbers=NumberRegistry())
+        if not self.enabled:
+            with _connected(private, connection):
+                result = fn(private, parsed)
+            entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
+            return Prepared(entry, False, "off", time.perf_counter() - t0)
+
+        self.ensure_labels_key(ctx, connection)
+        private.labels_key = ctx.labels_key
+        key = self.key(ctx, tool, canonical)
+        found = self.get(key, ctx.customer_id)
+        if found is not None:
+            entry, source = found
+            return Prepared(entry, True, source, time.perf_counter() - t0)
+
+        with _connected(private, connection):
+            result = fn(private, parsed)
+        if ctx._history is None and private._history is not None:
+            ctx._history = private._history   # the transactions read by this call serve the next one
+        entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
+        self.put(key, entry)
+        with self._lock:
+            self.stats.misses += 1
+        return Prepared(entry, False, "tool", time.perf_counter() - t0)
+
+    # ---- storage ----
+
+    def get(self, key: str, customer_id: str) -> tuple[Entry, str] | None:
+        with self._lock:
+            entry = self._memory.get(key)
+            if entry is not None:
+                if entry.customer_id != customer_id:   # never another customer's entry
+                    log.error("tool cache: key of one customer held an entry of another; dropped")
+                    del self._memory[key]
+                    return None
+                self._memory.move_to_end(key)
+                self.stats.hits += 1
+                return entry, "memory"
+        if self.mode != "disk":
+            return None
+        entry = self._disk_get(key, customer_id)
+        if entry is None:
+            return None
+        with self._lock:
+            self._remember(key, entry)
+            self.stats.hits += 1
+            self.stats.disk_hits += 1
+        return entry, "disk"
+
+    def put(self, key: str, entry: Entry) -> None:
+        with self._lock:
+            self._remember(key, entry)
+        if self.mode == "disk":
+            self._disk_put(key, entry)
+
+    def _remember(self, key: str, entry: Entry) -> None:
+        self._memory[key] = entry
+        self._memory.move_to_end(key)
+        while len(self._memory) > self.max_entries:
+            self._memory.popitem(last=False)
+
+    def invalidate_customer(self, customer_id: str) -> int:
+        """Drop every entry of one customer (called after a label write). Returns the number dropped."""
+        with self._lock:
+            keys = [k for k, e in self._memory.items() if e.customer_id == customer_id]
+            for k in keys:
+                del self._memory[k]
+        dropped = len(keys)
+        if self.mode == "disk" and self._db_path().exists():
+            with self._db() as db:
+                dropped += db.execute("DELETE FROM tool_cache WHERE customer_id = ?", (customer_id,)).rowcount
+        return dropped
+
+    def clear(self) -> None:
+        with self._lock:
+            self._memory.clear()
+        if self.mode == "disk" and self._db_path().exists():
+            with self._db() as db:
+                db.execute("DELETE FROM tool_cache")
+
+    def __len__(self) -> int:
+        return len(self._memory)
+
+    # ---- disk layer (sqlite, JSON payloads) ----
+
+    def _db_path(self) -> Path:
+        return self.directory / DB_FILE
+
+    @contextmanager
+    def _db(self) -> Iterator[sqlite3.Connection]:
+        if not self._disk_ready:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(self._db_path(), timeout=5)
+        try:
+            if not self._disk_ready:
+                db.execute("PRAGMA journal_mode=WAL")   # the service reads while the warm-up writes
+                db.execute("CREATE TABLE IF NOT EXISTS tool_cache (key TEXT PRIMARY KEY, customer_id TEXT NOT NULL, "
+                           "tool TEXT NOT NULL, created_at REAL NOT NULL, payload TEXT NOT NULL)")
+                db.execute("CREATE INDEX IF NOT EXISTS tool_cache_customer ON tool_cache (customer_id)")
+                self._disk_ready = True
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def _disk_get(self, key: str, customer_id: str) -> Entry | None:
+        if not self._db_path().exists():
+            return None
+        try:
+            with self._db() as db:
+                row = db.execute("SELECT customer_id, payload FROM tool_cache WHERE key = ?", (key,)).fetchone()
+            if row is None or row[0] != customer_id:
+                return None
+            entry = _load(row[1])
+        except Exception as exc:  # noqa: BLE001 - a broken cache file must never break an answer
+            log.warning("tool cache: disk read failed (%s); computing instead", type(exc).__name__)
+            return None
+        return entry if entry.customer_id == customer_id else None
+
+    def _disk_put(self, key: str, entry: Entry) -> None:
+        payload = _dump(entry)
+        if payload is None:
+            return
+        try:
+            with self._db() as db:
+                db.execute("INSERT OR REPLACE INTO tool_cache VALUES (?, ?, ?, ?, ?)",
+                           (key, entry.customer_id, entry.tool, time.time(), payload))
+                db.execute("DELETE FROM tool_cache WHERE key IN (SELECT key FROM tool_cache "
+                           "ORDER BY created_at DESC LIMIT -1 OFFSET ?)", (self.max_disk_entries,))
+        except Exception as exc:  # noqa: BLE001 - the memory layer still holds the entry
+            log.warning("tool cache: disk write failed (%s)", type(exc).__name__)
+
+
+@contextmanager
+def _connected(ctx: ToolContext, connection: Connector | None) -> Iterator[ToolContext]:
+    """Give ctx a connection for a tool run: its own, or one from `connection` for the run only."""
+    if connection is None:
+        yield ctx
+        return
+    with connection() as conn:
+        ctx.conn = conn
+        yield ctx
+
+
+TOOL_CACHE = ToolCache.from_env()
