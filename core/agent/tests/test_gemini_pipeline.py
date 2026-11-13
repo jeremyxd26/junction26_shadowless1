@@ -215,10 +215,13 @@ def test_an_unrecognised_question_goes_to_the_gemini_planner():
     assert len(transport.plan.requests) == 1 and len(transport.compose.requests) == 1
 
 
-def test_the_interim_signal_is_exactly_the_default_clarifying_question():
+def test_only_an_unmatched_question_is_not_recognised():
     unknown = RuleModel().plan(PlanInput(question="Tell me something", language="fi", as_of="2026-09-30",
                                          tools=[{"name": "get_spending"}]))
     assert not_recognised(unknown)
     spending = RuleModel().plan(PlanInput(question=QUESTION, language="en", as_of="2026-09-30",
                                           tools=[{"name": "get_spending"}]))
     assert not not_recognised(spending)
+    refusal = RuleModel().plan(PlanInput(question="Will the bank approve my mortgage?", language="en",
+                                         as_of="2026-09-30", tools=[{"name": "get_spending"}]))
+    assert not not_recognised(refusal)

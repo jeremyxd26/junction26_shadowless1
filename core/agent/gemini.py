@@ -29,7 +29,6 @@ from typing import Any
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.agent import template
 from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport
 from core.agent.model import (
     ComposeInput, ComposeResult, FunctionCall, FunctionResponse, ModelError, PlanInput, PlanResult, Usage,
@@ -275,12 +274,9 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
 # ---- rules first --------------------------------------------------------------------------------------
 
 def not_recognised(result: PlanResult) -> bool:
-    """The rule planner did not recognise the question: its only call is the default clarifying question.
-    (Interim test until the rule planner marks this case itself; then only this function changes.)"""
-    if len(result.calls) != 1 or result.calls[0].name != "ask_clarifying_question":
-        return False
-    question = result.calls[0].args.get("question")
-    return question in template.CLARIFY["question"]
+    """The rule planner did not recognise the question (no rule matched; its calls are the default
+    clarifying question). Declines, "not yet" answers and data calls are recognised."""
+    return not result.recognised
 
 
 class RulesFirstModel:
