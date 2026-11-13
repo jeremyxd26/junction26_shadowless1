@@ -1,0 +1,87 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+/*
+ * Map the token variables into Tailwind utilities (bg-page, text-ink, rounded-pill, ...).
+ * `inline` makes each utility use var(--token) directly, so swapping the token file
+ * changes the look without touching components.
+ */
+@theme inline {
+  --color-page: var(--color-page);
+  --color-surface: var(--color-surface);
+  --color-sunken: var(--color-sunken);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-scrim: var(--color-scrim);
+  --color-ink: var(--color-ink);
+  --color-ink-2: var(--color-ink-2);
+  --color-muted: var(--color-muted);
+  --color-on-deep: var(--color-on-deep);
+  --color-brand: var(--color-brand);
+  --color-deep: var(--color-deep);
+  --color-mint: var(--color-mint);
+  --color-mint-hover: var(--color-mint-hover);
+  --color-mint-tint: var(--color-mint-tint);
+  --color-mint-line: var(--color-mint-line);
+  --color-estimate: var(--color-estimate);
+  --color-estimate-tint: var(--color-estimate-tint);
+  --color-danger: var(--color-danger);
+  --color-danger-tint: var(--color-danger-tint);
+  --color-warning: var(--color-warning);
+  --color-warning-tint: var(--color-warning-tint);
+  --color-basket-essentials: var(--color-basket-essentials);
+  --color-basket-essentials-tint: var(--color-basket-essentials-tint);
+  --color-basket-unexpected: var(--color-basket-unexpected);
+  --color-basket-unexpected-tint: var(--color-basket-unexpected-tint);
+  --color-basket-everyday: var(--color-basket-everyday);
+  --color-basket-everyday-tint: var(--color-basket-everyday-tint);
+  --color-waiting: var(--color-waiting);
+  --color-waiting-tint: var(--color-waiting-tint);
+  --font-sans: var(--font-sans);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-sheet: var(--radius-sheet);
+  --radius-pill: var(--radius-pill);
+  --shadow-sheet: var(--shadow-sheet);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--color-page);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-page);
+  color: var(--color-ink-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS zooms into inputs below 16px. */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
