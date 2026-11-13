@@ -5,74 +5,79 @@
    --space-*, --gutter, --tap-min and --duration-* are plain custom properties
    (so is --focus-ring-width):
    map them by hand (for example `--spacing: 4px`) or use them through var().
+   Values follow the look of S-mobiili (public store screenshots and s-pankki.fi):
+   one strong green, near-black text, white flat cards on a light green page.
    Rules for using them: app/DESIGN.md. */
 :root{
   /* Surfaces */
-  --color-page:#F3F8F4;          /* light green tint behind everything */
-  --color-surface:#FFFFFF;       /* cards, sheets */
-  --color-sunken:#EBF2ED;        /* skeletons, bar tracks, the lesson box */
-  --color-line:#DCE6DF;          /* hairline borders (decorative) */
-  --color-line-strong:#7B8F83;   /* borders that carry meaning, 3:1 on white */
-  --color-scrim:rgba(14,58,37,.38);
+  --color-page:#EBF7EC;          /* light green page behind everything */
+  --color-surface:#FFFFFF;       /* cards, sheets, inputs: flat, 1px --color-line border */
+  --color-sunken:#F5F5F5;        /* skeletons, bar tracks, the lesson box */
+  --color-line:#E6E6E6;          /* thin neutral card border and row dividers (decorative) */
+  --color-line-strong:#808080;   /* borders that carry meaning, 3:1 on white and on the page */
+  --color-scrim:rgba(31,31,31,.40);
 
   /* Text */
-  --color-ink:#0E3A25;           /* primary text, dark green */
-  --color-ink-2:#26302A;         /* long body text */
-  --color-muted:#55635A;         /* secondary text, AA on page and surface */
+  --color-ink:#004628;           /* key figures, takeaways, amounts: darkest green */
+  --color-ink-2:#1F1F1F;         /* body text: near black */
+  --color-muted:#666666;         /* meta text: mid grey */
   --color-on-deep:#FFFFFF;
-  --color-on-deep-muted:#BFE3CB;
+  --color-on-deep-muted:#D2FCD5;
 
-  /* Brand greens (own values) */
-  --color-brand:#00703C;         /* links, action chips, term underline, focus ring on light surfaces */
-  --color-deep:#0B4A2E;          /* "Sentti asks" surface, send button */
-  --color-mint:#8DF29A;          /* primary button bg, text = ink */
-  --color-mint-hover:#5EE97A;
-  --color-mint-tint:#E4F5E8;     /* number chip bg, suggested question chips */
-  --color-mint-line:#9FD8AB;
+  /* Brand greens */
+  --color-brand:#007841;         /* bold titles, row labels, chevrons, pictograms, links, focus ring on light surfaces */
+  --color-deep:#004628;          /* "Sentti asks" surface, send button, user bubbles */
+  --color-hero:#007841;          /* safe-to-spend block: white figures on green */
+  --color-on-hero:#FFFFFF;
+  --color-on-hero-muted:#D2FCD5;
+  --color-mint:#91FA9B;          /* primary button bg, text = ink */
+  --color-mint-hover:#49F37B;
+  --color-mint-tint:#D2FCD5;     /* number chip bg, suggested question chips */
+  --color-mint-line:#99D59F;
 
-  /* Fact vs estimate */
-  --color-estimate:#0B6378;
-  --color-estimate-tint:#E2F1F5;
+  /* Fact vs estimate: estimates are neutral and dashed, so they never look like a basket */
+  --color-estimate:#363636;
+  --color-estimate-tint:#F5F5F5;
 
   /* Status */
-  --color-danger:#B3261E;  --color-danger-tint:#FDECEC;
-  --color-warning:#8A5300; --color-warning-tint:#FFF2DA;
-  --color-up:#00703C;      /* "better" tone, always with an arrow + text */
-  --color-down:#9A4A00;    /* "worse" tone, never red for spending */
+  --color-danger:#B70000;  --color-danger-tint:#FFEDED;
+  --color-warning:#885600; --color-warning-tint:#FFF1D8;
+  --color-up:#007841;      /* "better" tone, always with an arrow + text */
+  --color-down:#885600;    /* "worse" tone, never red for spending */
 
-  /* Baskets: icon + label + colour, always together */
-  --color-basket-essentials:#2F5DA8;  --color-basket-essentials-tint:#E8EFFA;  /* 🏠 Regular essentials */
-  --color-basket-unexpected:#9A4A00;  --color-basket-unexpected-tint:#FFEFDA;  /* 🔧 Unexpected necessities */
-  --color-basket-everyday:#A12D68;    --color-basket-everyday-tint:#FBE8F1;    /* ☕️ Everyday spending */
-  --color-waiting:#55635A;            --color-waiting-tint:#EEF2EF;            /* ? Waiting for your answer (unclassified): neutral, never a basket colour */
+  /* Baskets: icon + label + colour, always together. Hues from the same palette: green, teal, amber */
+  --color-basket-essentials:#007841;  --color-basket-essentials-tint:#EBF7EC;  /* 🏠 Regular essentials */
+  --color-basket-unexpected:#006E87;  --color-basket-unexpected-tint:#E0F4FF;  /* 🔧 Unexpected necessities */
+  --color-basket-everyday:#885600;    --color-basket-everyday-tint:#FFF1D8;    /* ☕️ Everyday spending */
+  --color-waiting:#666666;            --color-waiting-tint:#F5F5F5;            /* ? Waiting for your answer (unclassified): neutral, never a basket colour */
 
-  /* Type: Inter (SIL OFL 1.1), tabular figures for every amount */
-  --font-sans:"Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Type: Figtree (SIL OFL 1.1), tabular figures for every amount */
+  --font-sans:"Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --text-xs:12px;   --text-xs--line-height:16px;
   --text-sm:14px;   --text-sm--line-height:20px;
   --text-base:16px; --text-base--line-height:24px;   /* inputs never below 16px (iOS zoom) */
   --text-answer:16px; --text-answer--line-height:26px; /* coach answer text */
   --text-lg:18px;   --text-lg--line-height:26px;
   --text-xl:20px;   --text-xl--line-height:28px;     /* takeaway line */
-  --text-card-title:16px;     --text-card-title--line-height:22px;     /* card titles */
+  --text-card-title:17px;     --text-card-title--line-height:22px;     /* card titles and row labels, bold green */
   --text-review-amount:30px;  --text-review-amount--line-height:34px;  /* amount on the review card (#35) */
   --text-2xl:24px;  --text-2xl--line-height:30px;
-  --text-hero:40px; --text-hero--line-height:44px;   /* safe-to-spend number */
+  --text-hero:40px; --text-hero--line-height:44px;   /* safe-to-spend number, white on --color-hero */
   --text-stage:56px;--text-stage--line-height:60px;  /* projector mode */
 
   /* Spacing: 4px base */
   --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px; --space-10:40px;
   --gutter:16px;
   --tap-min:44px;
-  --focus-ring-width:3px;        /* --color-brand on light surfaces, --color-mint on --color-deep and --color-ink */
+  --focus-ring-width:3px;        /* --color-brand on light surfaces, --color-mint on --color-deep, --color-hero and --color-ink */
 
-  /* Radii */
-  --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:20px; --radius-sheet:24px; --radius-pill:999px;
+  /* Radii: app-sized cards, pill buttons and chips */
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px; --radius-sheet:20px; --radius-pill:999px;
 
-  /* Elevation: flat by default, like the host app */
+  /* Elevation: cards are flat (border, no shadow). Only floating things get a shadow */
   --shadow-none:none;
-  --shadow-float:0 6px 16px rgba(14,58,37,.18);
-  --shadow-sheet:0 -8px 28px rgba(14,58,37,.16);
+  --shadow-float:0 6px 16px rgba(31,31,31,.16);
+  --shadow-sheet:0 -8px 28px rgba(31,31,31,.14);
 
   /* Motion */
   --duration-fast:150ms; --duration-base:250ms; --duration-slow:500ms; --duration-money:900ms;
