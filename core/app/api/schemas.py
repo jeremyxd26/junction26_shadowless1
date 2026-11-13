@@ -158,7 +158,8 @@ Card = Annotated[Union[MetricCard, BreakdownCard, BillsCard], Field(discriminato
 
 class ErrorBody(Model):
     code: Literal["invalid_request", "customer_not_found", "evidence_not_found", "evidence_forbidden",
-                  "invalid_scenario", "rate_limited", "data_unavailable", "llm_unavailable", "internal"]
+                  "invalid_scenario", "rate_limited", "data_unavailable", "llm_unavailable", "internal",
+                  "not_found"]  # not_found: contract addition (#79), an unknown route
     message: str
     retryable: bool
 

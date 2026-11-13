@@ -18,7 +18,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from core.app.api import schemas
+from core.app.api import errors, schemas, texts
+from core.tools import config as tools_config
 from core.tools.formatting import display
 from core.tools.models import Unit
 
@@ -58,6 +59,8 @@ PENDING: dict[str, set[str]] = {
 # `reviews` is implemented as an always-empty list; the review item shape and the label logic are #68.
 # Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
 PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
+# Error codes the service has ahead of the contract (agreed additions; the text follows in the next version).
+ERROR_CODE_ADDITIONS = {"not_found"}  # #79: an unknown route
 
 
 def contract_text() -> str:
@@ -193,7 +196,9 @@ def backticked(line_pattern: str) -> set[str]:
 def test_enums_match_the_contract_text():
     error_codes = set(re.findall(r"^\| \d{3} \| `([a-z_]+)` \|", contract_text(), re.M))
     assert PENDING_ERROR_CODES <= error_codes
-    assert literal_values(schemas.ErrorBody, "code") == error_codes - PENDING_ERROR_CODES
+    assert not ERROR_CODE_ADDITIONS & error_codes, "the contract has it now: remove it from ERROR_CODE_ADDITIONS"
+    assert literal_values(schemas.ErrorBody, "code") == (error_codes - PENDING_ERROR_CODES) | ERROR_CODE_ADDITIONS
+    assert set(errors.STATUS) == literal_values(schemas.ErrorBody, "code") == set(texts.ERRORS)
     assert literal_values(schemas.Persona, "age_band") == backticked(r"^\| Age bands \|") - {"metrics.md"}
     units = backticked(r"^\| `unit` \| enum \|") - {"unit"}
     assert typing.get_args(schemas.UnitName) == tuple(sorted(units, key=list(typing.get_args(schemas.UnitName)).index))
@@ -208,3 +213,45 @@ def test_enums_match_the_contract_text():
     request_fields = {"customer_id", "scenario", "language"}
     kinds_table = set(re.findall(r"^\| `([a-z_]+)` \| ", whatif, re.M)) - request_fields
     assert set(typing.get_args(schemas.SelectionKind)) == kinds_table
+
+
+# ---- every method id a tool can emit has a name and a unit (texts.METHODS) ---------------------------
+# The evidence view names each number's method and formats its value with the method's unit, so a tool
+# that emits a method id texts.METHODS does not know would show a guessed name and unit. The ids are
+# found in the tools' source: quoted ids such as "spending.total@1", and `f"{METRIC}.{column}@1"`
+# built from a config table iterated as `for key, column[, unit] in config.TABLE`.
+
+TOOLS = Path(__file__).resolve().parents[1] / "tools"
+QUOTED_METHOD_ID = re.compile(r"[\"']([a-z_]+\.[a-z0-9_]+@\d+)[\"']")
+TABLE_LOOP = re.compile(r"for\s+\w+,\s*column(?:,\s*\w+)?\s+in\s+config\.([A-Z_]+)")
+FSTRING_COLUMN = re.compile(r"f[\"']\{METRIC\}\.([a-z0-9_]+)@(\d+)[\"']")
+
+
+def emitted_method_ids() -> dict[str, str | None]:
+    """Method id -> the unit its config table gives (None when the table names none)."""
+    ids: dict[str, str | None] = {}
+    for path in sorted(TOOLS.glob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        for method in QUOTED_METHOD_ID.findall(src):
+            ids.setdefault(method, None)
+        metric = re.search(r"^METRIC = [\"']([a-z_]+)[\"']", src, re.M)
+        if metric is None or "{METRIC}." not in src:
+            continue
+        tables, columns = TABLE_LOOP.findall(src), FSTRING_COLUMN.findall(src)
+        assert tables or columns, f"{path.name} builds method ids in a way this scan cannot see; extend it"
+        for table in tables:
+            for row in getattr(tools_config, table):
+                ids[f"{metric.group(1)}.{row[1]}@1"] = row[2] if len(row) > 2 else None
+        for column, version in columns:
+            ids.setdefault(f"{metric.group(1)}.{column}@{version}", None)
+    return ids
+
+
+def test_every_method_id_a_tool_emits_has_a_name_and_a_unit():
+    ids = emitted_method_ids()
+    # the scan sees each kind of source: config.METHODS, a metric table, and an f-string column
+    assert {"spending.total@1", "what_if.saving_month_eur@1", "safe_to_spend.safe_to_spend_7d_eur@1"} <= set(ids)
+    missing = sorted(set(ids) - set(texts.METHODS))
+    assert missing == [], f"add these method ids to core/app/api/texts.py METHODS: {missing}"
+    wrong_unit = {m: (u, texts.METHODS[m].unit.value) for m, u in ids.items() if u and texts.METHODS[m].unit.value != u}
+    assert wrong_unit == {}, wrong_unit

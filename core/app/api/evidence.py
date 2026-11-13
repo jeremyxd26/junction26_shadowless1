@@ -67,12 +67,17 @@ def _label_of(spec: dict[str, Any], language: str) -> str:
     return texts.pick(info.name, language)
 
 
+def _json_value(value: Decimal, unit: Unit) -> int | float:
+    """A whole count as an integer; anything else (also a count with a decimal) as a float."""
+    return int(value) if unit is Unit.COUNT and value == value.to_integral_value() else float(value)
+
+
 def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader) -> dict[str, Any]:
     info = texts.method_info(spec["method"])
     value = Decimal(spec["value"])
     start, end = _period_of(spec, load)
     return {
-        "value": int(value) if info.unit is Unit.COUNT else float(value),
+        "value": _json_value(value, info.unit),
         "unit": info.unit.value,
         "period": {"start": start, "end": end, "label": periods.period_label(start, end, language)},
         "method": spec["method"],
@@ -88,6 +93,26 @@ METRIC_SECTIONS = {  # core/metrics/<file> -> section of metrics.md that defines
     "05_spender_profile.sql": "#5-spender-profile", "06_peer_benchmark.sql": "#6-peer-benchmark",
     "07_store_price_index.sql": "#7-grocery-store-price-index",
 }
+
+
+def _peer_parts(parts: list[dict[str, Any]], period: dict[str, Any], language: str) -> list[dict[str, Any]]:
+    """Group statistics of a peer_aggregate (#69), parts `{role, method, value}` with no refs: each one a
+    Number without an evidence ref; the group (`peer_level`) is named in the group size's label."""
+    level = next((p["value"] for p in parts if p["role"] == "peer_level"), None)
+    out = []
+    for p in parts:
+        if not p.get("method"):
+            continue
+        info = texts.method_info(p["method"])
+        value = Decimal(p["value"])
+        label = texts.pick(info.name, language)
+        if p["role"] == "peer_n" and level in texts.PEER_LEVELS:
+            label = f"{label} ({texts.pick(texts.PEER_LEVELS[level], language)})"
+        out.append({"role": p["role"], "number": {
+            "value": _json_value(value, info.unit), "unit": info.unit.value, "period": period,
+            "method": p["method"], "evidence_ref": None, "label": label,
+            "display": display(value, info.unit, language)}})
+    return out
 
 
 def _rows(rows: list[dict[str, Any]], language: str) -> list[dict[str, Any]]:
@@ -139,6 +164,12 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
                           "number": number_from_spec(p["ref"], p.get("spec") or load(p["ref"]), language, load)}
                          for p in res.parts]
         body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
+    elif res.kind == "peer_aggregate":
+        # #69: statistics of the peer group only (median, quartiles, group size); no rows, no query.
+        body["method"]["doc"] = texts.METRICS_DOC + METRIC_SECTIONS["06_peer_benchmark.sql"]
+        body["parts"] = _peer_parts(res.parts, number["period"], language)
+        body["reconciles"] = res.reconciles
+        body["privacy_note"] = texts.pick(texts.PRIVACY_PEER, language)
     else:
         # "metric" (#55): the number is re-run from its metric SQL file; reconciles says whether the re-run
         # gives the same value. Rows are optional and carry no promise to add up (not shown yet).

@@ -198,6 +198,30 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
     assert e["reconciles"] is True  # the #55 resolver re-runs 03_safe_to_spend.sql for this customer
 
 
+def test_a_peer_aggregate_ref_opens_for_its_customer_only(client):
+    """#69 stores peer statistics as kind "peer_aggregate"; another customer's request is refused."""
+    from core.tools import evidence
+
+    spec = {"v": 1, "kind": "peer_aggregate", "customer_id": LEAD, "as_of": "2026-09-30",
+            "method": "peer_benchmark.peer_median_month_eur@1",
+            "source": {"file": "06_peer_benchmark.sql", "metric": "Restaurants", "column": "peer_median_month_eur",
+                       "settings": {"peer_min_n": "20"}},
+            "value": "0.00", "params": {"period": {"start": "2026-04-01", "end": "2026-09-30"}}}
+    ref = evidence.make_ref(spec)
+    conn = tools_db.connect()
+    try:
+        evidence.write(conn, {ref: spec})
+    finally:
+        conn.close()
+    foreign = client.get(f"/api/evidence/{ref}", params={"customer_id": "CUST00493"})
+    assert foreign.status_code == 403 and foreign.json()["error"]["code"] == "evidence_forbidden"
+    own = client.get(f"/api/evidence/{ref}", params={"customer_id": LEAD})
+    assert own.status_code == 200, own.text
+    e = own.json()
+    assert (e["kind"], e["rows"], e["row_count"], e["query"]) == ("peer_aggregate", [], None, None)
+    assert all(p["number"]["evidence_ref"] is None for p in e["parts"])
+
+
 def test_finnish_overview_has_the_same_numbers(client, lead_overview):
     fi = client.get(f"/api/overview/{LEAD}", params={"lang": "fi"}).json()
     assert fi["greeting"] == "Hei Sanna" and fi["language"] == "fi"

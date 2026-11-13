@@ -157,9 +157,25 @@ def test_unhandled_exception_text_reaches_neither_the_log_nor_the_body(clean_env
 def test_unknown_routes_and_methods_get_the_envelope(clean_env, method, path, status):
     with client_for() as client:
         response = client.request(method, path)
-    assert_envelope(response, status, "invalid_request")
+    assert_envelope(response, status, "not_found" if status == 404 else "invalid_request")
     if status == 405:
         assert "GET" in response.headers["allow"]
+
+
+def test_a_path_with_a_line_break_cannot_forge_a_log_line(clean_env, caplog):
+    app = create_app(Settings(_env_file=None))
+
+    @app.get("/api/boom/{rest}")  # a str parameter matches [^/]+, which includes a decoded line break
+    def boom(rest: str):
+        raise RuntimeError("boom")
+
+    caplog.set_level(logging.DEBUG)
+    with TestClient(app) as client:
+        response = client.get("/api/boom/a%0d%0aERROR:%20FAKE")
+    assert_envelope(response, 500, "internal", retryable=True)
+    lines = [r.getMessage() for r in caplog.records if "unhandled error" in r.getMessage()]
+    assert len(lines) == 1 and "\n" not in lines[0] and "\r" not in lines[0]
+    assert "\\r\\nERROR: FAKE" in lines[0]  # shown escaped, inside the one line
 
 
 # ---- the hero switch (no database: synthetic history and an in-memory evidence store) -------------
@@ -333,3 +349,43 @@ def test_whatif_maps_a_merchant_id_to_the_customers_alias(clean_env, monkeypatch
     alias = aliases.build(_history(), date(2026, 9, 30)).for_merchant("MRC-RES-0001").key
     assert (customer, language, args.selection.kind, args.selection.value, args.cut_pct) == (
         "CUST00860", "fi", "merchant", alias, 20)
+
+
+# ---- peer_aggregate evidence (#69): group statistics only, as the resolver of PR #95 returns them ----
+
+PEER_SPEC = {"v": 1, "kind": "peer_aggregate", "customer_id": "CUST00860", "as_of": "2026-09-30",
+             "method": "peer_benchmark.peer_median_month_eur@1",
+             "source": {"file": "06_peer_benchmark.sql", "metric": "Restaurants",
+                        "column": "peer_median_month_eur", "settings": {"peer_min_n": "20"}},
+             "value": "212.40", "params": {"period": {"start": "2026-04-01", "end": "2026-09-30"}}}
+PEER_PARTS = [  # core/tools/evidence.py resolve() of PR #95: {role, method, value}, no refs
+    {"role": "peer_median", "method": "peer_benchmark.peer_median_month_eur@1", "value": "212.40"},
+    {"role": "peer_p25", "method": "peer_benchmark.peer_p25_month_eur@1", "value": "140.05"},
+    {"role": "peer_p75", "method": "peer_benchmark.peer_p75_month_eur@1", "value": "301.90"},
+    {"role": "peer_n", "method": "peer_benchmark.peer_n@1", "value": "37"},
+    {"role": "peer_level", "method": None, "value": "age_band+city"},
+]
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_peer_aggregate_evidence_shows_group_statistics_only(language):
+    from core.app.api import evidence as evidence_api
+    from core.tools import evidence as tools_evidence
+
+    res = tools_evidence.Resolution("ev_0123456789ab", "peer_aggregate", PEER_SPEC["method"], Decimal("212.40"),
+                                    parts=PEER_PARTS, reconciles=True, spec=PEER_SPEC)
+    e = evidence_api.build(None, res, "CUST00860", language).model_dump(mode="json")
+    assert (e["kind"], e["reconciles"], e["rows"], e["row_count"], e["query"], e["next_cursor"]) == (
+        "peer_aggregate", True, [], None, None, None)
+    assert e["number"]["value"] == 212.4 and e["number"]["unit"] == "eur_per_month"
+    assert e["method"]["doc"].endswith("metrics.md#6-peer-benchmark")
+    parts = {p["role"]: p["number"] for p in e["parts"]}
+    assert list(parts) == ["peer_median", "peer_p25", "peer_p75", "peer_n"]       # no part for the level itself
+    assert all(n["evidence_ref"] is None for n in parts.values())                # statistics, nothing to open
+    assert [parts[r]["value"] for r in parts] == [212.4, 140.05, 301.9, 37]
+    assert parts["peer_n"]["unit"] == "count" and parts["peer_p25"]["unit"] == "eur_per_month"
+    assert parts["peer_n"]["period"] == e["number"]["period"]
+    level = "same age group and city" if language == "en" else "sama ikäryhmä ja kaupunki"
+    assert level in parts["peer_n"]["label"]
+    assert parts["peer_median"]["display"] == ("€212.40 a month" if language == "en" else "212,40 € / kk")
+    assert "never another customer" in e["privacy_note"] or "toisen asiakkaan" in e["privacy_note"]

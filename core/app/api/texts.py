@@ -27,6 +27,7 @@ ERRORS: dict[str, Pair] = {
                          "Tietosi eivät ole juuri nyt saatavilla. Yritä uudelleen."),
     "llm_unavailable": ("Explanations are not available right now.", "Selitykset eivät ole juuri nyt saatavilla."),
     "internal": ("Something went wrong. Please try again.", "Jokin meni vikaan. Yritä uudelleen."),
+    "not_found": ("There is nothing at this address.", "Tästä osoitteesta ei löydy mitään."),
 }
 
 AI_DISCLOSURE: Pair = (
@@ -49,6 +50,10 @@ PRIVACY_TRANSACTIONS: Pair = (
 PRIVACY_COMPOSITE: Pair = (
     "Only you can see this. Transactions are never sent to the AI model.",
     "Vain sinä näet tämän. Tapahtumia ei koskaan lähetetä tekoälymallille.",
+)
+PRIVACY_PEER: Pair = (
+    "Only group statistics are shown here, never another customer's transactions.",
+    "Tässä näytetään vain ryhmän tilastoja, ei koskaan toisen asiakkaan tapahtumia.",
 )
 ROW_COUNT_LABEL: Pair = ("Transactions", "Tapahtumat")
 
@@ -154,6 +159,46 @@ for _col, _unit, _en, _fi in [
     ("regular_excluded_eur", Unit.EUR, "Regular essentials left out", "Pois jätetyt säännölliset menot"),
 ]:
     METHODS[f"what_if.{_col}@1"] = _metric(_unit, _en, _fi, "04_what_if.sql", "#4-what-if-savings")
+# Spender profile features (#69), re-run from 05 (evidence kind "metric"). spend_month_eur is above: it is
+# the basket card's own Number over the window's spending rows.
+for _col, _unit, _en, _fi in [
+    ("keep_rate_pct", Unit.PERCENT, "Share of income kept", "Tuloista jäljelle jäävä osuus"),
+    ("net_income_month_eur", Unit.EUR_PER_MONTH, "Income per month", "Tulot kuukaudessa"),
+    ("saving_month_eur", Unit.EUR_PER_MONTH, "Saving and investing per month", "Säästäminen ja sijoittaminen kuukaudessa"),
+    ("regular_share_pct", Unit.PERCENT, "Share of regular essentials", "Säännöllisten menojen osuus"),
+    ("unexpected_share_pct", Unit.PERCENT, "Share of unexpected necessities", "Odottamattomien menojen osuus"),
+    ("everyday_share_pct", Unit.PERCENT, "Share of everyday spending", "Arjen kulutuksen osuus"),
+    ("one_off_share_pct", Unit.PERCENT, "Share of one-off purchases", "Kertaostosten osuus"),
+    ("everyday_weekend_pct", Unit.PERCENT, "Everyday spending at weekends", "Arjen kulutus viikonloppuisin"),
+    ("everyday_avg_ticket_eur", Unit.EUR, "Average everyday purchase", "Arjen ostoksen keskihinta"),
+    ("everyday_tx_month", Unit.COUNT, "Everyday purchases per month", "Arjen ostoksia kuukaudessa"),
+    ("months_out_over_in", Unit.MONTHS, "Months with more out than in", "Kuukaudet, joina menoja oli tuloja enemmän"),
+    ("n_tx_below_zero", Unit.COUNT, "Payments that took the balance below zero", "Maksut, jotka veivät saldon miinukselle"),
+]:
+    METHODS[f"spender_profile.{_col}@1"] = _metric(_unit, _en, _fi, "05_spender_profile.sql", "#5-spender-profile")
+# Peer benchmark (#69): the group statistics are re-run from 06 (evidence kind "peer_aggregate").
+for _col, _unit, _en, _fi in [
+    ("peer_median_month_eur", Unit.EUR_PER_MONTH, "Typical for similar people", "Tyypillinen samankaltaisille"),
+    ("peer_p25_month_eur", Unit.EUR_PER_MONTH, "Lower quarter of similar people", "Samankaltaisten alaneljännes"),
+    ("peer_p75_month_eur", Unit.EUR_PER_MONTH, "Upper quarter of similar people", "Samankaltaisten yläneljännes"),
+    ("percentile", Unit.PERCENTILE, "Your place among similar people", "Sijaintisi samankaltaisten joukossa"),
+    ("vs_median_pct", Unit.PERCENT, "Difference from typical", "Ero tyypilliseen"),
+    ("peer_n", Unit.COUNT, "Similar people compared", "Verrattuja samankaltaisia"),
+]:
+    METHODS[f"peer_benchmark.{_col}@1"] = _metric(_unit, _en, _fi, "06_peer_benchmark.sql", "#6-peer-benchmark")
+METHODS["peer_benchmark.you_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("You per month", "Sinä kuukaudessa"),
+    ("Your own spending in the compared group, divided by the months with history.",
+     "Oma kulutuksesi vertailtavassa ryhmässä jaettuna kuukausilla, joilta on tietoja."),
+    METRICS_DOC + "#6-peer-benchmark")
+
+# The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
+PEER_LEVELS: dict[str, Pair] = {
+    "age_band+area3": ("same age group and postal area", "sama ikäryhmä ja postinumeroalue"),
+    "age_band+city": ("same age group and city", "sama ikäryhmä ja kaupunki"),
+    "age_band": ("same age group", "sama ikäryhmä"),
+    "all": ("all customers", "kaikki asiakkaat"),
+}
 
 
 def method_info(method: str) -> MethodInfo:
