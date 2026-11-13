@@ -483,3 +483,15 @@ def test_one_failing_call_of_many_fails_alone(mem):
     prepared = mem.prepare_many(calls, request_ctx())
     assert isinstance(prepared[1], RuntimeError)
     assert [p.source for i, p in enumerate(prepared) if i != 1] == ["tool", "tool"]
+
+
+def test_an_id_set_by_hand_stays_as_a_fresh_call_returns_it(mem):
+    def stub(ctx, args):
+        n = Number(value=1.0, unit=Unit.EUR, period=PERIOD, method="spending.total@1", evidence_ref="ev_000000000009",
+                   label="Stub", display=display(Decimal("1"), Unit.EUR), id="n1")   # never registered
+        return ToolResult(tool="stub", data=None, model_view={"n": model_number(n)})
+
+    fresh = stub(ctx_for(preload=2), FakeArgs())
+    mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
+    hit = mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
+    assert dump(hit) == dump(fresh) and hit.model_view["n"]["id"] == "n1"

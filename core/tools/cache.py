@@ -174,7 +174,9 @@ def _remap(obj: Any, ids: dict[str, str], seen: set[int] | None = None) -> None:
         seen.add(id(obj))
     if isinstance(obj, Number):
         if obj.id is not None:
-            obj.id = ids[obj.id]   # every id of the result came from the private registry
+            # An id the tool registered is remapped; one it set by hand (never registered) stays as a
+            # fresh call would return it.
+            obj.id = ids.get(obj.id, obj.id)
         return
     if isinstance(obj, BaseModel):
         for name in type(obj).model_fields:
