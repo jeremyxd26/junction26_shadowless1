@@ -2,8 +2,9 @@
 
 The core service runs from the `dev` branch on one small Verda instance in Finland. Every change is tested there before it reaches `main`.
 
-- **URL:** https://135-181-63-178.sslip.io (`/healthz`, `/readyz`)
+- **URL:** https://135-181-63-178.sslip.io (`/healthz`, `/readyz`, and later `/api/*`). The planned host is `sentti.jeremyxd.dev` (see "Changing the host name").
 - **Deploy:** `bash deploy/dev.sh` deploys `origin/dev`.
+- **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is a plain 404 until the app is served from the same host. FastAPI's `/docs` is not exposed.
 
 ## What runs where
 
@@ -84,6 +85,25 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 
 `/readyz` is not a deploy gate: it is 503 whenever the database is unreachable, and that should not block a deploy.
 
+`origin/dev` can be deployed once it contains `deploy/` (PR #54). Before that, `dev.sh` stops with "commit … predates the deploy files" and leaves the running version untouched.
+
+On the first deploy to a new host name, Caddy needs a few seconds to obtain the certificate, so the public check retries for up to a minute.
+
+Example run (the smoke test of this branch):
+
+```
+deploying 'r/17-verda-dev-deploy' to 135.181.63.178
+checked out 0177340 Route only /api, /healthz and /readyz to the core service (#17)
+== building 0177340763e5b2ce7121822a37b4e544143f98bc (previous: 1e395dc61dd5447d85e1d6de5b39a0de06b0c681)
+== image contents (must not hold .env, .git or tests)
+. ./core ./core/app ./core/app/__init__.py ./core/app/db.py ./core/app/health.py ./core/app/main.py ./core/app/settings.py ./core/requirements.txt
+== starting
+== proxy
+deployed 0177340763e5b2ce7121822a37b4e544143f98bc; local /healthz: {"status":"ok","demo_today":"2026-09-30"}
+public check: https://135-181-63-178.sslip.io/healthz
+GET https://135-181-63-178.sslip.io/healthz -> 200
+```
+
 ## Roll back
 
 If a new version does not pass `/healthz` within 30 s, `remote-deploy.sh` switches back to the previous image by itself and exits with an error.
@@ -97,6 +117,22 @@ bash deploy/dev.sh <previous-sha>
 
 The images of the current and the previous deploy stay on the instance, so a rollback to the previous commit needs no rebuild.
 
+To test the automatic rollback without a broken commit, point the deploy gate at a path that does not exist:
+
+```bash
+DEV_HEALTH_PATH=/no-such-path bash deploy/dev.sh r/17-verda-dev-deploy
+```
+
+The new image starts, the gate gets 404 for 30 s, and the script prints the last log lines (masked) and switches back:
+
+```
+new version is not healthy (GET /no-such-path); last log lines (masked):
+INFO:     x.x.x.x:41302 - "GET /no-such-path HTTP/1.1" 404 Not Found
+...
+switching back to 1e395dc61dd5447d85e1d6de5b39a0de06b0c681
+previous version 1e395dc61dd5447d85e1d6de5b39a0de06b0c681 is running again
+```
+
 ## Logs
 
 The logs stay on the instance and are not shipped anywhere. The journal is readable only by root and the `adm`/`systemd-journal` groups.
@@ -106,7 +142,9 @@ ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowle
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u caddy -n 50 --no-pager              # proxy and TLS
 ```
 
-The service writes only to the journal (the container runs with `--log-driver none`). If a deploy fails, `remote-deploy.sh` prints the last 30 lines with URLs and `password=`/`key=`/`token=` values masked.
+The service writes only to the journal (the container runs with `--log-driver none`). Its access log lines contain client IP addresses. If a deploy fails, `remote-deploy.sh` prints the last 30 lines with URL credentials, `password=`/`key=`/`token=` values and IP addresses masked.
+
+The journal was checked after the real `DATABASE_URL` was set. Over 105 lines (a restart, the rollback test and a deploy), it contained no part of the URL: 0 matches for the full URL, host, user, password and `postgres://`.
 
 ## Settings on the instance
 
@@ -119,6 +157,8 @@ The service reads `/etc/shadowless1/core.env` every time it starts. The file is 
 | `GEMINI_API_KEY` | |
 | `GEMINI_MODEL` | unset for now |
 | `CORS_ORIGINS` | comma-separated; empty means the local dev servers. Add the app's origin here when it has a URL. |
+
+Set now: `DATABASE_URL`, `DEMO_TODAY` and `GEMINI_API_KEY`. `GEMINI_MODEL` and `CORS_ORIGINS` are unset, so they take their defaults. They were written over SSH stdin, never on a command line, with quotes stripped; on the instance only the URL's shape was checked.
 
 To change a setting, no redeploy is needed:
 
@@ -160,3 +200,28 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 5. **Deploy.** Run `bash deploy/dev.sh`.
 
 If the TLS certificate cannot be issued (Let's Encrypt limits for sslip.io names), serve plain HTTP: write `http://135-181-63-178.sslip.io` to `/etc/shadowless1/site` and deploy again.
+
+## Changing the host name
+
+The host name lives in one place on the instance: `/etc/shadowless1/site`, one line, outside git. It is now `135-181-63-178.sslip.io`.
+
+The planned host is `sentti.jeremyxd.dev`. It needs a Cloudflare A record pointing at `135.181.63.178` in "DNS only" mode (no proxy), so that Caddy can get a Let's Encrypt certificate itself.
+
+**Only after the record resolves to the instance** (failed attempts count against Let's Encrypt rate limits):
+
+```bash
+dig +short sentti.jeremyxd.dev        # must print 135.181.63.178
+ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 '
+  echo "135-181-63-178.sslip.io, sentti.jeremyxd.dev" > /etc/shadowless1/site
+  cd /opt/shadowless1/repo && sed "s|__SITE__|$(cat /etc/shadowless1/site)|" deploy/Caddyfile > /etc/caddy/Caddyfile.new &&
+  caddy validate --config /etc/caddy/Caddyfile.new --adapter caddyfile && mv /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile &&
+  systemctl reload caddy'
+```
+
+Then check it:
+- `curl -I http://sentti.jeremyxd.dev/healthz` should give a 308 to `https://`.
+- `echo | openssl s_client -connect sentti.jeremyxd.dev:443 -servername sentti.jeremyxd.dev 2>/dev/null | openssl x509 -noout -subject` should name the host.
+
+Finally, set `DEV_URL=https://sentti.jeremyxd.dev` as the default in `deploy/dev.sh` and update the README.
+
+`CORS_ORIGINS` needs no change while the app calls `/api` on the same host. Add an origin there only when the app is served from a different one.
