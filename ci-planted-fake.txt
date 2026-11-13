@@ -1,0 +1,2 @@
+Planted fake for the CI secret scan (issue #83), not a real credential:
+DB=postgresql://ci_canary:FakeOnly4CiScan0@db.invalid:5432/none
