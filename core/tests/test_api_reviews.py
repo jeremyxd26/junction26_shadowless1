@@ -111,6 +111,10 @@ def label(client, tx_ref, basket, language="en"):
     return LabelResponse.model_validate(response.json()).model_dump(mode="json")
 
 
+def moved_refs(body: dict) -> dict[str, str]:
+    return {c["key"]: c["after"]["evidence_ref"] for c in body["changes"]}
+
+
 def test_demo_path_overview_needed_overview_undo(client):
     first = overview(client)
     assert len(first["reviews"]) == 1
@@ -120,6 +124,7 @@ def test_demo_path_overview_needed_overview_undo(client):
     assert str(SPIKE) not in str(card)                                       # no transaction id, no merchant id
     assert items(first) == {"regular_essentials": 1889.04, "unexpected_necessities": 341.08,
                             "everyday_spending": 600.41, "unclassified": 180.07}
+    assert first["hero"]["primary"]["value"] == 221.58                      # the hero sees the pending state
     assert overview(client)["reviews"][0]["tx_ref"] == card["tx_ref"]       # served again, never created twice
 
     needed = label(client, card["tx_ref"], "unexpected_necessities")
@@ -133,10 +138,34 @@ def test_demo_path_overview_needed_overview_undo(client):
     assert after["reviews"] == []                                            # Sanna has no other spike
     assert items(after) == {"regular_essentials": 1889.04, "unexpected_necessities": 521.15,
                             "everyday_spending": 600.41}                     # the published numbers
+    assert after["hero"]["primary"]["value"] == 180.26
+    assert after["hero"]["primary"]["evidence_ref"] == moved_refs(needed)["safe_to_spend"]  # the same Number
 
     undone = label(client, card["tx_ref"], None)
     assert (undone["review_state"], undone["label"]) == ("pending", None)
-    assert overview(client)["reviews"][0]["tx_ref"] == card["tx_ref"]       # pending again
+    again = overview(client)
+    assert again["reviews"][0]["tx_ref"] == card["tx_ref"]                   # pending again
+    assert again["hero"]["primary"]["value"] == 221.58
+
+
+def evidence_of(client, ref: str) -> dict:
+    response = client.get(f"/api/evidence/{ref}", params={"customer_id": LEAD})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_row_count_of_the_unclassified_item_reconciles_before_and_after_needed(client):
+    """R2: the row count is a Number with its own spec, under the same label set as what it counts."""
+    first = overview(client)
+    item = next(i for i in first["cards"][0]["items"] if i["key"] == "unclassified")
+    opened = evidence_of(client, item["amount"]["evidence_ref"])
+    rc_ref = opened["row_count"]["evidence_ref"]
+    assert (opened["reconciles"], opened["row_count"]["value"]) == (True, 1)       # the one spike
+    assert evidence_of(client, rc_ref)["reconciles"] is True                       # while pending
+
+    label(client, first["reviews"][0]["tx_ref"], "unexpected_necessities")
+    assert evidence_of(client, item["amount"]["evidence_ref"])["reconciles"] is True   # the number as it was
+    assert evidence_of(client, rc_ref)["reconciles"] is True                           # and its row count
 
 
 def test_label_errors(client):
