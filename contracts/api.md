@@ -6,7 +6,10 @@
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
-All values in the examples are **illustrative**: they show shapes and consistent arithmetic, not results computed from the dataset. The exception is the examples for CUST00860 (persona Sanna): `card.review`, `card.safe_to_save` and the label examples in section 10. Their values are computed from the dataset (`metrics.md` sections 1.1 and 3.1). Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids, enums and windows here follow it (section 2.1, `method`).
+All values in the examples are **illustrative**: they show shapes and consistent arithmetic, not results computed from the dataset. The exceptions are computed from the dataset (`metrics.md` sections 1.1 and 3.1):
+- `card.review`, `card.safe_to_save` and the label examples in section 10, for CUST00860 (persona Sanna);
+- `card.safe_to_save_aleksi`, for CUST00849 (persona Aleksi);
+- `card.safe_to_save_zero`, for CUST00002. Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids, enums and windows here follow it (section 2.1, `method`).
 
 ## Contents
 
@@ -33,6 +36,7 @@ All values in the examples are **illustrative**: they show shapes and consistent
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
 | Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language`, and `/api/ask` also accepts `auto` (detect from the message). Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. |
 | Dates | `YYYY-MM-DD`. Periods are inclusive at both ends. |
+| Timestamps | ISO 8601 with offset, for example `2026-11-14T10:32:05+02:00`. They are wall-clock times of events such as `labelled_at`, not dataset dates. |
 | Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[]` entry carries a positive `amount` and an `operation` (`add` or `subtract`). Raw transaction rows in evidence keep the bank sign: negative means money out. |
 | Numbers | **Every number in a response is a [Number object](#21-number).** There are two exceptions. Raw transaction amounts in evidence rows are decimal strings (section 9). The `scenario` of an `open_whatif` action is a request payload that the app sends back to `/api/whatif` unchanged (section 8.1), so it may hold a plain number such as `cut_pct`. |
 | Merchants | Merchants are anonymised in the dataset. The core gives each merchant a label without digits that is stable for that customer, for example "Grocery store A" or "Restaurant B". The same label appears in cards, evidence and answer texts. |
@@ -112,7 +116,7 @@ Fields common to all cards:
 | Field | Type | Meaning |
 |---|---|---|
 | `card_id` | string | Unique within a response. |
-| `type` | enum | `metric`, `breakdown`, `bills`, `peer`, `stores`, `profile`, `whatif`, `review` |
+| `type` | enum | `metric`, `breakdown`, `bills`, `peer`, `stores`, `profile`, `whatif`, `review`, `safe_to_save` |
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
@@ -135,6 +139,7 @@ Card-specific fields:
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{id, label}` or null, `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now.<br>- `question` `{en, fi}`: the question in both languages.<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` and `everyday_spending`.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response` |
+| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: `free_month` add, `everyday_month` subtract. `monthly` is their sum, or 0 when the sum is negative.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative.<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- `essentials_exceed_income`: the typical income minus transfers out cannot cover bills, saving the customer set up, and usual essentials. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category`: otherwise. `category` `{key, label}` is the `everyday_spending` category with the largest monthly average in the window, and `amount` is that average. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- When both are true, `essentials_exceed_income` applies.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur` and `.essentials_shortfall_month_eur` are pending as SQL outputs (issue #53). `safe_to_spend.free_month_eur` and `.free_until_payday_eur` exist. `spending.month_avg` is a plain average (design doc, section 6.2). | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `overview.response` |
 
 Actions:
 
@@ -505,31 +510,52 @@ The `safe_to_save` card of the overview for Sanna (values from the dataset, befo
 ```json
 {
   "card_id": "card_save_01",
-  "type": "metric",
+  "type": "safe_to_save",
   "title": "Safe to save",
-  "subtitle": "Money in your account beyond what you need until payday",
-  "evidence_ref": "ev_sn2s4a6v8e0n",
+  "subtitle": "What a typical month leaves",
+  "evidence_ref": "ev_sn3m5o7n9t1h",
   "estimate": {
     "label": "Estimate",
-    "text": "What is free until payday after bills, reserves and a small cushion, minus your usual everyday spending until payday. Where you keep it is your choice."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
   },
-  "status": null,
-  "primary": {
+  "monthly": {
+    "value": 184.61, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
+    "label": "Typically left each month", "display": "€184.61 a month"
+  },
+  "monthly_components": [
+    {
+      "key": "free_month",
+      "label": "Left after bills, essentials and the reserve",
+      "operation": "add",
+      "amount": {
+        "value": 783.79, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.free_month_eur@1", "evidence_ref": "ev_sn5f7m9o1n3t",
+        "label": "Free in a typical month", "display": "€783.79 a month"
+      }
+    },
+    {
+      "key": "everyday_month",
+      "label": "Usual everyday spending",
+      "operation": "subtract",
+      "amount": {
+        "value": 599.18, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.everyday_month_eur@1", "evidence_ref": "ev_sn6e8v0m2o4n",
+        "label": "Everyday spending in a typical month", "display": "€599.18 a month"
+      }
+    }
+  ],
+  "stock": {
     "value": 12272.28, "unit": "eur",
     "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
     "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_sn2s4a6v8e0n",
-    "label": "Safe to save now", "display": "€12,272.28"
+    "label": "In your account beyond what you need until payday", "display": "€12,272.28"
   },
-  "secondary": [
-    {
-      "value": 184.61, "unit": "eur_per_month",
-      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
-      "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
-      "label": "Typically left each month", "display": "€184.61 a month"
-    }
-  ],
-  "comparison": null,
-  "components": [
+  "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+  "stock_components": [
     {
       "key": "free_until_payday",
       "label": "Free until payday",
@@ -553,8 +579,183 @@ The `safe_to_save` card of the overview for Sanna (values from the dataset, befo
       }
     }
   ],
+  "reason": null,
   "actions": [
-    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sn2s4a6v8e0n" }
+    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sn3m5o7n9t1h" }
+  ]
+}
+```
+
+For Aleksi (CUST00849, values from the dataset), a tight but positive month: no reason line.
+
+<!-- example: card.safe_to_save_aleksi -->
+```json
+{
+  "card_id": "card_save_03",
+  "type": "safe_to_save",
+  "title": "Safe to save",
+  "subtitle": "What a typical month leaves",
+  "evidence_ref": "ev_al1m3o5n7t9h",
+  "estimate": {
+    "label": "Estimate",
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+  },
+  "monthly": {
+    "value": 199.95, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_al1m3o5n7t9h",
+    "label": "Typically left each month", "display": "€199.95 a month"
+  },
+  "monthly_components": [
+    {
+      "key": "free_month",
+      "label": "Left after bills, essentials and the reserve",
+      "operation": "add",
+      "amount": {
+        "value": 725.47, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.free_month_eur@1", "evidence_ref": "ev_al2f4m6o8n0t",
+        "label": "Free in a typical month", "display": "€725.47 a month"
+      }
+    },
+    {
+      "key": "everyday_month",
+      "label": "Usual everyday spending",
+      "operation": "subtract",
+      "amount": {
+        "value": 525.52, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.everyday_month_eur@1", "evidence_ref": "ev_al3e5v7m9o1n",
+        "label": "Everyday spending in a typical month", "display": "€525.52 a month"
+      }
+    }
+  ],
+  "stock": {
+    "value": 560.64, "unit": "eur",
+    "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+    "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_al4s6a8v0e2n",
+    "label": "In your account beyond what you need until payday", "display": "€560.64"
+  },
+  "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+  "stock_components": [
+    {
+      "key": "free_until_payday",
+      "label": "Free until payday",
+      "operation": "add",
+      "amount": {
+        "value": 819.62, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+        "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_al5f7r9e1e3u",
+        "label": "Free until payday", "display": "€819.62"
+      }
+    },
+    {
+      "key": "everyday_until_payday",
+      "label": "Usual everyday spending until payday",
+      "operation": "subtract",
+      "amount": {
+        "value": 258.98, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+        "method": "safe_to_spend.everyday_until_payday_eur@1", "evidence_ref": "ev_al6e8v0d2y4p",
+        "label": "Everyday spending until payday", "display": "€258.98"
+      }
+    }
+  ],
+  "reason": null,
+  "actions": [
+    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_al1m3o5n7t9h" }
+  ]
+}
+```
+
+When a typical month leaves nothing, the headline is 0 and `reason` says why. The values are from the dataset for CUST00002, a customer of the metrics sample:
+
+<!-- example: card.safe_to_save_zero -->
+```json
+{
+  "card_id": "card_save_04",
+  "type": "safe_to_save",
+  "title": "Safe to save",
+  "subtitle": "What a typical month leaves",
+  "evidence_ref": "ev_zr1m3o5n7t9h",
+  "estimate": {
+    "label": "Estimate",
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+  },
+  "monthly": {
+    "value": 0.0, "unit": "eur_per_month",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_zr1m3o5n7t9h",
+    "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "monthly_components": [
+    {
+      "key": "free_month",
+      "label": "Left after bills, essentials and the reserve",
+      "operation": "add",
+      "amount": {
+        "value": -1.59, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.free_month_eur@1", "evidence_ref": "ev_zr2f4m6o8n0t",
+        "label": "Free in a typical month", "display": "-€1.59 a month"
+      }
+    },
+    {
+      "key": "everyday_month",
+      "label": "Usual everyday spending",
+      "operation": "subtract",
+      "amount": {
+        "value": 382.3, "unit": "eur_per_month",
+        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+        "method": "safe_to_spend.everyday_month_eur@1", "evidence_ref": "ev_zr3e5v7m9o1n",
+        "label": "Everyday spending in a typical month", "display": "€382.30 a month"
+      }
+    }
+  ],
+  "stock": {
+    "value": 10.07, "unit": "eur",
+    "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+    "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_zr4s6a8v0e2n",
+    "label": "In your account beyond what you need until payday", "display": "€10.07"
+  },
+  "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+  "stock_components": [
+    {
+      "key": "free_until_payday",
+      "label": "Free until payday",
+      "operation": "add",
+      "amount": {
+        "value": 198.47, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+        "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_zr5f7r9e1e3u",
+        "label": "Free until payday", "display": "€198.47"
+      }
+    },
+    {
+      "key": "everyday_until_payday",
+      "label": "Usual everyday spending until payday",
+      "operation": "subtract",
+      "amount": {
+        "value": 188.4, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+        "method": "safe_to_spend.everyday_until_payday_eur@1", "evidence_ref": "ev_zr6e8v0d2y4p",
+        "label": "Everyday spending until payday", "display": "€188.40"
+      }
+    }
+  ],
+  "reason": {
+    "kind": "largest_everyday_category",
+    "category": { "key": "Lifestyle", "label": "Lifestyle" },
+    "amount": {
+      "value": 230.3, "unit": "eur_per_month",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "spending.month_avg@1", "evidence_ref": "ev_zr7l9i1f3e5s",
+      "label": "Lifestyle, monthly average", "display": "€230.30 a month"
+    },
+    "text": "Nothing is left in a typical month. Most of your everyday spending went on Lifestyle."
+  },
+  "actions": [
+    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_zr1m3o5n7t9h" }
   ]
 }
 ```
@@ -640,7 +841,9 @@ Lists the demo customers the app can switch between. These are curated customers
 
 ## 6. `GET /api/overview/{customer_id}`
 
-The home screen. It is fully deterministic: no AI model is called, and it reads precomputed tables only, so it is fast and safe to call on every app open.
+The home screen. It is fully deterministic: no AI model is called, and its numbers come from precomputed tables only, so it is fast to call on every app open.
+- **One write:** the first time a review is returned in `reviews`, the server records it as asked, which starts its 7-day window (design doc, section 7.8). A prefetch or a retry that receives a review therefore counts as asking, so fetch the overview only when it is about to be shown.
+- **After a label:** the per-customer refresh finishes before `POST /api/baskets/label` returns, so the overview fetched afterwards already shows the new numbers.
 
 **Request:** `GET /api/overview/CUST00042?lang=en`
 
@@ -648,13 +851,7 @@ The home screen. It is fully deterministic: no AI model is called, and it reads 
 - `customer_id`, `as_of`, `language`, `greeting`.
 - `ai_disclosure`: show it on the first chat screen.
 - `hero`: a `metric` card, safe to spend in the next 7 days (`metrics.md` section 3; how its components work is in section 3 of this contract). Its `status` field carries the metrics status (`ok`, `below_usual` or `nothing_free`). The subtitle carries the period, for example "1 to 7 October", not the status.
-- `safe_to_save`: a `metric` card, "money in your account beyond what you need until payday" (`metrics.md` section 3.1):
-  - `primary` is the stock, available now;
-  - `secondary[0]`, which is optional, is the monthly figure: what a typical month leaves;
-  - `components` (`free_until_payday`, `everyday_until_payday`) add up to `primary`;
-  - `estimate` is always set.
-
-  It is **not** added to safe to spend: both come out of the same money, and the app never shows them as a sum. Which figure is the headline is a product choice; the app only swaps `primary` and `secondary[0]`. The method ids `safe_to_spend.safe_to_save_eur`, `safe_to_spend.everyday_until_payday_eur` and `safe_to_spend.safe_to_save_monthly_eur` are pending as SQL outputs (issue #53).
+- `safe_to_save`: a card of type `safe_to_save` (section 3, `metrics.md` section 3.1). The headline is `monthly`, what a typical month leaves. The second line is `stock` with its one-sentence `stock_explanation`, money in the account beyond what is needed until payday; the app shows it with no call to action. It is **not** added to safe to spend: both come out of the same money, and the app never shows them as a sum.
 - `cards`: Card[] (spending baskets, bills before payday, and more later).
 - `reviews`: Card[] of type `review` (section 3), in the order the server wants them asked. The app shows **only the first** and hides the section when the list is empty. Server rules:
   - At most 3 reviews are first shown per customer in any 7 days (wall clock, not `DEMO_TODAY`).
@@ -780,31 +977,52 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
   },
   "safe_to_save": {
     "card_id": "card_save_02",
-    "type": "metric",
+    "type": "safe_to_save",
     "title": "Safe to save",
-    "subtitle": "Money in your account beyond what you need until payday",
-    "evidence_ref": "ev_ai1s3a5v7e9n",
+    "subtitle": "What a typical month leaves",
+    "evidence_ref": "ev_ai2m4o6n8t0h",
     "estimate": {
       "label": "Estimate",
-      "text": "What is free until payday after bills, reserves and a small cushion, minus your usual everyday spending until payday. Where you keep it is your choice."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
     },
-    "status": null,
-    "primary": {
+    "monthly": {
+      "value": 431.58, "unit": "eur_per_month",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ai2m4o6n8t0h",
+      "label": "Typically left each month", "display": "€431.58 a month"
+    },
+    "monthly_components": [
+      {
+        "key": "free_month",
+        "label": "Left after bills, essentials and the reserve",
+        "operation": "add",
+        "amount": {
+          "value": 1080.55, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.free_month_eur@1", "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month", "display": "€1,080.55 a month"
+        }
+      },
+      {
+        "key": "everyday_month",
+        "label": "Usual everyday spending",
+        "operation": "subtract",
+        "amount": {
+          "value": 648.97, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.everyday_month_eur@1", "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month", "display": "€648.97 a month"
+        }
+      }
+    ],
+    "stock": {
       "value": 75.92, "unit": "eur",
       "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
       "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_ai1s3a5v7e9n",
-      "label": "Safe to save now", "display": "€75.92"
+      "label": "In your account beyond what you need until payday", "display": "€75.92"
     },
-    "secondary": [
-      {
-        "value": 431.58, "unit": "eur_per_month",
-        "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
-        "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ai2m4o6n8t0h",
-        "label": "Typically left each month", "display": "€431.58 a month"
-      }
-    ],
-    "comparison": null,
-    "components": [
+    "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+    "stock_components": [
       {
         "key": "free_until_payday",
         "label": "Free until payday",
@@ -828,8 +1046,9 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
         }
       }
     ],
+    "reason": null,
     "actions": [
-      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_ai1s3a5v7e9n" }
+      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_ai2m4o6n8t0h" }
     ]
   },
   "cards": [
@@ -2149,4 +2368,4 @@ The same label undone:
 | 0.1.0 | First draft: five endpoints, Number object, cards, streaming events (issue #5). |
 | 0.1.1 | Review fixes:<br>- `/api/ask` validation errors (400, 404, 429) arrive as HTTP errors before the stream; the stream's `error` event uses the `{"error": …}` envelope.<br>- New `done.clarify` and a `warnings` code list.<br>- New `card.whatif` example; `estimate` and `evidence_ref` sit on the card, not in `result`.<br>- Breakdown key `other` documented.<br>- Conversations are bound to one customer.<br>- Evidence kind `input` removed.<br>- `ai_disclosure` uses the agreed default text.<br><br>Aligned with `metrics.md` (#6):<br>- Age bands and profile keys, traits and features as enums.<br>- Peer `level` replaces `widened`; peers need at least 20 others.<br>- Safe to spend covers the 7 days after today, with components and two limits.<br>- Bills carry the metrics `status`, with Utilities as one `spread` bill.<br>- What-if takes `{selection, cut_pct}` and returns a `status`, savings per month, week and year, and the excluded one-offs and regular essentials; `horizon`, `projected_per_month` and the cancel and switch scenarios are removed.<br>- `stores` carries confidence intervals and a `switch.status`, with no saving unless the status is `estimate`.<br>- Baskets show monthly averages over the window.<br>- Method ids are `<metric>.<output column>@<version>`, using the metrics output names. |
 | 0.1.2 | Example values follow the safe-to-spend formula (#32).<br><br>New field:<br>- `metric.status` (`ok`, `below_usual`, `nothing_free` or `null`); the hero example carries `"status": "ok"`.<br><br>New method id:<br>- `safe_to_spend.bill_due_eur@1` for each bill's `due_until_payday` (pending as a SQL output column, issue #44); the bills total keeps `safe_to_spend.bills_due_eur@1`.<br><br>Changed example values in `overview.response`:<br>- essentials reserve 147.00 → 134.76;<br>- irregular reserve 61.50 → 167.46;<br>- free until payday 489.46 → 395.74;<br>- balance limit 228.41 → 184.68;<br>- budget limit 292.24 → 248.50;<br>- safe to spend 228.41 → 184.68;<br>- regular essentials 1,180.20 → 1,180.21 a month;<br>- total spending 2,211.00 → 2,211.01 a month.<br><br>`ask.json.response_fi` gains `"status": null` on its metric card. |
-| 0.2.0 | The coach asks about a spending spike (#33). All changes are additions; nothing existing was removed or renamed.<br><br>New:<br>- Card type `review`: one spike, an opaque `tx_ref`, the question in English and Finnish, and exactly two options, `unexpected_necessities` and `everyday_spending`.<br>- Endpoint `POST /api/baskets/label` (section 10): idempotent; undo with `basket: null`; errors `tx_ref_not_found`, `tx_ref_forbidden` and `basket_not_allowed`.<br>- Overview fields:<br>&nbsp;&nbsp;- `reviews`: the app shows the first one only. Server rules: at most 3 a week, never the same transaction twice, never Health.<br>&nbsp;&nbsp;- `safe_to_save`: a `metric` card with the stock as `primary`, the monthly figure as `secondary[0]`, and components and `estimate` set. Its method ids are pending as SQL outputs (#53).<br>- `/api/ask` may carry one `review` card, added by the server.<br><br>New examples:<br>- `card.review`, `card.safe_to_save` and the label request, response, undo and error examples, with dataset values for CUST00860.<br>- `overview.response` gains a review and safe to save for CUST00042. |
+| 0.2.0 | The coach asks about a spending spike (#33). All changes are additions; nothing existing was removed or renamed.<br><br>New:<br>- Card type `review`: one spike, an opaque `tx_ref`, the question in English and Finnish, and exactly two options, `unexpected_necessities` and `everyday_spending`.<br>- Endpoint `POST /api/baskets/label` (section 10): idempotent; undo with `basket: null`; errors `tx_ref_not_found`, `tx_ref_forbidden` and `basket_not_allowed`.<br>- Overview fields:<br>&nbsp;&nbsp;- `reviews`: the app shows the first one only. Server rules: at most 3 a week, never the same transaction twice, never Health.<br>&nbsp;&nbsp;- `safe_to_save`: a new card type, `safe_to_save`. The headline is `monthly`; the second line is `stock` with `stock_explanation` and no call to action. A `reason` (`essentials_exceed_income` or `largest_everyday_category`) appears when `monthly` is 0. Its method ids are pending as SQL outputs (#53).<br>- `/api/ask` may carry one `review` card, added by the server.<br>- A timestamp convention (section 1).<br><br>New examples:<br>- `card.review`, `card.safe_to_save` (Sanna), `card.safe_to_save_aleksi`, `card.safe_to_save_zero` (CUST00002), and the label request, response, undo and error examples, all with dataset values.<br>- `overview.response` gains a review and safe to save for CUST00042 (illustrative). |

@@ -484,7 +484,7 @@ The candidates are ordered **most recent first, then largest amount**. The first
 CREATE TABLE spike_reviews (
     customer_id    text   NOT NULL,
     tx_id          bigint NOT NULL,              -- transactions.id; never sent to the app or the model
-    tx_ref         text   NOT NULL UNIQUE,       -- 'txr_' + 16 random base32 characters, sent to the app
+    tx_ref         text   NOT NULL UNIQUE,       -- 'txr_' + 16 random lowercase letters and digits, sent to the app
     first_shown_at timestamptz NOT NULL DEFAULT now(),
     basket         text CHECK (basket IN ('unexpected_necessities', 'everyday_spending')),  -- NULL until answered or after undo
     answered_at    timestamptz,
@@ -494,7 +494,7 @@ CREATE TABLE spike_reviews (
 
 - `tx_ref` is a random token created when a candidate is first served. It is not derived from the transaction id, so it reveals nothing and needs no secret.
 - Only reviewable spikes get a `tx_ref`. The label endpoint therefore cannot label a Health purchase or any other transaction: R9 holds by construction, not only by validation.
-- Evidence rows of other numbers still show a `tx_id`. Making those opaque too is a follow-up; a `tx_ref` is never derived from them.
+- Evidence rows still show a `tx_id`, including the review card's own "See the purchase" evidence for the same transaction. Making evidence ids opaque is a follow-up. What holds: the label endpoint accepts only a `tx_ref`, never a `tx_id`, and a `tx_ref` is not derived from one.
 
 **Recomputing with labels.**
 - **Classification:** answered rows (`basket IS NOT NULL`) feed the transaction level of the overrides in the shared classification block. Every metric that uses it (baskets, safe to spend, safe to save, what-if, profile, peer) picks the label up the same way.
@@ -504,7 +504,7 @@ CREATE TABLE spike_reviews (
 
 **The label endpoint, not a tool (R6).** `POST /api/baskets/label` (contract, section 10) is called by the **app** when the customer taps an answer.
 - The model has no tool that writes data. The tool registry is unchanged, and the planner cannot label, undo or dismiss anything.
-- The endpoint checks that the `tx_ref` belongs to the customer (R4), that the basket is one of the two options, and that the review is still open.
+- The endpoint checks that the `tx_ref` belongs to the customer (R4) and that the basket is one of the two options. Late answers are accepted: any `tx_ref` the customer was shown can be labelled, also after the review stopped being offered (contract, section 10.1).
 - Every label write goes to the audit log: customer, `tx_ref`, basket, time.
 
 **Review cards in answers.**
@@ -512,7 +512,12 @@ CREATE TABLE spike_reviews (
 - **Limits:** the card counts towards the limit of 3 cards per answer and towards the weekly limit.
 - **Text:** the answer text does not mention it; the card speaks for itself. The question and the option texts are fixed, reviewed templates in English and Finnish. The model never writes them.
 
-**Safe to save.** The overview's `safe_to_save` card carries two figures, defined in `metrics.md` section 3.1: the stock (money on the account beyond what is needed until payday) and the monthly flow. It is an estimate (R13). The text never says where to put the money (R7). The coach presents it as separate from safe to spend, not added to it.
+**Safe to save.** The overview's `safe_to_save` card (its own card type) carries two figures, defined in `metrics.md` section 3.1:
+- **Headline:** the monthly figure, what a typical month leaves (product decision).
+- **Second line:** the stock, money on the account beyond what is needed until payday, with one fixed explanatory sentence and no call to action.
+- **When the month leaves nothing:** the headline is 0, and a `reason` built from the data says why. Either essentials exceed income, or the largest everyday category is named (never a sensitive one, R9).
+
+Both figures are estimates (R13), and nothing says where to put the money (R7). The coach presents them as separate from safe to spend, not added to it. The coach's text may cite these numbers like any other tool number, but it never adds a suggestion to move or invest money; the validator's deny list covers "move", "transfer" and "invest" next to a safe-to-save number.
 
 ## 8. Guardrails
 

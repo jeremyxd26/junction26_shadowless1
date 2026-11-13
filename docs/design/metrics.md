@@ -283,7 +283,23 @@ everyday_month        = everyday/day × 30.4375
 safe_to_save_monthly  = max(free_month − everyday_month, 0)                         a flow: what is typically left per month
 ```
 
-Two figures answer two questions. `safe_to_save` is a stock: the money on the account beyond what is needed until payday. For a customer with savings on a current account it can be large. `safe_to_save_monthly` is a flow: what a typical month leaves after commitments, both reserves and usual everyday spending. The contract carries both on one card, so the product can choose the headline without a contract change. The formulas are defined only here.
+Two figures answer two questions. The formulas are defined only here.
+- **`safe_to_save_monthly` is the headline** (product decision): a flow, what a typical month leaves after commitments, both reserves and usual everyday spending.
+- **`safe_to_save` is the second line:** a stock, the money on the account beyond what is needed until payday. For a customer with savings on a current account it can be large, so it is explained in one sentence and never comes with a call to action.
+
+**Why the month leaves nothing.** When `safe_to_save_monthly` is 0, a reason is given from the data:
+
+```
+left_after_essentials = income_month − sweep_month − committed_month − essentials_month
+if left_after_essentials < 0:  reason = essentials_exceed_income, amount = −left_after_essentials (the monthly shortfall)
+else:                          reason = largest_everyday_category, amount = that category's monthly average in the window
+```
+
+- `largest_everyday_category` is the `everyday_spending` category (after the basket rules and labels of section 1) with the largest window total, shown as a monthly average.
+- A sensitive category is never named (R9). `everyday_spending` holds none today, and if one ever appeared, the next category would be named.
+- When both causes hold, `essentials_exceed_income` applies: then even no everyday spending would leave nothing.
+
+**Not the same as the down-payment capacity.** `safe_to_save_monthly` uses the planning income of section 3 (`income_month_eur`, the median of the recurring income series) and keeps both reserves. The down-payment capacity of section 11 uses the average income that actually arrived (`net_income_month_eur`, see "Two income figures" in section 5) and no reserves. The two numbers differ on purpose: for Sanna, 184.61 against 547.79 a month.
 
 - **What it means.** Free until payday is what is left after the bills due before payday, both reserves and the cushion. Safe to save also keeps the usual everyday spending until payday. If the customer moves the whole amount, what is left still covers bills, reserves, the cushion and a normal everyday spending pace until payday.
 - **Not additive with safe to spend.** Both come out of the same free money. Moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday. The coach never presents the two as separate pots.
@@ -292,7 +308,7 @@ Two figures answer two questions. `safe_to_save` is a stock: the money on the ac
   - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
   - With no salary series, payday is assumed in 30 days (section 3), so the result is conservative.
   - Sweep customers: the balance is small, so the result is small.
-- **Output.** New columns of `03_safe_to_spend.sql`: `safe_to_save_eur`, `everyday_until_payday_eur`, `safe_to_save_monthly_eur` and `everyday_month_eur`. They are pending in issue #53: the committed SQL does not return them yet, and the values below come from the same query with these columns added.
+- **Output.** New columns of `03_safe_to_spend.sql`: `safe_to_save_monthly_eur`, `everyday_month_eur`, `safe_to_save_eur`, `everyday_until_payday_eur`, `essentials_shortfall_month_eur`, and the reason (`save_reason`, `save_reason_category`, `save_reason_month_eur`). They are pending in issue #53: the committed SQL does not return them yet, and the values below come from the same query with these columns added.
 - **Evidence.** Free until payday (with its own inputs) and the everyday rows of the window that are not one-offs.
 - **Worked numbers** (CUST00860, today 2026-09-30, N = 15; everyday/day = 3,602.44 / 183 = 19.685):
 
@@ -304,6 +320,18 @@ Two figures answer two questions. `safe_to_save` is a stock: the money on the ac
 | Free month | 783.79 | 963.49 |
 | Everyday month (× 30.4375) | 599.18 | 599.18 |
 | **Safe to save monthly** | **184.61** | **364.31** (+179.70, the irregular spending per month moved out) |
+
+Two more customers, today 2026-09-30 (no labels):
+
+| | CUST00849 (persona Aleksi) | CUST00002 |
+|---|---|---|
+| Free month = income − sweep − committed − (essentials + irregular) per month | 2,088.35 − 0 − 712.67 − 525.97 − 124.23 = **725.47** (the rounded parts add up to 725.48; each value is rounded on its own) | 1,592.42 − 0 − 996.32 − 455.55 − 142.13 = **−1.59** (the rounded parts add up to −1.58) |
+| Everyday month (one-offs left out) | 525.52 | 382.30 |
+| **Safe to save monthly** | **199.95** = 725.47 − 525.52 | **0.00**: −1.59 − 382.30 = −383.89, never below 0 |
+| Reason | none (the month leaves money) | left after essentials 1,592.42 − 996.32 − 455.55 = 140.54 ≥ 0, so `largest_everyday_category`: **Lifestyle**, 1,381.79 in the window = 230.30 a month (then Entertainment 99.07, Restaurants 92.18) |
+| Free until payday − everyday until payday | 819.62 − 258.98 = **560.64** | 198.47 − 188.40 = **10.07** |
+
+The per-category window totals come from the transactions of the window with the everyday rules of section 1 (Restaurants, Entertainment, Lifestyle, Travel, and taxis); there are no labels or subscriptions for these customers.
 
 ## 4. What-if savings — "How could I save more?"
 
