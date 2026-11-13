@@ -1,9 +1,11 @@
 """Merchant aliases: what the model and the app see instead of merchant ids (R3).
 
 Per customer and as_of, merchants are ranked by the customer's total spend with them up to as_of
-(ties by merchant id). Rank 1 is `store_a`, 27 is `store_aa`. The label is "<kind> <LETTERS>",
-for example "Grocery store A" or "Restaurant B", with the same letters as the key. Keys and labels
-contain no digits. The map back to merchant ids stays on the server.
+(ties by merchant id).
+- The key is opaque and unique: rank 1 overall is `store_a`, rank 27 is `store_aa`.
+- The label is "<kind> <LETTERS>" with letters by rank within the kind, so a customer's two taxi
+  companies are "Taxi A" and "Taxi B" and the top grocery store is "Grocery store A".
+Keys and labels contain no digits. The map back to merchant ids stays on the server.
 """
 
 from __future__ import annotations
@@ -26,22 +28,22 @@ def letters(rank: int) -> str:
     return out
 
 
-def merchant_kind(category: str, mcc: str | None, language: str) -> str:
-    pair = config.MERCHANT_KIND_BY_MCC.get(mcc or "") or config.MERCHANT_KIND_BY_CATEGORY.get(
+def merchant_kind(category: str, mcc: str | None) -> tuple[str, str]:
+    """(English, Finnish) kind of a merchant, from its MCC first, then its category."""
+    return config.MERCHANT_KIND_BY_MCC.get(mcc or "") or config.MERCHANT_KIND_BY_CATEGORY.get(
         category, config.MERCHANT_KIND_DEFAULT
     )
-    return config.label(pair, language)
 
 
 @dataclass(frozen=True)
 class Alias:
-    key: str
+    key: str           # opaque, unique per customer: store_a, store_b, ...
     merchant_id: str
-    category: str
-    mcc: str | None
+    kind: tuple[str, str]
+    kind_letters: str  # rank within the kind: a, b, ...
 
     def label(self, language: str = "en") -> str:
-        return f"{merchant_kind(self.category, self.mcc, language)} {self.key.removeprefix('store_').upper()}"
+        return f"{config.label(self.kind, language)} {self.kind_letters.upper()}"
 
 
 class AliasMap:
@@ -69,7 +71,10 @@ def build(history: list[Tx], as_of: date) -> AliasMap:
         spend[t.merchant_id] += -t.amount_eur
         first_seen.setdefault(t.merchant_id, t)
     ranked = sorted(spend, key=lambda m: (-spend[m], m))
-    return AliasMap([
-        Alias(key=f"store_{letters(i)}", merchant_id=m, category=first_seen[m].category, mcc=first_seen[m].mcc)
-        for i, m in enumerate(ranked, start=1)
-    ])
+    per_kind: dict[tuple[str, str], int] = defaultdict(int)
+    out = []
+    for i, m in enumerate(ranked, start=1):
+        kind = merchant_kind(first_seen[m].category, first_seen[m].mcc)
+        per_kind[kind] += 1
+        out.append(Alias(key=f"store_{letters(i)}", merchant_id=m, kind=kind, kind_letters=letters(per_kind[kind])))
+    return AliasMap(out)

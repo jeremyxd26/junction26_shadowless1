@@ -105,14 +105,16 @@ def test_aliases_rank_by_spend_and_have_no_digits():
         tx(1, date(2026, 9, 1), "Groceries", "-10.00", "MRC-GRO-0035", "5411"),
         tx(2, date(2026, 9, 2), "Restaurants", "-30.00", "MRC-RES-0112", "5812"),
         tx(3, date(2026, 9, 3), "Transportation", "-20.00", "MRC-TRN-0007", "4121"),
-        tx(4, date(2026, 10, 3), "Groceries", "-999.00", "MRC-GRO-0099", "5411"),  # after as_of: ignored
+        tx(4, date(2026, 9, 4), "Transportation", "-5.00", "MRC-TRN-0008", "4121"),
+        tx(5, date(2026, 10, 3), "Groceries", "-999.00", "MRC-GRO-0099", "5411"),  # after as_of: ignored
     ]
     amap = aliases.build(history, date(2026, 9, 30))
-    assert amap.keys() == ["store_a", "store_b", "store_c"]
+    assert amap.keys() == ["store_a", "store_b", "store_c", "store_d"]       # global spend rank
     assert amap.merchant_id("store_a") == "MRC-RES-0112"
-    labels = [amap.for_merchant(m).label(lang) for m in ("MRC-RES-0112", "MRC-TRN-0007", "MRC-GRO-0035")
-              for lang in ("en", "fi")]
-    assert labels == ["Restaurant A", "Ravintola A", "Taxi B", "Taksi B", "Grocery store C", "Ruokakauppa C"]
+    labels = [amap.for_merchant(m).label(lang)
+              for m in ("MRC-RES-0112", "MRC-TRN-0007", "MRC-GRO-0035", "MRC-TRN-0008") for lang in ("en", "fi")]
+    assert labels == ["Restaurant A", "Ravintola A", "Taxi A", "Taksi A", "Grocery store A", "Ruokakauppa A",
+                      "Taxi B", "Taksi B"]                                    # letters by rank within the kind
     assert not any(ch.isdigit() for text in labels + amap.keys() for ch in text)
     with pytest.raises(KeyError):
         amap.merchant_id("store_z")
