@@ -112,6 +112,7 @@ def answer(conn: psycopg.Connection, customer_id: str, as_of: date, tx_ref: str,
         raise reviews.ReviewNotFound(tx_ref)
     now = now or reviews.utcnow()
     with conn.transaction():
+        reviews.lock_customer(conn, customer_id)  # the lock review creation takes (one open review)
         review = reviews.find(conn, customer_id, tx_ref, lock=True)
         outcome = reviews.decide(review, basket, now)
         ctx = ToolContext(customer_id, as_of, conn, language)

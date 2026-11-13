@@ -154,9 +154,16 @@ def created_this_week(reviews: list[Review], now: datetime) -> int:
     return sum(1 for r in reviews if start <= r.created_at <= now)
 
 
+def is_open(review: Review, now: datetime) -> bool:
+    """Created less than REVIEW_DAYS ago: it can still be answered, changed or undone (any state)."""
+    return now < review.expires_at
+
+
 def may_create(reviews: list[Review], now: datetime) -> bool:
-    """One pending review at a time, and at most WEEKLY_LIMIT created per calendar week."""
-    return pending_of(reviews, now) is None and created_this_week(reviews, now) < WEEKLY_LIMIT
+    """A new review only when none of the customer's reviews is still open, so a customer has at most
+    one open review per 7 days and an undo can never meet a second pending review (review of #141);
+    WEEKLY_LIMIT per calendar week stays as an upper bound."""
+    return not any(is_open(r, now) for r in reviews) and created_this_week(reviews, now) < WEEKLY_LIMIT
 
 
 def next_candidate(history: list[Tx], as_of: date, reviews: list[Review], now: datetime) -> Tx | None:
@@ -259,7 +266,10 @@ def ensure_pending(conn: psycopg.Connection, customer_id: str, as_of: date, hist
         return None
     now = now or utcnow()
     current = load_reviews(conn, customer_id, as_of)
-    return pending_of(current, now) or _create_pending(conn, customer_id, as_of, history, now)
+    pending = pending_of(current, now)
+    if pending is not None or not may_create(current, now):  # checked again under the lock
+        return pending
+    return _create_pending(conn, customer_id, as_of, history, now)
 
 
 def ensure_pending_for(ctx: Any, now: datetime | None = None) -> Review | None:
@@ -270,7 +280,7 @@ def ensure_pending_for(ctx: Any, now: datetime | None = None) -> Review | None:
     now = now or utcnow()
     current = load_reviews(ctx.conn, ctx.customer_id, ctx.as_of)
     pending = pending_of(current, now)
-    if pending is None:
+    if pending is None and may_create(current, now):  # checked again under the lock
         pending = _create_pending(ctx.conn, ctx.customer_id, ctx.as_of, ctx.history, now)
         if pending is not None and all(r.tx_id != pending.tx_id for r in current):
             current = [*current, pending]  # a candidate comes from the history up to as_of
@@ -278,13 +288,25 @@ def ensure_pending_for(ctx: Any, now: datetime | None = None) -> Review | None:
     return pending
 
 
+def lock_customer(conn: psycopg.Connection, customer_id: str) -> None:
+    """The per-customer lock (transaction-level) that review creation and every label write take, so
+    the "one open review" rule cannot race with an answer or an undo."""
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:' || %s, 0))", (customer_id,))
+
+
+def _ensure_table_once(conn: psycopg.Connection) -> None:
+    """Create the table under one global lock, so first serves for different customers on a fresh
+    database cannot race on CREATE TABLE IF NOT EXISTS (which can fail with a duplicate type)."""
+    if not table_exists(conn):
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:ddl', 0))")
+        ensure_table(conn)
+
+
 def _create_pending(conn: psycopg.Connection, customer_id: str, as_of: date, history: History,
                     now: datetime) -> Review | None:
     with conn.transaction():
-        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:' || %s, 0))",
-                     (customer_id,))
-        if not table_exists(conn):
-            ensure_table(conn)
+        lock_customer(conn, customer_id)
+        _ensure_table_once(conn)
         reviews = load_reviews(conn, customer_id)
         pending = pending_of(reviews, now)
         if pending is not None:

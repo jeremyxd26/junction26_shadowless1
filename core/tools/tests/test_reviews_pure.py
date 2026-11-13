@@ -94,10 +94,27 @@ def test_label_overrides_pending_unclassified_answered_basket_closed_nothing():
 
 # ---- one at a time, weekly limit (Helsinki calendar week, wall clock) -----------------------------
 
-def test_one_pending_review_at_a_time():
+def test_one_open_review_per_seven_days():
+    """No new review while the last one can still be answered or undone (review of #141)."""
     assert reviews.may_create([], NOW)
-    assert not reviews.may_create([review()], NOW)
-    assert reviews.may_create([review(basket="everyday_spending", answered=NOW)], NOW)
+    assert not reviews.may_create([review()], NOW)                                        # pending
+    assert not reviews.may_create([review(basket="everyday_spending", answered=NOW)], NOW)  # answered, open
+    week_ago = NOW - timedelta(days=7)
+    assert reviews.may_create([review(created=week_ago, basket="everyday_spending", answered=week_ago)], NOW)
+    assert reviews.may_create([review(created=week_ago)], NOW)                            # closed
+
+
+def test_reviewer_sequence_answer_refetch_undo_never_gives_two_pending():
+    """Answer A; the refetched overview must not create B; undo A within 7 days: only A is pending."""
+    h = history_with_spikes()
+    a = review(6)                                                     # the first candidate, pending
+    answered = reviews.decide(a, "unexpected_necessities", NOW + timedelta(hours=1)).review
+    assert reviews.next_candidate(h, AS_OF, [answered], NOW + timedelta(hours=2)) is None    # no B
+    undone = reviews.decide(answered, None, NOW + timedelta(days=6)).review
+    assert reviews.next_candidate(h, AS_OF, [undone], NOW + timedelta(days=6)) is None
+    assert [r.tx_id for r in [undone] if r.state(NOW + timedelta(days=6)) == PENDING] == [6]
+    # Once A's 7 days are over, the next spike may be asked (and A is never asked again).
+    assert reviews.next_candidate(h, AS_OF, [answered], NOW + timedelta(days=7)).id == 1
 
 
 def test_week_starts_monday_midnight_in_helsinki():
@@ -114,15 +131,18 @@ def test_week_starts_monday_midnight_in_helsinki():
         2026, 6, 28, 21, 0, tzinfo=UTC)
 
 
-def test_at_most_three_reviews_created_per_calendar_week():
+def test_the_calendar_week_limit_counts_this_week_only():
+    """At most WEEKLY_LIMIT per calendar week stays as an upper bound over the 7-day rule."""
     monday = reviews.week_start(NOW).astimezone(UTC)
     done = [review(i, created=monday + timedelta(hours=i), basket="everyday_spending", answered=NOW)
             for i in (1, 2, 3)]
-    assert not reviews.may_create(done, NOW)
-    assert reviews.may_create(done[:2], NOW)
+    assert reviews.created_this_week(done, NOW) == 3 and not reviews.may_create(done, NOW)
     last_week = [review(i, created=monday - timedelta(hours=i), basket="everyday_spending", answered=NOW)
                  for i in (1, 2, 3)]
-    assert reviews.may_create(last_week, NOW)                              # a new week, a new limit
+    assert reviews.created_this_week(last_week, NOW) == 0                  # a new week, a new count
+    long_ago = [review(i, created=NOW - timedelta(days=8 + i), basket="everyday_spending", answered=NOW)
+                for i in (1, 2, 3)]
+    assert reviews.may_create(long_ago, NOW)
 
 
 # ---- selection ------------------------------------------------------------------------------------
