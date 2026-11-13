@@ -17,10 +17,14 @@ __SITE__ {
 	}
 
 	# Vite puts content-hashed files under /assets/: they never change, so they are cached for a year.
-	# A missing asset is a plain 404, never index.html (that would be cached as the asset).
+	# A missing asset is a plain 404 that is not cached, never index.html (that would be cached as the
+	# asset).
 	handle /assets/* {
 		root * /opt/shadowless1/app/current
-		header Cache-Control "public, max-age=31536000, immutable"
+		@hashed file
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@missing not file
+		header @missing Cache-Control "no-store"
 		file_server
 	}
 
