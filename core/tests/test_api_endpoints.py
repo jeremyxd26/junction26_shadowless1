@@ -16,7 +16,7 @@ from core.app.api.errors import ApiError
 from core.app.api.schemas import ErrorResponse, OverviewResponse, PersonasResponse
 from core.app.main import create_app
 from core.app.settings import Settings
-from core.tools import aliases, config
+from core.tools import aliases, config, safe_to_spend
 from core.tools.context import ToolContext
 from core.tools.db import Tx
 from core.tools.models import Card, Number, Period, ToolResult
@@ -115,7 +115,7 @@ class _FakePool:
 
 
 def test_unexpected_error_is_500_internal_without_its_text(clean_env, monkeypatch):
-    def boom(ctx, hero_tool=None):
+    def boom(*args, **kwargs):
         raise RuntimeError("secret detail that must not leak")
 
     monkeypatch.setattr(overview, "build", boom)
@@ -132,7 +132,7 @@ CANARY = "postgresql://canary_user:canary_pw@canary-host.example/canary_db"
 
 def test_unhandled_exception_text_reaches_neither_the_log_nor_the_body(clean_env, monkeypatch, caplog):
     """The exception is caught without re-raising: Starlette's 500 handler would log the traceback."""
-    def boom(ctx, hero_tool=None):
+    def boom(*args, **kwargs):
         raise RuntimeError(f"connection failed: {CANARY}")
 
     monkeypatch.setattr(overview, "build", boom)
@@ -228,8 +228,22 @@ def _history() -> list[Tx]:
     return h
 
 
-def _ctx() -> ToolContext:
-    return ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=_FakeStore(), _history=_history())
+# The row of 03_safe_to_spend.sql for Sanna (contracts/api.md `card.safe_to_save`), as metric_row caches
+# it on the context: the safe-to-save tool then runs without a database.
+SANNA_03_ROW = {
+    "free_month_eur": Decimal("783.79"), "everyday_month_eur": Decimal("599.18"),
+    "safe_to_save_monthly_eur": Decimal("184.61"), "essentials_shortfall_month_eur": Decimal("0.00"),
+    "free_until_payday_eur": Decimal("12567.56"), "everyday_until_payday_eur": Decimal("295.28"),
+    "safe_to_save_eur": Decimal("12272.28"), "save_reason": None, "save_reason_category": None,
+    "save_reason_month_eur": None, "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+}
+
+
+def _ctx(row: dict | None = None) -> ToolContext:
+    ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=_FakeStore(), _history=_history())
+    settings = safe_to_spend.settings_for(ctx)
+    ctx.shared[(config.SAFE_TO_SPEND_FILE, tuple(sorted(settings.items())))] = SANNA_03_ROW if row is None else row
+    return ctx
 
 
 def _stub_hero(ctx, args) -> ToolResult:

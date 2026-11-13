@@ -153,6 +153,21 @@ for _col, _unit, _en, _fi in [
     ("cushion_eur", Unit.EUR, "Cushion", "Puskuri"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+# Safe to save (#165), output columns of the same file (metrics.md section 3.1).
+for _col, _unit, _en, _fi in [
+    ("safe_to_save_monthly_eur", Unit.EUR_PER_MONTH, "Typically left each month", "Tavallisesti jää kuukaudessa"),
+    ("free_month_eur", Unit.EUR_PER_MONTH, "Free in a typical month", "Vapaana tavallisessa kuukaudessa"),
+    ("everyday_month_eur", Unit.EUR_PER_MONTH, "Everyday spending in a typical month",
+     "Arkikulutus tavallisessa kuukaudessa"),
+    ("essentials_shortfall_month_eur", Unit.EUR_PER_MONTH, "Bills, essentials and the reserve above income",
+     "Laskut, välttämättömät menot ja varaus ylittävät tulot"),
+    ("safe_to_save_eur", Unit.EUR, "In your account beyond what you need until payday",
+     "Tililläsi yli sen, mitä tarvitset palkkapäivään asti"),
+    ("everyday_until_payday_eur", Unit.EUR, "Everyday spending until payday", "Arkikulutus palkkapäivään asti"),
+    ("save_reason_month_eur", Unit.EUR_PER_MONTH, "Why a typical month leaves nothing",
+     "Miksi tavallisesta kuukaudesta ei jää mitään"),
+]:
+    METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#31-safe-to-save-33")
 for _col, _unit, _en, _fi in [
     ("baseline_month_eur", Unit.EUR_PER_MONTH, "Usual spending per month", "Tavallinen kulutus kuukaudessa"),
     ("saving_month_eur", Unit.EUR_PER_MONTH, "Saving per month", "Säästö kuukaudessa"),
