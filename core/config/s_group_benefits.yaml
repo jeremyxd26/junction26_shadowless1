@@ -1,0 +1,131 @@
+# S-Group Bonus and payment-benefit rules, for a what-if Bonus estimate only.
+# Issue #4. Human-readable version with quotes and sources: docs/domain/s-group-benefits.md
+# Every rule cites a source id from that document (G1..G8), all accessed 2026-11-13.
+# Values marked `unknown` are not published on the official pages we opened.
+# Product decision (owner, issue #4): S-Bonus is shown only as a what-if estimate on the
+# customer's own spending; no merchant is named or treated as an S-Group store.
+# Percentages are written as percent values: `percent: 1.5` means 1.5 %, not a fraction.
+
+version: 2
+accessed: "2026-11-13"
+sources:
+  G1: https://s-ryhma.fi/en/about-us/business-operations
+  G2: https://s-etukortti.fi/en/bonus/bonus-tables
+  G3: https://s-etukortti.fi/bonus/bonustaulukot
+  G4: https://s-etukortti.fi/en/rules-of-the-co-op-membership-system   # valid as of 10 July 2026
+  G5: https://s-etukortti.fi/en/bonus
+  G6: https://www.abcasemat.fi/polttoaineet
+  G7: https://www.s-pankki.fi/fi/kortit/maksutapaetu/
+  G8: https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/miten-saan-maksutapaetua/
+
+bonus:
+  period: calendar_month                       # G4
+  paid_to: s_pankki_account_of_main_member     # G4, G5
+  paid_by_day_of_next_month: 10                # G4, G5
+  level_base: household_bonus_purchases_including_fuel   # G4, G5
+  percent_applies_to: month_purchases_excluding_fuel     # G4
+  # Our reading, not stated in words on the pages: the level is the highest row with
+  # min_monthly_purchases_eur <= level_base; below the lowest row the percent is 0.
+  level_rule: highest_row_at_or_below          # assumption (open question 1)
+  below_lowest_row_percent: 0                  # assumption (open question 1)
+  tables:                                      # on G2/G3 each caption comes after its table
+    default:
+      applies_to: all cooperatives except Osuuskauppa KPO and Koillismaan Osuuskauppa   # G2
+      source: [G2, G3]
+      levels:                                  # min monthly purchases (EUR) -> Bonus percent
+        - {min_monthly_purchases_eur: 50,  percent: 1.0}
+        - {min_monthly_purchases_eur: 200, percent: 1.5}
+        - {min_monthly_purchases_eur: 300, percent: 2.0}
+        - {min_monthly_purchases_eur: 400, percent: 2.5}
+        - {min_monthly_purchases_eur: 500, percent: 3.0}
+        - {min_monthly_purchases_eur: 600, percent: 3.5}
+        - {min_monthly_purchases_eur: 700, percent: 4.0}
+        - {min_monthly_purchases_eur: 800, percent: 4.5}
+        - {min_monthly_purchases_eur: 900, percent: 5.0}
+    kpo:
+      applies_to: Osuuskauppa KPO              # G2 "KPO cooperative Bonus table"
+      source: [G2, G3]
+      levels:
+        - {min_monthly_purchases_eur: 100, percent: 1.0}
+        - {min_monthly_purchases_eur: 200, percent: 1.5}
+        - {min_monthly_purchases_eur: 300, percent: 2.0}
+        - {min_monthly_purchases_eur: 400, percent: 2.5}
+        - {min_monthly_purchases_eur: 500, percent: 3.0}
+        - {min_monthly_purchases_eur: 600, percent: 3.5}
+        - {min_monthly_purchases_eur: 700, percent: 4.0}
+        - {min_monthly_purchases_eur: 800, percent: 4.5}
+        - {min_monthly_purchases_eur: 900, percent: 5.0}
+    koillismaa:
+      applies_to: Koillismaan Osuuskauppa      # G2 "Koilismaan Osuuskauppa Bonus table" (page spelling)
+      source: [G2, G3]
+      levels:
+        - {min_monthly_purchases_eur: 1,   percent: 1.0}
+        - {min_monthly_purchases_eur: 200, percent: 1.5}
+        - {min_monthly_purchases_eur: 300, percent: 2.0}
+        - {min_monthly_purchases_eur: 400, percent: 2.5}
+        - {min_monthly_purchases_eur: 500, percent: 3.0}
+        - {min_monthly_purchases_eur: 600, percent: 3.5}
+        - {min_monthly_purchases_eur: 700, percent: 4.0}
+        - {min_monthly_purchases_eur: 800, percent: 4.5}
+        - {min_monthly_purchases_eur: 900, percent: 5.0}
+  excluded_from_bonus:                         # not visible in our data (no item level)
+    - tobacco and nicotine products                                  # G4 3.2.4, G5
+    - beverages over 1.2% alcohol by volume and foods over 2.8%      # G4 3.2.4, G5
+    - gambling and lottery products (most commission-based products) # G4 3.2.4, G5
+    - S Group gift cards (for the buyer)                             # G4 3.2.4
+    - tax-free purchases                                             # G4 3.2.4
+    - purchases with a corporate or business card                    # G4 3.2.4, G5
+    - medicines reimbursed by Kela                                   # G5
+    - bottle returns                                                 # G5
+  fuel:
+    earns_percent_bonus: false                 # G4
+    counts_towards_level: true                 # G4, G5
+    refuelling_bonus:
+      unit: cents_per_litre                    # G4
+      max_cents_per_litre: 5                   # G6
+      published_example: {bonus_percent: 3.0, cents_per_litre: 3}   # G5
+      cents_per_litre_equals_bonus_percent: true   # our reading from the example (open question 2)
+  ev_charging_at_abc_earns_bonus: true         # G4
+
+payment_benefit:                               # maksutapaetu
+  percent: 0.5                                 # 0.5 %, not a fraction. G4, G7, G8
+  cards: [S-Etukortti Visa, S-Etukortti Debit] # G4; debit and credit side both count (G7)
+  where: S Group outlets and online stores in Finland   # G4, G7
+  base: purchase_total                         # G8 "pääsääntöisesti koko oston loppusummasta"
+  excluded:                                    # G4 section 3.3.3, G8
+    - withdrawals, deposits and debt repayments
+    - gambling and lottery products (most commission-based products)
+    - tobacco and nicotine products
+    - beverages over 1.2% alcohol by volume
+    - car purchases (maintenance, spare parts and accessories do count)
+  household: all S-Etukortti Visa cards of the household count   # G7
+  paid_to: s_pankki_account_of_main_member     # G4, G8
+  paid_by_day_of_next_month: 10                # G4, G7
+
+# Which kinds of purchases the scale would apply to (our reading of G1). An MCC never makes a
+# merchant an S-Group store; no merchant is treated as one. v1 uses only groceries, through the
+# category Groceries.
+mcc_purchase_kinds:
+  "5411": {type: grocery,    counts_towards_level: true,  earns_percent_bonus: true}
+  "5499": {type: grocery,    counts_towards_level: true,  earns_percent_bonus: true}
+  "5541": {type: fuel,       counts_towards_level: true,  earns_percent_bonus: false}  # Refuelling Bonus
+  "5542": {type: fuel,       counts_towards_level: true,  earns_percent_bonus: false}  # unstaffed stations
+  "5812": {type: restaurant, counts_towards_level: true,  earns_percent_bonus: true}   # alcohol not visible in our data
+  "5814": {type: restaurant, counts_towards_level: true,  earns_percent_bonus: true}
+  "5813": {type: bar,        counts_towards_level: false, earns_percent_bonus: false}  # assumption: mostly alcohol
+  "7011": {type: hotel,      counts_towards_level: true,  earns_percent_bonus: true}
+# All other MCCs in the data: the scale is not applied (including health MCCs, rule R9).
+
+what_if_assumptions:
+  is_assumption: true
+  why: >-
+    Merchants in the dataset are anonymised ids such as MRC-GRO-0035, so whether a merchant
+    belongs to S-Group is not in the data. Until the bank confirms the mapping, the coach shows
+    Bonus only as a what-if on the customer's own grocery spending.
+  merchants_treated_as_s_group: none           # is_s_group = null for every merchant
+  base_category: Groceries                     # the customer's own spending in this category
+  default_share: 1.0                           # what-if share of that spending at S-Group (a fraction 0..1)
+  card_product: S-Etukortti Visa               # for the payment benefit
+  household: one_customer_is_one_household
+  bonus_table: default
+  excluded_goods_in_base: none_assumed
