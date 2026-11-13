@@ -110,6 +110,55 @@ In the prototypes the same shape is an empty `overrides` CTE, joined by `LEFT JO
 | CUST00002 | 1,129.45 (66.4%) | 142.42 (8.4%); 126.89 without one 93.17 one-off | 430.29 (25.3%); 383.09 without one 283.24 one-off |
 | CUST00006 | 169.32 (66.8%) | 34.23 (13.5%) | 49.99 (19.7%) |
 
+### 1.1 Customer labels for spending spikes (#33)
+
+The coach asks about a spike: "was this an unexpected necessity or everyday spending?" The answer becomes a **label on that one transaction**. The person decides what their own spending means.
+
+**Precedence.** A label is the most specific override: transaction label, then merchant, then MCC, then category, then the rules above. In SQL it is one more level in the shared classification block. The `overrides` CTE gets a `tx_id` column, the lateral join matches `o.tx_id = x.id` first, and `ORDER BY` puts `(o.tx_id IS NOT NULL) DESC` first. The product table is `spike_reviews` (design doc, section 7.8); its answered rows are read as transaction-level overrides.
+
+**What can be labelled.** The two target baskets are `unexpected_necessities` and `everyday_spending` only. The transaction must be:
+- a purchase in the spend flow, inside the window;
+- a one-off by the spike rule of section 0;
+- in `unexpected_necessities` or `everyday_spending` by the rules above.
+
+It is never a Health purchase or a health MCC (5912, 8011, 8099, 8021). Those spikes are never asked about and stay in `unexpected_necessities` silently (R9).
+
+**What a label changes.**
+- **The basket only.** The purchase stays a one-off, because the spike rule depends on amounts, not baskets. Baselines that leave one-offs out therefore do not move: usual everyday spending (section 3) and the what-if baseline (section 4).
+- **Downstream:**
+  - basket totals and shares (`02`);
+  - the irregular reserve and with it free until payday, the budget limit and safe to spend (`03`, and safe to save in 3.1);
+  - basket shares in the profile (`05`); the everyday share can cross 30%, and the label then changes only if no earlier rule matches;
+  - the basket metrics of the peer benchmark (`06`).
+- **Marts:** the precomputed marts of section 8 must be refreshed for that customer.
+- **Undo:** an undone label falls back to the rules.
+
+**Direction.** Answering "everyday spending" moves a lump out of `unexpected_necessities`, so it is no longer reserved for as a need. The irregular reserve falls and safe to spend rises. Answering "unexpected necessity" confirms the rule and changes nothing. This is intended: the person says the purchase was a choice, not a need that may come back. Open question 8 in section 10 confirms it.
+
+**Worked numbers.** CUST00860 (persona Sanna), transaction 606016: Home & Tech, 1,080.42 on 2026-09-28. It is 9.0 times her median Home & Tech purchase and a one-off, so the rules put it in `unexpected_necessities`. The label is `everyday_spending`. Window 2026-04-01 … 2026-09-30 (183 days); payday 2026-10-15, N = 15.
+
+| | Before | After the label | Difference |
+|---|---|---|---|
+| Unexpected necessities, window total | 3,126.90 | 2,046.48 | −1,080.42 |
+| Everyday spending, window total | 3,602.44 | 4,682.86 | +1,080.42 |
+| Regular essentials, window total | 11,334.21 | 11,334.21 | 0 |
+| Month averages (regular / unexpected / everyday) | 1,889.04 / 521.15 / 600.41 | 1,889.04 / 341.08 / 780.48 | unexpected −180.07, everyday +180.07 |
+| Shares | 62.7% / 17.3% / 19.9% | 62.7% / 11.3% / 25.9% | |
+| Irregular reserve (15 days) | 256.30 | 167.74 | −88.56 = 1,080.42 / 183 × 15 |
+| Free until payday | 12,567.56 | 12,656.12 | +88.56 |
+| Irregular spending per month (budget limit input) | 520.08 | 340.38 | −179.70 = 1,080.42 / 183 × 30.4375 |
+| Budget limit 7d | 180.26 | 221.58 | +41.32 (179.70 × 7 / 30.4375, after rounding) |
+| **Safe to spend 7d** (binding: budget) | **180.26** | **221.58** | +41.32 |
+| Usual everyday spending per 7 days | 137.80 | 137.80 | 0: the purchase is still a one-off |
+| Safe to save (3.1) | 12,272.28 | 12,360.83 | +88.55 (88.56 before rounding) |
+| Safe to save monthly (3.1) | 184.61 | 364.31 | +179.70 |
+
+**How the "after" column was computed.**
+- `02_baskets.sql` and `03_safe_to_spend.sql` were run for the range `CUST00860` … `CUST00861`: once as committed, and once with the transaction-level override described above (one row: CUST00860, tx 606016, `everyday_spending`).
+- Both runs used one read-only connection with `statement_timeout = '60s'`.
+- The override change is the specification for the SQL. It is not committed yet, because implementing labels is a separate issue.
+- Safe to save was computed in the same runs with the formula of 3.1.
+
 ## 2. Recurring bills and income cadence
 
 **Series.** A non-card flow is keyed by `tx_type` (salary, housing_payment, utilities_payment, investment_deposit, salary_sweep, …). A card purchase is keyed by `merchant_id`.
@@ -221,6 +270,40 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 | usual everyday spending / 7 days | 91.80 → ok | 87.92 | 11.47 → ok |
 
 Checked with an earlier today: at 2026-09-14 CUST00001's salary is `upcoming`, payday 2026-09-15 (N = 1) and the result is 86.98; at 2026-05-20 (that month's salary came on the 29th) it is `late`, payday 2026-05-31 and the result is 82.94.
+
+### 3.1 Safe to save (#33)
+
+"How much could I move to savings now?" Built only from what safe to spend already computes:
+
+```
+everyday/day          = everyday_spending in the window, one-offs left out / window days   (the rate behind usual_everyday_7d)
+everyday_until_payday = everyday/day × N
+safe_to_save          = max(free_until_payday − everyday_until_payday, 0)          a stock: money on the account now
+everyday_month        = everyday/day × 30.4375
+safe_to_save_monthly  = max(free_month − everyday_month, 0)                         a flow: what is typically left per month
+```
+
+Two figures answer two questions. `safe_to_save` is a stock: the money on the account beyond what is needed until payday. For a customer with savings on a current account it can be large. `safe_to_save_monthly` is a flow: what a typical month leaves after commitments, both reserves and usual everyday spending. The contract carries both on one card, so the product can choose the headline without a contract change. The formulas are defined only here.
+
+- **What it means.** Free until payday is what is left after the bills due before payday, both reserves and the cushion. Safe to save also keeps the usual everyday spending until payday. If the customer moves the whole amount, what is left still covers bills, reserves, the cushion and a normal everyday spending pace until payday.
+- **Not additive with safe to spend.** Both come out of the same free money. Moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday. The coach never presents the two as separate pots.
+- **R13 and R7.** It is an estimate, shown with its formula in plain words. It is not investment advice: the coach never says where to put the money (no product, no instrument).
+- **Edge cases.**
+  - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
+  - With no salary series, payday is assumed in 30 days (section 3), so the result is conservative.
+  - Sweep customers: the balance is small, so the result is small.
+- **Output.** New columns of `03_safe_to_spend.sql`: `safe_to_save_eur`, `everyday_until_payday_eur`, `safe_to_save_monthly_eur` and `everyday_month_eur`. They are pending in issue #53: the committed SQL does not return them yet, and the values below come from the same query with these columns added.
+- **Evidence.** Free until payday (with its own inputs) and the everyday rows of the window that are not one-offs.
+- **Worked numbers** (CUST00860, today 2026-09-30, N = 15; everyday/day = 3,602.44 / 183 = 19.685):
+
+| | Before the label | After the label of 1.1 |
+|---|---|---|
+| Free until payday | 12,567.56 | 12,656.12 |
+| Everyday until payday (× 15) | 295.28 | 295.28 |
+| **Safe to save** | **12,272.28** | **12,360.83** (+88.55; the irregular reserve fell by 88.56) |
+| Free month | 783.79 | 963.49 |
+| Everyday month (× 30.4375) | 599.18 | 599.18 |
+| **Safe to save monthly** | **184.61** | **364.31** (+179.70, the irregular spending per month moved out) |
 
 ## 4. What-if savings — "How could I save more?"
 
@@ -426,6 +509,7 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
 5. **What-if scope. Decided:** never propose cutting regular essentials; everyday spending is the target, unexpected necessities only with a caveat (section 4, implemented in `04_what_if.sql`).
 6. **Store switch. Decided:** shown only when the full-population run finds stores that pass the significance rule; otherwise the coach says the difference is not measurable. Result of the full run (#21): no store passes, so it is not shown (section 7).
 7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
+8. **Spike labels. Open.** A spike the customer labels as everyday spending is no longer reserved for, so safe to spend rises: for Sanna by 41.32 a week (section 1.1). The default is to accept the customer's answer and have the coach say what changed.
 
 ## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)
 

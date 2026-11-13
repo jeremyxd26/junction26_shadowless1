@@ -127,7 +127,7 @@ When a tool produces a number, it also writes an **evidence spec**: the recipe n
 
 Values the user typed in (`user_input@1`) carry `evidence_ref: null` and have no evidence spec.
 
-- **Ref:** `ev_` plus 12 lowercase letters and digits taken from `sha256(canonical JSON of the spec)`. The spec includes the method, so **one ref backs exactly one number**. The same number for the same customer and `as_of` always gets the same ref, even when it is shown in several places, so refs are stable across restarts and repeated questions.
+- **Ref:** `ev_` plus 12 lowercase letters and digits taken from `sha256(canonical JSON of the spec)`. The spec includes the method, so **one ref backs exactly one number**. The same number for the same customer and `as_of` always gets the same ref, even when it is shown in several places, so refs are stable across restarts and repeated questions. The spec also includes the customer's spike labels in effect (section 7.8). After a label the affected numbers get new refs, and old refs keep resolving to the numbers as they were.
 - **Storage:** specs live in a small table `coach_evidence(ref primary key, customer_id, spec jsonb, created_at)`. Writes are idempotent.
 - **Resolution:** `GET /api/evidence/{ref}` loads the spec, checks that it belongs to the customer in the request (403 otherwise), and re-runs the spec query. If the rows do not reconcile with `value`, it returns `reconciles: false` and logs an error. An eval check fails on that (R2).
 - **Privacy:** for `peer_aggregate` the inputs are other customers, so the app gets the distribution and the recompute check runs inside the eval job only.
@@ -145,7 +145,7 @@ Values the user typed in (`user_input@1`) carry `evidence_ref: null` and have no
   - `notes`: caveats, for example "no transactions in this period".
   - `evidence`: the refs written.
   - `model_view`: the compact projection the model sees (section 6.4).
-- **Results are deterministic and cacheable** by `(customer_id, tool, args, as_of)`.
+- **Results are deterministic and cacheable** by `(customer_id, tool, args, as_of, label set hash)`. The label set is the customer's spike labels (section 7.8), so a new label invalidates exactly that customer's cached results.
 
 Shared types:
 
@@ -459,6 +459,61 @@ The composer prompt forbids both, and the eval set samples for them.
 - **Server-side text:** labels, period labels, refusal templates, follow-ups and lessons come from catalogues in English and Finnish, which a Finnish speaker reviews before the demo.
 - **Labels:** basket labels follow the partner's vocabulary (contract, section 1). Finnish basket labels are an open question (section 13).
 
+### 7.8 The coach asks: spike reviews (#33)
+
+The coach does not only answer; it also asks. When it sees a spending spike, it asks one question: was this an unexpected necessity or everyday spending? The customer's answer is stored as a label on that transaction and changes the numbers (`metrics.md` section 1.1). The person decides what their own spending means.
+
+**Which spike to ask about.** The core picks candidates deterministically; the model never chooses. A candidate is a transaction that:
+- is a one-off by the spike rule (`metrics.md` section 0), in the spend flow, inside the window;
+- is in `unexpected_necessities` or `everyday_spending` by the basket rules;
+- is **not** Health and not a health MCC (5912, 8011, 8099, 8021). Those spikes are never asked about and stay in `unexpected_necessities` silently (R9);
+- has never been asked about before (see "asked" below) and has no label.
+
+The candidates are ordered **most recent first, then largest amount**. The first one is the review offered next.
+
+**What counts as asked, and the limits.**
+- **Asked:** a review counts as *asked* the first time the server returns it, either as the first item of `reviews` in `GET /api/overview` or as a card attached to an answer. The server then records `first_shown_at` (an idempotent upsert). This is the only write a GET makes, and it touches only the review table, not the metrics.
+- **Weekly limit:** at most **3 reviews first shown per customer in any 7 days**.
+- **Never twice:** a transaction is asked about at most once. An asked review is served again until it is answered or 7 days pass. After that it is never offered again, answered or not.
+- **Undo:** an undone label is never asked again.
+- **Clock:** the 7 days run on the **wall clock** (`now()`), not on `DEMO_TODAY`, which is frozen for the demo. A demo reset deletes the persona's rows from the review table, with an admin script in the implementation issue. Nothing else needs resetting, because labels live only there.
+
+**Storage: one small table.**
+
+```sql
+CREATE TABLE spike_reviews (
+    customer_id    text   NOT NULL,
+    tx_id          bigint NOT NULL,              -- transactions.id; never sent to the app or the model
+    tx_ref         text   NOT NULL UNIQUE,       -- 'txr_' + 16 random base32 characters, sent to the app
+    first_shown_at timestamptz NOT NULL DEFAULT now(),
+    basket         text CHECK (basket IN ('unexpected_necessities', 'everyday_spending')),  -- NULL until answered or after undo
+    answered_at    timestamptz,
+    PRIMARY KEY (customer_id, tx_id)
+);
+```
+
+- `tx_ref` is a random token created when a candidate is first served. It is not derived from the transaction id, so it reveals nothing and needs no secret.
+- Only reviewable spikes get a `tx_ref`. The label endpoint therefore cannot label a Health purchase or any other transaction: R9 holds by construction, not only by validation.
+- Evidence rows of other numbers still show a `tx_id`. Making those opaque too is a follow-up; a `tx_ref` is never derived from them.
+
+**Recomputing with labels.**
+- **Classification:** answered rows (`basket IS NOT NULL`) feed the transaction level of the overrides in the shared classification block. Every metric that uses it (baskets, safe to spend, safe to save, what-if, profile, peer) picks the label up the same way.
+- **Marts:** the precomputed marts of `metrics.md` section 8 are refreshed for that customer after a label.
+- **Evidence:** the evidence spec (section 5.2) includes the customer's **label set**, the sorted list of `(tx_id, basket)` pairs in effect. A number after a label therefore gets a new ref. A ref issued before the label keeps resolving to the number as it was, with the old label set, so it still reconciles (R2).
+- **Cache:** the tool cache key (section 6.1) includes a hash of the label set, so a label invalidates exactly that customer's cached results.
+
+**The label endpoint, not a tool (R6).** `POST /api/baskets/label` (contract, section 10) is called by the **app** when the customer taps an answer.
+- The model has no tool that writes data. The tool registry is unchanged, and the planner cannot label, undo or dismiss anything.
+- The endpoint checks that the `tx_ref` belongs to the customer (R4), that the basket is one of the two options, and that the review is still open.
+- Every label write goes to the audit log: customer, `tx_ref`, basket, time.
+
+**Review cards in answers.**
+- **When:** the server, not the model, may attach the next review card to an `/api/ask` answer. That happens when the answer's tools touched the spike's basket or category, the weekly limit allows, and the spike was not shown this week.
+- **Limits:** the card counts towards the limit of 3 cards per answer and towards the weekly limit.
+- **Text:** the answer text does not mention it; the card speaks for itself. The question and the option texts are fixed, reviewed templates in English and Finnish. The model never writes them.
+
+**Safe to save.** The overview's `safe_to_save` card carries two figures, defined in `metrics.md` section 3.1: the stock (money on the account beyond what is needed until payday) and the monthly flow. It is an estimate (R13). The text never says where to put the money (R7). The coach presents it as separate from safe to spend, not added to it.
+
 ## 8. Guardrails
 
 | Risk | Control | Rule |
@@ -468,10 +523,10 @@ The composer prompt forbids both, and the eval set samples for them.
 | Raw data reaching the model | `model_view` projections, merchant aliases, masked history. A canary merchant id in the test data must never appear in a logged prompt. | R3 |
 | Another customer's data | `customer_id` lives only in the server context. Tools have no customer argument. Evidence checks ownership. | R4 |
 | Future or ambiguous periods | Clamping to `as_of`, resolved periods in every Number, period labels in the text | R5 |
-| Actions with side effects | Read-only registry, no free-text arguments | R6 |
+| Actions with side effects | Read-only registry, no free-text arguments. A spike label is written only by the app through `POST /api/baskets/label` when the customer taps an answer; no tool can write it (section 7.8). | R6 |
 | Investment advice | `decline(investment_advice)`, a fixed template with general education and a pointer to an S-Pankki adviser, and a validator deny list. The user's own Invest Deposit and Withdraw history stays answerable. | R7 |
 | Credit decisions, mortgages | "Will the bank approve my mortgage?" and similar questions route to `decline(credit_decision)`: a fixed template that points to the bank's loan process. No tool scores creditworthiness, and the mortgage tables are not used to rate the user. Saving for a down payment is allowed through the post-MVP `down_payment_plan` tool, which uses only the user's own cash flow. | R8 |
-| Sensitive inferences | Profile traits and insights never use the Health category or health MCCs. Health appears only as an amount in a full breakdown or when asked about directly. Validator deny list. | R9 |
+| Sensitive inferences | Profile traits and insights never use the Health category or health MCCs. Health appears only as an amount in a full breakdown or when asked about directly. Validator deny list. A Health or health-MCC spike is never asked about, gets no `tx_ref` and so cannot be labelled (section 7.8). | R9 |
 | Off-topic questions | `decline(out_of_scope)` with 2 or 3 example questions. No data tool runs. | R10 |
 | Prompt injection | User text is wrapped and marked as data. Tool data holds no external free text (merchants are anonymised, then aliased). Tool arguments are schema-validated enums. The composer sees data in a quoted block. The validator does not depend on the model. Even a successful injection cannot switch customer, run SQL, see rows or emit an unvalidated number. | R11 |
 | Malformed model output | `AnswerDraft` schema, one retry, then the template | R12 |
@@ -656,10 +711,10 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 | R3 Raw rows never reach the model | 4, 6.4, 7.6 |
 | R4 Customer set by the server | 4, 5.2 |
 | R5 Time stops at `DEMO_TODAY` | 4, 7.3 |
-| R6 Read-only tools | 4, 6.1 |
+| R6 Read-only tools | 4, 6.1, 7.8 (labels are written by the app, not by a tool) |
 | R7 No investment recommendation | 6.3, 7.1, 7.4, 8 |
 | R8 No credit decision | 6.2, 6.3, 6.5, 8 |
-| R9 No sensitive inferences | 6.2, 7.4, 8 |
+| R9 No sensitive inferences | 6.2, 7.4, 7.8, 8 |
 | R10 Out of scope declined briefly | 6.3, 8 |
 | R11 Data is not instructions | 6.1, 7.2, 8 |
 | R12 Structured, validated answers | 7.1, 7.2, 7.4, 11 |
