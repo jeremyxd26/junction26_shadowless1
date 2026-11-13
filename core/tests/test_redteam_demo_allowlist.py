@@ -25,9 +25,11 @@ PERSONA = "CUST00860"
 NOT_A_PERSONA = "CUST00001"      # exists in the data
 MISSING = "CUST99999"            # does not exist
 
-ENDPOINTS = [   # every endpoint on main that names a customer: (method, path template, params template)
-    ("GET", "/api/overview/{cid}", {}),
-    ("GET", "/api/evidence/ev_0123456789ab", {"customer_id": "{cid}"}),
+ENDPOINTS = [   # every endpoint on main that names a customer: (method, path template, params template, body)
+    ("GET", "/api/overview/{cid}", {}, None),
+    ("GET", "/api/evidence/ev_0123456789ab", {"customer_id": "{cid}"}, None),
+    ("POST", "/api/whatif", {}, {"customer_id": "{cid}", "language": "en",
+                                 "scenario": {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}}),
 ]
 
 
@@ -44,8 +46,10 @@ class SpyPool:
         yield
 
 
-def request(client, method, path, params, cid):
-    return client.request(method, path.format(cid=cid), params={k: v.format(cid=cid) for k, v in params.items()})
+def request(client, method, path, params, cid, body=None):
+    payload = None if body is None else {**body, "customer_id": body["customer_id"].format(cid=cid)}
+    return client.request(method, path.format(cid=cid), params={k: v.format(cid=cid) for k, v in params.items()},
+                          json=payload)
 
 
 @pytest.fixture
@@ -57,13 +61,14 @@ def client_with(clean_env):
     return make
 
 
-@pytest.mark.parametrize("method, path, params", ENDPOINTS)
-def test_a_non_persona_gets_the_same_404_as_a_missing_id_without_the_database(client_with, method, path, params):
+@pytest.mark.parametrize("method, path, params, body", ENDPOINTS)
+def test_a_non_persona_gets_the_same_404_as_a_missing_id_without_the_database(client_with, method, path, params,
+                                                                              body):
     with client_with() as client:
         pool = SpyPool()
         client.app.state.pool = pool
-        not_a_persona = request(client, method, path, params, NOT_A_PERSONA)
-        missing = request(client, method, path, params, MISSING)
+        not_a_persona = request(client, method, path, params, NOT_A_PERSONA, body)
+        missing = request(client, method, path, params, MISSING, body)
         client.app.state.pool = None
     for response in (not_a_persona, missing):
         assert response.status_code == 404
@@ -73,17 +78,17 @@ def test_a_non_persona_gets_the_same_404_as_a_missing_id_without_the_database(cl
     assert pool.taken == 0                                 # refused before any connection
 
 
-@pytest.mark.parametrize("method, path, params", ENDPOINTS)
-def test_a_persona_passes_the_allowlist(client_with, method, path, params):
+@pytest.mark.parametrize("method, path, params, body", ENDPOINTS)
+def test_a_persona_passes_the_allowlist(client_with, method, path, params, body):
     with client_with() as client:                          # no database: the request reaches the data step
-        response = request(client, method, path, params, PERSONA)
+        response = request(client, method, path, params, PERSONA, body)
     assert response.status_code == 503 and response.json()["error"]["code"] == "data_unavailable"
 
 
-@pytest.mark.parametrize("method, path, params", ENDPOINTS)
-def test_demo_customers_all_widens_it_for_local_eval_runs(client_with, method, path, params):
+@pytest.mark.parametrize("method, path, params, body", ENDPOINTS)
+def test_demo_customers_all_widens_it_for_local_eval_runs(client_with, method, path, params, body):
     with client_with(demo_customers="all") as client:
-        response = request(client, method, path, params, NOT_A_PERSONA)
+        response = request(client, method, path, params, NOT_A_PERSONA, body)
     assert response.status_code == 503                     # past the allowlist; the database decides
 
 
@@ -146,15 +151,12 @@ def test_a_missing_customer_is_never_remembered(monkeypatch):
 
 # ---- with the database (skipped without DATABASE_URL) ----------------------------------------------
 
-def test_with_the_database_a_persona_is_served_and_others_are_not(clean_env):
-    url = Settings().database_url
-    if url is None:
-        pytest.skip("DATABASE_URL is not set")
-    with TestClient(create_app(Settings(_env_file=None, database_url=url.get_secret_value()))) as client:
+def test_with_the_database_a_persona_is_served_and_others_are_not(clean_env, real_database_url):
+    with TestClient(create_app(Settings(_env_file=None, database_url=real_database_url))) as client:
         served = client.get(f"/api/overview/{PERSONA}")
         assert served.status_code == 200 and served.json()["customer_id"] == PERSONA
         ref = served.json()["cards"][0]["total"]["evidence_ref"]
-        for method, path, params in ENDPOINTS + [("GET", f"/api/evidence/{ref}", {"customer_id": "{cid}"})]:
-            a = request(client, method, path, params, NOT_A_PERSONA)
-            b = request(client, method, path, params, MISSING)
+        for method, path, params, body in ENDPOINTS + [("GET", f"/api/evidence/{ref}", {"customer_id": "{cid}"}, None)]:
+            a = request(client, method, path, params, NOT_A_PERSONA, body)
+            b = request(client, method, path, params, MISSING, body)
             assert a.status_code == b.status_code == 404 and a.content == b.content, path
