@@ -1,14 +1,17 @@
 """Load the S-Pankki synthetic dataset into PostgreSQL.
 
 Usage:
-    python core/ingest/load.py data/s-pankki
+    python core/ingest/load.py data/s-pankki [--force]
 
 Reads DATABASE_URL from the environment, or from a .env file in the repository root.
-Re-runnable: recreates the tables (schema.sql) and loads everything again.
+Only for an empty database: if `transactions` already has rows, the loader refuses to
+run unless --force is given. A forced run recreates the tables (schema.sql), which takes
+the data away from everyone using that database for several minutes.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -47,24 +50,30 @@ STAGING = {
     ),
 }
 
-TRANSFORM = f"""
+# One INSERT per final table, run separately so each reports how many rows it inserted.
+# Those counts are the final row-count check: no count(*) over the 3.6M-row table.
+TRANSFORM = {
+    "customers": """
 INSERT INTO customers (customer_id, postal_code, age)
-SELECT customer_id, customer_postal_code, customer_age::int FROM stg_customers;
-
+SELECT customer_id, customer_postal_code, customer_age::int FROM stg_customers
+""",
+    "transactions": f"""
 INSERT INTO transactions (customer_id, account_id, tx_date, tx_at, category, amount_eur,
                           balance_after, tx_type, merchant_id, mcc)
 SELECT customer_id, bank_account_id, tx_date::date, to_timestamp(tx_timestamp, '{TS_FORMAT}')::timestamp,
        category, tx_amount_eur::numeric, NULLIF(balance_after_eur, '')::numeric, transaction_type,
        NULLIF(merchant_id, ''), NULLIF(mcc_code, '')
-FROM stg_transactions;
-
+FROM stg_transactions
+""",
+    "mortgage_applications": """
 INSERT INTO mortgage_applications
 SELECT mortgage_customer_id, customer_id, final_decision, NULLIF(rejection_reason, ''),
        NULLIF(final_property_price_eur, '')::numeric, NULLIF(final_requested_loan_eur, '')::numeric,
        NULLIF(final_equity_amount_eur, '')::numeric, NULLIF(final_collateral_value_eur, '')::numeric,
        NULLIF(required_monthly_income_eur, '')::numeric, NULLIF(lfinal_loan_to_value, '')::numeric
-FROM stg_mortgage_applications;
-
+FROM stg_mortgage_applications
+""",
+    "mortgage_events": f"""
 INSERT INTO mortgage_events (mortgage_customer_id, event_at, event_type, property_id, property_type,
     property_price_estimate, loan_amount, equity_amount, collateral_type, collateral_value,
     collateral_status, decision, rejection_reason, expense_type, expense_amount, note)
@@ -74,8 +83,9 @@ SELECT mortgage_customer_id, to_timestamp(timestamp, '{TS_FORMAT}')::timestamp, 
        NULLIF(collateral_value, '')::numeric, NULLIF(collateral_status, ''), NULLIF(decision, ''),
        NULLIF(rejection_reason, ''), NULLIF(expense_type, ''), NULLIF(expense_amount, '')::numeric,
        NULLIF(note, '')
-FROM stg_mortgage_events;
-"""
+FROM stg_mortgage_events
+""",
+}
 
 INDEXES = """
 CREATE INDEX tx_customer_time     ON transactions (customer_id, tx_at);
@@ -104,6 +114,14 @@ def database_url() -> str:
     return url
 
 
+def already_loaded(conn: psycopg.Connection) -> bool:
+    """True if `transactions` exists and has at least one row. Cheap: stops at the first row."""
+    conn.execute("SET statement_timeout = '10s'")
+    if conn.execute("SELECT to_regclass('transactions')").fetchone()[0] is None:
+        return False
+    return conn.execute("SELECT EXISTS (SELECT 1 FROM transactions)").fetchone()[0]
+
+
 def copy_csv(conn: psycopg.Connection, table: str, path: Path, columns: str) -> None:
     conn.execute(f"DROP TABLE IF EXISTS {table}")
     cols = ", ".join(f"{c.strip()} text" for c in columns.split(","))
@@ -121,19 +139,40 @@ def copy_csv(conn: psycopg.Connection, table: str, path: Path, columns: str) -> 
 
 
 def main() -> None:
-    data_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "data/s-pankki")
-    for _, (name, _) in STAGING.items():
-        if not (data_dir / name).exists():
-            sys.exit(f"missing {data_dir / name}")
+    parser = argparse.ArgumentParser(description="Load the S-Pankki dataset into an empty PostgreSQL database.")
+    parser.add_argument("data_dir", nargs="?", default="data/s-pankki", type=Path)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="drop and reload even if `transactions` already has rows (takes the data away from everyone for minutes)",
+    )
+    args = parser.parse_args()
+    data_dir: Path = args.data_dir
 
     started = time.time()
     with psycopg.connect(database_url(), autocommit=True) as conn:
+        if already_loaded(conn):
+            if not args.force:
+                sys.exit(
+                    "REFUSED: the table `transactions` in this database already has rows, so the dataset is loaded.\n"
+                    "Re-running the loader drops and recreates every table: the data is gone for everyone using\n"
+                    "this database for several minutes. Nothing was changed.\n"
+                    "The loader is only for an empty database (a fresh instance or a local one).\n"
+                    "If you really mean to reload this database, run again with --force."
+                )
+            print("--force: reloading a database that already has data", flush=True)
+        conn.execute("RESET statement_timeout")
+
+        for _, (name, _) in STAGING.items():
+            if not (data_dir / name).exists():
+                sys.exit(f"missing {data_dir / name}")
+
         conn.execute(SCHEMA.read_text(encoding="utf-8"))
         for table, (name, columns) in STAGING.items():
             print(f"copy {name}", flush=True)
             copy_csv(conn, table, data_dir / name, columns)
         print("transform", flush=True)
-        conn.execute(TRANSFORM)
+        inserted = {table: conn.execute(sql).rowcount for table, sql in TRANSFORM.items()}
         for table in STAGING:
             conn.execute(f"DROP TABLE {table}")
         print("indexes", flush=True)
@@ -141,7 +180,7 @@ def main() -> None:
 
         ok = True
         for table, expected in EXPECTED.items():
-            got = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            got = inserted[table]
             ok &= got == expected
             print(f"{table:24} {got:>10,}  {'ok' if got == expected else f'EXPECTED {expected:,}'}")
         size = conn.execute("SELECT pg_size_pretty(pg_database_size(current_database()))").fetchone()[0]
