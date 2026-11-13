@@ -72,3 +72,15 @@ def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
     assert "7" not in draft["text"] and draft["cited"] == ["n6", "n8", "n9"]
     kept = template_draft([{**SPENDING}], [], "en", None, "How much on taxis last month?")
     assert kept["text"].startswith("August 2026: ")
+
+
+def test_save_more_ends_with_a_what_if_offer_and_no_cut_of_its_own():
+    # Issue #142: "How could I save more?" shows the baskets and the bills, then offers a what-if.
+    baskets = {**BASKETS, "total": n(40, 3010.59, "eur_per_month", "Total spending")}
+    for question, lang, offer in [("How could I save more?", "en", "what if I cut restaurants by half?"),
+                                  ("Miten voisin säästää enemmän?", "fi", "entä jos vähentäisin ravintoloita puoleen?")]:
+        draft = template_draft([baskets, BILLS], [], lang, None, question)
+        assert draft["text"].endswith(offer)
+        offer_sentence = draft["text"].rsplit(". ", 1)[-1]
+        assert not any(c in offer_sentence for c in "0123456789%")  # no cut the user did not give
+    assert not template_draft([BILLS], [], "en", None, "Which bills are coming up next?")["text"].endswith("half?")

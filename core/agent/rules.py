@@ -158,9 +158,10 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     """What the rules do with a what-if question. They never fill in a value the user did not give
     (R1, design section 7.4; issue #142):
     - ("health", None): a health selection (R9): the refusal alone, no other scenario;
-    - ("unmapped", None): not exactly one what-if category the rules know ("How could I save more?"
-      names none), or an MCC, merchant or transport group: not recognised, so the next planner, or a
-      clarifying question, takes it;
+    - ("save_more", None): "How could I save more?" with no category and no cut: the design's tools
+      for it (section 7.5) that need no number from the user, and the answer offers a what-if;
+    - ("unmapped", None): not exactly one what-if category the rules know, or an MCC, merchant or
+      transport group: not recognised, so the next planner, or a clarifying question, takes it;
     - ("amount", None): one category but no cut, or a cut outside 1..100 % or not whole: ask how much;
     - ("run", args): run_what_if with that category and the user's own cut ("half" is 50 %)."""
     q = question.lower()
@@ -169,6 +170,8 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
+    if not categories and not pct and not half and re.search(template.SAVE_MORE, q):
+        return "save_more", None
     if (len(categories) != 1 or re.search(SELECTION_CODE, q)
             or any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS)):
         return "unmapped", None
@@ -199,6 +202,9 @@ BRIEF = [
      lambda q, as_of: [("get_recurring_bills", {})]),
     ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
 ]
+# "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
+# section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
+SAVE_MORE_CALLS = [("get_basket_breakdown", {"period": {"preset": "last_6_months"}}), ("get_recurring_bills", {})]
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Ask again with a percentage, or say half.",
                   "Kuinka paljon haluaisit vähentää? Kysy uudelleen prosentin kanssa tai sano puolet.")
 WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For example restaurants by half.",
@@ -258,7 +264,7 @@ class RuleModel:
                     return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
                 if kind == "amount":
                     return self._clarify(WHAT_IF_AMOUNT, ((), ()), lang), True
-                planned = [("run_what_if", what_if)]
+                planned = SAVE_MORE_CALLS if kind == "save_more" else [("run_what_if", what_if)]
             else:
                 planned = build(q, as_of)
             calls = [FunctionCall(name, args) for name, args in planned if name in tools]

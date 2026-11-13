@@ -55,6 +55,11 @@ BRIEF_QUESTIONS = (
 )
 
 MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
+# "How could I save more?" without a category or a cut: the answer shows the baskets and the bills and
+# ends by offering a what-if, never with a cut the user did not give (issue #142, R1).
+SAVE_MORE = r"save more|saving more|säästää enemmän|säästäisin enemmän|säästämään enemmän|säästöä enemmän"
+WHAT_IF_OFFER = ("Want to see what a cut would save? Ask, for example: what if I cut restaurants by half?",
+                 "Haluatko nähdä, paljonko vähennys säästäisi? Kysy esimerkiksi: entä jos vähentäisin ravintoloita puoleen?")
 NO_DATA = ("There are no transactions for that period in your data.",
            "Tältä jaksolta ei ole tapahtumia aineistossasi.")
 TOOL_FAILED = ("Some of the data could not be computed right now.",
@@ -244,6 +249,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)
+    if sentences and re.search(SAVE_MORE, question.lower()):
+        sentences.append(pick(WHAT_IF_OFFER, language))
     if errors:
         if not views and all(e.get("error") == "period_out_of_range" for e in errors):
             sentences.append(pick(NO_DATA, language))

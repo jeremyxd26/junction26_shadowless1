@@ -91,9 +91,15 @@ def clarify_text(result):
 
 
 @pytest.mark.parametrize("question,lang", [("How could I save more?", "en"), ("Miten voisin säästää enemmän?", "fi")])
-def test_what_if_without_a_category_is_left_to_the_next_planner(question, lang):
-    # No category and no cut: the rules plan no what-if; without another planner the user is asked.
+def test_what_if_save_more_plans_the_tools_that_need_no_user_number(question, lang):
+    # No category and no cut: the baskets and the bills, never a what-if with a cut of the rules' own.
     result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["get_basket_breakdown", "get_recurring_bills", "finish"]
+    assert result.calls[0].args == {"period": {"preset": "last_6_months"}}
+
+
+def test_what_if_without_a_category_is_left_to_the_next_planner():
+    result = plan("What if I cut back a bit?")
     assert not result.recognised and names(result) == ["ask_clarifying_question"]
     assert result.calls[0].args["options"]
 
