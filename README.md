@@ -19,15 +19,32 @@ pytest core -q                                            # run the tests
 Settings:
 - `DATABASE_URL`
 - `DEMO_TODAY` (default `2026-09-30`)
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL`
+- `GEMINI_API_KEY`: optional. Without it the coach answers from the rule planner and the templates.
+- `GEMINI_MODEL`: leave it out of `.env` (see below).
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 ### Ask the coach: `POST /api/ask`
 
-The answer pipeline is in `core/agent`: plan, run the tools, compose, validate, stream and audit (contract: `contracts/api.md` section 7; design: `docs/design/agent-core.md` sections 7 to 9). Until the Gemini adapter is plugged in, the service runs a deterministic keyword model (`core/agent/rules.py`). It maps the partner's questions and spending questions to the registered tools and writes a template answer. Questions it cannot map get a clarifying question.
+The answer pipeline is in `core/agent`: plan, run the tools, compose, validate, stream and audit (contract: `contracts/api.md` section 7; design: `docs/design/agent-core.md` sections 7 to 9).
+
+The AI model is optional. Without `GEMINI_API_KEY`, the service runs a deterministic keyword model (`core/agent/rules.py`). It maps the partner's questions and spending questions to the registered tools and writes a template answer. Questions it cannot map get a clarifying question.
+
+With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prompts in `core/agent/prompts/`) and still plans with the rules first:
+- A question the rule planner recognises is planned without a model call. Gemini only writes the answer, so it costs one model call.
+- Any other question goes to the Gemini planner, which uses function calling over the tool registry.
+- Gemini writes the text with numbers as `{{nK}}` tokens. The validator checks the text, and a rejected draft is retried once, then replaced by the template.
+- When Gemini fails (timeout, 429, 503, a refused key or model, an empty or cut response), the answer comes from the rule planner and the template. A 429, 401, 403 or 404 pauses model calls for 5 minutes.
+
+The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
+
+Model settings:
+- `MODEL_DAILY_BUDGET`: requests to the Gemini API per UTC day. The default is 300. Requests are counted in `var/gemini-requests.jsonl`, so a restart keeps the count, and cache hits do not count. Past the budget, answers use the template. `0` turns the model off.
+- `var/model-off`: while this file exists, no request is sent. It takes effect at once, without a restart or a redeploy.
+- `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). The default is the other of flash and pro. `none` turns it off.
+- `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
+- `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
 
 ```
 curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \
@@ -50,6 +67,14 @@ To run the eval set against a local service with the keyword model:
 AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 ASK_RATE_LIMIT_GLOBAL_PER_MIN=0 ASK_RATE_LIMIT_CUSTOMER_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
 python core/eval/run.py --source api --base-url http://localhost:8000 --tag spending
 ```
+
+To run it in process with Gemini, with a timing, token and cost table per answer:
+```
+python core/eval/run.py --source core.agent.gemini_eval:make_source --tag brief --persona CUST00860
+GEMINI_PLANNER=model python core/eval/run.py --source core.agent.gemini_eval:make_source --tag red_team
+python core/agent/gemini_eval.py "What if I cut it a little?"     # free-form questions
+```
+Every request counts against the team's daily model budget. Keep the cache on, and run each pass once. A repeated run is served from the cache. The offline tests replay recorded exchanges from `core/agent/tests/recordings/` and need no key and no network.
 
 ## Dev environment
 
