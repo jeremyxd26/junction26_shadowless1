@@ -167,7 +167,11 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
                     hits.append((ctx, call, fn, args_model, prepared))
             history, labels_key = ctx._history, ctx.labels_key
         refs = {ref for *_, p in hits for ref in p.entry.result.evidence}
-        gone = missing_evidence(conn, customer_id, refs)
+        try:
+            gone = missing_evidence(conn, customer_id, refs)
+        except Exception as exc:  # noqa: BLE001 - one persona's failed check never stops the others
+            out(f"{customer_id}  evidence check failed ({type(exc).__name__}); cached results kept")
+            gone = set()
         for ctx, call, fn, args_model, p in hits:
             if gone & set(p.entry.result.evidence):   # evidence row gone: a miss, computed again
                 cache.drop(p.key)

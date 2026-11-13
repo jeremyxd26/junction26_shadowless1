@@ -136,3 +136,22 @@ def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
     assert conn.queries == 1                                           # one query for the persona
     assert [(r.language, r.source) for r in rows] == [("en", "memory"), ("fi", "memory"), ("fi", "recomputed")]
     assert calls_made[-1] == ("CUST00860", "fi") and len(calls_made) == 3
+
+
+
+def test_a_failed_evidence_check_does_not_stop_the_other_personas(monkeypatch):
+    calls_made.clear()
+    cache = ToolCache(mode="memory")
+    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
+    two = ["CUST00860", "CUST00493"]
+    warmup.warm(cache, None, two, ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
+
+    class BrokenConn:
+        def execute(self, sql, params=None):
+            raise RuntimeError("database went away")
+
+    lines: list[str] = []
+    rows = warmup.warm(cache, BrokenConn(), two, ["en"], date(2026, 9, 30), out=lines.append, calls=calls)
+    assert [r.source for r in rows] == ["memory", "memory"]            # both personas still served
+    assert sum("evidence check failed (RuntimeError)" in line for line in lines) == 2
