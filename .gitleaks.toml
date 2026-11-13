@@ -25,7 +25,7 @@ keywords = ["postgres"]
     condition = "AND"
     paths = [
         '''^core/tests/(conftest|test_log_redaction|test_settings|test_api_endpoints)\.py$''',
-        '''^core/agent/tests/conftest\.py$''',
+        '''^core/agent/tests/(conftest|agent_fakes)\.py$''',
         '''^core/tools/tests/test_tools_pure\.py$''',
         '''^deploy/remote-deploy\.sh$''',
         '''^docs/deploy\.md$''',
