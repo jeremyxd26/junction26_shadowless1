@@ -3,7 +3,7 @@
 Two people build this project during a hackathon. Each person runs one **coordinator** Claude Code session and several **worker** sessions on their own machine. Sessions on different machines cannot message each other. The only shared state is this repository and its GitHub Issues and PRs.
 
 ## Roles
-- **Coordinator** works in the main checkout on `main`. It plans the work, files issues, dispatches tasks to its workers by message, and reviews their PRs. After a reviewer verdict PASS it merges the PR into `dev`, then the same branch into `main`. It writes no feature code itself.
+- **Coordinator** works in the main checkout on `main`. It plans the work, files issues, dispatches tasks to its workers by message, and reviews their PRs. After a reviewer verdict PASS it merges the PR into `dev`; once the change has passed on the dev environment it merges the same branch into `main`. It writes no feature code itself.
 - **Worker** works in its own git worktree. It does one claimed issue at a time on its own branch and reports back to its coordinator. Workers never merge.
 - **Humans** own product decisions, the interface contract between areas, and anything irreversible.
 
