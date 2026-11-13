@@ -5,9 +5,10 @@
 --   app.customer_from  first customer_id of the range, inclusive        (default CUST00000)
 --   app.customer_to    end of the customer_id range, exclusive          (default CUST00100)
 --   app.peer_min_n     smallest peer group that may be shown            (default 20)
--- PROTOTYPE SCOPE: peers are only the customers inside the range, so on the 99-customer sample the
--- groups are small and most customers fall back to a coarser level. The full-population version
--- reads a precomputed per-customer table instead (metrics.md, "Batched precompute").
+-- Peers: when the marts built by core/marts/build.py hold rows for as_of = today, the peers are the
+-- whole population from metric_peer_flags and metric_customer_month. Otherwise (no build for this
+-- today) the peers fall back to the customers inside the range. The customer's own values are always
+-- computed live from transactions. The mart tables must exist (core/marts/schema.sql); they may be empty.
 -- One row per customer and benchmarked metric (monthly euros over the last 6 complete months).
 -- Health is not benchmarked (rule R9). Customers with a monthly Salary Sweep spend mostly from
 -- another account: they never enter a peer group and their own rows say comparable = false.
@@ -140,16 +141,47 @@ cust_metric AS (   -- every customer gets every metric; no spending means 0
     CROSS JOIN metric_list ml
     LEFT JOIN sums s ON s.customer_id = k.customer_id AND s.metric = ml.metric
 ),
-levels AS (   -- the same row at each peer level, most specific first
-    SELECT cm.*, l.peer_level, l.level_rank,
-           CASE l.peer_level WHEN 'age_band+area3' THEN cm.age_band || ' ' || cm.area3
-                             WHEN 'age_band+city'  THEN cm.age_band || ' ' || cm.city2
-                             WHEN 'age_band'       THEN cm.age_band
-                             ELSE 'all' END AS peer_group
-    FROM cust_metric cm
-    CROSS JOIN (VALUES ('age_band+area3', 1), ('age_band+city', 2), ('age_band', 3), ('all', 4)) AS l (peer_level, level_rank)
+mart_ready AS (   -- true when the marts were built for this "today"
+    SELECT EXISTS (SELECT 1 FROM metric_peer_flags f, params p WHERE f.as_of = p.today) AS ok
 ),
-peers AS (SELECT * FROM levels WHERE comparable),   -- sweepers never enter a peer group
+mart_flags AS (   -- mart customers in the age bands of the customers in the range: every peer level
+                 -- below "all" stays inside one age band, and "all" is not needed with the marts
+    SELECT f.*
+    FROM metric_peer_flags f, params p
+    WHERE f.as_of = p.today AND f.age_band IN (SELECT age_band FROM cust)
+),
+mart_sums AS (
+    SELECT m.customer_id, m.metric, sum(m.value_eur) AS eur
+    FROM metric_customer_month m
+    JOIN mart_flags f ON f.customer_id = m.customer_id AND f.as_of = m.as_of
+    GROUP BY 1, 2
+),
+population AS (   -- everyone a customer can be compared with
+    SELECT f.customer_id, f.age_band, f.area3, f.city2, f.comparable, ml.metric,
+           COALESCE(ms.eur, 0) / f.n_months AS value_month
+    FROM mart_flags f
+    CROSS JOIN metric_list ml
+    LEFT JOIN mart_sums ms ON ms.customer_id = f.customer_id AND ms.metric = ml.metric
+    UNION ALL
+    SELECT cm.customer_id, cm.age_band, cm.area3, cm.city2, cm.comparable, cm.metric, cm.value_month
+    FROM cust_metric cm
+    WHERE NOT (SELECT ok FROM mart_ready)
+),
+level_list AS (   -- with the marts every age band has at least 130 customers, so "all" is only used
+                 -- by the range-only fallback
+    SELECT v.peer_level, v.level_rank
+    FROM (VALUES ('age_band+area3', 1), ('age_band+city', 2), ('age_band', 3), ('all', 4)) AS v (peer_level, level_rank)
+    WHERE v.peer_level <> 'all' OR NOT (SELECT ok FROM mart_ready)
+),
+peers AS (   -- comparable members only, at every level; sweepers never enter a peer group
+    SELECT po.customer_id, po.metric, po.value_month, l.peer_level,
+           CASE l.peer_level WHEN 'age_band+area3' THEN po.age_band || ' ' || po.area3
+                             WHEN 'age_band+city'  THEN po.age_band || ' ' || po.city2
+                             WHEN 'age_band'       THEN po.age_band
+                             ELSE 'all' END AS peer_group
+    FROM population po CROSS JOIN level_list l
+    WHERE po.comparable
+),
 group_stats AS (   -- median/p25/p75 of the whole group, the customer included (one value among 21+ moves
                   -- them little); peer_n and percentile count only the other members
     SELECT peer_level, peer_group, metric, count(*) AS group_n,
@@ -159,27 +191,43 @@ group_stats AS (   -- median/p25/p75 of the whole group, the customer included (
     FROM peers
     GROUP BY 1, 2, 3
 ),
-ranked AS (   -- peers other than the customer: how many, and how many spend less
-    SELECT lv.customer_id, lv.metric, lv.value_month, lv.comparable, lv.peer_level, lv.level_rank, lv.peer_group,
-           count(q.customer_id)                                   AS peer_n,
-           count(q.customer_id) FILTER (WHERE q.value_month < lv.value_month) AS n_less
-    FROM levels lv
-    LEFT JOIN peers q ON q.peer_level = lv.peer_level AND q.peer_group = lv.peer_group
-                     AND q.metric = lv.metric AND q.customer_id <> lv.customer_id
-    GROUP BY 1, 2, 3, 4, 5, 6, 7
+in_peers AS (SELECT DISTINCT customer_id FROM population WHERE comparable),
+you AS (   -- the customers in the range at every level, with the size of their group minus themselves
+    SELECT cm.customer_id, cm.metric, cm.value_month, cm.comparable, l.peer_level, l.level_rank,
+           CASE l.peer_level WHEN 'age_band+area3' THEN cm.age_band || ' ' || cm.area3
+                             WHEN 'age_band+city'  THEN cm.age_band || ' ' || cm.city2
+                             WHEN 'age_band'       THEN cm.age_band
+                             ELSE 'all' END AS peer_group,
+           (ip.customer_id IS NOT NULL) AS self_in_peers
+    FROM cust_metric cm
+    CROSS JOIN level_list l
+    LEFT JOIN in_peers ip ON ip.customer_id = cm.customer_id
 ),
-chosen AS (   -- most specific level whose group is big enough; "all" is the last resort
-    SELECT DISTINCT ON (r.customer_id, r.metric) r.*
-    FROM ranked r
-    WHERE r.peer_n >= COALESCE(NULLIF(current_setting('app.peer_min_n', true), ''), '20')::int
-       OR r.peer_level = 'all'
-    ORDER BY r.customer_id, r.metric, r.level_rank
+sized AS (
+    SELECT y.*, gs.p25, gs.p50, gs.p75,
+           COALESCE(gs.group_n, 0) - CASE WHEN y.self_in_peers AND gs.group_n IS NOT NULL THEN 1 ELSE 0 END AS peer_n
+    FROM you y
+    LEFT JOIN group_stats gs USING (peer_level, peer_group, metric)
+),
+chosen AS (   -- most specific level whose group is big enough; if none is, the coarsest level (not shown)
+    SELECT DISTINCT ON (s.customer_id, s.metric) s.*
+    FROM sized s
+    ORDER BY s.customer_id, s.metric,
+             CASE WHEN s.peer_n >= COALESCE(NULLIF(current_setting('app.peer_min_n', true), ''), '20')::int
+                  THEN s.level_rank ELSE 100 - s.level_rank END
+),
+less AS (   -- other peers in the chosen group who spend less (one join on the group key)
+    SELECT ch.customer_id, ch.metric,
+           count(q.customer_id) FILTER (WHERE q.customer_id <> ch.customer_id AND q.value_month < ch.value_month) AS n_less
+    FROM chosen ch
+    LEFT JOIN peers q ON q.peer_level = ch.peer_level AND q.peer_group = ch.peer_group AND q.metric = ch.metric
+    GROUP BY 1, 2
 ),
 final AS (   -- statistics are only given when the group is big enough and the customer is comparable
-    SELECT ch.*, gs.p25, gs.p50, gs.p75,
+    SELECT ch.*, ls.n_less,
            (ch.comparable AND ch.peer_n >= COALESCE(NULLIF(current_setting('app.peer_min_n', true), ''), '20')::int) AS shown
     FROM chosen ch
-    LEFT JOIN group_stats gs USING (peer_level, peer_group, metric)
+    JOIN less ls USING (customer_id, metric)
 )
 SELECT f.customer_id,
        f.metric,
@@ -194,6 +242,7 @@ SELECT f.customer_id,
        f.peer_level,
        f.peer_group,
        f.peer_n,
+       CASE WHEN (SELECT ok FROM mart_ready) THEN 'marts' ELSE 'range' END     AS peer_source,
        p.win_start AS period_start,
        p.win_end   AS period_end
 FROM final f

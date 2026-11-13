@@ -168,7 +168,12 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=100, help="customers per batch (default 100)")
     parser.add_argument("--pause", type=float, default=1.0, help="seconds to wait between batches (default 1)")
     parser.add_argument("--dry-run", action="store_true", help="print the batches and exit; no database access")
+    parser.add_argument("--timeout-ms", type=int, default=60000,
+                        help="statement timeout for the batch statements in ms, at most 60000 (default 60000); "
+                             "a small value is only for testing the split-and-retry path")
     args = parser.parse_args()
+    if not 0 < args.timeout_ms <= 60000:
+        parser.error("--timeout-ms must be between 1 and 60000")
 
     as_of = os.environ.get("DEMO_TODAY") or DEFAULT_TODAY
     batches = [(lo, min(lo + args.batch, args.end)) for lo in range(args.start, args.end, args.batch)]
@@ -194,6 +199,7 @@ def main() -> None:
         with psycopg.connect(url, autocommit=True, application_name="marts-build") as conn:
             conn.execute("SET statement_timeout = '60s'")
             conn.execute(SCHEMA.read_text(encoding="utf-8"))
+            conn.execute(f"SET statement_timeout = {int(args.timeout_ms)}")
             for i, (lo, hi) in enumerate(batches, 1):
                 t0 = time.time()
                 counts = build_batch(conn, psycopg, lo, hi, as_of, inserts)

@@ -310,17 +310,19 @@ An estimate (R13): "people like you" are customers in the same age band and area
 
 **Evidence.** The customer's rows for the metric; the peer group definition and its n. Peer rows themselves are never exposed.
 
-**Prototype scope.** Peers are the customers inside the range. With 99 customers almost every age × area cell is under 20, so the sample mostly falls back to age band or all. On the full population (5,100 customers; ~24 per age band × area3 cell on average) the area levels become usable. The full version reads the precomputed table of section 8. Statistics Finland's open Paavo data by postal code (median income, household size) could later refine "people like you"; it is not used here.
+**Who the peers are.** When the marts of section 8 hold rows for `as_of = today`, the peers are the whole population (5,100 customers; output column `peer_source = marts`). Every age band then has at least 130 customers, so the "all" level is never needed and the file reads only the age bands of the customers in the range. Without a build for that day the file falls back to the customers inside the range (`peer_source = range`); with 99 customers that mostly means age band or all. The customer's own values are always computed live. Statistics Finland's open Paavo data by postal code (median income, household size) could later refine "people like you"; it is not used here.
 
-**Worked numbers** (sample range; numbers will change on the full population):
+On the full population, the sample's 1,287 rows split as: 1,079 compared within age band + area3, 143 within age band + city, and 65 not comparable (the 5 sweep customers × 13 metrics). 261 of the 5,100 customers are sweep customers.
 
-| Customer | Metric | You / month | Peer median | Percentile | Level (n) |
+**Worked numbers** (full population, marts built for 2026-09-30):
+
+| Customer | Metric | You / month | Peer median | Percentile | Level (other peers) |
 |---|---|---|---|---|---|
-| CUST00001 | total spend | 2,087.92 | 2,787.20 | 23 | all (93) |
-| CUST00001 | Restaurants | 56.86 | 177.01 | 14 | all (93) |
-| CUST00002 | total spend | 1,702.17 | 3,285.49 | 10 | age band 45–54 (30) |
-| CUST00002 | everyday spending | 430.29 | 778.19 | 17 | age band 45–54 (30) |
-| CUST00006 | total spend | 253.54 | not shown | not shown (comparable = false) | 35–44 + Helsinki (21) |
+| CUST00001 | total spend | 2,087.92 | 3,027.77 | 10 | 55–64 + area 009 (31) |
+| CUST00001 | Restaurants | 56.86 | 188.90 | 16 | 55–64 + area 009 (31) |
+| CUST00002 | total spend | 1,702.17 | 3,138.52 | 4 | 45–54 + area 005 (93) |
+| CUST00002 | everyday spending | 430.29 | 850.10 | 26 | 45–54 + area 005 (93) |
+| CUST00006 | total spend | 253.54 | not shown | not shown (comparable = false) | 35–44 + area 007 (132) |
 
 ## 7. Grocery store price index and switch saving
 
@@ -332,7 +334,7 @@ An estimate (R13) with a strong caveat: the data has **ticket totals, not item p
 ln(ticket) = a_customer + b_merchant + e
 ```
 
-Fitted by alternating means (5 rounds, starting from b = 0) on customer × merchant cells with sufficient statistics `n, Σy, Σy²`. The customer effect removes "this person buys big baskets"; `b_merchant` is what remains. Effects are centred so that the visit-weighted average store is 0%.
+Fitted by alternating means (3 rounds, starting from b = 0; on the full population the last round moves the merchant effects by at most 0.000006) on customer × merchant cells with sufficient statistics `n, Σy, Σy²`. The cells come from `metric_grocery_cells` when the marts are built for `as_of = today`, otherwise from the customers in the range. The customer effect removes "this person buys big baskets"; `b_merchant` is what remains. Effects are centred so that the visit-weighted average store is 0%.
 
 - `index_pct = 100 × (exp(b) − 1)`; `se = σ / sqrt(n_visits)` with σ pooled from the residuals (degrees of freedom = visits − customers − merchants + 1); 95% interval shown. If no degrees of freedom are left (a tiny range), σ is NULL: no interval, no flag, and switch status `not_measurable`.
 - Caveat: this standard error treats the customer effects as known. It ignores their own uncertainty, so the intervals are somewhat optimistic (too narrow); the strict |z| ≥ 3 rule below partly offsets that.
@@ -344,47 +346,37 @@ Fitted by alternating means (5 rounds, starting from b = 0) on customer × merch
 
 **Evidence.** The customer's grocery transactions at the two stores; the index's method and n.
 
-**What the sample shows (honest result).** 80 grocery merchants, 68 with 30+ visits. Index from −14.1% to +9.0% (SD 4.8 points), but the median 95% interval is ±10.0% (from ±3.1% for the busiest store to ±16.9%). **No store differs from average at |z| ≥ 3, and no customer gets a switch estimate**: on 99 customers the index is noise. The model converges (last step change 0.000000). On the full population a store gets about 51× more visits, so the interval shrinks about 7×, to roughly ±1.4% at the median, which is small enough to detect the −3.4% … +4.5% spread seen in the first full-data check. Until the full run confirms it, the coach must not present a store switch as a saving.
+**What the sample shows (honest result).** 80 grocery merchants, 68 with 30+ visits. Index from −14.1% to +9.0% (SD 4.8 points), but the median 95% interval is ±10.0% (from ±3.1% for the busiest store to ±16.9%). **No store differs from average at |z| ≥ 3, and no customer gets a switch estimate**: on 99 customers the index is noise. The model converges (last step change 0.000000). The sample alone could not settle it, so the full population was run.
 
-**Worked numbers** (sample range):
+**Full population (the result the coach uses).** 203,680 customer × store cells from 5,100 customers, 80 grocery stores, each with 414 to 45,200 visits (all shown). The median 95% interval shrinks to ±1.45% (±0.45% to ±4.5%), as predicted. But the stores barely differ once the customer is taken into account: the index runs from −3.7% to +1.6% with a spread (SD) of 0.78 points, which is about the size of the noise. The −3.4% … +4.5% spread of the first raw check came from who shops where, not from the stores. **No store passes the |z| ≥ 3 rule, and no sample customer gets a switch estimate** (73 within_noise, 17 no_alternative, 9 already_lowest). At the looser 95% level, 2 of 80 stores differ, which is about what chance alone would produce (about 4).
+
+**Conclusion.** Following the team-lead rule, the coach does **not** show a store index or a switch saving for this data. It says that the difference between grocery stores is not measurable from these transactions. 07 stays in place so the check can be re-run after a new data load.
+
+**Worked numbers** (full population):
 
 | Customer | Home store (index) | Home spend / month | Lowest-index alternative (index) | Status | Saving |
 |---|---|---|---|---|---|
-| CUST00001 | MRC-GRO-0032 (−1.4%) | 57.52 | MRC-GRO-0066 (−1.5%) | within_noise | 0 |
-| CUST00002 | MRC-GRO-0032 (−1.4%) | 46.67 | MRC-GRO-0022 (−4.0%) | within_noise | 0 |
-| CUST00006 | MRC-GRO-0036 (+3.0%) | 9.83 | none with 3+ visits | no_alternative | 0 |
+| CUST00001 | MRC-GRO-0032 (−0.1%) | 57.52 | MRC-GRO-0073 (−0.4%) | within_noise | 0 |
+| CUST00002 | MRC-GRO-0032 (−0.1%) | 46.67 | MRC-GRO-0022 (−0.3%) | within_noise | 0 |
+| CUST00006 | MRC-GRO-0036 (+0.3%) | 9.83 | none with 3+ visits | no_alternative | 0 |
 
 Note that customers spread their grocery spend over many stores (15 to 74 different grocery merchants each over the two years, 56 on average), so even a real 3% gap at the home store is worth only a few euros a month.
 
-## 8. Batched precompute for the full population (designed, not run)
+## 8. Batched precompute for the full population (`core/marts/`)
 
-The database has 2 GB RAM and 25 connections, and a full-table aggregate has restarted it before. Metrics 1–5 are per customer and run on demand for one customer (16–41 ms on the sample). Metrics 6 and 7 need everyone. They read small tables filled in batches of 100 customers, one connection, `statement_timeout = '60s'`, one batch at a time:
+The database has 2 GB RAM and 25 connections, and a full-table aggregate has restarted it before. Metrics 1–5 are per customer and run on demand for one customer. Metrics 6 and 7 need everyone, so they read three small mart tables (`core/marts/schema.sql`):
 
-```sql
-CREATE TABLE metric_customer_month (            -- input to the peer benchmark
-    customer_id text, month date, metric text, value_eur numeric(12,2),
-    PRIMARY KEY (customer_id, month, metric));
-CREATE TABLE metric_grocery_cells (             -- input to the store index
-    customer_id text, merchant_id text, mcc text,
-    n int, sy double precision, syy double precision, spend_eur numeric(14,2),
-    PRIMARY KEY (customer_id, merchant_id));
-CREATE TABLE metric_peer_flags (customer_id text PRIMARY KEY, comparable boolean, age_band text, area3 text, city2 text);
-```
+| Table | One row per | Rows (as_of 2026-09-30) |
+|---|---|---|
+| `metric_customer_month` | customer × window month × metric (spend total, basket, category; no Health) | 299,971 |
+| `metric_peer_flags` | customer: age band, area3, city, comparable (not a sweep customer), n_months | 5,100 |
+| `metric_grocery_cells` | customer × grocery store over 365 days: n, Σ ln ticket, Σ ln² ticket, spend | 203,680 |
 
-```bash
-# one batch per 100 customers: CUST00000-CUST00100, CUST00100-CUST00200, ... CUST05100-CUST05200
-for i in $(seq 0 51); do
-  from=$(printf 'CUST%05d' $((i*100))); to=$(printf 'CUST%05d' $((i*100+100)))
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-    -c "SET statement_timeout='60s'" \
-    -c "SET app.customer_from='$from'" -c "SET app.customer_to='$to'" \
-    -c "DELETE FROM metric_customer_month WHERE customer_id >= '$from' AND customer_id < '$to'" \
-    -f core/metrics/precompute_customer_month.sql      # not written yet: the sums CTE of 06 as an INSERT
-  sleep 1
-done
-```
+Every row carries `as_of`, the DEMO_TODAY it was built for. 06 and 07 use the marts only when `as_of` equals their own "today", so a build for another day can never leak in. The three tables take 72 MB.
 
-Each batch reads about 70k rows through the `(customer_id, tx_at)` index (the sample batch takes under 1 s). The peer statistics then aggregate `metric_customer_month` (about 5,100 × 6 × 13 = 400k rows), and the store index iterates over `metric_grocery_cells` (about 5,100 × 56 = 285k cells) — both small and well inside the limits. Refresh once after each data load, not per request. Creating these tables needs the coordinator's go-ahead; this issue creates nothing.
+`core/marts/build.py` fills them in 52 batches of 100 customers, using one connection with `statement_timeout = 60s` and a pause between batches. Each batch is one transaction that deletes its range for that `as_of` and inserts it again, so batches are idempotent, and a run can resume with `--from CUSTxxxxx`. A batch that times out is split in half and each half is tried once; then the script stops and names the range. The classification SQL is read from the shared block in `02_baskets.sql`, so the marts cannot drift from metrics 1–6.
+
+The first full build took 234 s for 52 batches. The slowest batch took 12.0 s, while the database was busy with other work; idle batches take 1.3–1.8 s. There were no timeouts. Rebuild once after each data load, or when DEMO_TODAY changes, not per request (README, "Data").
 
 ## 9. How it was verified
 
@@ -392,20 +384,33 @@ Every file was run on the sample under `statement_timeout = '60s'` after rebasin
 
 | File | Rows | Time |
 |---|---|---|
-| 01_recurring.sql | 315 | 0.74 s |
-| 02_baskets.sql | 297 | 0.53 s |
-| 03_safe_to_spend.sql | 99 | 1.25 s |
-| 04_what_if.sql | 96 | 0.62 s |
-| 05_spender_profile.sql | 99 | 2.60 s |
-| 06_peer_benchmark.sql | 1,287 | 1.01 s |
-| 07_store_price_index.sql | 80 + 99 | 0.32 s |
+| File | Rows | Server idle | Server busy |
+|---|---|---|---|
+| 01_recurring.sql | 315 | 0.74 s | 2.07 s |
+| 02_baskets.sql | 297 | 0.53 s | 2.89 s |
+| 03_safe_to_spend.sql | 99 | 1.25 s | 8.05 s |
+| 04_what_if.sql | 96 | 0.62 s | 2.97 s |
+| 05_spender_profile.sql | 99 | 2.60 s | 14.71 s |
+| 06_peer_benchmark.sql (marts) | 1,287 | – | 14.88 s |
+| 07_store_price_index.sql (marts) | 80 + 99 | – | 8.64 s |
 
-Times are wall-clock from a laptop client, including network round trips.
+Times are wall-clock from a laptop client, including network round trips. "Busy" runs happened while the database server was slowed by other work. Our own database had no other active session at the time, so the load came from the server itself. That load slows large reads 3–6× and occasionally up to 14× (05 once took 36.5 s on the sample).
+
+**Per customer (the app's on-demand path)**, one customer per call, for CUST00001, CUST00002 and CUST00006:
+
+| File | Server idle | Server busy |
+|---|---|---|
+| 01–05 (each) | 11–36 ms | 10–213 ms |
+| 06_peer_benchmark.sql | 0.1–0.5 s | 0.7–3.5 s |
+| 07_store_price_index.sql | 1.6–1.7 s | 7.5–8.9 s |
+
+Metrics 1–5 need no cache or mart for the demo: one customer reads a few hundred rows through the customer index. 07 refits the whole index on every call. The index is the same for every customer on a given day, so if it is ever shown it should be computed once per data load (follow-up). With this data it is not shown (section 7).
 
 - `EXPLAIN` of every statement that reads `transactions` shows an `Index Scan` on `tx_customer_time` (07: `tx_customer_category`) with the customer range as the `Index Cond`; no `Seq Scan on transactions` anywhere.
 - With `app.demo_today = 2026-09-14` all seven files run, and every period moves: the 6-month window becomes 2026-03-01 … 2026-08-31, the safe-to-spend week 2026-09-15 … 2026-09-21, the store index year 2025-09-15 … 2026-09-14. 01 and 03 were also checked at 2026-05-20 (late salary); see sections 2 and 3.
 - One-customer runs (`[CUST00006, CUST00007)`) return the same numbers as the sample run for files 01–05.
 - The override path was run with two rows (section 1).
+- Marts (#21) were checked four ways. Spot check: CUST00001's May 2026 rows in `metric_customer_month` equal direct sums from `transactions` (Groceries 610.20 over 9 transactions, total spend 2,125.15 over 26). Re-running `build.py --from CUST05000` leaves all three row counts unchanged. A forced timeout (`--timeout-ms 5`) splits the batch, stops at the first half and names it, with the rows untouched. With `app.demo_today = 2026-09-14` (no build for that day), 06 and 07 fall back to the range (`peer_source = range`).
 - The worked numbers above are copied from these runs. The runs used a psycopg 3 client (no psql on the machine): it sets the three `app.*` settings, runs the whole file in one call and prints the time and rows; `psql -f` gives the same result.
 
 ## 10. Open questions for Renat
@@ -417,7 +422,7 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
 3. **Cushion. Decided:** 100 € by default, configurable with `app.cushion_eur`.
 4. **Investment deposits. Decided:** a recurring investment deposit is reserved in safe to spend. It is the customer's own saving plan, and the explanation says so.
 5. **What-if scope. Decided:** never propose cutting regular essentials; everyday spending is the target, unexpected necessities only with a caveat (section 4, implemented in `04_what_if.sql`).
-6. **Store switch. Decided:** shown only when the full-population run finds stores that pass the significance rule; otherwise the coach says the difference is not measurable.
+6. **Store switch. Decided:** shown only when the full-population run finds stores that pass the significance rule; otherwise the coach says the difference is not measurable. Result of the full run (#21): no store passes, so it is not shown (section 7).
 7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
 
 ## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)

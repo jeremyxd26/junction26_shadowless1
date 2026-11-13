@@ -27,6 +27,17 @@ To load it into an empty database:
    ```
    This creates the tables `transactions`, `customers`, `mortgage_applications` and `mortgage_events`, and prints the number of rows inserted into each.
 
+### Metric marts
+
+The peer benchmark and the grocery store index read three small precomputed tables. Build them once after every data load, and again whenever `DEMO_TODAY` changes. This is safe on the shared database: it never drops anything, it only creates `metric_customer_month`, `metric_peer_flags` and `metric_grocery_cells` if they are missing, and it rewrites their rows one batch at a time.
+
+```
+set -a && . ./.env && set +a      # build.py reads DATABASE_URL and DEMO_TODAY from the environment only
+python core/marts/build.py
+```
+
+It runs 52 batches of 100 customers, printing one line per batch, and takes about 4 minutes. `--dry-run` lists the batches without touching the database, and `--from CUST01200` resumes after an interruption. Design: `docs/design/metrics.md`, section 8.
+
 ## License
 
 MIT
