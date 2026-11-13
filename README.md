@@ -25,6 +25,28 @@ Settings:
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
+### Ask the coach: `POST /api/ask`
+
+The answer pipeline is in `core/agent`: plan, run the tools, compose, validate, stream and audit (contract: `contracts/api.md` section 7; design: `docs/design/agent-core.md` sections 7 to 9). Until the Gemini adapter is plugged in, the service runs a deterministic keyword model (`core/agent/rules.py`). It maps the partner's questions and spending questions to the registered tools and writes a template answer. Questions it cannot map get a clarifying question.
+
+```
+curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+  -d '{"customer_id":"CUST00860","conversation_id":null,"message":"How much did I spend on taxis last month?","language":"auto"}'
+```
+
+`Accept: application/json` returns one JSON object instead of the event stream. Every answer appends an audit record (question, tool calls, model views, validated text, outcome, tokens, timings; never transaction rows) to `var/audit/<date>.jsonl`.
+
+Answer pipeline settings:
+- `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
+- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
+- `ASK_RATE_LIMIT_PER_MIN`: asks per customer per minute, per process. The default is 10. Use `0` (off) for local eval runs only.
+
+To run the eval set against a local service with the keyword model:
+```
+AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
+python core/eval/run.py --source api --base-url http://localhost:8000 --tag spending
+```
+
 ## Dev environment
 
 The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.

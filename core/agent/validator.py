@@ -143,6 +143,17 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
         errors.append("cited must list exactly the ids used in text")
     if draft.language != language:
         errors.append(f"language must be {language}")
+    else:
+        # The text itself, not only the field (R14). Conservative: English text that reads as Finnish,
+        # or a Finnish text with no Finnish letter and several English words.
+        from core.agent.guard import detect_language  # local import: guard has no validator dependency
+
+        detected = detect_language(stripped)
+        if language == "en" and detected == "fi":
+            errors.append("the text must be in English")
+        english_words = re.findall(r"\b(the|you|your|and|of|was|were|spent|is|are|this|that)\b", stripped, re.I)
+        if language == "fi" and not re.search(r"[äöå]", stripped, re.I) and len(english_words) >= 3:
+            errors.append("the text must be in Finnish")
     errors += check_text(draft.text, allowed)
     return draft, errors
 
