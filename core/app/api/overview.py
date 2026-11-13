@@ -54,8 +54,9 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
 
     # The pending spike review (#68), found or created before any number is computed, so the hero and
     # the cards already show its purchase as `unclassified`. Creating it is the only write of this GET
-    # (contract section 6); nothing is created when SPIKE_REVIEWS is off.
-    pending = spike_reviews.ensure_pending(ctx.conn, ctx.customer_id, ctx.as_of, ctx.history())
+    # (contract section 6); nothing is created when SPIKE_REVIEWS is off. The reviews it reads become
+    # the context's labels, so no tool of this request reads them again.
+    pending = spike_reviews.ensure_pending_for(ctx)
     review = review_card.build(ctx, pending) if pending is not None else None
 
     try:

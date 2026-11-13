@@ -45,7 +45,7 @@ def overview_numbers(ctx: ToolContext) -> dict[str, tuple[str, Number]]:
     shown = {b.key: b.amount for b in data.baskets}
     missing = [k for k in BASKET_KEYS if k not in shown]
     if missing:  # a zero with its own evidence, computed like the breakdown's items
-        rows = classify(ctx.history(), ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+        rows = classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
         nb = NumberBuilder(ctx, rows)
         for key in missing:
             sel = Selection(direction="out", start=data.period.start, end=data.period.end, baskets=(key,))
@@ -90,7 +90,7 @@ def _message(ctx: ToolContext, outcome: reviews.Outcome) -> dict[str, Any]:
     elif outcome.review.basket == "everyday_spending":
         found = purchase(ctx, outcome.review)
         n1 = amount_number(ToolContext(ctx.customer_id, ctx.as_of, ctx.conn, lang, NumberRegistry(),
-                                       ctx.history()), *found)
+                                       _history=ctx.history(), _labels=ctx._labels), *found)
         text = _t("done_everyday_spending", lang, amount="{{" + n1.id + "}}")
         rendered = _t("done_everyday_spending", lang, amount=n1.display)
         numbers[n1.id] = n1.model_dump(mode="json")

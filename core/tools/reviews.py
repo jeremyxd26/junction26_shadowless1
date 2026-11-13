@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import string
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -238,16 +239,47 @@ def get_pending(conn: psycopg.Connection, customer_id: str, as_of: date, now: da
     return pending_of(load_reviews(conn, customer_id, as_of), now or utcnow())
 
 
-def ensure_pending(conn: psycopg.Connection, customer_id: str, as_of: date, history: list[Tx],
+History = list[Tx] | Callable[[], list[Tx]]
+
+# (customer, as_of, transactions already asked) for which no transaction qualifies. The dataset does not
+# change, so the answer stays the same until a review is created or deleted (which changes the key).
+_NO_CANDIDATE: set[tuple[str, date, frozenset[int]]] = set()
+
+
+def ensure_pending(conn: psycopg.Connection, customer_id: str, as_of: date, history: History,
                    now: datetime | None = None) -> Review | None:
     """The pending review, created on first serve if a spike qualifies and no limit applies.
 
-    The only write of GET /api/overview. Concurrent calls are serialised per customer by a
-    transaction-level advisory lock, and the insert is an upsert keyed by customer and transaction.
+    The only write of GET /api/overview. Warm path: when a review is pending, one read and nothing
+    else (no lock, no history). Otherwise the creation path runs, serialised per customer by a
+    transaction-level advisory lock, with an upsert keyed by customer and transaction. `history` may
+    be a callable, so the transactions are read only when a candidate has to be looked for.
     """
     if not enabled():
         return None
     now = now or utcnow()
+    current = load_reviews(conn, customer_id, as_of)
+    return pending_of(current, now) or _create_pending(conn, customer_id, as_of, history, now)
+
+
+def ensure_pending_for(ctx: Any, now: datetime | None = None) -> Review | None:
+    """ensure_pending for a ToolContext, which also keeps the reviews it read as the context's labels,
+    so the tools of the same request read no reviews again (core.tools.labels.for_context)."""
+    if not enabled():
+        return None
+    now = now or utcnow()
+    current = load_reviews(ctx.conn, ctx.customer_id, ctx.as_of)
+    pending = pending_of(current, now)
+    if pending is None:
+        pending = _create_pending(ctx.conn, ctx.customer_id, ctx.as_of, ctx.history, now)
+        if pending is not None and all(r.tx_id != pending.tx_id for r in current):
+            current = [*current, pending]  # a candidate comes from the history up to as_of
+    ctx._labels = label_overrides(current, now)
+    return pending
+
+
+def _create_pending(conn: psycopg.Connection, customer_id: str, as_of: date, history: History,
+                    now: datetime) -> Review | None:
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:' || %s, 0))",
                      (customer_id,))
@@ -256,9 +288,15 @@ def ensure_pending(conn: psycopg.Connection, customer_id: str, as_of: date, hist
         reviews = load_reviews(conn, customer_id)
         pending = pending_of(reviews, now)
         if pending is not None:
-            return pending
-        tx = next_candidate(history, as_of, reviews, now)
+            return pending  # created by a concurrent request
+        if not may_create(reviews, now):
+            return None
+        key = (customer_id, as_of, frozenset(r.tx_id for r in reviews))
+        if key in _NO_CANDIDATE:
+            return None
+        tx = next_candidate(history() if callable(history) else history, as_of, reviews, now)
         if tx is None:
+            _NO_CANDIDATE.add(key)
             return None
         conn.execute(
             "INSERT INTO spike_reviews (customer_id, tx_id, tx_ref, created_at, expires_at) "

@@ -96,14 +96,14 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     # The customer's labels (#68) go in as app.tx_labels, so the metric SQL classifies a reviewed purchase
     # like the tools do, and the evidence spec records them.
     settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR,
-                **labels.metric_settings(labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))}
+                **labels.metric_settings_for(ctx)}
     row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         raise NoTransactions("no transactions up to as_of for this customer")
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
     nb = NumberBuilder(ctx, rows)
     reg = ctx.numbers.register
     due = recurring.bills_due_numbers(ctx, nb)

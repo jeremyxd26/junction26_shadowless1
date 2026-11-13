@@ -141,6 +141,34 @@ def test_unknown_foreign_and_malformed_refs_are_not_found(tx):
     assert reviews.get_pending(conn, LEAD, AS_OF, now) == pending              # nothing was written
 
 
+class Counting:
+    """A connection wrapper that counts the statements sent through execute()."""
+
+    def __init__(self, conn) -> None:
+        self.conn, self.statements = conn, 0
+
+    def execute(self, *args, **kwargs):
+        self.statements += 1
+        return self.conn.execute(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
+def test_warm_overview_reads_the_reviews_once(tx):
+    """With a pending review, the overview's review step and every label read of the request together
+    cost two statements (the table check and one read), take no lock and read no history."""
+    conn = tx
+    reviews.ensure_pending(conn, LEAD, AS_OF, load_transactions(conn, LEAD, AS_OF))
+    counting = Counting(conn)
+    ctx = ToolContext(LEAD, AS_OF, counting)
+    assert reviews.ensure_pending_for(ctx).tx_id == SPIKE
+    for _ in range(4):  # baskets, bills, the review card, safe to spend
+        assert labels.for_context(ctx) == {SPIKE: "unclassified"}
+    assert labels.metric_settings_for(ctx) == {"tx_labels": '{"606016":"unclassified"}'}
+    assert counting.statements == 2 and ctx._history is None
+
+
 def test_get_pending_never_creates(tx):
     conn = tx
     assert reviews.get_pending(conn, LEAD, AS_OF) is None

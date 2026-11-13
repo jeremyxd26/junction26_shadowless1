@@ -89,7 +89,7 @@ def get_basket_breakdown(ctx: ToolContext, args: GetBasketBreakdownArgs | dict) 
         notes.append(config.label(config.TEXT["note_clamped"], lang).format(label=period.label))
 
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
     base = Selection(direction="out", start=period.start, end=period.end)
     spend_rows = select(rows, base)
     if not spend_rows:

@@ -33,7 +33,7 @@ def long_date(d, language: str) -> str:
 
 def purchase(ctx: ToolContext, review: Review) -> tuple[CTx, list[CTx]] | None:
     """The reviewed purchase as classified now (with the customer's labels), and all classified rows."""
-    rows = classify(ctx.history(), ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
     row = next((c for c in rows if c.tx.id == review.tx_id), None)
     return (row, rows) if row is not None else None
 

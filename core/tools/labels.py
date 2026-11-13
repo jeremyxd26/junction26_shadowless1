@@ -29,6 +29,19 @@ def basket_labels(conn: Any, customer_id: str, as_of: date, now: datetime | None
     return reviews.label_overrides(reviews.load_reviews(conn, customer_id, as_of), now or reviews.utcnow())
 
 
+def for_context(ctx: Any) -> dict[int, str]:
+    """The labels for one ToolContext (one request or answer), read once and then shared by every tool
+    of that context. A new context reads them again, so the numbers after a label write see it."""
+    if ctx._labels is None:
+        ctx._labels = basket_labels(ctx.conn, ctx.customer_id, ctx.as_of)
+    return ctx._labels
+
+
+def metric_settings_for(ctx: Any) -> dict[str, str]:
+    """The settings a tool passes to core/metrics files for the labels of its context (one call)."""
+    return metric_settings(for_context(ctx))
+
+
 def metric_settings(labels: dict[int, str]) -> dict[str, str]:
     """The `tx_labels` setting for core/metrics files: canonical JSON, and only when there are labels,
     so the evidence specs of customers without labels do not change."""
