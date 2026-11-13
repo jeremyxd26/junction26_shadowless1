@@ -332,24 +332,32 @@ class ToolCache:
 
         with _connected(private, connection):
             result = fn(private, parsed)
+            # The tool read the labels itself. If they changed after the key was made (a label write, or
+            # a pending review expiring), this result belongs to other labels: return it, never store it.
+            unchanged = self.labels_key(private.conn, ctx.customer_id, ctx.as_of) == ctx.labels_key
         if ctx._history is None and private._history is not None:
             ctx._history = private._history   # the transactions read by this call serve the next one
         entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
-        self.put(key, entry)
+        if unchanged:
+            self.put(key, entry)
+        else:
+            log.info("tool cache: labels changed during %s; result not stored", tool)
         with self._lock:
             self.stats.misses += 1
-        return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
+        return Prepared(entry, False, "tool", time.perf_counter() - t0, key if unchanged else None)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
-                     extra_connection: Connector | None = None) -> list[Prepared]:
+                     extra_connection: Connector | None = None) -> list[Prepared | Exception]:
         """Prepare several independent calls of one request; apply the results in list order.
 
         Hits are served at once. Misses run on ctx.conn, and when there are two or more and
         `extra_connection` gives a second connection, half of them run on that one in parallel
         (the pool's limit is two connections). If the second connection is not available at once,
         everything runs on ctx.conn. The customer's transactions are read once and shared.
+        A call that fails gives its exception in its place, so one card can fail alone; the caller
+        decides what to show.
         """
-        out: list[Prepared | None] = [None] * len(calls)
+        out: list[Prepared | Exception | None] = [None] * len(calls)
         if self.enabled:
             self.ensure_labels_key(ctx)
             for i, (name, args_model, _, args) in enumerate(calls):
@@ -359,7 +367,10 @@ class ToolCache:
         def run(lane: list[int], connection: Connector | None) -> None:
             for i in lane:
                 name, args_model, fn, args = calls[i]
-                out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                try:
+                    out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                except Exception as exc:  # noqa: BLE001 - this call fails alone
+                    out[i] = exc
 
         if len(misses) < 2 or extra_connection is None:
             run(misses, None)

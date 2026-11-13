@@ -244,7 +244,12 @@ def test_labels_key_is_read_once_per_request(mem, tool, monkeypatch):
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
     for amount in (1, 2, 3):
         mem.run("fake", FakeArgs, tool, ctx, {"amount": amount})
-    assert reads == ["CUST00860"] and ctx.labels_key == labels_key_of({})
+    assert len(reads) == 1 + 3 and ctx.labels_key == labels_key_of({})   # the key once, one check per miss
+    reads.clear()
+    warm = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)     # the next request: all hits
+    for amount in (1, 2, 3):
+        mem.run("fake", FakeArgs, tool, warm, {"amount": amount})
+    assert reads == ["CUST00860"]                                          # exactly one label read
 
 
 def test_parallel_prepare_then_apply_in_order_gives_fresh_ids(mem, tool):
@@ -451,3 +456,30 @@ def test_the_database_identity_is_in_the_key_and_never_the_url(mem, tool, monkey
 @pytest.mark.parametrize("raw, expected", [("7", 7), ("0", 1), ("-3", 1), ("lots", 512), ("", 512)])
 def test_max_entries_is_parsed_defensively(raw, expected):
     assert ToolCache.from_env({"TOOL_CACHE_MAX_ENTRIES": raw}).max_entries == expected
+
+
+# ---- PR B: label race and per-call errors ----------------------------------------------------------------
+
+def test_a_result_computed_under_changed_labels_is_returned_but_not_stored(mem, tool, monkeypatch):
+    reads = iter(["labels-before", "labels-after"])          # a label write lands while the tool runs
+    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda conn, cid, as_of: next(reads)))
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
+    result = mem.run("fake", FakeArgs, tool, ctx, {})
+    assert result.data.total.value == 100.25 and len(mem) == 0      # served, never cached under the old key
+    monkeypatch.setattr(mem, "labels_key", staticmethod(lambda conn, cid, as_of: "labels-after"))
+    mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
+    mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
+    assert tool.calls == 2 and len(mem) == 1                         # stable labels: stored, then a hit
+
+
+def test_one_failing_call_of_many_fails_alone(mem):
+    tool = SlowTool(0.0)
+
+    def broken(ctx, args):
+        raise RuntimeError("this card's data is not there")
+
+    calls = [("slow", FakeArgs, tool, {"amount": 1}), ("broken", FakeArgs, broken, {}),
+             ("slow", FakeArgs, tool, {"amount": 2})]
+    prepared = mem.prepare_many(calls, request_ctx())
+    assert isinstance(prepared[1], RuntimeError)
+    assert [p.source for i, p in enumerate(prepared) if i != 1] == ["tool", "tool"]
