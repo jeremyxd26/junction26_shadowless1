@@ -2,6 +2,7 @@
 // with an ApiError; the open stream is read with `readAskStream`. `signal` stops the answer.
 // Like the API client, the mode is picked once at build time by VITE_API_MODE, and the mock is
 // loaded on first use, so a live build does not ship the example data.
+import { strings } from '../lib/i18n.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
 import type { AskRequest } from './types.ts'
 
@@ -10,6 +11,8 @@ export type Ask = (request: AskRequest, signal?: AbortSignal) => Promise<Readabl
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function liveAsk(base: string): Ask {
   return async (request, signal) => {
+    // Errors the app makes itself use the app's own texts; errors from the core come localised.
+    const t = strings(request.language === 'fi' ? 'fi' : 'en')
     let response: Response
     try {
       response = await fetch(`${base}/api/ask`, {
@@ -20,7 +23,7 @@ function liveAsk(base: string): Ask {
       })
     } catch (error) {
       if (signal?.aborted) throw error
-      throw new ApiError(0, { code: 'network', message: 'No connection. Try again.', retryable: true })
+      throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
     }
     // Validation errors come before the stream, as plain JSON with the envelope (section 7.1).
     if (!response.ok) {
@@ -28,7 +31,7 @@ function liveAsk(base: string): Ask {
       if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
       throw new ApiError(response.status, {
         code: 'internal',
-        message: 'Something went wrong. Try again.',
+        message: t.errorRetry,
         retryable: response.status >= 500,
       })
     }
@@ -39,7 +42,7 @@ function liveAsk(base: string): Ask {
       await response.body?.cancel().catch(() => undefined)
       throw new ApiError(response.status, {
         code: 'bad_response',
-        message: 'Something went wrong. Try again.',
+        message: t.errorRetry,
         retryable: true,
       })
     }
