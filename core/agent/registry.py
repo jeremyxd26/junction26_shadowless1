@@ -85,16 +85,23 @@ CONTROL = {
 }
 
 
-def _schema_mentions_customer(schema: Any) -> bool:
+def property_names(schema: Any) -> set[str]:
+    """Every property name of a JSON Schema at any depth (the keys of each "properties" object).
+    Descriptions and titles are text, not fields, so they are not looked at."""
+    names: set[str] = set()
     if isinstance(schema, dict):
         for key, value in schema.items():
-            if isinstance(key, str) and any(h in key.lower() for h in CUSTOMER_KEY_HINTS):
-                return True
-            if _schema_mentions_customer(value):
-                return True
+            if key == "properties" and isinstance(value, dict):
+                names.update(value)
+            names |= property_names(value)
     elif isinstance(schema, list):
-        return any(_schema_mentions_customer(v) for v in schema)
-    return False
+        for value in schema:
+            names |= property_names(value)
+    return names
+
+
+def _schema_mentions_customer(schema: Any) -> bool:
+    return any(h in name.lower() for name in property_names(schema) for h in CUSTOMER_KEY_HINTS)
 
 
 def find_customer_key(args: Any, path: str = "") -> str | None:

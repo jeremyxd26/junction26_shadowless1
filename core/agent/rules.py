@@ -40,7 +40,7 @@ CATEGORY_WORDS = [
     (r"groceries|grocery|food shopping|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
     (r"restaurants?|dining out|eating out|eat out|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
-    (r"investments?|invested|sijoituks\w*|sijoitt\w*", "Invest Deposit"),
+    (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
     (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
     (r"\btravel\w*|matkailu\w*|matkoihin", "Travel"),
@@ -182,7 +182,16 @@ class RuleModel:
     model_id = "rules@1"
 
     def plan(self, request: PlanInput) -> PlanResult:
-        return PlanResult(calls=self._calls(request))
+        """Rules first: recognised=False means no rule matched, and the calls are the default clarifying
+        question. A decline, a NOT_YET answer and every data call are recognised answers."""
+        calls = self._calls(request)
+        return PlanResult(calls=calls, recognised=calls != self._default_clarify(request.language))
+
+    @staticmethod
+    def _default_clarify(lang: str) -> list[FunctionCall]:
+        return [FunctionCall("ask_clarifying_question", {
+            "question": template.pick(template.CLARIFY["question"], lang),
+            "options": list(template.pick(template.CLARIFY["options"], lang))})]
 
     def _calls(self, request: PlanInput) -> list[FunctionCall]:
         if request.responses:  # round 2: the data is in; write the answer
@@ -211,10 +220,7 @@ class RuleModel:
             args = plan_spending(request.question, date.fromisoformat(request.as_of))
             if args is not None:
                 return [FunctionCall("get_spending", args), FunctionCall("finish")]
-        lang = request.language
-        return [FunctionCall("ask_clarifying_question", {
-            "question": template.pick(template.CLARIFY["question"], lang),
-            "options": list(template.pick(template.CLARIFY["options"], lang))})]
+        return self._default_clarify(request.language)
 
     def compose(self, request: ComposeInput) -> ComposeResult:
         return ComposeResult(text=json.dumps(

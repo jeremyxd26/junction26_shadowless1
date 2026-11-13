@@ -67,6 +67,9 @@ class PlanResult:
     calls: list[FunctionCall]
     usage: Usage = Usage()
     raw: Any = None                    # the provider's model turn (e.g. with thought signatures), opaque
+    # False when a rule planner did not recognise the question: its calls are then only a default
+    # (a clarifying question), and a rules-first wrapper should ask the model's planner instead.
+    recognised: bool = True
 
 
 @dataclass(frozen=True)

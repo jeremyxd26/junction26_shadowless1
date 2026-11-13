@@ -9,7 +9,7 @@ import pytest
 from conftest import AUG, FakeArgs, fake_spending
 from pydantic import BaseModel, ConfigDict
 
-from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec
+from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names
 from core.agent.toolset import KNOWN_TOOLS, default_registry
 from core.agent.validator import Allowed, validate
 from core.tools.formatting import display
@@ -109,5 +109,5 @@ def test_default_registry_builds_with_the_tools_present():
     reg = default_registry()
     assert "get_spending" in reg.names()
     assert set(reg.names()) <= {k.function for k in KNOWN_TOOLS}
-    for schema in reg.schemas():
-        assert "customer" not in str(schema["parameters_json_schema"]).lower()
+    for schema in reg.schemas():  # field names at any depth; descriptions may mention the customer
+        assert not any("customer" in name.lower() for name in property_names(schema["parameters_json_schema"]))
