@@ -509,7 +509,7 @@ The `review` card for Sanna's Home & Tech purchase (values from the dataset):
 }
 ```
 
-The `safe_to_save` card of the overview for Sanna (values from the dataset, before any label):
+The `safe_to_save` card of the overview for Sanna after she answered "needed" (values from the dataset). These are the same numbers as with no review at all. While her review is pending, the card shows 364.31 a month instead (`overview.response_pending`):
 
 <!-- example: card.safe_to_save -->
 ```json
@@ -859,7 +859,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 404 | `evidence_not_found` | Unknown or expired `ref`. |
 | 403 | `evidence_forbidden` | The evidence belongs to a different customer. |
 | 422 | `invalid_scenario` | The what-if scenario cannot be computed, for example a selection with no spending in the window. |
-| 404 | `tx_ref_not_found` | Unknown `tx_ref`, or one that belongs to another customer. Both get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
+| 404 | `tx_ref_not_found` | Unknown `tx_ref`, the ref of an expired review, or one that belongs to another customer. All three get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
 | 422 | `basket_not_allowed` | The basket is not one of the review's two options (section 10). |
 | 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
@@ -2474,15 +2474,18 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 | `basket` | `unexpected_necessities`, `everyday_spending` or `null` | The chosen option. `null` undoes the label. |
 | `language` | `en` or `fi` | |
 
-**What the answers do** (`metrics.md` section 1.1). While the review is pending, the purchase is `unclassified`: in no basket and not in the reserve. No answer ever raises safe to spend.
+**What the answers do** (`metrics.md` section 1.1). While the review is pending, the purchase is `unclassified`: in no basket and not in the reserve. No answer raises safe to spend above the value shown while the question was pending. Undo and changing the answer only move between the documented states.
 - **"Needed"** (`unexpected_necessities`): the purchase joins that basket and its reserve, so the reserve grows and safe to spend goes **down**. Sanna: 221.58 → 180.26. The message says Sentti keeps a reserve for surprises like this.
 - **"I chose it"** (`everyday_spending`): the purchase joins everyday spending, and safe to spend **stays the same**. It stays a one-off, outside the everyday run rate. The message says this month's everyday spending is higher than usual by the amount.
 
 **Rules:**
 - **Idempotent:** sending the same answer again returns 200 with `changed: false` and an empty `changes` list.
 - **Changing the answer:** a different `basket` replaces the label.
-- **Undo:** `basket: null` removes the label. While the review is still open (7 days after creation), the purchase goes back to `unclassified` and the review is pending again. After that, it goes back to the basket the rules give it. Either way, the transaction is never asked about in a new review.
-- **Late answers:** a label is accepted for any `tx_ref` the customer was shown, also after the review stopped being offered.
+- **Undo:** `basket: null` removes the label. If the review was created less than 7 days ago, the purchase goes back to `unclassified` and the review is pending again. Otherwise the review closes, and the purchase goes back to the basket the rules give it. Either way, the transaction is never asked about in a new review.
+- **Expiry:**
+  - A pending review expires 7 days after creation; an answered review does not expire.
+  - A review can be answered, changed or undone only while it is pending (not expired) or answered.
+  - Once a pending review has expired, its `tx_ref` is no longer valid: the call returns 404 `tx_ref_not_found`, and the purchase stays in its rule-based basket. There are no late answers.
 - **What can be labelled:** only reviewable spikes have a `tx_ref`, so a Health or other sensitive purchase can never be labelled.
 
 **Response:**
@@ -2497,7 +2500,7 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 **Errors** (section 4):
 - 400 `invalid_request`: a malformed body, including a `basket` that is not one of the three basket keys or `null`;
 - 404 `customer_not_found`;
-- 404 `tx_ref_not_found`: an unknown ref, **or one of another customer**. The same answer for both, so nobody can probe for other customers' refs (R4);
+- 404 `tx_ref_not_found`: an unknown ref, the ref of an expired review, **or one of another customer**. The same answer for all three, so nobody can probe for other customers' refs (R4);
 - 422 `basket_not_allowed`: a valid basket key that is not one of the review's two options, for example `regular_essentials`;
 - 429 `rate_limited`.
 
@@ -2608,18 +2611,18 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
     },
     {
       "key": "safe_to_save",
-      "label": "Safe to save now",
+      "label": "Left over in your account",
       "before": {
         "value": 12360.83, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
         "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_sa5s7a9v1e3n",
-        "label": "Safe to save now", "display": "€12,360.83"
+        "label": "Left over in your account", "display": "€12,360.83"
       },
       "after": {
         "value": 12272.28, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
         "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_sn2s4a6v8e0n",
-        "label": "Safe to save now", "display": "€12,272.28"
+        "label": "Left over in your account", "display": "€12,272.28"
       }
     }
   ],
@@ -2799,18 +2802,18 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
     },
     {
       "key": "safe_to_save",
-      "label": "Safe to save now",
+      "label": "Left over in your account",
       "before": {
         "value": 12272.28, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
         "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_sn2s4a6v8e0n",
-        "label": "Safe to save now", "display": "€12,272.28"
+        "label": "Left over in your account", "display": "€12,272.28"
       },
       "after": {
         "value": 12360.83, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
         "method": "safe_to_spend.safe_to_save_eur@1", "evidence_ref": "ev_sa5s7a9v1e3n",
-        "label": "Safe to save now", "display": "€12,360.83"
+        "label": "Left over in your account", "display": "€12,360.83"
       }
     }
   ],

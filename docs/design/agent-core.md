@@ -483,9 +483,9 @@ The candidates are ordered **most recent first, then largest amount, then transa
 ```
 
 - **PENDING** (created, not answered, open for 7 days from creation): the purchase is `unclassified`, "Waiting for your answer". It is in no basket total and not in the reserve for unexpected necessities. As a one-off it was never in the everyday run rate.
-- **ANSWERED:** the purchase is in the chosen basket. "Needed" adds it to `unexpected_necessities` and its reserve, so safe to spend goes down. "I chose it" adds it to `everyday_spending`, and safe to spend does not change. No answer ever raises safe to spend (`metrics.md` section 1.1).
-- **CLOSED** (no answer within 7 days, or undone after them): the purchase is back in the basket the rules give it, exactly as for a customer who was never asked.
-- **Undo** while the review is open returns to PENDING. A closed review is never re-opened, and its transaction is never asked about again.
+- **ANSWERED:** the purchase is in the chosen basket. "Needed" adds it to `unexpected_necessities` and its reserve, so safe to spend goes down. "I chose it" adds it to `everyday_spending`, and safe to spend does not change. No answer raises safe to spend above the value shown while the question was pending (`metrics.md` section 1.1). An answered review does not expire.
+- **CLOSED** (no answer within 7 days of creation, or undone after them): the purchase is back in the basket the rules give it, exactly as for a customer who was never asked. Its `tx_ref` is no longer valid: a label call returns 404, so there are no late answers.
+- **Undo** within 7 days of creation returns to PENDING. After that, undo closes the review. A closed review is never re-opened, and its transaction is never asked about again.
 
 So a customer with no pending review has exactly the numbers of the published worked examples. Only the pending state differs.
 
@@ -525,7 +525,7 @@ CREATE TABLE spike_reviews (
 
 **The label endpoint, not a tool (R6).** `POST /api/baskets/label` (contract, section 10) is called by the **app** when the customer taps an answer.
 - The model has no tool that writes data. The tool registry is unchanged, and the planner cannot label, undo or dismiss anything.
-- The endpoint checks that the `tx_ref` belongs to the customer and that the basket is one of the two options. An unknown ref and another customer's ref get the same 404, so nobody can probe for refs (R4). Late answers are accepted: any `tx_ref` the customer was shown can be labelled, also after the review closed (contract, section 10.1).
+- The endpoint checks that the `tx_ref` belongs to the customer and that the basket is one of the two options. An unknown ref, the ref of a closed review and another customer's ref all get the same 404, so nobody can probe for refs (R4). A review can be answered, changed or undone only while it is pending or answered (contract, section 10.1).
 - Every label write goes to the audit log: customer, `tx_ref`, basket, time.
 
 **Review cards in answers.**

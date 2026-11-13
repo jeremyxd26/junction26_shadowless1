@@ -149,7 +149,7 @@ It is never a Health purchase or a health MCC (5912, 8011, 8099, 8021). Those sp
 - **Pending:** the purchase is outside the reserve, so safe to spend is the same as after "I chose it".
 - **"Needed":** the purchase joins the reserve for unexpected necessities, so the reserve grows and **safe to spend goes down**. The coach explains that it keeps a reserve for surprises like this. This is the demo path; the bank's own example is a washing machine.
 - **"I chose it":** the purchase joins everyday spending, and **safe to spend does not change**. The coach says this month's everyday spending is higher than usual by the amount.
-- **No answer ever raises safe to spend.**
+- **No answer raises safe to spend above the value shown while the question was pending.** Undo and changing the answer only move between these states. A review that expired unanswered cannot be answered any more (its `tx_ref` is no longer valid), so the purchase stays in its rule-based basket.
 
 **Worked numbers.** CUST00860 (persona Sanna), transaction 606016: Home & Tech, 1,080.42 on 2026-09-28. It is 9.0 times her median Home & Tech purchase and a one-off, so the rules put it in `unexpected_necessities`. Window 2026-04-01 … 2026-09-30 (183 days); payday 2026-10-15, N = 15. The first column is both "no review" and "after 'needed'"; the two states give the same numbers.
 
@@ -567,7 +567,7 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
    - A spike with a pending review is `unclassified`: in no basket and not in the reserve.
    - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 221.58 → 180.26).
    - "I chose it" leaves safe to spend unchanged.
-   - No answer ever raises safe to spend.
+   - No answer raises safe to spend above the value shown while the question was pending, and an expired review cannot be answered.
    - A customer without a pending review keeps every published number (section 1.1).
 
 ## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)
