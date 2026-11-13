@@ -115,7 +115,7 @@ Only one of the 78 passing candidates is 18–24 (CUST00164, age 23), and its sa
 
 Eetu's cell (25-34 in 021xx, Espoo) has exactly 24 other comparable customers, enough for the 20-peer rule with a small margin. All four are `comparable = true` in `metric_peer_flags`.
 
-The script checks the cell size on `customers`. The comparable counts (and `peer_group.comparable_others` in `personas.yaml`) come from the mart of issue #21 and are not reproduced by the script. Subtract 1 for the persona itself:
+The scan checks the cell size on `customers`. The comparable counts (and `peer_group.comparable_others` in `personas.yaml`) come from the mart of issue #21. `select_personas.py --answers` prints them as `peer_n` of `06_peer_benchmark.sql`. Subtract 1 for the persona itself:
 
 ```sql
 SELECT age_band, area3, count(*) AS members, count(*) FILTER (WHERE comparable) AS comparable
@@ -147,14 +147,28 @@ All answers: `DEMO_TODAY` 2026-09-30, window 2026-04-01 … 2026-09-30 (`n_month
 | CUST00349 | `everyday_heavy` | one-off share 4.3% < 5, everyday share 30.1% ≥ 30 (checked before saver) | regular_investor, frequent_small_purchases | 22.6% | 3,161.55 | 2,445.52 |
 | CUST00849 | `steady` | keep rate 9.4% < 20, everyday share 28.0% < 30, one-off share 0% | went_below_zero (20 transactions), frequent_small_purchases | 9.4% | 2,075.65 | 1,881.06 |
 
-**Peer comparison: pending.** The values come from `06_peer_benchmark.sql` once it reads the precomputed marts (issue #21). They will be filled in with a small follow-up. Peer groups, at level `age_band+area3`:
+**Peer comparison** ("people of the same age and area"). `06_peer_benchmark.sql` is run for each persona alone; it reads the marts built by `core/marts/build.py` (`peer_source = marts`). Level `age_band+area3`, `shown = true` for all four. Month averages over the window. The percentile is the share of the other peers in the group who spend less.
 
-| Persona | Peer group | Comparable others |
-|---|---|---|
-| CUST00860 | 35-44, 005xx | 118 |
-| CUST00493 | 45-54, 001xx | 121 |
-| CUST00349 | 25-34, 021xx | 24 |
-| CUST00849 | 25-34, 022xx | 39 |
+| Persona | Peer group (comparable others) | Metric | You | Peer median | p25 – p75 | Percentile | vs median |
+|---|---|---|---|---|---|---|---|
+| CUST00860 | 35-44, 005xx (118) | total spending | 3,010.59 | 2,975.65 | 2,313.00 – 3,713.90 | 51 | +1.2% |
+| | | regular essentials | 1,889.04 | 1,976.48 | 1,613.18 – 2,308.72 | 43 | −4.4% |
+| | | unexpected necessities | 521.15 | 299.03 | 139.36 – 468.85 | 87 | +74.3% |
+| | | everyday spending | 600.41 | 727.85 | 445.69 – 1,038.40 | 39 | −17.5% |
+| CUST00493 | 45-54, 001xx (121) | total spending | 2,124.09 | 3,567.81 | 2,774.64 – 4,731.34 | 8 | −40.5% |
+| | | regular essentials | 1,645.05 | 2,221.92 | 1,911.78 – 2,752.60 | 13 | −26.0% |
+| | | unexpected necessities | 144.60 | 363.64 | 189.84 – 618.87 | 14 | −60.2% |
+| | | everyday spending | 334.44 | 913.24 | 547.71 – 1,454.59 | 8 | −63.4% |
+| CUST00349 | 25-34, 021xx (24) | total spending | 2,445.52 | 1,894.55 | 1,664.60 – 2,790.60 | 67 | +29.1% |
+| | | regular essentials | 1,431.19 | 1,365.34 | 1,143.86 – 2,090.07 | 58 | +4.8% |
+| | | unexpected necessities | 277.45 | 165.26 | 85.26 – 277.45 | 75 | +67.9% |
+| | | everyday spending | 736.87 | 479.25 | 270.63 – 736.87 | 75 | +53.8% |
+| CUST00849 | 25-34, 022xx (39) | total spending | 1,881.06 | 2,202.21 | 1,819.64 – 2,811.44 | 31 | −14.6% |
+| | | regular essentials | 1,229.97 | 1,537.60 | 1,188.80 – 1,943.43 | 28 | −20.0% |
+| | | unexpected necessities | 124.49 | 205.58 | 104.51 – 334.20 | 36 | −39.4% |
+| | | everyday spending | 526.60 | 538.51 | 392.92 – 691.95 | 46 | −2.2% |
+
+`06` also returns the category metrics (Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing; never Health). Each persona's group size equals the comparable count from `metric_peer_flags` in section 3. For Eetu, the upper quartile of two metrics equals Eetu's own value: the group statistics include the persona, and the group is small (25 with the persona).
 
 ### Q3. "What can I safely spend this week?" — `03_safe_to_spend.sql`, week 2026-10-01 … 2026-10-07, payday 2026-10-15 (N = 15)
 
