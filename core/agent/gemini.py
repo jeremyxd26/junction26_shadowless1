@@ -29,7 +29,7 @@ from typing import Any
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, SdkTransport
+from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport
 from core.agent.model import (
     ComposeInput, ComposeResult, FunctionCall, FunctionResponse, ModelError, PlanInput, PlanResult, Usage,
 )
@@ -40,6 +40,7 @@ log = logging.getLogger("core.agent.gemini")
 ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 DEFAULT_CACHE_DIR = ROOT / "var" / "gemini-cache"
+DEFAULT_LEDGER = ROOT / "var" / "gemini-requests.jsonl"
 LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 
 # The pinned model: an exact id from the Gemini models page (checked 2026-11-14), not a "-latest"
@@ -47,6 +48,11 @@ LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 # process environment variable. Do not put a value for it into .env: the local commit check treats
 # every .env value of 12 or more characters as a secret, which would block this file.
 DEFAULT_MODEL = "gemini-3.8-flash"
+# When the primary model stays overwhelmed (503 after two retries), one attempt goes to the other one.
+FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash"}
+# The organisers' account allows a limited number of requests a day for the whole team; one process
+# stops calling the model past this many requests in its ledger today (answers then use the template).
+DEFAULT_DAILY_CAP = 300
 
 
 @dataclass(frozen=True)
@@ -92,7 +98,9 @@ def _data(tag: str, value: Any) -> str:
 
 
 def _quoted(text: str) -> str:
-    return json.dumps(text, ensure_ascii=False)  # a JSON string: quotes, backslashes and tags are escaped
+    """The user's text as one JSON string. Quotes and backslashes are escaped by JSON, and < and > as
+    JSON unicode escapes, so the text cannot close the tag around it or open a new one (R11)."""
+    return json.dumps(text, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
 
 
 # ---- planner request ----------------------------------------------------------------------------------
@@ -211,17 +219,21 @@ class GeminiModel:
 # ---- settings and factory -----------------------------------------------------------------------------
 
 class GeminiSettings(BaseSettings):
-    """GEMINI_API_KEY, GEMINI_MODEL (default DEFAULT_MODEL; an override for experiments, never a -latest
-    alias), GEMINI_CACHE (on | off | replay; default on) and GEMINI_CACHE_DIR (default var/gemini-cache).
-    Read from the environment and the repository's .env, like core/app/settings.py."""
+    """GEMINI_API_KEY; GEMINI_MODEL (default DEFAULT_MODEL; an override for experiments, never a -latest
+    alias); GEMINI_FALLBACK_MODEL (default from FALLBACK_MODELS; "none" turns it off); GEMINI_CACHE (on |
+    off | replay; default on); GEMINI_CACHE_DIR (default var/gemini-cache); GEMINI_DAILY_CAP (requests
+    a day in the ledger var/gemini-requests.jsonl; default DEFAULT_DAILY_CAP). Read from the environment
+    and the repository's .env, like core/app/settings.py."""
 
     model_config = SettingsConfigDict(env_file=ROOT / ".env", env_file_encoding="utf-8", env_ignore_empty=True,
                                       extra="ignore")
 
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_MODEL
+    gemini_fallback_model: str | None = None
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
+    gemini_daily_cap: int = DEFAULT_DAILY_CAP
 
 
 def make_model(settings: Any | None = None, **client_options: Any) -> GeminiModel | None:
@@ -240,8 +252,11 @@ def make_model(settings: Any | None = None, **client_options: Any) -> GeminiMode
         log.warning("GEMINI_MODEL is an alias; pin an exact model id for the demo")
     cache = getattr(s, "gemini_cache", env.gemini_cache)
     cache_dir = getattr(s, "gemini_cache_dir", env.gemini_cache_dir)
+    fallback = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model or FALLBACK_MODELS.get(model)
     secret = key.get_secret_value() if isinstance(key, SecretStr) else str(key)
     transport = None if cache == "replay" else SdkTransport(secret)
-    client = GeminiClient(model, transport, cache=cache, cache_dir=None if cache == "off" else Path(cache_dir),
+    client = GeminiClient(model, transport, fallback_model=None if fallback == "none" else fallback, cache=cache,
+                          cache_dir=None if cache == "off" else Path(cache_dir),
+                          ledger=Ledger(DEFAULT_LEDGER, getattr(s, "gemini_daily_cap", env.gemini_daily_cap)),
                           **client_options)
     return GeminiModel(client)

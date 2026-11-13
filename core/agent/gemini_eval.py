@@ -78,6 +78,8 @@ class Row:
     first_text_ms: int | None
     done_ms: int
     calls: list[tuple[str, int, bool, str | None]] = field(default_factory=list)  # kind, live ms, cached, error
+    tools: list[tuple[str, int]] = field(default_factory=list)  # data tool, ms (database and Python time)
+    requests: int = 0                    # requests sent to the Gemini API for this answer
     prompt_tokens: int = 0
     thought_tokens: int = 0
     output_tokens: int = 0
@@ -137,8 +139,14 @@ class PipelineSource:
 
         row = Row(self.case_ids.get((customer_id, question), question[:40]), language, (done or {}).get("outcome") or "error",
                   first("card"), first("delta"), int((t_done - t0) * 1000), text=(done or {}).get("text_rendered") or "")
+        for turn in record.get("planner_turns") or []:
+            for call in turn.get("calls") or []:
+                if "latency_ms" in call and call.get("status") in ("ok", "error"):
+                    row.tools.append((call["name"], int(call["latency_ms"])))
         for c in client.calls[first_call:]:
-            row.calls.append((c.kind, c.latency_ms, c.cached, c.error))
+            row.calls.append((c.kind + ("" if c.model == client.model else f"@{c.model}"), c.latency_ms, c.cached,
+                              c.error))
+            row.requests += c.network
             row.prompt_tokens += c.usage.prompt_tokens
             row.thought_tokens += c.usage.thought_tokens
             row.output_tokens += c.usage.output_tokens
@@ -147,8 +155,9 @@ class PipelineSource:
         if self.echo:
             calls = ", ".join(f"{k} {ms} ms{' (cache)' if cached else ''}{f' {err}' if err else ''}"
                               for k, ms, cached, err in row.calls)
+            tools = ", ".join(f"{name} {ms} ms" for name, ms in row.tools) or "no data tool"
             print(f"      [{row.outcome}] first card {row.first_card_ms} ms, first text {row.first_text_ms} ms, "
-                  f"done {row.done_ms} ms; {calls}; tokens {row.prompt_tokens}/{row.thought_tokens}/"
+                  f"done {row.done_ms} ms; {calls}; {tools}; tokens {row.prompt_tokens}/{row.thought_tokens}/"
                   f"{row.output_tokens}; ${row.cost_usd:.5f}\n      {row.text}", flush=True)
             for attempt in record.get("composer_attempts") or []:
                 if attempt.get("validation") not in (None, "ok"):
@@ -177,19 +186,20 @@ class PipelineSource:
             return ""
         live = [ms for r in rows for k, ms, cached, err in r.calls if err is None]
         n_calls = sum(len(r.calls) for r in self.rows)
-        live_calls = sum(1 for r in self.rows for _, _, cached, err in r.calls if not cached and err != "cache_miss")
-        return (f"; model {self.model.model_id}, {n_calls} model calls ({live_calls} live), per answer: "
+        requests = sum(r.requests for r in self.rows)
+        return (f"; model {self.model.model_id}, {n_calls} model calls ({requests} requests sent), per answer: "
                 f"{mean(r.prompt_tokens for r in rows):.0f} prompt / {mean(r.thought_tokens for r in rows):.0f} thought / "
                 f"{mean(r.output_tokens for r in rows):.0f} output tokens, ${mean(r.cost_usd for r in rows):.5f}; "
                 f"model call median {median(live) if live else 0:.0f} ms")
 
     def table(self) -> str:
         lines = ["\n| case | lang | outcome | first card ms | first text ms | done ms | model calls (live ms) | "
-                 "tokens prompt/thought/output | cost USD |", "|---|---|---|---|---|---|---|---|---|"]
+                 "data tools (ms) | tokens prompt/thought/output | cost USD |", "|---|---|---|---|---|---|---|---|---|---|"]
         for r in self.rows:
             calls = ", ".join(f"{k} {ms}{'c' if cached else ''}{'!' + err if err else ''}" for k, ms, cached, err in r.calls)
             lines.append(f"| {r.case} | {r.lang} | {r.outcome} | {r.first_card_ms if r.first_card_ms is not None else '-'} | "
                          f"{r.first_text_ms if r.first_text_ms is not None else '-'} | {r.done_ms} | {calls} | "
+                         f"{', '.join(f'{n} {ms}' for n, ms in r.tools) or '-'} | "
                          f"{r.prompt_tokens}/{r.thought_tokens}/{r.output_tokens} | {r.cost_usd:.5f} |")
         return "\n".join(lines)
 
