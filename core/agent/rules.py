@@ -142,6 +142,41 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     return args
 
 
+WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spend(ing)? less|spent half|half as much|less on|"
+           r"säästä\w*|vähentä\w*|vähemmän|puolet")
+PERCENT = r"(\d{1,3})\s?(?:%|percent|prosent\w*)"
+
+
+def plan_what_if(question: str) -> dict:
+    """run_what_if arguments: the category named in the question (dining out by default) and the cut
+    the user gave (20% by default, half = 50%)."""
+    q = question.lower()
+    category = next((c for rx, c in CATEGORY_WORDS if re.search(rx, q) and c != "Invest Deposit"), "Restaurants")
+    m = re.search(PERCENT, q)
+    cut = int(m.group(1)) if m else 50 if re.search(r"half|puolet|puoleen", q) else 20
+    return {"selection": {"kind": "category", "value": category}, "cut_pct": max(1, min(cut, 100))}
+
+
+# The partner's questions and their tools (team-lead mapping). The first match wins; a question about
+# a specific period or category falls through to get_spending.
+BRIEF = [
+    ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
+     lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_month"}})]),
+    ("safe_to_spend", r"safe(ly)? to spend|safely spend|can i (safely )?spend this week|turvallisesti käyttää|"
+                      r"voin käyttää tällä viikolla",
+     lambda q, as_of: [("get_safe_to_spend", {})]),
+    ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
+     lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
+    ("recurring_bills", r"\bbills?\b|payday|pay ?day|palkkapäivä|laskut|laskuni",
+     lambda q, as_of: [("get_recurring_bills", {})]),
+    ("what_if", WHAT_IF, lambda q, as_of: [("run_what_if", plan_what_if(q))]),
+]
+NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
+           "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
+NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
+                   ("Paljonko käytin viime kuussa?", "Paljonko käytin ravintoloihin viime kuussa?"))
+
+
 class RuleModel:
     model_id = "rules@1"
 
@@ -156,6 +191,21 @@ class RuleModel:
             if re.search(rx, q, re.I):
                 return [FunctionCall("decline", {"kind": kind})]
         tools = {t["name"] for t in request.tools}
+        lang = request.language
+        as_of = date.fromisoformat(request.as_of)
+        spending = plan_spending(request.question, as_of) if "get_spending" in tools else None
+        for intent, rx, build in BRIEF:
+            if not re.search(rx, q, re.I):
+                continue
+            # A what-if or bills question that names a period is still a what-if or bills question;
+            # a plain spending question with a period goes to get_spending below.
+            if intent == "what_if" and spending is not None and not re.search(PERCENT + r"|half|puolet", q):
+                break
+            calls = [FunctionCall(name, args) for name, args in build(q, as_of) if name in tools]
+            if calls:
+                return calls + [FunctionCall("finish")]
+            return [FunctionCall("ask_clarifying_question", {
+                "question": template.pick(NOT_YET, lang), "options": list(template.pick(NOT_YET_OPTIONS, lang))})]
         if "get_spending" in tools:
             args = plan_spending(request.question, date.fromisoformat(request.as_of))
             if args is not None:

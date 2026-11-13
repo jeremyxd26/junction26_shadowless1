@@ -1,26 +1,75 @@
-"""The built-in data tools. The one place that names them: add a ToolSpec here to register a tool.
+"""The built-in data tools, registered by discovery. The one place that names them.
 
+Each known tool module is imported when it exists; a tool whose module (or function, or argument
+model) is not there yet is skipped with one debug line, so tools arrive in the pipeline as their
+branches merge, without the pipeline depending on them. To add a tool, add a row to KNOWN_TOOLS.
+Every tool follows tool(ctx, args) -> ToolResult with an argument model, a card and a model_view.
 The pipeline (orchestrator.py) never names a tool; it reads them from the registry built here.
 """
 
 from __future__ import annotations
 
+import importlib
+import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
+
 from core.agent.registry import Registry, ToolSpec
 
+log = logging.getLogger("uvicorn.error")
 
-def builtin_tools() -> list[ToolSpec]:
-    from core.tools.spending import TOOL as SPENDING, GetSpendingArgs, get_spending
 
-    return [
-        ToolSpec(
-            name=SPENDING,
-            description=("Total spending or income of the current user for a period, optionally filtered, "
-                         "grouped and compared with an earlier period. Returns numbers with ids; cite them as {{id}}."),
-            args_model=GetSpendingArgs,
-            fn=get_spending,
-            status_label=("Looking at your spending", "Katson kulutustasi"),
-        ),
-    ]
+@dataclass(frozen=True)
+class KnownTool:
+    module: str
+    function: str
+    args_model: str
+    description: str
+    status_label: tuple[str, str]
+
+
+KNOWN_TOOLS = [
+    KnownTool("core.tools.spending", "get_spending", "GetSpendingArgs",
+              "Total spending or income of the current user for a period, optionally filtered, grouped and compared "
+              "with an earlier period. Returns numbers with ids; cite them as {{id}}.",
+              ("Looking at your spending", "Katson kulutustasi")),
+    KnownTool("core.tools.baskets", "get_basket_breakdown", "GetBasketBreakdownArgs",
+              "Split of spending into the three baskets (regular essentials, unexpected necessities, everyday "
+              "spending) for a period. Returns numbers with ids; cite them as {{id}}.",
+              ("Sorting your spending into baskets", "Jaan kulutuksesi koreihin")),
+    KnownTool("core.tools.bills", "get_recurring_bills", "GetRecurringBillsArgs",
+              "Recurring bills and income: typical monthly amounts, what is paid this month and what is due "
+              "before payday. Returns numbers with ids; cite them as {{id}}.",
+              ("Checking your regular bills", "Tarkistan säännölliset laskusi")),
+    KnownTool("core.tools.safe_to_spend", "get_safe_to_spend", "GetSafeToSpendArgs",
+              "What the user can safely spend in the next 7 days, with its components. An estimate. Returns "
+              "numbers with ids; cite them as {{id}}.",
+              ("Working out what is safe to spend", "Lasken, paljonko voit käyttää")),
+    KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
+              "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
+              "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              ("Calculating the saving", "Lasken säästön")),
+    # Issue #69 (not started): the names below are placeholders until the tools exist.
+    KnownTool("core.tools.profile", "get_spender_profile", "GetSpenderProfileArgs",
+              "What kind of spender the user is: a profile key, traits and the features that decided them.",
+              ("Looking at your spending habits", "Katson kulutustottumuksiasi")),
+    KnownTool("core.tools.peer", "get_peer_benchmark", "GetPeerBenchmarkArgs",
+              "Comparison with people of the same age band and area: median, quartiles and percentile.",
+              ("Comparing with people like you", "Vertaan kaltaisiisi")),
+]
+
+
+def builtin_tools() -> Iterator[ToolSpec]:
+    for known in KNOWN_TOOLS:
+        try:
+            module = importlib.import_module(known.module)
+            fn = getattr(module, known.function)
+            args_model = getattr(module, known.args_model)
+        except (ImportError, AttributeError):
+            log.debug("tool %s is not available yet; not registered", known.function)
+            continue
+        yield ToolSpec(name=known.function, description=known.description, args_model=args_model, fn=fn,
+                       status_label=known.status_label)
 
 
 def default_registry() -> Registry:

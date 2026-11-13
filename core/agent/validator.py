@@ -35,7 +35,7 @@ LESSON_KEYS = ("one_off_vs_habit", "fixed_vs_flexible", "safety_buffer", "small_
 
 TOKEN = re.compile(r"\{\{(n[0-9]+)\}\}")
 ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
-TOKEN_NEIGHBOUR = re.compile(rf"[{answer_text.DASHES}+€%$]\s?\{{\{{n[0-9]+\}}\}}|\{{\{{n[0-9]+\}}\}}\s?[€%$]")
+TOKEN_NEIGHBOUR = re.compile(rf"[{answer_text.DASH_CLASS}+€%$]\s?\{{\{{n[0-9]+\}}\}}|\{{\{{n[0-9]+\}}\}}\s?[€%$]")
 
 DENY = {
     "sensitive_inference": re.compile(

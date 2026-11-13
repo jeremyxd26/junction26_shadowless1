@@ -152,15 +152,20 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     sentences: list[str] = []
     cited: list[str] = []
     for view in views:
-        period = view.get("period")
-        if isinstance(period, str) and ok(period):
-            sentences.append(f"{period}.")
+        # One sentence per tool: "<period>: <label>: {{n1}}; <label>: {{n2}}." Items are joined with
+        # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
+        # would read as a date). Signed values keep their sign in the token's display.
+        items = []
         for label, number_id in _numbers_in(view):
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
             safe_label = label if label and ok(label) else ""
-            sentences.append(f"{safe_label}: {{{{{number_id}}}}}." if safe_label else f"{{{{{number_id}}}}}.")
+            items.append(f"{safe_label}: {{{{{number_id}}}}}" if safe_label else f"{{{{{number_id}}}}}")
             cited.append(number_id)
+        period = view.get("period")
+        head = f"{period}: " if isinstance(period, str) and ok(period) and items else ""
+        if items:
+            sentences.append(head + "; ".join(items) + ".")
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)
