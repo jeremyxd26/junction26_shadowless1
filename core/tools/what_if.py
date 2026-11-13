@@ -27,7 +27,7 @@ from core.tools.numbers import NumberBuilder, model_number
 TOOL = "run_what_if"
 METRIC = "what_if"
 HEALTH_MCCS = frozenset(config.MCC_GROUPS["health"])
-MCC_CODE = re.compile(r"^\d{4}$")
+MCC_CODE = re.compile(r"[0-9]{4}")  # ASCII digits only (\d also matches other scripts' digits)
 
 
 class WhatIfSelection(Args):
@@ -128,7 +128,9 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
             merchant_id = alias_map.merchant_id(sel.value)
         except KeyError:
             raise ValueError(f"unknown merchant alias {sel.value!r}") from None
-        if any(t.merchant_id == merchant_id and t.category == "Health" for t in history):
+        # A health service by category or by a health MCC (the same list as for an MCC selection), R9.
+        if any(t.merchant_id == merchant_id and (t.category == "Health" or t.mcc in HEALTH_MCCS)
+               for t in history):
             raise ValueError("a health service cannot be a what-if selection (rule R9)")
         sql_value = merchant_id
         alias_label = alias_map.for_merchant(merchant_id).label(lang)

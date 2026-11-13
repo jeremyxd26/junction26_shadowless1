@@ -1,15 +1,17 @@
 """Pure-logic tests for get_safe_to_spend and run_what_if (no database)."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
 from core.tools import evidence, metric_sql
+from core.tools.context import ToolContext
+from core.tools.db import Tx
 from core.tools.formatting import money
 from core.tools.safe_to_spend import binding_limit, status_of
-from core.tools.what_if import RunWhatIfArgs, WhatIfSelection, caveats_for
+from core.tools.what_if import RunWhatIfArgs, WhatIfSelection, caveats_for, run_what_if
 
 D = Decimal
 
@@ -119,3 +121,28 @@ def test_caveats_follow_the_status():
     assert len(caveats_for("estimate", "en")) == 1
     assert "unexpected necessities" in caveats_for("estimate_with_caveat", "en")[1]
     assert "Regular essentials are not cut" in caveats_for("not_offered", "en")[1]
+
+
+# ---- #55 review follow-ups -------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["١٢٣٤", "４１２１", "4121,٥٨١٢"])
+def test_mcc_codes_must_be_ascii_digits(bad):
+    """A \\d pattern would also accept Arabic-Indic or full-width digits; MCC codes are ASCII only."""
+    with pytest.raises(ValidationError):
+        WhatIfSelection(kind="mcc", value=bad)
+
+
+def test_merchant_with_a_health_mcc_is_rejected():
+    """R9 for a merchant selection also uses the health MCC list, not only the category."""
+    pharmacy = Tx(id=1, tx_date=date(2026, 9, 1), tx_at=datetime(2026, 9, 1, 12, 0), category="Lifestyle",
+                  tx_type="purchase", merchant_id="MRC-X-0001", mcc="5912", amount_eur=Decimal("-20.00"))
+    ctx = ToolContext(customer_id="CUST00001", as_of=date(2026, 9, 30), conn=None, _history=[pharmacy])
+    with pytest.raises(ValueError, match="R9"):  # refused before any SQL runs (conn is None)
+        run_what_if(ctx, {"selection": {"kind": "merchant", "value": "store_a"}, "cut_pct": 10})
+
+
+@pytest.mark.parametrize("name", ["demo_today", "customer_from", "customer_to", "customer_anything"])
+def test_metric_runner_refuses_reserved_settings(name):
+    """The customer range and as_of come only from run()'s arguments, never from a caller's settings."""
+    with pytest.raises(ValueError, match="reserved"):
+        metric_sql.run(None, "03_safe_to_spend.sql", "CUST00001", date(2026, 9, 30), {name: "CUST00000"})
