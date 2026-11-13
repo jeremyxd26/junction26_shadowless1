@@ -23,7 +23,7 @@ export function ErrorBlock({ message, onRetry, children }: ErrorProps) {
   const { t } = useSettings()
   return (
     <div role="alert" className="flex flex-col items-start gap-3 rounded-lg bg-danger-tint p-4">
-      <p className="text-base text-ink">{message ?? 'Something went wrong.'}</p>
+      <p className="text-base text-ink">{message ?? t.errorGeneric}</p>
       <div className="flex flex-wrap gap-2">
         {onRetry && (
           <button
