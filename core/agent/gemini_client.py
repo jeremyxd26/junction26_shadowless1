@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import time
 from collections.abc import Callable
@@ -47,6 +48,9 @@ RETRY_CODES = {429, 500, 502, 503, 504}
 RETRY_BACKOFF_S = {429: 1.0}            # other retryable codes wait DEFAULT_BACKOFF_S
 DEFAULT_BACKOFF_S = 0.5
 MIN_ATTEMPT_S = 1.0                     # a retry needs at least this much of the deadline left
+# The Gemini API rejects a request whose server deadline (the X-Server-Timeout header, which the SDK
+# fills from the client timeout) is under 10 s with HTTP 400. The client-side timeout stays ours.
+MIN_SERVER_DEADLINE_S = 10
 BLOCK_REASONS = {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION", "MODEL_ARMOR"}
 UNUSABLE_REASONS = {"MALFORMED_FUNCTION_CALL", "UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS",
                     "MISSING_THOUGHT_SIGNATURE", "MALFORMED_RESPONSE"}
@@ -103,7 +107,8 @@ Transport = Callable[[str, list[dict[str, Any]], dict[str, Any], float], dict[st
 
 
 class SdkTransport:
-    """The real transport: google-genai's generate_content. The SDK's own retries stay off."""
+    """The real transport: google-genai's generate_content. The SDK's own retries stay off. The client
+    gives up after timeout_s; the server deadline is never below MIN_SERVER_DEADLINE_S."""
 
     def __init__(self, api_key: str) -> None:
         from google import genai
@@ -114,8 +119,10 @@ class SdkTransport:
                  timeout_s: float) -> dict[str, Any]:
         from google.genai import types
 
+        server_deadline = max(MIN_SERVER_DEADLINE_S, math.ceil(timeout_s))
         cfg = types.GenerateContentConfig.model_validate(
-            {**config, "http_options": {"timeout": int(timeout_s * 1000)}})
+            {**config, "http_options": {"timeout": int(timeout_s * 1000),
+                                        "headers": {"X-Server-Timeout": str(server_deadline)}}})
         response = self._client.models.generate_content(
             model=model, contents=[types.Content.model_validate(c) for c in contents], config=cfg)
         return response.model_dump(mode="json", exclude_none=True)
@@ -187,7 +194,7 @@ class GeminiClient:
     """
 
     def __init__(self, model: str, transport: Transport | None, *, cache: str = "on",
-                 cache_dir: Path | None = None, plan_timeout_s: float = 10.0, compose_timeout_s: float = 15.0,
+                 cache_dir: Path | None = None, plan_timeout_s: float = 8.0, compose_timeout_s: float = 10.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.perf_counter) -> None:
