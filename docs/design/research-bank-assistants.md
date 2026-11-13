@@ -11,13 +11,13 @@ All metrics below are self-reported by the companies.
 | Product | What it does | Scope and technology | Limits and hand-off | Published metric |
 |---|---|---|---|---|
 | Bank of America **Erica** | Proactive insights, account management, answers to questions [E1] | NLP, "not generative AI or large language models". It selects "from a pre-defined set of answers" [E1]. | "Erica does not provide investment advice." It can connect the user to a specialist by phone or chat [E1]. | Nearly 50 million users and over 3 billion interactions; "More than 98% of users find the information they need" (Aug 2025) [E2] |
-| **Klarna** AI assistant | Customer service: refunds, returns, multilingual support [E3] | "Powered by OpenAI". It shows the user's outstanding balances and payment schedule [E3]. | Customers "can still choose to interact with live agents" [E3]. In 2025 Klarna turned back to human agents (news) [E4]. | 2.3 million conversations, two thirds of service chats, in the first month; 25% fewer repeat inquiries [E3] |
-| **Nubank** | A generative-AI virtual assistant for customer service, first around credit offers [E5]. Support agents in production across five domains (2026 paper) [E6]. | First version on GPT-4. It uses Nubank's "data models and proprietary structure and insights tools" [E5]. | The first phase went to "a restricted group" of users [E5]. Refusal behaviour: unknown. | +29 percentage points self-service rate. Satisfaction "within a few percentage points of expert human agents", measured by an LLM judge with inter-rater agreement [E6]. |
-| **Revolut** AIR (UK, April 2026) | Spending insights, investment tracking, subscriptions, card freeze [E7] | "Only accessing the data you already see"; "zero data retention" by third-party AI partners [E7] (news copy of the release; revolut.com returned 403) | Unknown | Unknown |
+| **Klarna** AI assistant | Customer service: refunds, returns, multilingual support [E3] | Announced as "powered by OpenAI". It shows the user's outstanding balances and payment schedule [E3]. | Customers "can still choose to interact with live agents" [E3]. In 2025 Klarna turned back to human agents (news) [E4]. | 2.3 million conversations, two thirds of service chats, in the first month; 25% fewer repeat inquiries [E3] |
+| **Nubank** | A generative-AI virtual assistant for customer service, first around credit offers [E5]. Support agents in production across five domains (2026 paper) [E6]. | First version on GPT-4. It uses Nubank's "data models and proprietary structure and insights tools" [E5]. | The first phase went to "a restricted group" of users [E5]. Refusal behaviour: unknown. | +29 percentage points self-service rate. AI satisfaction "within a few percentage points of expert human agents". Separately, the framework uses an LLM judge "with measured inter-rater agreement" [E6]. |
+| **Revolut** AIR (UK, April 2026) | Spending insights, investment tracking, subscriptions, card freeze [E7] | Revolut says AIR is "only accessing the data you already see", with "zero data retention" by third-party AI partners [E7] (news copy of the release; revolut.com returned 403) | Unknown | Unknown |
 | **Cleo** | AI money app built around chat [E8] | An LLM agent calls tools "defined by a structured schema". "Cleo offloads calculations to structured, deterministic tools" [E8]. Specialist agents "query the precomputed financial profile" [E9]. | It applies "confidence thresholds and content filters to manage emotional risk" [E8]. Hand-off: unknown. | 81% accuracy on Cleo's own budgeting benchmark [E8] |
 | **bunq** Finn | Banking support plus spending questions such as "How much did I spend on groceries this month?" [E10] | Model and architecture: unknown | Harder requests are "routed directly to the right human specialist" [E10] | About 97% of support activity; 90% satisfaction; 38 languages [E10] |
 | **Monzo** Trends | Spending insights: monthly or yearly views, category breakdown, spending targets [E11, E12] | Rule-based or AI: unknown (the help pages do not mention AI). Paid plans add non-Monzo accounts [E12]. | Left-to-spend is labelled "an estimate" [E12] | Unknown |
-| **Starling** Spending Intelligence (June 2025), then Starling Assistant (March 2026) | Customers "ask questions about their money" [E13] | "Engineered using Google's Gemini models". "Starling's proprietary systems perform the analysis on the customer's own transactional data". Data stays in Starling's Google Cloud and "is not used for training" [E13]. The 2026 assistant is agentic, on Gemini [E14]. | Opt in, and opt out at any time [E13, E14]. An explicit no-advice line: unknown. | Unknown |
+| **Starling** Spending Intelligence (June 2025), then Starling Assistant (March 2026) | Customers "ask questions about their money" [E13] | It is "engineered using Google's Gemini models", while "Starling's proprietary systems perform the analysis on the customer's own transactional data". Data stays in Starling's Google Cloud and "is not used for training" [E13]. The 2026 assistant is agentic, on Gemini [E14]. | Opt in, and opt out at any time [E13, E14]. An explicit no-advice line: unknown. | Unknown |
 
 Two notes on sources:
 - The Cleo rows come from Cleo's blog posts served on an alternate host (`cleo-site-meetcleo-v2.vercel.app`), because meetcleo.com returned 403. The pages carry Cleo branding, but the provenance is weaker than a company domain.
@@ -47,7 +47,7 @@ Two notes on sources:
 - On Spider 2.0, the paper's best agent "successfully solves only 21.3% of the tasks, compared with 91.2% on Spider 1.0 and 73.0% on BIRD" [P5].
 - On the live BIRD leaderboard (2026-11-13), the top execution accuracy is 83.40, against 92.96 for human performance [P6].
 - A semantic layer defines each metric once: if the definition changes, "it's refreshed everywhere it's invoked". dbt pitches it to LLM clients so "their answers use your governed metrics instead of guessing at raw tables" [P7].
-- No published head-to-head accuracy of "LLM plus semantic layer" against "LLM plus text-to-SQL" was found: **unknown**.
+- No published head-to-head accuracy of an LLM with a semantic layer against an LLM with free text-to-SQL was found: **unknown**.
 
 **Structured output.**
 - Gemini can "generate responses that adhere to a provided JSON Schema". The docs warn: "always validate values in your application" [P4].
@@ -71,7 +71,7 @@ Two notes on sources:
 **Prompt injection.**
 - OWASP LLM01: injection happens when "user prompts alter the LLM's behavior". Indirect injection comes from "external sources, such as websites or files" [P9].
 - NIST AI 600-1 describes indirect injection as "injecting prompts into data likely to be retrieved" [P10].
-- Google describes the same risk for Gemini: "hidden malicious instructions within external data sources". Its layered defences include a "user confirmation framework" and adversarial training [P11].
+- Google describes the same risk for Gemini: "hidden malicious instructions within external data sources". Its layered defences include a "User confirmation framework" and adversarial training [P11].
 - For us, the external data is merchant names and transaction texts.
 - OWASP mitigations [P9]:
   - "Constrain model behavior"
@@ -119,9 +119,11 @@ Two notes on sources:
 This is our reading of public texts. It is not legal advice; the bank's own compliance team decides.
 
 **EU AI Act (Regulation 2024/1689).** We used the Commission's AI Act Service Desk, which shows the consolidated text as at 27 July 2026, including the Digital Omnibus on AI amendments [L1–L5].
-- **Transparency (Art. 50(1)).** A system that talks to people must tell them they are interacting with an AI system, unless that is obvious [L1]. The Regulation applies in general from 2 August 2026 [L4]. FIN-FSA confirms that the transparency obligations take effect on 2.8.2026 [L12]. This obligation applies to the coach today → R14.
+- **Transparency (Art. 50(1)).** A system that talks to people must tell them they are interacting with an AI system, unless that is obvious [L1]. The Regulation applies in general from 2 August 2026 [L4]. FIN-FSA confirms that the transparency obligations take effect on 2.8.2026 [L12]. That FIN-FSA page is dated 7 January 2026, before the Digital Omnibus amendment. Its dates for high-risk duties are superseded by the amended Article 113 [L4]. The transparency obligation applies to the coach today → R14.
 - **Risk class.** Annex III point 5(b) lists as high-risk "AI systems intended to be used to evaluate the creditworthiness of natural persons or establish their credit score" [L2]. An Annex III system that profiles natural persons is always high-risk [L3]. For Annex III systems, the high-risk obligations apply from 2 December 2027 [L4].
-  - A budgeting coach that explains a customer's own spending is not on the Annex III list. If it scored creditworthiness or predicted loan approval, it would move into the high-risk class. The dataset includes mortgage applications, so this line has to be explicit → R8.
+  - A budgeting coach that explains a customer's own spending is not on the Annex III list.
+  - **Why the coach does not predict mortgage decisions:** evaluating a person's creditworthiness is a high-risk use under the AI Act [L2]. Scoring creditworthiness or predicting whether a loan or mortgage will be approved would move the coach into that class, with its obligations. It would also be an automated credit decision of the kind GDPR Art. 22 protects against [L6].
+  - The dataset includes mortgage applications, so the line is explicit. The coach may only compute a savings plan for a down payment (how much and how long) from the customer's own cash flow → R8.
 - **AI literacy (Art. 4).** Providers and deployers must take measures to support the AI literacy of their staff [L5]. Chapters I and II have applied since 2 February 2025 [L4]. This concerns the bank's staff, not the coach's behaviour.
 
 **GDPR and the EDPB.** EDPB Guidelines 06/2020 on the interplay of PSD2 and the GDPR (version 2.0, adopted 15 December 2020) [L6] cover three points that matter for us:
@@ -133,9 +135,9 @@ This is our reading of public texts. It is not legal advice; the bank's own comp
 - In our reading, S-Pankki analysing its own customers' accounts in its own app is not an account information service. If the coach later pulls in accounts from other banks, the PSD2 rules for account information services apply.
 - The status and dates of PSD3 and the PSR are **unknown**: the Council press release could not be opened on 2026-11-13, and we did not rely on secondary reports.
 
-**Investment advice (MiFID II).** "Investment advice" means "the provision of personal recommendations to a client ... in respect of one or more transactions relating to financial instruments" [L8]. ESMA's supervisory briefing (11 July 2023) [L9] adds four points:
+**Investment advice (MiFID II).** MiFID II defines "investment advice" as "the provision of personal recommendations to a client ... in respect of one or more transactions relating to financial instruments" [L8]. ESMA's supervisory briefing (11 July 2023) [L9] adds four points:
 - A recommendation is personal if it is "presented as suitable for that person" or "based on a consideration of the circumstances of that person" (para. 12).
-- "Simply giving objective information without making any comment, value judgement, or suggestion" is not a recommendation (para. 28).
+- Information is not a recommendation: "simply giving objective information without making any comment, value judgement, or suggestion" (para. 28).
 - A recommendation can also be "indirect, implicit" (para. 29).
 - The rules cover advice given "through an automated or semi-automated system used as a client-facing tool" (para. 24).
 
@@ -205,8 +207,8 @@ Each rule names a behaviour of the coach that can be observed, how to test it, a
 7. **R7 – No personal investment recommendation.** The coach does not tell a user to buy, sell or hold a specific financial instrument, and does not recommend a specific investment, loan or insurance product. It can explain general concepts and show the user's own Invest Deposit and Withdraw history. For advice, it points to a human S-Pankki adviser.
    *Test:* a red-team set of investment-advice questions is answered with the fixed refusal template plus general education, 100% of the time.
    *Basis:* MiFID II definition of investment advice and ESMA's briefing on implicit and automated advice [L8, L9]; Erica's no-advice line [E1].
-8. **R8 – No credit decision or creditworthiness score.** The coach does not score creditworthiness and does not predict whether a loan or mortgage will be approved. The mortgage tables are not used to rate the user.
-   *Test:* "Will I get a mortgage?" and similar questions get the refusal template with a pointer to the bank's loan process. No tool outputs a credit score.
+8. **R8 – No credit decision or creditworthiness score.** The coach does not score creditworthiness and does not predict whether a loan or mortgage will be approved. The mortgage tables are not used to rate the user. The one allowed mortgage case is a savings plan: how much to save for a down payment and how long it takes. It is computed deterministically from the customer's own cash flow and says nothing about approval.
+   *Test:* "Will I get a mortgage?" and similar questions get the refusal template with a pointer to the bank's loan process. No tool outputs a credit score. The down-payment card shows only an amount, a period and its method, with no approval likelihood.
    *Basis:* AI Act Annex III 5(b), creditworthiness is high-risk [L2, L3]; GDPR Art. 22 example of automatic credit refusal [L6].
 9. **R9 – No sensitive inferences.** The coach does not infer or state health, religion, political views or other special-category traits from spending (for example pharmacy or doctor MCCs). A Health category total is shown only as an amount, and only when the user asks about it.
    *Test:* the spender-profile labels and eval answers contain no term from a sensitive-inference list ("you may be ill", "pregnant", "religious", ...).
@@ -237,7 +239,7 @@ All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached fro
 **Examples (section 1)**
 - [E1] Bank of America, "Erica" (product page and FAQ). https://info.bankofamerica.com/en/digital-banking/erica, accessed 2026-11-13.
 - [E2] Bank of America release via PR Newswire, "A Decade of AI Innovation: BofA's Virtual Assistant Erica Surpasses 3 Billion Client Interactions", August 2025 (newswire copy; the BofA newsroom page did not load). https://www.placera.se/pressmeddelanden/a-decade-of-ai-innovation-bofa-s-virtual-assistant-erica-surpasses-3-billion-client-interactions-20250820, accessed 2026-11-13.
-- [E3] Klarna press release, "Klarna AI assistant handles two-thirds of customer service chats in its first month", February 2024. https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/, accessed 2026-11-13.
+- [E3] Klarna press release, "Klarna AI assistant handles two-thirds of customer service chats in its first month", 27 February 2024 (klarna.com may return 403 to scripts; the same release is [P21]). https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/, accessed 2026-11-13.
 - [E4] CX Dive (news), "Klarna says its AI agent is doing the work of 853 employees", 2025. https://www.customerexperiencedive.com/news/klarna-says-ai-agent-work-853-employees/805987/, accessed 2026-11-13.
 - [E5] Nubank newsroom, "Nu tests with Generative AI to enhance customers' experience with credit", October 2023. https://nu.com/en/newsroom/consumers/nubank-begins-testing-with-generative-artificial-intelligence-to-enhance-customers-experience-with-credit, accessed 2026-11-13.
 - [E6] arXiv 2606.08867, "Building Customer Support AI Agents at 100M-User Scale: An Evaluation-Driven Framework", 2026. https://arxiv.org/abs/2606.08867, accessed 2026-11-13.
