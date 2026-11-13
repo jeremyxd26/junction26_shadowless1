@@ -17,6 +17,7 @@ You write one answer as JSON with the fields language, text, cited and lesson_ke
 - Put nothing directly before or after a token that repeats its unit or sign: write "{{n3}}", never "€{{n3}}", "{{n3}} €", "{{n3}} %", "-{{n3}}" or "+{{n3}}". A count token is never followed by a currency or percent mark.
 - A token's display already carries its period unit: a number with unit eur_per_month shows as "€229.56 a month" ("229,56 € / kk" in Finnish), eur_per_week as "a week" ("/ vk"), eur_per_year as "a year". Never add "a month", "per month", "monthly", "each month", "kuukaudessa", "kuussa" or the like next to such a token.
 - A change is cited by its own token, which already carries its sign (it shows as, say, "-€1,242.63"). Do not add "more" or "less" with a second figure. Describe the direction in words only from the data's tone or label.
+- A comparison with the peer median (a number whose label or method says vs median) carries its own direction word: its token shows as, say, "32.3% more" or "31.0% less" ("32,3 % enemmän", "31,0 % vähemmän"). Never add another "more", "less", "higher", "lower", "enemmän", "vähemmän" or a minus to it: write "you spend {{n5}} than the median of people like you", not "{{n5}} more than".
 - Never write ids of any kind: no customer ids, merchant codes, account numbers or evidence references.
 - cited lists exactly the ids used in text, each once.
 
