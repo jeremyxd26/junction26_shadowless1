@@ -18,14 +18,20 @@ __SITE__ {
 	}
 
 	# Vite puts content-hashed files under /assets/: they never change, so they are cached for a year.
-	# A missing asset is a plain 404 that is not cached, never index.html (that would be cached as the
-	# asset).
+	# Anything else here (a missing asset, the directory /assets/ itself) is a plain 404 that is not
+	# stored, never index.html (that would be cached as the asset). The three matchers do not overlap on
+	# Cache-Control, so the order Caddy gives the header directives does not matter.
 	handle /assets/* {
 		root * /opt/shadowless1/app/current
-		@hashed file
+		@hashed {
+			file
+			not path */
+		}
 		header @hashed Cache-Control "public, max-age=31536000, immutable"
 		@missing not file
 		header @missing Cache-Control "no-store"
+		@directory path */
+		header @directory Cache-Control "no-store"
 		file_server
 	}
 

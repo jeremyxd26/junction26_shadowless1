@@ -127,14 +127,15 @@ GET https://sentti.jeremyxd.dev/healthz -> 200
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
 
 - `git archive <sha> app` gives the commit's tracked files only. A local `app/.env` never reaches the build.
-- They are built in a throwaway `node:22.21.1-slim` container: `npm ci && npm run build`, as uid 1000, with `--memory 2g`. npm's cache is kept in `/var/cache/shadowless1/npm`.
+- They are built in a throwaway `node:22.21.1-slim` container: `npm ci && npm run build`, as uid 1000, with `--memory 2g`, `--cap-drop ALL` and `--security-opt no-new-privileges`. The container has network, because npm downloads the packages. npm's cache is kept in `/var/cache/shadowless1/npm`.
 - The container gets no service setting. Its only build setting is the public `VITE_API_MODE=live`, so the app calls `/api` on the same origin. Vite puts only `VITE_*` variables into the bundle.
 - Measured on this instance (4 vCPU) with the app of PR #75: 7 s with an empty npm cache, 6 s with a warm one. The build is about 0.3 MB in 3 files.
-- **Secret check.** Every value of `/etc/shadowless1/core.env` that is at least 12 characters long is searched for in all built files by its first 12 characters, and so are the password and host of a URL setting, in full. Only counts are printed, and any match refuses the deploy. Shorter values are skipped: `DEMO_TODAY` is a date that the app's mock data contains.
-- The result is installed as `/opt/shadowless1/app/<sha>` (root-owned, world-readable). The link `/opt/shadowless1/app/current` moves to it after the core passed `/healthz`, so a failed build, a failed check or a failed core start leaves the previous app and core serving.
+- **Only plain files.** The build must hold nothing but regular files and directories; a symbolic link or anything else refuses the deploy. Caddy follows links, so a link left in the build by a package could otherwise publish any file Caddy can read, its TLS keys included.
+- **Secret check.** The secret-like settings of `/etc/shadowless1/core.env` (names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`) are searched for in all built files: the full value when it has at least 6 characters, and a URL's password and host. Any match refuses the deploy and prints the setting's name, never its value. Public settings such as a model name, CORS origins or a plain URL are not searched.
+- The result is installed as `/opt/shadowless1/app/<sha>` (root-owned, world-readable). The link `/opt/shadowless1/app/current` moves to it after the core passed `/healthz`, so a failed build, a failed check or a failed core start leaves the previous app and core serving. A commit whose build is already installed (a redeploy of the same commit, or a rollback to the previous one, whose build is kept) reuses it without npm, so the directory being served is never replaced.
 
 **Caching** (`deploy/Caddyfile`):
-- `/assets/*` holds Vite's content-hashed files: `Cache-Control: public, max-age=31536000, immutable`. A missing asset is a plain 404, never `index.html`.
+- `/assets/*` holds Vite's content-hashed files: an existing file gets `Cache-Control: public, max-age=31536000, immutable`. A missing asset and the directory `/assets/` itself are a plain 404 with `no-store`, never `index.html`.
 - Every other path: `Cache-Control: no-cache`, so `index.html` is revalidated on every load and a deploy shows at once.
 
 A commit without `app/package.json` (today's `main` and `dev`, which hold only `app/DESIGN.md` and `app/design/`, until PR #75 is merged) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.

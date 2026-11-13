@@ -169,44 +169,65 @@ tail -1 <<<"$import_out" | mask
 
 # ---- the app (app/, a static Vite build) ------------------------------------------------------------
 # Built here, before the switch, in a throwaway Node container from the files of the commit (git
-# archive: tracked files only, never a local .env), with network for npm only and no service setting.
-# The only build setting is the public VITE_API_MODE=live (the app calls /api on the same origin).
-# The result is installed as $app_root/<sha>; the served link $app_root/current moves to it only after
-# the core passed its health check. No Node on the request path: Caddy serves the files.
+# archive: tracked files only, never a local .env). The container has network, because npm downloads
+# the packages, but no capabilities and no service setting. The only build setting is the public
+# VITE_API_MODE=live (the app calls /api on the same origin). The result is installed as
+# $app_root/<sha>; the served link $app_root/current moves to it only after the core passed its health
+# check. No Node on the request path: Caddy serves the files. A commit whose build is already installed
+# (a redeploy, a rollback to the previous commit) reuses it: no npm, and the served directory is never
+# replaced while it is being served.
 app_root=$state/app
 node_image=node:22.21.1-slim
 npm_cache=/var/cache/shadowless1/npm
 app_new=""
 
-# No secret or server-side setting may end up in the app build. Every service setting value of at least
-# 12 characters is searched for by its first 12 characters, and the password and host of a URL setting
-# in full. Prints "<matches> <values checked>", never a value.
+# No secret may end up in the app build. The secret-like service settings (names ending in KEY, TOKEN,
+# SECRET or PASSWORD, and DATABASE_URL) are searched for in all built files: the full value when it has
+# at least 6 characters, and a URL's password and host. Public settings (a model name, CORS origins, a
+# plain URL) are not searched. Prints "checked=<n> matched=<names>": setting NAMES only, never a value.
 secret_matches() {   # $1: directory of the build, $2: the service settings file
   python3 - "$1" "$2" <<'PY'
 import os, re, sys, urllib.parse
 root, settings = sys.argv[1], sys.argv[2]
-needles = []
+needles = []   # (setting name, text)
 for line in open(settings, encoding="utf-8"):
-    m = re.match(r"\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$", line.rstrip("\r\n"))
+    m = re.match(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line.rstrip("\r\n"))
     if not m:
         continue
-    value = m.group(1).strip().strip("\"'")
-    if len(value) >= 12:
-        needles.append(value[:12])
+    name, value = m.group(1), m.group(2).strip().strip("\"'")
+    if not (re.search(r"(KEY|TOKEN|SECRET|PASSWORD)$", name, re.I) or name.upper() == "DATABASE_URL"):
+        continue
+    if len(value) >= 6:
+        needles.append((name, value))
     if "://" in value:
         u = urllib.parse.urlsplit(value)
-        needles += [p for p in (u.password, u.hostname) if p and len(p) >= 6]
+        needles += [(name, p) for p in (u.password, u.hostname) if p and len(p) >= 6]
 data = b""
 for d, _, files in os.walk(root):
     for f in files:
         with open(os.path.join(d, f), "rb") as fh:
             data += fh.read()
-print(sum(data.count(n.encode("utf-8")) for n in needles), len(needles))
+matched = sorted({name for name, text in needles if text.encode("utf-8") in data})
+print(f"checked={len(needles)} matched={','.join(matched)}")
 PY
 }
 
+# The served files must be plain files and directories: Caddy follows symbolic links, so a link left in
+# the build by a package would publish any file Caddy can read (its TLS keys too).
+only_plain_files() {   # $1: directory; fails when it is missing, a link, or holds anything else
+  local odd
+  [[ -d $1 && ! -L $1 ]] || return 1
+  odd=$(find "$1" ! -type f ! -type d -print -quit) || return 1
+  [[ -z $odd ]]
+}
+
 echo "== app"
-if git cat-file -e "$sha:app/package.json" 2>/dev/null; then
+if ! git cat-file -e "$sha:app/package.json" 2>/dev/null; then
+  echo "this commit has no app/package.json: no app build, and outside the core routes the proxy answers 404"
+elif [[ -f $app_root/$sha/index.html ]] && only_plain_files "$app_root/$sha"; then
+  app_new=$app_root/$sha
+  echo "app build of $sha is already installed (checked when it was built): reused, no npm"
+else
   app_work=$(mktemp -d "$state/app-build.XXXXXX")
   trap 'rm -rf "$app_work"' EXIT
   git archive "$sha" app | tar -x -C "$app_work"
@@ -214,6 +235,7 @@ if git cat-file -e "$sha:app/package.json" 2>/dev/null; then
   chown -R 1000:1000 "$app_work"
   app_started=$(date +%s)
   if ! docker run --rm --user 1000:1000 --memory 2g --pids-limit 512 \
+         --cap-drop ALL --security-opt no-new-privileges \
          --volume "$app_work/app:/app" --volume "$npm_cache:/home/node/.npm" --workdir /app \
          --env VITE_API_MODE=live "$node_image" \
          sh -c 'npm ci --no-audit --no-fund --loglevel=error && npm run build' > "$app_work/build.log" 2>&1 \
@@ -223,15 +245,20 @@ if git cat-file -e "$sha:app/package.json" 2>/dev/null; then
     drop_image
     exit 1
   fi
+  if ! only_plain_files "$app_work/app/dist"; then
+    echo "refusing to deploy: the app build holds something other than regular files and directories (for example a symbolic link)" >&2
+    drop_image
+    exit 1
+  fi
   if ! secret_out=$(secret_matches "$app_work/app/dist" /etc/shadowless1/core.env) \
-     || ! [[ $secret_out =~ ^([0-9]+)\ ([0-9]+)$ ]]; then
+     || ! [[ $secret_out =~ ^checked=([0-9]+)\ matched=([A-Za-z0-9_,]*)$ ]]; then
     echo "refusing to deploy: the secret check of the app build could not run" >&2
     drop_image
     exit 1
   fi
-  secret_hits=${BASH_REMATCH[1]} secret_checked=${BASH_REMATCH[2]}
-  if (( secret_hits > 0 )); then
-    echo "refusing to deploy: the app build contains $secret_hits match(es) of service setting values" >&2
+  secret_checked=${BASH_REMATCH[1]} secret_names=${BASH_REMATCH[2]}
+  if [[ -n $secret_names ]]; then
+    echo "refusing to deploy: the app build contains the value of: $secret_names" >&2
     drop_image
     exit 1
   fi
@@ -240,12 +267,10 @@ if git cat-file -e "$sha:app/package.json" 2>/dev/null; then
   cp -r "$app_work/app/dist" "$app_root/$sha.new"
   chown -R root:root "$app_root/$sha.new"
   chmod -R u=rwX,go=rX "$app_root/$sha.new"
-  rm -rf "$app_root/$sha"
+  rm -rf "$app_root/$sha"   # a broken earlier install of this commit; never the served one (reused above)
   mv "$app_root/$sha.new" "$app_root/$sha"
   app_new=$app_root/$sha
-  echo "app built in $(( $(date +%s) - app_started )) s: $(find "$app_new" -type f | wc -l) files; secret check: 0 matches for $secret_checked setting values"
-else
-  echo "this commit has no app/package.json: no app build, and outside the core routes the proxy answers 404"
+  echo "app built in $(( $(date +%s) - app_started )) s: $(find "$app_new" -type f | wc -l) files; only plain files; secret check: no match among $secret_checked secret values"
 fi
 
 # The service's own data survives deploys and restarts: the unit mounts this directory at /srv/var.
