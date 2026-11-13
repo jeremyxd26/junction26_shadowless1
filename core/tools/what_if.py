@@ -148,7 +148,8 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     for key, column, unit in config.WHAT_IF_NUMBERS:
         value = metric_sql.decimal(row[column])
         method = f"{METRIC}.{column}@1"
-        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.WHAT_IF_FILE, column, settings, value)
+        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.WHAT_IF_FILE, column, settings, value,
+                                    evidence.period_param(window))
         label = _t(key, lang, what=what[:1].upper() + what[1:])
         numbers[key] = reg(nb.number(value, Unit(unit), window, method, spec, label))
 

@@ -111,7 +111,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
         value = metric_sql.decimal(row[column])
         method = f"{METRIC}.{column}@1"
         spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.SAFE_TO_SPEND_FILE, column,
-                                    settings, value)
+                                    settings, value, evidence.period_param(periods_by_key[key]))
         numbers[key] = nb.number(value, Unit.EUR, periods_by_key[key], method, spec, _t(key, lang))
         values[key] = value
 
@@ -119,7 +119,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
         f"{METRIC}.safe_to_spend_7d_eur@1", "minimum",
         {"a": (numbers["balance_limit"], values["balance_limit"]),
          "b": (numbers["budget_limit"], values["budget_limit"])},
-        Unit.EUR, week, _t("safe_to_spend", lang))
+        Unit.EUR, week, _t("safe_to_spend", lang), params={"period": evidence.period_param(week)})
     if safe_value != metric_sql.decimal(row["safe_to_spend_7d_eur"]):  # min of rounded = rounded min
         raise RuntimeError("safe to spend does not equal the smaller limit")
 

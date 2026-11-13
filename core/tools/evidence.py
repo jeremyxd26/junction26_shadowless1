@@ -96,13 +96,14 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
 
 
 def metric_spec(customer_id: str, as_of: date, method: str, file: str, column: str,
-                settings: dict[str, str], value: Decimal) -> dict[str, Any]:
+                settings: dict[str, str], value: Decimal, period: dict[str, str] | None = None) -> dict[str, Any]:
     """A number read from a metric SQL file (core/metrics/<file>) for one customer (#55).
 
     Resolving it re-runs the file for the same customer, as_of and settings and compares the column,
-    so the number reconciles against the metric definition itself.
+    so the number reconciles against the metric definition itself. `period` ({start, end}) is the
+    period the card shows for the number; GET /api/evidence takes it from params.period.
     """
-    return {
+    spec = {
         "v": SPEC_VERSION,
         "kind": "metric",
         "customer_id": customer_id,
@@ -111,6 +112,14 @@ def metric_spec(customer_id: str, as_of: date, method: str, file: str, column: s
         "source": {"file": file, "column": column, "settings": dict(sorted(settings.items()))},
         "value": str(value),
     }
+    if period:
+        spec["params"] = {"period": period}
+    return spec
+
+
+def period_param(period) -> dict[str, str]:
+    """{start, end} of a Period, as stored in params.period of a spec."""
+    return {"start": period.start.isoformat(), "end": period.end.isoformat()}
 
 
 def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
