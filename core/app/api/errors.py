@@ -48,7 +48,10 @@ class ApiError(Exception):
 
 
 def language_of(request: Request) -> str:
-    return "fi" if request.query_params.get("lang") == "fi" else "en"
+    """The language of an error message: a POST endpoint sets `request.state.language` from its body
+    (contract section 1); otherwise the `lang` query parameter. A body that cannot be parsed stays en."""
+    language = getattr(request.state, "language", None) or request.query_params.get("lang")
+    return "fi" if language == "fi" else "en"
 
 
 def envelope(code: str, language: str, status: int | None = None,

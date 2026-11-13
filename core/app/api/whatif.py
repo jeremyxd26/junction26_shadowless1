@@ -5,12 +5,15 @@
 - A merchant selection carries the merchant id from a card (section 8.1); the tool works with the
   customer's own aliases, so the id is mapped to its alias here. An alias is accepted as it is.
 - Everything the tool refuses about the selection is a 422 `invalid_scenario`, with the contract's
-  fixed message and no detail:
+  fixed message and no detail, one identical body for every reason (so Health cannot be told apart):
   - Health or another sensitive selection (R9);
-  - a category that is not spending;
+  - a category that is not spending, an unknown basket, a malformed MCC;
   - a merchant this customer has not used;
   - a selection with no spending in the window.
+  Only the tool's refusal type (`WhatIfRefused`) and the argument validation are mapped; any other
+  error of the tool is a bug and stays a 500.
 - A cut of regular essentials is not an error: the tool returns the status `not_offered`.
+- Error messages are in the body's `language` (contract section 1), through `request.state.language`.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from pydantic import ValidationError
 from core.tools import aliases
 from core.tools.context import ToolContext
 from core.tools.models import MERCHANT_ALIAS_PATTERN
-from core.tools.what_if import RunWhatIfArgs, run_what_if
+from core.tools.what_if import RunWhatIfArgs, WhatIfRefused, run_what_if
 
 from .deps import connection, require_customer
 from .errors import ApiError
@@ -47,7 +50,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
         raise ApiError("invalid_scenario") from None
     try:
         result = run_what_if(ctx, args)
-    except ValueError:  # the tool's refusals: R9, unknown alias, no spending in the window
+    except WhatIfRefused:  # the tool's refusals: R9, unknown alias, no spending in the window
         raise ApiError("invalid_scenario") from None
     card = result.card
     return WhatIfResponse.model_validate({
@@ -62,6 +65,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
 
 @router.post("/api/whatif", response_model=WhatIfResponse)
 def post_whatif(request: Request, body: WhatIfRequest) -> WhatIfResponse:
+    request.state.language = body.language  # every error from here on is in the body's language
     with connection(request) as conn:
         require_customer(conn, body.customer_id)
         ctx = ToolContext(customer_id=body.customer_id, as_of=request.app.state.settings.demo_today, conn=conn,

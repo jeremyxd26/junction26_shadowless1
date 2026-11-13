@@ -215,7 +215,7 @@ class OverviewResponse(Model):
     language: Language
     greeting: str
     ai_disclosure: str
-    hero: MetricCard  # safe to spend in the next 7 days, from overview.HERO_TOOL (#79)
+    hero: MetricCard | None  # safe to spend in the next 7 days (#79); null on a known tool failure
     cards: list[Card]
     # Always [] until the spike review exists: #68 narrows the item to its review card model.
     reviews: list[dict[str, Any]]

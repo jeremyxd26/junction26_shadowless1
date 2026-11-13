@@ -2,7 +2,8 @@
 
 Sections and their tools:
 - hero: the safe-to-spend metric card, from HERO_TOOL = get_safe_to_spend (#55, switched on in #79):
-  safe to spend in the next 7 days with its components, status and estimate text.
+  safe to spend in the next 7 days with its components, status and estimate text; null when the tool
+  fails for a known reason (HERO_KNOWN_FAILURES).
 - cards: the basket breakdown over the last 6 complete months (get_basket_breakdown) and the bills
   before payday (get_recurring_bills).
 - insights: none yet (no insight tool exists).
@@ -12,6 +13,7 @@ once for all tools.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -21,7 +23,7 @@ from core.tools.baskets import get_basket_breakdown
 from core.tools.bills import get_recurring_bills
 from core.tools.context import ToolContext
 from core.tools.models import ToolResult
-from core.tools.safe_to_spend import get_safe_to_spend
+from core.tools.safe_to_spend import BillsDueMismatch, NoTransactions, get_safe_to_spend
 
 from . import texts
 from .deps import CUSTOMER_ID_PATTERN, connection, require_customer
@@ -32,6 +34,10 @@ router = APIRouter()
 
 # The hero section's tool: `(ctx, args) -> ToolResult` whose card is a `metric` card.
 HERO_TOOL: Callable[[ToolContext, dict], ToolResult] = get_safe_to_spend
+# The tool's known failures: the hero is null instead of a 500 for the whole overview. Anything else is
+# a bug and stays a 500.
+HERO_KNOWN_FAILURES = (BillsDueMismatch, NoTransactions)
+log = logging.getLogger("uvicorn.error")
 
 
 def _card(result: ToolResult) -> dict[str, Any]:
@@ -44,7 +50,13 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
     greeting = (texts.pick(texts.GREETING, lang).format(name=persona["display_name"]) if persona
                 else texts.pick(texts.GREETING_NO_NAME, lang))
 
-    hero = MetricCard.model_validate(_card((hero_tool or HERO_TOOL)(ctx, {})))
+    try:
+        hero = MetricCard.model_validate(_card((hero_tool or HERO_TOOL)(ctx, {})))
+    except HERO_KNOWN_FAILURES as exc:
+        # Safe to spend cannot be computed for a known reason: the hero is null and the rest of the
+        # overview stays intact (coordinator decision on #106; contract 0.2.2). The log names the class only.
+        log.warning("hero unavailable (%s)", type(exc).__name__)
+        hero = None
 
     cards = [
         _card(get_basket_breakdown(ctx, {"period": {"preset": "last_6_months"}})),

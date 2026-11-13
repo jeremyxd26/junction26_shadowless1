@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.app.api import deps, overview, whatif
+from core.app.api.errors import ApiError
 from core.app.api.schemas import ErrorResponse, OverviewResponse, PersonasResponse
 from core.app.main import create_app
 from core.app.settings import Settings
@@ -19,7 +20,8 @@ from core.tools import aliases, config
 from core.tools.context import ToolContext
 from core.tools.db import Tx
 from core.tools.models import Card, Number, Period, ToolResult
-from core.tools.safe_to_spend import get_safe_to_spend
+from core.tools.safe_to_spend import BillsDueMismatch, NoTransactions, get_safe_to_spend
+from core.tools.what_if import WhatIfRefused
 
 
 def client_for(**settings) -> TestClient:
@@ -240,6 +242,31 @@ def _stub_hero(ctx, args) -> ToolResult:
     return ToolResult(tool="get_safe_to_spend", data={}, card=card)
 
 
+@pytest.mark.parametrize("failure", [
+    BillsDueMismatch("bills due differ for customer CUST00860: 278.37 against 278.36"),
+    NoTransactions("no transactions up to as_of for this customer"),
+])
+def test_a_known_hero_failure_gives_a_null_hero_and_the_rest_intact(failure, caplog):
+    def failing(ctx, args):
+        raise failure
+
+    caplog.set_level(logging.DEBUG)
+    body = overview.build(_ctx(), hero_tool=failing)
+    assert body.hero is None
+    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna"
+    OverviewResponse.model_validate(body.model_dump(mode="json"))
+    assert f"hero unavailable ({type(failure).__name__})" in caplog.text
+    assert str(failure) not in caplog.text and "CUST00860" not in caplog.text and "278" not in caplog.text
+
+
+def test_any_other_hero_failure_is_not_hidden():
+    def bug(ctx, args):
+        raise RuntimeError("safe to spend does not equal the smaller limit")
+
+    with pytest.raises(RuntimeError):
+        overview.build(_ctx(), hero_tool=bug)
+
+
 def test_the_hero_comes_from_get_safe_to_spend():
     assert overview.HERO_TOOL is get_safe_to_spend
     body = overview.build(_ctx(), hero_tool=_stub_hero)  # the stub stands in for the metric SQL
@@ -329,11 +356,39 @@ def test_whatif_selections_refused_before_the_tool_are_422(clean_env, monkeypatc
 
 def test_whatif_refusals_of_the_tool_are_422_without_their_text(clean_env, monkeypatch):
     def no_spending(ctx, args):
-        raise ValueError("invalid_scenario: the selection has no spending in the last 6 full months")
+        raise WhatIfRefused("invalid_scenario: the selection has no spending in the last 6 full months")
 
     response = _post_whatif(monkeypatch, WHATIF, no_spending)
     assert_envelope(response, 422, "invalid_scenario")
     assert "spending" not in response.text
+
+
+def test_whatif_errors_are_in_the_bodys_language(clean_env, monkeypatch):
+    """The review of #106: a Finnish request gets Finnish errors, not only with ?lang=fi."""
+    fi_health = {**whatif_body({"kind": "category", "value": "Health"}), "language": "fi"}
+    response = _post_whatif(monkeypatch, fi_health, lambda ctx, args: None)
+    assert_envelope(response, 422, "invalid_scenario")
+    assert response.json()["error"]["message"] == "Tätä tilannetta ei voi laskea."
+
+    def unknown(conn, customer_id):
+        raise ApiError("customer_not_found")
+
+    monkeypatch.setattr(whatif, "require_customer", unknown)
+    response = _post_whatif(monkeypatch, {**WHATIF, "language": "fi"}, lambda ctx, args: None)
+    assert_envelope(response, 404, "customer_not_found")
+    assert response.json()["error"]["message"] == "Asiakasta ei löytynyt."
+    response = _post_whatif(monkeypatch, WHATIF, lambda ctx, args: None)            # language en: English
+    assert response.json()["error"]["message"] == "We couldn't find this customer."
+
+
+def test_a_bug_in_the_what_if_tool_is_a_500_not_a_refusal(clean_env, monkeypatch):
+    """Only the tool's refusal type is a 422; any other ValueError (or pydantic error) is a bug."""
+    def bug(ctx, args):
+        raise ValueError("a tool bug, not a refusal")
+
+    response = _post_whatif(monkeypatch, WHATIF, bug)
+    assert_envelope(response, 500, "internal", retryable=True)
+    assert "bug" not in response.text
 
 
 def test_whatif_maps_a_merchant_id_to_the_customers_alias(clean_env, monkeypatch):
@@ -341,7 +396,7 @@ def test_whatif_maps_a_merchant_id_to_the_customers_alias(clean_env, monkeypatch
 
     def capture(ctx, args):
         seen.append((ctx.customer_id, ctx.language, args))
-        raise ValueError("stop here")
+        raise WhatIfRefused("stop here")
 
     _post_whatif(monkeypatch, {**whatif_body({"kind": "merchant", "value": "MRC-RES-0001"}), "language": "fi"},
                  capture)

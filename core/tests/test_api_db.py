@@ -198,28 +198,9 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
     assert e["reconciles"] is True  # the #55 resolver re-runs 03_safe_to_spend.sql for this customer
 
 
-def test_a_peer_aggregate_ref_opens_for_its_customer_only(client):
-    """#69 stores peer statistics as kind "peer_aggregate"; another customer's request is refused."""
-    from core.tools import evidence
-
-    spec = {"v": 1, "kind": "peer_aggregate", "customer_id": LEAD, "as_of": "2026-09-30",
-            "method": "peer_benchmark.peer_median_month_eur@1",
-            "source": {"file": "06_peer_benchmark.sql", "metric": "Restaurants", "column": "peer_median_month_eur",
-                       "settings": {"peer_min_n": "20"}},
-            "value": "0.00", "params": {"period": {"start": "2026-04-01", "end": "2026-09-30"}}}
-    ref = evidence.make_ref(spec)
-    conn = tools_db.connect()
-    try:
-        evidence.write(conn, {ref: spec})
-    finally:
-        conn.close()
-    foreign = client.get(f"/api/evidence/{ref}", params={"customer_id": "CUST00493"})
-    assert foreign.status_code == 403 and foreign.json()["error"]["code"] == "evidence_forbidden"
-    own = client.get(f"/api/evidence/{ref}", params={"customer_id": LEAD})
-    assert own.status_code == 200, own.text
-    e = own.json()
-    assert (e["kind"], e["rows"], e["row_count"], e["query"]) == ("peer_aggregate", [], None, None)
-    assert all(p["number"]["evidence_ref"] is None for p in e["parts"])
+# No database test for peer_aggregate evidence here: it would have to store a synthetic spec in the
+# shared coach_evidence (review of #106). The mapping is tested without a database on the resolver's
+# exact shape (test_api_endpoints.py); a database test follows with #95's real peer specs.
 
 
 def test_finnish_overview_has_the_same_numbers(client, lead_overview):
@@ -274,6 +255,17 @@ def test_groceries_are_not_offered(client):
     w = post_whatif(client, "category", "Groceries").json()
     assert w["status"] == "not_offered" and w["saving_per_month"]["value"] == 0
     assert w["regular_excluded"]["value"] > 0 and len(w["caveats"]) == 2
+
+
+def test_unexpected_necessities_are_an_estimate_with_a_caveat(client):
+    """The basket unexpected_necessities stays allowed (coordinator decision): its baseline leaves out
+    Sanna's Home & Tech one-off of 1,080.42 (docs/design/personas.md)."""
+    response = post_whatif(client, "basket", "unexpected_necessities")
+    assert response.status_code == 200, response.text
+    w = response.json()
+    assert w["status"] == "estimate_with_caveat" and len(w["caveats"]) == 2
+    assert (w["baseline_per_month"]["value"], w["one_off_excluded"]["value"]) == (341.08, 1080.42)
+    assert w["saving_per_month"]["value"] > 0
 
 
 def test_a_merchant_id_from_a_card_is_accepted(client, lead_overview):
