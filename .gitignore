@@ -8,6 +8,9 @@
 .claude/settings.local.json
 CLAUDE.local.md
 
+# local runtime data (audit logs of the coach)
+var/
+
 # build / deps
 node_modules/
 __pycache__/
