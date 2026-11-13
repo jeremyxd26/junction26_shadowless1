@@ -4,7 +4,26 @@ Work in progress.
 
 ## Run
 
-_One-command run goes here._
+The core service is a Python 3.11 FastAPI app. It reads its settings from environment variables, or from `.env` in the repository root (see `.env.example`). Without `DATABASE_URL` it still starts, and `/readyz` returns 503.
+
+From the repository root, in a virtual environment:
+
+```
+pip install -r core/requirements.txt
+uvicorn core.app.main:create_app --factory --port 8000   # start the core service
+pytest core -q                                            # run the tests
+```
+
+`curl localhost:8000/healthz` returns `{"status":"ok","demo_today":"2026-09-30"}`. `curl localhost:8000/readyz` returns 200 when the database answers `SELECT 1`, and 503 with a short reason otherwise.
+
+Settings:
+- `DATABASE_URL`
+- `DEMO_TODAY` (default `2026-09-30`)
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+
+The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 ## Data
 
