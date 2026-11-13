@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
@@ -35,6 +36,7 @@ class Answer:
     dates: list[str] = field(default_factory=list)      # ISO dates the answer returned (as_of, due dates, payday)
     labels: list[str] | None = None    # keys the answer reports (profile, what-if status); None = unknown
     tool_calls: list[str] | None = None  # tool and function names called; None = unknown
+    error: str | None = None           # the source could not produce an answer (HTTP error, ...)
 
 
 # ---- reference source ------------------------------------------------------------------------------
@@ -135,7 +137,8 @@ class ReferenceSource:
                 text += f" ({fmt_date(period['start'], language)} – {fmt_date(period['end'], language)})"
             parts.append(text + ".")
             pct = (src.get("settings") or {}).get("whatif_pct")
-            if pct is not None and not any(n["method"] == "user_input@1" for n in numbers):
+            # The cut is the user's own number: state it only when the question does.
+            if pct is not None and str(pct) in question and not any(n["method"] == "user_input@1" for n in numbers):
                 numbers.append({"name": "cut_pct", "value": float(pct), "unit": "percent", "period": None,
                                 "method": "user_input@1", "display": fmt_number(pct, "percent", language)})
                 parts.append(f"{label_of('cut')}: {fmt_number(pct, 'percent', language)}.")
@@ -179,6 +182,14 @@ class ApiSource:
             return json.load(r)
 
     def __call__(self, customer_id: str, question: str, language: str) -> Answer:
+        try:
+            return self._ask(customer_id, question, language)
+        except urllib.error.HTTPError as exc:
+            return Answer(text="", outcome="error", error=f"HTTP {exc.code}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            return Answer(text="", outcome="error", error=type(exc).__name__)
+
+    def _ask(self, customer_id: str, question: str, language: str) -> Answer:
         body = json.dumps({"customer_id": customer_id, "conversation_id": None, "message": question,
                            "language": language}).encode("utf-8")
         resp = self._get_json(urllib.request.Request(

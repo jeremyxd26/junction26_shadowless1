@@ -27,9 +27,9 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets, lead]
   numbers:
-  - {name: regular_essentials_month, value: 1889.04, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 521.15, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 600.41, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1889.04, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 521.15, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 600.41, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
   - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
@@ -44,7 +44,7 @@ cases:
   numbers:
   - {name: keep_rate, value: 15.4, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: one_off_share, value: 6.0, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: one_off_share_pct}}
-  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
   labels:
@@ -58,7 +58,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, lead]
   numbers:
-  - {name: safe_to_spend_week, value: 180.26, unit: eur, tolerance: 0.01, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 180.26, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -70,8 +70,8 @@ cases:
   expected_tools: [run_what_if]
   tags: [brief, q4_what_if, lead, dining]
   numbers:
-  - {name: dining_baseline_month, value: 229.56, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
-  - {name: dining_saving_month, value: 45.91, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  - {name: dining_baseline_month, value: 229.56, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
+  - {name: dining_saving_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
   labels:
   - {name: what_if_status, value: estimate, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: status}}
 
@@ -83,9 +83,9 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets]
   numbers:
-  - {name: regular_essentials_month, value: 1645.05, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 144.6, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 334.44, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1645.05, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 144.6, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 334.44, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
   - {name: regular_essentials_share, value: 77.4, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
 
 - id: marja-q2-spender-type
@@ -98,7 +98,7 @@ cases:
   numbers:
   - {name: keep_rate, value: 17.6, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: everyday_share, value: 15.7, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 3567.81, unit: eur_per_month, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_median_spend_month, value: 3567.81, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 8.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 121, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
   labels:
@@ -112,7 +112,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 175.46, unit: eur, tolerance: 0.01, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 175.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: marja-q4-dining-what-if
   persona: CUST00493
@@ -122,8 +122,8 @@ cases:
   expected_tools: [run_what_if]
   tags: [brief, q4_what_if, dining]
   numbers:
-  - {name: dining_baseline_month, value: 102.66, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
-  - {name: dining_saving_month, value: 20.53, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  - {name: dining_baseline_month, value: 102.66, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
+  - {name: dining_saving_month, value: 20.53, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
 
 - id: eetu-q1-where-money-went
   persona: CUST00349
@@ -133,9 +133,9 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets]
   numbers:
-  - {name: regular_essentials_month, value: 1431.19, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 277.45, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 736.87, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1431.19, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 277.45, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 736.87, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
   - {name: everyday_spending_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
 
 - id: eetu-q2-spender-type
@@ -148,7 +148,7 @@ cases:
   numbers:
   - {name: keep_rate, value: 22.6, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: everyday_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 1894.55, unit: eur_per_month, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_median_spend_month, value: 1894.55, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 67.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 24, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
   labels:
@@ -162,7 +162,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 285.21, unit: eur, tolerance: 0.01, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 285.21, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: eetu-q4-dining-what-if
   persona: CUST00349
@@ -172,8 +172,8 @@ cases:
   expected_tools: [run_what_if]
   tags: [brief, q4_what_if, dining]
   numbers:
-  - {name: dining_baseline_month, value: 294.73, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
-  - {name: dining_saving_month, value: 58.95, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  - {name: dining_baseline_month, value: 294.73, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
+  - {name: dining_saving_month, value: 58.95, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
 
 - id: aleksi-q1-where-money-went
   persona: CUST00849
@@ -183,9 +183,9 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets, young_adult]
   numbers:
-  - {name: regular_essentials_month, value: 1229.97, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 124.49, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 526.6, unit: eur_per_month, tolerance: 0.01, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1229.97, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 124.49, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 526.6, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
 
 - id: aleksi-q2-spender-type
   persona: CUST00849
@@ -197,7 +197,7 @@ cases:
   numbers:
   - {name: keep_rate, value: 9.4, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: everyday_share, value: 28.0, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 2202.21, unit: eur_per_month, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_median_spend_month, value: 2202.21, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 31.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 39, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
   labels:
@@ -211,7 +211,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, young_adult]
   numbers:
-  - {name: safe_to_spend_week, value: 166.84, unit: eur, tolerance: 0.01, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 166.84, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -223,8 +223,8 @@ cases:
   expected_tools: [run_what_if]
   tags: [brief, q4_what_if, young_adult, dining]
   numbers:
-  - {name: dining_baseline_month, value: 277.48, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
-  - {name: dining_saving_month, value: 55.5, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  - {name: dining_baseline_month, value: 277.48, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: baseline_month_eur}}
+  - {name: dining_saving_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
 
 - id: sanna-taxi-last-month
   persona: CUST00860
@@ -234,7 +234,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, mcc_group, period_last_month]
   numbers:
-  - {name: taxi_total, value: 52.84, unit: eur, tolerance: 0.01, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: taxi_total, value: 52.84, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: taxi_rides, value: 1, unit: count, tolerance: 0, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: n_tx}}
 
 - id: sanna-public-transport-last-month
@@ -245,7 +245,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, mcc_group, period_last_month]
   numbers:
-  - {name: public_transport_total, value: 74.46, unit: eur, tolerance: 0.01, source: {query: spending, mcc_group: public_transport, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: public_transport_total, value: 74.46, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: public_transport, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
 
 - id: eetu-fuel-last-3-months
   persona: CUST00349
@@ -255,7 +255,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, mcc_group, period_last_3_months]
   numbers:
-  - {name: fuel_total, value: 232.3, unit: eur, tolerance: 0.01, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: total_eur}}
+  - {name: fuel_total, value: 232.3, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: total_eur}}
   - {name: fuel_purchases, value: 6, unit: count, tolerance: 0, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: n_tx}}
 
 - id: marja-dining-july-category-not-card-only
@@ -266,9 +266,9 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, category, dining, dining_category_vs_mcc, period_custom]
   numbers:
-  - {name: restaurants_total, value: 147.64, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
+  - {name: restaurants_total, value: 147.64, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
   forbid:
-  - {name: card_restaurants_only, value: 134.83, unit: eur, tolerance: 0.01, source: {query: spending, mcc_group: restaurants, start: '2026-07-01', end: '2026-07-31', column: total_eur}}
+  - {name: card_restaurants_only, value: 134.83, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: restaurants, start: '2026-07-01', end: '2026-07-31', column: total_eur}}
 
 - id: marja-groceries-last-month
   persona: CUST00493
@@ -278,7 +278,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, category, period_last_month]
   numbers:
-  - {name: groceries_total, value: 125.16, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: groceries_total, value: 125.16, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: groceries_purchases, value: 2, unit: count, tolerance: 0, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
 
 - id: eetu-entertainment-this-month
@@ -289,7 +289,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, category, period_this_month]
   numbers:
-  - {name: entertainment_total, value: 39.72, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Entertainment], start: '2026-09-01', end: '2026-09-30', column: total_eur}}
+  - {name: entertainment_total, value: 39.72, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Entertainment], start: '2026-09-01', end: '2026-09-30', column: total_eur}}
 
 - id: aleksi-groceries-custom-range
   persona: CUST00849
@@ -299,7 +299,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, category, period_custom, young_adult]
   numbers:
-  - {name: groceries_total, value: 99.91, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Groceries], start: '2026-06-01', end: '2026-06-15', column: total_eur}}
+  - {name: groceries_total, value: 99.91, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-06-01', end: '2026-06-15', column: total_eur}}
 
 - id: aleksi-restaurants-last-3-months
   persona: CUST00849
@@ -309,7 +309,7 @@ cases:
   expected_tools: [get_spending]
   tags: [spending, category, dining, period_last_3_months, young_adult]
   numbers:
-  - {name: restaurants_total, value: 1102.0, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-09-30', column: total_eur}}
+  - {name: restaurants_total, value: 1102.0, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-09-30', column: total_eur}}
 
 - id: marja-upcoming-bills
   persona: CUST00493
@@ -319,8 +319,8 @@ cases:
   expected_tools: [get_recurring_bills]
   tags: [recurring]
   numbers:
-  - {name: housing_typical_month, value: 1209.05, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
-  - {name: utilities_typical_month, value: 165.85, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
+  - {name: housing_typical_month, value: 1209.05, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
+  - {name: utilities_typical_month, value: 165.85, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
   dates:
   - {name: housing_next_due, value: '2026-10-03', unit: date, source: {metric: recurring, where: {series_key: housing_payment}, column: next_expected_date}}
 
@@ -332,7 +332,7 @@ cases:
   expected_tools: [get_recurring_bills]
   tags: [recurring, income, lead]
   numbers:
-  - {name: salary_typical_month, value: 3187.25, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: salary}, column: typical_month_eur}}
+  - {name: salary_typical_month, value: 3187.25, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: salary}, column: typical_month_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: recurring, where: {series_key: salary}, column: next_expected_date}}
 
@@ -344,8 +344,8 @@ cases:
   expected_tools: [get_recurring_bills]
   tags: [recurring, young_adult]
   numbers:
-  - {name: housing_typical_month, value: 613.93, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
-  - {name: utilities_typical_month, value: 98.74, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
+  - {name: housing_typical_month, value: 613.93, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
+  - {name: utilities_typical_month, value: 98.74, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
   dates:
   - {name: housing_next_due, value: '2026-10-06', unit: date, source: {metric: recurring, where: {series_key: housing_payment}, column: next_expected_date}}
 
@@ -357,9 +357,9 @@ cases:
   expected_tools: [get_spending]
   tags: [comparison, period_this_month, lead]
   numbers:
-  - {name: september_total, value: 2932.54, unit: eur, tolerance: 0.01, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
-  - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.01, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: change, value: -1242.63, unit: eur, tolerance: 0.01, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
+  - {name: september_total, value: 2932.54, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
+  - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: change, value: -1242.63, unit: eur, tolerance: 0.005, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
   - {name: change_pct, value: -29.8, unit: percent, tolerance: 0.01, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_pct}}
 
 - id: eetu-restaurants-august-vs-july
@@ -370,9 +370,9 @@ cases:
   expected_tools: [get_spending]
   tags: [comparison, category, dining]
   numbers:
-  - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
-  - {name: change, value: 227.11, unit: eur, tolerance: 0.01, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
+  - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
+  - {name: change, value: 227.11, unit: eur, tolerance: 0.005, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
 
 - id: marja-taxi-this-month-none
   persona: CUST00493
@@ -382,7 +382,7 @@ cases:
   expected_tools: [get_spending]
   tags: [edge, edge_no_transactions_in_period, mcc_group, period_this_month]
   numbers:
-  - {name: taxi_total, value: 0.0, unit: eur, tolerance: 0.01, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
+  - {name: taxi_total, value: 0.0, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
   - {name: taxi_rides, value: 0, unit: count, tolerance: 0, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
 - id: sanna-future-month
@@ -401,7 +401,7 @@ cases:
   expected_tools: [get_spending]
   tags: [edge, edge_category_never_used, r7_own_history, period_custom]
   numbers:
-  - {name: invest_deposit_total, value: 0.0, unit: eur, tolerance: 0.01, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: total_eur}}
+  - {name: invest_deposit_total, value: 0.0, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: total_eur}}
   - {name: invest_deposits, value: 0, unit: count, tolerance: 0, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: n_tx}}
 
 - id: eetu-before-data-starts
@@ -422,7 +422,7 @@ cases:
   labels:
   - {name: what_if_status, value: not_offered, source: {metric: what_if, settings: {whatif: 'category:Housing', whatif_pct: 20}, column: status}}
   forbid:
-  - {name: naive_housing_saving_month, value: 167.33, unit: eur_per_month, tolerance: 0.01, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur, multiply: 0.2}}
+  - {name: naive_housing_saving_month, value: 167.33, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur, multiply: 0.2}}
 
 - id: eetu-cut-home-tech-with-caveat
   persona: CUST00349
@@ -432,7 +432,7 @@ cases:
   expected_tools: [run_what_if]
   tags: [edge, edge_cut_with_caveat]
   numbers:
-  - {name: home_tech_saving_month, value: 91.19, unit: eur_per_month, tolerance: 0.01, source: {metric: what_if, settings: {whatif: 'category:Home & Tech', whatif_pct: 50}, column: saving_month_eur}}
+  - {name: home_tech_saving_month, value: 91.19, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Home & Tech', whatif_pct: 50}, column: saving_month_eur}}
   labels:
   - {name: what_if_status, value: estimate_with_caveat, source: {metric: what_if, settings: {whatif: 'category:Home & Tech', whatif_pct: 50}, column: status}}
 
