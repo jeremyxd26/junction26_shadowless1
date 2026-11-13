@@ -113,14 +113,11 @@ def _t(table: dict[str, tuple[str, str]], key: str, language: str, **kw) -> str:
 
 
 def _feature_number(nb: NumberBuilder, key: str, value: Decimal, unit: Unit, period: Period, method: str,
-                    spec: dict[str, Any], label: str, language: str) -> Number:
+                    spec: dict[str, Any], label: str) -> Number:
+    # The display is always the formatter's output for value and unit (the answer validator requires it).
     n = nb.number(value, unit, period, method, spec, label)
-    if key == "everyday_tx_month":  # a rate with one decimal: keep it (contracts/api.md card.profile)
-        text = f"{value:.1f}"
-        shown = f"{text.replace('.', ',')} / kk" if language == "fi" else f"{text} a month"
-        return n.model_copy(update={"value": float(value), "display": shown})
-    if unit is Unit.MONTHS and value == 1 and language != "fi":
-        return n.model_copy(update={"display": "1 month"})
+    if key == "everyday_tx_month":  # a rate with one decimal: the value keeps it, as 05 returns it
+        return n.model_copy(update={"value": float(value)})
     return n
 
 
@@ -163,7 +160,7 @@ def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | N
             log.warning("monthly spending of the rows and of 05_spender_profile.sql differ for one customer")
         spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.PROFILE_FILE, column, {}, value,
                                     evidence.period_param(period))
-        numbers[key] = _feature_number(nb, key, value, unit, period, method, spec, label, lang)
+        numbers[key] = _feature_number(nb, key, value, unit, period, method, spec, label)
 
     key = row["profile"]
     if key not in config.PROFILE_KEYS:

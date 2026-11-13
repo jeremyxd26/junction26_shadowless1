@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from core.tools import config, evidence
 from core.tools.models import PeerMetric
 from core.tools.peer import (
-    GetPeerBenchmarkArgs, group_label, ordinal_en, peer_status, percentile_display, vs_median_display,
+    GetPeerBenchmarkArgs, group_label, peer_status,
 )
 from core.tools.profile import DECIDING, GetSpenderProfileArgs, keep_rate, profile_key
 
@@ -119,21 +119,7 @@ def test_peer_status(comparable, peer_n, expected):
     assert peer_status(comparable, peer_n, 20) == expected
 
 
-# ---- peer benchmark: display and labels --------------------------------------------------------------
-
-@pytest.mark.parametrize("n, text", [(1, "1st"), (2, "2nd"), (3, "3rd"), (4, "4th"), (11, "11th"), (12, "12th"),
-                                     (13, "13th"), (21, "21st"), (51, "51st"), (72, "72nd"), (100, "100th")])
-def test_ordinals(n, text):
-    assert ordinal_en(n) == text
-
-
-def test_percentile_and_difference_display():
-    assert percentile_display(72, "en") == "72nd percentile"     # contracts/api.md card.peer
-    assert percentile_display(72, "fi") == "72. persentiili"
-    assert vs_median_display(D("32.3"), "en") == "32.3% more"
-    assert vs_median_display(D("-31.0"), "en") == "31.0% less"
-    assert vs_median_display(D("1.2"), "fi") == "1,2 % enemmän"
-    assert vs_median_display(D("0.0"), "en") == "0.0%"
+# ---- peer benchmark: labels ----------------------------------------------------------------------------
 
 
 def test_group_labels_are_coarse():

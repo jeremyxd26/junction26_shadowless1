@@ -458,8 +458,6 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
         "Only group statistics are shown, never another customer's transactions.",
         "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
     ),
-    "more": ("{pct} more", "{pct} enemmän"),
-    "less": ("{pct} less", "{pct} vähemmän"),
     "reason_not_comparable": (
         "Most of the salary moves to another account each month, so this account is not compared with others.",
         "Suurin osa palkasta siirtyy joka kuukausi toiselle tilille, joten tätä tiliä ei verrata muihin.",

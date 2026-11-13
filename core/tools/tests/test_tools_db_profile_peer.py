@@ -20,6 +20,7 @@ from core.tools import config, evidence, labels
 from core.tools.baskets import get_basket_breakdown, months_with_history
 from core.tools.classify import classify
 from core.tools.context import ToolContext
+from core.tools.formatting import display
 from core.tools.models import Period
 from core.tools.peer import get_peer_benchmark, metric_selection, peer_status
 from core.tools.profile import DECIDING, get_spender_profile, profile_key
@@ -93,6 +94,14 @@ def dec(number):
     return D(str(number.value))
 
 
+def assert_displays_from_formatter(numbers, language="en"):
+    """Every display is exactly the formatter's output for its value and unit (the answer validator's rule)."""
+    numbers = [n for n in numbers if n is not None]
+    assert numbers
+    for n in numbers:
+        assert n.display == display(D(str(n.value)), n.unit, language), (n.method, n.display)
+
+
 def assert_reconciles(conn, customer_id, refs):
     assert refs
     for ref in refs:
@@ -148,8 +157,8 @@ def test_profile_feature_details_of_cust00002(conn):
     features = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00002")).data.features}
     assert features["n_tx_below_zero"].value == 11                       # metrics.md section 5
     assert features["everyday_tx_month"].value == 13.3                   # a rate keeps its decimal
-    assert features["everyday_tx_month"].display == "13.3 a month"
     assert features["everyday_share_pct"].value == 25.3
+    assert_displays_from_formatter(features.values())                    # "13" for 13.3: the count formatter
 
 
 @pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00860"])
@@ -179,6 +188,7 @@ def test_profile_in_finnish(conn):
     assert result.data.profile.label == "Isot hankinnat"
     keep = next(f.value for f in result.data.features if f.key == "keep_rate")
     assert keep.display == "15,4 %"
+    assert_displays_from_formatter([f.value for f in result.data.features], "fi")
 
 
 # ---- get_peer_benchmark ----------------------------------------------------------------------------------
@@ -278,17 +288,30 @@ def test_peer_card_and_model_view(conn):
     card = result.card
     assert card.type == "peer" and card.estimate["label"] == "Estimate"
     assert card.estimate["text"].startswith("Compared with at least 20 other customers")
-    assert card.percentile["display"] == "51st percentile" and card.vs_median["display"].endswith("% more")
+    assert card.percentile["value"] == 51 and card.percentile["display"] == "51.0%"
     assert card.peer_group["label"] == "Age 35-44, postal area 005" and card.peer_group["size"]["value"] == 118
     assert card.evidence_ref == result.data.peer_median.evidence_ref
     assert card.you["display"] == "€3,010.59 a month"
+    d = result.data
+    assert_displays_from_formatter([d.you, d.peer_median, d.peer_p25, d.peer_p75, d.percentile, d.vs_median,
+                                    d.peer_group.size])
     assert_model_view_clean(result.model_view, "CUST00860")
 
 
 def test_peer_in_finnish(conn):
     result = get_peer_benchmark(ctx_for(conn, "CUST00860", "fi"), {"metric": "spend_total"})
-    assert result.data.percentile.display == "51. persentiili"
+    assert result.data.percentile.display == "51,0 %"
     assert result.card.peer_group["label"] == "Ikä 35-44, postinumeroalue 005"
+    d = result.data
+    assert_displays_from_formatter([d.you, d.peer_median, d.percentile, d.vs_median], "fi")
+
+
+def test_negative_difference_shows_its_minus(conn, peer_rows):
+    # CUST00001 spends less than the group: the display carries the formatter's minus sign
+    row = peer_rows["CUST00001"]["spend_total"]
+    assert row["vs_median_pct"] < 0
+    vs = get_peer_benchmark(ctx_for(conn, "CUST00001"), {"metric": "spend_total"}).data.vs_median
+    assert vs.value < 0 and vs.display.startswith("-") and vs.display == display(row["vs_median_pct"], vs.unit)
 
 
 # ---- timing (one call of each tool for one customer) ------------------------------------------------

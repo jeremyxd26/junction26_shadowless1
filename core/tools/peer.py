@@ -27,7 +27,6 @@ from pydantic import BaseModel, field_validator
 from core.tools import baskets, config, evidence, labels, metric_sql, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.formatting import display
 from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
@@ -91,26 +90,6 @@ def peer_status(comparable: bool, peer_n: int, min_n: int) -> tuple[bool, str | 
     if peer_n < min_n:
         return False, "group_too_small"
     return True, None
-
-
-def ordinal_en(n: int) -> str:
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
-
-
-def percentile_display(n: int, language: str) -> str:
-    """`72nd percentile` / `72. persentiili` (contracts/api.md card.peer)."""
-    return f"{n}. persentiili" if language == "fi" else f"{ordinal_en(n)} percentile"
-
-
-def vs_median_display(value: Decimal, language: str) -> str:
-    """`32.3% more` / `12.0% less` (contracts/api.md card.peer); the word carries the sign."""
-    text = display(abs(value), Unit.PERCENT, language)
-    if value > 0:
-        return _t("more", language, pct=text)
-    if value < 0:
-        return _t("less", language, pct=text)
-    return text
 
 
 def group_label(level: str, group: str, language: str) -> str:
@@ -221,11 +200,11 @@ def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: 
     method = f"{METRIC}.{column}@1"
     spec = evidence.peer_spec(ctx.customer_id, ctx.as_of, method, config.PEER_FILE, metric, column, settings,
                               value, period_param)
+    # The display is always the formatter's output for value and unit, sign included (the answer
+    # validator requires it); words such as "more" or "less" belong to the answer text.
     n = nb.number(value, unit, period, method, spec, label)
-    if unit is Unit.PERCENTILE:
-        return n.model_copy(update={"value": int(value), "display": percentile_display(int(value), ctx.language)})
-    if column == "vs_median_pct":
-        return n.model_copy(update={"display": vs_median_display(value, ctx.language)})
+    if unit is Unit.PERCENTILE:   # a whole percentile stays an integer, as in contracts/api.md card.peer
+        return n.model_copy(update={"value": int(value)})
     return n
 
 
