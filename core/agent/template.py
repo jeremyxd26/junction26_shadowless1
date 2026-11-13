@@ -121,20 +121,26 @@ def lesson(key: str | None, language: str) -> dict[str, str] | None:
 
 
 def _numbers_in(view: Any, label: str = "") -> list[tuple[str, str]]:
-    """(label, id) of every number in a model view, in order. Groups use the group's label."""
-    out: list[tuple[str, str]] = []
-    if isinstance(view, dict):
-        if {"id", "value", "unit"} <= view.keys() and isinstance(view.get("id"), str):
-            return [(view.get("label") or label, view["id"])]
-        group_label = view.get("label") if isinstance(view.get("label"), str) else label
-        for key, value in view.items():
-            if key in ("notes", "period", "tool"):
-                continue
-            out += _numbers_in(value, group_label)
-    elif isinstance(view, list):
-        for item in view:
-            out += _numbers_in(item, label)
-    return out
+    """(label, id) of every number in a model view, the shallow ones first (a total and each group's
+    amount before nested details such as a basket's categories), in view order within a depth.
+    Groups use the group's label."""
+    found: list[tuple[int, int, str, str]] = []
+
+    def walk(node: Any, depth: int, current: str) -> None:
+        if isinstance(node, dict):
+            if {"id", "value", "unit"} <= node.keys() and isinstance(node.get("id"), str):
+                found.append((depth, len(found), node.get("label") or current, node["id"]))
+                return
+            group_label = node.get("label") if isinstance(node.get("label"), str) else current
+            for key, value in node.items():
+                if key not in ("notes", "period", "tool"):
+                    walk(value, depth + 1, group_label)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, depth + 1, current)
+
+    walk(view, 0, label)
+    return [(lab, number_id) for _, _, lab, number_id in sorted(found)]
 
 
 def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
