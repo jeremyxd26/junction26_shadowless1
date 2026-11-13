@@ -128,6 +128,34 @@ METHODS: dict[str, MethodInfo] = {
 }
 
 
+def _metric(unit: Unit, en: str, fi: str, file: str, section: str) -> MethodInfo:
+    return MethodInfo(unit, (en, fi), (f"Calculated by core/metrics/{file}.", f"Laskettu tiedostolla core/metrics/{file}."),
+                      METRICS_DOC + section)
+
+
+# Numbers of the safe-to-spend and what-if tools (#55), re-run from their metric files (evidence kind "metric").
+for _col, _unit, _en, _fi in [
+    ("safe_to_spend_7d_eur", Unit.EUR, "Safe to spend", "Turvallisesti käytettävissä"),
+    ("free_until_payday_eur", Unit.EUR, "Free until payday", "Vapaana palkkapäivään asti"),
+    ("balance_limit_7d_eur", Unit.EUR, "Your balance allows", "Saldosi sallii"),
+    ("budget_limit_7d_eur", Unit.EUR, "Your monthly budget allows", "Kuukausibudjettisi sallii"),
+    ("balance_eur", Unit.EUR, "Balance", "Saldo"),
+    ("essentials_reserve_eur", Unit.EUR, "Essentials reserve", "Välttämättömien varaus"),
+    ("irregular_reserve_eur", Unit.EUR, "Irregular reserve", "Odottamattomien varaus"),
+    ("cushion_eur", Unit.EUR, "Cushion", "Puskuri"),
+]:
+    METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+for _col, _unit, _en, _fi in [
+    ("baseline_month_eur", Unit.EUR_PER_MONTH, "Usual spending per month", "Tavallinen kulutus kuukaudessa"),
+    ("saving_month_eur", Unit.EUR_PER_MONTH, "Saving per month", "Säästö kuukaudessa"),
+    ("saving_week_eur", Unit.EUR_PER_WEEK, "Saving per week", "Säästö viikossa"),
+    ("saving_year_eur", Unit.EUR_PER_YEAR, "Saving per year", "Säästö vuodessa"),
+    ("one_off_excluded_eur", Unit.EUR, "One-offs left out", "Pois jätetyt kertaostot"),
+    ("regular_excluded_eur", Unit.EUR, "Regular essentials left out", "Pois jätetyt säännölliset menot"),
+]:
+    METHODS[f"what_if.{_col}@1"] = _metric(_unit, _en, _fi, "04_what_if.sql", "#4-what-if-savings")
+
+
 def method_info(method: str) -> MethodInfo:
     """Known methods from the table; any other method (for example from a newer tool) still gets a
     plain name and a unit guessed from its id, so its evidence opens instead of failing."""

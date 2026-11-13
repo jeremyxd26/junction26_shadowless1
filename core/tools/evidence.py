@@ -253,7 +253,11 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
-        return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value)
+        return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value, spec=spec)
+
+    if spec["kind"] != "transactions":
+        # A kind this version cannot re-run: the evidence still opens, without a reconciliation check.
+        return Resolution(ref, spec["kind"], spec["method"], value, reconciles=None, spec=spec)
 
     sel = Selection.from_spec(spec["selection"])
     history = load_transactions(conn, customer_id, as_of)

@@ -82,11 +82,19 @@ def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader
     }
 
 
-def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> EvidenceResponse:
-    spec = res.spec or {}
+METRIC_SECTIONS = {  # core/metrics/<file> -> section of metrics.md that defines it
+    "01_recurring.sql": "#2-recurring-bills", "02_baskets.sql": "#1-three-baskets",
+    "03_safe_to_spend.sql": "#3-safe-to-spend", "04_what_if.sql": "#4-what-if-savings",
+    "05_spender_profile.sql": "#5-spender-profile", "06_peer_benchmark.sql": "#6-peer-benchmark",
+    "07_store_price_index.sql": "#7-grocery-store-price-index",
+}
 
+
+def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> EvidenceResponse:
     def load(ref: str) -> dict[str, Any]:
         return evidence.load(conn, ref)[1]
+
+    spec = res.spec if res.spec is not None else load(res.ref)  # a resolver may not hand back its spec
 
     number = number_from_spec(res.ref, spec, language, load)
     info = texts.method_info(res.method)
@@ -121,9 +129,21 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
             "display": display(rc_value, Unit.COUNT, language),
         }
         body["privacy_note"] = texts.pick(texts.PRIVACY_TRANSACTIONS, language)
-    else:
-        body["parts"] = [{"role": p["role"], "number": number_from_spec(p["ref"], p["spec"], language, load)}
+    elif res.kind == "composite":
+        body["parts"] = [{"role": p["role"],
+                          "number": number_from_spec(p["ref"], p.get("spec") or load(p["ref"]), language, load)}
                          for p in res.parts]
+        body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
+    else:
+        # "metric" (#55): the number is re-run from its metric SQL file; reconciles says whether the re-run
+        # gives the same value. Rows are optional and carry no promise to add up (not shown yet).
+        source = spec.get("source") or {}
+        if source.get("file"):
+            body["method"]["doc"] = texts.METRICS_DOC + METRIC_SECTIONS.get(source["file"], "")
+            if not body["method"]["summary"]:
+                body["method"]["summary"] = f"core/metrics/{source['file']}: {source.get('column', '')}"
+        body["reconciles"] = res.reconciles
+        body["rows"] = res.rows
         body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
     return EvidenceResponse.model_validate(body)
 

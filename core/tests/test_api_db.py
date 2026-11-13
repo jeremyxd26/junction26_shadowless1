@@ -129,6 +129,30 @@ def test_refs_of_another_customer_and_unknown_ids_are_refused(client, lead_overv
         assert response.status_code == 404 and response.json()["error"]["code"] == "customer_not_found"
 
 
+def test_a_metric_kind_ref_opens_as_evidence(client):
+    """#55 stores numbers re-run from metric SQL files (kind "metric"); they must open, not fail."""
+    from core.tools import evidence
+
+    spec = {"v": 1, "kind": "metric", "customer_id": LEAD, "as_of": "2026-09-30",
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "source": {"file": "03_safe_to_spend.sql", "column": "safe_to_spend_7d_eur", "settings": {}},
+            "value": "180.26"}
+    ref = evidence.make_ref(spec)
+    conn = tools_db.connect()
+    try:
+        evidence.write(conn, {ref: spec})
+    finally:
+        conn.close()
+    response = client.get(f"/api/evidence/{ref}", params={"customer_id": LEAD})
+    assert response.status_code == 200, response.text
+    e = response.json()
+    assert (e["kind"], e["number"]["value"], e["number"]["unit"], e["number"]["label"]) == (
+        "metric", 180.26, "eur", "Safe to spend")
+    assert e["method"]["doc"].endswith("metrics.md#3-safe-to-spend")
+    assert (e["query"], e["row_count"], e["parts"]) == (None, None, [])
+    assert e["reconciles"] in (None, True)  # None until the #55 resolver re-runs the file here
+
+
 def test_finnish_overview_has_the_same_numbers(client, lead_overview):
     fi = client.get(f"/api/overview/{LEAD}", params={"lang": "fi"}).json()
     assert fi["greeting"] == "Hei Sanna" and fi["language"] == "fi"

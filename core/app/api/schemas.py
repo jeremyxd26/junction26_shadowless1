@@ -260,7 +260,8 @@ class Part(Model):
 
 class EvidenceResponse(Model):
     evidence_ref: str
-    kind: Literal["transactions", "composite", "peer_aggregate", "store_index"]
+    # "metric" (#55): a number re-run from a metric SQL file. Not in contract 0.1.2; its text lands with #34.
+    kind: Literal["transactions", "composite", "peer_aggregate", "store_index", "metric"]
     language: Language
     title: str
     number: Number
