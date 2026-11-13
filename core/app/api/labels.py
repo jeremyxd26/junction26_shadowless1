@@ -12,6 +12,8 @@ Error messages follow the request's `language`.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -21,6 +23,7 @@ from .deps import connection, require_customer
 from .errors import ApiError, envelope
 from .schemas import LabelRequest, LabelResponse
 
+log = logging.getLogger("uvicorn.error")
 router = APIRouter()
 
 
@@ -38,4 +41,9 @@ def post_label(request: Request, body: LabelRequest) -> LabelResponse | JSONResp
             return envelope("tx_ref_not_found", body.language)
         except reviews.BasketNotAllowed:
             return envelope("basket_not_allowed", body.language)
+    if result["changed"]:  # the audit record of every label write (design 7.8): who, which ref, what, when
+        label = result["label"] or {}
+        log.info("audit label: customer=%s tx_ref=%s basket=%s review_state=%s labelled_at=%s",
+                 body.customer_id, body.tx_ref, label.get("basket"), result["review_state"],
+                 label.get("labelled_at"))
     return LabelResponse.model_validate(result)

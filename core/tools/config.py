@@ -395,4 +395,6 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                       "Peruttu. Tämä ostos on taas siinä ryhmässä, johon säännöt sen sijoittavat."),
     "unchanged": ("Nothing changed: this answer is already saved.",
                   "Mikään ei muuttunut: tämä vastaus on jo tallennettu."),
+    "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
+                      "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
 }

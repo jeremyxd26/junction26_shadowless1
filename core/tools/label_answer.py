@@ -12,7 +12,6 @@ the label set it was computed with, so a ref issued before the answer keeps reco
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime
 from typing import Any
 
@@ -27,8 +26,6 @@ from core.tools.numbers import NumberBuilder
 from core.tools.review_card import amount_number, purchase
 from core.tools.safe_to_spend import get_safe_to_spend
 from core.tools.selection import Selection
-
-audit = logging.getLogger("core.audit")
 
 BASKET_KEYS = ("unclassified", *config.BASKETS)
 CHANGE_ORDER = (*BASKET_KEYS, "irregular_reserve", "safe_to_spend")
@@ -85,12 +82,11 @@ def _timestamp(moment: datetime | None) -> str | None:
     return moment.astimezone(reviews.HELSINKI).replace(microsecond=0).isoformat()
 
 
-def _message(ctx: ToolContext, outcome: reviews.Outcome, previous: reviews.Review) -> dict[str, Any]:
+def _message(ctx: ToolContext, outcome: reviews.Outcome) -> dict[str, Any]:
     lang = ctx.language
     numbers: dict[str, Any] = {}
     if not outcome.changed:
-        text = _t("unchanged", lang)
-        rendered = text
+        text = rendered = _t("unchanged" if outcome.review.basket else "still_pending", lang)
     elif outcome.review.basket == "everyday_spending":
         found = purchase(ctx, outcome.review)
         n1 = amount_number(ToolContext(ctx.customer_id, ctx.as_of, ctx.conn, lang, NumberRegistry(),
@@ -118,18 +114,14 @@ def answer(conn: psycopg.Connection, customer_id: str, as_of: date, tx_ref: str,
     with conn.transaction():
         review = reviews.find(conn, customer_id, tx_ref, lock=True)
         outcome = reviews.decide(review, basket, now)
-        ctx_before = ToolContext(customer_id, as_of, conn, language)
-        found = changes_list = None
+        ctx = ToolContext(customer_id, as_of, conn, language)
+        moved: list[dict[str, Any]] = []
         if outcome.changed:
-            before = overview_numbers(ctx_before)
+            before = overview_numbers(ctx)
             reviews.save(conn, outcome.review)
-            ctx_after = ToolContext(customer_id, as_of, conn, language, _history=ctx_before.history())
-            after = overview_numbers(ctx_after)
-            changes_list = changes(before, after)
-            found = ctx_after
-            audit.info("label customer=%s tx_ref=%s basket=%s state=%s at=%s", customer_id, tx_ref,
-                       outcome.review.basket, outcome.state, _timestamp(now))
-        message = _message(found or ctx_before, outcome, review)
+            ctx = ToolContext(customer_id, as_of, conn, language, _history=ctx.history())  # after the answer
+            moved = changes(before, overview_numbers(ctx))
+        message = _message(ctx, outcome)
     label = None
     if outcome.review.basket is not None:
         label = {"basket": outcome.review.basket,
@@ -144,6 +136,6 @@ def answer(conn: psycopg.Connection, customer_id: str, as_of: date, tx_ref: str,
         "review_state": outcome.state,
         "changed": outcome.changed,
         "message": message,
-        "changes": changes_list or [],
+        "changes": moved,
         "refetch": [f"/api/overview/{customer_id}"],
     }
