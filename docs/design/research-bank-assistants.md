@@ -14,7 +14,7 @@ All metrics below are self-reported by the companies.
 | **Klarna** AI assistant | Customer service: refunds, returns, multilingual support [E3] | "Powered by OpenAI". It shows the user's outstanding balances and payment schedule [E3]. | Customers "can still choose to interact with live agents" [E3]. In 2025 Klarna turned back to human agents (news) [E4]. | 2.3 million conversations, two thirds of service chats, in the first month; 25% fewer repeat inquiries [E3] |
 | **Nubank** | A generative-AI virtual assistant for customer service, first around credit offers [E5]. Support agents in production across five domains (2026 paper) [E6]. | First version on GPT-4. It uses Nubank's "data models and proprietary structure and insights tools" [E5]. | The first phase went to "a restricted group" of users [E5]. Refusal behaviour: unknown. | +29 percentage points self-service rate. Satisfaction "within a few percentage points of expert human agents", measured by an LLM judge with inter-rater agreement [E6]. |
 | **Revolut** AIR (UK, April 2026) | Spending insights, investment tracking, subscriptions, card freeze [E7] | "Only accessing the data you already see"; "zero data retention" by third-party AI partners [E7] (news copy of the release; revolut.com returned 403) | Unknown | Unknown |
-| **Cleo** | AI money app built around chat [E8] | An LLM agent calls tools "defined by a structured schema". "Cleo offloads calculations to structured, deterministic tools" [E8]. Specialist agents "query the precomputed financial profile" [E9]. | "Confidence thresholds and content filters to manage emotional risk" [E8]. Hand-off: unknown. | 81% accuracy on Cleo's own budgeting benchmark [E8] |
+| **Cleo** | AI money app built around chat [E8] | An LLM agent calls tools "defined by a structured schema". "Cleo offloads calculations to structured, deterministic tools" [E8]. Specialist agents "query the precomputed financial profile" [E9]. | It applies "confidence thresholds and content filters to manage emotional risk" [E8]. Hand-off: unknown. | 81% accuracy on Cleo's own budgeting benchmark [E8] |
 | **bunq** Finn | Banking support plus spending questions such as "How much did I spend on groceries this month?" [E10] | Model and architecture: unknown | Harder requests are "routed directly to the right human specialist" [E10] | About 97% of support activity; 90% satisfaction; 38 languages [E10] |
 | **Monzo** Trends | Spending insights: monthly or yearly views, category breakdown, spending targets [E11, E12] | Rule-based or AI: unknown (the help pages do not mention AI). Paid plans add non-Monzo accounts [E12]. | Left-to-spend is labelled "an estimate" [E12] | Unknown |
 | **Starling** Spending Intelligence (June 2025), then Starling Assistant (March 2026) | Customers "ask questions about their money" [E13] | "Engineered using Google's Gemini models". "Starling's proprietary systems perform the analysis on the customer's own transactional data". Data stays in Starling's Google Cloud and "is not used for training" [E13]. The 2026 assistant is agentic, on Gemini [E14]. | Opt in, and opt out at any time [E13, E14]. An explicit no-advice line: unknown. | Unknown |
@@ -99,7 +99,7 @@ Two notes on sources:
 → R1, R2.
 
 **Out-of-scope questions and advice.**
-- Google's Gemini safety guidance recommends "Adjusting functionality to something that is inherently lower risk." It also recommends "Blocking unsafe inputs and filtering output before it is shown to the user.", and adversarial testing [P12].
+- Google's Gemini safety guidance recommends "Adjusting functionality to something that is inherently lower risk." It also recommends adversarial testing and "Blocking unsafe inputs and filtering output before it is shown to the user." [P12]
 - ESMA's 2024 statement on AI in investment services warns that "hallucinated information can lead to misleading advice". It says firms "should transparently disclose to clients the use of such technology" [P16].
 - That ESMA statement covers MiFID investment firms. For a spending coach, refusing investment advice is our product decision, consistent with section 4 → R7, R10, R14.
 
@@ -251,14 +251,14 @@ All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached fro
 - [E14] Starling Bank news, "Starling launches UK's first Agentic AI financial assistant", 20 March 2026. https://www.starlingbank.com/news/starling-launches-agentic-ai-assistant/, accessed 2026-11-13.
 
 **Patterns, guardrails and evaluation (sections 2, 3, 5)**
-- [P1] Anthropic, "Building effective agents". https://www.anthropic.com/engineering/building-effective-agents, accessed 2026-11-13.
-- [P2] Monzo blog, "Engineering the future of customer operations: the Monzo Ops Agent", June 2026. https://monzo.com/blog/engineering-the-future-of-customer-operations-the-monzo-ops-agent, accessed 2026-11-13.
+- [P1] Anthropic, "Building effective AI agents". https://www.anthropic.com/engineering/building-effective-agents, accessed 2026-11-13.
+- [P2] Monzo blog, "Engineering the Future of Customer Operations: The Monzo Ops Agent", June 2026. https://monzo.com/blog/engineering-the-future-of-customer-operations-the-monzo-ops-agent, accessed 2026-11-13.
 - [P3] Google, Gemini API docs, "Function calling". https://aistudio.google.com/docs/function-calling, accessed 2026-11-13.
 - [P4] Google, Gemini API docs, "Structured output". https://aistudio.google.com/docs/structured-output, accessed 2026-11-13.
-- [P5] arXiv 2411.07763, Spider 2.0 (enterprise text-to-SQL benchmark), November 2024. https://arxiv.org/abs/2411.07763, accessed 2026-11-13.
+- [P5] arXiv 2411.07763, "Spider 2.0: Evaluating Language Models on Real-World Enterprise Text-to-SQL Workflows", November 2024. https://arxiv.org/abs/2411.07763, accessed 2026-11-13.
 - [P6] BIRD benchmark leaderboard. https://bird-bench.github.io/, accessed 2026-11-13.
 - [P7] dbt docs, "dbt Semantic Layer". https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl, accessed 2026-11-13.
-- [P8] Google Cloud docs, "Check grounding". https://docs.cloud.google.com/generative-ai-app-builder/docs/check-grounding, accessed 2026-11-13.
+- [P8] Google Cloud docs, "Check grounding with RAG". https://docs.cloud.google.com/generative-ai-app-builder/docs/check-grounding, accessed 2026-11-13.
 - [P9] OWASP GenAI Security Project, "LLM01:2025 Prompt Injection". https://genai.owasp.org/llmrisk/llm01-prompt-injection/, accessed 2026-11-13.
 - [P10] NIST AI 600-1, "Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile", July 2024. https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf, accessed 2026-11-13.
 - [P11] Google, "Mitigating prompt injection attacks with a layered defense strategy", 13 June 2025. https://blog.google/security/mitigating-prompt-injection-attacks/, accessed 2026-11-13.
@@ -267,7 +267,7 @@ All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached fro
 - [P14] OWASP GenAI Security Project, "LLM06:2025 Excessive Agency". https://genai.owasp.org/llmrisk/llm062025-excessive-agency/, accessed 2026-11-13.
 - [P15] OWASP GenAI Security Project, "LLM09:2025 Misinformation". https://genai.owasp.org/llmrisk/llm092025-misinformation/, accessed 2026-11-13.
 - [P16] ESMA35-335435667-5924, Public Statement on AI and investment services, 30 May 2024. https://www.esma.europa.eu/sites/default/files/2024-05/ESMA35-335435667-5924__Public_Statement_on_AI_and_investment_services.pdf, accessed 2026-11-13.
-- [P17] Nubank engineering blog, "Building AI agents for 127 million customers", March 2026. https://building.nu.com/building-ai-agents-for-127-million-customers/, accessed 2026-11-13.
+- [P17] Nubank engineering blog, "Building AI agents for 131 million customers" (the URL says 127), March 2026. https://building.nu.com/building-ai-agents-for-127-million-customers/, accessed 2026-11-13.
 - [P18] OpenAI API docs, "Evaluation best practices". https://developers.openai.com/api/docs/guides/evaluation-best-practices, accessed 2026-11-13.
 - [P19] arXiv 2306.05685, "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena", 2023. https://arxiv.org/abs/2306.05685, accessed 2026-11-13.
 - [P20] Google Cloud docs, Gen AI evaluation service overview. https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/evaluation-overview, accessed 2026-11-13.
