@@ -2,7 +2,8 @@
 #
 # Every case: id, persona (core/config/personas.yaml), question (en, and fi for some), intent, expect,
 # expected tools (agent-core.md section 6.5), tags, and the items the answer is checked against:
-#   numbers  every one must be in the answer's Number objects and in its text, within tolerance
+#   numbers  every one must be in the answer's Number objects and in its text, within tolerance;
+#            one with `required: false` may be stated but need not be (it is still checked)
 #   dates    every one must be among the dates the answer returns (bills, payday)
 #   labels   every key must be among the keys the answer reports (profile, what-if status)
 #   forbid   none may appear in the answer (a value a confused coach would give)
@@ -246,6 +247,7 @@ cases:
   tags: [spending, mcc_group, period_last_month]
   numbers:
   - {name: public_transport_total, value: 74.46, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: public_transport, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: public_transport_purchases, value: 2, unit: count, tolerance: 0, required: false, source: {query: spending, mcc_group: public_transport, start: '2026-08-01', end: '2026-08-31', column: n_tx}}
 
 - id: eetu-fuel-last-3-months
   persona: CUST00349
@@ -267,6 +269,7 @@ cases:
   tags: [spending, category, dining, dining_category_vs_mcc, period_custom]
   numbers:
   - {name: restaurants_total, value: 147.64, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
+  - {name: restaurants_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: n_tx}}
   forbid:
   - {name: card_restaurants_only, value: 134.83, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: restaurants, start: '2026-07-01', end: '2026-07-31', column: total_eur}}
 
@@ -290,6 +293,7 @@ cases:
   tags: [spending, category, period_this_month]
   numbers:
   - {name: entertainment_total, value: 39.72, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Entertainment], start: '2026-09-01', end: '2026-09-30', column: total_eur}}
+  - {name: entertainment_purchases, value: 5, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Entertainment], start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
 - id: aleksi-groceries-custom-range
   persona: CUST00849
@@ -300,6 +304,7 @@ cases:
   tags: [spending, category, period_custom, young_adult]
   numbers:
   - {name: groceries_total, value: 99.91, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-06-01', end: '2026-06-15', column: total_eur}}
+  - {name: groceries_purchases, value: 2, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Groceries], start: '2026-06-01', end: '2026-06-15', column: n_tx}}
 
 - id: aleksi-restaurants-last-3-months
   persona: CUST00849
@@ -310,6 +315,7 @@ cases:
   tags: [spending, category, dining, period_last_3_months, young_adult]
   numbers:
   - {name: restaurants_total, value: 1102.0, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-09-30', column: total_eur}}
+  - {name: restaurants_purchases, value: 30, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-09-30', column: n_tx}}
 
 - id: marja-upcoming-bills
   persona: CUST00493
@@ -361,6 +367,7 @@ cases:
   - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: change, value: -1242.63, unit: eur, tolerance: 0.005, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
   - {name: change_pct, value: -29.8, unit: percent, tolerance: 0.01, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_pct}}
+  - {name: september_purchases, value: 25, unit: count, tolerance: 0, required: false, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
 - id: eetu-restaurants-august-vs-july
   persona: CUST00349
@@ -373,6 +380,8 @@ cases:
   - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
   - {name: change, value: 227.11, unit: eur, tolerance: 0.005, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
+  - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
+  - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
 
 - id: marja-taxi-this-month-none
   persona: CUST00493
