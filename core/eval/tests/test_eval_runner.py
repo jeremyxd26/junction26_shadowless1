@@ -107,9 +107,9 @@ def test_correct_finnish_answers_pass(text):
     assert run.check(SAFE, fi_safe(text), "fi", SAFE["question"]["fi"]) == []
 
 
-def test_finnish_thousands_separators_parse():
+def test_finnish_thousands_separators_match_the_formatter():
     for sep in (" ", NBSP, NNBSP):
-        assert answer_text.parse_display(f"1{sep}242,63{NBSP}€", "fi") == (1242.63, "eur")
+        assert answer_text.display_matches(f"1{sep}242,63{NBSP}€", 1242.63, "eur", "fi")
 
 
 def test_negative_change_with_its_display_passes():
@@ -122,7 +122,7 @@ def test_negative_change_with_its_display_passes():
 
 def test_number_from_the_question_as_user_input_percent_passes():
     ans = Answer(text="Cutting dining out by 20.0% saves €45.91 a month.", outcome="answered",
-                 numbers=[num(45.91, "eur_per_month", "€45.91"), num(20.0, "percent", "20.0%", method="user_input@1")],
+                 numbers=[num(45.91, "eur_per_month", "€45.91 a month"), num(20.0, "percent", "20.0%", method="user_input@1")],
                  labels=[], tool_calls=[])
     assert run.check(CUT, ans, "en", CUT["question"]["en"]) == []
 
@@ -170,11 +170,11 @@ def test_wrong_unit_on_the_number_object_fails():
 
 
 def test_percentile_as_percent_and_count_as_days_fail():
-    good = Answer(text="Percentile 51, group of 118 people.", outcome="answered",
-                  numbers=[num(51.0, "percentile", "51"), num(118, "count", "118")], labels=["big_ticket"], tool_calls=[])
+    good = Answer(text="Percentile 51.0%, group of 118 people.", outcome="answered",
+                  numbers=[num(51.0, "percentile", "51.0%"), num(118, "count", "118")], labels=["big_ticket"], tool_calls=[])
     assert run.check(PEER, good, "en", "") == []
-    bad = Answer(text="Percentile 51, group of 118 people.", outcome="answered",
-                 numbers=[num(51.0, "percent", "51"), num(118, "days", "118")], labels=["big_ticket"], tool_calls=[])
+    bad = Answer(text="Percentile 51.0%, group of 118 people.", outcome="answered",
+                 numbers=[num(51.0, "percent", "51.0%"), num(118, "days", "118")], labels=["big_ticket"], tool_calls=[])
     assert sum("(objects)" in f for f in run.check(PEER, bad, "en", "")) == 2
 
 
@@ -196,7 +196,8 @@ def test_one_cent_off_fails():
 
 def test_number_from_the_question_turned_into_money_fails():
     ans = Answer(text="Cutting dining out saves €45.91 a month, or €20.00 a month more.", outcome="answered",
-                 numbers=[num(45.91, "eur_per_month", "€45.91"), num(20.0, "eur_per_month", "€20.00", method="user_input@1")],
+                 numbers=[num(45.91, "eur_per_month", "€45.91 a month"),
+                          num(20.0, "eur_per_month", "€20.00 a month", method="user_input@1")],
                  labels=[], tool_calls=[])
     fails_with(CUT, ans, "en", "R1: Number object 20.0 eur_per_month is not an expected value", CUT["question"]["en"])
 
@@ -231,8 +232,8 @@ def test_ids_with_digits_fail(text):
 
 def test_unknown_tool_calls_and_keys_are_unverified_failures():
     fails_with(REFUSED, refusal(tool_calls=None), "en", "unverified")
-    ans = Answer(text="Percentile 51, group of 118 people.", outcome="answered",
-                 numbers=[num(51.0, "percentile", "51"), num(118, "count", "118")], labels=None, tool_calls=[])
+    ans = Answer(text="Percentile 51.0%, group of 118 people.", outcome="answered",
+                 numbers=[num(51.0, "percentile", "51.0%"), num(118, "count", "118")], labels=None, tool_calls=[])
     fails_with(PEER, ans, "en", "unverified")
 
 
@@ -308,9 +309,10 @@ def test_a_closing_euro_sign_before_a_date_is_fine(text):
 
 
 def test_a_closing_euro_sign_before_another_amount_is_fine():
-    case = {**CUT, "numbers": CUT["numbers"] + [{"name": "base", "value": 229.56, "unit": "eur_per_month", "tolerance": 0.005}]}
-    ans = Answer(text=f"Säästö olisi 45,91{NBSP}€ 229,56{NBSP}€:sta kuukaudessa.", outcome="answered", labels=[], tool_calls=[],
-                 numbers=[num(45.91, "eur_per_month", f"45,91{NBSP}€"), num(229.56, "eur_per_month", f"229,56{NBSP}€")])
+    case = {**CUT, "numbers": [{"name": "saving", "value": 45.91, "unit": "eur", "tolerance": 0.005},
+                               {"name": "base", "value": 229.56, "unit": "eur", "tolerance": 0.005}]}
+    ans = Answer(text=f"Säästö olisi 45,91{NBSP}€ 229,56{NBSP}€:sta.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[num(45.91, "eur", f"45,91{NBSP}€"), num(229.56, "eur", f"229,56{NBSP}€")])
     assert run.check(case, ans, "fi", "Paljonko säästäisin?") == []
 
 
@@ -323,11 +325,35 @@ def test_a_count_next_to_a_currency_or_unit_word_fails(text, lang):
     fails_with(TAXI, taxi_answer(text, lang), lang, "R1")
 
 
-def test_display_with_a_unit_suffix_states_its_value():
-    assert answer_text.display_matches("€1,209.05 a month", 1209.05, "eur_per_month", "en")
-    assert answer_text.display_matches(f"1{NBSP}209,05{NBSP}€ / kk", 1209.05, "eur_per_month", "fi")
-    assert not answer_text.display_matches("€1,209.05 a month", 1209.50, "eur_per_month", "en")
-    assert answer_text.parse_display("€1,209.05 a month 2", "en") is None  # a suffix has no digits
+# ---- fifth review: a display is valid only if it equals the server's formatter output -------------
+
+@pytest.mark.parametrize("value,unit,en,fi", [
+    (180.26, "eur", "€180.26", "180,26 €"),
+    (-1242.63, "eur", "-€1,242.63", "-1 242,63 €"),
+    (12.5, "eur_per_day", "€12.50 a day", "12,50 € / pv"),
+    (180.26, "eur_per_week", "€180.26 a week", "180,26 € / vk"),
+    (1209.05, "eur_per_month", "€1,209.05 a month", "1 209,05 € / kk"),
+    (551.0, "eur_per_year", "€551.00 a year", "551,00 € / v"),
+    (-29.8, "percent", "-29.8%", "-29,8 %"),
+    (51.0, "percentile", "51.0%", "51,0 %"),
+    (118, "count", "118", "118"),
+    (15, "days", "15 days", "15 pv"),
+    (6, "months", "6 months", "6 kk"),
+])
+def test_every_formatter_display_passes(value, unit, en, fi):
+    assert answer_text.formatted(value, unit, "en") == en and answer_text.formatted(value, unit, "fi") == fi
+    for display in (en, fi, fi.replace(" ", NBSP), fi.replace(" ", NNBSP), en.replace("-", "\u2212")):
+        assert answer_text.display_matches(display, value, unit)
+
+
+@pytest.mark.parametrize("display,value,unit", [
+    ("1 euro", 1, "count"), ("1 EUR", 1, "count"), ("1 prosenttia", 1, "count"), ("1 $", 1, "count"),
+    ("20% euros", 20.0, "percent"), ("€45.91 a year", 45.91, "eur_per_month"), ("€30", 180.26, "eur"),
+    ("€180.26", 180.26, "eur_per_month"), ("180.26%", 180.26, "eur"), ("€180.26", -180.26, "eur"),
+    ("51", 51.0, "percentile"), ("118", 118, "days"),
+])
+def test_displays_that_are_not_the_formatter_output_fail(display, value, unit):
+    assert not answer_text.display_matches(display, value, unit)
 
 
 def test_a_capitalised_month_after_a_number_starts_a_sentence():

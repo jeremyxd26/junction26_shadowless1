@@ -10,7 +10,9 @@ The rule. Remove from the text
   (b) every whole date expression that parses to a real date, month or date range and equals a date
       or a period the tools returned (a date expression followed by € or % is not a date).
 If ANY digit remains anywhere (glued to letters, inside an id, after a dash, in any unit), the text
-fails. No id shapes or lookbehind tricks are needed: an id, an IBAN or "EUR5000" fails because its
+fails.
+A declared display is valid only if it equals what the server's formatter (core/tools/formatting)
+writes for the object's value and unit, in English or Finnish (display_matches). No id shapes or lookbehind tricks are needed: an id, an IBAN or "EUR5000" fails because its
 digits are left over.
 
 A date expression needs a year: "15 Oct 2026", "October 15, 2026", "September 2026",
@@ -209,21 +211,6 @@ def parse_number(raw: str, language: str) -> float:
     return float(raw.replace(",", ""))
 
 
-def parse_display(display: str, language: str) -> tuple[float, str | None] | None:
-    """(signed value, mark) of a display string such as "€1,234.56", "-1 234,56 €", "18,9 %" or "3".
-    The mark is "eur", "pct" or None. None when the string is not one number."""
-    m = re.fullmatch(rf"{_S}*" + NUMBER_RX.pattern + r"(?P<suffix>[^\d€%]*)", normalise(display))
-    if not m:
-        return None
-    try:
-        value = parse_number(m.group("num"), language)
-    except ValueError:
-        return None
-    marks = (m.group("pre") or "") + (m.group("post") or "")
-    mark = "eur" if "€" in marks else "pct" if "%" in marks else None
-    return (-value if m.group("sign") else value), mark
-
-
 def scan_numbers(text: str, language: str) -> list[tuple[float, str | None]]:
     """(value, mark) of every number in a free text, for numbers the user typed in a question."""
     _, text = find_dates(text, blank_all=True)
@@ -243,10 +230,28 @@ UNIT_MARKS = {"eur": {"eur"}, "eur_per_day": {"eur"}, "eur_per_week": {"eur"}, "
               "days": {None}, "months": {None}}
 
 
-def display_matches(display: str, value: float, unit: str, language: str, tolerance: float = 0.005) -> bool:
-    """The display string states this value, with this unit's mark and the right sign."""
-    parsed = parse_display(display, language)
-    if parsed is None or unit not in UNIT_MARKS:
+def formatted(value, unit: str, language: str) -> str:
+    """What the server's formatter (core/tools/formatting.display) writes for this value and unit."""
+    from decimal import Decimal
+
+    from core.tools.formatting import display
+    from core.tools.models import Unit
+
+    return display(Decimal(str(value)), Unit(unit), language)
+
+
+def _same(a: str, b: str) -> bool:
+    # NFKC turns NBSP and NNBSP into spaces; the minus sign U+2212 is the same sign as a hyphen-minus.
+    return normalise(a).replace("\u2212", "-") == normalise(b).replace("\u2212", "-")
+
+
+def display_matches(display: str, value: float, unit: str, language: str | None = None) -> bool:
+    """A declared Number object's display is valid only if it EQUALS what the server's formatter
+    writes for its value and unit, in English or Finnish. A display is never free text, so no suffix
+    or unit word is parsed: "1 euro" on a count or "€45.91 a year" on a monthly value never match."""
+    if unit not in UNIT_MARKS:
         return False
-    shown, mark = parsed
-    return mark in UNIT_MARKS[unit] and abs(shown - float(value)) <= tolerance + 1e-9
+    try:
+        return any(_same(display or "", formatted(value, unit, lang)) for lang in ("en", "fi"))
+    except (ValueError, ArithmeticError):
+        return False
