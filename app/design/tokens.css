@@ -51,6 +51,7 @@
   --text-xs:12px;   --text-xs--line-height:16px;
   --text-sm:14px;   --text-sm--line-height:20px;
   --text-base:16px; --text-base--line-height:24px;   /* inputs never below 16px (iOS zoom) */
+  --text-answer:16px; --text-answer--line-height:26px; /* coach answer text */
   --text-lg:18px;   --text-lg--line-height:26px;
   --text-xl:20px;   --text-xl--line-height:28px;     /* takeaway line */
   --text-card-title:16px;     --text-card-title--line-height:22px;     /* card titles */
