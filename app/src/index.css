@@ -77,6 +77,25 @@ select {
   outline-offset: 2px;
 }
 
+/* Bottom sheet entry */
+.sheet-scrim {
+  animation: sheet-fade var(--duration-base) var(--ease-entry);
+}
+.sheet-panel {
+  animation: sheet-rise var(--duration-base) var(--ease-entry);
+}
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-rise {
+  from {
+    transform: translateY(32px);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
