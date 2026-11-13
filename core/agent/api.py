@@ -16,7 +16,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -63,13 +63,20 @@ class PoolData:
     def __init__(self, app) -> None:
         self._app = app
 
+    def connection(self) -> AbstractContextManager[Any]:
+        return self._connect(CONNECTION_TIMEOUT_S)
+
+    def connection_if_free(self, wait: float) -> AbstractContextManager[Any]:
+        """A connection only if one is free within `wait` seconds (a second tool lane)."""
+        return self._connect(wait)
+
     @contextmanager
-    def connection(self) -> Iterator[Any]:
+    def _connect(self, timeout: float) -> Iterator[Any]:
         pool = self._app.state.pool
         if pool is None:
             raise DataUnavailable()
         try:
-            with pool.connection(timeout=CONNECTION_TIMEOUT_S) as conn:
+            with pool.connection(timeout=timeout) as conn:
                 yield conn
         except (PoolTimeout, psycopg.OperationalError):
             raise DataUnavailable() from None
@@ -90,10 +97,14 @@ class AskLimits:
     """Per-process limits on POST /api/ask, checked before the stream opens (security issue #85).
 
     Three sliding one-minute windows; 0 turns a limit off:
-    - per client address (ASK_RATE_LIMIT_PER_MIN, default 10): the address the reverse proxy saw;
-    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together;
-    - per customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10): changing the customer_id in the body
-      never resets the address limit, and one customer cannot be flooded from many addresses.
+    - per client address (ASK_RATE_LIMIT_PER_MIN, default 10): the address uvicorn reports. In the
+      image uvicorn runs with --proxy-headers behind Caddy, which replaces X-Forwarded-For, so this is
+      the address Caddy saw; changing the customer_id in the body never resets it;
+    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together, which
+      also caps how often one customer can be asked about from many addresses;
+    - per address and customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10): keyed by both, so one
+      address that uses up its window for a persona never blocks that persona for anyone else (on
+      the public demo, every visitor asks about the same four personas).
     A request counts only if every limit allows it.
     """
 
@@ -109,7 +120,7 @@ class AskLimits:
 
     def allow(self, address: str, customer_id: str) -> tuple[bool, int]:
         now = time.monotonic()
-        keys = {"address": address, "global": "*", "customer": customer_id}
+        keys = {"address": address, "global": "*", "customer": f"{address} {customer_id}"}
         with self._lock:
             retry = 0
             for kind, limit in self.limits.items():
@@ -129,8 +140,10 @@ class AskLimits:
 
 
 def trusted_proxies() -> set[str]:
-    """Peers whose X-Forwarded-For is believed: the reverse proxy on the same host (the service listens
-    on 127.0.0.1 behind Caddy). TRUSTED_PROXIES is a comma-separated list; default loopback only."""
+    """Peers whose X-Forwarded-For is believed; TRUSTED_PROXIES is a comma-separated list, default
+    loopback only. In the image (deploy/Dockerfile) uvicorn runs with --proxy-headers behind Caddy,
+    which replaces X-Forwarded-For, so the peer uvicorn reports is already the client's address; this
+    list matters when the service runs without those flags behind a proxy on the same host."""
     raw = os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1")
     return {p.strip() for p in raw.split(",") if p.strip()}
 

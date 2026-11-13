@@ -212,3 +212,91 @@ def test_independent_calls_of_one_turn_run_in_parallel(make_pipeline):
     ids = [p["card"]["primary"]["id"] for e, p in events if e == "card"]
     assert ids == ["n1", "n1"]  # one shared registry: the same evidence ref gets the same id in both calls
     assert dict(events)["done"]["outcome"] == "answered"
+
+
+def _tool(tag: str, delay: float):
+    """A data tool with its own evidence refs that sleeps `delay` seconds before it registers numbers."""
+    import time
+    from decimal import Decimal
+
+    from agent_fakes import AUG
+
+    from core.tools.formatting import display
+    from core.tools.models import Card, Number, ToolResult, Unit
+
+    def fn(ctx, args):
+        time.sleep(delay)
+        n = ctx.numbers.register(Number(value=1.5, unit=Unit.EUR, period=AUG, method="spending.total@1",
+                                        evidence_ref=f"ev_{tag:0>12}", label=tag,
+                                        display=display(Decimal("1.5"), Unit.EUR, ctx.language)))
+        card = Card(card_id=f"card_{tag}", type="metric", title=tag, subtitle=AUG.label, evidence_ref=n.evidence_ref,
+                    primary=n, secondary=[])
+        return ToolResult(tool=tag, data={}, card=card, evidence=[n.evidence_ref],
+                          model_view={"tool": tag, "total": {"id": n.id, "value": 1.5, "unit": "eur", "label": tag}})
+    return ToolSpec(tag, tag, FakeArgs, fn, ("x", "x"))
+
+
+def _ordered_run(make_pipeline, delays, data=None):
+    tags = [f"tool{i}" for i in range(len(delays))]
+    reg = registry(*[_tool(tag, d) for tag, d in zip(tags, delays)])
+    draft = {"language": "en", "text": "In August 2026 you spent {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    model = ScriptedModel(plans=[[FunctionCall(tag, {}) for tag in tags] + [FunctionCall("finish")]], drafts=[draft])
+    pipe = make_pipeline(model, reg=reg, data=data or FakeData())
+    events = run(pipe)
+    return tags, events, audit_records(pipe)[-1]
+
+
+def test_ids_cards_and_audit_keys_follow_the_call_order(make_pipeline):
+    # Review of PR #104: with delays [0.3, 0.0] the second call finished first and took n1.
+    tags, events, record = _ordered_run(make_pipeline, [0.3, 0.0])
+    cards = [p["card"] for e, p in events if e == "card"]
+    assert [c["card_id"] for c in cards] == ["card_tool0", "card_tool1"]
+    assert [c["primary"]["id"] for c in cards] == ["n1", "n2"]
+    assert list(record["tool_outputs"]) == ["tool0#1", "tool1#2"]
+    assert record["tool_outputs"]["tool0#1"]["total"]["id"] == "n1"
+    assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_the_three_surviving_cards_are_the_first_three_calls(make_pipeline):
+    tags, events, record = _ordered_run(make_pipeline, [0.3, 0.0, 0.0, 0.0])
+    assert [p["card"]["card_id"] for e, p in events if e == "card"] == ["card_tool0", "card_tool1", "card_tool2"]
+    assert record["cards"] == ["card_tool0", "card_tool1", "card_tool2"]
+    assert list(record["tool_outputs"]) == ["tool0#1", "tool1#2", "tool2#3", "tool3#4"]
+
+
+def test_one_connection_runs_the_calls_one_by_one(make_pipeline):
+    data = FakeData(capacity=1)
+    tags, events, record = _ordered_run(make_pipeline, [0.1, 0.0, 0.0], data=data)
+    assert data.most_in_use == 1
+    assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2", "n3"]
+    assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_an_answer_never_queues_for_a_connection_another_request_holds(make_pipeline):
+    # Pool of two, one held by another request: the answer runs on the other one, one call at a time,
+    # and finishes while the held connection is still out.
+    data = FakeData(capacity=2)
+    with data.connection():
+        tags, events, record = _ordered_run(make_pipeline, [0.05, 0.0], data=data)
+        assert data.in_use == 1
+    assert data.most_in_use == 2
+    assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2"]
+    assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_data_access_without_connection_if_free_runs_the_calls_one_by_one(make_pipeline):
+    # A DataAccess with only connection() (the red-team tests' fake, for one) keeps working: no
+    # second lane, the same ids.
+    inner = FakeData(capacity=2)
+
+    class Plain:
+        def customer_exists(self, customer_id):
+            return inner.customer_exists(customer_id)
+
+        def connection(self):
+            return inner.connection()
+
+    tags, events, record = _ordered_run(make_pipeline, [0.05, 0.0], data=Plain())
+    assert inner.most_in_use == 1 and inner.connections == 2
+    assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2"]
+    assert dict(events)["done"]["outcome"] == "answered"

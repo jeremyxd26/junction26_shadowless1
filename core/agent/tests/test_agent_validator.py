@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names
 from core.agent.toolset import KNOWN_TOOLS, default_registry
 from core.agent.validator import Allowed, validate
+from core.agent.validator import render as validator_render
 from core.tools.formatting import display
 from core.tools.models import Number, Unit
 
@@ -50,6 +52,62 @@ def test_valid_texts_pass(text, lang):
 ])
 def test_digits_outside_tokens_fail(text, lang):
     assert check(text, lang), text
+
+
+N2 = Number(id="n2", value=10, unit=Unit.COUNT, period=AUG, method="spending.tx_count@1", evidence_ref="ev_y",
+            label="Purchases", display=display(Decimal("10"), Unit.COUNT, "en"))
+
+
+def check_two(text, language="en"):
+    numbers = {"n1": N1, "n2": N2}
+    cited = sorted(set(re.findall(r"\{\{(n\d+)\}\}", text)))
+    return validate({"language": language, "text": text, "cited": cited, "lesson_key": None},
+                    language=language, numbers=numbers, allowed=ALLOWED)[1]
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("You made {{n2}}{{n2}} purchases.", "en"),               # "1010"
+    ("You made {{n2}}.{{n2}} purchases.", "en"),              # "10.10"
+    ("You made {{n2}},{{n2}} purchases.", "en"),              # "10,10"
+    ("You saved {{n2}}k in August 2026.", "en"),              # "10k"
+    ("That is {{n2}}x your usual month.", "en"),              # "10x"
+    ("You spent {{n2}} euros in August 2026.", "en"),         # a unit word turns a count into money
+    ("Restaurants were {{n2}} percent of August 2026.", "en"),
+    ("Ravintolat olivat {{n2}} prosenttia elokuussa 2026.", "fi"),
+    ("On {{n2}} August 2026 you spent {{n1}}.", "en"),        # a date that was not returned
+])
+def test_tokens_glued_to_digits_units_or_dates_fail(text, lang):
+    # Review of PR #104: the token-stripped check passed all of these; the rendered text does not.
+    assert check_two(text, lang), text
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("In August 2026 you spent {{n1}} on {{n2}} purchases.", "en"),
+    ("You spent {{n1}} ({{n2}} purchases) in August 2026.", "en"),
+    ("You spent {{n1}}, {{n2}} purchases.", "en"),
+    ("Elokuussa 2026 käytit {{n1}}; ostoksia oli {{n2}}.", "fi"),
+])
+def test_rendered_check_keeps_good_drafts(text, lang):
+    assert check_two(text, lang) == []
+
+
+def test_a_finnish_template_with_two_tools_passes_the_rendered_check():
+    # "…; Tapahtumat: 10. syyskuu 2026: …" would read as a date that was not returned; the template
+    # starts each sentence with a capital, and a day never takes a capitalised month.
+    from core.agent import template
+    from core.agent.validator import allowed_from
+    from core.tools.models import Period
+
+    sep = Period(start=date(2026, 9, 1), end=date(2026, 9, 30), label="syyskuu 2026")
+    fi = {k: n.model_copy(update={"display": display(Decimal(str(n.value)), n.unit, "fi")}) for k, n in
+          {"n1": N1, "n2": N2, "n3": N1.model_copy(update={"id": "n3", "period": sep, "evidence_ref": "ev_z"})}.items()}
+    views = [{"tool": "t", "period": "elokuu 2026", "total": {"id": "n1", "value": 147.64, "unit": "eur", "label": "Ravintolat"},
+              "tx_count": {"id": "n2", "value": 10, "unit": "count", "label": "Tapahtumat"}},
+             {"tool": "t", "period": "syyskuu 2026", "total": {"id": "n3", "value": 147.64, "unit": "eur", "label": "Ravintolat"}}]
+    allowed = allowed_from(fi.values(), views, date(2026, 9, 30))
+    draft = template.template_draft(views, [], "fi", allowed)
+    assert "10. Syyskuu 2026" in validator_render(draft["text"], fi)
+    assert validate(draft, language="fi", numbers=fi, allowed=allowed)[1] == []
 
 
 def test_token_rules():
