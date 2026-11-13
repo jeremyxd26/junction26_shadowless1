@@ -387,7 +387,9 @@ class Pipeline:
             "question": a.question or guard.clean(req.message),
             "guard_flags": a.flags,
             "model": {"id": getattr(self.model, "model_id", type(self.model).__name__),
-                      "planner_prompt": None, "composer_prompt": None},
+                      # prompt versions (name@sha8) when the model has them, e.g. the Gemini adapter
+                      "planner_prompt": getattr(self.model, "planner_prompt", None),
+                      "composer_prompt": getattr(self.model, "composer_prompt", None)},
             "planner_turns": a.planner_turns,
             "tool_outputs": a.tool_outputs,   # model views only: never rows, merchant ids or the customer id
             "numbers": a.numbers,

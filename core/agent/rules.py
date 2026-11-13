@@ -161,8 +161,9 @@ def plan_what_if(question: str) -> dict:
 # a specific period or category falls through to get_spending.
 BRIEF = [
     ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
-     lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_month"}})]),
-    ("safe_to_spend", r"safe(ly)? to spend|safely spend|can i (safely )?spend this week|turvallisesti käyttää|"
+     # The metric's window (metrics.md section 1): month averages of the last 6 complete months.
+     lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]),
+    ("safe_to_spend", r"safe(ly)? to spend|safely spend|can i (safely )?spend this week|turvallisesti käyt\w*|"
                       r"voin käyttää tällä viikolla",
      lambda q, as_of: [("get_safe_to_spend", {})]),
     ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",

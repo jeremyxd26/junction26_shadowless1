@@ -51,10 +51,11 @@ REFUSAL: dict[str, dict[str, Any]] = {
 BRIEF_QUESTIONS = (
     ("Where did my money go?", "Mihin rahani menivät?"),
     ("What kind of spender am I?", "Millainen kuluttaja olen?"),
-    ("What can I safely spend this week?", "Paljonko voin turvallisesti käyttää tällä viikolla?"),
+    ("What can I safely spend this week?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
 )
 
+MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 NO_DATA = ("There are no transactions for that period in your data.",
            "Tältä jaksolta ei ole tapahtumia aineistossasi.")
 TOOL_FAILED = ("Some of the data could not be computed right now.",
@@ -164,6 +165,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             cited.append(number_id)
         period = view.get("period")
         head = f"{period}: " if isinstance(period, str) and ok(period) and items else ""
+        if head and view.get("monthly_average"):  # say that the amounts are averages, not one month
+            head = f"{period}, {pick(MONTHLY_AVERAGE, language)}: "
         if items:
             sentences.append(head + "; ".join(items) + ".")
         for note in view.get("notes") or []:

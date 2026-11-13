@@ -44,7 +44,7 @@ KNOWN_TOOLS = [
     KnownTool("core.tools.safe_to_spend", "get_safe_to_spend", "GetSafeToSpendArgs",
               "What the user can safely spend in the next 7 days, with its components. An estimate. Returns "
               "numbers with ids; cite them as {{id}}.",
-              ("Working out what is safe to spend", "Lasken, paljonko voit käyttää")),
+              ("Working out what is safe to spend", "Lasken, paljonko on turvallisesti käytettävissä")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
               "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
               "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",

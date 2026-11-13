@@ -218,10 +218,17 @@ async def ask(request: Request):
     return JSONResponse(payload, status_code=status)
 
 
+def audit_api_enabled() -> bool:
+    """The audit read endpoint is off unless AUDIT_API=1 (meant for local eval runs): on the dev service
+    /api/* is public, and a record holds a customer's question, tool calls and model views."""
+    return os.environ.get("AUDIT_API", "").strip() == "1"
+
+
 @router.get("/api/audit/{answer_id}")
 async def audit_record(answer_id: str, request: Request):
-    """Internal: the audit record of one answer (agent-core.md section 9.1). Not part of the app contract."""
-    if not answer_id.startswith("ans_") or len(answer_id) > 32:
+    """Internal: the audit record of one answer (agent-core.md section 9.1). Not part of the app contract.
+    Answers 404 unless AUDIT_API=1. The audit files are written either way."""
+    if not audit_api_enabled() or not answer_id.startswith("ans_") or len(answer_id) > 32:
         return _error(404, "not_found", "No such answer.")
     record = await run_in_threadpool(get_agent(request.app).audit.find, answer_id)
     if record is None:
