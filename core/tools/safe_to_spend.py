@@ -168,11 +168,18 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     )
 
 
+def card_subtitle(period: Period, language: str) -> str:
+    """The week's dates, written like every other period label (core/tools/periods.py), e.g. "1–7 Oct
+    2026" / "1.–7.10.2026" (contracts/api.md section 6: the subtitle carries the period). It has digits,
+    so it stays a card text and is never put into answer text; the Numbers keep the label "Next 7 days"."""
+    return periods.period_label(period.start, period.end, language)
+
+
 def _card(data: SafeToSpendData, language: str) -> Card:
     ref = data.safe_to_spend.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
-        type="metric", title=_t("title", language), subtitle=data.period.label,
+        type="metric", title=_t("title", language), subtitle=card_subtitle(data.period, language),
         evidence_ref=ref,
         estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
