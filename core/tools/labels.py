@@ -21,19 +21,22 @@ from typing import Any
 from core.tools import reviews
 
 
-def basket_labels(conn: Any, customer_id: str, as_of: date, now: datetime | None = None) -> dict[int, str]:
+def basket_labels(conn: Any, customer_id: str, as_of: date, now: datetime | None = None,
+                  viewer: str | None = None) -> dict[int, str]:
     """Transaction id -> basket key chosen by the customer (or `unclassified` while a review is
-    pending), for transactions up to as_of."""
+    pending), for transactions up to as_of, as `viewer` answered (#144; None = the shared state)."""
     if not reviews.enabled():
         return {}
-    return reviews.label_overrides(reviews.load_reviews(conn, customer_id, as_of), now or reviews.utcnow())
+    now = now or reviews.utcnow()
+    return reviews.label_overrides(reviews.load_reviews(conn, customer_id, as_of, viewer, now), now)
 
 
 def for_context(ctx: Any) -> dict[int, str]:
-    """The labels for one ToolContext (one request or answer), read once and then shared by every tool
-    of that context. A new context reads them again, so the numbers after a label write see it."""
+    """The labels for one ToolContext (one request or answer, one viewer), read once and then shared
+    by every tool of that context. A new context reads them again, so the numbers after a label write
+    see it. Two viewers with different answers get different label sets (and cache keys)."""
     if ctx._labels is None:
-        ctx._labels = basket_labels(ctx.conn, ctx.customer_id, ctx.as_of)
+        ctx._labels = basket_labels(ctx.conn, ctx.customer_id, ctx.as_of, viewer=ctx.viewer)
     return ctx._labels
 
 

@@ -57,3 +57,9 @@ class Settings(BaseSettings):
     # Which customers the API serves (#101): `personas`, only the ids of core/config/personas.yaml (the
     # demo and the dev service), or `all`, every customer of the data (local eval runs only).
     demo_customers: Literal["personas", "all"] = "personas"
+    # Viewer sessions (#144): the cookie that keeps one viewer's review answers apart from everyone
+    # else's. Secure is on by default; set VIEWER_COOKIE_SECURE=false only for local development over http.
+    viewer_cookie_secure: bool = True
+    # POST /api/baskets/label, sliding one-minute windows; 0 turns a limit off (#144).
+    label_rate_limit_per_min: int = Field(default=10, ge=0)            # per client address
+    label_rate_limit_customer_per_min: int = Field(default=30, ge=0)   # per customer, all viewers together

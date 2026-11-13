@@ -1,0 +1,174 @@
+"""Viewer sessions on the shared database (#144). Skipped without DATABASE_URL.
+
+Like test_api_reviews.py: the app's pool is a stub that hands out one connection inside a transaction
+that is rolled back, and Sanna's review rows (with every viewer's answers, ON DELETE CASCADE) are
+deleted inside it first. Nothing is committed; the dev demo state neither affects the test nor is
+changed by it. SPIKE_REVIEWS is on for these tests only.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import date, timedelta
+
+import psycopg
+import pytest
+from fastapi.testclient import TestClient
+
+from core.app.api import viewer
+from core.app.main import create_app
+from core.app.settings import Settings
+from core.tests.test_api_reviews import LEAD, StubPool, items
+from core.tools import labels, reviews
+from core.tools.db import load_transactions
+
+A, B, C = (viewer.new_value() for _ in range(3))
+AS_OF = date(2026, 9, 30)
+
+
+@pytest.fixture(scope="module")
+def db_conn():
+    url = Settings().database_url
+    if url is None:
+        pytest.skip("DATABASE_URL is not set")
+    conn = psycopg.connect(url.get_secret_value(), autocommit=True, application_name="core-tests-viewers")
+    conn.execute("SET statement_timeout = '60s'")
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def client(db_conn, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "on")
+    with db_conn.transaction(force_rollback=True):
+        reviews.ensure_table(db_conn)
+        reviews.reset(db_conn, [LEAD])
+        app = create_app(Settings(_env_file=None, database_url=None))
+        with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
+            app.state.pool = StubPool(db_conn)
+            yield c
+
+
+def as_viewer(client, value: str | None) -> None:
+    client.cookies.clear()
+    if value is not None:  # http.cookiejar matches a dotless host as "<host>.local"
+        client.cookies.set(viewer.COOKIE, value, domain="testserver.local")
+
+
+def overview(client, value: str | None):
+    as_viewer(client, value)
+    r = client.get(f"/api/overview/{LEAD}")
+    assert r.status_code == 200, r.text
+    return r
+
+
+def answer(client, value: str | None, tx_ref: str, basket):
+    as_viewer(client, value)
+    r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": tx_ref, "basket": basket,
+                                                "language": "en"})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def answer_rows(conn) -> int:
+    return reviews.count_answers(conn, [LEAD])
+
+
+def test_two_viewers_answer_independently(client, db_conn):
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    needed = answer(client, A, tx_ref, "unexpected_necessities")
+    assert {c["key"]: c["after"]["value"] for c in needed["changes"]}["safe_to_spend"] == 180.26
+
+    a, b = overview(client, A).json(), overview(client, B).json()
+    assert a["reviews"] == [] and items(a)["unexpected_necessities"] == 521.15        # A answered
+    assert b["reviews"][0]["tx_ref"] == tx_ref and items(b)["unclassified"] == 180.07  # B still pending
+    assert "Set-Cookie" not in overview(client, B).headers                            # B keeps its cookie
+
+    wanted = answer(client, B, tx_ref, "everyday_spending")  # from B's own pending state, not A's answer
+    assert {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in wanted["changes"]} == {
+        "unclassified": (180.07, 0.0), "everyday_spending": (600.41, 780.48)}
+    undone = answer(client, A, tx_ref, None)
+    assert undone["review_state"] == "pending"
+    assert overview(client, A).json()["reviews"][0]["tx_ref"] == tx_ref                # A pending again
+    assert overview(client, B).json()["reviews"] == []                                # B untouched
+    assert items(overview(client, B).json())["everyday_spending"] == 780.48
+    # The shared row was never written: a viewer without answers sees the pending state.
+    assert overview(client, C).json()["reviews"][0]["tx_ref"] == tx_ref
+    shared = reviews.load_reviews(db_conn, LEAD)
+    assert [r.basket for r in shared] == [None]
+
+
+def test_no_cookie_gets_one_and_the_shared_pending_state(client, db_conn):
+    r = overview(client, None)
+    assert r.json()["reviews"][0]["current_basket"]["key"] == "unclassified"
+    cookie = r.headers["set-cookie"]
+    assert cookie.startswith(viewer.COOKIE + "=") and "HttpOnly" in cookie and "Secure" in cookie
+    assert "SameSite=lax" in cookie and "Max-Age=7200" in cookie and "Path=/" in cookie
+    assert answer_rows(db_conn) == 0                                  # a GET writes no answer row
+
+
+def test_label_without_a_cookie_is_stored_for_a_new_viewer_only(client, db_conn):
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    as_viewer(client, None)
+    r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": tx_ref,
+                                                "basket": "unexpected_necessities", "language": "en"})
+    assert r.status_code == 200 and viewer.COOKIE in r.headers["set-cookie"]
+    assert overview(client, A).json()["reviews"][0]["tx_ref"] == tx_ref    # nobody else changed
+
+
+def test_the_session_id_is_never_logged(client, caplog):
+    caplog.set_level(logging.DEBUG)
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    answer(client, A, tx_ref, "unexpected_necessities")
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "audit label" in text and A not in text and viewer.session_key(A) not in text
+
+
+def test_cap_drops_the_oldest_viewer_who_sees_the_pending_card_again(client, db_conn, monkeypatch):
+    monkeypatch.setattr(reviews, "MAX_SESSIONS", 2)
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    for v in (A, B, C):                                               # C's first answer evicts A
+        answer(client, v, tx_ref, "unexpected_necessities")
+    assert overview(client, A).json()["reviews"][0]["tx_ref"] == tx_ref
+    assert overview(client, B).json()["reviews"] == [] and overview(client, C).json()["reviews"] == []
+    assert answer_rows(db_conn) == 2
+
+
+def test_answers_expire_after_the_session_ttl(db_conn, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "on")
+    with db_conn.transaction(force_rollback=True):
+        reviews.ensure_table(db_conn)
+        reviews.reset(db_conn, [LEAD])
+        now = reviews.utcnow()
+        pending = reviews.ensure_pending(db_conn, LEAD, AS_OF, load_transactions(db_conn, LEAD, AS_OF), now)
+        key = viewer.session_key(A)
+        then = now - reviews.SESSION_TTL - timedelta(minutes=1)
+        answered = reviews.decide(pending, "unexpected_necessities", then).review
+        reviews.save_answer(db_conn, key, answered, then)
+        assert labels.basket_labels(db_conn, LEAD, AS_OF, then, viewer=key) == {
+            pending.tx_id: "unexpected_necessities"}
+        # Two hours later the answer no longer counts, and the next write by anyone cleans it up.
+        assert labels.basket_labels(db_conn, LEAD, AS_OF, now, viewer=key) == {pending.tx_id: "unclassified"}
+        reviews.save_answer(db_conn, viewer.session_key(B), answered, now)
+        assert reviews.count_answers(db_conn, [LEAD]) == 1
+
+
+def test_a_full_session_cannot_answer_another_review(db_conn, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "on")
+    monkeypatch.setattr(reviews, "MAX_ANSWERS_PER_SESSION", 1)
+    with db_conn.transaction(force_rollback=True):
+        reviews.ensure_table(db_conn)
+        reviews.reset(db_conn, [LEAD])
+        now = reviews.utcnow()
+        first = reviews.ensure_pending(db_conn, LEAD, AS_OF, load_transactions(db_conn, LEAD, AS_OF), now)
+        other_tx = db_conn.execute("SELECT id FROM transactions WHERE customer_id = %s AND id <> %s "
+                                   "ORDER BY id LIMIT 1", (LEAD, first.tx_id)).fetchone()[0]
+        db_conn.execute("INSERT INTO spike_reviews (customer_id, tx_id, tx_ref, created_at, expires_at) "
+                        "VALUES (%s, %s, %s, %s, %s)", (LEAD, other_tx, reviews.new_tx_ref(), now,
+                                                        now + timedelta(days=7)))
+        second = next(r for r in reviews.load_reviews(db_conn, LEAD) if r.tx_id == other_tx)
+        key = viewer.session_key(A)
+        reviews.save_answer(db_conn, key, reviews.decide(first, "everyday_spending", now).review, now)
+        reviews.save_answer(db_conn, key, reviews.decide(first, "unexpected_necessities", now).review, now)
+        with pytest.raises(reviews.TooManyAnswers):
+            reviews.save_answer(db_conn, key, reviews.decide(second, "everyday_spending", now).review, now)
