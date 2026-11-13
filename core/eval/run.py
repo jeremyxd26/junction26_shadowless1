@@ -58,11 +58,6 @@ DENY = {
     "R13 promise": r"(?<!not )(?<!not a )(?<!no )(?<!n't )\bguarantee[ds]?\b|\b(will definitely|takuulla|taatusti)\b",
 }
 
-def close(a: float, b: float, tol: float) -> bool:
-    """Signed values within tolerance (Number objects carry the sign of a change)."""
-    return abs(float(a) - float(b)) <= tol + 1e-9
-
-
 def _iso(value) -> date | None:
     try:
         return date.fromisoformat(str(value))
@@ -119,7 +114,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         for n in wanted:
             if n.get("required", True) is False:
                 continue
-            match = [x for x in declared if x["unit"] == n["unit"] and close(x["value"], n["value"], n["tolerance"])]
+            match = [x for x in declared if x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"])]
             if not match:
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (objects)")
             elif not any(answer_text.shows(ans.text, str(x.get("display") or ""), dates, periods) for x in match):
@@ -128,7 +123,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         # question's own mark ("20%" is a percent, never money).
         typed = answer_text.scan_numbers(question, lang)
         for x in declared:
-            if any(x["unit"] == n["unit"] and close(x["value"], n["value"], n["tolerance"]) for n in wanted):
+            if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"]) for n in wanted):
                 continue
             from_question = any(abs(abs(float(x["value"])) - v) < 1e-9 and mark in answer_text.UNIT_MARKS.get(x["unit"], set())
                                 for v, mark in typed)

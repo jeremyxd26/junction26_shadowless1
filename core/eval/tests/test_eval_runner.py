@@ -364,3 +364,32 @@ def test_a_capitalised_month_after_a_number_starts_a_sentence():
     ans = Answer(text="Ostoksia oli 10. Heinäkuussa 2026 käytit ravintoloihin.", outcome="answered",
                  numbers=[num(10, "count", "10", jul)], labels=[], tool_calls=[])
     assert run.check(case, ans, "fi", case["question"]["fi"]) == []
+
+
+# ---- sixth review: the rounding edge, more unit words ---------------------------------------------
+
+@pytest.mark.parametrize("value,display", [(45.915, "€45.92 a month"), (45.909, "€45.91 a month")])
+def test_a_value_at_the_rounding_edge_is_judged_by_its_display(value, display):
+    ans = Answer(text=f"Cutting dining out by 20.0% saves {display}.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[num(value, "eur_per_month", display), num(20.0, "percent", "20.0%", method="user_input@1")])
+    fails = run.check(CUT, ans, "en", CUT["question"]["en"])
+    if display == "€45.91 a month":   # shown as the SQL value: the user sees the right number
+        assert fails == []
+    else:                             # 45.915 is shown as 45.92, which is not the SQL value 45.91
+        assert any("missing saving" in f for f in fails), fails
+
+
+def test_zero_point_zero_zero_five_is_not_zero():
+    case = {"id": "t-zero", "persona": "CUST00493", "intent": "spending", "expect": "answered",
+            "question": {"en": "How much did I spend on taxis this month?"}, "expected_tools": [], "tags": ["t"],
+            "numbers": [{"name": "taxi", "value": 0.0, "unit": "eur", "tolerance": 0.005}]}
+    ans = Answer(text="Taxis this month: €0.01.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[num(0.005, "eur", "€0.01")])
+    fails_with(case, ans, "en", "missing taxi")
+
+
+@pytest.mark.parametrize("word", ["cent", "cents", "senttiä", "USD", "pct", "e"])
+def test_more_unit_words_after_a_count_fail(word):
+    lang = "fi" if word in ("senttiä", "e") else "en"
+    total = "€52.84" if lang == "en" else f"52,84{NBSP}€"
+    fails_with(TAXI, taxi_answer(f"Taxis: {total}, 1 ride and 1 {word} extra.", lang), lang, "R1")
