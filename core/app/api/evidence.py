@@ -155,7 +155,7 @@ def get_evidence(
     customer_id: str = Query(pattern=CUSTOMER_ID_PATTERN),
     lang: Language = Query("en"),
     limit: int = Query(evidence.DEFAULT_LIMIT, ge=1, le=evidence.MAX_LIMIT),
-    cursor: str | None = Query(None, pattern=r"^cur_[0-9]+$"),
+    cursor: str | None = Query(None, pattern=r"^cur_[0-9]{1,6}$"),  # offsets up to 999999
 ) -> EvidenceResponse:
     with connection(request) as conn:
         require_customer(conn, customer_id)

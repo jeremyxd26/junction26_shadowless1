@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
@@ -60,6 +61,8 @@ def test_personas_in_finnish(clean_env):
     ("/api/evidence/ev_0123456789ab", {"customer_id": "CUST00860", "limit": 0}),
     ("/api/evidence/ev_0123456789ab", {"customer_id": "CUST00860", "limit": 201}),
     ("/api/evidence/ev_0123456789ab", {"customer_id": "CUST00860", "cursor": "page2"}),
+    ("/api/evidence/ev_0123456789ab", {"customer_id": "CUST00860", "cursor": "cur_1234567"}),   # 7 digits
+    ("/api/evidence/ev_0123456789ab", {"customer_id": "CUST00860", "cursor": "cur_" + "9" * 5000}),
 ])
 def test_bad_parameters_are_400_invalid_request(clean_env, path, params):
     with client_for() as client:
@@ -117,6 +120,43 @@ def test_unexpected_error_is_500_internal_without_its_text(clean_env, monkeypatc
         client.app.state.pool = None
     assert_envelope(response, 500, "internal", retryable=True)
     assert "secret" not in response.text
+
+
+CANARY = "postgresql://canary_user:canary_pw@canary-host.example/canary_db"
+
+
+def test_unhandled_exception_text_reaches_neither_the_log_nor_the_body(clean_env, monkeypatch, caplog):
+    """The exception is caught without re-raising: Starlette's 500 handler would log the traceback."""
+    def boom(ctx, hero_tool=None):
+        raise RuntimeError(f"connection failed: {CANARY}")
+
+    monkeypatch.setattr(overview, "build", boom)
+    caplog.set_level(logging.DEBUG)  # every logger, every level
+    app = create_app(Settings(_env_file=None))
+    with TestClient(app) as client:  # raise_server_exceptions=True: a re-raised exception would fail here
+        client.app.state.pool = _FakePool()
+        response = client.get("/api/overview/CUST00860", headers={"Origin": "http://localhost:5173"})
+        client.app.state.pool = None
+    assert_envelope(response, 500, "internal", retryable=True)
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"  # inside CORS
+    request_id = response.headers["x-request-id"]
+    logged = "\n".join(caplog.text.splitlines() + [r.exc_text or "" for r in caplog.records])
+    assert "canary" not in logged and "canary" not in response.text
+    assert f"(RuntimeError), request {request_id}" in caplog.text
+
+
+@pytest.mark.parametrize("method, path, status", [
+    ("GET", "/api/no-such-route", 404),
+    ("GET", "/nothing/here", 404),
+    ("POST", "/api/personas", 405),
+    ("DELETE", "/api/overview/CUST00860", 405),
+])
+def test_unknown_routes_and_methods_get_the_envelope(clean_env, method, path, status):
+    with client_for() as client:
+        response = client.request(method, path)
+    assert_envelope(response, status, "invalid_request")
+    if status == 405:
+        assert "GET" in response.headers["allow"]
 
 
 # ---- the hero switch (no database: synthetic history and an in-memory evidence store) -------------
