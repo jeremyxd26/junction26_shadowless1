@@ -1,7 +1,7 @@
 // The chat's turns and the one running /api/ask stream. It lives in App, so the conversation
 // survives a trip to the overview and back; switching persona starts an empty chat.
 import { useCallback, useRef, useState } from 'react'
-import { api } from '../api/client.ts'
+import { ask } from '../api/ask.ts'
 import { readAskStream } from '../api/askStream.ts'
 import { ApiError } from '../api/errors.ts'
 import type { Language } from '../api/types.ts'
@@ -78,7 +78,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
       running.current = { turnId, controller }
       if (conversation.current.owner !== owner) conversation.current = { owner, id: null }
       try {
-        const stream = await api.ask(
+        const stream = await ask(
           { customer_id: owner, conversation_id: conversation.current.id, message: question, language: lang },
           controller.signal,
         )
