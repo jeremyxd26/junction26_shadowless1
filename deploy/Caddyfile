@@ -1,7 +1,20 @@
 # Reverse proxy in front of the core service (rendered to /etc/caddy/Caddyfile by deploy/remote-deploy.sh).
-# __SITE__ is replaced with the contents of /etc/shadowless1/site: a host name such as
-# 203-0-113-7.sslip.io for automatic HTTPS (Let's Encrypt), or http://203-0-113-7.sslip.io for plain HTTP.
+# __SITE__ is replaced with the contents of /etc/shadowless1/site, one line that names the host(s):
+#   135-181-63-178.sslip.io                          automatic HTTPS (Let's Encrypt)
+#   135-181-63-178.sslip.io, sentti.jeremyxd.dev     several names; add one only after its DNS record
+#                                                    points at the instance (failed attempts hit rate limits)
+#   http://135-181-63-178.sslip.io                   plain HTTP, if no certificate can be issued
+# Only the API and the health checks reach the core service; everything else is a plain 404 until the
+# app is served from here.
 __SITE__ {
 	encode gzip
-	reverse_proxy 127.0.0.1:8000
+
+	@core path /api/* /healthz /readyz
+	handle @core {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		respond "Not found" 404
+	}
 }
