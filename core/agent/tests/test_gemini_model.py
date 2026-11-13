@@ -142,10 +142,10 @@ def test_without_a_key_there_is_no_model():
     assert make_model(settings()) is None
 
 
-def test_the_pinned_model_is_the_default_without_a_fallback_until_pro_answers():
+def test_the_pinned_model_is_the_default_and_pro_is_its_fallback():
     m = make_model(settings(gemini_api_key="test-key-not-real"))
     assert m.model_id == gemini.DEFAULT_MODEL == "gemini-3.8-flash"
-    assert m.client.fallback_model is None
+    assert m.client.fallback_model == "gemini-3.1-pro-preview"
     assert not m.model_id.endswith("-latest")
     pro = make_model(settings(gemini_api_key="test-key-not-real", gemini_model="gemini-3.1-pro-preview"))
     assert pro.client.fallback_model == "gemini-3.8-flash"

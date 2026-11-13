@@ -42,7 +42,7 @@ The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemi
 Model settings:
 - `MODEL_DAILY_BUDGET`: requests to the Gemini API per UTC day. The default is 300. Requests are counted in `var/gemini-requests.jsonl`, so a restart keeps the count, and cache hits do not count. Past the budget, answers use the template. `0` turns the model off.
 - `var/model-off`: while this file exists, no request is sent. It takes effect at once, without a restart or a redeploy.
-- `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). Flash has no fallback by default, because the pro model has not answered this key yet. Pro falls back to flash. `none` turns it off. A fallback the API refuses turns itself off.
+- `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). The default is the other of flash and pro (pro is called on the `v1beta` API, the only one that serves it). `none` turns it off. A fallback the API refuses turns itself off.
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
 

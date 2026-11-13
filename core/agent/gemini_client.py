@@ -75,6 +75,9 @@ BLOCK_REASONS = {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATIO
 UNUSABLE_REASONS = {"MALFORMED_FUNCTION_CALL", "UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS",
                     "MISSING_THOUGHT_SIGNATURE", "MALFORMED_RESPONSE"}
 STORED_FIELDS = ("candidates", "prompt_feedback", "usage_metadata", "model_version")
+# The API version per model, where the SDK's default (v1) does not serve it: the preview model is only
+# on v1beta (v1 answered HTTP 404 for it; v1beta answered on 2026-11-14).
+API_VERSIONS = {"gemini-3.1-pro-preview": "v1beta"}
 CACHE_FORMAT = 1
 
 
@@ -131,12 +134,22 @@ Transport = Callable[[str, list[dict[str, Any]], dict[str, Any], float], dict[st
 
 class SdkTransport:
     """The real transport: google-genai's generate_content. The SDK's own retries stay off. The client
-    gives up after timeout_s; the server deadline is never below MIN_SERVER_DEADLINE_S."""
+    gives up after timeout_s; the server deadline is never below MIN_SERVER_DEADLINE_S. A model listed in
+    API_VERSIONS is called on that API version."""
 
     def __init__(self, api_key: str) -> None:
         from google import genai
 
+        self._genai = genai
         self._client = genai.Client(api_key=api_key)
+        self._clients = {None: self._client}
+        self._api_key = api_key          # kept only to open a client on another API version
+
+    def _client_for(self, model: str):
+        version = API_VERSIONS.get(model)
+        if version not in self._clients:
+            self._clients[version] = self._genai.Client(api_key=self._api_key, http_options={"api_version": version})
+        return self._clients[version]
 
     def __call__(self, model: str, contents: list[dict[str, Any]], config: dict[str, Any],
                  timeout_s: float) -> dict[str, Any]:
@@ -146,7 +159,7 @@ class SdkTransport:
         cfg = types.GenerateContentConfig.model_validate(
             {**config, "http_options": {"timeout": int(timeout_s * 1000),
                                         "headers": {"X-Server-Timeout": str(server_deadline)}}})
-        response = self._client.models.generate_content(
+        response = self._client_for(model).models.generate_content(
             model=model, contents=[types.Content.model_validate(c) for c in contents], config=cfg)
         return response.model_dump(mode="json", exclude_none=True)
 

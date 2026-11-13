@@ -280,3 +280,21 @@ def test_sdk_transport_keeps_the_server_deadline_at_its_minimum(monkeypatch):
     assert seen["timeout"] <= 8000                      # the client gives up after our deadline
     assert int(seen["headers"]["X-Server-Timeout"]) >= gc.MIN_SERVER_DEADLINE_S  # the API's minimum
     assert str(seen["mode"]).endswith("ANY") and str(seen["level"]).endswith("LOW")
+
+
+def test_sdk_transport_calls_the_preview_model_on_v1beta(monkeypatch):
+    from google import genai
+
+    opened = []
+    real_client = genai.Client
+
+    def spy(*args, **kwargs):
+        opened.append((kwargs.get("http_options") or {}).get("api_version"))
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(genai, "Client", spy)
+    transport = SdkTransport("test-key-not-real")
+    assert transport._client_for(FLASH) is transport._client
+    pro_client = transport._client_for(PRO)
+    assert pro_client is not transport._client and transport._client_for(PRO) is pro_client
+    assert opened == [None, "v1beta"]
