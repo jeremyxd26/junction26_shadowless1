@@ -161,17 +161,23 @@ class Ledger:
         self.daily_cap = daily_cap
         self.off_switch = Path(off_switch) if off_switch is not None else None
         self._lock = threading.Lock()
+        self._sent: tuple[str, int] = ("", 0)   # (UTC day, requests this process sent): the floor of the count
 
     def disabled(self) -> bool:
         return self.off_switch is not None and self.off_switch.exists()
 
     def today(self) -> int:
-        prefix = f'{{"ts": "{datetime.now(timezone.utc):%Y-%m-%d}'
+        """Requests today: the ledger file's count, and never less than this process sent, so an
+        unwritable or deleted ledger cannot reopen the budget."""
+        day = f"{datetime.now(timezone.utc):%Y-%m-%d}"
+        prefix = f'{{"ts": "{day}'
         try:
             with self.path.open(encoding="utf-8") as f:
-                return sum(1 for line in f if line.startswith(prefix))
-        except FileNotFoundError:
-            return 0
+                counted = sum(1 for line in f if line.startswith(prefix))
+        except OSError:
+            counted = 0
+        sent_day, sent = self._sent
+        return max(counted, sent if sent_day == day else 0)
 
     def allow(self) -> bool:
         return self.daily_cap is None or self.today() < self.daily_cap
@@ -181,6 +187,9 @@ class Ledger:
         line = json.dumps({"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind,
                            "model": model, "result": result, "latency_ms": latency_ms,
                            "tokens": [usage.prompt_tokens, usage.thought_tokens, usage.output_tokens]})
+        with self._lock:
+            day = f"{datetime.now(timezone.utc):%Y-%m-%d}"
+            self._sent = (day, (self._sent[1] if self._sent[0] == day else 0) + 1)
         try:
             with self._lock:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -388,11 +397,16 @@ class GeminiClient:
         # The primary model stayed overwhelmed: one attempt on the fallback model, same deadline.
         key = self.cache_key(self.fallback_model, kind, contents, config)
         try:
-            return self._attempts(self.fallback_model, key, kind, contents, config, deadline, retries=0)
+            return self._attempts(self.fallback_model, key, kind, contents, config, deadline, retries=0,
+                                  fallback=True)
         except GeminiError as exc:
-            if exc.code == "server":
-                self._pause(OVERLOAD_COOLDOWN_S, "server")
-            raise
+            if exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
+                # The fallback model is refused (for example an id this key cannot use): stop using it,
+                # but do not pause the primary model for longer than an overload.
+                log.error("gemini fallback model refused (%s); fallback turned off", exc.code)
+                self.fallback_model = None
+            self._pause(OVERLOAD_COOLDOWN_S, "server")
+            raise GeminiError("server") from None
 
     def _pause(self, seconds: float, code: str) -> None:
         with self._lock:
@@ -402,7 +416,7 @@ class GeminiClient:
                   code, seconds)
 
     def _attempts(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
-                  deadline: float, retries: int) -> Reply:
+                  deadline: float, retries: int, fallback: bool = False) -> Reply:
         assert self.transport is not None
         attempt = 0
         while True:
@@ -430,7 +444,7 @@ class GeminiClient:
                 ms = int((self.clock() - t) * 1000)
                 if status == 429:
                     self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
-                elif status in CONFIG_ERROR_CODES:
+                elif status in CONFIG_ERROR_CODES and not fallback:
                     self._pause(CONFIG_ERROR_COOLDOWN_S, code)
                 if status in SERVER_RETRY_CODES and attempt < retries:
                     pause = SERVER_RETRY_BACKOFF_S[attempt]

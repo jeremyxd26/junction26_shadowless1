@@ -35,14 +35,14 @@ With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prom
 - A question the rule planner recognises is planned without a model call. Gemini only writes the answer, so it costs one model call.
 - Any other question goes to the Gemini planner, which uses function calling over the tool registry.
 - Gemini writes the text with numbers as `{{nK}}` tokens. The validator checks the text, and a rejected draft is retried once, then replaced by the template.
-- When Gemini fails (timeout, 429, 503, a refused key or model, an empty or cut response), the answer comes from the rule planner and the template. A 429, 401, 403 or 404 pauses model calls for 5 minutes.
+- When Gemini fails (timeout, 429, 503, a refused key or model, an empty or cut response), or cannot be set up, the answer comes from the rule planner and the template. A 429, 401, 403 or 404 pauses model calls for 5 minutes.
 
 The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
 
 Model settings:
 - `MODEL_DAILY_BUDGET`: requests to the Gemini API per UTC day. The default is 300. Requests are counted in `var/gemini-requests.jsonl`, so a restart keeps the count, and cache hits do not count. Past the budget, answers use the template. `0` turns the model off.
 - `var/model-off`: while this file exists, no request is sent. It takes effect at once, without a restart or a redeploy.
-- `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). The default is the other of flash and pro. `none` turns it off.
+- `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). Flash has no fallback by default, because the pro model has not answered this key yet. Pro falls back to flash. `none` turns it off. A fallback the API refuses turns itself off.
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
 

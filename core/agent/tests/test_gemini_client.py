@@ -163,6 +163,32 @@ def test_an_outage_everywhere_raises_and_pauses_further_requests():
     assert len(transport.requests) == 4
 
 
+def test_a_refused_fallback_model_is_turned_off_and_the_primary_pauses_only_briefly():
+    now = [1000.0]
+    transport = FakeTransport(api_error(503), api_error(503), api_error(503), api_error(404), call_response())
+    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None, clock=lambda: now[0])
+    with pytest.raises(GeminiError) as exc:
+        c.plan(*PLAN_ARGS)
+    assert exc.value.code == "server" and c.fallback_model is None
+    assert [m for m, _ in transport.requests] == [FLASH, FLASH, FLASH, PRO]
+    now[0] += gc.OVERLOAD_COOLDOWN_S + 1               # the short overload pause, not the 5 minutes of a 404
+    assert c.plan(*PLAN_ARGS).calls
+    assert [m for m, _ in transport.requests][-1] == FLASH
+
+
+def test_an_unwritable_ledger_still_enforces_the_budget(tmp_path):
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")
+    ledger = Ledger(blocker / "requests.jsonl", daily_cap=2)    # its parent is a file: every write fails
+    transport = FakeTransport(call_response())
+    c = client(transport, ledger=ledger)
+    c.plan(*PLAN_ARGS)
+    c.plan(*PLAN_ARGS)
+    with pytest.raises(GeminiError) as exc:
+        c.plan(*PLAN_ARGS)
+    assert exc.value.code == "budget" and len(transport.requests) == 2
+
+
 def test_429_is_not_retried_and_pauses_every_later_call():
     now = [1000.0]
     transport = FakeTransport(api_error(429), call_response())

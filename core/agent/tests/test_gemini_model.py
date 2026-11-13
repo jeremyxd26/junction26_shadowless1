@@ -142,17 +142,39 @@ def test_without_a_key_there_is_no_model():
     assert make_model(settings()) is None
 
 
-def test_the_pinned_model_is_the_default_and_pro_is_its_fallback():
+def test_the_pinned_model_is_the_default_without_a_fallback_until_pro_answers():
     m = make_model(settings(gemini_api_key="test-key-not-real"))
     assert m.model_id == gemini.DEFAULT_MODEL == "gemini-3.8-flash"
-    assert m.client.fallback_model == "gemini-3.1-pro-preview"
+    assert m.client.fallback_model is None
     assert not m.model_id.endswith("-latest")
+    pro = make_model(settings(gemini_api_key="test-key-not-real", gemini_model="gemini-3.1-pro-preview"))
+    assert pro.client.fallback_model == "gemini-3.8-flash"
 
 
 def test_the_model_can_be_overridden_and_the_fallback_turned_off():
     m = make_model(settings(gemini_api_key="test-key-not-real", gemini_model="gemini-3.1-pro-preview",
                             gemini_fallback_model="none"))
     assert m.model_id == "gemini-3.1-pro-preview" and m.client.fallback_model is None
+
+
+def test_model_daily_budget_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("MODEL_DAILY_BUDGET", "7")
+    assert gemini.GeminiSettings(_env_file=None).daily_budget == 7
+    monkeypatch.delenv("MODEL_DAILY_BUDGET")
+    assert gemini.GeminiSettings(_env_file=None).daily_budget == gemini.DEFAULT_DAILY_BUDGET
+
+
+@pytest.mark.parametrize("broken", ["load_prompt", "SdkTransport"])
+def test_a_model_that_cannot_be_set_up_leaves_the_service_on_the_rule_model(monkeypatch, broken):
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+
+    def fail(*args, **kwargs):
+        raise FileNotFoundError("prompts/planner.md") if broken == "load_prompt" else ImportError("google.genai")
+
+    monkeypatch.setattr(gemini, broken, fail)
+    model = make_agent_model(settings(gemini_api_key="test-key-not-real", gemini_cache="off"))
+    assert isinstance(model, RuleModel)
 
 
 def test_the_service_model_is_rules_first_and_the_rule_model_without_a_key():

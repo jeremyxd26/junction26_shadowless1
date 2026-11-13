@@ -49,8 +49,10 @@ LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 # process environment variable. Do not put a value for it into .env: the local commit check treats
 # every .env value of 12 or more characters as a secret, which would block this file.
 DEFAULT_MODEL = "gemini-3.8-flash"
-# When the primary model stays overwhelmed (503 after two retries), one attempt goes to the other one.
-FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash"}
+# When the primary model stays overwhelmed (503 after two retries), one attempt goes to a fallback model.
+# Flash has none by default: the pro model has not answered this key yet (HTTP 404 on 2026-11-14). Set
+# GEMINI_FALLBACK_MODEL once a pro request has succeeded.
+FALLBACK_MODELS = {"gemini-3.1-pro-preview": "gemini-3.8-flash"}
 # The team's model account has a daily request limit, and the dev service is public: past this many
 # requests today in the ledger, answers use the template.
 DEFAULT_DAILY_BUDGET = 300
@@ -224,7 +226,7 @@ class GeminiSettings(BaseSettings):
     """Read from the environment and the repository's .env, like core/app/settings.py:
     - GEMINI_API_KEY: without it the service runs the rule model only;
     - GEMINI_MODEL: default DEFAULT_MODEL; an override for experiments, never a -latest alias;
-    - GEMINI_FALLBACK_MODEL: default from FALLBACK_MODELS; "none" turns it off;
+    - GEMINI_FALLBACK_MODEL: default from FALLBACK_MODELS (none for flash); "none" turns it off;
     - GEMINI_PLANNER: rules_first (default: the rule planner, Gemini only for questions it does not
       recognise) or model (Gemini plans every question; used by the eval of the planner);
     - GEMINI_CACHE: on (default), off, or replay; GEMINI_CACHE_DIR: default var/gemini-cache;
@@ -310,8 +312,13 @@ class RulesFirstModel:
 
 def make_agent_model(settings: Any | None = None, **options: Any) -> Any:
     """The model the service runs: RulesFirstModel over Gemini when a key is set (or Gemini alone when
-    GEMINI_PLANNER=model), else the rule model alone."""
-    gemini_model = make_model(settings, **options)
+    GEMINI_PLANNER=model), else the rule model alone. If the Gemini model cannot be set up (a missing
+    prompt file, a missing SDK, a bad setting), the service keeps answering with the rule model."""
+    try:
+        gemini_model = make_model(settings, **options)
+    except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+        log.error("the Gemini model could not be set up (%s); answers use the rule model", type(exc).__name__)
+        return RuleModel()
     if gemini_model is None:
         return RuleModel()
     planner = getattr(settings, "gemini_planner", None) or GeminiSettings().gemini_planner
