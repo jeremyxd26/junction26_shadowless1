@@ -229,15 +229,18 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
         # would read as a date). Signed values keep their sign in the token's display.
         items = []
+        period = view.get("period")
+        has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
             safe_label = label if label and ok(label) else ""
+            if not safe_label and (items or not has_head):
+                continue  # a bare token after another token would read as one number with it
             items.append(f"{safe_label}: {{{{{number_id}}}}}" if safe_label else f"{{{{{number_id}}}}}")
             cited.append(number_id)
-        period = view.get("period")
-        head = f"{period}: " if isinstance(period, str) and ok(period) and items else ""
+        head = f"{period}: " if has_head and items else ""
         if head and view.get("monthly_average"):  # say that the amounts are averages, not one month
             head = f"{period}, {pick(MONTHLY_AVERAGE, language)}: "
         if items:
