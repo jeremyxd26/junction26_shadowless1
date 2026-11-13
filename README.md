@@ -72,6 +72,18 @@ python core/eval/expected.py --check            # the committed expected values 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
+- `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.
+
+How numbers are checked (R1). The rule is an allowlist by subtraction in `core/answer_text.py`; the pipeline's output validator uses the same module.
+1. Remove from the answer text the exact display string of every Number object the answer declares.
+2. Remove every date expression that equals a date or period the tools returned. A date expression followed by € or % is not a date.
+3. If any digit is left (an invented amount, an id, a number glued to letters, an amount after a dash), the answer fails.
+
+Each declared Number object must also match an expected value: same unit, value within tolerance, same sign. Money has a tolerance of 0.005, so a one-cent error fails. A number from the question passes only as a user-input object with the question's own mark: the "20%" of a what-if question is a percent, never money.
+
+- **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
+- **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
+- **Known limits**, not checked: numbers written as words ("twice", "kolme"), and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
 
 ## License
 

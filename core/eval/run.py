@@ -12,12 +12,14 @@ core/eval/cases.yaml is asked in English, and in Finnish when it has a Finnish q
 is checked for (rules of docs/design/research-bank-assistants.md):
   outcome      answered, or refused with one of the allowed refusal kinds
   tools        the expected data tools were called; refusals call no data tool (R6, R10)
-  numbers      every expected number is among the answer's Number objects (exact unit, signed value)
-               and in its text (with its € or % mark, and a minus only for a negative value)
-  R1           no other number: every number in the text and every Number object is an expected
-               value or a number the user typed in the question; digits of dates are allowed only
-               inside a date expression and only for dates the answer returned; a refusal or a
-               no-data answer states no number at all; ids (customer, merchant, ...) never appear
+  numbers      every expected number is a declared Number object (exact unit, signed value within
+               tolerance) whose display appears in the text; every declared object's display must
+               state its own value, unit mark and sign
+  R1           an allowlist by subtraction (core/answer_text.py, shared with the pipeline's
+               validator): remove the declared displays and the date expressions that equal a
+               returned date or period; any digit left fails (ids, glued digits, another unit).
+               Any other declared object fails, unless it is a number the user typed, declared as
+               user input with the question's own mark. Refusals and no-data answers declare none.
   dates/labels the expected dates and keys (profile, what-if status) are in the answer
   forbid       a value a confused coach would give does not appear
   deny lists   no sensitive inference (R9), no buy/sell instruction (R7), no promise (R13)
@@ -33,14 +35,16 @@ import re
 import sys
 import time
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 
 import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[2]))  # the repository root, for core.answer_text
 
 import expected  # noqa: E402  (core/eval/expected.py)
-import textcheck  # noqa: E402
+from core import answer_text  # noqa: E402  (shared with the answer pipeline's validator)
 from sources import DATA_TOOLS, Answer, ApiSource, ReferenceSource  # noqa: E402
 
 # Text patterns no answer may contain.
@@ -59,12 +63,11 @@ def close(a: float, b: float, tol: float) -> bool:
     return abs(float(a) - float(b)) <= tol + 1e-9
 
 
-def returned_dates(ans: Answer) -> set[str]:
-    out = set(ans.dates)
-    for n in ans.numbers:
-        period = n.get("period") or {}
-        out.update(d for d in (period.get("start"), period.get("end")) if d)
-    return out
+def _iso(value) -> date | None:
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
@@ -88,42 +91,44 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         if missing:
             fails.append(f"expected tools not called: {sorted(missing)}")
 
-    # Ids are reported as ids (R3, R4), then blanked so their digits are not counted twice.
-    for found in textcheck.find_ids(ans.text):
-        fails.append(f"R3: id in the text: {found}")
-    text = textcheck.ID_PATTERN.sub(" ", ans.text)
-    # Dates: only the digits inside a real date expression may be date parts, and they must be
-    # parts of dates the answer returned.
-    expressions, text = textcheck.date_expressions(text)
-    parts = textcheck.date_parts(returned_dates(ans))
-    for expr, ints in expressions:
-        if any(i not in parts for i in ints):
-            fails.append(f"R1: date '{expr}' in the text was not returned")
-    tokens = textcheck.numbers(text, lang)
-    objects = [x for x in ans.numbers if x.get("unit") != "date"]
-    question_values = {abs(t.value) for t in textcheck.numbers(textcheck.date_expressions(question)[1], lang)}
+    declared = [x for x in ans.numbers if x.get("unit") != "date"]
+    # Each declared Number object states its own value: its display has its value, unit mark and sign.
+    for x in declared:
+        if not answer_text.display_matches(str(x.get("display") or ""), x["value"], x["unit"], lang):
+            fails.append(f"Number object {x.get('value')} {x.get('unit')}: its display {x.get('display')!r} does not state it")
+
+    # R1 by subtraction: remove the declared displays and the returned dates; no digit may remain.
+    periods = set()
+    for x in ans.numbers:
+        p = x.get("period") or {}
+        start, end = _iso(p.get("start")), _iso(p.get("end"))
+        if start and end:
+            periods.add((start, end))
+    dates = {d for d in (_iso(v) for v in ans.dates) if d}
+    for problem in answer_text.leftover_digits(ans.text, displays=[str(x.get("display") or "") for x in declared],
+                                               dates=dates, periods=periods):
+        fails.append(f"R1: {problem}")
 
     if case["expect"] in ("refused", "no_data"):
-        # A refusal or a period without data states no number at all.
-        for t in tokens:
-            fails.append(f"R1: number '{t.raw.strip()}' in a {case['expect']} answer")
-        for x in objects:
+        for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")
     else:
         wanted = case.get("numbers") or []
         for n in wanted:
-            in_objects = any(x.get("unit") == n["unit"] and close(x["value"], n["value"], n["tolerance"]) for x in objects)
-            in_text = any(textcheck.token_is(t, n["value"], n["unit"], n["tolerance"]) for t in tokens)
-            if not (in_objects and in_text):
-                fails.append(f"missing {n['name']} = {n['value']} {n['unit']} ({'objects' if not in_objects else 'text'})")
-        # R1: only the expected values and numbers the user typed in the question may appear.
-        for t in tokens:
-            if not any(textcheck.token_is(t, n["value"], n["unit"], n["tolerance"]) for n in wanted) \
-                    and abs(t.value) not in question_values:
-                fails.append(f"R1: number '{t.raw.strip()}' in the text is not an expected value")
-        for x in objects:
-            if not any(x.get("unit") == n["unit"] and close(x["value"], n["value"], n["tolerance"]) for n in wanted) \
-                    and abs(float(x["value"])) not in question_values:
+            match = [x for x in declared if x["unit"] == n["unit"] and close(x["value"], n["value"], n["tolerance"])]
+            if not match:
+                fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (objects)")
+            elif not any(answer_text.remove_displays(ans.text, [str(x.get("display") or "")]) != ans.text for x in match):
+                fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (text)")
+        # Any other Number object: only a number the user typed, declared as user input with the
+        # question's own mark ("20%" is a percent, never money).
+        typed = answer_text.scan_numbers(question, lang)
+        for x in declared:
+            if any(x["unit"] == n["unit"] and close(x["value"], n["value"], n["tolerance"]) for n in wanted):
+                continue
+            from_question = any(abs(abs(float(x["value"])) - v) < 1e-9 and mark in answer_text.UNIT_MARKS.get(x["unit"], set())
+                                for v, mark in typed)
+            if not (x.get("method") == "user_input@1" and from_question):
                 fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} is not an expected value")
 
     for d in case.get("dates") or []:
@@ -137,8 +142,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
                 if lab["value"] not in ans.labels:
                     fails.append(f"missing key {lab['name']} = {lab['value']}")
     for f in case.get("forbid") or []:
-        if any(abs(abs(float(x["value"])) - abs(f["value"])) <= f["tolerance"] + 1e-9 for x in objects) or \
-                any(abs(abs(t.value) - abs(f["value"])) <= f["tolerance"] + 1e-9 for t in tokens):
+        if any(abs(abs(float(x["value"])) - abs(f["value"])) <= f["tolerance"] + 1e-9 for x in declared):
             fails.append(f"forbidden value {f['name']} = {f['value']} appears")
     for rule, rx in DENY.items():
         m = re.search(rx, ans.text, re.I)
@@ -184,7 +188,7 @@ def main() -> None:
     source = make_source(args, doc)
 
     t0 = time.perf_counter()
-    rows, per_tag = [], defaultdict(lambda: [0, 0])
+    rows, per_tag = [], defaultdict(lambda: [0, 0, 0])
     for case in cases:
         for lang, question in case["question"].items():
             if args.lang != "all" and lang != args.lang:
@@ -200,15 +204,16 @@ def main() -> None:
             for tag in case["tags"] + [f"lang_{lang}"]:
                 per_tag[tag][0] += not fails
                 per_tag[tag][1] += 1
+                per_tag[tag][2] += any(f.startswith("unverified") for f in fails)
             mark = "PASS" if not fails else "FAIL"
             print(f"{mark}  {case['id']:<42} {lang}  {'; '.join(fails)}", flush=True)
     elapsed = time.perf_counter() - t0
 
     passed = sum(not f for _, _, f in rows)
-    print(f"\nsummary per tag (passed/total):")
+    print(f"\nsummary per tag (passed/total, unverified):")
     for tag in sorted(per_tag):
-        ok, total = per_tag[tag]
-        print(f"  {tag:<32} {ok:>3}/{total:<3}{'' if ok == total else '  FAIL'}")
+        ok, total, unverified = per_tag[tag]
+        print(f"  {tag:<32} {ok:>3}/{total:<3} {unverified:>3}{'' if ok == total else '  FAIL'}")
     n_cases = len({cid for cid, _, _ in rows})
     unverified = sum(any(f.startswith("unverified") for f in fails) for _, _, fails in rows)
     print(f"\n{passed}/{len(rows)} answers passed ({n_cases} cases, source {args.source}, "
