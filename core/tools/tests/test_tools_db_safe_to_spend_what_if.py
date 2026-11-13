@@ -287,3 +287,61 @@ def test_one_call_of_each_tool_is_fast_enough(conn):
     t2 = time.perf_counter()
     print(f"get_safe_to_spend {1000 * (t1 - t0):.0f} ms, run_what_if {1000 * (t2 - t1):.0f} ms")
     assert t1 - t0 < 10 and t2 - t1 < 10   # generous: the shared database is sometimes slow
+
+
+# ---- #55 review follow-ups ---------------------------------------------------------------------------
+
+def test_metric_files_run_in_a_read_only_transaction(conn, tmp_path, monkeypatch):
+    """On an idle (autocommit) connection nothing in a metric file can write."""
+    from psycopg import errors
+
+    from core.tools import metric_sql
+
+    monkeypatch.setattr(metric_sql, "METRICS_DIR", tmp_path)
+    (tmp_path / "probe.sql").write_text(
+        "SELECT 'CUST00001'::text AS customer_id, current_setting('transaction_read_only') AS ro;", encoding="utf-8")
+    (tmp_path / "write.sql").write_text(
+        "INSERT INTO coach_evidence (ref, customer_id, spec) VALUES ('ev_readonlyprobe', 'CUST00001', '{}');\n"
+        "SELECT 'CUST00001'::text AS customer_id;", encoding="utf-8")
+    assert metric_sql.run_one(conn, "probe.sql", "CUST00001", AS_OF)["ro"] == "on"
+    with pytest.raises(errors.ReadOnlySqlTransaction):
+        metric_sql.run(conn, "write.sql", "CUST00001", AS_OF)
+    assert conn.execute("SELECT count(*) FROM coach_evidence WHERE ref = 'ev_readonlyprobe'").fetchone()[0] == 0
+    # inside a caller's transaction: a savepoint, and the caller's transaction stays writable afterwards
+    with conn.transaction(force_rollback=True):
+        assert metric_sql.run_one(conn, "probe.sql", "CUST00001", AS_OF)["ro"] == "off"
+        assert conn.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] == "off"
+
+
+@pytest.mark.parametrize("source", [
+    {"file": "01_recurring.sql", "column": "typical_month_eur", "settings": {}},
+    {"file": "03_safe_to_spend.sql", "column": "bills_due_eur", "settings": {"customer_from": "CUST00000"}},
+    {"file": "03_safe_to_spend.sql", "column": "bills_due_eur", "settings": {"demo_today": "2026-01-31"}},
+])
+def test_metric_evidence_refuses_other_files_and_reserved_settings(conn, source):
+    """A stored spec is data: another file, or a setting that moves the customer range or as_of, is refused."""
+    spec = {"v": 1, "kind": "metric", "customer_id": "CUST00001", "as_of": AS_OF.isoformat(),
+            "method": "safe_to_spend.bills_due_eur@1", "source": source, "value": "586.32"}
+    ref = evidence.make_ref(spec)
+    with conn.transaction(force_rollback=True):  # the crafted spec is never kept
+        conn.execute("INSERT INTO coach_evidence (ref, customer_id, spec) VALUES (%s, %s, %s)",
+                     (ref, "CUST00001", json.dumps(spec)))
+        with pytest.raises(evidence.EvidenceForbidden):
+            evidence.resolve(conn, ref, "CUST00001")
+
+
+def test_safe_to_spend_refuses_a_bills_total_that_differs_from_03(conn, monkeypatch):
+    """The bills-due Number must equal 03's bills_due_eur; a difference is an internal error, not a warning."""
+    import dataclasses
+
+    from core.tools import safe_to_spend
+
+    real = safe_to_spend.recurring.bills_due_numbers
+
+    def off_by_a_cent(ctx, nb, **kw):
+        due = real(ctx, nb, **kw)
+        return dataclasses.replace(due, total_value=due.total_value + D("0.01"))
+
+    monkeypatch.setattr(safe_to_spend.recurring, "bills_due_numbers", off_by_a_cent)
+    with pytest.raises(safe_to_spend.BillsDueMismatch):
+        get_safe_to_spend(ctx_for(conn, "CUST00001"))

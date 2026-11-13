@@ -77,6 +77,15 @@ def _t(key: str, language: str, **kw) -> str:
     return config.label(config.SAFE_TO_SPEND_TEXT[key], language).format(**kw)
 
 
+class BillsDueMismatch(RuntimeError):
+    """Internal error: the shared bills-due Number and 03's bills_due_eur differ (they must be equal)."""
+
+
+class NoTransactions(ValueError):
+    """The customer has no transactions up to as_of, so there is nothing to compute (a ValueError, so
+    callers that caught ValueError before keep working)."""
+
+
 def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
     GetSafeToSpendArgs.model_validate(args or {}) if not isinstance(args, GetSafeToSpendArgs) else args
     lang = ctx.language
@@ -87,7 +96,7 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR}
     row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
-        raise ValueError("no transactions up to as_of for this customer")
+        raise NoTransactions("no transactions up to as_of for this customer")
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()
@@ -97,6 +106,10 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     due = recurring.bills_due_numbers(ctx, nb)
     if due.payday.date != row["next_payday"] or due.payday.salary_status != row["salary_status"]:
         log.warning("payday of core.tools.recurring and 03_safe_to_spend.sql differ for one customer")
+    # One number, one value ("metrics wins"): the card never shows a bills total that 03 does not
+    # compute, because free until payday and the limits are 03's and subtract 03's bills_due_eur.
+    if due.total_value != metric_sql.decimal(row["bills_due_eur"]):
+        raise BillsDueMismatch("bills due of core.tools.recurring and 03_safe_to_spend.sql differ for one customer")
 
     week = Period(start=row["week_start"], end=row["week_end"], label=_t("next_7_days", lang))
     until_payday = due.due_period  # today + 1 .. payday, labelled like the bills card
@@ -155,11 +168,18 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     )
 
 
+def card_subtitle(period: Period, language: str) -> str:
+    """The week's dates, written like every other period label (core/tools/periods.py), e.g. "1–7 Oct
+    2026" / "1.–7.10.2026" (contracts/api.md section 6: the subtitle carries the period). It has digits,
+    so it stays a card text and is never put into answer text; the Numbers keep the label "Next 7 days"."""
+    return periods.period_label(period.start, period.end, language)
+
+
 def _card(data: SafeToSpendData, language: str) -> Card:
     ref = data.safe_to_spend.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
-        type="metric", title=_t("title", language), subtitle=data.period.label,
+        type="metric", title=_t("title", language), subtitle=card_subtitle(data.period, language),
         evidence_ref=ref,
         estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],

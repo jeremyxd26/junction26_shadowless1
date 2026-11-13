@@ -1,5 +1,7 @@
 # shadowless1 — Junction 2026
 
+[![CI](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml)
+
 Work in progress.
 
 ## Run
@@ -25,6 +27,8 @@ Settings:
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
+CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `dev` and `main`: the tests without a database, the eval set and red-team regressions (no model calls), `ruff check .` (`pip install -r requirements-dev.txt`) and a gitleaks scan of the whole history (`.gitleaks.toml`). It uses no secrets.
+
 ### Ask the coach: `POST /api/ask`
 
 The answer pipeline is in `core/agent`: plan, run the tools, compose, validate, stream and audit (contract: `contracts/api.md` section 7; design: `docs/design/agent-core.md` sections 7 to 9). Until the Gemini adapter is plugged in, the service runs a deterministic keyword model (`core/agent/rules.py`). It maps the partner's questions and spending questions to the registered tools and writes a template answer. Questions it cannot map get a clarifying question.
@@ -42,8 +46,8 @@ Answer pipeline settings:
 - Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
   - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
   - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
-  - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per customer, default 10.
-- `TRUSTED_PROXIES`: comma-separated peers whose `X-Forwarded-For` is believed, default loopback only (the service listens on 127.0.0.1 behind Caddy). From any other peer the header is ignored.
+  - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per client address and customer, default 10. One address that uses up its window for a persona never blocks that persona for other visitors.
+- `TRUSTED_PROXIES`: comma-separated peers whose `X-Forwarded-For` is believed, default loopback only. From any other peer the header is ignored. In the image, uvicorn runs with `--proxy-headers` behind Caddy, which replaces `X-Forwarded-For`, so uvicorn already reports the client's address.
 
 To run the eval set against a local service with the keyword model:
 ```

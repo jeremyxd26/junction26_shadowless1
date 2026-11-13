@@ -1,15 +1,17 @@
 """Pure-logic tests for get_safe_to_spend and run_what_if (no database)."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
 from core.tools import evidence, metric_sql
+from core.tools.context import ToolContext
+from core.tools.db import Tx
 from core.tools.formatting import money
 from core.tools.safe_to_spend import binding_limit, status_of
-from core.tools.what_if import RunWhatIfArgs, WhatIfSelection, caveats_for
+from core.tools.what_if import RunWhatIfArgs, WhatIfSelection, caveats_for, run_what_if
 
 D = Decimal
 
@@ -119,3 +121,61 @@ def test_caveats_follow_the_status():
     assert len(caveats_for("estimate", "en")) == 1
     assert "unexpected necessities" in caveats_for("estimate_with_caveat", "en")[1]
     assert "Regular essentials are not cut" in caveats_for("not_offered", "en")[1]
+
+
+# ---- #55 review follow-ups -------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", ["١٢٣٤", "４１２１", "4121,٥٨١٢"])
+def test_mcc_codes_must_be_ascii_digits(bad):
+    """A \\d pattern would also accept Arabic-Indic or full-width digits; MCC codes are ASCII only."""
+    with pytest.raises(ValidationError):
+        WhatIfSelection(kind="mcc", value=bad)
+
+
+def test_merchant_with_a_health_mcc_is_rejected():
+    """R9 for a merchant selection also uses the health MCC list, not only the category."""
+    pharmacy = Tx(id=1, tx_date=date(2026, 9, 1), tx_at=datetime(2026, 9, 1, 12, 0), category="Lifestyle",
+                  tx_type="purchase", merchant_id="MRC-X-0001", mcc="5912", amount_eur=Decimal("-20.00"))
+    ctx = ToolContext(customer_id="CUST00001", as_of=date(2026, 9, 30), conn=None, _history=[pharmacy])
+    with pytest.raises(ValueError, match="R9"):  # refused before any SQL runs (conn is None)
+        run_what_if(ctx, {"selection": {"kind": "merchant", "value": "store_a"}, "cut_pct": 10})
+
+
+@pytest.mark.parametrize("name", ["demo_today", "customer_from", "customer_to", "customer_anything"])
+def test_metric_runner_refuses_reserved_settings(name):
+    """The customer range and as_of come only from run()'s arguments, never from a caller's settings."""
+    with pytest.raises(ValueError, match="reserved"):
+        metric_sql.run(None, "03_safe_to_spend.sql", "CUST00001", date(2026, 9, 30), {name: "CUST00000"})
+
+
+# ---- hero card subtitle: the week's dates (#113) ------------------------------------------------------
+
+def _hero_card(start: date, end: date, language: str):
+    from core.tools import config
+    from core.tools.models import Number, Period, Unit
+    from core.tools.safe_to_spend import SafeToSpendData, _card
+
+    week = Period(start=start, end=end, label=config.label(config.SAFE_TO_SPEND_TEXT["next_7_days"], language))
+
+    def n(value: str) -> Number:
+        return Number(value=float(value), unit=Unit.EUR, period=week, method="safe_to_spend.safe_to_spend_7d_eur@1",
+                      evidence_ref="ev_0123456789ab", label="Safe to spend", display=f"€{value}")
+
+    data = SafeToSpendData(period=week, safe_to_spend=n("180.26"), free_until_payday=n("900.00"),
+                           balance_limit=n("400.00"), budget_limit=n("180.26"), binding_limit="budget",
+                           components=[], status="ok", next_payday=date(2026, 10, 15), salary_status="upcoming")
+    return _card(data, language)
+
+
+@pytest.mark.parametrize("start, end, language, subtitle", [
+    (date(2026, 10, 1), date(2026, 10, 7), "en", "1–7 Oct 2026"),                 # DEMO_TODAY 2026-09-30
+    (date(2026, 10, 1), date(2026, 10, 7), "fi", "1.–7.10.2026"),
+    (date(2026, 9, 29), date(2026, 10, 5), "en", "29 Sep – 5 Oct 2026"),           # across a month boundary
+    (date(2026, 9, 29), date(2026, 10, 5), "fi", "29.9.–5.10.2026"),
+    (date(2026, 12, 29), date(2027, 1, 4), "en", "29 Dec 2026 – 4 Jan 2027"),      # across a year boundary
+])
+def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
+    card = _hero_card(start, end, language)
+    assert card.subtitle == subtitle
+    assert card.primary.period.label == ("Seuraavat 7 päivää" if language == "fi" else "Next 7 days")
+    assert card.primary.method == "safe_to_spend.safe_to_spend_7d_eur@1" and card.primary.value == 180.26

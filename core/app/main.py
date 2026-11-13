@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from core.agent.api import router as ask_router
 
-from . import health
+from . import api, health
 from .db import MALFORMED, MAX_CONNECTIONS, NOT_SET, create_pool, valid_database_url
 from .settings import Settings
 
@@ -57,5 +57,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    api.register(app)  # /api/personas, /api/evidence, /api/overview and the error envelope (#64)
     app.include_router(ask_router)  # POST /api/ask (core/agent)
     return app

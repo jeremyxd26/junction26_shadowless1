@@ -1,0 +1,3 @@
+# One known finding: the fake postgres URL planted on purpose to prove the CI secret scan fails (#83).
+# Its scratch branch was deleted, but the head of the closed PR #96 keeps it reachable as refs/pull/96/head.
+bcaf7a5e8403177b017007ccf904bd353e7446fc:ci-planted-fake.txt:postgres-url-password:2

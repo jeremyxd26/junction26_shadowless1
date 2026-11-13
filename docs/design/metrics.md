@@ -38,10 +38,13 @@ For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only o
 
 | Flow | Categories | Counts as spending? |
 |---|---|---|
-| income | Salary, Other Income, Invest Withdraw | no |
+| income | Salary, Other Income | no |
+| own_savings_back | Invest Withdraw: the customer's own saving coming back, not income (section 2.3) | no |
 | saving | Invest Deposit | no (shown as saving) |
 | transfer | Salary Sweep | no (see 2.3) |
 | spend | all other categories | yes |
+
+The flow column of the shared classification block (`02_baskets.sql` to `06_peer_benchmark.sql`) and `core/tools/classify.py` use these labels. No metric filters on `income` or `own_savings_back`: income figures name their categories (Salary, Other Income) or use the recurring income series of section 2.
 
 **One-off (spike).** A purchase is a one-off if it is more than **5×** the customer's median purchase in the same category over the 365 days up to today, and the customer has at least 8 purchases in that category in those 365 days. One-offs stay in their basket totals but are excluded from "typical" baselines (what-if, everyday run-rate). On the sample (all 2 years, today 2026-09-30), 1,033 of 57,017 purchases are one-offs: Restaurants 585, Entertainment 224, Health 89, Lifestyle 59, Home & Tech 42, Travel 17, Transportation 11, Groceries 6.
 
@@ -263,7 +266,7 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 - `cushion`: `app.cushion_eur`, default **100 €**, configurable (team-lead decision).
 - `status`: `nothing_free` if the result is 0; `below_usual` if it is under the customer's usual everyday spending per 7 days (non-one-off, from the window); else `ok`.
 
-**Output** (`03_safe_to_spend.sql`, one row per customer): `safe_to_spend_7d_eur`, `binding_limit`, `balance_limit_7d_eur`, `budget_limit_7d_eur`, `free_until_payday_eur`, `free_month_eur`, `balance_eur`, `balance_tx_id`, `bills_due_eur`, `essentials_reserve_eur`, `irregular_reserve_eur`, `cushion_eur`, `next_payday`, `days_to_payday`, `salary_status`, `income_month_eur`, `sweep_month_eur`, `committed_month_eur`, `essentials_month_eur`, `irregular_month_eur`, `window_days`, `usual_everyday_7d_eur`, `status`, `week_start`, `week_end`.
+**Output** (`03_safe_to_spend.sql`, one row per customer): `safe_to_spend_7d_eur`, `binding_limit`, `balance_limit_7d_eur`, `budget_limit_7d_eur`, `free_until_payday_eur`, `free_month_eur`, `balance_eur`, `balance_tx_id`, `bills_due_eur`, `essentials_reserve_eur`, `irregular_reserve_eur`, `cushion_eur`, `next_payday`, `days_to_payday`, `salary_status`, `income_month_eur`, `sweep_month_eur`, `committed_month_eur`, `essentials_month_eur`, `irregular_month_eur`, `window_days`, `usual_everyday_7d_eur`, `status`, `week_start`, `week_end`, and the safe-to-save columns of section 3.1. The bills behind `bills_due_eur` are the per-bill output of section 3.2.
 
 **Evidence.** Inputs: `balance_tx_id`; the recurring series of section 2; the basket rows of section 1 for the run-rates.
 
@@ -332,8 +335,16 @@ else:                reason = largest_everyday_category, amount = that category'
 - **Edge cases.**
   - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
   - With no salary series, payday is assumed in 30 days (section 3), so the result is conservative.
+  - Payday today: N is never 0. A salary not yet paid on its typical day is expected tomorrow (N = 1), so everyday until payday is one day of everyday spending; once it is paid, payday is next month's.
+  - No everyday spending in the window: everyday until payday and everyday month are 0, and both figures equal their free amounts (or 0).
   - Sweep customers: the balance is small, so the result is small.
-- **Output.** New columns of `03_safe_to_spend.sql`: `safe_to_save_monthly_eur`, `everyday_month_eur`, `safe_to_save_eur`, `everyday_until_payday_eur`, `essentials_shortfall_month_eur`, and the reason (`save_reason`, `save_reason_category`, `save_reason_month_eur`). They are pending in issue #53: the committed SQL does not return them yet, and the values below come from the same query with these columns added.
+- **Output** (columns of `03_safe_to_spend.sql`, #53), all computed from the unrounded terms and rounded once:
+  - `everyday_until_payday_eur` = everyday/day × N; `safe_to_save_eur` = max(free until payday − that, 0).
+  - `everyday_month_eur` = everyday/day × 30.4375; `safe_to_save_monthly_eur` = max(free month − that, 0).
+  - `essentials_shortfall_month_eur` = max(−free month, 0): the monthly shortfall as a positive amount, 0 when free month is not negative.
+  - `save_reason`: `null` unless `safe_to_save_monthly_eur` is 0.00; then `essentials_exceed_income` if free month < 0, else `largest_everyday_category`.
+  - `save_reason_category`: the category for `largest_everyday_category` (Health is never named, R9), else `null`.
+  - `save_reason_month_eur`: the shortfall for `essentials_exceed_income`, the category's figure for `largest_everyday_category`, else `null`.
 - **Evidence.** Free until payday (with its own inputs) and the everyday rows of the window that are not one-offs.
 - **Worked numbers** (CUST00860, today 2026-09-30, N = 15; everyday/day = 3,602.44 / 183 = 19.685):
 
@@ -356,8 +367,42 @@ Three more customers, today 2026-09-30 (no reviews):
 | Reason | none: the month leaves money | free month ≥ 0, so `largest_everyday_category`: **Restaurants**, 186.93 a month (then Entertainment 157.48, Lifestyle 139.37 and Travel 101.55; the four add up to 585.33) | free month < 0, so `essentials_exceed_income`, shortfall **1.59** a month |
 | Free until payday − everyday until payday | 819.62 − 258.98 = **560.64** | 573.53 − 288.46 = **285.07** | 198.47 − 188.40 = **10.07** |
 
-- **How these were computed:** `03_safe_to_spend.sql` over the default sample range, one read-only connection with `statement_timeout = '60s'`, plus the per-category figures from the shared classification block on the same basis as `everyday_month`.
+The three sample customers of section 3, today 2026-09-30 (no reviews; N = 15):
+
+| | CUST00001 | CUST00002 | CUST00006 |
+|---|---|---|---|
+| Free until payday − everyday until payday | 3,523.49 − 196.72 = **3,326.77** | 198.47 − 188.40 = **10.07** | 4,370.15 − 24.59 = **4,345.56** |
+| Free month − everyday month | 448.66 − 399.17 = **49.48** (the rounded parts give 49.49) | −1.59, already negative: **0.00** | 136.30 − 49.89 = **86.41** |
+| Reason | none | `essentials_exceed_income`, shortfall **1.59** | none |
+
+- **How these were computed:** the columns of `03_safe_to_spend.sql` over the default sample range and for CUST00849 and CUST00860 one at a time, one read-only connection with `statement_timeout = '60s'`. The same values are checked in `core/tools/tests/test_tools_db_safe_to_save_bills.py`.
 - **How often each case occurs:** in the 99-customer sample, 5 customers have a negative free month (CUST00002, 09, 34, 78, 86), and 35 have a positive free month that everyday spending uses up.
+
+### 3.2 Bills due before payday, per bill (#44)
+
+The bills behind `bills_due_eur`, one row per bill that falls due after today and up to and including the next payday: `core/metrics/03_safe_to_spend_bills.sql`. Its method id is `safe_to_spend.bill_due_eur@1`.
+
+- **One definition.** The file's text from `SET statement_timeout` to the line "end of the part shared with 03_safe_to_spend_bills.sql" is identical to `03_safe_to_spend.sql`, and a test checks it. That part ends with `bill_items`, one unrounded term per bill. 03's `bills_due_eur` is the sum of those terms, rounded once.
+- **The term.** A once-a-month bill counts its typical month for each due date up to and including payday (section 3: this month's unpaid bill is due tomorrow if at most 7 days late, and skipped if later). A bill paid several times a month counts typical month × N / 30.4375. Salary Sweep is never a bill.
+- **Columns:**
+  - `customer_id`, `series_kind`, `series_key`, `category`.
+  - `label`: English, for reading the output. The app shows the tool's labels, an alias for a merchant.
+  - `status`: section 2: `spread`, `done_this_month`, `upcoming`, `late` or `skipped_this_month`. A once-a-month bill already paid this month, or skipped, can still be due before payday through next month's date.
+  - `typical_month_eur`, `occurrences` (due dates before payday; 0 for a spread bill), `first_due_date`.
+  - `pro_rata_days` (N for a spread bill, else 0), `bill_due_eur`, `next_payday`, `days_to_payday`.
+- **Rounding.** Each row is rounded on its own, and the total once. The rows therefore add up to `bills_due_eur` or differ from it by up to 0.01 per row: each row's rounding moves it by at most 0.005. In the sample: exact for 76 of 99 customers, +0.01 for 23. A customer has at most 2 bills there. The `get_recurring_bills` tool shows the same per-bill values (a test compares them).
+- **Worked numbers** (today 2026-09-30, payday 2026-10-15, N = 15):
+
+| Customer | Bill | Status | Due before payday |
+|---|---|---|---|
+| CUST00001 | housing_payment | done_this_month (next on 2026-10-04) | 528.38 |
+| | utilities_payment | spread, 117.57 × 15 / 30.4375 | 57.94 |
+| | **total = `bills_due_eur`** | | **586.32** |
+| CUST00002 | housing_payment | skipped_this_month (next on 2026-10-04) | 897.39 |
+| | utilities_payment | spread, 98.93 × 15 / 30.4375 | 48.75 |
+| | **total** | | **946.14** |
+| CUST00006 | utilities_payment | spread, 133.45 × 15 / 30.4375 (the sweep is not a bill) | 65.76 |
+| | **total** | | **65.76** |
 
 ## 4. What-if savings — "How could I save more?"
 
