@@ -20,6 +20,9 @@ model timings without new requests; the database times are always measured anew.
 
 from __future__ import annotations
 
+import argparse
+import dataclasses
+import json
 import os
 import re
 import sys
@@ -38,6 +41,7 @@ for p in (str(ROOT), str(ROOT / "core" / "eval")):
 
 from core.agent.conversation import ConversationStore  # noqa: E402
 from core.agent.gemini import make_agent_model  # noqa: E402
+from core.agent.gemini_client import GeminiError, Reply  # noqa: E402
 from core.agent.orchestrator import AskRequest, Pipeline  # noqa: E402
 from core.agent.toolset import default_registry  # noqa: E402
 
@@ -101,14 +105,22 @@ def _walk(obj: Any) -> Iterator[Any]:
 
 
 class PipelineSource:
-    def __init__(self, as_of: str, model: Any | None = None, echo: bool = True) -> None:
+    def __init__(self, as_of: str, model: Any | None = None, echo: bool = True,
+                 record_dir: Path | None = None) -> None:
         self.as_of = date.fromisoformat(str(as_of))
         self.model = model or make_agent_model()
         if not hasattr(self.model, "client"):
             sys.exit("GEMINI_API_KEY is not set")
         self.data = OneConnection()
         self.audit = MemoryAudit()
-        self.pipeline = Pipeline(default_registry(), self.model, self.data, as_of=self.as_of,
+        registry = default_registry()
+        self.record_dir = Path(record_dir) if record_dir else None
+        self._rec: dict[str, Any] = {"tools": [], "exchanges": []}
+        if self.record_dir is not None:
+            for name, spec in list(registry.tools.items()):
+                registry.tools[name] = dataclasses.replace(spec, fn=self._recording_tool(spec))
+            self._record_model_calls(self.model.client)
+        self.pipeline = Pipeline(registry, self.model, self.data, as_of=self.as_of,
                                  store=ConversationStore(), audit=self.audit)
         self.rows: list[Row] = []
         self.echo = echo
@@ -119,6 +131,7 @@ class PipelineSource:
 
         client = self.model.client
         first_call = len(client.calls)
+        self._rec = {"tools": [], "exchanges": []}
         events: list[tuple[float, str, dict[str, Any]]] = []
         t0 = time.perf_counter()
         self.pipeline.run(AskRequest(customer_id=customer_id, message=question, language=language),
@@ -165,6 +178,8 @@ class PipelineSource:
                 if attempt.get("validation") not in (None, "ok"):
                     print(f"      rejected draft: {attempt.get('validation')}", flush=True)
 
+        if self.record_dir is not None and done is not None:
+            self._write_recording(row.case, question, language, record, done)
         if error is not None or done is None:
             return Answer(text="", outcome="error", error=((error or {}).get("error") or {}).get("code", "no done event"))
         cited = {k: v for k, v in numbers.items() if k in done.get("cited", [])}
@@ -180,6 +195,48 @@ class PipelineSource:
         return Answer(text=done.get("text_rendered") or done.get("text") or "", outcome=done.get("outcome"),
                       refusal_kind=(done.get("refusal") or {}).get("kind"), numbers=list(cited.values()),
                       dates=sorted(dates), labels=[x for x in labels if x], tool_calls=tool_calls)
+
+    # ---- recordings for the offline tests (core/agent/tests/test_gemini_recorded.py) -------------------
+
+    def _recording_tool(self, spec):
+        def fn(ctx, args):
+            before = set(ctx.numbers.all())
+            result = spec.fn(ctx, args)
+            new = [n for k, n in ctx.numbers.all().items() if k not in before]
+            self._rec["tools"].append({"name": spec.name, "args": args.model_dump(mode="json", exclude_none=True),
+                                       "numbers": [n.model_dump(mode="json") for n in new],
+                                       "model_view": result.model_view})
+            return result
+        return fn
+
+    def _record_model_calls(self, client) -> None:
+        for kind in ("plan", "compose"):
+            original = getattr(client, kind)
+
+            def wrapped(*args, _kind=kind, _original=original, **kwargs):
+                try:
+                    reply = _original(*args, **kwargs)
+                except GeminiError as exc:
+                    self._rec["exchanges"].append({"kind": _kind, "error": exc.code})
+                    raise
+                self._rec["exchanges"].append({"kind": _kind, "response": response_of(reply)})
+                return reply
+            setattr(client, kind, wrapped)
+
+    def _write_recording(self, case: str, question: str, language: str, record: dict, done: dict) -> None:
+        assert self.record_dir is not None
+        calls = [c.get("name") for t in record.get("planner_turns") or [] for c in t.get("calls") or []]
+        fixture = {
+            "question": question, "language": language, "as_of": self.as_of.isoformat(),
+            "planner": "model" if type(self.model).__name__ == "GeminiModel" else "rules_first",
+            "model": self.model.model_id, "tools": self._rec["tools"], "exchanges": self._rec["exchanges"],
+            "expect": {"outcome": done.get("outcome"), "refusal_kind": (done.get("refusal") or {}).get("kind"),
+                       "tool_calls": calls, "text": done.get("text"), "text_rendered": done.get("text_rendered")},
+        }
+        self.record_dir.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^a-z0-9-]+", "-", f"{case}-{language}".lower()).strip("-")[:80]
+        (self.record_dir / f"{name}.json").write_text(json.dumps(fixture, ensure_ascii=False, indent=1),
+                                                      encoding="utf-8")
 
     def stats(self) -> str:
         print(self.table())
@@ -206,8 +263,42 @@ class PipelineSource:
         return "\n".join(lines)
 
 
+def response_of(reply: Reply) -> dict[str, Any]:
+    """The response JSON a Reply was parsed from (candidates and usage; no headers or ids)."""
+    usage = {"prompt_token_count": reply.usage.prompt_tokens, "thoughts_token_count": reply.usage.thought_tokens,
+             "candidates_token_count": reply.usage.output_tokens}
+    if reply.blocked and reply.finish_reason == "PROMPT_BLOCKED":
+        return {"prompt_feedback": {"block_reason": "SAFETY"}, "usage_metadata": usage}
+    return {"candidates": [{"content": reply.content, "finish_reason": reply.finish_reason}], "usage_metadata": usage}
+
+
 def make_source(doc: dict, args: Any) -> PipelineSource:
-    """Factory for core/eval/run.py --source core.agent.gemini_eval:make_source."""
-    source = PipelineSource(doc["as_of"], echo=os.environ.get("GEMINI_EVAL_ECHO", "1") != "0")
+    """Factory for core/eval/run.py --source core.agent.gemini_eval:make_source.
+    GEMINI_RECORD_DIR=<dir> also writes one recording per answer there (var/, not committed)."""
+    record_dir = os.environ.get("GEMINI_RECORD_DIR")
+    source = PipelineSource(doc["as_of"], echo=os.environ.get("GEMINI_EVAL_ECHO", "1") != "0",
+                            record_dir=Path(record_dir) if record_dir else None)
     source.case_ids = {(c["persona"], q): c["id"] for c in doc["cases"] for q in c["question"].values()}
     return source
+
+
+def main() -> None:
+    """Ask free-form questions outside the eval set (the Gemini planner path), with the same echo."""
+    ap = argparse.ArgumentParser(description="Ask the Gemini pipeline one or more questions.")
+    ap.add_argument("questions", nargs="+")
+    ap.add_argument("--persona", default="CUST00860")
+    ap.add_argument("--lang", default="en", choices=["en", "fi", "auto"])
+    ap.add_argument("--as-of", default="2026-09-30")
+    ap.add_argument("--record", help="directory for recordings, e.g. var/recordings")
+    args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    source = PipelineSource(args.as_of, record_dir=Path(args.record) if args.record else None)
+    for i, question in enumerate(args.questions, 1):
+        source.case_ids[(args.persona, question)] = f"ask-{i}-" + re.sub(r"[^a-z0-9]+", "-", question.lower())[:40]
+        print(f"Q: {question}")
+        source(args.persona, question, args.lang)
+    print(source.stats())
+
+
+if __name__ == "__main__":
+    main()

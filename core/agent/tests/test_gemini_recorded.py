@@ -1,0 +1,137 @@
+"""Real Gemini exchanges, recorded once and replayed without network, key or database.
+
+Each file in recordings/ holds one answer recorded by core/agent/gemini_eval.py (GEMINI_RECORD_DIR):
+the question, every model response in order (candidates and token counts only), and what every data
+tool returned (its model view and the Number objects it registered). The replay runs the real
+pipeline and the real adapter: the transport hands back the recorded responses in order, and each
+tool hands back its recorded result. The answer must come out exactly as recorded: the same outcome,
+refusal, function calls and text, with every recorded response used.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections import defaultdict
+from contextlib import contextmanager
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from core.agent.conversation import ConversationStore
+from core.agent.gemini import GeminiModel, RulesFirstModel
+from core.agent.gemini_client import GeminiClient
+from core.agent.orchestrator import AskRequest, Pipeline
+from core.agent.registry import Registry, ToolSpec
+from core.agent.rules import RuleModel
+from core.agent.toolset import default_registry
+from core.tools.models import Number, ToolResult
+
+RECORDINGS = sorted((Path(__file__).parent / "recordings").glob("*.json"))
+RAW_ROW_MARKERS = ("merchant_id", "balance_after", "CUST0", "MRC", "transaction_id")
+
+
+class Replay:
+    """The recorded model responses, in order; fails on a request the recording does not have."""
+
+    def __init__(self, exchanges: list[dict]) -> None:
+        self.exchanges = list(exchanges)
+        self.used = 0
+
+    def __call__(self, model, contents, config, timeout_s):
+        assert self.exchanges, "the pipeline made a model request the recording does not have"
+        step = self.exchanges.pop(0)
+        self.used += 1
+        assert step["kind"] == ("plan" if "tools" in config else "compose")
+        if "error" in step:
+            raise TimeoutError(step["error"])
+        return step["response"]
+
+
+class NoDatabase:
+    @contextmanager
+    def connection(self):
+        yield None
+
+    def customer_exists(self, customer_id):
+        return True
+
+
+class Audit:
+    def __init__(self):
+        self.records = []
+
+    def write(self, record):
+        self.records.append(record)
+
+
+def recorded_registry(fixture: dict) -> Registry:
+    """The service's tools with their real argument models, each returning its recorded result."""
+    results = defaultdict(list)
+    for entry in fixture["tools"]:
+        results[entry["name"]].append(entry)
+    registry = Registry()
+    for name, spec in default_registry().tools.items():
+        def fn(ctx, args, _name=name):
+            assert results[_name], f"{_name} was not called in the recording"
+            entry = results[_name].pop(0)
+            for number in entry["numbers"]:
+                registered = ctx.numbers.register(Number.model_validate({**number, "id": None}))
+                assert registered.id == number["id"]
+            return ToolResult(tool=_name, data={}, model_view=entry["model_view"])
+        registry.register(ToolSpec(name, spec.description, spec.args_model, fn, spec.status_label,
+                                   card_builder=lambda result: None))
+    return registry
+
+
+@pytest.mark.parametrize("path", RECORDINGS, ids=[p.stem for p in RECORDINGS])
+def test_a_recorded_exchange_replays_without_network(path):
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    missing = {e["name"] for e in fixture["tools"]} - set(default_registry().tools)
+    if missing:
+        pytest.skip(f"tools not in this checkout: {sorted(missing)}")
+    replay = Replay(fixture["exchanges"])
+    gemini = GeminiModel(GeminiClient(fixture["model"], replay, cache="off", fallback_model=None,
+                                      sleep=lambda s: None))
+    model = gemini if fixture["planner"] == "model" else RulesFirstModel(RuleModel(), gemini)
+    audit = Audit()
+    pipeline = Pipeline(recorded_registry(fixture), model, NoDatabase(), as_of=date.fromisoformat(fixture["as_of"]),
+                        store=ConversationStore(), audit=audit)
+    events = []
+    pipeline.run(AskRequest(customer_id="CUST00860", message=fixture["question"], language=fixture["language"]),
+                 lambda e, d: events.append((e, d)))
+    done = dict(events).get("done")
+    assert done is not None, events
+    expect = fixture["expect"]
+    assert done["outcome"] == expect["outcome"]
+    assert (done.get("refusal") or {}).get("kind") == expect["refusal_kind"]
+    calls = [c["name"] for t in audit.records[-1]["planner_turns"] for c in t.get("calls") or []]
+    assert calls == expect["tool_calls"]
+    assert done["text"] == expect["text"] and done["text_rendered"] == expect["text_rendered"]
+    assert replay.exchanges == []                       # every recorded response was used
+    for marker in RAW_ROW_MARKERS:                      # R3: no raw rows, ids or balances in the answer
+        assert marker not in done["text_rendered"]
+
+
+def test_the_recordings_cover_the_required_exchanges():
+    """Issue #66: a spending question, a basket question, a refusal (investment advice), a clarifying
+    question, a Finnish question and an injection attempt."""
+    fixtures = [json.loads(p.read_text(encoding="utf-8")) for p in RECORDINGS]
+    if not fixtures:
+        pytest.skip("no recordings yet")
+    calls = [f["expect"]["tool_calls"] for f in fixtures]
+    assert any("get_spending" in c for c in calls)
+    assert any("get_basket_breakdown" in c for c in calls)
+    assert any(f["expect"]["refusal_kind"] == "investment_advice" for f in fixtures)
+    assert any(f["expect"]["outcome"] == "clarify" for f in fixtures)
+    assert any(f["language"] == "fi" for f in fixtures)
+    assert any("ignore" in f["question"].lower() for f in fixtures)
+    assert any(f["planner"] == "model" for f in fixtures)   # the Gemini planner itself, not only the rules
+
+
+def test_recordings_hold_no_key_and_no_http_headers():
+    for path in RECORDINGS:
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"A[I]za[0-9A-Za-z_-]{30,}", text)          # the shape of a Google API key
+        assert "x-goog-api-key" not in text.lower() and "headers" not in text and "key=" not in text
