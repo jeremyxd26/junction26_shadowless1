@@ -72,6 +72,7 @@ FORMULAS = {
     "share_pct": ("part", "whole"),            # part / whole * 100, 1 decimal
     "scale": ("base",),                        # base * factor_num / factor_den, cents
     "sum": None,                               # sum of all parts, cents
+    "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
 }
 
 
@@ -89,7 +90,36 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return money(values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"])))
     if formula == "sum":
         return money(sum(values.values(), Decimal("0")))
+    if formula == "minimum":
+        return money(min(values["a"], values["b"]))
     raise ValueError(f"unknown formula {formula!r}")
+
+
+def metric_spec(customer_id: str, as_of: date, method: str, file: str, column: str,
+                settings: dict[str, str], value: Decimal, period: dict[str, str] | None = None) -> dict[str, Any]:
+    """A number read from a metric SQL file (core/metrics/<file>) for one customer (#55).
+
+    Resolving it re-runs the file for the same customer, as_of and settings and compares the column,
+    so the number reconciles against the metric definition itself. `period` ({start, end}) is the
+    period the card shows for the number; GET /api/evidence takes it from params.period.
+    """
+    spec = {
+        "v": SPEC_VERSION,
+        "kind": "metric",
+        "customer_id": customer_id,
+        "as_of": as_of.isoformat(),
+        "method": method,
+        "source": {"file": file, "column": column, "settings": dict(sorted(settings.items()))},
+        "value": str(value),
+    }
+    if period:
+        spec["params"] = {"period": period}
+    return spec
+
+
+def period_param(period) -> dict[str, str]:
+    """{start, end} of a Period, as stored in params.period of a spec."""
+    return {"start": period.start.isoformat(), "end": period.end.isoformat()}
 
 
 def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
@@ -210,6 +240,15 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
                           "value": part_spec["value"]})
         recomputed = compute_formula(spec["formula"], part_values, spec.get("params"))
         return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=recomputed == value)
+
+    if spec["kind"] == "metric":  # #55: re-run the metric SQL file for this customer
+        from core.tools import metric_sql
+
+        source = spec["source"]
+        row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
+        column = row.get(source["column"]) if row else None
+        recomputed = None if column is None else metric_sql.decimal(column)
+        return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value)
 
     sel = Selection.from_spec(spec["selection"])
     history = load_transactions(conn, customer_id, as_of)
