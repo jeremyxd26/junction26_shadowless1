@@ -67,6 +67,15 @@ METHODS = {
     "change_pct": "spending.change_pct@1",
     "share_pct": "spending.share_pct@1",
     "row_count": "evidence.row_count@1",
+    # get_basket_breakdown (metrics.md section 1, 02_baskets.sql; total from 05_spender_profile.sql)
+    "basket_total": "baskets.total_eur@1",
+    "basket_month_avg": "baskets.month_avg_eur@1",
+    "basket_share": "baskets.share_pct@1",
+    "spend_month": "spender_profile.spend_month_eur@1",
+    # get_recurring_bills (metrics.md sections 2 and 3, 01_recurring.sql, 03_safe_to_spend.sql)
+    "typical_month": "recurring.typical_month_eur@1",
+    "bill_due": "safe_to_spend.bill_due_eur@1",
+    "bills_due": "safe_to_spend.bills_due_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -161,3 +170,60 @@ TEXT: dict[str, tuple[str, str]] = {
 def label(pair: tuple[str, str], language: str) -> str:
     """Pick the English or Finnish label."""
     return pair[1] if language == "fi" else pair[0]
+
+
+# ---- get_basket_breakdown and get_recurring_bills (#46) -------------------------------------------
+
+# Labels of non-card recurring series (tx_type keys, metrics.md section 2). Card series use aliases.
+SERIES_LABELS: dict[str, tuple[str, str]] = {
+    "housing_payment": ("Housing", "Asuminen"),
+    "utilities_payment": ("Utilities", "Kodin laskut"),
+    "investment_deposit": ("Investment deposit", "Sijoitus"),
+    "investment_withdrawal": ("Investment withdrawal", "Sijoitusten nosto"),
+    "salary": ("Salary", "Palkka"),
+    "other_income": ("Other income", "Muut tulot"),
+    "salary_sweep": ("Salary sweep", "Palkan siirto"),
+}
+
+COUNT_WORDS: dict[int, tuple[str, str]] = {
+    2: ("two", "kaksi"), 3: ("three", "kolme"), 4: ("four", "neljä"), 5: ("five", "viisi"),
+}
+
+BASKET_TEXT: dict[str, tuple[str, str]] = {
+    "title_monthly": ("Where your money goes in a typical month", "Mihin rahasi menevät tavallisena kuukautena"),
+    "title_period": ("Where your money went", "Mihin rahasi menivät"),
+    "subtitle_monthly": ("Monthly average, {label}", "Kuukausikeskiarvo, {label}"),
+    "total": ("Total spending", "Kulutus yhteensä"),
+    "share": ("Share of spending", "Osuus kulutuksesta"),
+    "action_label": ("What is in everyday spending?", "Mitä arjen kulutukseen kuuluu?"),
+    "action_prompt": ("What is in my everyday spending?", "Mitä arjen kulutukseeni kuuluu?"),
+}
+
+BILLS_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Bills before payday", "Laskut ennen palkkapäivää"),
+    "until_payday": ("Until payday on {date}", "Palkkapäivään {date} asti"),
+    "until_assumed_payday": ("Next 30 days", "Seuraavat 30 päivää"),
+    "typical": ("Usual amount", "Tavallinen summa"),
+    "due": ("Due before payday", "Erääntyy ennen palkkapäivää"),
+    "due_pro_rata": ("Due before payday, pro rata", "Erääntyy ennen palkkapäivää, suhteutettuna"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "Some bills are paid several times a month, so the amount until payday is pro rata.",
+        "Osa laskuista maksetaan useita kertoja kuussa, joten summa palkkapäivään asti on suhteutettu.",
+    ),
+    "status_spread": ("About {word} payments a month", "Noin {word} maksua kuussa"),
+    "status_spread_many": ("Several payments a month", "Useita maksuja kuussa"),
+    "status_done": ("Paid this month, usually around the {day}", "Maksettu tässä kuussa, yleensä noin {day}"),
+    "status_upcoming": ("Due around the {day}", "Erääntyy noin {day}"),
+    "status_late": ("Not paid yet, usually by the {day}", "Ei vielä maksettu, yleensä {day} mennessä"),
+    "status_skipped": ("Not paid this month", "Ei maksettu tässä kuussa"),
+    "note_sweep": (
+        "Part of the salary moves to another account each month. That is a transfer, so it is not listed as a bill.",
+        "Osa palkasta siirtyy joka kuukausi toiselle tilille. Se on siirto, joten sitä ei näytetä laskuna.",
+    ),
+    "note_no_salary": (
+        "No regular salary was found, so the next 30 days are used instead of payday.",
+        "Säännöllistä palkkaa ei löytynyt, joten palkkapäivän sijaan käytetään seuraavia 30 päivää.",
+    ),
+    "action_label": ("Show the payments", "Näytä maksut"),
+}
