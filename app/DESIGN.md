@@ -24,13 +24,13 @@ Component code and screens are built in their own issues and follow these rules.
 |---|---|---|
 | `--color-page` | `#F3F8F4` | Background behind everything |
 | `--color-surface` | `#FFFFFF` | Cards, sheets, inputs |
-| `--color-sunken` | `#EBF2ED` | Skeletons, bar tracks, the lesson box |
+| `--color-sunken` | `#EBF2ED` | Skeletons, bar tracks, the lesson box (inputs use `--color-surface`) |
 | `--color-line` | `#DCE6DF` | Decorative hairlines (card borders, row dividers) |
 | `--color-line-strong` | `#7B8F83` | Borders that carry meaning (inputs, secondary buttons); 3:1 on white |
 | `--color-ink` | `#0E3A25` | Primary text (dark green) |
 | `--color-ink-2` | `#26302A` | Long body text |
 | `--color-muted` | `#55635A` | Secondary text, captions, periods |
-| `--color-brand` | `#00703C` | Links, action chips, the term underline, the focus ring |
+| `--color-brand` | `#00703C` | Links, action chips, the term underline, the focus ring on light surfaces |
 | `--color-deep` | `#0B4A2E` | The "Sentti asks" card surface, the send button, user bubbles |
 | `--color-mint` / `-hover` | `#8DF29A` / `#5EE97A` | Primary button background (text is `--color-ink`) |
 | `--color-mint-tint` / `-line` | `#E4F5E8` / `#9FD8AB` | Number chips, suggested-question chips |
@@ -83,6 +83,9 @@ Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, the focus ring)
 | `--color-basket-everyday` `#A12D68` | `--color-surface` `#FFFFFF` | ☕️ bar (non-text) | 6.79:1 | 3:1 |
 | `--color-line-strong` `#7B8F83` | `--color-surface` `#FFFFFF` | Borders that carry meaning (non-text) | 3.44:1 | 3:1 |
 | `--color-brand` `#00703C` | `--color-surface` `#FFFFFF` | Focus ring, term underline (non-text) | 6.21:1 | 3:1 |
+| `--color-brand` `#00703C` | `--color-page` `#F3F8F4` | Focus ring on the page (non-text) | 5.78:1 | 3:1 |
+| `--color-mint` `#8DF29A` | `--color-deep` `#0B4A2E` | Focus ring on the review card, user bubble, send button (non-text) | 7.53:1 | 3:1 |
+| `--color-mint` `#8DF29A` | `--color-ink` `#0E3A25` | Focus ring on the toast (non-text) | 9.27:1 | 3:1 |
 | `--color-ink` `#0E3A25` | `--color-danger-tint` `#FDECEC` | Error card text | 11.14:1 | 4.5:1 |
 | `--color-surface` `#FFFFFF` | `--color-ink` `#0E3A25` | Toast text (white on ink) | 12.72:1 | 4.5:1 |
 | `--color-mint` `#8DF29A` | `--color-ink` `#0E3A25` | Toast Undo link | 9.27:1 | 4.5:1 |
@@ -93,7 +96,7 @@ Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, the focus ring)
 | `--color-ink` `#0E3A25` | `--color-estimate-tint` `#E2F1F5` | Open term highlight | 10.99:1 | 4.5:1 |
 
 ### 2.3 Type
-Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figures (`font-variant-numeric: tabular-nums`), so counters never jitter.
+Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, then the system UI fonts). Every amount uses tabular figures (`font-variant-numeric: tabular-nums`), so counters never jitter.
 
 | Token | Size / line height | Weight | Use |
 |---|---|---|---|
@@ -102,6 +105,8 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figure
 | `--text-base` | 16 / 24 (26 for answers) | 400 | Body text. **Inputs are never below 16 px** (iOS zooms otherwise). |
 | `--text-lg` | 18 / 26 | 600–700 | Sheet titles |
 | `--text-xl` | 20 / 28 | 700 | The takeaway line |
+| `--text-card-title` | 16 / 22 | 700 | Card titles |
+| `--text-review-amount` | 30 / 34 | 700, tabular | The amount on the review card (#35) |
 | `--text-2xl` | 24 / 30 | 700 | Greeting, secondary big numbers |
 | `--text-hero` | 40 / 44 | 700, −0.02em | Safe to spend |
 | `--text-stage` | 56 / 60 | 700 | Projector mode (`[data-stage]`) |
@@ -109,7 +114,7 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figure
 ### 2.4 Spacing, radii, elevation
 - **Spacing** has a 4 px base: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8` 32, `-10` 40. `--gutter` is 16 px, `--tap-min` is 44 px.
 - **Radii:** `--radius-sm` 8 (small tiles), `-md` 12 (basket tiles, boxes), `-lg` 16 (cards, answer buttons), `-xl` 20 (the review card), `-sheet` 24 (the top of bottom sheets), `-pill` (chips, buttons, inputs).
-- **Elevation:** surfaces are flat, with a 1 px `--color-line` border and no shadow. `--shadow-sheet` is only for bottom sheets. `--shadow-float` is only for the flying amount (#35), toasts and popovers.
+- **Elevation:** surfaces are flat (`--shadow-none`), with a 1 px `--color-line` border. `--shadow-sheet` is only for bottom sheets. `--shadow-float` is only for the flying amount (#35), toasts and popovers.
 
 ### 2.5 Motion
 | Token | Value | Use |
@@ -118,6 +123,8 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figure
 | `--duration-base` | 250 ms | Sheet in and out, card collapse, toast in |
 | `--duration-slow` | 500 ms | Row flash, the guess reveal |
 | `--duration-money` | 900 ms | Number counters |
+| `--duration-flight` | 600 ms | The amount's flight between baskets (#35) |
+| `--duration-long-press` | 600 ms | Long-press that opens the persona picker |
 | `--ease-standard` | `cubic-bezier(.33,0,.34,1)` | Default |
 | `--ease-entry` / `--ease-exit` | `(0,0,.3,1)` / `(.5,0,1,1)` | Things entering and leaving |
 | `--ease-expressive` | `(.46,0,.19,1)` | The amount's flight between baskets |
@@ -138,10 +145,10 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figure
 
 ### Number chip (evidence)
 - A pill in `--color-mint-tint` with a 1 px `--color-mint-line` border, `--color-ink` text (600, tabular) and a small receipt mark.
-- It shows `display` exactly as received; the app never formats numbers.
+- Its visible text is `display` exactly as received (with `label` in front when the surrounding text does not name the number). The app does not format it.
 - **Tap:** opens the evidence sheet (`GET /api/evidence/{evidence_ref}`).
-- **Inside running text:** the hit area extends to at least 32 px (the WCAG 2.5.8 inline exception).
-- **Screen readers:** read `text_rendered` plus "show transactions".
+- **Size:** the chip is 32 px high when it stands alone. Inside running text it stays visually as high as the line, and its touch area is extended to at least 44 × 44 px with a transparent pseudo-element or padding. There is no exception to the 44 px rule.
+- **Screen readers:** a Number object has no `text_rendered`. The chip's accessible name is "`label` `display`, show transactions", for example "Restaurants €312.80, show transactions". Whole texts with tokens (answers, insights, the label `message`) also come as `text_rendered`; screen readers and copying use that.
 
 ### Glossary term (#36)
 - The term is plain text with a 2 px dotted `--color-brand` underline, offset 4 px. It has no background, so it never looks like a number chip.
@@ -156,7 +163,7 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted. Every amount uses tabular figure
 - **Fact:** no badge, or a quiet "From your transactions" in `--color-muted`.
 
 ### Answer card
-- A white card with a 16 px radius and 16 px padding: the title (16/22, 700), the subtitle (xs, muted), and the estimate or fact marker top right.
+- A white card with a 16 px radius and 16 px padding: the title (`--text-card-title`, 16/22, 700), the subtitle (xs, muted), and the estimate or fact marker top right.
 - `metric`, `breakdown` and `whatif` share this frame.
 - At most 2 card `actions`, shown as action chips under the explanation.
 
@@ -180,7 +187,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - the title and the total;
   - "N transactions · reconciles ✓";
   - a "How it was counted" box in plain words, built from `method` and `query`;
-  - transaction rows (merchant label, date and time, amount in the bank sign, as received);
+  - transaction rows: merchant label, date and time, and the amount. The amount is the one number the app formats itself (section 4);
   - "Show all N";
   - `privacy_note` with a lock icon.
 
@@ -193,14 +200,15 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 ### "Sentti asks" review card (#35)
 - **Surface:** `--color-deep`, radius 20, a mint question icon and "Sentti asks". It must never look like an answer.
 - **Header row:** "Not sure" sits at the right. It only closes the card, with no API call.
-- **Contents:** the amount (30 px, 700, tabular); the date, category and merchant label; the `question` as is.
-- **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels come from `options[].label` in the request language.
+- **Contents:** the amount (`--text-review-amount`, 700, tabular); the date, category and merchant label; the question text. `question` is `{en, fi}`: show `question[language]`, the language of the request.
+- **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels are `options[].label[language]`.
 - **After a tap:**
-  1. The card collapses to one line: a check, the chosen label and `options[].effect`.
-  2. The amount, as a pill, flies from the "Waiting for your answer" row to the chosen basket row: 600 ms with `--ease-expressive`. Its border colour turns to the target basket's.
+  1. The card collapses to one line: a check, the chosen label and `options[].effect[language]`.
+  2. The amount, as a pill, flies from the "Waiting for your answer" row to the chosen basket row: `--duration-flight` (600 ms) with `--ease-expressive`. Its border colour turns to the target basket's.
   3. Every changed number counts from `changes[].before` to `after` (900 ms, tabular figures), and the bars resize.
   4. The waiting row fades out. "was …" hints stay for 6 s.
-  5. A toast shows `message.text_rendered`, with number tokens as chips, and an Undo button. Undo sends `basket: null` and counts everything back.
+  5. A toast shows `message.text` with each `{{nN}}` token rendered as a number chip from `message.numbers`, and an Undo button. `message.text_rendered` (tokens already replaced) is only for screen readers (the toast's live region) and copying.
+  6. **Undo** sends `basket: null` and counts the changed numbers back. If the review is less than 7 days old, the purchase returns to "Waiting for your answer" and the question comes back. If it is older, the review closes and the purchase returns to the basket its rules give it; the card does not come back.
 - **No reload:** the overview is refetched in the background after the animation.
 - **Expiry:** a pending review expires 7 days after creation; after that its `tx_ref` returns 404 `tx_ref_not_found`. The app then removes the card quietly and shows no error.
 - **Direction of change:** "It was needed" lowers safe to spend, and the hero then shows a grey down arrow with "was €…" and the reserve line. "I chose it" leaves safe to spend unchanged ("stays the same"). Red is never used for this.
@@ -216,7 +224,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - The previous value stays until the new response arrives.
 
 ### Persona picker (demo only)
-- **Opens:** with a long-press (600 ms) on the header title, or with `?persona=`.
+- **Opens:** with a long-press (`--duration-long-press`, 600 ms) on the header title, or with `?persona=`.
 - **Contents:** a bottom sheet titled "Demo personas", plus a stage mode switch (`data-stage` on the root, which swaps in `--text-stage`) and "Reset reviews".
 
 ### States
@@ -230,14 +238,15 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 | Fallback | `outcome: "fallback"`: the same cards and the template line, plus one quiet note that the written explanation is unavailable and the numbers come from the transactions. |
 
 ## 4. Numbers and language
-- **The app never formats or translates numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
+- **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
+- **One exception: evidence rows.** In `GET /api/evidence/{ref}` a row's `amount` is a raw decimal string in the bank sign (for example `"-24.50"`, contract section 9). The app formats it with `Intl.NumberFormat` for the current language (`en-GB` or `fi-FI`, style `currency`, currency `EUR`). A negative amount is money out and keeps its minus sign: `-€24.50` in EN, `−24,50 €` in FI. A positive amount shows no plus sign.
 - **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 
 ## 5. Accessibility and WebView
 - **Contrast:** all text pairs meet AA (section 2.2). Colour is never the only signal (WCAG 1.4.1).
-- **Focus:** a 3 px `--color-brand` outline with a 2 px offset.
-- **Targets:** at least 44 px; inline chips get a padded hit area.
+- **Focus:** a `--focus-ring-width` (3 px) outline with a 2 px offset: `--color-brand` on light surfaces, `--color-mint` on dark ones (`--color-deep`, `--color-ink`). `--color-brand` on those dark surfaces is only 1.66:1 and 2.05:1, so it is never used there.
+- **Targets:** at least 44 × 44 px everywhere, including inline chips (extended with a pseudo-element or padding).
 - **Viewport:** `viewport-fit=cover`, safe-area padding on the composer and sheets, and height from `100dvh` minus `env(safe-area-inset-bottom)`.
 - **No service worker in production:** WKWebView does not run it. Mock data is for development only.
 - **Larger Text:** WKWebView ignores the system text-size setting. All sizes are in px tokens, so the layout must survive 200 % browser zoom and reflow at 320 px without horizontal scroll (WCAG 1.4.4, 1.4.10). An in-app text-size switch is a follow-up (section 8).
@@ -253,9 +262,9 @@ Only MIT-compatible material goes into `app/`.
 
 | Item | Licence | Decision | Notes |
 |---|---|---|---|
-| Inter (typeface) | SIL OFL 1.1 | Use | Self-host through `@fontsource/inter` (package MIT, font OFL). Keep the OFL text with the font files. |
+| Inter (typeface) | SIL OFL 1.1 | Use | Self-host through `@fontsource/inter`, whose package licence is also OFL-1.1. OFL is compatible with an MIT repository: keep the OFL text with the font files and do not sell the font on its own. |
 | shadcn/ui | MIT | Use | Components are copied in. |
-| Vercel AI Elements | Apache-2.0 | Use with care | Compatible. Keep `LICENSE`/`NOTICE` and mark modified files. Upstream announced its deprecation for the end of November 2026 in favour of shadcn/ui copy-in patterns; prefer those. |
+| Vercel AI Elements | Apache-2.0 | Use with care | Compatible. Keep `LICENSE`/`NOTICE` and mark modified files. Reportedly being deprecated in favour of shadcn/ui copy-in patterns (date not verified); prefer those. |
 | 21st.dev blocks | Per component, no default | Not used yet | Each block is checked before it is copied in, and its licence is added as a row here. A block with no stated licence ("unknown") is rejected. |
 | S Bonus UX / S Bonus Display | Proprietary (S Group) | Rejected | Replaced by Inter. |
 | S-Pankki / S-Group logos, icons, images | Proprietary | Rejected | None in the repo. Basket icons are system emoji, and line icons are our own inline SVG. |
@@ -265,3 +274,4 @@ Only MIT-compatible material goes into `app/`.
 - **Finnish texts:** basket names and glossary definitions come from the core (contract 0.2, #34). The app shows them as received.
 - **21st.dev:** each block chosen later gets a row in the licence table (section 7) before it is used.
 - **Text size:** an in-app text-size switch for WKWebView (section 5).
+- **More card renderers:** `bills`, `peer`, `stores`, `profile` and `safe_to_save` cards, and the other evidence kinds (for example composite evidence with `parts`), get their rules when their screens are built. They reuse the answer-card frame, number chips and the fact/estimate markers above.

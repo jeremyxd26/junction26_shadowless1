@@ -2,14 +2,15 @@
    Single source for colours, type, spacing, radii, elevation and motion.
    --color-*, --font-sans, --text-*, --radius-*, --shadow-* and --ease-* use
    Tailwind v4 theme namespaces and can move into `@theme` unchanged.
-   --space-*, --gutter, --tap-min and --duration-* are plain custom properties:
+   --space-*, --gutter, --tap-min and --duration-* are plain custom properties
+   (so is --focus-ring-width):
    map them by hand (for example `--spacing: 4px`) or use them through var().
    Rules for using them: app/DESIGN.md. */
 :root{
   /* Surfaces */
   --color-page:#F3F8F4;          /* light green tint behind everything */
   --color-surface:#FFFFFF;       /* cards, sheets */
-  --color-sunken:#EBF2ED;        /* skeletons, bar tracks, input bg */
+  --color-sunken:#EBF2ED;        /* skeletons, bar tracks, the lesson box */
   --color-line:#DCE6DF;          /* hairline borders (decorative) */
   --color-line-strong:#7B8F83;   /* borders that carry meaning, 3:1 on white */
   --color-scrim:rgba(14,58,37,.38);
@@ -22,7 +23,7 @@
   --color-on-deep-muted:#BFE3CB;
 
   /* Brand greens (own values) */
-  --color-brand:#00703C;         /* titles, links, focus ring, term underline */
+  --color-brand:#00703C;         /* links, action chips, term underline, focus ring on light surfaces */
   --color-deep:#0B4A2E;          /* "Sentti asks" surface, send button */
   --color-mint:#8DF29A;          /* primary button bg, text = ink */
   --color-mint-hover:#5EE97A;
@@ -52,6 +53,8 @@
   --text-base:16px; --text-base--line-height:24px;   /* inputs never below 16px (iOS zoom) */
   --text-lg:18px;   --text-lg--line-height:26px;
   --text-xl:20px;   --text-xl--line-height:28px;     /* takeaway line */
+  --text-card-title:16px;     --text-card-title--line-height:22px;     /* card titles */
+  --text-review-amount:30px;  --text-review-amount--line-height:34px;  /* amount on the review card (#35) */
   --text-2xl:24px;  --text-2xl--line-height:30px;
   --text-hero:40px; --text-hero--line-height:44px;   /* safe-to-spend number */
   --text-stage:56px;--text-stage--line-height:60px;  /* projector mode */
@@ -60,6 +63,7 @@
   --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px; --space-10:40px;
   --gutter:16px;
   --tap-min:44px;
+  --focus-ring-width:3px;        /* --color-brand on light surfaces, --color-mint on --color-deep and --color-ink */
 
   /* Radii */
   --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:20px; --radius-sheet:24px; --radius-pill:999px;
@@ -71,6 +75,8 @@
 
   /* Motion */
   --duration-fast:150ms; --duration-base:250ms; --duration-slow:500ms; --duration-money:900ms;
+  --duration-flight:600ms;       /* the amount flying between baskets (#35) */
+  --duration-long-press:600ms;   /* hidden persona picker */
   --ease-standard:cubic-bezier(.33,0,.34,1);
   --ease-entry:cubic-bezier(0,0,.3,1);
   --ease-exit:cubic-bezier(.5,0,1,1);
