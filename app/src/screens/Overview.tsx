@@ -45,6 +45,8 @@ type Motion = NumberMotion & { seq: number }
 
 /** How long "was …" hints and the row tint stay after an answer (DESIGN.md). */
 const HINT_MS = 6000
+/** How long a toast with no action (the undo confirmation) stays; screen readers got it at once. */
+const NOTE_MS = 4000
 /** Keys whose "was …" hint is shown: the hero, its reserve and the basket the purchase moved to. */
 const HINTED = new Set(['safe_to_spend', 'irregular_reserve', 'regular_essentials', 'unexpected_necessities', 'everyday_spending'])
 
@@ -198,10 +200,10 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           current && current.seq === run ? { ...current, was: {}, steady: false, highlight: null } : current,
         ),
       )
-    } else if (response.review_state === 'pending') {
-      setPhase({ kind: 'asking' })
     } else {
-      setPhase({ kind: 'gone' })
+      setPhase(response.review_state === 'pending' ? { kind: 'asking' } : { kind: 'gone' })
+      // The undo confirmation has no action, so it may go: it would cover the answer buttons.
+      later(NOTE_MS, () => setToast((current) => (current && current.seq === run ? null : current)))
     }
 
     if (flies) {
@@ -331,6 +333,9 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   )
 }
 
+/** Room the toast takes at the bottom of the screen; the flight's rows must stay above it. */
+const TOAST_SPACE = 220
+
 const BASKET_COLOUR: Record<string, string> = {
   regular_essentials: '--color-basket-essentials',
   unexpected_necessities: '--color-basket-unexpected',
@@ -399,17 +404,29 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
         .catch(() => undefined)
     }
 
-    // On a short screen (375 × 812) the basket rows sit below the fold. Then the hero counts
-    // first, at the top, and only after that the page glides to the rows and the amount flies.
+    // On a short screen (375 × 812) the basket rows sit below the fold, or where the toast will
+    // come up. Then the hero counts first, at the top, and only after that the page glides to
+    // the rows and the amount flies.
     const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
+    const floor = window.innerHeight - TOAST_SPACE
     const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
-    const hidden = rows.some((box) => !box || box.top < header || box.bottom > window.innerHeight)
+    const hidden = rows.some((box) => !box || box.top < header || box.bottom > floor)
+    let stopWaiting = () => {}
     if (hidden) {
       waits.push(
         window.setTimeout(() => {
           if (cancelled) return
+          let started = false
+          const go = () => {
+            if (started) return
+            started = true
+            window.removeEventListener('scrollend', go)
+            fly()
+          }
+          stopWaiting = () => window.removeEventListener('scrollend', go)
+          window.addEventListener('scrollend', go)
+          waits.push(window.setTimeout(go, 700))
           target.closest('li')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-          waits.push(window.setTimeout(fly, 450))
         }, tokenMs('--duration-money', 900)),
       )
     } else {
@@ -417,6 +434,7 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
     }
     return () => {
       cancelled = true
+      stopWaiting()
       for (const id of waits) window.clearTimeout(id)
       for (const animation of animations) animation.cancel()
     }
