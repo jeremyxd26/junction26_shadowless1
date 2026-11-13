@@ -2,12 +2,20 @@ import { useRef } from 'react'
 import { goBack } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
-const LONG_PRESS_MS = 600
+const FALLBACK_LONG_PRESS_MS = 600
 const MOVE_TOLERANCE_PX = 10
+
+/** `--duration-long-press` from the design tokens, in milliseconds. */
+function longPressMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--duration-long-press').trim()
+  const value = Number.parseFloat(raw)
+  if (!Number.isFinite(value) || value <= 0) return FALLBACK_LONG_PRESS_MS
+  return raw.endsWith('ms') ? value : raw.endsWith('s') ? value * 1000 : value
+}
 
 /**
  * Minimal header inside the host app: back + "Sentti", no logo, no own navigation.
- * A long press anywhere on it opens the demo persona switch.
+ * A long press on the header (not on the back button) opens the demo persona switch.
  */
 export function Header({ onLongPress }: { onLongPress: () => void }) {
   const { t } = useSettings()
@@ -25,12 +33,13 @@ export function Header({ onLongPress }: { onLongPress: () => void }) {
       className="sticky top-0 z-40 bg-page/95 pt-[env(safe-area-inset-top)] backdrop-blur select-none [-webkit-touch-callout:none]"
       onPointerDown={(event) => {
         cancel()
+        if (event.target instanceof Element && event.target.closest('button')) return
         start.current = { x: event.clientX, y: event.clientY }
         timer.current = window.setTimeout(() => {
           cancel()
           navigator.vibrate?.(10)
           onLongPress()
-        }, LONG_PRESS_MS)
+        }, longPressMs())
       }}
       onPointerMove={(event) => {
         if (!start.current) return
@@ -43,12 +52,12 @@ export function Header({ onLongPress }: { onLongPress: () => void }) {
       onPointerLeave={cancel}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <div className="grid min-h-12 grid-cols-[44px_1fr_44px] items-center px-2">
+      <div className="grid min-h-13 grid-cols-[44px_1fr_44px] items-center px-2">
         <button
           type="button"
           onClick={goBack}
           aria-label={t.back}
-          className="inline-flex size-11 items-center justify-center rounded-pill text-ink hover:bg-sunken"
+          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.25">
             <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
@@ -57,7 +66,6 @@ export function Header({ onLongPress }: { onLongPress: () => void }) {
         <h1 className="text-center text-lg font-semibold text-ink">Sentti</h1>
         <span aria-hidden="true" />
       </div>
-      <p className="px-4 pb-2 text-center text-xs text-muted">{t.disclosure}</p>
     </header>
   )
 }

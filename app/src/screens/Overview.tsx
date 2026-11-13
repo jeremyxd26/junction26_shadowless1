@@ -1,5 +1,5 @@
 import type { BreakdownCard, OverviewResponse } from '../api/types.ts'
-import { BasketsCard, HeroCard, InsightCard, ReviewPlaceholder } from '../components/cards.tsx'
+import { BasketsCard, HeroCard, HeroPending, InsightCard, ReviewPlaceholder } from '../components/cards.tsx'
 import { navigate } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
@@ -16,8 +16,12 @@ export function Overview({ overview }: { overview: OverviewResponse }) {
 
   return (
     <div className="flex flex-col gap-4 pb-4">
-      <p className="text-xl font-semibold text-ink">{overview.greeting}</p>
-      <HeroCard card={overview.hero} />
+      <div>
+        <p className="text-xl font-semibold text-ink">{overview.greeting}</p>
+        {/* The AI disclosure once, on the overview, in the API's words when it sends them. */}
+        <p className="mt-0.5 text-xs text-muted">{overview.ai_disclosure || t.disclosure}</p>
+      </div>
+      {overview.hero ? <HeroCard card={overview.hero} /> : <HeroPending />}
       {review && <ReviewPlaceholder card={review} />}
       {baskets && <BasketsCard card={baskets} />}
 

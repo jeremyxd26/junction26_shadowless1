@@ -8,7 +8,8 @@
 // - Overview: CUST00042 (Aino) and CUST00860 (Sanna) have examples; other customers get the
 //   contract's customer_not_found error.
 // - Evidence: the two contract examples by ref. Other refs that appear in a mock overview get an
-//   evidence object built only from that overview's own data (see buildEvidence).
+//   evidence object built only from that overview's own data (see buildEvidence). The examples
+//   hold only a first page of rows, so a request with a cursor gets an empty last page.
 import type { ApiClient } from '../client.ts'
 import { ApiError } from '../errors.ts'
 import type {
@@ -168,7 +169,7 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   if (EVIDENCE[ref]) return clone(EVIDENCE[ref])
   const overview = OVERVIEWS[customerId]
   if (overview) {
-    if (overview.hero.primary.evidence_ref === ref || overview.hero.evidence_ref === ref) {
+    if (overview.hero && (overview.hero.primary.evidence_ref === ref || overview.hero.evidence_ref === ref)) {
       return heroEvidence(overview.hero)
     }
     const review = overview.reviews.find((card) => card.amount.evidence_ref === ref || card.evidence_ref === ref)
@@ -198,6 +199,11 @@ export function createMockClient(): ApiClient {
         if (!overview) throw new ApiError(404, examples['error.response'].error)
         return clone(overview)
       }),
-    evidence: (ref: string, customerId: string) => later(() => buildEvidence(ref, customerId)),
+    evidence: (ref: string, customerId: string, _lang, cursor?: string) =>
+      later(() => {
+        const evidence = buildEvidence(ref, customerId)
+        // The contract shows only the first page of rows; any next page is empty and the last.
+        return cursor ? { ...evidence, rows: [], next_cursor: null } : evidence
+      }),
   }
 }

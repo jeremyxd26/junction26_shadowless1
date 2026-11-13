@@ -160,8 +160,10 @@ export interface OverviewResponse {
   language: Language
   greeting: string
   ai_disclosure: string
-  hero: MetricCard
-  safe_to_save: SafeToSaveCard | null
+  /** The contract always has it; the core may still send null while safe to spend is being built. */
+  hero: MetricCard | null
+  /** May be missing from older core builds. */
+  safe_to_save?: SafeToSaveCard | null
   cards: Card[]
   reviews: ReviewCard[]
   insights: Insight[]

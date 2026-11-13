@@ -30,6 +30,11 @@ const en = {
   chatSoon: 'Sentti will answer here in the next build. For now, every number on the overview opens its transactions.',
   toOverview: 'Back to overview',
   mockBadge: 'Mock data',
+  heroPendingTitle: 'Safe to spend this week',
+  heroPending: 'Safe to spend is still being calculated. Check back soon.',
+  showMore: 'Show more',
+  crash: 'Something went wrong on this screen.',
+  reload: 'Reload',
 }
 
 type Strings = typeof en
@@ -62,6 +67,11 @@ const fi: Strings = {
   chatSoon: 'Sentti vastaa tässä seuraavassa versiossa. Nyt jokainen yleiskuvan luku avaa omat tapahtumansa.',
   toOverview: 'Takaisin yleiskuvaan',
   mockBadge: 'Testidata',
+  heroPendingTitle: 'Käyttövara tällä viikolla',
+  heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',
+  showMore: 'Näytä lisää',
+  crash: 'Tällä näkymällä tapahtui virhe.',
+  reload: 'Lataa uudelleen',
 }
 
 export function strings(lang: Language): Strings {

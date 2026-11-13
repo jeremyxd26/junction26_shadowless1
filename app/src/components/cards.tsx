@@ -5,74 +5,107 @@ import { useSettings } from '../lib/settings.ts'
 import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
+/** Flat white card with a thin border, no shadow (DESIGN.md). */
 function CardShell({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-xl border border-line bg-surface p-4 ${className}`}>{children}</section>
+  return <section className={`rounded-lg border border-line bg-surface p-4 ${className}`}>{children}</section>
 }
 
-function ActionButton({ action, primary = false }: { action: Action; primary?: boolean }) {
-  const base = 'inline-flex min-h-11 items-center justify-center rounded-pill px-4 text-base font-semibold'
-  const look = primary ? 'bg-mint text-ink hover:bg-mint-hover' : 'border border-mint-line bg-surface text-brand hover:bg-mint-tint'
+/** Card titles and row labels: 17/22, bold, brand green. */
+const CARD_TITLE = 'text-card-title font-bold text-brand'
+
+function Chevron() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ActionButton({ action, onHero = false }: { action: Action; onHero?: boolean }) {
+  const className = onHero
+    ? 'inline-flex min-h-11 items-center gap-1 text-base font-semibold text-on-hero underline-offset-4 hover:underline'
+    : 'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint'
+  const label = onHero ? (
+    <>
+      {action.label}
+      <Chevron />
+    </>
+  ) : (
+    action.label
+  )
   if (action.type === 'open_evidence') {
     return (
-      <button type="button" className={`${base} ${look}`} onClick={() => openEvidence(action.evidence_ref)}>
-        {action.label}
+      <button type="button" className={className} onClick={() => openEvidence(action.evidence_ref)}>
+        {label}
       </button>
     )
   }
   if (action.type === 'ask') {
     return (
-      <button type="button" className={`${base} ${look}`} onClick={() => navigate('/chat', { q: action.prompt })}>
-        {action.label}
+      <button type="button" className={className} onClick={() => navigate('/chat', { q: action.prompt })}>
+        {label}
       </button>
     )
   }
   return null
 }
 
-const statusTone: Record<SafeToSpendStatus, { chip: 'mint' | 'warning' | 'neutral'; dot: string }> = {
-  ok: { chip: 'mint', dot: 'bg-brand' },
-  below_usual: { chip: 'warning', dot: 'bg-warning' },
-  nothing_free: { chip: 'neutral', dot: 'bg-muted' },
+/** The green safe-to-spend block: no border, no shadow, everything white or on-hero-muted. */
+const HERO_BLOCK = 'rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint'
+
+const statusDot: Record<SafeToSpendStatus, string> = {
+  ok: 'bg-mint',
+  below_usual: 'border-2 border-on-hero-muted',
+  nothing_free: 'border-2 border-on-hero-muted',
 }
 
-/** The weekly safe-to-spend card: one primary number, one line about the reserve. */
+/** The weekly safe-to-spend block: one primary number, one line about the reserve. */
 export function HeroCard({ card }: { card: MetricCard }) {
   const { t } = useSettings()
   const status = card.status ?? 'ok'
-  const tone = statusTone[status] ?? statusTone.ok
   const reserve = card.components.find((component) => component.key === 'irregular_reserve')
   return (
-    <CardShell>
+    <section className={HERO_BLOCK}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-ink">{card.title}</h2>
-          {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
-        </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} />}
+        <h2 className="min-w-0 pt-3 text-sm font-semibold text-on-hero-muted">{card.title}</h2>
+        {card.estimate && <EstimateBadge estimate={card.estimate} onHero />}
       </div>
 
-      <div className="mt-3">
-        <NumberChip number={card.primary} size="hero" tone={tone.chip} />
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <NumberChip number={card.primary} size="hero" tone="hero" />
+        {card.subtitle && <span className="text-sm text-on-hero-muted">{card.subtitle}</span>}
       </div>
-      <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-ink">
-        <span aria-hidden="true" className={`size-2.5 rounded-pill ${tone.dot}`} />
+      <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-on-hero">
+        <span aria-hidden="true" className={`size-2.5 rounded-pill ${statusDot[status] ?? statusDot.ok}`} />
         {t.status[status] ?? ''}
       </p>
 
       {reserve && (
-        <p className="mt-3 text-base leading-8 text-ink-2">
+        <p className="mt-3 text-base leading-8 text-on-hero">
           {reserve.label} <NumberChip number={reserve.amount} size="inline" /> {t.keptAside}.
         </p>
       )}
 
       {card.actions.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-col items-start">
           {card.actions.map((action, index) => (
-            <ActionButton key={`${action.type}-${index}`} action={action} />
+            <ActionButton key={`${action.type}-${index}`} action={action} onHero />
           ))}
         </div>
       )}
-    </CardShell>
+    </section>
+  )
+}
+
+/** Shown when the overview has no hero yet (`hero: null`): a clear line instead of an empty slot. */
+export function HeroPending() {
+  const { t } = useSettings()
+  return (
+    <section className={HERO_BLOCK}>
+      <h2 className="text-sm font-semibold text-on-hero-muted">{t.heroPendingTitle}</h2>
+      <div aria-hidden="true" className="mt-3 h-12 w-44 animate-pulse rounded-pill bg-on-hero/15" />
+      <p className="mt-3 text-base text-on-hero">{t.heroPending}</p>
+    </section>
   )
 }
 
@@ -105,7 +138,7 @@ export function BasketsCard({ card }: { card: BreakdownCard }) {
     <CardShell>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-ink">{card.title}</h2>
+          <h2 className={CARD_TITLE}>{card.title}</h2>
           {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
         </div>
         {card.estimate && <EstimateBadge estimate={card.estimate} />}
@@ -160,7 +193,7 @@ export function ReviewPlaceholder({ card }: { card: ReviewCard }) {
         <span aria-hidden="true">?</span>
         {card.current_basket.label}
       </span>
-      <h2 className="mt-2 text-lg font-semibold text-ink">{card.title}</h2>
+      <h2 className={`mt-2 ${CARD_TITLE}`}>{card.title}</h2>
       {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <NumberChip number={card.amount} />
@@ -205,7 +238,7 @@ export function InsightCard({ insight }: { insight: Insight }) {
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-ink">{insight.title}</h3>
+        <h3 className={CARD_TITLE}>{insight.title}</h3>
         {insight.estimate && <EstimateBadge estimate={insight.estimate} />}
       </div>
       <p className="mt-1 text-base leading-8 text-ink-2">
