@@ -21,6 +21,7 @@ import type {
   Persona,
   PersonasResponse,
   ReviewCard,
+  SafeToSaveCard,
 } from '../types.ts'
 import contract from './contract-examples.json'
 import { mockAsk } from './mockAsk.ts'
@@ -32,7 +33,19 @@ const examples = contract.examples as unknown as {
   'evidence.response': EvidenceResponse
   'evidence.response_composite': EvidenceResponse
   'error.response': ErrorEnvelope
+  'card.safe_to_save': SafeToSaveCard
+  'card.safe_to_save_aleksi': SafeToSaveCard
+  'card.safe_to_save_zero': SafeToSaveCard
+  'card.safe_to_save_everyday': SafeToSaveCard
 }
+
+/** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
+const CARD_EXAMPLES = [
+  examples['card.safe_to_save'],
+  examples['card.safe_to_save_aleksi'],
+  examples['card.safe_to_save_zero'],
+  examples['card.safe_to_save_everyday'],
+]
 
 /** Sanna as in core/config/personas.yaml (lead persona of the demo). */
 const SANNA: Persona = {
@@ -178,6 +191,8 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
     const number = collectNumbers(overview).find((candidate) => candidate.evidence_ref === ref)
     if (number) return placeholderEvidence(number)
   }
+  const cardNumber = collectNumbers(CARD_EXAMPLES).find((candidate) => candidate.evidence_ref === ref)
+  if (cardNumber) return placeholderEvidence(cardNumber)
   throw new ApiError(404, {
     code: 'evidence_not_found',
     message: 'We could not find how this number was built.',

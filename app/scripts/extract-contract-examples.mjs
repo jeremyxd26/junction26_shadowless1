@@ -38,6 +38,10 @@ const NEEDED = [
   'ask.json.response_refusal',
   'ask.json.request_clarify',
   'ask.json.response_clarify',
+  'card.safe_to_save',
+  'card.safe_to_save_aleksi',
+  'card.safe_to_save_zero',
+  'card.safe_to_save_everyday',
 ]
 
 const text = readFileSync(contractPath, 'utf8')

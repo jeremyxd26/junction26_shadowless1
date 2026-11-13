@@ -33,6 +33,7 @@ const en = {
   showMore: 'Show more',
   crash: 'Something went wrong on this screen.',
   reload: 'Reload',
+  saveSeparate: 'Safe to save is separate from safe to spend and is never added to it.',
 }
 
 type Strings = typeof en
@@ -68,6 +69,7 @@ const fi: Strings = {
   showMore: 'Näytä lisää',
   crash: 'Tällä näkymällä tapahtui virhe.',
   reload: 'Lataa uudelleen',
+  saveSeparate: 'Säästövara on eri asia kuin käyttövara, eikä niitä lasketa yhteen.',
 }
 
 export function strings(lang: Language): Strings {

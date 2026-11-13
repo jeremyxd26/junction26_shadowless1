@@ -1,12 +1,13 @@
 // The cards of a chat answer (`card` events, contract sections 3 and 7.2), one renderer per
 // `type` in the shared answer-card frame (DESIGN.md "Answer card"). Card `actions` are not
 // drawn here: the chat shows them as action chips under the explanation.
-import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard } from '../api/types.ts'
+import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BasketsCard, CARD_TITLE, CardShell, ReviewPlaceholder } from './cards.tsx'
 import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
+import { SafeToSaveCard } from './SafeToSaveCard.tsx'
 
 /** Title, subtitle and the fact or estimate marker, top right. */
 function CardHeader({ card }: { card: Card }) {
@@ -63,7 +64,7 @@ function MetricAnswer({ card }: { card: MetricCard }) {
     <CardShell>
       <CardHeader card={card} />
       <div className="mt-3">
-        <NumberChip number={card.primary} />
+        <NumberChip number={card.primary} size="lg" />
       </div>
       {card.secondary?.length > 0 && (
         <ul className="mt-3 flex flex-col">
@@ -121,26 +122,6 @@ function BreakdownAnswer({ card }: { card: BreakdownCard }) {
   )
 }
 
-/**
- * Safe to save has its own card in issue #88 (`SafeToSaveCard`). Until that lands, the chat
- * shows its headline numbers in the shared frame.
- */
-function SafeToSaveFallback({ card }: { card: SafeToSaveCard }) {
-  return (
-    <CardShell>
-      <CardHeader card={card} />
-      <div className="mt-3 flex flex-col items-start gap-2">
-        <NumberChip number={card.monthly} />
-        {card.stock && (
-          <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
-            {card.stock.label} <NumberChip number={card.stock} size="inline" />
-          </p>
-        )}
-      </div>
-    </CardShell>
-  )
-}
-
 /** A card type without its own renderer yet (DESIGN.md section 8): the frame and its marker. */
 function GenericAnswer({ card }: { card: Card }) {
   return (
@@ -165,7 +146,7 @@ export function AnswerCard({ card }: { card: Card }) {
     case 'review':
       return <ReviewPlaceholder card={card as ReviewCard} />
     case 'safe_to_save':
-      return <SafeToSaveFallback card={card as SafeToSaveCard} />
+      return <SafeToSaveCard card={card as SafeToSaveData} />
     default:
       return <GenericAnswer card={card} />
   }
