@@ -100,19 +100,22 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 
 On the first deploy to a new host name, Caddy needs a few seconds to obtain the certificate, so the public check retries for up to a minute.
 
-Example run (the smoke test of this branch, before the host switch, so it checks the sslip.io name):
+Example run (a branch deploy, with both checks before the switch):
 
 ```
-deploying 'r/17-verda-dev-deploy' to 135.181.63.178
-checked out 0177340 Route only /api, /healthz and /readyz to the core service (#17)
-== building 0177340763e5b2ce7121822a37b4e544143f98bc (previous: 1e395dc61dd5447d85e1d6de5b39a0de06b0c681)
+deploying 'r/60-deploy-image-contents' to 135.181.63.178
+checked out c648379 Check the image against the checkout's run-time files before the switch (#60)
+== building c64837975d8c75f7438fdba08412482122fbfb80 (previous: 7ca4392f761dfcde2cf88c9925777c9982662d8f)
 == image contents (must not hold .env, .git or tests)
-. ./core ./core/app ./core/app/__init__.py ./core/app/db.py ./core/app/health.py ./core/app/main.py ./core/app/settings.py ./core/requirements.txt
+. ./core ./core/app ./core/app/__init__.py ./core/app/db.py ./core/app/health.py ./core/app/main.py ./core/app/settings.py ./core/config ./core/config/personas.yaml ./core/config/s_group_benefits.yaml ./core/metrics ./core/requirements.txt ./core/tools (+ 17 files in core/tools, 7 in core/metrics)
+all run-time files of the checkout are in the image
+== import check
+imports ok: core.app and 16 modules of core.tools/core.agent
 == starting
 == proxy
-deployed 0177340763e5b2ce7121822a37b4e544143f98bc; local /healthz: {"status":"ok","demo_today":"2026-09-30"}
-public check: https://135-181-63-178.sslip.io/healthz
-GET https://135-181-63-178.sslip.io/healthz -> 200
+deployed c64837975d8c75f7438fdba08412482122fbfb80; local /healthz: {"status":"ok","demo_today":"2026-09-30"}
+public check: https://sentti.jeremyxd.dev/healthz
+GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
 
 ## Roll back
