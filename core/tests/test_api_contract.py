@@ -31,8 +31,17 @@ MODELS: dict[str, type[BaseModel]] = {
     "error.response": schemas.ErrorResponse,
     "personas.response": schemas.PersonasResponse,
     "overview.response": schemas.OverviewResponse,
+    "overview.response_pending": schemas.OverviewResponse,
+    "card.review": schemas.ReviewCard,
     "evidence.response": schemas.EvidenceResponse,
     "evidence.response_composite": schemas.EvidenceResponse,
+    "label.request": schemas.LabelRequest,
+    "label.request_wanted": schemas.LabelRequest,
+    "label.request_undo": schemas.LabelRequest,
+    "label.response": schemas.LabelResponse,
+    "label.response_wanted": schemas.LabelResponse,
+    "label.response_undo": schemas.LabelResponse,
+    "label.error": schemas.ErrorResponse,
     "whatif.request": schemas.WhatIfRequest,
     "whatif.request_basket": schemas.WhatIfRequest,
     "whatif.response": schemas.WhatIfResponse,
@@ -55,10 +64,12 @@ PENDING: dict[str, set[str]] = {
     "overview.response": {
         "$.safe_to_save",  # the safe_to_save card (#53/#55)
     },
+    "overview.response_pending": {
+        "$.safe_to_save",  # the safe_to_save card (#53/#55)
+    },
 }
-# `reviews` is implemented as an always-empty list; the review item shape and the label logic are #68.
-# Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
-PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
+# Error codes the models do not have yet (the label endpoint's two codes came with #68).
+PENDING_ERROR_CODES: set[str] = set()
 # Error codes the service has ahead of the contract (agreed additions; the text follows in the next version).
 ERROR_CODE_ADDITIONS = {"not_found"}  # #79: an unknown route
 

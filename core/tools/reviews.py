@@ -251,6 +251,8 @@ def ensure_pending(conn: psycopg.Connection, customer_id: str, as_of: date, hist
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:' || %s, 0))",
                      (customer_id,))
+        if not table_exists(conn):
+            ensure_table(conn)
         reviews = load_reviews(conn, customer_id)
         pending = pending_of(reviews, now)
         if pending is not None:
