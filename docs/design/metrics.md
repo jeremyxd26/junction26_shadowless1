@@ -387,7 +387,7 @@ The bills behind `bills_due_eur`, one row per bill that falls due after today an
   - `status`: section 2: `spread`, `done_this_month`, `upcoming`, `late` or `skipped_this_month`. A once-a-month bill already paid this month, or skipped, can still be due before payday through next month's date.
   - `typical_month_eur`, `occurrences` (due dates before payday; 0 for a spread bill), `first_due_date`.
   - `pro_rata_days` (N for a spread bill, else 0), `bill_due_eur`, `next_payday`, `days_to_payday`.
-- **Rounding.** Each row is rounded on its own, and the total once. The rows therefore add up to `bills_due_eur` or differ from it by 0.01. In the sample: exact for 76 of 99 customers, +0.01 for 23. A customer has at most 2 bills there, so the difference stays within 0.01. The `get_recurring_bills` tool shows the same per-bill values (a test compares them).
+- **Rounding.** Each row is rounded on its own, and the total once. The rows therefore add up to `bills_due_eur` or differ from it by up to 0.01 per row: each row's rounding moves it by at most 0.005. In the sample: exact for 76 of 99 customers, +0.01 for 23. A customer has at most 2 bills there. The `get_recurring_bills` tool shows the same per-bill values (a test compares them).
 - **Worked numbers** (today 2026-09-30, payday 2026-10-15, N = 15):
 
 | Customer | Bill | Status | Due before payday |

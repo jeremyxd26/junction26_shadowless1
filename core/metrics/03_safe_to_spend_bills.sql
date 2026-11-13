@@ -4,7 +4,7 @@
 -- The text from `SET statement_timeout` up to the line "end of the part shared with
 -- 03_safe_to_spend_bills.sql" is identical to 03_safe_to_spend.sql (a test checks it), so every row's
 -- bill_due_eur is exactly one unrounded term of 03's bills_due_eur. bills_due_eur is that sum rounded
--- once; the rows are rounded one by one, so their sum may differ from it by a cent or two.
+-- once; the rows are rounded one by one, so their sum may differ from it by up to 0.01 per row.
 --
 -- Inputs (session settings, all optional): app.demo_today, app.customer_from, app.customer_to, as in 03.
 -- One row per bill that falls due after today and up to and including the next payday. Euros, 2 decimals.
