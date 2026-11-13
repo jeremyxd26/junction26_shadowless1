@@ -60,6 +60,7 @@ This document defines how the coach answers a question: which tools exist, what 
    │ GET  /api/personas, /api/overview/{id} ──► Metrics layer ──┐
    │ POST /api/whatif ────────────────────────► Metrics layer   │
    │ GET  /api/evidence/{ref} ───────────────► Evidence store   │
+   │ POST /api/baskets/label (app only) ─────► Review table     │
    │ POST /api/ask ──► Coach orchestrator                       │
    │                     1 Input guard                          │
    │                     2 Planner  ◄─► Gemini (function calls) │
@@ -469,53 +470,76 @@ The coach does not only answer; it also asks. When it sees a spending spike, it 
 - is **not** Health and not a health MCC (5912, 8011, 8099, 8021). Those spikes are never asked about and stay in `unexpected_necessities` silently (R9);
 - has never been asked about before (see "asked" below) and has no label.
 
-The candidates are ordered **most recent first, then largest amount**. The first one is the review offered next.
+The candidates are ordered **most recent first, then largest amount, then transaction id** (a final tiebreak, so the order is always deterministic). The first one is the next review to create.
 
-**What counts as asked, and the limits.**
-- **Asked:** a review counts as *asked* the first time the server returns it, either as the first item of `reviews` in `GET /api/overview` or as a card attached to an answer. The server then records `first_shown_at` (an idempotent upsert). This is the only write a GET makes, and it touches only the review table, not the metrics.
-- **Weekly limit:** at most **3 reviews first shown per customer in any 7 days**.
-- **Never twice:** a transaction is asked about at most once. An asked review is served again until it is answered or 7 days pass. After that it is never offered again, answered or not.
-- **Undo:** an undone label is never asked again.
-- **Clock:** the 7 days run on the **wall clock** (`now()`), not on `DEMO_TODAY`, which is frozen for the demo. A demo reset deletes the persona's rows from the review table, with an admin script in the implementation issue. Nothing else needs resetting, because labels live only there.
+**The life of a review.**
+
+```text
+  (candidate) --first serve--> PENDING --"needed" / "I chose it"--> ANSWERED
+                                  ^   \                               |
+                                  |    \--7 days, no answer--> CLOSED |
+                                  +------- undo while open -----------+
+     ANSWERED --undo after the 7 days--> CLOSED
+```
+
+- **PENDING** (created, not answered, open for 7 days from creation): the purchase is `unclassified`, "Waiting for your answer". It is in no basket total and not in the reserve for unexpected necessities. As a one-off it was never in the everyday run rate.
+- **ANSWERED:** the purchase is in the chosen basket. "Needed" adds it to `unexpected_necessities` and its reserve, so safe to spend goes down. "I chose it" adds it to `everyday_spending`, and safe to spend does not change. No answer ever raises safe to spend (`metrics.md` section 1.1).
+- **CLOSED** (no answer within 7 days, or undone after them): the purchase is back in the basket the rules give it, exactly as for a customer who was never asked.
+- **Undo** while the review is open returns to PENDING. A closed review is never re-opened, and its transaction is never asked about again.
+
+So a customer with no pending review has exactly the numbers of the published worked examples. Only the pending state differs.
+
+**Creating reviews, "asked", and the limits.**
+- **Asked means created.** A review is created, and so counts as asked, the first time the server serves it, either in `reviews` of `GET /api/overview` or as a card attached to an answer.
+- **One at a time.** A customer has at most one PENDING review. While it is pending, the server serves the same review again and never creates another; `reviews` therefore holds at most one item. A new review is created only after the previous one is answered or closed.
+- **Creation is idempotent:** an upsert keyed by customer and transaction, so concurrent overview calls cannot create two. This is the only write a GET makes, and it touches only the review table, not the metrics. The overview therefore stays safe to call on every app open; a prefetch that gets a new review counts as asking it.
+- **Weekly limit:** at most **3 reviews created per customer per calendar week** (Monday to Sunday, Helsinki time).
+- **Never twice:** a transaction gets at most one review, ever.
+- **Clock:** creation, expiry and the weekly limit run on the **wall clock** (`now()`), not on `DEMO_TODAY`, which is frozen for the demo. A demo reset deletes the persona's rows from the review table, with an admin script in the implementation issue. Nothing else needs resetting, because labels live only there.
 
 **Storage: one small table.**
 
 ```sql
 CREATE TABLE spike_reviews (
-    customer_id    text   NOT NULL,
-    tx_id          bigint NOT NULL,              -- transactions.id; never sent to the app or the model
-    tx_ref         text   NOT NULL UNIQUE,       -- 'txr_' + 16 random lowercase letters and digits, sent to the app
-    first_shown_at timestamptz NOT NULL DEFAULT now(),
-    basket         text CHECK (basket IN ('unexpected_necessities', 'everyday_spending')),  -- NULL until answered or after undo
-    answered_at    timestamptz,
+    customer_id  text   NOT NULL,
+    tx_id        bigint NOT NULL,              -- transactions.id; never sent to the app or the model
+    tx_ref       text   NOT NULL UNIQUE,       -- 'txr_' + 16 random lowercase letters and digits, sent to the app
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    expires_at   timestamptz NOT NULL,         -- created_at + 7 days
+    basket       text CHECK (basket IN ('unexpected_necessities', 'everyday_spending')),  -- NULL while pending, closed or undone
+    answered_at  timestamptz,
     PRIMARY KEY (customer_id, tx_id)
 );
+-- state: ANSWERED if basket IS NOT NULL; PENDING if basket IS NULL AND now() < expires_at; otherwise CLOSED
 ```
 
-- `tx_ref` is a random token created when a candidate is first served. It is not derived from the transaction id, so it reveals nothing and needs no secret.
+- `tx_ref` is a random token created with the review. It is not derived from the transaction id, so it reveals nothing and needs no secret.
 - Only reviewable spikes get a `tx_ref`. The label endpoint therefore cannot label a Health purchase or any other transaction: R9 holds by construction, not only by validation.
 - Evidence rows still show a `tx_id`, including the review card's own "See the purchase" evidence for the same transaction. Making evidence ids opaque is a follow-up. What holds: the label endpoint accepts only a `tx_ref`, never a `tx_id`, and a `tx_ref` is not derived from one.
 
 **Recomputing with labels.**
-- **Classification:** answered rows (`basket IS NOT NULL`) feed the transaction level of the overrides in the shared classification block. Every metric that uses it (baskets, safe to spend, safe to save, what-if, profile, peer) picks the label up the same way.
+- **Classification:** the review table feeds the transaction level of the overrides in the shared classification block. An ANSWERED row puts the purchase in its `basket`, a PENDING row puts it in `unclassified`, and a CLOSED row adds nothing. Every metric that uses the block (baskets, safe to spend, safe to save, what-if, profile, peer) picks this up the same way.
 - **Marts:** the precomputed marts of `metrics.md` section 8 are refreshed for that customer after a label.
-- **Evidence:** the evidence spec (section 5.2) includes the customer's **label set**, the sorted list of `(tx_id, basket)` pairs in effect. A number after a label therefore gets a new ref. A ref issued before the label keeps resolving to the number as it was, with the old label set, so it still reconciles (R2).
+- **Evidence:** the evidence spec (section 5.2) includes the customer's **label set**, the sorted list of `(tx_id, basket)` pairs in effect. A pending review counts as `(tx_id, unclassified)`. A number after a label therefore gets a new ref. A ref issued before the label keeps resolving to the number as it was, with the old label set, so it still reconciles (R2).
 - **Cache:** the tool cache key (section 6.1) includes a hash of the label set, so a label invalidates exactly that customer's cached results.
 
 **The label endpoint, not a tool (R6).** `POST /api/baskets/label` (contract, section 10) is called by the **app** when the customer taps an answer.
 - The model has no tool that writes data. The tool registry is unchanged, and the planner cannot label, undo or dismiss anything.
-- The endpoint checks that the `tx_ref` belongs to the customer (R4) and that the basket is one of the two options. Late answers are accepted: any `tx_ref` the customer was shown can be labelled, also after the review stopped being offered (contract, section 10.1).
+- The endpoint checks that the `tx_ref` belongs to the customer and that the basket is one of the two options. An unknown ref and another customer's ref get the same 404, so nobody can probe for refs (R4). Late answers are accepted: any `tx_ref` the customer was shown can be labelled, also after the review closed (contract, section 10.1).
 - Every label write goes to the audit log: customer, `tx_ref`, basket, time.
 
 **Review cards in answers.**
-- **When:** the server, not the model, may attach the next review card to an `/api/ask` answer. That happens when the answer's tools touched the spike's basket or category, the weekly limit allows, and the spike was not shown this week.
-- **Limits:** the card counts towards the limit of 3 cards per answer and towards the weekly limit.
-- **Text:** the answer text does not mention it; the card speaks for itself. The question and the option texts are fixed, reviewed templates in English and Finnish. The model never writes them.
+- **When:** the server, not the model, may attach a review card to an `/api/ask` answer when the answer's tools touched the spike's basket or category.
+  - If a review is pending, it attaches **that** review and never a second one.
+  - Otherwise it may create the next one, within the weekly limit.
+- **Limits:** the card counts towards the limit of 3 cards per answer.
+- **Text:** the question and the option texts are fixed, reviewed templates in English and Finnish. The model never writes them.
+- **Pending purchases in answers.** While a review is pending, the tool results show the purchase as `unclassified` ("waiting for your answer"). The composer prompt states: a pending purchase is waiting for the customer's answer, so describe it that way and never assign it to a basket. For example, "the 1,080.42 Home & Tech purchase is waiting for your answer, so it is not in any basket yet". The validator's deny list rejects text that calls a pending purchase "needed", "essential" or "everyday".
 
 **Safe to save.** The overview's `safe_to_save` card (its own card type) carries two figures, defined in `metrics.md` section 3.1:
 - **Headline:** the monthly figure, what a typical month leaves (product decision).
 - **Second line:** the stock, money on the account beyond what is needed until payday, with one fixed explanatory sentence and no call to action.
-- **When the month leaves nothing:** the headline is 0, and a `reason` built from the data says why. Either essentials exceed income, or the largest everyday category is named (never a sensitive one, R9).
+- **When the month leaves nothing:** the headline is 0, and a `reason` built from the data says why. The rule is on the sign of free month: if it is negative, essentials exceed income; if not, the largest everyday category is named (never a sensitive one, R9).
 
 Both figures are estimates (R13), and nothing says where to put the money (R7). The coach presents them as separate from safe to spend, not added to it. The coach's text may cite these numbers like any other tool number, but it never adds a suggestion to move or invest money; the validator's deny list covers "move", "transfer" and "invest" next to a safe-to-save number.
 
@@ -613,6 +637,7 @@ Targets for the demo on the dev environment. The p50 column is the target; the h
 | `GET /api/overview` | 300 ms | 1 s | Precomputed snapshot, no model |
 | `POST /api/whatif` | 300 ms | 1 s | No model |
 | `GET /api/evidence` | 300 ms | 2 s | One indexed per-customer query |
+| `POST /api/baskets/label` | 500 ms | 3 s | One write, then the per-customer refresh of section 7.8 before it returns |
 | `/api/ask`: `meta` event | 100 ms | | |
 | Planner call | 1.2 s | 6 s | One retry on 429 or 5xx if the budget allows |
 | Tools, in parallel | 0.3 s | 5 s per statement | `statement_timeout = '5s'` |
@@ -704,7 +729,7 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 | Conversation flow: tool calls, then an answer with cards; follow-up questions; English and Finnish | 7.1 to 7.7; contract section 7 |
 | Guardrails: refusals, prompt-injection handling, never a number without a tool | 6.3, 7.4, 8 |
 | Audit log of each answer, latency budget, failure modes | 9, 10, 11 |
-| API: `POST /api/ask` (streaming), `GET /api/overview/{customer_id}`, `GET /api/evidence/{ref}`, `POST /api/whatif`, `GET /api/personas` | contract sections 5 to 9 |
+| API: `POST /api/ask` (streaming), `GET /api/overview/{customer_id}`, `GET /api/evidence/{ref}`, `POST /api/whatif`, `GET /api/personas`; and from #33, `POST /api/baskets/label` | contract sections 5 to 10 |
 | Use of the bank-assistant research (#3) | Rules R1 to R15 referenced throughout. Sections 1 to 5 of #3 were still in progress at the time of writing. |
 
 **Research rules:**

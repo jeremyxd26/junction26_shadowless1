@@ -112,9 +112,21 @@ In the prototypes the same shape is an empty `overrides` CTE, joined by `LEFT JO
 
 ### 1.1 Customer labels for spending spikes (#33)
 
-The coach asks about a spike: "was this an unexpected necessity or everyday spending?" The answer becomes a **label on that one transaction**. The person decides what their own spending means.
+The coach asks about a spike: was it needed, or everyday spending the customer chose? The answer becomes a **label on that one transaction**. The person decides what their own spending means.
 
-**Precedence.** A label is the most specific override: transaction label, then merchant, then MCC, then category, then the rules above. In SQL it is one more level in the shared classification block. The `overrides` CTE gets a `tx_id` column, the lateral join matches `o.tx_id = x.id` first, and `ORDER BY` puts `(o.tx_id IS NOT NULL) DESC` first. The product table is `spike_reviews` (design doc, section 7.8); its answered rows are read as transaction-level overrides.
+**Three states of an asked spike** (design doc, section 7.8, has the state machine):
+- **Pending** (review open, not answered): the purchase is `unclassified`, "Waiting for your answer". It is in **no basket total** and **not in the reserve for unexpected necessities**. As a one-off it stays out of the everyday run rate, as before.
+- **Answered "needed"** (`unexpected_necessities`): the purchase is in that basket and in its reserve.
+- **Answered "I chose it"** (`everyday_spending`): the purchase is in that basket. As a one-off it stays out of the everyday run rate.
+
+A spike that was never asked about, or whose review closed unanswered, keeps the basket the rules give it. So every number of a customer without a pending review is exactly as before, including the worked numbers of this document, the personas' reference values and the eval set.
+
+**Precedence.** A label is the most specific override: transaction label (or `unclassified` while pending), then merchant, then MCC, then category, then the rules above. In SQL it is one more level in the shared classification block:
+- the `overrides` CTE gets a `tx_id` column;
+- the lateral join matches `o.tx_id = x.id` first;
+- `ORDER BY` puts `(o.tx_id IS NOT NULL) DESC` first.
+
+The product table is `spike_reviews` (design doc, section 7.8). Its answered rows are read as transaction-level overrides to their basket, and its pending rows as overrides to `unclassified`.
 
 **What can be labelled.** The two target baskets are `unexpected_necessities` and `everyday_spending` only. The transaction must be:
 - a purchase in the spend flow, inside the window;
@@ -131,31 +143,41 @@ It is never a Health purchase or a health MCC (5912, 8011, 8099, 8021). Those sp
   - basket shares in the profile (`05`); the everyday share can cross 30%, and the label then changes only if no earlier rule matches;
   - the basket metrics of the peer benchmark (`06`).
 - **Marts:** the precomputed marts of section 8 must be refreshed for that customer.
-- **Undo:** an undone label falls back to the rules.
+- **Undo:** an undone label returns the purchase to `unclassified` while the review is open, and to the rules after that.
 
-**Direction.** Answering "everyday spending" moves a lump out of `unexpected_necessities`, so it is no longer reserved for as a need. The irregular reserve falls and safe to spend rises. Answering "unexpected necessity" confirms the rule and changes nothing. This is intended: the person says the purchase was a choice, not a need that may come back. Open question 8 in section 10 confirms it.
+**Effects of the answers** (product decision, recorded on issue #33). The formulas do not change; only the starting state of a spike with a pending review does.
+- **Pending:** the purchase is outside the reserve, so safe to spend is the same as after "I chose it".
+- **"Needed":** the purchase joins the reserve for unexpected necessities, so the reserve grows and **safe to spend goes down**. The coach explains that it keeps a reserve for surprises like this. This is the demo path; the bank's own example is a washing machine.
+- **"I chose it":** the purchase joins everyday spending, and **safe to spend does not change**. The coach says this month's everyday spending is higher than usual by the amount.
+- **No answer ever raises safe to spend.**
 
-**Worked numbers.** CUST00860 (persona Sanna), transaction 606016: Home & Tech, 1,080.42 on 2026-09-28. It is 9.0 times her median Home & Tech purchase and a one-off, so the rules put it in `unexpected_necessities`. The label is `everyday_spending`. Window 2026-04-01 … 2026-09-30 (183 days); payday 2026-10-15, N = 15.
+**Worked numbers.** CUST00860 (persona Sanna), transaction 606016: Home & Tech, 1,080.42 on 2026-09-28. It is 9.0 times her median Home & Tech purchase and a one-off, so the rules put it in `unexpected_necessities`. Window 2026-04-01 … 2026-09-30 (183 days); payday 2026-10-15, N = 15. The first column is both "no review" and "after 'needed'"; the two states give the same numbers.
 
-| | Before | After the label | Difference |
+| | No review = after "needed" | Review pending (`unclassified`) | After "I chose it" |
 |---|---|---|---|
-| Unexpected necessities, window total | 3,126.90 | 2,046.48 | −1,080.42 |
-| Everyday spending, window total | 3,602.44 | 4,682.86 | +1,080.42 |
-| Regular essentials, window total | 11,334.21 | 11,334.21 | 0 |
-| Month averages (regular / unexpected / everyday) | 1,889.04 / 521.15 / 600.41 | 1,889.04 / 341.08 / 780.48 | unexpected −180.07, everyday +180.07 |
-| Shares | 62.7% / 17.3% / 19.9% | 62.7% / 11.3% / 25.9% | |
-| Irregular reserve (15 days) | 256.30 | 167.74 | −88.56 = 1,080.42 / 183 × 15 |
-| Free until payday | 12,567.56 | 12,656.12 | +88.56 |
-| Irregular spending per month (budget limit input) | 520.08 | 340.38 | −179.70 = 1,080.42 / 183 × 30.4375 |
-| Budget limit 7d | 180.26 | 221.58 | +41.32 (179.70 × 7 / 30.4375, after rounding) |
-| **Safe to spend 7d** (binding: budget) | **180.26** | **221.58** | +41.32 |
-| Usual everyday spending per 7 days | 137.80 | 137.80 | 0: the purchase is still a one-off |
-| Safe to save (3.1) | 12,272.28 | 12,360.83 | +88.55 (88.56 before rounding) |
-| Safe to save monthly (3.1) | 184.61 | 364.31 | +179.70 |
+| Unexpected necessities, window total | 3,126.90 | 2,046.48 | 2,046.48 |
+| Everyday spending, window total | 3,602.44 | 3,602.44 | 4,682.86 |
+| Unclassified, window total | – | 1,080.42 | – |
+| Regular essentials, window total | 11,334.21 | 11,334.21 | 11,334.21 |
+| Month averages (regular / unexpected / everyday / unclassified) | 1,889.04 / 521.15 / 600.41 / – | 1,889.04 / 341.08 / 600.41 / 180.07 | 1,889.04 / 341.08 / 780.48 / – |
+| Shares | 62.7% / 17.3% / 19.9% | 62.7% / 11.3% / 19.9% / 6.0% | 62.7% / 11.3% / 25.9% |
+| Irregular reserve (15 days) | 256.30 | 167.74 | 167.74 |
+| Free until payday | 12,567.56 | 12,656.12 | 12,656.12 |
+| Irregular spending per month (budget limit input) | 520.08 | 340.38 | 340.38 |
+| Budget limit 7d | 180.26 | 221.58 | 221.58 |
+| **Safe to spend 7d** (binding: budget) | **180.26** | **221.58** | **221.58** |
+| Usual everyday spending per 7 days | 137.80 | 137.80 | 137.80 (the purchase is still a one-off) |
+| Safe to save (3.1) | 12,272.28 | 12,360.83 | 12,360.83 |
+| Safe to save monthly (3.1) | 184.61 | 364.31 | 364.31 |
 
-**How the "after" column was computed.**
-- `02_baskets.sql` and `03_safe_to_spend.sql` were run for the range `CUST00860` … `CUST00861`: once as committed, and once with the transaction-level override described above (one row: CUST00860, tx 606016, `everyday_spending`).
-- Both runs used one read-only connection with `statement_timeout = '60s'`.
+From pending, "needed" moves 1,080.42 into unexpected necessities and grows the reserve by 1,080.42 / 183 × 15 = 88.56. Irregular spending per month rises by 1,080.42 / 183 × 30.4375 = 179.70, so the budget limit and safe to spend fall from 221.58 to 180.26. "I chose it" moves 1,080.42 into everyday spending and changes no limit. Both basket totals move by exactly the labelled amount. Shares are rounded on their own, so a column may add up to 99.9%.
+
+**How the columns were computed.**
+- `02_baskets.sql` and `03_safe_to_spend.sql` were run for the range `CUST00860` … `CUST00861`:
+  - once as committed (no review);
+  - once with the transaction-level override described above set to `unclassified` (pending);
+  - once with it set to `everyday_spending` ("I chose it").
+- All runs used one read-only connection with `statement_timeout = '60s'`.
 - The override change is the specification for the SQL. It is not committed yet, because implementing labels is a separate issue.
 - Safe to save was computed in the same runs with the formula of 3.1.
 
@@ -290,14 +312,17 @@ Two figures answer two questions. The formulas are defined only here.
 **Why the month leaves nothing.** When `safe_to_save_monthly` is 0, a reason is given from the data:
 
 ```
-left_after_essentials = income_month − sweep_month − committed_month − essentials_month
-if left_after_essentials < 0:  reason = essentials_exceed_income, amount = −left_after_essentials (the monthly shortfall)
-else:                          reason = largest_everyday_category, amount = that category's monthly average in the window
+if free_month < 0:   reason = essentials_exceed_income,  amount = −free_month (the monthly shortfall, a positive number)
+else:                reason = largest_everyday_category, amount = that category's everyday_month figure
+                     (free_month ≥ 0 but free_month − everyday_month ≤ 0)
 ```
 
-- `largest_everyday_category` is the `everyday_spending` category (after the basket rules and labels of section 1) with the largest window total, shown as a monthly average.
-- A sensitive category is never named (R9). `everyday_spending` holds none today, and if one ever appeared, the next category would be named.
-- When both causes hold, `essentials_exceed_income` applies: then even no everyday spending would leave nothing.
+- **The rule is on the sign of free month** (team-lead decision on the #33 review).
+  - If free month is already negative, bills, the saving the customer set up, usual essentials and the reserve exceed income, so even no everyday spending would leave nothing. In that case the card shows the shortfall as its own positive component and never a negative free month.
+  - Otherwise the month leaves nothing because of everyday spending.
+- **`largest_everyday_category`** is the `everyday_spending` category (after the basket rules and labels of section 1) with the largest window total, one-offs left out. Its amount uses the same basis as `everyday_month`: window total ÷ window days × 30.4375. The categories therefore add up to `everyday_month`.
+- **Sensitive categories:** none is ever named (R9). `everyday_spending` holds none today, and if one ever appeared, the next category would be named.
+- **Rounding:** derived figures are computed from unrounded values and rounded once. A figure can therefore differ by 0.01 from the same sum of displayed figures, for example safe to save 12,360.83 against 12,656.12 − 295.28 = 12,360.84.
 
 **Not the same as the down-payment capacity.** `safe_to_save_monthly` uses the planning income of section 3 (`income_month_eur`, the median of the recurring income series) and keeps both reserves. The down-payment capacity of section 11 uses the average income that actually arrived (`net_income_month_eur`, see "Two income figures" in section 5) and no reserves. The two numbers differ on purpose: for Sanna, 184.61 against 547.79 a month.
 
@@ -312,26 +337,27 @@ else:                          reason = largest_everyday_category, amount = that
 - **Evidence.** Free until payday (with its own inputs) and the everyday rows of the window that are not one-offs.
 - **Worked numbers** (CUST00860, today 2026-09-30, N = 15; everyday/day = 3,602.44 / 183 = 19.685):
 
-| | Before the label | After the label of 1.1 |
+| | No review = after "needed" (1.1) | Review pending, or after "I chose it" |
 |---|---|---|
 | Free until payday | 12,567.56 | 12,656.12 |
 | Everyday until payday (× 15) | 295.28 | 295.28 |
-| **Safe to save** | **12,272.28** | **12,360.83** (+88.55; the irregular reserve fell by 88.56) |
+| **Safe to save** | **12,272.28** | **12,360.83** (the irregular reserve is 88.56 lower) |
 | Free month | 783.79 | 963.49 |
 | Everyday month (× 30.4375) | 599.18 | 599.18 |
-| **Safe to save monthly** | **184.61** | **364.31** (+179.70, the irregular spending per month moved out) |
+| **Safe to save monthly** | **184.61** | **364.31** (the irregular spending per month is 179.70 lower) |
 
-Two more customers, today 2026-09-30 (no labels):
+Three more customers, today 2026-09-30 (no reviews):
 
-| | CUST00849 (persona Aleksi) | CUST00002 |
-|---|---|---|
-| Free month = income − sweep − committed − (essentials + irregular) per month | 2,088.35 − 0 − 712.67 − 525.97 − 124.23 = **725.47** (the rounded parts add up to 725.48; each value is rounded on its own) | 1,592.42 − 0 − 996.32 − 455.55 − 142.13 = **−1.59** (the rounded parts add up to −1.58) |
-| Everyday month (one-offs left out) | 525.52 | 382.30 |
-| **Safe to save monthly** | **199.95** = 725.47 − 525.52 | **0.00**: −1.59 − 382.30 = −383.89, never below 0 |
-| Reason | none (the month leaves money) | left after essentials 1,592.42 − 996.32 − 455.55 = 140.54 ≥ 0, so `largest_everyday_category`: **Lifestyle**, 1,381.79 in the window = 230.30 a month (then Entertainment 99.07, Restaurants 92.18) |
-| Free until payday − everyday until payday | 819.62 − 258.98 = **560.64** | 198.47 − 188.40 = **10.07** |
+| | CUST00849 (persona Aleksi) | CUST00019 | CUST00002 |
+|---|---|---|---|
+| Free month = income − sweep − committed − (essentials + irregular) per month | 2,088.35 − 0 − 712.67 − 525.97 − 124.23 = **725.47** (the rounded parts add up to 725.48) | 2,548.69 − 0 − 1,171.32 − 694.69 − 283.79 = **398.89** | 1,592.42 − 0 − 996.32 − 455.55 − 142.13 = **−1.59** (the rounded parts add up to −1.58) |
+| Everyday month (one-offs left out) | 525.52 | 585.33 | 382.30 |
+| **Safe to save monthly** | **199.95** = 725.47 − 525.52 | **0.00**: 398.89 − 585.33 = −186.45 | **0.00**: free month is already negative |
+| Reason | none: the month leaves money | free month ≥ 0, so `largest_everyday_category`: **Restaurants**, 186.93 a month (then Entertainment 157.48, Lifestyle 139.37 and Travel 101.55; the four add up to 585.33) | free month < 0, so `essentials_exceed_income`, shortfall **1.59** a month |
+| Free until payday − everyday until payday | 819.62 − 258.98 = **560.64** | 573.53 − 288.46 = **285.07** | 198.47 − 188.40 = **10.07** |
 
-The per-category window totals come from the transactions of the window with the everyday rules of section 1 (Restaurants, Entertainment, Lifestyle, Travel, and taxis); there are no labels or subscriptions for these customers.
+- **How these were computed:** `03_safe_to_spend.sql` over the default sample range, one read-only connection with `statement_timeout = '60s'`, plus the per-category figures from the shared classification block on the same basis as `everyday_month`.
+- **How often each case occurs:** in the 99-customer sample, 5 customers have a negative free month (CUST00002, 09, 34, 78, 86), and 35 have a positive free month that everyday spending uses up.
 
 ## 4. What-if savings — "How could I save more?"
 
@@ -537,7 +563,12 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
 5. **What-if scope. Decided:** never propose cutting regular essentials; everyday spending is the target, unexpected necessities only with a caveat (section 4, implemented in `04_what_if.sql`).
 6. **Store switch. Decided:** shown only when the full-population run finds stores that pass the significance rule; otherwise the coach says the difference is not measurable. Result of the full run (#21): no store passes, so it is not shown (section 7).
 7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
-8. **Spike labels. Open.** A spike the customer labels as everyday spending is no longer reserved for, so safe to spend rises: for Sanna by 41.32 a week (section 1.1). The default is to accept the customer's answer and have the coach say what changed.
+8. **Spike labels. Decided** (owner, on issue #33):
+   - A spike with a pending review is `unclassified`: in no basket and not in the reserve.
+   - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 221.58 → 180.26).
+   - "I chose it" leaves safe to spend unchanged.
+   - No answer ever raises safe to spend.
+   - A customer without a pending review keeps every published number (section 1.1).
 
 ## 11. Optional, after the MVP: down payment plan (`down_payment_plan`)
 
