@@ -185,3 +185,30 @@ def test_finnish_answer_with_finnish_formatting(make_pipeline):
     done = dict(events)["done"]
     assert dict(events)["meta"]["language"] == "fi"
     assert done["outcome"] == "answered" and done["text_rendered"] == "Elokuussa 2026 ravintoloihin meni 147,64 €."
+
+
+def test_independent_calls_of_one_turn_run_in_parallel(make_pipeline):
+    import threading
+
+    from conftest import fake_spending
+
+    barrier = threading.Barrier(2, timeout=5)
+
+    def together(ctx, args):
+        barrier.wait()  # passes only if the other call runs at the same time
+        return fake_spending(ctx, args)
+
+    reg = registry(ToolSpec("other_spending", "Same data, another tool.", FakeArgs, together, ("x", "x")))
+    reg.tools["fake_spending"] = ToolSpec("fake_spending", "t", FakeArgs, together, ("x", "x"))
+    model = ScriptedModel(plans=[[FunctionCall("fake_spending", {}), FunctionCall("other_spending", {}),
+                                  FunctionCall("finish")]], drafts=[GOOD])
+    data = FakeData()
+    pipe = make_pipeline(model, reg=reg, data=data)
+    events = run(pipe)
+    assert names(events).count("card") == 2 and data.connections == 2
+    calls = audit_records(pipe)[-1]["planner_turns"][0]["calls"]
+    assert [c["name"] for c in calls] == ["fake_spending", "other_spending", "finish"]
+    assert [c["status"] for c in calls] == ["ok", "ok", "ok"]
+    ids = [p["card"]["primary"]["id"] for e, p in events if e == "card"]
+    assert ids == ["n1", "n1"]  # one shared registry: the same evidence ref gets the same id in both calls
+    assert dict(events)["done"]["outcome"] == "answered"

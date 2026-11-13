@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -37,7 +39,7 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
-from core.tools.context import ToolContext
+from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
@@ -45,6 +47,7 @@ log = logging.getLogger("uvicorn.error")
 MAX_ROUNDS = 2
 MAX_DATA_CALLS = 6
 MAX_CARDS = 3
+MAX_PARALLEL = 2   # the app's pool holds 2 connections (core/app/db.py)
 
 ERRORS = {
     "data_unavailable": (("Your data can't be loaded right now. Please try again in a minute.",
@@ -53,6 +56,18 @@ ERRORS = {
 }
 
 Emit = Callable[[str, dict[str, Any]], None]
+
+
+class LockedNumberRegistry(NumberRegistry):
+    """The answer's number registry, safe for tools that run in parallel threads."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._lock = threading.Lock()
+
+    def register(self, number):
+        with self._lock:
+            return super().register(number)
 
 
 class DataUnavailable(RuntimeError):
@@ -102,6 +117,7 @@ class _Answer:
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
 
@@ -171,7 +187,8 @@ class Pipeline:
         a.flags = guard.flags(message)
 
         # The customer is bound here, from the request, and never from model output (R4).
-        ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang)
+        ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
+                          numbers=LockedNumberRegistry())
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -214,16 +231,21 @@ class Pipeline:
             for call, exc in rejected:
                 responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
                 turn["calls"].append({"name": call.name, "args": call.args, "status": f"rejected: {exc.code}"})
+            pending, slots = [], []  # slots keep the model's call order in the audit record
             for call, kind, args in parsed:
                 if kind == "control":
-                    turn["calls"].append({"name": call.name, "args": call.args, "status": "ok"})
+                    slots.append({"name": call.name, "args": call.args, "status": "ok"})
                     continue
                 if data_calls >= MAX_DATA_CALLS:
-                    turn["calls"].append({"name": call.name, "args": call.args, "status": "not_run: call limit"})
+                    slots.append({"name": call.name, "args": call.args, "status": "not_run: call limit"})
                     continue
                 data_calls += 1
-                record = self._run_tool(ctx, call, args, lang, emit, a)
-                turn["calls"].append(record)
+                pending.append((call, args))
+                slots.append(None)
+            records = self._run_tools(ctx, pending, lang, emit, a)
+            done_records = iter(records)
+            turn["calls"] += [slot if slot is not None else next(done_records) for slot in slots]
+            for (call, args), record in zip(pending, records):
                 a.calls.append({"name": call.name, "args": call.args})
                 if "view" in record:
                     views.append(record.pop("view"))
@@ -274,6 +296,23 @@ class Pipeline:
                                     "latency_ms": self._ms(t)})
         return self.fallback.plan(request), "fallback"
 
+    def _run_tools(self, ctx: ToolContext, pending: list[tuple[FunctionCall, Any]], lang: str, emit: Emit,
+                   a: _Answer) -> list[dict[str, Any]]:
+        """Run one turn's data calls. Independent calls run in parallel, at most MAX_PARALLEL at a time
+        (one pool connection each); each gets its own context over the answer's shared number registry.
+        Records come back in call order; cards are sent as each tool finishes."""
+        if len(pending) <= 1:
+            return [self._run_tool(ctx, call, args, lang, emit, a) for call, args in pending]
+
+        def one(item: tuple[FunctionCall, Any]) -> dict[str, Any]:
+            call, args = item
+            own = ToolContext(customer_id=ctx.customer_id, as_of=ctx.as_of, conn=None, language=ctx.language,
+                              numbers=ctx.numbers)
+            return self._run_tool(own, call, args, lang, emit, a)
+
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+            return list(pool.map(one, pending))  # re-raises DataUnavailable from any call
+
     def _run_tool(self, ctx: ToolContext, call: FunctionCall, args: Any, lang: str, emit: Emit, a: _Answer) -> dict[str, Any]:
         spec = self.registry.tools[call.name]
         emit("status", {"stage": "tool", "tool": call.name, "label": template.pick(spec.status_label, lang)})
@@ -297,10 +336,13 @@ class Pipeline:
         else:
             record.update(status="ok", evidence=list(result.evidence))
             record["view"] = result.model_view
-            a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
             card = spec.card_builder(result)
-            if card is not None and len(a.cards) < MAX_CARDS:
-                a.cards.append(card.card_id)
+            with a.lock:
+                a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
+                send = card is not None and len(a.cards) < MAX_CARDS
+                if send:
+                    a.cards.append(card.card_id)
+            if send:  # as soon as the tool finishes, before the composer starts
                 emit("card", {"card": card.model_dump(mode="json")})
         finally:
             ctx.conn = None

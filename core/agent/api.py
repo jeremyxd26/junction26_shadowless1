@@ -78,26 +78,72 @@ class PoolData:
             return conn.execute(CUSTOMER_SQL, (customer_id,)).fetchone() is not None
 
 
-class RateLimiter:
-    """A simple per-process counter: at most `per_minute` asks per customer (0 turns it off)."""
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return default
 
-    def __init__(self, per_minute: int) -> None:
-        self.per_minute = per_minute
-        self._hits: dict[str, deque] = defaultdict(deque)
+
+class AskLimits:
+    """Per-process limits on POST /api/ask, checked before the stream opens (security issue #85).
+
+    Three sliding one-minute windows; 0 turns a limit off:
+    - per client address (ASK_RATE_LIMIT_PER_MIN, default 10): the address the reverse proxy saw;
+    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together;
+    - per customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10): changing the customer_id in the body
+      never resets the address limit, and one customer cannot be flooded from many addresses.
+    A request counts only if every limit allows it.
+    """
+
+    def __init__(self, per_address: int, global_: int, per_customer: int) -> None:
+        self.limits = {"address": per_address, "global": global_, "customer": per_customer}
+        self._hits: dict[tuple[str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def allow(self, key: str) -> tuple[bool, int]:
-        if self.per_minute <= 0:
-            return True, 0
+    @classmethod
+    def from_env(cls) -> AskLimits:
+        return cls(_env_int("ASK_RATE_LIMIT_PER_MIN", 10), _env_int("ASK_RATE_LIMIT_GLOBAL_PER_MIN", 60),
+                   _env_int("ASK_RATE_LIMIT_CUSTOMER_PER_MIN", 10))
+
+    def allow(self, address: str, customer_id: str) -> tuple[bool, int]:
         now = time.monotonic()
+        keys = {"address": address, "global": "*", "customer": customer_id}
         with self._lock:
-            hits = self._hits[key]
-            while hits and now - hits[0] > 60:
-                hits.popleft()
-            if len(hits) >= self.per_minute:
-                return False, int(60 - (now - hits[0])) + 1
-            hits.append(now)
+            retry = 0
+            for kind, limit in self.limits.items():
+                if limit <= 0:
+                    continue
+                hits = self._hits[(kind, keys[kind])]
+                while hits and now - hits[0] > 60:
+                    hits.popleft()
+                if len(hits) >= limit:
+                    retry = max(retry, int(60 - (now - hits[0])) + 1)
+            if retry:
+                return False, retry
+            for kind, limit in self.limits.items():
+                if limit > 0:
+                    self._hits[(kind, keys[kind])].append(now)
             return True, 0
+
+
+def trusted_proxies() -> set[str]:
+    """Peers whose X-Forwarded-For is believed: the reverse proxy on the same host (the service listens
+    on 127.0.0.1 behind Caddy). TRUSTED_PROXIES is a comma-separated list; default loopback only."""
+    raw = os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1")
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
+def client_address(request: Request) -> str:
+    """The client's address as the reverse proxy saw it. X-Forwarded-For is used only when the direct
+    peer is a trusted proxy, and then only its rightmost entry: the one our proxy wrote, not anything
+    the client sent. From any other peer the header is ignored, so it cannot change the key."""
+    peer = request.client.host if request.client else "unknown"
+    if peer in trusted_proxies():
+        forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+        if forwarded:
+            return forwarded[-1]
+    return peer
 
 
 @dataclass
@@ -105,7 +151,7 @@ class Agent:
     pipeline: Pipeline
     data: DataAccess
     audit: AuditLog
-    limiter: RateLimiter = field(default_factory=lambda: RateLimiter(int(os.environ.get("ASK_RATE_LIMIT_PER_MIN", "10"))))
+    limits: AskLimits = field(default_factory=AskLimits.from_env)
 
 
 def build_agent(app) -> Agent:
@@ -199,7 +245,7 @@ async def ask(request: Request):
     message = body.message.strip()
     if not message or len(body.message) > MAX_MESSAGE:
         return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
-    allowed, retry_after = agent.limiter.allow(body.customer_id)
+    allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
     if not allowed:
         return _error(429, "rate_limited", ERROR_TEXT["rate_limited"], True, {"Retry-After": str(retry_after)})
     try:

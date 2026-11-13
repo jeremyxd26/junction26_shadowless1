@@ -39,11 +39,15 @@ curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "A
 Answer pipeline settings:
 - `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
 - `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
-- `ASK_RATE_LIMIT_PER_MIN`: asks per customer per minute, per process. The default is 10. Use `0` (off) for local eval runs only.
+- Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
+  - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
+  - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
+  - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per customer, default 10.
+- `TRUSTED_PROXIES`: comma-separated peers whose `X-Forwarded-For` is believed, default loopback only (the service listens on 127.0.0.1 behind Caddy). From any other peer the header is ignored.
 
 To run the eval set against a local service with the keyword model:
 ```
-AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
+AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 ASK_RATE_LIMIT_GLOBAL_PER_MIN=0 ASK_RATE_LIMIT_CUSTOMER_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
 python core/eval/run.py --source api --base-url http://localhost:8000 --tag spending
 ```
 
