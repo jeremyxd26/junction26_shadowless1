@@ -96,3 +96,43 @@ def test_warm_calls_use_the_pipelines_arguments():
     assert by_tool["run_what_if"] == {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}
     bills = [c.args for c in warmup.CALLS if c.function == "get_recurring_bills"]
     assert bills == [{"include_income": False}, {}]           # the overview's card and the bills question
+
+
+
+def evidence_tool(ctx, args):
+    calls_made.append((ctx.customer_id, ctx.language))
+    ref = f"ev_{ctx.customer_id[-3:]}{ctx.language}000000"[:15]
+    return ToolResult(tool="evidence_tool", data=None, evidence=[ref], model_view={"tool": "evidence_tool"})
+
+
+class EvidenceConn:
+    """Answers the warm-up's one coach_evidence query per persona with the refs that still exist."""
+
+    def __init__(self, existing):
+        self.existing = set(existing)
+        self.queries = 0
+
+    def execute(self, sql, params=None):
+        self.queries += 1
+        customer_id, refs = params
+        rows = [(r,) for r in refs if r in self.existing]
+
+        class _Res:
+            def fetchall(self):
+                return rows
+        return _Res()
+
+
+def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
+    calls_made.clear()
+    cache = ToolCache(mode="memory")
+    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
+    warmup.warm(cache, None, ["CUST00860"], ["en", "fi"], date(2026, 9, 30), out=lambda _: None, calls=calls)
+    assert len(calls_made) == 2
+    conn = EvidenceConn(existing={"ev_860en000000"})                  # the fi result's evidence is gone
+    rows = warmup.warm(cache, conn, ["CUST00860"], ["en", "fi"], date(2026, 9, 30), out=lambda _: None,
+                       calls=calls)
+    assert conn.queries == 1                                           # one query for the persona
+    assert [(r.language, r.source) for r in rows] == [("en", "memory"), ("fi", "memory"), ("fi", "recomputed")]
+    assert calls_made[-1] == ("CUST00860", "fi") and len(calls_made) == 3

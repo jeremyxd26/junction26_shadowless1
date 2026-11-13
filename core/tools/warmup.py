@@ -10,7 +10,9 @@ so it writes the sqlite file the service reads (/srv/var/cache, the persistent v
 failed call is reported and skipped, and the exit code is only informative. It fills the disk layer of
 the tool cache (core/tools/cache.py, TOOL_CACHE=disk), which the service reads on its first request. For each persona and language it calls the tools of the overview and of the four questions of
 the challenge brief, with the same arguments the overview and the answer pipeline's question rules use,
-and prints the time and the source (computed or already cached) of every call.
+and prints the time and the source (computed or already cached) of every call. A cached result whose
+evidence rows are gone from coach_evidence (a reset database) is treated as a miss and computed again:
+one query per persona checks the refs.
 
 Limits: only the customers of core/config/personas.yaml, never more; one database connection with the
 tools' 60 s statement timeout; the tools write their evidence specs, as on any request.
@@ -115,6 +117,17 @@ def answer_requests(customers: Iterable[str], languages: Iterable[str] = LANGUAG
             for c in customers for lang in languages for pair in BRIEF_QUESTIONS]
 
 
+EVIDENCE_SQL = "SELECT ref FROM coach_evidence WHERE customer_id = %s AND ref = ANY(%s)"
+
+
+def missing_evidence(conn: Any, customer_id: str, refs: set[str]) -> set[str]:
+    """The refs of cached results whose evidence row is gone (a reset database): one query per persona."""
+    if not refs or conn is None:
+        return set()
+    found = {row[0] for row in conn.execute(EVIDENCE_SQL, (customer_id, sorted(refs))).fetchall()}
+    return refs - found
+
+
 def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[str], as_of: date,
          out: Callable[[str], None] = print, calls: Iterable[WarmCall] = CALLS) -> list[Row]:
     allowed = set(persona_ids())
@@ -122,25 +135,48 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
         raise ValueError("the warm-up runs for the demo personas only")
     tools = available_calls(calls)
     rows: list[Row] = []
+
+    def report(customer_id: str, lang: str, tool: str, source: str, t0: float) -> None:
+        row = Row(customer_id, lang, tool, source, round(1000 * (time.perf_counter() - t0)))
+        rows.append(row)
+        out(f"{row.customer_id}  {row.language}  {row.tool:<22} {row.source:<10} {row.ms:>7} ms")
+
+    def prepare(ctx: ToolContext, call: WarmCall, fn: Callable, args_model: type) -> Any:
+        t0 = time.perf_counter()
+        try:
+            prepared = cache.prepare(call.function, args_model, fn, ctx, call.args)
+        except Exception as exc:  # noqa: BLE001 - report and go on with the next call
+            report(ctx.customer_id, ctx.language, call.function, f"error {type(exc).__name__}", t0)
+            return None
+        report(ctx.customer_id, ctx.language, call.function, prepared.source, t0)
+        return prepared
+
     for customer_id in customers:
         history, labels_key = None, None   # one transactions read and one label read per customer
+        hits = []                          # cached results of this persona, checked against coach_evidence
         for lang in languages:
             ctx = ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=lang)
             ctx._history, ctx.labels_key = history, labels_key
             cache.ensure_labels_key(ctx)
             for call, fn, args_model in tools:
-                t0 = time.perf_counter()
                 if fn is None:
-                    source = "missing"
-                else:
-                    try:
-                        source = cache.prepare(call.function, args_model, fn, ctx, call.args).source
-                    except Exception as exc:  # noqa: BLE001 - report and go on with the next call
-                        source = f"error {type(exc).__name__}"
-                row = Row(customer_id, lang, call.function, source, round(1000 * (time.perf_counter() - t0)))
-                rows.append(row)
-                out(f"{row.customer_id}  {row.language}  {row.tool:<22} {row.source:<8} {row.ms:>7} ms")
+                    report(customer_id, lang, call.function, "missing", time.perf_counter())
+                    continue
+                prepared = prepare(ctx, call, fn, args_model)
+                if prepared is not None and prepared.hit:
+                    hits.append((ctx, call, fn, args_model, prepared))
             history, labels_key = ctx._history, ctx.labels_key
+        refs = {ref for *_, p in hits for ref in p.entry.result.evidence}
+        gone = missing_evidence(conn, customer_id, refs)
+        for ctx, call, fn, args_model, p in hits:
+            if gone & set(p.entry.result.evidence):   # evidence row gone: a miss, computed again
+                cache.drop(p.key)
+                t0 = time.perf_counter()
+                try:
+                    cache.prepare(call.function, args_model, fn, ctx, call.args)
+                    report(customer_id, ctx.language, call.function, "recomputed", t0)
+                except Exception as exc:  # noqa: BLE001
+                    report(customer_id, ctx.language, call.function, f"error {type(exc).__name__}", t0)
     return rows
 
 
@@ -195,10 +231,12 @@ def main(argv: list[str] | None = None) -> int:
         conn.close()
     errors = [r for r in rows if r.source.startswith("error")]
     computed = sum(r.source == "tool" for r in rows)
+    recomputed = sum(r.source == "recomputed" for r in rows)
     cached = sum(r.source in ("memory", "disk") for r in rows)
     missing = sum(r.source == "missing" for r in rows)
     print(f"warmed {len(customers)} personas x {len(languages)} languages in {time.perf_counter() - t0:.1f} s: "
-          f"{computed} computed, {cached} already cached, {missing} tools not merged yet, {len(errors)} errors; "
+          f"{computed} computed, {cached} already cached ({recomputed} of them recomputed: evidence missing), "
+          f"{missing} tools not merged yet, {len(errors)} errors; "
           f"cache {cache.directory / 'tools.sqlite3'}")
     return 1 if errors else 0
 
