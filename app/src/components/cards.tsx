@@ -4,7 +4,8 @@ import { BASKETS } from '../lib/baskets.ts'
 import type { Count } from '../lib/motion.ts'
 import { navigate, openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
-import { EstimateBadge } from './EstimateBadge.tsx'
+import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
+import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
 /** Flat white card with a thin border, no shadow (DESIGN.md). */
@@ -101,6 +102,7 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
   const reserve = card.components.find((component) => component.key === 'irregular_reserve')
   const wasPrimary = motion?.was.safe_to_spend
   const wasReserve = motion?.was.irregular_reserve
+  const estimate = useEstimateToggle()
   return (
     <section className={HERO_BLOCK}>
       <div className="flex items-start justify-between gap-3">
@@ -108,8 +110,9 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
           <h2 className="text-sm font-semibold text-on-hero-muted">{card.title}</h2>
           {card.subtitle && <p className="text-sm text-on-hero-muted">{card.subtitle}</p>}
         </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} onHero />}
+        {card.estimate && <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />}
       </div>
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} onHero />}
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <NumberChip number={card.primary} size="hero" tone="hero" count={motion?.counts.safe_to_spend} />
@@ -173,6 +176,7 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
   const items = card.items.filter(
     (item) => item.key in BASKETS && !(item.key === 'unclassified' && item.amount.value <= 0 && !motion?.waiting),
   )
+  const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
@@ -182,8 +186,9 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
           </h2>
           {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
         </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} />}
+        {card.estimate && <EstimateBadge estimate={card.estimate} control={estimate.control} />}
       </div>
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
 
       <ul className="mt-3 flex flex-col">
         {items.map((item) => {
@@ -251,12 +256,14 @@ export function TokenText({ text, numbers }: { text: string; numbers: Record<str
 }
 
 export function InsightCard({ insight }: { insight: Insight }) {
+  const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
         <h3 className={CARD_TITLE}>{insight.title}</h3>
-        {insight.estimate && <EstimateBadge estimate={insight.estimate} />}
+        {insight.estimate && <EstimateBadge estimate={insight.estimate} control={estimate.control} />}
       </div>
+      {insight.estimate && estimate.open && <EstimateNote estimate={insight.estimate} id={estimate.id} />}
       <p className="mt-1 text-base leading-8 text-ink-2">
         <TokenText text={insight.text} numbers={insight.numbers} />
       </p>

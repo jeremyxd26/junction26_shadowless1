@@ -7,6 +7,7 @@ import type {
   PersonasResponse,
 } from './types.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
+import { strings } from '../lib/i18n.ts'
 
 export type ApiMode = 'mock' | 'live'
 
@@ -21,61 +22,81 @@ export interface ApiClient {
   label(request: LabelRequest): Promise<LabelResponse>
 }
 
+type Body = Record<string, unknown>
+
+function isRecord(value: unknown): value is Body {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasArrays(body: Body, ...keys: string[]): boolean {
+  return keys.every((key) => Array.isArray(body[key]))
+}
+
+// The fields each screen reads without further checks. A body that lacks them is answered like
+// any other bad response (an error with "Try again"), not left to the error boundary.
+const isPersonas = (body: Body) => hasArrays(body, 'personas')
+const isOverview = (body: Body) =>
+  typeof body.greeting === 'string' &&
+  (body.hero == null || isRecord(body.hero)) &&
+  (body.safe_to_save == null || isRecord(body.safe_to_save)) &&
+  hasArrays(body, 'cards', 'reviews', 'insights', 'suggested_questions')
+const isEvidence = (body: Body) => isRecord(body.number) && isRecord(body.method) && hasArrays(body, 'rows', 'parts')
+const isLabel = (body: Body) =>
+  typeof body.review_state === 'string' && isRecord(body.message) && hasArrays(body, 'changes', 'refetch')
+
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
   // Default fetch credentials (same-origin), so the core's session cookie travels with every call.
-  async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(url: string, init: RequestInit, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    // Errors the app makes itself use the app's own texts; errors from the core come localised.
+    const t = strings(lang)
     let response: Response
     try {
       response = await fetch(url, { ...init, headers: { Accept: 'application/json', ...init.headers } })
     } catch {
-      throw new ApiError(0, { code: 'network', message: 'No connection. Try again.', retryable: true })
+      throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
     }
     const body: unknown = await response.json().catch(() => null)
     if (!response.ok) {
       if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
       throw new ApiError(response.status, {
         code: 'internal',
-        message: 'Something went wrong. Try again.',
+        message: t.errorRetry,
         retryable: response.status >= 500,
       })
     }
-    // A 200 that is not a JSON object (for example a static host answering /api with
-    // index.html) must not reach the screens as data.
-    if (typeof body !== 'object' || body === null) {
-      throw new ApiError(response.status, {
-        code: 'bad_response',
-        message: 'Something went wrong. Try again.',
-        retryable: true,
-      })
+    // A 200 that is not the expected JSON object (for example a static host answering /api with
+    // index.html, an array, or an object without the fields the screen reads) must not reach the
+    // screens as data.
+    if (!isRecord(body) || !isShape(body)) {
+      throw new ApiError(response.status, { code: 'bad_response', message: t.errorRetry, retryable: true })
     }
     return body as T
   }
 
-  function get<T>(path: string, params: Record<string, string>): Promise<T> {
-    return request<T>(`${base}${path}?${new URLSearchParams(params).toString()}`)
+  function get<T>(path: string, params: Record<string, string>, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    const query = new URLSearchParams({ ...params, lang }).toString()
+    return request<T>(`${base}${path}?${query}`, {}, lang, isShape)
   }
 
-  function post<T>(path: string, body: unknown): Promise<T> {
-    return request<T>(`${base}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+  function post<T>(path: string, body: { language: Language }, isShape: (body: Body) => boolean): Promise<T> {
+    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    return request<T>(`${base}${path}`, init, body.language, isShape)
   }
 
   return {
     mode: 'live',
-    personas: (lang) => get<PersonasResponse>('/api/personas', { lang }),
+    personas: (lang) => get<PersonasResponse>('/api/personas', {}, lang, isPersonas),
     overview: (customerId, lang) =>
-      get<OverviewResponse>(`/api/overview/${encodeURIComponent(customerId)}`, { lang }),
+      get<OverviewResponse>(`/api/overview/${encodeURIComponent(customerId)}`, {}, lang, isOverview),
     evidence: (ref, customerId, lang, cursor) =>
-      get<EvidenceResponse>(`/api/evidence/${encodeURIComponent(ref)}`, {
-        customer_id: customerId,
+      get<EvidenceResponse>(
+        `/api/evidence/${encodeURIComponent(ref)}`,
+        { customer_id: customerId, ...(cursor ? { cursor } : {}) },
         lang,
-        ...(cursor ? { cursor } : {}),
-      }),
-    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest),
+        isEvidence,
+      ),
+    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest, isLabel),
   }
 }
 

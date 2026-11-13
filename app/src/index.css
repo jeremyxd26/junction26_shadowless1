@@ -82,7 +82,7 @@ select {
 /* In the base layer, so utilities such as outline-none can still override it. */
 @layer base {
   :focus-visible {
-    outline: 3px solid var(--color-brand);
+    outline: var(--focus-ring-width) solid var(--color-brand);
     outline-offset: 2px;
   }
 }

@@ -48,14 +48,15 @@ export function EstimateBadge({ estimate, onHero = false, control }: Props) {
 }
 
 /** The estimate's text as a full-width box, for cards that use the badge's controlled mode. */
-export function EstimateNote({ estimate, id }: { estimate: Estimate; id: string }) {
+export function EstimateNote({ estimate, id, onHero = false }: { estimate: Estimate; id: string; onHero?: boolean }) {
+  const box = onHero ? 'bg-on-hero/10 text-on-hero' : 'bg-estimate-tint text-ink-2'
   return (
-    <div id={id} className="mt-2 rounded-md bg-estimate-tint p-3 text-sm text-ink-2">
-      <p className="font-semibold text-estimate">
+    <div id={id} className={`mt-2 rounded-md p-3 text-sm ${box}`}>
+      <p className={`font-semibold ${onHero ? 'text-on-hero' : 'text-estimate'}`}>
         <span aria-hidden="true">≈ </span>
         {estimate.label}
       </p>
-      <p className="mt-1">{estimate.text}</p>
+      <p className={`mt-1 ${onHero ? 'text-on-hero-muted' : ''}`}>{estimate.text}</p>
     </div>
   )
 }
