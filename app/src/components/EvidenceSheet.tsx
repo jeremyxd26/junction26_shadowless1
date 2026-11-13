@@ -60,7 +60,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
       setPages((current) => ({
         ...current,
         loading: false,
-        error: error instanceof ApiError ? error.message : 'Something went wrong.',
+        error: error instanceof ApiError ? error.message : t.errorGeneric,
       }))
     }
   }
