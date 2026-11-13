@@ -91,7 +91,7 @@ This document defines how the coach answers a question: which tools exist, what 
 | The user's question, wrapped as data | Transaction rows, one by one |
 | The previous questions and answers of this conversation, with numbers masked | Merchant ids. It sees aliases such as `store_a` with the digit-free label the app also shows, such as "Grocery store A". |
 | A compact view of each tool result: number ids, values, units, labels, period labels and flags | `balance_after` series, timestamps, account ids |
-| Category, basket and profile labels | `customer_id`, postal code, exact age. It sees only coarse peer-group labels such as "Age 30-39, postal areas 005xx". |
+| Category, basket and profile labels | `customer_id`, postal code, exact age. It sees only coarse peer-group labels such as "Age 25-34, postal area 005". |
 | The date `as_of` | Evidence refs and the evidence store |
 
 **Context bound by the server:**
@@ -108,7 +108,7 @@ This document defines how the coach answers a question: which tools exist, what 
 ### 5.1 The Number object
 
 Every number is `{value, unit, period, method, evidence_ref}` plus a localised `label` and `display` (contract, section 2.1).
-- `method` is `<metric_id>@<version>` and points to its definition in `metrics.md`.
+- `method` is `<metric>.<output column>@<version>` and points to the exact output in `metrics.md` and `core/metrics/` (section 6.2).
 - Spending is positive. Changes are signed.
 - `evidence_ref` is `null` only for values the user typed in (`user_input@1`).
 
@@ -124,7 +124,8 @@ When a tool produces a number, it also writes an **evidence spec**: the recipe n
 | `composite` | The method and the refs of the input numbers | `parts`: the input Number objects, each with its own ref, so the user can drill down |
 | `peer_aggregate` | Peer group, metric, period | Group statistics only: median, quartiles, group size. Never other customers' rows. |
 | `store_index` | Store, method, window | The index inputs at store level |
-| `input` | The value the user typed | Nothing more |
+
+Values the user typed in (`user_input@1`) carry `evidence_ref: null` and have no evidence spec.
 
 - **Ref:** `ev_` plus 12 lowercase letters and digits taken from `sha256(canonical JSON of the spec)`. The spec includes the method, so **one ref backs exactly one number**. The same number for the same customer and `as_of` always gets the same ref, even when it is shown in several places, so refs are stable across restarts and repeated questions.
 - **Storage:** specs live in a small table `coach_evidence(ref primary key, customer_id, spec jsonb, created_at)`. Writes are idempotent.
@@ -158,6 +159,7 @@ MccGroup    = "groceries" | "restaurants" | "taxi" | "public_transport" | "fuel"
 PeriodArg   = { preset: "this_week" | "last_week" | "this_month" | "last_month" | "last_3_months"
                       | "last_6_months" | "last_12_months" | "year_to_date" | "custom",
                 start?: date, end?: date }           # start/end only with "custom"
+                # last_6_months = the last 6 complete calendar months (metrics.md section 0)
 Period      = { start: date, end: date, label: string }   # resolved and clamped (R5)
 Filter      = { categories?: Category[], baskets?: Basket[], mcc_groups?: MccGroup[],
                 merchant?: MerchantAlias }
@@ -173,15 +175,17 @@ The rules that turn a preset into dates (for example where a week starts) are de
 
 | Tool | Answers | Card | Main method ids |
 |---|---|---|---|
-| `get_spending` | Spending or income by filter and period, optionally grouped and compared | `metric` (no grouping) or `breakdown` | `spending_total`, `spending_change`, `spending_change_pct`, `category_share`, `visit_count` |
-| `get_basket_breakdown` | Split into the three baskets | `breakdown` (`stacked_bar`) | `basket_amount`, `basket_share` |
-| `get_recurring_bills` | Recurring bills and income cadence, upcoming payments | `bills` | `recurring_amount`, `upcoming_bills_total` |
-| `get_safe_to_spend` | Safe to spend this week or until payday | `metric` with `components`, `estimate` set | `safe_to_spend`, `safe_to_spend_daily` |
-| `run_what_if` | Savings from a change in behaviour | `whatif` (`estimate` set) | `whatif_baseline`, `whatif_projection`, `whatif_saving` |
-| `get_spender_profile` | "What kind of spender am I?" | `profile` | per trait, from #6 |
-| `get_peer_benchmark` | Comparison with people of the same age band and area | `peer` | `peer_median`, `peer_quantile`, `peer_percentile`, `peer_group_size` |
-| `compare_store_prices` | Grocery store price levels and the saving from switching | `stores` (`estimate` set) | `store_price_index`, `store_switch_saving` |
-| `down_payment_plan` (optional, post-MVP) | How much could I put aside for a down payment, and how long would it take | `metric` with components (`estimate` set) | from #6 |
+| `get_spending` | Spending or income by filter and period, optionally grouped and compared | `metric` (no grouping) or `breakdown` | `spending.total`, `spending.change`, `spending.change_pct`, `spending.share_pct`, `spending.n_tx` (plain sums and counts over the filter, defined here) |
+| `get_basket_breakdown` | Split into the three baskets, monthly average over the window | `breakdown` (`stacked_bar`) | `baskets.month_avg_eur`, `baskets.share_pct`, `spender_profile.spend_month_eur` |
+| `get_recurring_bills` | Recurring bills and income cadence, bills due before payday | `bills` | `recurring.typical_month_eur`, `safe_to_spend.bills_due_eur` |
+| `get_safe_to_spend` | Safe to spend in the next 7 days | `metric` with `components`, `estimate` set | `safe_to_spend.safe_to_spend_7d_eur`, `.free_until_payday_eur`, `.balance_limit_7d_eur`, `.budget_limit_7d_eur`, `.balance_eur`, `.bills_due_eur`, `.essentials_reserve_eur`, `.irregular_reserve_eur`, `.cushion_eur` |
+| `run_what_if` | Savings from cutting a selection by a percentage | `whatif` (`estimate` set) | `what_if.baseline_month_eur`, `.saving_month_eur`, `.saving_week_eur`, `.saving_year_eur`, `.one_off_excluded_eur`, `.regular_excluded_eur` |
+| `get_spender_profile` | "What kind of spender am I?" | `profile` | `spender_profile.<feature column>`, for example `spender_profile.keep_rate_pct` |
+| `get_peer_benchmark` | Comparison with people of the same age band and area | `peer` (`estimate` set) | `peer_benchmark.you_month_eur`, `.peer_median_month_eur`, `.peer_p25_month_eur`, `.peer_p75_month_eur`, `.percentile`, `.vs_median_pct`, `.peer_n` |
+| `compare_store_prices` | Grocery store price levels, and whether switching would save anything | `stores` (`estimate` set) | `store_price_index.index_pct`, `.ci95_low_pct`, `.ci95_high_pct`, `.n_visits`, `.home_spend_month_eur`, `.ticket_gap_pct`, `.est_saving_month_eur` |
+| `down_payment_plan` (optional, post-MVP) | How much could I put aside for a down payment, and how long would it take | `metric` with components (`estimate` set) | `metrics.md` section 11 (no SQL yet) |
+
+Method ids are `<metric>.<output column>@<version>`. `<metric>` is the SQL file in `core/metrics/` without its number, and the output column is the one `metrics.md` lists, so every number points at the exact definition that produced it. `spending.*` and `evidence.row_count` are plain sums and counts over a filter, which `metrics.md` does not need to define. Values the user typed carry `user_input@1`.
 
 Typed signatures (`data` is what the tool returns besides the card):
 
@@ -201,58 +205,87 @@ get_basket_breakdown(period: PeriodArg)
                   top_categories: { key: Category, label, amount: Number }[] }[],
        overrides_applied: { target: Category | MerchantAlias, from: Basket, to: Basket }[] }
 
-get_recurring_bills(window?: "until_next_payday" | "next_30_days" | "all_active",  # default until_next_payday
-                    include_income?: boolean)
-  -> { bills: { bill_id, label, category: Category, cadence, cadence_label, typical_amount: Number,
-                last_paid: date, next_expected: date | null, confidence: "high" | "medium" | "low" }[],
-       income: { key, label, cadence, typical_amount: Number, next_expected: date | null }[],
-       upcoming_total: Number, next_payday: date | null }
+get_recurring_bills(include_income?: boolean)              # metrics.md section 2; window = last 6 complete months
+  -> { bills: { bill_id, label, category: Category, cadence: "monthly", typical_month: Number,
+                status: "spread" | "done_this_month" | "upcoming" | "late" | "skipped_this_month",
+                last_paid: date, next_expected: date | null, due_until_payday: Number }[],
+       income: { key, label, typical_month: Number, next_expected: date | null }[],
+       upcoming_total: Number, next_payday: date,
+       salary_status: "received_this_month" | "upcoming" | "late" | "no_salary_series" }
+       # Salary Sweep is a transfer: never listed as a bill (metrics.md 2.3).
+       # "upcoming" includes the typical day itself; an unpaid bill becomes "late" the day after.
 
-get_safe_to_spend(horizon?: "this_week" | "until_next_payday")                      # default this_week
-  -> { period: Period, safe_to_spend: Number, per_day: Number,
-       components: { key, label, operation: "add" | "subtract", amount: Number }[],  # keys, formula: metrics.md
-       status: "comfortable" | "tight" | "over", next_payday: date | null }
+get_safe_to_spend()                                         # metrics.md section 3: the 7 days after today
+  -> { period: Period, safe_to_spend: Number,
+       free_until_payday: Number, balance_limit: Number, budget_limit: Number,
+       binding_limit: "balance" | "budget",
+       components: { key: "balance" | "bills_due" | "essentials_reserve" | "irregular_reserve" | "cushion",
+                     label, operation: "add" | "subtract", amount: Number }[],
+       status: "ok" | "below_usual" | "nothing_free", next_payday: date,
+       salary_status: "received_this_month" | "upcoming" | "late" | "no_salary_series" }
+       # no_salary_series with no other recurring income: the result is 0 and the answer says
+       # the coach cannot estimate it
 
-run_what_if(scenario: Scenario, horizon?: "next_month" | "next_3_months" | "next_12_months")
-  Scenario = { type: "category_change", category: Category, change_pct: -100..100 }
-           | { type: "basket_change", basket: Basket, change_pct: -100..100 }
-           | { type: "cancel_recurring", bill_id: string }
-           | { type: "switch_grocery_store", from: MerchantAlias, to: MerchantAlias }
-  -> WhatIfResult                                           # same shape as POST /api/whatif
+run_what_if(selection: { kind: "category", value: Category }      # metrics.md section 4
+                     | { kind: "basket", value: Basket }
+                     | { kind: "mcc", value: string }               # comma-separated MCC codes, e.g. "4121"
+                     | { kind: "merchant", value: MerchantAlias },
+            cut_pct: 1..100)
+  -> WhatIfResult                                           # same shape as POST /api/whatif:
+                                                            # status: "estimate" | "estimate_with_caveat" | "not_offered",
+                                                            # baseline, saving per month/week/year, one_off_excluded,
+                                                            # regular_excluded. Baseline = last 6 complete months,
+                                                            # one-offs left out; regular essentials are never cut.
+  # POST /api/whatif takes a merchant id; the model only knows aliases. The server maps alias <-> id.
 
-get_spender_profile(period?: PeriodArg)                                             # default last_6_months
-  -> { period: Period, profile: { key, label, description },
-       traits: { key, label, value: Number, note }[] }      # no sensitive traits (R9)
+get_spender_profile()                                       # metrics.md section 5; last 6 complete months
+  -> { period: Period,
+       profile: { key: "not_enough_income_data" | "stretched" | "big_ticket" | "everyday_heavy"
+                     | "saver" | "steady", label, description },
+                # not_enough_income_data: no verdict; the answer says the account shows too little income
+       traits: { key: "salary_moved_elsewhere" | "went_below_zero" | "regular_investor"
+                    | "weekend_spender" | "frequent_small_purchases", label, note }[],
+       features: { key, decides_label: boolean, value: Number }[] }   # e.g. keep_rate, everyday_share
+       # no feature uses Health on its own, labels and traits hold no sensitive terms (R9)
 
-get_peer_benchmark(metric: "total_spending" | "category_spending" | "basket_amount",
-                   category?: Category, basket?: Basket, period: PeriodArg,
-                   peer_group?: "age_band" | "postal_area" | "age_band_and_postal_area")
+get_peer_benchmark(metric: "spend_total" | Basket
+                         | "Groceries" | "Restaurants" | "Transportation" | "Entertainment" | "Lifestyle"
+                         | "Travel" | "Home & Tech" | "Utilities" | "Housing")   # Health is never benchmarked (R9)
   -> { period: Period, you: Number, peer_median: Number, peer_p25: Number, peer_p75: Number,
-       percentile: Number, peer_group: { key, label, size: Number, widened: boolean } }
-       # below the minimum group size (set in metrics.md) the group is widened and widened = true
+       percentile: Number, vs_median: Number,
+       peer_group: { level: "age_band+area3" | "age_band+city" | "age_band" | "all",
+                     label, size: Number, comparable: boolean } }
+     | { shown: false, reason: "group_too_small" | "not_comparable" }    # then no card
+       # metrics.md section 6: the most specific level with at least 20 other peers; monthly averages
 
-compare_store_prices(period?: PeriodArg)                    # groceries only in v1; default last_6_months
-  -> { stores: { merchant: MerchantAlias, label, is_s_group: boolean | null,
-                 price_index: Number, your_spend: Number, visits: Number }[],
-       cheapest: MerchantAlias | null, estimated_saving: Number,
-       saving_range: { low: Number, high: Number }, caveats: string[],
+compare_store_prices()                                      # metrics.md section 7; groceries, last 365 days
+  -> { stores: { merchant: MerchantAlias, label, is_s_group: boolean | null, price_index: Number,
+                 price_index_ci95: { low: Number, high: Number } | null, differs_from_average: boolean,
+                 visits: Number }[],
+       switch: { status: "estimate" | "within_noise" | "already_lowest" | "not_measurable" | "no_alternative",
+                 home: MerchantAlias, alternative: MerchantAlias | null, home_spend_month: Number,
+                 ticket_gap: Number | null, estimated_saving: Number | null },   # set only for "estimate"
+       caveats: string[],
        bonus_estimate: Number | null }                     # S-Bonus, once the #4 rules exist
+       # Until the full-population run confirms the index, the coach never presents a switch as a saving.
 ```
 
 **Not in v1.** Two features are left out on purpose:
 - **Basket overrides:** #6 defines how a user can move a category or merchant to another basket. The tools already report `overrides_applied`, but the endpoint that stores an override is not part of this contract. Adding it is a follow-up issue.
-- **Mortgages (decided, narrow scope):** R8 stays. The coach never predicts or scores a mortgage or credit decision. The only mortgage-related help is `down_payment_plan` below, an **optional post-MVP** tool. It answers "how much could I put aside for a down payment, and how long would it take" from the customer's own cash flow. Its formula belongs to `metrics.md`. It reads none of the mortgage tables.
+- **Mortgages (decided, narrow scope):** R8 stays. The coach never predicts or scores a mortgage or credit decision. The only mortgage-related help is `down_payment_plan` below, an **optional post-MVP** tool. It answers "how much could I put aside for a down payment, and how long would it take" from the customer's own cash flow. Its formula belongs to `metrics.md`. It reads none of the mortgage tables. Until it is built, a down-payment question routes to `decline(out_of_scope)` with its own template: the coach says it cannot plan a down payment yet, and offers "How could I save more?" and "What can I safely spend this week?" instead.
 
 Optional post-MVP tool:
 
 ```text
-down_payment_plan(target: { type: "amount", amount_eur: number }
-                        | { type: "price", price_eur: number, down_payment_share_pct: 0..100 },
-                  monthly_saving_eur?: number)              # default: the saving capacity from the user's own cash flow
-  -> { target_amount: Number,                               # eur; user_input@1 when typed, else derived from price and share
-       monthly_saving: Number,                              # eur_per_month; user_input@1 or from cash flow, with evidence
-       months_needed: Number,                               # unit months
-       reach_by: Period,                                    # from the first month after as_of until the target month
+down_payment_plan(target_eur: number,                      # metrics.md section 11; the user's own target,
+                  start_eur?: number,                       # the coach never suggests a home price; default 0
+                  cuts?: { selection, cut_pct }[])          # optional what-if cuts that add to the capacity
+  -> { target: Number,                                      # eur, user_input@1
+       capacity_month: Number,                              # eur_per_month: income minus spending, last 6 complete months
+       capacity_plan: Number,                               # eur_per_month: capacity plus the chosen cuts
+       months_to_target: Number | null,                     # unit months; null when not reachable at this pace
+       keep_low: Number, keep_high: Number, negative_months: Number,   # how steady the pace is
+       status: "estimate" | "not_reachable" | "not_estimated",         # not_estimated: salary moved elsewhere
        assumptions: string[] }
   card: metric with components, estimate set (R13). Method ids and formula: metrics.md.
 ```
@@ -264,10 +297,10 @@ The planner also gets three functions that touch no data:
 | Function | Arguments | Effect |
 |---|---|---|
 | `decline` | `kind`: `investment_advice`, `credit_decision`, `out_of_scope`, `other_person_data` or `unsafe` | Ends the turn with the fixed, localised refusal template for that kind, plus 2 or 3 example questions. No data tool runs (R7, R8, R10). |
-| `ask_clarifying_question` | `question` (up to 140 characters), `options` (up to 3 short strings) | Ends the turn with `outcome: "clarify"`. The question passes the output validator. |
+| `ask_clarifying_question` | `question` (up to 140 characters), `options` (up to 3 short strings) | Ends the turn with `outcome: "clarify"`. The question and the options pass the output validator and reach the app as `done.clarify` (contract, section 7.2). |
 | `finish` | none | Data collection is complete; go to the composer. The model may call it in the same turn as the data tools. |
 
-The tests for R6 and R10 say "no tool call". In this design, `decline` is a function call that reads no data, so the tests should read "no **data** tool call". This needs confirming with the research owner.
+The tests for R6 and R10 read "no **data** tool call", because `decline` is a function call that reads no data. Confirmed by the team lead; the research document is being aligned.
 
 ### 6.4 What the model receives from a tool (R3)
 
@@ -336,7 +369,7 @@ The planner chooses tools freely. The eval set (section 9) checks that each cano
 | What can I safely spend this week? | "What can I safely spend this week?" | `get_safe_to_spend`, `get_recurring_bills` |
 | How could I save more? | "How could I save more?" | `get_basket_breakdown`, `compare_store_prices`, `get_recurring_bills`, then `run_what_if` |
 | Specific follow-ups | "And restaurants?", "What if I cut that by 20%?" | `get_spending` with a filter, `run_what_if` |
-| Down payment (post-MVP) | "How long would it take to save a down payment?" | `down_payment_plan`, `get_recurring_bills` |
+| Down payment (post-MVP) | "How long would it take to save a down payment?" | `down_payment_plan`, `get_recurring_bills`. Until the tool exists: `decline(out_of_scope)` with the "not yet" template. |
 | Credit decision | "Will the bank approve my mortgage?" | `decline(credit_decision)` |
 | Investment, other people, off topic | "Should I buy tech stocks?" | `decline` |
 
@@ -346,8 +379,9 @@ The planner chooses tools freely. The eval set (section 9) checks that each cano
 
 | Step | What happens | Stream events |
 |---|---|---|
-| 0. Start | Resolve the customer (404 if unknown) and the conversation (a new one, or the last 6 turns from the store). Resolve the language: the request value, or a detector for `auto`. If the detector is unsure, use the previous turn's language, then the persona default. | `meta` |
-| 1. Input guard | Reject an empty message or one over 500 characters (400). Strip control characters. Flag injection markers, investment keywords and references to other people as hints for the planner and the audit log. Nothing is blocked on keywords alone, because "How much did I invest?" is a valid question about the user's own Invest Deposit history (R7). | `status` (`understanding`) |
+| 0. Validate (before the stream) | Check the body, including an empty message or one over 500 characters (400 `invalid_request`), the customer (404 `customer_not_found`) and the rate limit (429 `rate_limited`). These are plain HTTP errors: the stream is not opened yet. | none |
+| 1. Start | Open the stream. Resolve the conversation: it belongs to one customer, so an id that is unknown, expired or owned by another customer starts a new conversation (`warnings: conversation_reset`), and earlier tool results are never reused. Resolve the language: the request value, or a detector for `auto`. If the detector is unsure, use the previous turn's language, then the persona default. | `meta` |
+| 1a. Input guard | Strip control characters. Flag injection markers, investment keywords and references to other people as hints for the planner and the audit log. Nothing is blocked on keywords alone, because "How much did I invest?" is a valid question about the user's own Invest Deposit history (R7). | `status` (`understanding`) |
 | 2. Plan, model call 1 | Gemini gets the planner system prompt, the masked history, the question and the 8 data tools plus 3 control functions. Mode `ANY`: the model must call a function. It may return several calls in parallel. | |
 | 3. Tools | Validate the arguments; on an error, return it to the model as a function response. Run valid calls in parallel on the 3-connection pool. Register number ids and evidence. Build cards. | `status` (`tool`) per tool, `card` per card-worthy result |
 | 4. Loop | If the model did not call `finish`, send the function responses back (model turns appended verbatim) and call again in mode `ANY`. At most 2 tool rounds and 6 data calls, then go to the composer anyway. `decline` or `ask_clarifying_question` ends the turn at once. | |
@@ -378,7 +412,7 @@ A typical answer needs two model calls: one planner call, with `finish` in the s
 }
 ```
 
-R12 says the model returns cards. In this design the cards are built by the server from tool results, and the model's JSON only refers to numbers by id. Cards stay correct even when the composer fails, and they arrive before the text. This is a deliberate reading of R12, to confirm with the research owner.
+R12 says the model returns cards. In this design the cards are built by the server from tool results, and the model's JSON only refers to numbers by id. Cards stay correct even when the composer fails, and they arrive before the text. This reading of R12 is confirmed by the team lead.
 
 ### 7.3 Numbers in text
 
@@ -400,6 +434,7 @@ The validator runs on every composer output. Any failure triggers the single ret
 **Residual risks:**
 - A number written as a word ("twice as much") passes rule 3.
 - An invented number that happens to equal a date part, for example "1" or "2026", also passes.
+- **Numbers in tool arguments:** the model passes numbers as tool arguments, for example `cut_pct` in `run_what_if` or `target_eur` in `down_payment_plan`. Nothing yet checks them against what the user typed, so the model could turn "cut a bit" into 20. The tool output labels such a value as `user_input@1`, so it is visible, but not verified. A later issue adds an argument check: every numeric argument must appear in the user's message (parsed with the locale's number format) or in the `scenario` of an action the user tapped. Otherwise the planner must call `ask_clarifying_question`.
 
 The composer prompt forbids both, and the eval set samples for them.
 
@@ -412,6 +447,7 @@ The composer prompt forbids both, and the eval set samples for them.
 ### 7.6 Follow-ups, memory and lessons
 
 - **Memory:** an in-memory store keyed by `conversation_id`, keeping the last 6 turns for 30 minutes on a single instance. Production would use a shared store.
+  - A conversation belongs to the customer who started it. A request with a `conversation_id` that is unknown, expired or owned by another customer starts a new conversation and never sees earlier tool results (R4).
   - The planner gets the previous questions, its previous function calls and their compact results, so "and last month?" or "what if I cut that by 20%?" resolve without the app resending anything.
   - The composer gets only the previous question and answer with numbers masked as `[number]`. It cannot copy an old number; it has to cite a fresh tool result.
 - **Follow-up suggestions** (`follow_ups`): a deterministic, localised table per intent and tool. It always offers the partner's four questions, minus the one just asked, and never depends on the model.
@@ -479,7 +515,7 @@ Every `/api/ask` call writes one record, whatever the outcome.
     }
   ],
   "tool_outputs": { "get_spending#1": "<full ToolResult.data, aggregates only>" },
-  "numbers": { "n1": { "value": 2315.6, "method": "spending_total@1", "evidence_ref": "ev_k3m5p7r9t1v3" } },
+  "numbers": { "n1": { "value": 2315.6, "method": "spending.total@1", "evidence_ref": "ev_k3m5p7r9t1v3" } },
   "composer_attempts": [
     { "raw": "{\"language\":\"en\",\"text\":\"September cost {{n1}}, ...\",\"cited\":[\"n1\",\"n3\",\"n5\",\"n8\"],\"lesson_key\":\"one_off_vs_habit\"}", "validation": "ok", "latency_ms": 1460, "tokens": { "input": 1530, "output": 118 } }
   ],
@@ -582,12 +618,12 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 ## 13. Open questions
 
 **For Renat (product):**
-1. **Personas:** which 3 customers to use, and are invented first names (Aino, Mikko, Leena) acceptable as labelled demo personas?
-2. **Mortgages:** decided. The scope is narrow and R8 stays (section 6.2). Still open: should `down_payment_plan` be built for the demo, or wait until after the MVP?
+1. **Personas:** decided. Three customers are picked from the data in a separate issue, and invented first names are fine because the data is synthetic.
+2. **Mortgages:** decided. The scope is narrow and R8 stays (section 6.2), and `down_payment_plan` comes after the MVP.
 3. **Salary Sweep:** the category's meaning is unknown. Should it show as income, as a transfer, or be hidden?
 4. **Finnish basket labels:** what is the official Finnish wording of "Regular essentials", "Unexpected necessities" and "Everyday spending"?
-5. **Health category (R9):** this design shows Health only as an amount in full breakdowns and never in insights or profiles. Is that the right reading?
-6. **AI disclosure:** wording, and whether the overview is the right place for it (R14).
+5. **Health category (R9):** decided. Health appears only as a category amount inside a full breakdown. It is never singled out and never turned into a statement about the person.
+6. **AI disclosure (R14):** decided default: "Explanations are written by AI. The numbers are calculated from your transactions."
 
 **For Maxim (app):**
 7. Is streaming with `fetch()` and a stream reader fine in the app stack, or should the app start with the JSON response (`Accept: application/json`) and switch later?
@@ -595,7 +631,7 @@ This design uses `generate_content`: it is in the SDK docs, it is stateless, and
 9. Does v1 need time-series charts (`display_hint: "time_series"`)?
 
 **For #6 (metrics):**
-10. The method ids, the rules that turn presets into dates, the safe-to-spend component keys, the profile keys and traits, the minimum peer group size, and the "typical" baseline for `compare_to`.
+10. `metrics.md` now settles the profile keys and traits, the age bands, the peer levels and the minimum group of 20, the safe-to-spend window and components, and the what-if baseline. It also settles the what-if and store-switch statuses and the output columns that method ids now use. This design and the contract follow it. Still open: how the remaining period presets resolve, and that document's own open questions (its section 10).
 
 ## 14. Coverage of the issue and of the research rules
 
