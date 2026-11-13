@@ -130,6 +130,16 @@ def test_the_global_cap_and_the_customer_limit(client):
     assert client.post("/api/ask", json=BODY).status_code == 429
 
 
+def test_one_address_cannot_use_up_a_persona_for_everyone(client, monkeypatch):
+    # Review of PR #104: the customer window is per address and customer, so the presenter still gets
+    # an answer about the lead persona after another visitor has used up their own window for it.
+    monkeypatch.setenv("TRUSTED_PROXIES", "testclient")
+    client.install(plans=[SPEND, SPEND, SPEND], drafts=[GOOD, GOOD, GOOD], per_customer=1)
+    assert client.post("/api/ask", json=BODY, headers={"X-Forwarded-For": "10.0.0.1"}).status_code == 200
+    assert client.post("/api/ask", json=BODY, headers={"X-Forwarded-For": "10.0.0.1"}).status_code == 429
+    assert client.post("/api/ask", json=BODY, headers={"X-Forwarded-For": "10.0.0.2"}).status_code == 200
+
+
 def test_database_down_before_the_stream_is_503(client):
     client.install(data=FakeData(down=True))
     r = client.post("/api/ask", json=BODY, headers={"Accept": "text/event-stream"})
