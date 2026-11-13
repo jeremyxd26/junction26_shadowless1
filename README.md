@@ -27,7 +27,7 @@ The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 ## Dev environment
 
-The `dev` branch runs at **https://135-181-63-178.sslip.io** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h. The planned host is `sentti.jeremyxd.dev`, once its DNS record exists.
+The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
 
 To deploy `origin/dev`, you need the instance SSH key at `~/.ssh/shadowless1_dev_ed25519`:
 

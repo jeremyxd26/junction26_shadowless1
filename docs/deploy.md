@@ -2,7 +2,7 @@
 
 The core service runs from the `dev` branch on one small Verda instance in Finland. Every change is tested there before it reaches `main`.
 
-- **URL:** https://135-181-63-178.sslip.io (`/healthz`, `/readyz`, and later `/api/*`). The planned host is `sentti.jeremyxd.dev` (see "Changing the host name").
+- **URL:** https://sentti.jeremyxd.dev (`/healthz`, `/readyz`, and later `/api/*`). The old name `135-181-63-178.sslip.io` still answers until PR #54 is merged (see "Changing the host name").
 - **Deploy:** `bash deploy/dev.sh` deploys `origin/dev`.
 - **Routing:** Caddy sends only `/api/*`, `/healthz` and `/readyz` to the core service. Every other path is a plain 404 until the app is served from the same host. FastAPI's `/docs` is not exposed.
 
@@ -15,7 +15,7 @@ The core service runs from the `dev` branch on one small Verda instance in Finla
 | Region | `FIN-01` (Finland, EU) |
 | Image | `24.04.base` (Ubuntu 24.04) |
 | OS volume | 50 GB NVMe, id `89a421bb-0c81-4479-bef8-24a075f70eaa`. 50 GB is the platform default; a 30 GB request was rejected ("storage size is too low"). |
-| Address | `135.181.63.178`; public name `135-181-63-178.sslip.io` (sslip.io resolves it to the IP) |
+| Address | `135.181.63.178`; public name `sentti.jeremyxd.dev` (a Cloudflare A record in "DNS only" mode, no proxy). `135-181-63-178.sslip.io` (sslip.io resolves it to the IP) also answers for now. |
 | SSH key at Verda | `shadowless1-dev-deploy` |
 
 The request travels like this:
@@ -81,7 +81,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
    - waits up to 30 s for `/healthz`;
    - renders the Caddy config and reloads Caddy;
    - records the deploy in `/opt/shadowless1/deploy.log`.
-3. Back on your machine, `dev.sh` checks `GET https://135-181-63-178.sslip.io/healthz` and fails unless it gets 200.
+3. Back on your machine, `dev.sh` checks `GET https://sentti.jeremyxd.dev/healthz` (override with `DEV_URL`) and fails unless it gets 200.
 
 `/readyz` is not a deploy gate: it is 503 whenever the database is unreachable, and that should not block a deploy.
 
@@ -89,7 +89,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 
 On the first deploy to a new host name, Caddy needs a few seconds to obtain the certificate, so the public check retries for up to a minute.
 
-Example run (the smoke test of this branch):
+Example run (the smoke test of this branch, before the host switch, so it checks the sslip.io name):
 
 ```
 deploying 'r/17-verda-dev-deploy' to 135.181.63.178
@@ -199,15 +199,17 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 4. **Fill in the settings.** Write `/etc/shadowless1/core.env` (see "Settings on the instance").
 5. **Deploy.** Run `bash deploy/dev.sh`.
 
-If the TLS certificate cannot be issued (Let's Encrypt limits for sslip.io names), serve plain HTTP: write `http://135-181-63-178.sslip.io` to `/etc/shadowless1/site` and deploy again.
+If a TLS certificate cannot be issued (for example Let's Encrypt rate limits), serve plain HTTP: write the name with `http://` in front (for example `http://sentti.jeremyxd.dev`) to `/etc/shadowless1/site` and render the Caddy config again (see "Changing the host name").
 
 ## Changing the host name
 
-The host name lives in one place on the instance: `/etc/shadowless1/site`, one line, outside git. It is now `135-181-63-178.sslip.io`.
+The host name lives in one place on the instance: `/etc/shadowless1/site`, one line, outside git. It is now `135-181-63-178.sslip.io, sentti.jeremyxd.dev`: both names answer, and each has its own Let's Encrypt certificate.
 
-The planned host is `sentti.jeremyxd.dev`. It needs a Cloudflare A record pointing at `135.181.63.178` in "DNS only" mode (no proxy), so that Caddy can get a Let's Encrypt certificate itself.
+`sentti.jeremyxd.dev` is a Cloudflare A record pointing at `135.181.63.178` in "DNS only" mode (no proxy), so Caddy gets its certificate itself (HTTP-01 challenge on port 80).
 
-**Only after the record resolves to the instance** (failed attempts count against Let's Encrypt rate limits):
+To change the names, edit that line and render the Caddy config again. No redeploy is needed.
+
+**Add a new name only after its DNS record resolves to the instance**, because failed attempts count against Let's Encrypt rate limits:
 
 ```bash
 dig +short sentti.jeremyxd.dev        # must print 135.181.63.178
@@ -218,10 +220,20 @@ ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 '
   systemctl reload caddy'
 ```
 
-Then check it:
-- `curl -I http://sentti.jeremyxd.dev/healthz` should give a 308 to `https://`.
-- `echo | openssl s_client -connect sentti.jeremyxd.dev:443 -servername sentti.jeremyxd.dev 2>/dev/null | openssl x509 -noout -subject` should name the host.
+When `sentti.jeremyxd.dev` was added, Caddy got its certificate on the first attempt, about 5 s after the reload. Checked from outside:
 
-Finally, set `DEV_URL=https://sentti.jeremyxd.dev` as the default in `deploy/dev.sh` and update the README.
+```
+$ curl -s https://sentti.jeremyxd.dev/healthz
+{"status":"ok","demo_today":"2026-09-30"}
+$ curl -s -o /dev/null -w "%{http_code}" https://sentti.jeremyxd.dev/readyz
+200
+/ -> 404   /docs -> 404   /openapi.json -> 404
+http://sentti.jeremyxd.dev/healthz -> 308 -> https://sentti.jeremyxd.dev/healthz
+subject=CN=sentti.jeremyxd.dev
+issuer=C=US, O=Let's Encrypt, CN=YE1
+notAfter=Feb 11 20:35:54 2027 GMT
+```
+
+Once PR #54 is merged, the sslip.io name can be dropped. Write only `sentti.jeremyxd.dev` to the file and render again.
 
 `CORS_ORIGINS` needs no change while the app calls `/api` on the same host. Add an origin there only when the app is served from a different one.

@@ -9,7 +9,7 @@
 # Settings (environment variables, all optional):
 #   DEV_HOST     instance address        (default 135.181.63.178)
 #   DEV_SSH_KEY  private key for root@   (default ~/.ssh/shadowless1_dev_ed25519; never commit it)
-#   DEV_URL      public base URL         (default https://135-181-63-178.sslip.io)
+#   DEV_URL      public base URL         (default https://sentti.jeremyxd.dev)
 #   DEV_HEALTH_PATH  deploy gate path    (default /healthz; a missing path such as /no-such-path makes the
 #                                         gate fail on purpose, to test the automatic rollback)
 # Prints no secret: the service settings stay in /etc/shadowless1/core.env on the instance.
@@ -19,7 +19,7 @@ ref=${1:-dev}
 [[ $ref =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "unsupported ref: $ref" >&2; exit 1; }
 host=${DEV_HOST:-135.181.63.178}
 key=${DEV_SSH_KEY:-$HOME/.ssh/shadowless1_dev_ed25519}
-url=${DEV_URL:-https://135-181-63-178.sslip.io}
+url=${DEV_URL:-https://sentti.jeremyxd.dev}
 health_path=${DEV_HEALTH_PATH:-/healthz}
 [[ $health_path =~ ^/[A-Za-z0-9._/-]*$ ]] || { echo "unsupported health path: $health_path" >&2; exit 1; }
 [[ -f $key ]] || { echo "SSH key not found: $key (see docs/deploy.md, 'Access')" >&2; exit 1; }
