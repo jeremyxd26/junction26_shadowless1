@@ -1,0 +1,7 @@
+# Reverse proxy in front of the core service (rendered to /etc/caddy/Caddyfile by deploy/remote-deploy.sh).
+# __SITE__ is replaced with the contents of /etc/shadowless1/site: a host name such as
+# 203-0-113-7.sslip.io for automatic HTTPS (Let's Encrypt), or http://203-0-113-7.sslip.io for plain HTTP.
+__SITE__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}

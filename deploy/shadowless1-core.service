@@ -1,0 +1,24 @@
+# systemd unit for the core service on the dev instance (installed by deploy/remote-deploy.sh).
+# The container reads its settings from /etc/shadowless1/core.env (root only, outside git) every time it
+# starts, so changing a setting needs only `systemctl restart shadowless1-core`, not a redeploy.
+# Logs go to the journal only (journalctl -u shadowless1-core), which is not world-readable.
+[Unit]
+Description=shadowless1 core service (container)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Restart=always
+RestartSec=3
+ExecStartPre=-/usr/bin/docker rm -f shadowless1-core
+ExecStart=/usr/bin/docker run --rm --name shadowless1-core \
+    --env-file /etc/shadowless1/core.env \
+    --publish 127.0.0.1:8000:8000 \
+    --memory 1g --pids-limit 256 --read-only --tmpfs /tmp \
+    --log-driver none \
+    shadowless1-core:current
+ExecStop=/usr/bin/docker stop --time 10 shadowless1-core
+
+[Install]
+WantedBy=multi-user.target
