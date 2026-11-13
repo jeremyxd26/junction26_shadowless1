@@ -52,7 +52,7 @@ Component code and screens are built in their own issues and follow these rules.
 The `unclassified` state is neutral: a dashed tile, grey text and a hatched bar. It appears only while a review is pending, and it is never an answer option.
 
 ### 2.2 Contrast (WCAG 2.x AA)
-Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, the focus ring) need 3:1. All 35 pairs pass. Ratios are computed from `tokens.css`.
+Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, the focus ring) need 3:1. All 38 rows pass (34 distinct colour pairs; a pair used for two purposes is listed once per use). Ratios are computed from `tokens.css`.
 
 | Foreground | Background | Use | Ratio | Needs |
 |---|---|---|---|---|
@@ -102,7 +102,8 @@ Typeface: **Inter** (SIL OFL 1.1), self-hosted, through `--font-sans` (Inter, th
 |---|---|---|---|
 | `--text-xs` | 12 / 16 | 400–600 | Captions, periods, the AI disclosure, badges |
 | `--text-sm` | 14 / 20 | 400–600 | Secondary lines, chips |
-| `--text-base` | 16 / 24 (26 for answers) | 400 | Body text. **Inputs are never below 16 px** (iOS zooms otherwise). |
+| `--text-base` | 16 / 24 | 400 | Body text. **Inputs are never below 16 px** (iOS zooms otherwise). |
+| `--text-answer` | 16 / 26 | 400 | Coach answer text (looser leading for longer reading) |
 | `--text-lg` | 18 / 26 | 600–700 | Sheet titles |
 | `--text-xl` | 20 / 28 | 700 | The takeaway line |
 | `--text-card-title` | 16 / 22 | 700 | Card titles |
