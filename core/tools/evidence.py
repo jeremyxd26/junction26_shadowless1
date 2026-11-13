@@ -247,9 +247,15 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=reconciles, spec=spec)
 
     if spec["kind"] == "metric":  # #55: re-run the metric SQL file for this customer
-        from core.tools import metric_sql
+        from core.tools import config, metric_sql
 
         source = spec["source"]
+        # A stored spec is data: only the files the tools write metric specs for, and never a setting
+        # that would move the customer range or as_of (run() refuses those as well).
+        if source["file"] not in config.METRIC_EVIDENCE_FILES:
+            raise EvidenceForbidden(ref)
+        if any(metric_sql.is_reserved_setting(name) for name in source["settings"]):
+            raise EvidenceForbidden(ref)
         row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)

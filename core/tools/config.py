@@ -237,12 +237,16 @@ BILLS_TEXT: dict[str, tuple[str, str]] = {
 # Numbers are read from core/metrics/03_safe_to_spend.sql and 04_what_if.sql for one customer
 # (core/tools/metric_sql.py). Method ids are `<metric>.<output column>@1` (agent-core.md section 6.2).
 # Bills due before payday is NOT read here: it is the same Number get_recurring_bills returns
-# (METHODS["bills_due"], the sum of the rounded per-bill amounts), so both cards show one value.
+# (METHODS["bills_due"], from recurring.bills_due_numbers: the unrounded per-bill terms summed and
+# rounded once, like bills_due_eur in 03), so both cards show one value. get_safe_to_spend checks it
+# against 03's bills_due_eur on every call.
 
 SAFE_TO_SPEND_FILE = "03_safe_to_spend.sql"
 SAFE_TO_SPEND_CUSHION_EUR = "100"   # metrics.md section 10, decision 3 (configurable; 03's default)
 WHAT_IF_FILE = "04_what_if.sql"
 USER_INPUT_METHOD = "user_input@1"
+# The only metric files a stored `metric` evidence spec may name; resolve() refuses any other file.
+METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
 
 SAFE_TO_SPEND_NUMBERS = (  # (key, output column) read from 03_safe_to_spend.sql as metric numbers
     ("free_until_payday", "free_until_payday_eur"),
