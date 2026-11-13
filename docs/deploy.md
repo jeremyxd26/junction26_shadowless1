@@ -85,7 +85,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
    - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
    - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
    - **app build** (when the commit has `app/package.json`; see "The app" below). It runs in a throwaway `node:22.21.1-slim` container from the commit's tracked files and is checked for secrets. A failed build or a secret match stops the deploy here too, with nothing switched;
@@ -148,7 +148,7 @@ The core writes its own data under `var/` at the repository root, which is `/srv
 |---|---|---|
 | `/var/lib/shadowless1/var` | `/srv/var` | uid 10001 (the container user `app`), `700` |
 
-It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
+The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
 
 ## Roll back
 
@@ -275,6 +275,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 - **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore`:
   - `core/requirements.txt`;
   - `core/app`, `core/tools` and `core/agent` (the service, the tools and the answer pipeline);
+  - `core/answer_text.py`, the one module outside those packages that they import (the answer pipeline shares it with the eval);
   - `core/metrics/*.sql` (the metric SQL the tools run);
   - `core/config/*.yaml` (personas and benefit rules).
 
