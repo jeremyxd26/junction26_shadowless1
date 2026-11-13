@@ -6,7 +6,29 @@ Issue #3. Public sources only. Every factual claim points to a numbered source i
 
 ## 1. Examples
 
-_In progress._
+All metrics below are self-reported by the companies.
+
+| Product | What it does | Scope and technology | Limits and hand-off | Published metric |
+|---|---|---|---|---|
+| Bank of America **Erica** | Proactive insights, account management, answers to questions [E1] | NLP, "not generative AI or large language models". It selects "from a pre-defined set of answers" [E1]. | "Erica does not provide investment advice." It can connect the user to a specialist by phone or chat [E1]. | Nearly 50 million users and over 3 billion interactions; "More than 98% of users find the information they need" (Aug 2025) [E2] |
+| **Klarna** AI assistant | Customer service: refunds, returns, multilingual support [E3] | "Powered by OpenAI". It shows the user's outstanding balances and payment schedule [E3]. | Customers "can still choose to interact with live agents" [E3]. In 2025 Klarna turned back to human agents (news) [E4]. | 2.3 million conversations, two thirds of service chats, in the first month; 25% fewer repeat inquiries [E3] |
+| **Nubank** | A generative-AI virtual assistant for customer service, first around credit offers [E5]. Support agents in production across five domains (2026 paper) [E6]. | First version on GPT-4. It uses Nubank's "data models and proprietary structure and insights tools" [E5]. | The first phase went to "a restricted group" of users [E5]. Refusal behaviour: unknown. | +29 percentage points self-service rate. Satisfaction "within a few percentage points of expert human agents", measured by an LLM judge with inter-rater agreement [E6]. |
+| **Revolut** AIR (UK, April 2026) | Spending insights, investment tracking, subscriptions, card freeze [E7] | "Only accessing the data you already see"; "zero data retention" by third-party AI partners [E7] (news copy of the release; revolut.com returned 403) | Unknown | Unknown |
+| **Cleo** | AI money app built around chat [E8] | An LLM agent calls tools "defined by a structured schema". "Cleo offloads calculations to structured, deterministic tools" [E8]. Specialist agents "query the precomputed financial profile" [E9]. | "Confidence thresholds and content filters to manage emotional risk" [E8]. Hand-off: unknown. | 81% accuracy on Cleo's own budgeting benchmark [E8] |
+| **bunq** Finn | Banking support plus spending questions such as "How much did I spend on groceries this month?" [E10] | Model and architecture: unknown | Harder requests are "routed directly to the right human specialist" [E10] | About 97% of support activity; 90% satisfaction; 38 languages [E10] |
+| **Monzo** Trends | Spending insights: monthly or yearly views, category breakdown, spending targets [E11, E12] | Rule-based or AI: unknown (the help pages do not mention AI). Paid plans add non-Monzo accounts [E12]. | Left-to-spend is labelled "an estimate" [E12] | Unknown |
+| **Starling** Spending Intelligence (June 2025), then Starling Assistant (March 2026) | Customers "ask questions about their money" [E13] | "Engineered using Google's Gemini models". "Starling's proprietary systems perform the analysis on the customer's own transactional data". Data stays in Starling's Google Cloud and "is not used for training" [E13]. The 2026 assistant is agentic, on Gemini [E14]. | Opt in, and opt out at any time [E13, E14]. An explicit no-advice line: unknown. | Unknown |
+
+Two notes on sources:
+- The Cleo rows come from Cleo's blog posts served on an alternate host (`cleo-site-meetcleo-v2.vercel.app`), because meetcleo.com returned 403. The pages carry Cleo branding, but the provenance is weaker than a company domain.
+- Cleo's "roast" mode is mentioned in search results, but we could not open a page that confirms it: **unknown**.
+
+**Patterns across products**
+- **The generative model does not produce the numbers.** Erica uses no LLM [E1]. Cleo sends arithmetic to deterministic tools [E8]. Starling's own systems perform the analysis while Gemini handles the language [E13]. This is the same split as our tools-compute, LLM-explains design (R1).
+- **Scope is the customer's own data.** Starling keeps data in its own cloud, does not train on it, and asks users to opt in [E13]. Revolut reads only data the customer already sees [E7].
+- **A human stays reachable**: Erica [E1], Klarna [E3, E4], bunq [E10].
+- **Explicit boundaries are rare in public material.** Of the pages we opened, only Erica states "does not provide investment advice" [E1]. Monzo labels its left-to-spend figure as an estimate [E12]. We state our boundaries ourselves (R7, R13).
+- **Published metrics are volume, containment and satisfaction, not numeric accuracy.** The only accuracy figure is Cleo's own benchmark [E8]. Nubank describes its method: an LLM judge with measured inter-rater agreement [E6].
 
 ## 2. Architecture patterns
 
@@ -91,6 +113,22 @@ Each rule names a behaviour of the coach that can be observed, and how to test i
 ## Sources
 
 All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached from our network that day (TLS certificate error), so legal texts are cited from official EU mirrors: the Commission AI Act Service Desk, the EBA single rulebook Q&A and the ESMA interactive single rulebook.
+
+**Examples (section 1)**
+- [E1] Bank of America, "Erica" (product page and FAQ). https://info.bankofamerica.com/en/digital-banking/erica, accessed 2026-11-13.
+- [E2] Bank of America release via PR Newswire, "A Decade of AI Innovation: BofA's Virtual Assistant Erica Surpasses 3 Billion Client Interactions", August 2025 (newswire copy; the BofA newsroom page did not load). https://www.placera.se/pressmeddelanden/a-decade-of-ai-innovation-bofa-s-virtual-assistant-erica-surpasses-3-billion-client-interactions-20250820, accessed 2026-11-13.
+- [E3] Klarna press release, "Klarna AI assistant handles two-thirds of customer service chats in its first month", February 2024. https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/, accessed 2026-11-13.
+- [E4] Customer Experience Dive (news), "Klarna says AI agent does the work of 853 employees", 2025. https://www.customerexperiencedive.com/news/klarna-says-ai-agent-work-853-employees/805987/, accessed 2026-11-13.
+- [E5] Nubank newsroom, "Nubank begins testing with generative artificial intelligence to enhance customers' experience with credit", October 2023. https://nu.com/en/newsroom/consumers/nubank-begins-testing-with-generative-artificial-intelligence-to-enhance-customers-experience-with-credit, accessed 2026-11-13.
+- [E6] arXiv 2606.08867, paper on customer-facing support agents at Nubank, 2026. https://arxiv.org/abs/2606.08867, accessed 2026-11-13.
+- [E7] FF News, "Revolut enters new era of money intelligence with launch of AI assistant", 8 April 2026 (news copy of the Revolut release; revolut.com returned 403). https://ffnews.com/newsarticle/fintech/revolut-enters-new-era-of-money-intelligence-with-launch-of-ai-assistant/, accessed 2026-11-13.
+- [E8] Cleo blog, "Building a financial agent on top of commodified LLMs", 23 July 2025 (alternate host). https://cleo-site-meetcleo-v2.vercel.app/blog/building-a-financial-agent-on-top-of-commodified-llms, accessed 2026-11-13.
+- [E9] Cleo blog, "Inside Cleo's multi-agent architecture", 14 May 2026 (alternate host). https://cleo-site-meetcleo-v2.vercel.app/blog/inside-cleos-multi-agent-architecture, accessed 2026-11-13.
+- [E10] bunq press release, "bunq launches smarter, more powerful upgrade to GenAI financial assistant", December 2025. https://press.bunq.com/258930-bunq-launches-smarter-more-powerful-upgrade-to-genai-financial-assistant, accessed 2026-11-13.
+- [E11] Monzo help, "Trends". https://monzo.com/ie/help/managing-money/help-trends, accessed 2026-11-13.
+- [E12] Monzo help, "Trends: spending and balance". https://monzo.com/help/budgeting-overdrafts-savings/trends-spending-and-balance-web, accessed 2026-11-13.
+- [E13] Starling Bank news, "Starling launches pioneering AI banking tool" (Spending Intelligence), June 2025. https://www.starlingbank.com/news/starling-launches-pioneering-ai-banking-tool/, accessed 2026-11-13.
+- [E14] Starling Bank news, "Starling launches agentic AI assistant", 20 March 2026. https://www.starlingbank.com/news/starling-launches-agentic-ai-assistant/, accessed 2026-11-13.
 
 **Law and regulators**
 - [L1] EU AI Act, Article 50, AI Act Service Desk (European Commission). https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-50, accessed 2026-11-13.
