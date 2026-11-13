@@ -16,7 +16,8 @@ Around each call, within one deadline per call:
   (so the pipeline's retry and the next questions do not add requests during an outage);
 - 429 (a spending or rate limit): no retry. The client stops calling for RATE_LIMIT_COOLDOWN_S, so
   the pipeline's own retry cannot send a second request; the pipeline falls back to the rule
-  planner and the template answer;
+  planner and the template answer. 401, 403 and 404 (a key or model id the API refuses) pause the
+  same way;
 - a timeout is not retried here (the pipeline retries a failed call once, then falls back);
 - a response that cannot be used (empty, cut at max_output_tokens, malformed function call)
   raises GeminiError with a short code; no request or response text is ever put in an error.
@@ -62,6 +63,10 @@ SERVER_RETRY_CODES = {500, 502, 503, 504}
 SERVER_RETRY_BACKOFF_S = (0.5, 1.5)     # pauses before the first and the second retry
 RATE_LIMIT_COOLDOWN_S = 300.0           # after a 429, no request for this long
 OVERLOAD_COOLDOWN_S = 30.0              # after 5xx on every attempt and on the fallback, no request for this long
+# A key or model the API refuses (401, 403, 404) will not work on a retry or on the next question:
+# no request for this long, so a wrong setting cannot burn the request budget.
+CONFIG_ERROR_CODES = {401, 403, 404}
+CONFIG_ERROR_COOLDOWN_S = 300.0
 MIN_ATTEMPT_S = 1.0                     # an attempt needs at least this much of the deadline left
 # The Gemini API rejects a request whose server deadline (the X-Server-Timeout header, which the SDK
 # fills from the client timeout) is under 10 s with HTTP 400. The client-side timeout stays ours.
@@ -425,6 +430,8 @@ class GeminiClient:
                 ms = int((self.clock() - t) * 1000)
                 if status == 429:
                     self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
+                elif status in CONFIG_ERROR_CODES:
+                    self._pause(CONFIG_ERROR_COOLDOWN_S, code)
                 if status in SERVER_RETRY_CODES and attempt < retries:
                     pause = SERVER_RETRY_BACKOFF_S[attempt]
                     if deadline - self.clock() - pause >= MIN_ATTEMPT_S:

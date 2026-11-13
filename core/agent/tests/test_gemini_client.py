@@ -178,6 +178,17 @@ def test_429_is_not_retried_and_pauses_every_later_call():
     assert len(transport.requests) == 2
 
 
+@pytest.mark.parametrize("code", [401, 403, 404])
+def test_a_refused_key_or_model_pauses_every_later_call(code):
+    transport = FakeTransport(api_error(code), call_response())
+    c = client(transport, fallback_model=PRO)
+    for _ in range(3):                                  # the pipeline's retry and the next questions
+        with pytest.raises(GeminiError) as exc:
+            c.plan(*PLAN_ARGS)
+        assert exc.value.code == f"http_{code}"
+    assert len(transport.requests) == 1
+
+
 def test_a_timeout_is_not_retried_here():
     transport = FakeTransport(TimeoutError(), call_response())
     with pytest.raises(GeminiError) as exc:
