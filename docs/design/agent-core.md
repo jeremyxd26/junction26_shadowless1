@@ -245,7 +245,7 @@ get_spender_profile()                                       # metrics.md section
                 # not_enough_income_data: no verdict; the answer says the account shows too little income
        traits: { key: "salary_moved_elsewhere" | "went_below_zero" | "regular_investor"
                     | "weekend_spender" | "frequent_small_purchases", label, note }[],
-       features: { key, decides_label: boolean, value: Number }[] }   # e.g. keep_rate, everyday_share
+       features: { key, decides_label: boolean, value: Number }[] }   # e.g. keep_rate, everyday_share_pct
        # no feature uses Health on its own, labels and traits hold no sensitive terms (R9)
 
 get_peer_benchmark(metric: "spend_total" | Basket

@@ -41,7 +41,7 @@ All values in the examples are **illustrative**: they show shapes and consistent
 | Categories | The 15 dataset categories, used as keys exactly as written: `Groceries`, `Restaurants`, `Transportation`, `Utilities`, `Entertainment`, `Health`, `Home & Tech`, `Housing`, `Lifestyle`, `Travel`, `Salary`, `Other Income`, `Invest Withdraw`, `Invest Deposit`, `Salary Sweep`. Following `metrics.md` section 0, the first 10 are spending. `Salary`, `Other Income` and `Invest Withdraw` are income. `Invest Deposit` is saving. `Salary Sweep` is a transfer, which is neither spending nor saving. |
 | Age bands | `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65-74`, `75+` (`metrics.md` section 6). |
 | Time windows | "Typical" and monthly averages use the last 6 complete calendar months (`2026-04-01` to `2026-09-30` for today `2026-09-30`). "This week" for safe to spend is the 7 days after today. The core resolves every window into explicit `period` dates. |
-| Unknown fields | The app ignores fields it does not know. The core may add fields in a minor version, and removing or renaming a field is a major version change. |
+| Unknown fields | The app ignores fields it does not know. The core may add fields in a minor version, and removing or renaming a field is a major version change. While the contract is a 0.x draft, a minor version may still remove or rename fields without a major bump; every such change is listed in the changelog. |
 | CORS | The core allows the app's dev and production origins. |
 | Internal endpoints | `GET /api/audit/{answer_id}` returns the audit record of one answer (design doc, section 9). It is for the team and the eval run, not for the app, and is not part of this contract. |
 
@@ -115,7 +115,7 @@ Fields common to all cards:
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
-| `estimate` | object or null | `{label, text}`. Set when the card shows an estimate rather than a fact: safe to spend, what-if and store savings. The app must show `label` (for example "Estimate") and make `text` (the assumption in plain words) reachable. |
+| `estimate` | object or null | `{label, text}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, and the `bills` (pro rata amounts), `peer`, `whatif` and `stores` cards. The app must show `label` (for example "Estimate") and make `text` (the assumption in plain words) reachable. |
 | `actions` | Action[] | Buttons, at most 2. See below. |
 
 Card-specific fields:
@@ -127,7 +127,7 @@ Card-specific fields:
 | `bills` | `total` Number; `items` `{bill_id, label, category, cadence, status, status_label, typical_month: Number, last_paid, next_expected (date or null), due_until_payday: Number, evidence_ref}`[]. `cadence` is `monthly`, the only cadence in this data. `status` is one of `spread` (several payments a month, counted pro rata), `done_this_month`, `upcoming`, `late` or `skipped_this_month` (`metrics.md` section 2). | `overview.response` |
 | `peer` | `you`, `peer_median`, `peer_p25`, `peer_p75` (monthly averages), `percentile`, `vs_median` (all Number); `peer_group` `{level, label, size: Number, comparable: bool}`; `note`. `level` is `age_band+area3`, `age_band+city`, `age_band` or `all`: the most specific group with at least 20 other customers (`metrics.md` section 6). Without such a group, or for a customer whose salary is swept elsewhere, there is no peer card. Health is never benchmarked. | `card.peer` |
 | `stores` | `items` `{merchant: {id, label}, is_s_group (bool or null), price_index: Number, price_index_ci95: {low: Number, high: Number} or null, differs_from_average: bool, visits: Number}`[]; `switch` `{status, status_label, home: {id, label}, alternative: {id, label} or null, home_spend_month: Number, ticket_gap: Number or null, estimated_saving: Number or null}`; `caveats` string[]. `switch.status` is `estimate`, `within_noise`, `already_lowest`, `not_measurable` or `no_alternative`. Only `estimate` carries a gap and a saving (`metrics.md` section 7). | `card.stores` |
-| `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, for example `keep_rate`, `everyday_share`, `one_off_share`, `everyday_weekend` or `everyday_tx_month`. | `card.profile` |
+| `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 
 Actions:
@@ -332,7 +332,7 @@ Actions:
   ],
   "features": [
     {
-      "key": "everyday_share",
+      "key": "everyday_share_pct",
       "decides_label": true,
       "value": {
         "value": 31.2, "unit": "percent",
@@ -352,7 +352,7 @@ Actions:
       }
     },
     {
-      "key": "everyday_weekend",
+      "key": "everyday_weekend_pct",
       "decides_label": false,
       "value": {
         "value": 47.5, "unit": "percent",
@@ -1281,7 +1281,7 @@ A question in Finnish (`language: "auto"` detects `fi`):
   ],
   "follow_ups": [
     "Missä kaupassa ostaisin ruokani edullisimmin?",
-    "Mitä jos käyttäisin ruokaan 10 % vähemmän?",
+    "Mitä jos käyttäisin ravintoloihin 20 % vähemmän?",
     "Mitkä laskut erääntyvät ennen palkkapäivää?"
   ],
   "lesson": null,
@@ -1633,4 +1633,4 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
 | Version | Change |
 |---|---|
 | 0.1.0 | First draft: five endpoints, Number object, cards, streaming events (issue #5). |
-| 0.1.1 | Review fixes:<br>- `/api/ask` validation errors (400, 404, 429) arrive as HTTP errors before the stream; the stream's `error` event uses the `{"error": …}` envelope.<br>- New `done.clarify` and a `warnings` code list.<br>- New `card.whatif` example; `estimate` and `evidence_ref` sit on the card, not in `result`.<br>- Peer group key `age_band_and_postal_area`.<br>- Breakdown key `other` documented.<br>- Conversations are bound to one customer.<br>- Evidence kind `input` removed.<br>- `ai_disclosure` uses the agreed default text.<br><br>Aligned with `metrics.md` (#6):<br>- Age bands and profile keys, traits and features as enums.<br>- Peer `level` replaces `widened`; peers need at least 20 others.<br>- Safe to spend covers the 7 days after today, with components and two limits.<br>- Bills carry the metrics `status`, with Utilities as one `spread` bill.<br>- What-if takes `{selection, cut_pct}` and returns a `status`, savings per month, week and year, and the excluded one-offs and regular essentials; `horizon`, `projected_per_month` and the cancel and switch scenarios are removed.<br>- `stores` carries confidence intervals and a `switch.status`, with no saving unless the status is `estimate`.<br>- Baskets show monthly averages over the window.<br>- Method ids are `<metric>.<output column>@<version>`, using the metrics output names. |
+| 0.1.1 | Review fixes:<br>- `/api/ask` validation errors (400, 404, 429) arrive as HTTP errors before the stream; the stream's `error` event uses the `{"error": …}` envelope.<br>- New `done.clarify` and a `warnings` code list.<br>- New `card.whatif` example; `estimate` and `evidence_ref` sit on the card, not in `result`.<br>- Breakdown key `other` documented.<br>- Conversations are bound to one customer.<br>- Evidence kind `input` removed.<br>- `ai_disclosure` uses the agreed default text.<br><br>Aligned with `metrics.md` (#6):<br>- Age bands and profile keys, traits and features as enums.<br>- Peer `level` replaces `widened`; peers need at least 20 others.<br>- Safe to spend covers the 7 days after today, with components and two limits.<br>- Bills carry the metrics `status`, with Utilities as one `spread` bill.<br>- What-if takes `{selection, cut_pct}` and returns a `status`, savings per month, week and year, and the excluded one-offs and regular essentials; `horizon`, `projected_per_month` and the cancel and switch scenarios are removed.<br>- `stores` carries confidence intervals and a `switch.status`, with no saving unless the status is `estimate`.<br>- Baskets show monthly averages over the window.<br>- Method ids are `<metric>.<output column>@<version>`, using the metrics output names. |
