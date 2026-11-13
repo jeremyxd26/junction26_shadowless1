@@ -226,4 +226,8 @@ BILLS_TEXT: dict[str, tuple[str, str]] = {
         "Säännöllistä palkkaa ei löytynyt, joten palkkapäivän sijaan käytetään seuraavia 30 päivää.",
     ),
     "action_label": ("Show the payments", "Näytä maksut"),
+    "note_after_payday": (
+        "{label} falls due after payday, so it adds nothing before payday.",
+        "{label} erääntyy palkkapäivän jälkeen, joten se ei kuulu summaan ennen palkkapäivää.",
+    ),
 }

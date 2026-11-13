@@ -96,6 +96,26 @@ def test_payday_and_bills_due():
     assert dues["MRC-ENT-0001"].due_dates == (date(2026, 10, 10),)
 
 
+def test_bills_due_total_rounds_once_while_items_round_each():
+    """Metrics wins: total = round(sum of unrounded terms); items are rounded one by one."""
+    from core.tools import config
+    from core.tools.classify import classify
+    from core.tools.selection import Selection, select, value_of
+
+    h = []
+    for i, m in enumerate(range(4, 10), 1):   # two monthly bills of 10.00, each due 1/3 of a month
+        h.append(tx(i, date(2026, m, 5), "Housing", "-10.00", "housing_payment"))
+        h.append(tx(100 + i, date(2026, m, 6), "Utilities", "-10.00", "utilities_payment"))
+    rows = classify(h, TODAY)
+    both = Selection(direction="out", start=date(2026, 4, 1), end=TODAY,
+                     series_keys=("housing_payment", "utilities_payment"))
+    total = value_of(select(rows, both), both, config.METHODS["bills_due"],
+                     {"factors": {"housing_payment": ["1", "3"], "utilities_payment": ["1", "3"]}})
+    one = Selection(direction="out", start=date(2026, 4, 1), end=TODAY, series_key="housing_payment")
+    item = value_of(select(rows, one), one, config.METHODS["bill_due"], {"factor_num": "1", "factor_den": "3"})
+    assert (item, 2 * item, total) == (Decimal("3.33"), Decimal("6.66"), Decimal("6.67"))
+
+
 def test_payday_without_salary_and_skipped_bill():
     h = [tx(i, date(2026, m, 3), "Housing", "-500.00", "housing_payment") for i, m in enumerate(range(3, 9), 1)]
     series = recurring.detect(h, TODAY)

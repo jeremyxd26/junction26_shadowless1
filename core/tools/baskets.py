@@ -21,7 +21,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.tools import config, evidence, labels, periods
 from core.tools.classify import classify
@@ -57,7 +57,9 @@ class BasketsData(BaseModel):
     n_months: int | None
     total: Number
     baskets: list[BasketItem]
-    overrides_applied: list[dict[str, Any]] = Field(default_factory=list)  # customer labels: none yet
+    # No `overrides_applied`: the design's shape ({target: category or merchant, from, to}) belongs to
+    # rule overrides, which are not built. Customer labels work per transaction (core/tools/labels.py),
+    # and a labelled transaction is marked `overridden` in its classification.
 
 
 def _t(key: str, language: str, **kw) -> str:

@@ -9,7 +9,7 @@ come from ctx only (R4, R5).
 from __future__ import annotations
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from core.tools import aliases, config, evidence, labels, periods, recurring
 from core.tools.classify import classify, window
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Number, Period, ToolResult
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
 
@@ -101,11 +101,6 @@ def _bill_id(ctx: ToolContext, s: recurring.Series) -> str:
     return "bill_" + hashlib.sha256(f"{ctx.customer_id}|{s.key}".encode()).hexdigest()[:10]
 
 
-def _short_date(d: date, language: str) -> str:
-    if language == "fi":
-        return f"{d.day}.{d.month}."
-    return f"{d.day} {periods.MONTHS_EN_SHORT[d.month - 1]}"
-
 
 def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | None = None) -> ToolResult:
     args = args if isinstance(args, GetRecurringBillsArgs) else GetRecurringBillsArgs.model_validate(args or {})
@@ -117,13 +112,9 @@ def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | N
     alias_map = aliases.build(history, ctx.as_of)
     series = recurring.detect(history, ctx.as_of)
     pay = recurring.payday(series, ctx.as_of)
-    dues = {d.series.key: d for d in recurring.bills_due(series, ctx.as_of, pay)}
 
     win_start, win_end = window(ctx.as_of)
     win = Period(start=win_start, end=win_end, label=periods.period_label(win_start, win_end, lang))
-    due_label = (_t("until_payday", lang, date=_short_date(pay.date, lang))
-                 if pay.salary_status != "no_salary_series" else _t("until_assumed_payday", lang))
-    due_period = Period(start=ctx.as_of + timedelta(days=1), end=pay.date, label=due_label)
     if pay.salary_status == "no_salary_series":
         notes.append(_t("note_no_salary", lang))
     if any(s.key == recurring.SWEEP for s in series):
@@ -132,35 +123,27 @@ def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | N
     nb = NumberBuilder(ctx, rows)
     reg = ctx.numbers.register
 
-    def series_selection(s: recurring.Series) -> Selection:
-        return Selection(direction=s.direction, start=win_start, end=win_end, series_key=s.key)
-
     def typical(s: recurring.Series) -> tuple[Number, Any]:
-        return nb.transactions(series_selection(s), config.METHODS["typical_month"], win, _t("typical", lang))
+        sel = Selection(direction=s.direction, start=win_start, end=win_end, series_key=s.key)
+        return nb.transactions(sel, config.METHODS["typical_month"], win, _t("typical", lang))
 
-    bills: list[tuple[BillItem, tuple[Number, Any]]] = []
-    for s in series:
-        if not recurring.is_bill(s) or s.key not in dues:
-            continue
-        due = dues[s.key]
+    # The bills-due numbers come from the one shared function (rounding rule in its docstring).
+    due = recurring.bills_due_numbers(ctx, nb, series=series, pay=pay)
+    due_period = due.due_period
+    bills: list[tuple[BillItem, Any]] = []
+    for s, bill_due, due_n, due_value in due.items:
         typ = typical(s)
-        num, den = due.factor
-        # From the series' rows, like 03_safe_to_spend.sql: the unrounded typical month times the factor,
-        # rounded once. Its evidence is the series' transactions in the window.
-        due_n = nb.transactions(series_selection(s), config.METHODS["bill_due"], due_period,
-                                _t("due_pro_rata" if s.status == "spread" else "due", lang),
-                                params={"factor_num": str(num), "factor_den": str(den)})
+        label = _series_label(s, alias_map, lang)
+        if due_value == 0 and s.status != "spread":
+            notes.append(_t("note_after_payday", lang, label=label))
         bills.append((BillItem(
-            bill_id=_bill_id(ctx, s), label=_series_label(s, alias_map, lang), category=s.category,
+            bill_id=_bill_id(ctx, s), label=label, category=s.category,
             status=s.status, status_label=_status_label(s, lang), typical_month=reg(typ[0]),
-            typical_day=None if s.status == "spread" else s.typical_day, last_paid=s.last_date, next_expected=s.next_expected, due_until_payday=reg(due_n[0]),
-            evidence_ref=typ[0].evidence_ref,
-        ), due_n))
-    bills.sort(key=lambda b: (-b[1][1], -b[0].typical_month.value, b[0].bill_id))
-
-    total = reg(nb.composite(config.METHODS["bills_due"], "sum",
-                             {item.bill_id: due for item, due in bills}, Unit.EUR, due_period,
-                             _t("title", lang))[0])
+            typical_day=None if s.status == "spread" else s.typical_day, last_paid=s.last_date,
+            next_expected=s.next_expected, due_until_payday=reg(due_n), evidence_ref=typ[0].evidence_ref,
+        ), due_value))
+    bills.sort(key=lambda b: (-b[1], -b[0].typical_month.value, b[0].bill_id))
+    total = reg(due.total)
 
     income: list[IncomeItem] = []
     if args.include_income:
@@ -189,7 +172,7 @@ def _card(data: BillsData, language: str) -> Card:
         actions=[Action(type="open_evidence", label=_t("action_label", language),
                         evidence_ref=data.upcoming_total.evidence_ref)],
         total=data.upcoming_total,
-        items=[b.model_dump() for b in data.bills],
+        items=[b.model_dump(exclude={"typical_day"}) for b in data.bills],  # typical_day: model view only
     )
 
 

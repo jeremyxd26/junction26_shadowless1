@@ -35,6 +35,7 @@ class Selection:
     group_not_in: tuple[str, ...] = ()  # or rows whose group key is none of these ("other")
     series_key: str | None = None       # a recurring series: a tx_type, or a merchant id for card
                                         # purchases (metrics.md section 2); replaces the flow filter
+    series_keys: tuple[str, ...] | None = None  # several series (the bills due total); () = none
 
     def to_spec(self) -> dict[str, Any]:
         spec: dict[str, Any] = {
@@ -50,6 +51,8 @@ class Selection:
             spec["group"] = {"by": self.group_by, "key": self.group_key, "not_in": list(self.group_not_in)}
         if self.series_key is not None:  # only when set, so refs of other numbers do not change
             spec["series_key"] = self.series_key
+        if self.series_keys is not None:
+            spec["series_keys"] = list(self.series_keys)
         return spec
 
     @classmethod
@@ -67,6 +70,7 @@ class Selection:
             group_key=group.get("key"),
             group_not_in=tuple(group.get("not_in") or ()),
             series_key=spec.get("series_key"),
+            series_keys=tuple(spec["series_keys"]) if "series_keys" in spec else None,
         )
 
     def with_group(self, by: str, key: str | None = None, not_in: tuple[str, ...] = ()) -> Selection:
@@ -101,6 +105,8 @@ def group_key(c: CTx, by: str) -> str:
 
 
 def _in_direction(c: CTx, sel: Selection) -> bool:
+    if sel.series_keys is not None:
+        return series_key_of(c) in sel.series_keys
     if sel.series_key is not None:
         return series_key_of(c) == sel.series_key
     if sel.categories:
@@ -148,6 +154,7 @@ COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"]}
 MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}
 SCALED_MEDIAN_METHODS = {config.METHODS["bill_due"]}
+SUM_OF_SCALED_MEDIANS_METHODS = {config.METHODS["bills_due"]}
 
 
 def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any] | None = None) -> Decimal:
@@ -159,6 +166,9 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
     - recurring.typical_month_eur: median of the monthly totals of the series (metrics.md section 2).
     - safe_to_spend.bill_due_eur: that unrounded median * factor_num / factor_den, rounded once, as
       in the `bills` step of 03_safe_to_spend.sql (occurrences before payday, or N / 30.4375).
+    - safe_to_spend.bills_due_eur: the same unrounded term for every series in params["factors"]
+      ({series key: [factor_num, factor_den]}), summed and rounded once, exactly as 03 computes
+      bills_due_eur (metrics wins: the per-bill items, each rounded, may differ from it by 0.01 each).
     """
     if method in SUM_METHODS:
         return money(sum((amount(c, sel.direction) for c in rows), Decimal("0")))
@@ -175,4 +185,14 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
         p = params or {}
         median = statistics.median(totals) if totals else Decimal("0")
         return money(median * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"])))
+    if method in SUM_OF_SCALED_MEDIANS_METHODS:
+        by_key: dict[str, list[CTx]] = defaultdict(list)
+        for c in rows:
+            by_key[series_key_of(c)].append(c)
+        total = Decimal("0")
+        for key, (num, den) in (params or {})["factors"].items():
+            totals = _monthly_totals(by_key.get(key, []))
+            if totals:
+                total += statistics.median(totals) * Decimal(str(num)) / Decimal(str(den))
+        return money(total)
     raise ValueError(f"method {method!r} is not a transactions method")

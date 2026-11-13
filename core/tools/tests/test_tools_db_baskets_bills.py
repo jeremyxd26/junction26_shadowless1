@@ -171,7 +171,9 @@ def test_bills_due_match_03_safe_to_spend_sql_and_worked_numbers(conn, customer_
     sql = run_metric(conn, "03_safe_to_spend.sql", customer_id)[0]
     assert dec(res.data.upcoming_total) == sql["bills_due_eur"] == Decimal(BILLS_WORKED[customer_id]["due"])
     assert (res.data.next_payday, res.data.salary_status) == (sql["next_payday"], sql["salary_status"])
-    assert sum(dec(b.due_until_payday) for b in res.data.bills) == dec(res.data.upcoming_total)
+    # metrics wins: the total is 03's rounded sum; each item is rounded on its own (0.01 each at most)
+    items = sum(dec(b.due_until_payday) for b in res.data.bills)
+    assert abs(items - dec(res.data.upcoming_total)) <= Decimal("0.01") * len(res.data.bills)
     keys = {b.bill_id for b in res.data.bills}
     assert "bill_salary_sweep" not in keys and "bill_salary" not in keys    # transfer and income are not bills
     assert [i.key for i in res.data.income] == ["salary"]
@@ -206,11 +208,54 @@ def test_dates_with_salary_not_yet_paid_match_the_sql(conn, as_of, salary_status
     sql03 = run_metric(conn, "03_safe_to_spend.sql", "CUST00001", as_of)[0]
     assert (res.data.salary_status, res.data.next_payday) == (salary_status, payday)
     assert (res.data.salary_status, res.data.next_payday) == (sql03["salary_status"], sql03["next_payday"])
-    # The contract makes the total the sum of the rounded per-bill amounts (the items add up on the card);
-    # 03_safe_to_spend.sql rounds the unrounded sum once, so they can differ by up to a cent per bill.
-    assert abs(dec(res.data.upcoming_total) - sql03["bills_due_eur"]) <= Decimal("0.01") * len(res.data.bills)
+    # Metrics wins: the total is exactly 03's bills_due_eur (the rounded sum of unrounded terms), also
+    # on 2026-05-20, where the sum of the rounded items is a cent higher.
+    assert dec(res.data.upcoming_total) == sql03["bills_due_eur"]
+    items = sum(dec(b.due_until_payday) for b in res.data.bills)
+    assert abs(items - dec(res.data.upcoming_total)) <= Decimal("0.01") * len(res.data.bills)
+    if as_of == date(2026, 5, 20):
+        assert (dec(res.data.upcoming_total), items) == (Decimal("278.36"), Decimal("278.37"))
     for ref in res.evidence:
         assert evidence.resolve(conn, ref, "CUST00001", limit=200).reconciles is True
+
+
+def test_the_bills_due_total_has_one_ref_and_resolves_to_all_bill_transactions(conn):
+    res = get_recurring_bills(ctx_for(conn, "CUST00001"))
+    total = res.data.upcoming_total
+    assert sum(1 for ref in res.evidence if ref == total.evidence_ref) == 1
+    r = evidence.resolve(conn, total.evidence_ref, "CUST00001", limit=200)
+    n = conn.execute("""SELECT count(*) FROM transactions WHERE customer_id = %s AND tx_date <= %s
+                        AND tx_type IN ('housing_payment', 'utilities_payment', 'investment_deposit')
+                        AND tx_date BETWEEN %s AND %s""",
+                     ("CUST00001", AS_OF, date(2026, 4, 1), date(2026, 9, 30))).fetchone()[0]
+    assert r.kind == "transactions" and r.reconciles is True and r.row_count == n
+
+
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
+def test_baskets_at_a_second_as_of_match_02_baskets_sql(conn, customer_id):
+    as_of = date(2026, 9, 14)  # window 2026-03-01 .. 2026-08-31 (metrics.md section 9)
+    res = get_basket_breakdown(ctx_for(conn, customer_id, as_of=as_of), {"period": {"preset": "last_6_months"}})
+    assert (res.data.period.start, res.data.period.end) == (date(2026, 3, 1), date(2026, 8, 31))
+    sql = {r["basket"]: r for r in run_metric(conn, "02_baskets.sql", customer_id, as_of)}
+    got = {b.key: (dec(b.amount), dec(b.share)) for b in res.data.baskets}
+    assert got == {k: (r["month_avg_eur"], r["share_pct"]) for k, r in sql.items()}
+
+
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
+def test_baskets_for_one_month(conn, customer_id):
+    res = get_basket_breakdown(ctx_for(conn, customer_id), {"period": {"preset": "last_month"}})
+    assert (res.data.period.start, res.data.period.end, res.data.n_months) == (date(2026, 8, 1), date(2026, 8, 31), 1)
+    rows = conn.execute(
+        """SELECT category, sum(-amount_eur) FROM transactions
+           WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s AND category <> ALL(%s)
+           GROUP BY category""",
+        (customer_id, AS_OF, date(2026, 8, 1), date(2026, 8, 31),
+         ["Salary", "Other Income", "Invest Withdraw", "Invest Deposit", "Salary Sweep"])).fetchall()
+    by_category = {c: Decimal(s) for c, s in rows}
+    assert dec(res.data.total) == sum(by_category.values())                  # one month: average = total
+    listed = {c.key: dec(c.amount) for b in res.data.baskets for c in b.categories}
+    assert sum(listed.values()) == sum(by_category.values())
+    assert set(listed) == set(by_category) or all(by_category[c] == 0 for c in set(by_category) - set(listed))
 
 
 def test_series_evidence_is_the_series_transactions(conn):

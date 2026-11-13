@@ -18,9 +18,12 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from core.tools import config
 from core.tools.classify import window
 from core.tools.db import Tx
-from core.tools.periods import add_months, month_end
+from core.tools.models import Number, Period
+from core.tools.periods import MONTHS_EN_SHORT, add_months, month_end
+from core.tools.selection import Selection
 
 MIN_MONTHS = 4             # present in at least 4 of the 6 window months
 MERCHANT_MAX_CV = 0.10     # a merchant series needs one stable charge a month
@@ -226,3 +229,66 @@ def bills_due(series: list[Series], today: date, pay: Payday) -> list[BillDue]:
 
 def days_in_month(d: date) -> int:
     return calendar.monthrange(d.year, d.month)[1]
+
+
+# ---- the bills-due numbers (shared by get_recurring_bills and safe to spend) ----------------------
+
+def due_period(today: date, pay: Payday, language: str) -> Period:
+    """The days after today up to and including payday, labelled for the card."""
+    if pay.salary_status == "no_salary_series":
+        label = config.label(config.BILLS_TEXT["until_assumed_payday"], language)
+    else:
+        short = (f"{pay.date.day}.{pay.date.month}." if language == "fi"
+                 else f"{pay.date.day} {MONTHS_EN_SHORT[pay.date.month - 1]}")
+        label = config.label(config.BILLS_TEXT["until_payday"], language).format(date=short)
+    return Period(start=today + timedelta(days=1), end=pay.date, label=label)
+
+
+@dataclass
+class BillsDueNumbers:
+    payday: Payday
+    due_period: Period
+    items: list[tuple[Series, BillDue, Number, Decimal]]   # per bill: its due amount before payday
+    total: Number                                           # safe_to_spend.bills_due_eur@1
+    total_value: Decimal
+
+
+def bills_due_numbers(ctx, nb, *, series: list[Series] | None = None, pay: Payday | None = None) -> BillsDueNumbers:
+    """The bills due before payday as finished Numbers. The ONLY way to obtain
+    `safe_to_spend.bills_due_eur@1` (and each `safe_to_spend.bill_due_eur@1`): get_recurring_bills and
+    the safe-to-spend tool both call it, so one number has one value and one evidence ref.
+
+    Rounding rule (team-lead decision, metrics wins): the total is computed like `bills_due_eur` in
+    03_safe_to_spend.sql: every bill's unrounded term (unrounded typical month x occurrences before
+    payday, or x N / 30.4375 for a spread bill) is summed and the sum is rounded once. Each item is that
+    term rounded on its own, so the items' sum may differ from the total by up to 0.01 per item.
+
+    Evidence: an item resolves to its series' transactions in the window; the total resolves to the
+    transactions of all the bills' series, and recomputing reproduces it exactly.
+    `nb` is the tool's NumberBuilder (its specs are written by the tool, once).
+    """
+    series = series if series is not None else detect(ctx.history(), ctx.as_of)
+    pay = pay if pay is not None else payday(series, ctx.as_of)
+    dues = bills_due(series, ctx.as_of, pay)
+    lang = ctx.language
+    period = due_period(ctx.as_of, pay, lang)
+    win_start, win_end = window(ctx.as_of)
+    period_param = {"period": {"start": period.start.isoformat(), "end": period.end.isoformat()}}
+
+    items = []
+    factors: dict[str, list[str]] = {}
+    for due in dues:
+        s = due.series
+        num, den = due.factor
+        factors[s.key] = [str(num), str(den)]
+        sel = Selection(direction=s.direction, start=win_start, end=win_end, series_key=s.key)
+        label = config.label(config.BILLS_TEXT["due_pro_rata" if s.status == "spread" else "due"], lang)
+        number, value = nb.transactions(sel, config.METHODS["bill_due"], period, label,
+                                        params={"factor_num": str(num), "factor_den": str(den), **period_param})
+        items.append((s, due, number, value))
+
+    sel_all = Selection(direction="out", start=win_start, end=win_end, series_keys=tuple(sorted(factors)))
+    total, total_value = nb.transactions(sel_all, config.METHODS["bills_due"], period,
+                                         config.label(config.BILLS_TEXT["title"], lang),
+                                         params={"factors": dict(sorted(factors.items())), **period_param})
+    return BillsDueNumbers(pay, period, items, total, total_value)

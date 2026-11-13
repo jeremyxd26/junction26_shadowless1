@@ -111,8 +111,10 @@ def basket_of(t: Tx, flow: str, is_one_off: bool, is_subscription: bool) -> str 
 def classify(history: list[Tx], as_of: date, overrides: dict[int, str] | None = None) -> list[CTx]:
     """Classify every transaction up to as_of. Rows after as_of are dropped (R5).
 
-    `overrides` maps a transaction id to the basket a customer chose (core.tools.labels); for a
-    spending transaction it wins over the rules, like the overrides CTE in 02_baskets.sql.
+    `overrides` maps a transaction id to the basket a customer chose (core.tools.labels; empty today).
+    It applies to spending transactions only and wins over the rules. This differs from the overrides
+    CTE in 02_baskets.sql, which matches a rule override by merchant, then MCC, then category (empty in
+    the prototypes): customer labels are per transaction, and a label may also be `unclassified`.
     """
     overrides = overrides or {}
     spikes = _spike_base(history, as_of)
