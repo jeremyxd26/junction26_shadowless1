@@ -1,7 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
-import type { EvidenceResponse } from '../api/types.ts'
+import type { EvidenceResponse, EvidenceRow } from '../api/types.ts'
 import { formatDate, formatRowAmount } from '../lib/i18n.ts'
 import { useLoad } from '../lib/useLoad.ts'
 import { closeEvidence } from '../lib/url.ts'
@@ -26,14 +26,48 @@ export function EvidenceSheet({ evidenceRef }: { evidenceRef: string }) {
           onRetry={result.error instanceof ApiError && !result.error.retryable ? undefined : result.retry}
         />
       )}
-      {result.status === 'ready' && <EvidenceBody evidence={result.data} />}
+      {result.status === 'ready' && (
+        // Keyed, so the extra pages of one evidence never leak into the next one.
+        <EvidenceBody key={`${evidenceRef}|${customerId}|${lang}`} evidence={result.data} />
+      )}
     </BottomSheet>
   )
 }
 
+interface Pages {
+  rows: EvidenceRow[]
+  cursor: string | null
+  loading: boolean
+  error: string | null
+}
+
 function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
-  const { lang, t } = useSettings()
+  const { lang, customerId, t } = useSettings()
   const { number } = evidence
+  const [pages, setPages] = useState<Pages>({ rows: evidence.rows, cursor: evidence.next_cursor, loading: false, error: null })
+
+  const showMore = async () => {
+    if (!pages.cursor || pages.loading) return
+    setPages((current) => ({ ...current, loading: true, error: null }))
+    try {
+      const next = await api.evidence(evidence.evidence_ref, customerId ?? '', lang, pages.cursor)
+      setPages((current) => {
+        const seen = new Set(current.rows.map((row) => row.tx_id))
+        const fresh = next.rows.filter((row) => !seen.has(row.tx_id))
+        return { rows: [...current.rows, ...fresh], cursor: next.next_cursor, loading: false, error: null }
+      })
+    } catch (error) {
+      setPages((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof ApiError ? error.message : 'Something went wrong.',
+      }))
+    }
+  }
+
+  // "Add up" is only true of the full list: every page loaded and the API says it reconciles.
+  const allRows = pages.cursor === null && (evidence.row_count === null || pages.rows.length >= evidence.row_count.value)
+  const showReconciles = evidence.reconciles === true && allRows
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -48,7 +82,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
         <p className="mt-1 text-base text-ink-2">{evidence.method.summary}</p>
       </section>
 
-      {evidence.rows.length > 0 && (
+      {pages.rows.length > 0 && (
         <section aria-labelledby="ev-rows">
           <div className="flex items-baseline justify-between gap-2">
             <h3 id="ev-rows" className="text-sm font-semibold text-ink">
@@ -61,7 +95,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
             )}
           </div>
           <ul className="mt-2 divide-y divide-line rounded-lg border border-line">
-            {evidence.rows.map((row) => (
+            {pages.rows.map((row) => (
               <li key={row.tx_id} className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
                 <div className="min-w-0">
                   <p className="truncate text-base text-ink">{row.merchant?.label ?? row.category}</p>
@@ -76,7 +110,23 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
               </li>
             ))}
           </ul>
-          {evidence.reconciles && <p className="mt-2 text-sm text-muted">{t.reconciles}</p>}
+          {pages.cursor && (
+            <button
+              type="button"
+              onClick={showMore}
+              disabled={pages.loading}
+              aria-busy={pages.loading}
+              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint disabled:cursor-wait disabled:opacity-70"
+            >
+              {pages.loading ? t.loading : t.showMore}
+            </button>
+          )}
+          {pages.error && (
+            <p role="alert" className="mt-2 text-sm text-danger">
+              {pages.error}
+            </p>
+          )}
+          {showReconciles && <p className="mt-2 text-sm text-muted">{t.reconciles}</p>}
         </section>
       )}
 

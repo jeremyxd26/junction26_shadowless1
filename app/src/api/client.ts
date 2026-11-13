@@ -8,7 +8,8 @@ export interface ApiClient {
   readonly mode: ApiMode
   personas(lang: Language): Promise<PersonasResponse>
   overview(customerId: string, lang: Language): Promise<OverviewResponse>
-  evidence(ref: string, customerId: string, lang: Language): Promise<EvidenceResponse>
+  /** `cursor` is the previous page's `next_cursor` (contract section 9). */
+  evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
 }
 
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
@@ -30,6 +31,15 @@ function createLiveClient(base: string): ApiClient {
         retryable: response.status >= 500,
       })
     }
+    // A 200 that is not a JSON object (for example a static host answering /api with
+    // index.html) must not reach the screens as data.
+    if (typeof body !== 'object' || body === null) {
+      throw new ApiError(response.status, {
+        code: 'bad_response',
+        message: 'Something went wrong. Try again.',
+        retryable: true,
+      })
+    }
     return body as T
   }
 
@@ -38,8 +48,12 @@ function createLiveClient(base: string): ApiClient {
     personas: (lang) => get<PersonasResponse>('/api/personas', { lang }),
     overview: (customerId, lang) =>
       get<OverviewResponse>(`/api/overview/${encodeURIComponent(customerId)}`, { lang }),
-    evidence: (ref, customerId, lang) =>
-      get<EvidenceResponse>(`/api/evidence/${encodeURIComponent(ref)}`, { customer_id: customerId, lang }),
+    evidence: (ref, customerId, lang, cursor) =>
+      get<EvidenceResponse>(`/api/evidence/${encodeURIComponent(ref)}`, {
+        customer_id: customerId,
+        lang,
+        ...(cursor ? { cursor } : {}),
+      }),
   }
 }
 
@@ -50,7 +64,7 @@ function createLazyMockClient(): ApiClient {
     mode: 'mock',
     personas: (lang) => client.then((mock) => mock.personas(lang)),
     overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
-    evidence: (ref, customerId, lang) => client.then((mock) => mock.evidence(ref, customerId, lang)),
+    evidence: (ref, customerId, lang, cursor) => client.then((mock) => mock.evidence(ref, customerId, lang, cursor)),
   }
 }
 
