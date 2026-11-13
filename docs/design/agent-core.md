@@ -177,7 +177,7 @@ The rules that turn a preset into dates (for example where a week starts) are de
 |---|---|---|---|
 | `get_spending` | Spending or income by filter and period, optionally grouped and compared | `metric` (no grouping) or `breakdown` | `spending.total`, `spending.change`, `spending.change_pct`, `spending.share_pct`, `spending.n_tx` (plain sums and counts over the filter, defined here) |
 | `get_basket_breakdown` | Split into the three baskets, monthly average over the window | `breakdown` (`stacked_bar`) | `baskets.month_avg_eur`, `baskets.share_pct`, `spender_profile.spend_month_eur` |
-| `get_recurring_bills` | Recurring bills and income cadence, bills due before payday | `bills` | `recurring.typical_month_eur`, `safe_to_spend.bills_due_eur` |
+| `get_recurring_bills` | Recurring bills and income cadence, bills due before payday | `bills` | `recurring.typical_month_eur`, `safe_to_spend.bills_due_eur` (the total), `safe_to_spend.bill_due_eur` (one bill's term of it) |
 | `get_safe_to_spend` | Safe to spend in the next 7 days | `metric` with `components`, `estimate` set | `safe_to_spend.safe_to_spend_7d_eur`, `.free_until_payday_eur`, `.balance_limit_7d_eur`, `.budget_limit_7d_eur`, `.balance_eur`, `.bills_due_eur`, `.essentials_reserve_eur`, `.irregular_reserve_eur`, `.cushion_eur` |
 | `run_what_if` | Savings from cutting a selection by a percentage | `whatif` (`estimate` set) | `what_if.baseline_month_eur`, `.saving_month_eur`, `.saving_week_eur`, `.saving_year_eur`, `.one_off_excluded_eur`, `.regular_excluded_eur` |
 | `get_spender_profile` | "What kind of spender am I?" | `profile` | `spender_profile.<feature column>`, for example `spender_profile.keep_rate_pct` |
