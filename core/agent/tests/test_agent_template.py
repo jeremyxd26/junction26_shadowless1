@@ -64,3 +64,11 @@ def test_at_most_four_numbers_and_the_draft_cites_exactly_them():
     draft = template_draft([BASKETS], [], "en", None, "Where did my money go?")
     assert draft["cited"] == ["n9", "n11", "n21", "n31"]
     assert draft["text"].startswith("1 Apr – 30 Sep 2026, monthly average: Total spending: {{n9}}; Regular essentials: {{n11}}")
+
+
+def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
+    view = {**SAFE, "period": "Next 7 days"}
+    draft = template_draft([view], [], "en", None, "What can I safely spend this week?")
+    assert "7" not in draft["text"] and draft["cited"] == ["n6", "n8", "n9"]
+    kept = template_draft([{**SPENDING}], [], "en", None, "How much on taxis last month?")
+    assert kept["text"].startswith("August 2026: ")

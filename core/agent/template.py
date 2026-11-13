@@ -210,7 +210,12 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     the result."""
     def ok(text: str, is_note: bool = False) -> bool:
         if allowed is None:
-            return not (is_note and re.search(r"\d", text))
+            # Without the answer's dates: a note with digits is left out; a label is kept only if all its
+            # digits are inside date expressions ("August 2026" yes, "Next 7 days" no). The validator
+            # then checks that those dates were returned.
+            if is_note:
+                return not re.search(r"\d", text)
+            return not re.search(r"\d", answer_text.find_dates(text, blank_all=True)[1])
         return not answer_text.leftover_digits(text, dates=allowed.dates, periods=allowed.periods)
 
     sentences: list[str] = []
