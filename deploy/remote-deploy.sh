@@ -6,13 +6,16 @@
 # Never prints the settings file or environment values; failure logs are masked.
 set -euo pipefail
 
-sha=${1:?usage: remote-deploy.sh <commit-sha>}
+sha=${1:?usage: remote-deploy.sh <commit-sha> [health-path]}
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit sha: $sha" >&2; exit 1; }
+# The deploy gate. Only for testing the rollback path is it set to a path that does not exist.
+health_path=${2:-/healthz}
+[[ $health_path =~ ^/[A-Za-z0-9._/-]*$ ]] || { echo "unsupported health path: $health_path" >&2; exit 1; }
 cd /opt/shadowless1/repo
 state=/opt/shadowless1
 prev=$(cat "$state/current" 2>/dev/null || echo none)
 
-mask() { sed -E 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^ @/]*@#\1***@#g; s#(password|secret|key|token)=[^ &]*#\1=***#Ig'; }
+mask() { sed -E 's#([a-zA-Z][a-zA-Z0-9+.-]*://)[^ @/]*@#\1***@#g; s#(password|secret|key|token)=[^ &]*#\1=***#Ig; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#x.x.x.x#g'; }
 
 echo "== building $sha (previous: $prev)"
 docker build --quiet --file deploy/Dockerfile --tag "shadowless1-core:$sha" . >/dev/null
@@ -33,9 +36,9 @@ switch_to() {
   systemctl restart shadowless1-core
 }
 
-healthy() {
+healthy() {   # $1: path to check (default /healthz)
   for _ in $(seq 1 30); do
-    if curl -fsS --max-time 2 http://127.0.0.1:8000/healthz >/dev/null 2>&1; then return 0; fi
+    if curl -fsS --max-time 2 "http://127.0.0.1:8000${1:-/healthz}" >/dev/null 2>&1; then return 0; fi
     sleep 1
   done
   return 1
@@ -43,8 +46,8 @@ healthy() {
 
 echo "== starting"
 switch_to "$sha"
-if ! healthy; then
-  echo "new version is not healthy; last log lines (masked):" >&2
+if ! healthy "$health_path"; then
+  echo "new version is not healthy (GET $health_path); last log lines (masked):" >&2
   journalctl -u shadowless1-core -n 30 --no-pager -o cat 2>/dev/null | mask >&2 || true
   if [[ $prev != none ]] && docker image inspect "shadowless1-core:$prev" >/dev/null 2>&1; then
     echo "switching back to $prev" >&2

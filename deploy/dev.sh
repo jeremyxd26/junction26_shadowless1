@@ -10,6 +10,8 @@
 #   DEV_HOST     instance address        (default 135.181.63.178)
 #   DEV_SSH_KEY  private key for root@   (default ~/.ssh/shadowless1_dev_ed25519; never commit it)
 #   DEV_URL      public base URL         (default https://135-181-63-178.sslip.io)
+#   DEV_HEALTH_PATH  deploy gate path    (default /healthz; a missing path such as /no-such-path makes the
+#                                         gate fail on purpose, to test the automatic rollback)
 # Prints no secret: the service settings stay in /etc/shadowless1/core.env on the instance.
 set -euo pipefail
 
@@ -18,13 +20,16 @@ ref=${1:-dev}
 host=${DEV_HOST:-135.181.63.178}
 key=${DEV_SSH_KEY:-$HOME/.ssh/shadowless1_dev_ed25519}
 url=${DEV_URL:-https://135-181-63-178.sslip.io}
+health_path=${DEV_HEALTH_PATH:-/healthz}
+[[ $health_path =~ ^/[A-Za-z0-9._/-]*$ ]] || { echo "unsupported health path: $health_path" >&2; exit 1; }
 [[ -f $key ]] || { echo "SSH key not found: $key (see docs/deploy.md, 'Access')" >&2; exit 1; }
 
 echo "deploying '$ref' to $host"
 ssh -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
-    -o StrictHostKeyChecking=accept-new "root@$host" "bash -s -- '$ref'" <<'REMOTE'
+    -o StrictHostKeyChecking=accept-new "root@$host" "bash -s -- '$ref' '$health_path'" <<'REMOTE'
 set -euo pipefail
 ref=$1
+health_path=$2
 cd /opt/shadowless1/repo
 git fetch --quiet --prune origin
 # A branch name is taken from origin; anything else must be a commit that origin has.
@@ -37,10 +42,15 @@ if [[ ! -f deploy/remote-deploy.sh || ! -f deploy/Dockerfile ]]; then
   echo "commit $sha has no deploy/remote-deploy.sh or deploy/Dockerfile: it predates the deploy files" >&2
   exit 1
 fi
-exec bash deploy/remote-deploy.sh "$sha"
+exec bash deploy/remote-deploy.sh "$sha" "$health_path"
 REMOTE
 
+# The first deploy on a new name waits for the TLS certificate, so the public check retries for a minute.
 echo "public check: $url/healthz"
-code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url/healthz" || true)
+for _ in $(seq 1 12); do
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url/healthz" 2>/dev/null || true)
+  [[ $code == 200 ]] && break
+  sleep 5
+done
 echo "GET $url/healthz -> $code"
 [[ $code == 200 ]]
