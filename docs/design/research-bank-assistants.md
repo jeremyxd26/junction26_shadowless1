@@ -118,17 +118,17 @@ All sources were accessed on 2026-11-13. EUR-Lex itself could not be reached fro
 - [E1] Bank of America, "Erica" (product page and FAQ). https://info.bankofamerica.com/en/digital-banking/erica, accessed 2026-11-13.
 - [E2] Bank of America release via PR Newswire, "A Decade of AI Innovation: BofA's Virtual Assistant Erica Surpasses 3 Billion Client Interactions", August 2025 (newswire copy; the BofA newsroom page did not load). https://www.placera.se/pressmeddelanden/a-decade-of-ai-innovation-bofa-s-virtual-assistant-erica-surpasses-3-billion-client-interactions-20250820, accessed 2026-11-13.
 - [E3] Klarna press release, "Klarna AI assistant handles two-thirds of customer service chats in its first month", February 2024. https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/, accessed 2026-11-13.
-- [E4] Customer Experience Dive (news), "Klarna says AI agent does the work of 853 employees", 2025. https://www.customerexperiencedive.com/news/klarna-says-ai-agent-work-853-employees/805987/, accessed 2026-11-13.
-- [E5] Nubank newsroom, "Nubank begins testing with generative artificial intelligence to enhance customers' experience with credit", October 2023. https://nu.com/en/newsroom/consumers/nubank-begins-testing-with-generative-artificial-intelligence-to-enhance-customers-experience-with-credit, accessed 2026-11-13.
-- [E6] arXiv 2606.08867, paper on customer-facing support agents at Nubank, 2026. https://arxiv.org/abs/2606.08867, accessed 2026-11-13.
+- [E4] CX Dive (news), "Klarna says its AI agent is doing the work of 853 employees", 2025. https://www.customerexperiencedive.com/news/klarna-says-ai-agent-work-853-employees/805987/, accessed 2026-11-13.
+- [E5] Nubank newsroom, "Nu tests with Generative AI to enhance customers' experience with credit", October 2023. https://nu.com/en/newsroom/consumers/nubank-begins-testing-with-generative-artificial-intelligence-to-enhance-customers-experience-with-credit, accessed 2026-11-13.
+- [E6] arXiv 2606.08867, "Building Customer Support AI Agents at 100M-User Scale: An Evaluation-Driven Framework", 2026. https://arxiv.org/abs/2606.08867, accessed 2026-11-13.
 - [E7] FF News, "Revolut enters new era of money intelligence with launch of AI assistant", 8 April 2026 (news copy of the Revolut release; revolut.com returned 403). https://ffnews.com/newsarticle/fintech/revolut-enters-new-era-of-money-intelligence-with-launch-of-ai-assistant/, accessed 2026-11-13.
 - [E8] Cleo blog, "Building a financial agent on top of commodified LLMs", 23 July 2025 (alternate host). https://cleo-site-meetcleo-v2.vercel.app/blog/building-a-financial-agent-on-top-of-commodified-llms, accessed 2026-11-13.
 - [E9] Cleo blog, "Inside Cleo's multi-agent architecture", 14 May 2026 (alternate host). https://cleo-site-meetcleo-v2.vercel.app/blog/inside-cleos-multi-agent-architecture, accessed 2026-11-13.
 - [E10] bunq press release, "bunq launches smarter, more powerful upgrade to GenAI financial assistant", December 2025. https://press.bunq.com/258930-bunq-launches-smarter-more-powerful-upgrade-to-genai-financial-assistant, accessed 2026-11-13.
-- [E11] Monzo help, "Trends". https://monzo.com/ie/help/managing-money/help-trends, accessed 2026-11-13.
-- [E12] Monzo help, "Trends: spending and balance". https://monzo.com/help/budgeting-overdrafts-savings/trends-spending-and-balance-web, accessed 2026-11-13.
-- [E13] Starling Bank news, "Starling launches pioneering AI banking tool" (Spending Intelligence), June 2025. https://www.starlingbank.com/news/starling-launches-pioneering-ai-banking-tool/, accessed 2026-11-13.
-- [E14] Starling Bank news, "Starling launches agentic AI assistant", 20 March 2026. https://www.starlingbank.com/news/starling-launches-agentic-ai-assistant/, accessed 2026-11-13.
+- [E11] Monzo Help, "All about the Trends". https://monzo.com/ie/help/managing-money/help-trends, accessed 2026-11-13.
+- [E12] Monzo Help, "Spending, Balance and Targets in Trends". https://monzo.com/help/budgeting-overdrafts-savings/trends-spending-and-balance-web, accessed 2026-11-13.
+- [E13] Starling Bank news, "Starling launches pioneering AI banking tool in mission to help UK be 'Good with money'" (Spending Intelligence), June 2025. https://www.starlingbank.com/news/starling-launches-pioneering-ai-banking-tool/, accessed 2026-11-13.
+- [E14] Starling Bank news, "Starling launches UK's first Agentic AI financial assistant", 20 March 2026. https://www.starlingbank.com/news/starling-launches-agentic-ai-assistant/, accessed 2026-11-13.
 
 **Law and regulators**
 - [L1] EU AI Act, Article 50, AI Act Service Desk (European Commission). https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-50, accessed 2026-11-13.
