@@ -1,6 +1,6 @@
 # Core API contract
 
-**Version:** 0.1.1 (draft) · **Issue:** #5 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.1.2 (draft) · **Issues:** #5, #32 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
 **Status:** draft 0.1. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
@@ -122,9 +122,12 @@ Card-specific fields:
 
 | `type` | Fields | Example |
 |---|---|---|
-| `metric` | `primary` Number; `secondary` Number[]; `comparison` Comparison or null; `components` `{key, label, operation: "add" or "subtract", amount: Number}`[] (empty when not relevant). For safe to spend (`metrics.md` section 3): the components `balance`, `bills_due`, `essentials_reserve`, `irregular_reserve` and `cushion` add up to the first secondary number, "Free until payday". Spread over the days to payday, it gives the balance limit (second secondary number). The primary number is the smaller of the balance limit and the budget limit (third secondary number). | `overview.response` (hero), `ask.json.response_fi` |
+| `metric` | `status` (string or null); `primary` Number; `secondary` Number[]; `comparison` Comparison or null; `components` `{key, label, operation: "add" or "subtract", amount: Number}`[] (empty when not relevant). `status` is set only on the safe-to-spend card and is one of `ok`, `below_usual` or `nothing_free` (`metrics.md` section 3). Use it for tone and colour; it is `null` on every other `metric` card. For safe to spend (`metrics.md` section 3): the components `balance`, `bills_due`, `essentials_reserve`, `irregular_reserve` and `cushion` add up to the first secondary number, "Free until payday". Spread over the days to payday, it gives the balance limit (second secondary number). The primary number is the smaller of the balance limit and the budget limit (third secondary number). Each value is rounded to cents separately, so in real responses the components may differ from "Free until payday" by 0.01. The examples add up exactly. | `overview.response` (hero), `ask.json.response_fi` |
 | `breakdown` | `display_hint` (`list`, `stacked_bar` or `time_series`); `total` Number; `comparison` Comparison or null; `items` `{key, label, amount: Number, share: Number or null, change: Number or null, flags: ("one_off" or "habit")[]}`[]. An item `key` is a category, basket, MCC group or month, or `other` for everything outside the top items. | `overview.response`, `ask.sse.card` |
-| `bills` | `total` Number; `items` `{bill_id, label, category, cadence, status, status_label, typical_month: Number, last_paid, next_expected (date or null), due_until_payday: Number, evidence_ref}`[]. `cadence` is `monthly`, the only cadence in this data. `status` is one of `spread` (several payments a month, counted pro rata), `done_this_month`, `upcoming`, `late` or `skipped_this_month` (`metrics.md` section 2). | `overview.response` |
+| `bills` | `total` Number; `items` `{bill_id, label, category, cadence, status, status_label, typical_month: Number, last_paid, next_expected (date or null), due_until_payday: Number, evidence_ref}`[]. `cadence` is `monthly`, the only cadence in this data. `status` is one of `spread` (several payments a month, counted pro rata), `done_this_month`, `upcoming`, `late` or `skipped_this_month` (`metrics.md` section 2). Methods:
+- `total` uses `safe_to_spend.bills_due_eur@1`, the per-customer total.
+- Each `due_until_payday` uses `safe_to_spend.bill_due_eur@1`: one bill's term of that total. That is the bill's typical amount when it falls due before payday, or a pro rata share for a `spread` bill, as in the `bill_due` step of `core/metrics/03_safe_to_spend.sql`.
+- The items' `due_until_payday` add up to `total`. | `overview.response` |
 | `peer` | `you`, `peer_median`, `peer_p25`, `peer_p75` (monthly averages), `percentile`, `vs_median` (all Number); `peer_group` `{level, label, size: Number, comparable: bool}`; `note`. `level` is `age_band+area3`, `age_band+city`, `age_band` or `all`: the most specific group with at least 20 other customers (`metrics.md` section 6). Without such a group, or for a customer whose salary is swept elsewhere, there is no peer card. Health is never benchmarked. | `card.peer` |
 | `stores` | `items` `{merchant: {id, label}, is_s_group (bool or null), price_index: Number, price_index_ci95: {low: Number, high: Number} or null, differs_from_average: bool, visits: Number}`[]; `switch` `{status, status_label, home: {id, label}, alternative: {id, label} or null, home_spend_month: Number, ticket_gap: Number or null, estimated_saving: Number or null}`; `caveats` string[]. `switch.status` is `estimate`, `within_noise`, `already_lowest`, `not_measurable` or `no_alternative`. Only `estimate` carries a gap and a saving (`metrics.md` section 7). | `card.stores` |
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
@@ -530,7 +533,7 @@ The home screen. It is fully deterministic: no AI model is called, and it reads 
 **Response fields:**
 - `customer_id`, `as_of`, `language`, `greeting`.
 - `ai_disclosure`: show it on the first chat screen.
-- `hero`: a `metric` card, safe to spend in the next 7 days (`metrics.md` section 3; how its components work is in section 3 of this contract). The core writes the metrics status (`ok`, `below_usual` or `nothing_free`) into the subtitle.
+- `hero`: a `metric` card, safe to spend in the next 7 days (`metrics.md` section 3; how its components work is in section 3 of this contract). Its `status` field carries the metrics status (`ok`, `below_usual` or `nothing_free`), and the subtitle says the same in words.
 - `cards`: Card[] (spending baskets, bills before payday, and more later).
 - `insights`: Insight[].
 - `suggested_questions`: string[], sent to `/api/ask` when tapped. These are the partner's four questions.
@@ -559,30 +562,31 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       "label": "Estimate",
       "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget."
     },
+    "status": "ok",
     "primary": {
-      "value": 228.41, "unit": "eur",
+      "value": 184.68, "unit": "eur",
       "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
       "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_s2t4w6y8a0c2",
-      "label": "Safe to spend", "display": "€228.41"
+      "label": "Safe to spend", "display": "€184.68"
     },
     "secondary": [
       {
-        "value": 489.46, "unit": "eur",
+        "value": 395.74, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
         "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_s4t6w8y0a2c4",
-        "label": "Free until payday", "display": "€489.46"
+        "label": "Free until payday", "display": "€395.74"
       },
       {
-        "value": 228.41, "unit": "eur",
+        "value": 184.68, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
         "method": "safe_to_spend.balance_limit_7d_eur@1", "evidence_ref": "ev_s3t5w7y9a1c3",
-        "label": "Your balance allows", "display": "€228.41"
+        "label": "Your balance allows", "display": "€184.68"
       },
       {
-        "value": 292.24, "unit": "eur",
+        "value": 248.5, "unit": "eur",
         "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
         "method": "safe_to_spend.budget_limit_7d_eur@1", "evidence_ref": "ev_s5t7w9y1a3c5",
-        "label": "Your monthly budget allows", "display": "€292.24"
+        "label": "Your monthly budget allows", "display": "€248.50"
       }
     ],
     "comparison": null,
@@ -614,10 +618,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
         "label": "Usual essentials until payday",
         "operation": "subtract",
         "amount": {
-          "value": 147.0, "unit": "eur",
+          "value": 134.76, "unit": "eur",
           "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
           "method": "safe_to_spend.essentials_reserve_eur@1", "evidence_ref": "ev_e1s3r5v7e9a1",
-          "label": "Essentials reserve", "display": "€147.00"
+          "label": "Essentials reserve", "display": "€134.76"
         }
       },
       {
@@ -625,10 +629,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
         "label": "Reserve for unexpected necessities",
         "operation": "subtract",
         "amount": {
-          "value": 61.5, "unit": "eur",
+          "value": 167.46, "unit": "eur",
           "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
           "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_i1r3r5v7e9a2",
-          "label": "Irregular reserve", "display": "€61.50"
+          "label": "Irregular reserve", "display": "€167.46"
         }
       },
       {
@@ -658,10 +662,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       "estimate": null,
       "display_hint": "stacked_bar",
       "total": {
-        "value": 2211.0, "unit": "eur_per_month",
+        "value": 2211.01, "unit": "eur_per_month",
         "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
         "method": "spender_profile.spend_month_eur@1", "evidence_ref": "ev_k4m6p8r0t2v4",
-        "label": "Total spending", "display": "€2,211.00 a month"
+        "label": "Total spending", "display": "€2,211.01 a month"
       },
       "comparison": null,
       "items": [
@@ -669,10 +673,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "key": "regular_essentials",
           "label": "Regular essentials",
           "amount": {
-            "value": 1180.2, "unit": "eur_per_month",
+            "value": 1180.21, "unit": "eur_per_month",
             "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
             "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_br1a3c5e7g9i",
-            "label": "Regular essentials", "display": "€1,180.20 a month"
+            "label": "Regular essentials", "display": "€1,180.21 a month"
           },
           "share": {
             "value": 53.4, "unit": "percent",
@@ -759,7 +763,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "due_until_payday": {
             "value": 780.0, "unit": "eur",
             "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
-            "method": "safe_to_spend.bills_due_eur@1", "evidence_ref": "ev_h5o7u9s1e3a5",
+            "method": "safe_to_spend.bill_due_eur@1", "evidence_ref": "ev_h5o7u9s1e3a5",
             "label": "Due before payday", "display": "€780.00"
           },
           "evidence_ref": "ev_h1o3u5s7e9a1"
@@ -782,7 +786,7 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "due_until_payday": {
             "value": 62.19, "unit": "eur",
             "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
-            "method": "safe_to_spend.bills_due_eur@1", "evidence_ref": "ev_h6o8u0s2e4a6",
+            "method": "safe_to_spend.bill_due_eur@1", "evidence_ref": "ev_h6o8u0s2e4a6",
             "label": "Due before payday, pro rata", "display": "€62.19"
           },
           "evidence_ref": "ev_h2o4u6s8e0a2"
@@ -1243,6 +1247,7 @@ A question in Finnish (`language: "auto"` detects `fi`):
       "subtitle": null,
       "evidence_ref": "ev_g4i6k8m0o2q4",
       "estimate": null,
+      "status": null,
       "primary": {
         "id": "n1", "value": 401.5, "unit": "eur",
         "period": { "start": "2026-09-01", "end": "2026-09-30", "label": "syyskuu 2026" },
@@ -1634,3 +1639,4 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
 |---|---|
 | 0.1.0 | First draft: five endpoints, Number object, cards, streaming events (issue #5). |
 | 0.1.1 | Review fixes:<br>- `/api/ask` validation errors (400, 404, 429) arrive as HTTP errors before the stream; the stream's `error` event uses the `{"error": …}` envelope.<br>- New `done.clarify` and a `warnings` code list.<br>- New `card.whatif` example; `estimate` and `evidence_ref` sit on the card, not in `result`.<br>- Breakdown key `other` documented.<br>- Conversations are bound to one customer.<br>- Evidence kind `input` removed.<br>- `ai_disclosure` uses the agreed default text.<br><br>Aligned with `metrics.md` (#6):<br>- Age bands and profile keys, traits and features as enums.<br>- Peer `level` replaces `widened`; peers need at least 20 others.<br>- Safe to spend covers the 7 days after today, with components and two limits.<br>- Bills carry the metrics `status`, with Utilities as one `spread` bill.<br>- What-if takes `{selection, cut_pct}` and returns a `status`, savings per month, week and year, and the excluded one-offs and regular essentials; `horizon`, `projected_per_month` and the cancel and switch scenarios are removed.<br>- `stores` carries confidence intervals and a `switch.status`, with no saving unless the status is `estimate`.<br>- Baskets show monthly averages over the window.<br>- Method ids are `<metric>.<output column>@<version>`, using the metrics output names. |
+| 0.1.2 | Example values follow the safe-to-spend formula (#32).<br><br>New field:<br>- `metric.status` (`ok`, `below_usual`, `nothing_free` or `null`); the hero example carries `"status": "ok"`.<br><br>New method id:<br>- `safe_to_spend.bill_due_eur@1` for each bill's `due_until_payday`; the bills total keeps `safe_to_spend.bills_due_eur@1`.<br><br>Changed example values in `overview.response`:<br>- essentials reserve 147.00 → 134.76;<br>- irregular reserve 61.50 → 167.46;<br>- free until payday 489.46 → 395.74;<br>- balance limit 228.41 → 184.68;<br>- budget limit 292.24 → 248.50;<br>- safe to spend 228.41 → 184.68;<br>- regular essentials 1,180.20 → 1,180.21 a month;<br>- total spending 2,211.00 → 2,211.01 a month.<br><br>`ask.json.response_fi` gains `"status": null` on its metric card. |
