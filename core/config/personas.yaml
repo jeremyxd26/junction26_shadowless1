@@ -13,8 +13,9 @@
 # state only what the data shows.
 # The extra fields (lead, age, demo_role, why, peer_group) are for the team and the eval set.
 # peer_group.comparable_others comes from the precomputed mart metric_peer_flags of issue #21
-# (other customers in the cell with comparable = true, as of 2026-09-30). select_personas.py does
-# not reproduce it: the script only checks the cell size on the customers table.
+# (other customers in the cell with comparable = true, as of 2026-09-30). The scan in
+# select_personas.py only checks the cell size on the customers table; --answers prints the same
+# count as peer_n of 06_peer_benchmark.sql. Peer comparison values: docs/design/personas.md, Q2.
 
 as_of: "2026-09-30"
 
