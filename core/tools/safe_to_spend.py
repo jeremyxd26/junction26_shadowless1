@@ -77,6 +77,10 @@ def _t(key: str, language: str, **kw) -> str:
     return config.label(config.SAFE_TO_SPEND_TEXT[key], language).format(**kw)
 
 
+class BillsDueMismatch(RuntimeError):
+    """Internal error: the shared bills-due Number and 03's bills_due_eur differ (they must be equal)."""
+
+
 def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
     GetSafeToSpendArgs.model_validate(args or {}) if not isinstance(args, GetSafeToSpendArgs) else args
     lang = ctx.language
@@ -97,6 +101,10 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
     due = recurring.bills_due_numbers(ctx, nb)
     if due.payday.date != row["next_payday"] or due.payday.salary_status != row["salary_status"]:
         log.warning("payday of core.tools.recurring and 03_safe_to_spend.sql differ for one customer")
+    # One number, one value ("metrics wins"): the card never shows a bills total that 03 does not
+    # compute, because free until payday and the limits are 03's and subtract 03's bills_due_eur.
+    if due.total_value != metric_sql.decimal(row["bills_due_eur"]):
+        raise BillsDueMismatch("bills due of core.tools.recurring and 03_safe_to_spend.sql differ for one customer")
 
     week = Period(start=row["week_start"], end=row["week_end"], label=_t("next_7_days", lang))
     until_payday = due.due_period  # today + 1 .. payday, labelled like the bills card

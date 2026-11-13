@@ -60,6 +60,7 @@ Commits and PRs:
 ## Definition of done
 - Every acceptance criterion is met.
 - Tests and the README run command pass, and their output is in the PR.
+- CI is green on the PR.
 - No secrets, no unrelated changes, and the branch still runs with one command.
 - For the merge into `main`: the same change passed on the dev environment.
 

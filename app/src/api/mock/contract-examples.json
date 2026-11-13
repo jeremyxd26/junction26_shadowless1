@@ -1,0 +1,1370 @@
+{
+  "contract_version": "0.2.0",
+  "examples": {
+    "error.response": {
+      "error": {
+        "code": "customer_not_found",
+        "message": "We couldn't find this customer.",
+        "retryable": false
+      }
+    },
+    "personas.response": {
+      "as_of": "2026-09-30",
+      "language": "en",
+      "personas": [
+        {
+          "customer_id": "CUST00042",
+          "display_name": "Aino",
+          "age_band": "25-34",
+          "postal_area": {
+            "code": "00530",
+            "label": "Helsinki 00530"
+          },
+          "profile": {
+            "key": "everyday_heavy",
+            "label": "Everyday spender"
+          },
+          "tagline": "Steady salary, rents in Helsinki, eats out often.",
+          "default_language": "en"
+        },
+        {
+          "customer_id": "CUST00017",
+          "display_name": "Mikko",
+          "age_band": "45-54",
+          "postal_area": {
+            "code": "02100",
+            "label": "Espoo 02100"
+          },
+          "profile": {
+            "key": "steady",
+            "label": "Steady"
+          },
+          "tagline": "Predictable bills and a regular investment deposit.",
+          "default_language": "fi"
+        },
+        {
+          "customer_id": "CUST00088",
+          "display_name": "Leena",
+          "age_band": "18-24",
+          "postal_area": {
+            "code": "00100",
+            "label": "Helsinki 00100"
+          },
+          "profile": {
+            "key": "stretched",
+            "label": "Stretched"
+          },
+          "tagline": "Part-time income; some months cost more than comes in.",
+          "default_language": "en"
+        }
+      ]
+    },
+    "overview.response": {
+      "customer_id": "CUST00042",
+      "as_of": "2026-09-30",
+      "language": "en",
+      "greeting": "Hi Aino",
+      "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions.",
+      "hero": {
+        "card_id": "card_sts_01",
+        "type": "metric",
+        "title": "Safe to spend in the next 7 days",
+        "subtitle": "1 to 7 October",
+        "evidence_ref": "ev_s2t4w6y8a0c2",
+        "estimate": {
+          "label": "Estimate",
+          "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget."
+        },
+        "status": "ok",
+        "primary": {
+          "value": 184.68,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+          "evidence_ref": "ev_s2t4w6y8a0c2",
+          "label": "Safe to spend",
+          "display": "€184.68"
+        },
+        "secondary": [
+          {
+            "value": 395.74,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.free_until_payday_eur@1",
+            "evidence_ref": "ev_s4t6w8y0a2c4",
+            "label": "Free until payday",
+            "display": "€395.74"
+          },
+          {
+            "value": 184.68,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.balance_limit_7d_eur@1",
+            "evidence_ref": "ev_s3t5w7y9a1c3",
+            "label": "Your balance allows",
+            "display": "€184.68"
+          },
+          {
+            "value": 248.5,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.budget_limit_7d_eur@1",
+            "evidence_ref": "ev_s5t7w9y1a3c5",
+            "label": "Your monthly budget allows",
+            "display": "€248.50"
+          }
+        ],
+        "comparison": null,
+        "components": [
+          {
+            "key": "balance",
+            "label": "Money on your account",
+            "operation": "add",
+            "amount": {
+              "value": 1640.15,
+              "unit": "eur",
+              "period": {
+                "start": "2026-09-30",
+                "end": "2026-09-30",
+                "label": "30 Sep 2026"
+              },
+              "method": "safe_to_spend.balance_eur@1",
+              "evidence_ref": "ev_b4l6n8p0r2t4",
+              "label": "Balance",
+              "display": "€1,640.15"
+            }
+          },
+          {
+            "key": "bills_due",
+            "label": "Bills due before payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 842.19,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.bills_due_eur@1",
+              "evidence_ref": "ev_u6b8d0f2h4j6",
+              "label": "Bills before payday",
+              "display": "€842.19"
+            }
+          },
+          {
+            "key": "essentials_reserve",
+            "label": "Usual essentials until payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 134.76,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.essentials_reserve_eur@1",
+              "evidence_ref": "ev_e1s3r5v7e9a1",
+              "label": "Essentials reserve",
+              "display": "€134.76"
+            }
+          },
+          {
+            "key": "irregular_reserve",
+            "label": "Reserve for unexpected necessities",
+            "operation": "subtract",
+            "amount": {
+              "value": 167.46,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.irregular_reserve_eur@1",
+              "evidence_ref": "ev_i1r3r5v7e9a2",
+              "label": "Irregular reserve",
+              "display": "€167.46"
+            }
+          },
+          {
+            "key": "cushion",
+            "label": "Cushion",
+            "operation": "subtract",
+            "amount": {
+              "value": 100,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.cushion_eur@1",
+              "evidence_ref": "ev_f8h0j2l4n6p8",
+              "label": "Cushion",
+              "display": "€100.00"
+            }
+          }
+        ],
+        "actions": [
+          {
+            "type": "open_evidence",
+            "label": "How is this calculated?",
+            "evidence_ref": "ev_s2t4w6y8a0c2"
+          },
+          {
+            "type": "ask",
+            "label": "Can I afford a dinner out?",
+            "prompt": "Can I afford a dinner out this week?"
+          }
+        ]
+      },
+      "safe_to_save": {
+        "card_id": "card_save_02",
+        "type": "safe_to_save",
+        "title": "Safe to save",
+        "subtitle": "What a typical month leaves",
+        "evidence_ref": "ev_ai2m4o6n8t0h",
+        "estimate": {
+          "label": "Estimate",
+          "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+        },
+        "monthly": {
+          "value": 431.58,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1",
+          "evidence_ref": "ev_ai2m4o6n8t0h",
+          "label": "Typically left each month",
+          "display": "€431.58 a month"
+        },
+        "monthly_components": [
+          {
+            "key": "free_month",
+            "label": "Left after bills, essentials and the reserve",
+            "operation": "add",
+            "amount": {
+              "value": 1080.55,
+              "unit": "eur_per_month",
+              "period": {
+                "start": "2026-04-01",
+                "end": "2026-09-30",
+                "label": "Apr-Sep 2026"
+              },
+              "method": "safe_to_spend.free_month_eur@1",
+              "evidence_ref": "ev_ai4f6m8o0n2t",
+              "label": "Free in a typical month",
+              "display": "€1,080.55 a month"
+            }
+          },
+          {
+            "key": "everyday_month",
+            "label": "Usual everyday spending",
+            "operation": "subtract",
+            "amount": {
+              "value": 648.97,
+              "unit": "eur_per_month",
+              "period": {
+                "start": "2026-04-01",
+                "end": "2026-09-30",
+                "label": "Apr-Sep 2026"
+              },
+              "method": "safe_to_spend.everyday_month_eur@1",
+              "evidence_ref": "ev_ai5e7v9m1o3n",
+              "label": "Everyday spending in a typical month",
+              "display": "€648.97 a month"
+            }
+          }
+        ],
+        "stock": {
+          "value": 75.92,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.safe_to_save_eur@1",
+          "evidence_ref": "ev_ai1s3a5v7e9n",
+          "label": "In your account beyond what you need until payday",
+          "display": "€75.92"
+        },
+        "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+        "stock_components": [
+          {
+            "key": "free_until_payday",
+            "label": "Free until payday",
+            "operation": "add",
+            "amount": {
+              "value": 395.74,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.free_until_payday_eur@1",
+              "evidence_ref": "ev_s4t6w8y0a2c4",
+              "label": "Free until payday",
+              "display": "€395.74"
+            }
+          },
+          {
+            "key": "everyday_until_payday",
+            "label": "Usual everyday spending until payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 319.82,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.everyday_until_payday_eur@1",
+              "evidence_ref": "ev_ai3e5v7d9y1p",
+              "label": "Everyday spending until payday",
+              "display": "€319.82"
+            }
+          }
+        ],
+        "reason": null,
+        "actions": [
+          {
+            "type": "open_evidence",
+            "label": "How is this calculated?",
+            "evidence_ref": "ev_ai2m4o6n8t0h"
+          }
+        ]
+      },
+      "cards": [
+        {
+          "card_id": "card_baskets_01",
+          "type": "breakdown",
+          "title": "Where your money goes in a typical month",
+          "subtitle": "Monthly average, April to September 2026",
+          "evidence_ref": "ev_k4m6p8r0t2v4",
+          "estimate": null,
+          "display_hint": "stacked_bar",
+          "total": {
+            "value": 2211.01,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "spender_profile.spend_month_eur@1",
+            "evidence_ref": "ev_k4m6p8r0t2v4",
+            "label": "Total spending",
+            "display": "€2,211.01 a month"
+          },
+          "comparison": null,
+          "items": [
+            {
+              "key": "regular_essentials",
+              "label": "Regular essentials",
+              "amount": {
+                "value": 1180.21,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_br1a3c5e7g9i",
+                "label": "Regular essentials",
+                "display": "€1,180.21 a month"
+              },
+              "share": {
+                "value": 53.4,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_bs1a3c5e7g9i",
+                "label": "Share of spending",
+                "display": "53.4%"
+              },
+              "change": null,
+              "flags": []
+            },
+            {
+              "key": "unexpected_necessities",
+              "label": "Unexpected necessities",
+              "amount": {
+                "value": 340.5,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_bi2b4d6f8h0j",
+                "label": "Unexpected necessities",
+                "display": "€340.50 a month"
+              },
+              "share": {
+                "value": 15.4,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_bt2b4d6f8h0j",
+                "label": "Share of spending",
+                "display": "15.4%"
+              },
+              "change": null,
+              "flags": []
+            },
+            {
+              "key": "everyday_spending",
+              "label": "Everyday spending",
+              "amount": {
+                "value": 690.3,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_bl3c5e7g9i1k",
+                "label": "Everyday spending",
+                "display": "€690.30 a month"
+              },
+              "share": {
+                "value": 31.2,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_bu3c5e7g9i1k",
+                "label": "Share of spending",
+                "display": "31.2%"
+              },
+              "change": null,
+              "flags": []
+            }
+          ],
+          "actions": [
+            {
+              "type": "ask",
+              "label": "What is in everyday spending?",
+              "prompt": "What is in my everyday spending?"
+            }
+          ]
+        },
+        {
+          "card_id": "card_bills_01",
+          "type": "bills",
+          "title": "Bills before payday",
+          "subtitle": "1 to 15 October",
+          "evidence_ref": "ev_u6b8d0f2h4j6",
+          "estimate": {
+            "label": "Estimate",
+            "text": "Utilities are paid about three times a month, so the amount until payday is pro rata."
+          },
+          "total": {
+            "value": 842.19,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.bills_due_eur@1",
+            "evidence_ref": "ev_u6b8d0f2h4j6",
+            "label": "Bills before payday",
+            "display": "€842.19"
+          },
+          "items": [
+            {
+              "bill_id": "bill_housing_payment",
+              "label": "Housing",
+              "category": "Housing",
+              "cadence": "monthly",
+              "status": "done_this_month",
+              "status_label": "Paid this month, usually around the 1st",
+              "typical_month": {
+                "value": 780,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "recurring.typical_month_eur@1",
+                "evidence_ref": "ev_h1o3u5s7e9a1",
+                "label": "Usual amount",
+                "display": "€780.00 a month"
+              },
+              "last_paid": "2026-09-01",
+              "next_expected": "2026-10-01",
+              "due_until_payday": {
+                "value": 780,
+                "unit": "eur",
+                "period": {
+                  "start": "2026-10-01",
+                  "end": "2026-10-15",
+                  "label": "Until payday on 15 Oct"
+                },
+                "method": "safe_to_spend.bill_due_eur@1",
+                "evidence_ref": "ev_h5o7u9s1e3a5",
+                "label": "Due before payday",
+                "display": "€780.00"
+              },
+              "evidence_ref": "ev_h1o3u5s7e9a1"
+            },
+            {
+              "bill_id": "bill_utilities_payment",
+              "label": "Utilities",
+              "category": "Utilities",
+              "cadence": "monthly",
+              "status": "spread",
+              "status_label": "About three payments a month",
+              "typical_month": {
+                "value": 126.2,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "recurring.typical_month_eur@1",
+                "evidence_ref": "ev_h2o4u6s8e0a2",
+                "label": "Usual amount",
+                "display": "€126.20 a month"
+              },
+              "last_paid": "2026-09-27",
+              "next_expected": null,
+              "due_until_payday": {
+                "value": 62.19,
+                "unit": "eur",
+                "period": {
+                  "start": "2026-10-01",
+                  "end": "2026-10-15",
+                  "label": "Until payday on 15 Oct"
+                },
+                "method": "safe_to_spend.bill_due_eur@1",
+                "evidence_ref": "ev_h6o8u0s2e4a6",
+                "label": "Due before payday, pro rata",
+                "display": "€62.19"
+              },
+              "evidence_ref": "ev_h2o4u6s8e0a2"
+            }
+          ],
+          "actions": [
+            {
+              "type": "ask",
+              "label": "Which bills grew this year?",
+              "prompt": "Which of my bills have grown this year?"
+            }
+          ]
+        }
+      ],
+      "reviews": [],
+      "insights": [
+        {
+          "insight_id": "ins_rest_01",
+          "kind": "habit_trend",
+          "title": "Eating out is up",
+          "text": "You spent {{n1}} on restaurants in September, {{n2}} more than in August.",
+          "text_rendered": "You spent €312.80 on restaurants in September, €91.70 more than in August.",
+          "numbers": {
+            "n1": {
+              "id": "n1",
+              "value": 312.8,
+              "unit": "eur",
+              "period": {
+                "start": "2026-09-01",
+                "end": "2026-09-30",
+                "label": "September 2026"
+              },
+              "method": "spending.total@1",
+              "evidence_ref": "ev_r7t9v1x3z5b7",
+              "label": "Restaurants",
+              "display": "€312.80"
+            },
+            "n2": {
+              "id": "n2",
+              "value": 91.7,
+              "unit": "eur",
+              "period": {
+                "start": "2026-09-01",
+                "end": "2026-09-30",
+                "label": "September vs August 2026"
+              },
+              "method": "spending.change@1",
+              "evidence_ref": "ev_r8t0v2x4z6b8",
+              "label": "Change vs August",
+              "display": "€91.70"
+            }
+          },
+          "estimate": null,
+          "action": {
+            "type": "ask",
+            "label": "How can I spend less on eating out?",
+            "prompt": "How can I spend less on restaurants?"
+          }
+        },
+        {
+          "insight_id": "ins_oneoff_01",
+          "kind": "one_off",
+          "title": "A one-off in September",
+          "text": "Travel cost {{n1}} in September. It was a one-off, so it is left out of your typical month.",
+          "text_rendered": "Travel cost €240.00 in September. It was a one-off, so it is left out of your typical month.",
+          "numbers": {
+            "n1": {
+              "id": "n1",
+              "value": 240,
+              "unit": "eur",
+              "period": {
+                "start": "2026-09-01",
+                "end": "2026-09-30",
+                "label": "September 2026"
+              },
+              "method": "spending.total@1",
+              "evidence_ref": "ev_t2v4x6z8b0d2",
+              "label": "Travel",
+              "display": "€240.00"
+            }
+          },
+          "estimate": null,
+          "action": {
+            "type": "ask",
+            "label": "What does a typical month look like?",
+            "prompt": "What does my typical month look like?"
+          }
+        }
+      ],
+      "suggested_questions": [
+        "Where did my money go?",
+        "What kind of spender am I?",
+        "What can I safely spend this week?",
+        "How could I save more?"
+      ]
+    },
+    "overview.response_pending": {
+      "customer_id": "CUST00860",
+      "as_of": "2026-09-30",
+      "language": "en",
+      "greeting": "Hi Sanna",
+      "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions.",
+      "hero": {
+        "card_id": "card_sts_02",
+        "type": "metric",
+        "title": "Safe to spend in the next 7 days",
+        "subtitle": "1 to 7 October",
+        "evidence_ref": "ev_sa4s6t8s0p2d",
+        "estimate": {
+          "label": "Estimate",
+          "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget."
+        },
+        "status": "ok",
+        "primary": {
+          "value": 221.58,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+          "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend",
+          "display": "€221.58"
+        },
+        "secondary": [
+          {
+            "value": 12656.12,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.free_until_payday_eur@1",
+            "evidence_ref": "ev_pn1f3r5e7e9u",
+            "label": "Free until payday",
+            "display": "€12,656.12"
+          },
+          {
+            "value": 5906.19,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.balance_limit_7d_eur@1",
+            "evidence_ref": "ev_pn7b9a1l3i5m",
+            "label": "Your balance allows",
+            "display": "€5,906.19"
+          },
+          {
+            "value": 221.58,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.budget_limit_7d_eur@1",
+            "evidence_ref": "ev_pn8b0u2d4g6t",
+            "label": "Your monthly budget allows",
+            "display": "€221.58"
+          }
+        ],
+        "comparison": null,
+        "components": [
+          {
+            "key": "balance",
+            "label": "Money on your account",
+            "operation": "add",
+            "amount": {
+              "value": 14276.35,
+              "unit": "eur",
+              "period": {
+                "start": "2026-09-30",
+                "end": "2026-09-30",
+                "label": "30 Sep 2026"
+              },
+              "method": "safe_to_spend.balance_eur@1",
+              "evidence_ref": "ev_pn9b1a3l5a7n",
+              "label": "Balance",
+              "display": "€14,276.35"
+            }
+          },
+          {
+            "key": "bills_due",
+            "label": "Bills due before payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 928.5,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.bills_due_eur@1",
+              "evidence_ref": "ev_pn0b2i4l6l8s",
+              "label": "Bills before payday",
+              "display": "€928.50"
+            }
+          },
+          {
+            "key": "essentials_reserve",
+            "label": "Usual essentials until payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 423.99,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.essentials_reserve_eur@1",
+              "evidence_ref": "ev_pn2e4s6s8e0n",
+              "label": "Essentials reserve",
+              "display": "€423.99"
+            }
+          },
+          {
+            "key": "irregular_reserve",
+            "label": "Reserve for unexpected necessities",
+            "operation": "subtract",
+            "amount": {
+              "value": 167.74,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.irregular_reserve_eur@1",
+              "evidence_ref": "ev_sa3i5r7r9e1g",
+              "label": "Irregular reserve",
+              "display": "€167.74"
+            }
+          },
+          {
+            "key": "cushion",
+            "label": "Cushion",
+            "operation": "subtract",
+            "amount": {
+              "value": 100,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.cushion_eur@1",
+              "evidence_ref": "ev_sn7c9u1s3h5n",
+              "label": "Cushion",
+              "display": "€100.00"
+            }
+          }
+        ],
+        "actions": [
+          {
+            "type": "open_evidence",
+            "label": "How is this calculated?",
+            "evidence_ref": "ev_sa4s6t8s0p2d"
+          }
+        ]
+      },
+      "safe_to_save": {
+        "card_id": "card_save_06",
+        "type": "safe_to_save",
+        "title": "Safe to save",
+        "subtitle": "What a typical month leaves",
+        "evidence_ref": "ev_sa6m8o0n2t4h",
+        "estimate": {
+          "label": "Estimate",
+          "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+        },
+        "monthly": {
+          "value": 364.31,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1",
+          "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month",
+          "display": "€364.31 a month"
+        },
+        "monthly_components": [
+          {
+            "key": "free_month",
+            "label": "Left after bills, essentials and the reserve",
+            "operation": "add",
+            "amount": {
+              "value": 963.49,
+              "unit": "eur_per_month",
+              "period": {
+                "start": "2026-04-01",
+                "end": "2026-09-30",
+                "label": "Apr-Sep 2026"
+              },
+              "method": "safe_to_spend.free_month_eur@1",
+              "evidence_ref": "ev_pn5f7m9o1n3t",
+              "label": "Free in a typical month",
+              "display": "€963.49 a month"
+            }
+          },
+          {
+            "key": "everyday_month",
+            "label": "Usual everyday spending",
+            "operation": "subtract",
+            "amount": {
+              "value": 599.18,
+              "unit": "eur_per_month",
+              "period": {
+                "start": "2026-04-01",
+                "end": "2026-09-30",
+                "label": "Apr-Sep 2026"
+              },
+              "method": "safe_to_spend.everyday_month_eur@1",
+              "evidence_ref": "ev_pn6e8v0m2o4n",
+              "label": "Everyday spending in a typical month",
+              "display": "€599.18 a month"
+            }
+          }
+        ],
+        "stock": {
+          "value": 12360.83,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.safe_to_save_eur@1",
+          "evidence_ref": "ev_sa5s7a9v1e3n",
+          "label": "In your account beyond what you need until payday",
+          "display": "€12,360.83"
+        },
+        "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+        "stock_components": [
+          {
+            "key": "free_until_payday",
+            "label": "Free until payday",
+            "operation": "add",
+            "amount": {
+              "value": 12656.12,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.free_until_payday_eur@1",
+              "evidence_ref": "ev_pn1f3r5e7e9u",
+              "label": "Free until payday",
+              "display": "€12,656.12"
+            }
+          },
+          {
+            "key": "everyday_until_payday",
+            "label": "Usual everyday spending until payday",
+            "operation": "subtract",
+            "amount": {
+              "value": 295.28,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-01",
+                "end": "2026-10-15",
+                "label": "Until payday on 15 Oct"
+              },
+              "method": "safe_to_spend.everyday_until_payday_eur@1",
+              "evidence_ref": "ev_pn4e6v8d0y2p",
+              "label": "Everyday spending until payday",
+              "display": "€295.28"
+            }
+          }
+        ],
+        "reason": null,
+        "actions": [
+          {
+            "type": "open_evidence",
+            "label": "How is this calculated?",
+            "evidence_ref": "ev_sa6m8o0n2t4h"
+          }
+        ]
+      },
+      "cards": [
+        {
+          "card_id": "card_baskets_02",
+          "type": "breakdown",
+          "title": "Where your money goes in a typical month",
+          "subtitle": "Monthly average, April to September 2026",
+          "evidence_ref": "ev_pk1t3o5t7a9l",
+          "estimate": null,
+          "display_hint": "stacked_bar",
+          "total": {
+            "value": 3010.59,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "spender_profile.spend_month_eur@1",
+            "evidence_ref": "ev_pk1t3o5t7a9l",
+            "label": "Total spending",
+            "display": "€3,010.59 a month"
+          },
+          "comparison": null,
+          "items": [
+            {
+              "key": "regular_essentials",
+              "label": "Regular essentials",
+              "amount": {
+                "value": 1889.04,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_pk2r4e6g8u0l",
+                "label": "Regular essentials",
+                "display": "€1,889.04 a month"
+              },
+              "share": {
+                "value": 62.7,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_pk3r5e7g9u1s",
+                "label": "Share of spending",
+                "display": "62.7%"
+              },
+              "change": null,
+              "flags": []
+            },
+            {
+              "key": "unexpected_necessities",
+              "label": "Unexpected necessities",
+              "amount": {
+                "value": 341.08,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_sa1u3n5e7x9p",
+                "label": "Unexpected necessities",
+                "display": "€341.08 a month"
+              },
+              "share": {
+                "value": 11.3,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_pk4u6n8e0x2s",
+                "label": "Share of spending",
+                "display": "11.3%"
+              },
+              "change": null,
+              "flags": []
+            },
+            {
+              "key": "everyday_spending",
+              "label": "Everyday spending",
+              "amount": {
+                "value": 600.41,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_sb2e4v6e8r0y",
+                "label": "Everyday spending",
+                "display": "€600.41 a month"
+              },
+              "share": {
+                "value": 19.9,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_pk5e7v9e1r3s",
+                "label": "Share of spending",
+                "display": "19.9%"
+              },
+              "change": null,
+              "flags": []
+            },
+            {
+              "key": "unclassified",
+              "label": "Waiting for your answer",
+              "amount": {
+                "value": 180.07,
+                "unit": "eur_per_month",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.month_avg_eur@1",
+                "evidence_ref": "ev_pu1n3c5l7a9s",
+                "label": "Waiting for your answer",
+                "display": "€180.07 a month"
+              },
+              "share": {
+                "value": 6,
+                "unit": "percent",
+                "period": {
+                  "start": "2026-04-01",
+                  "end": "2026-09-30",
+                  "label": "Apr-Sep 2026"
+                },
+                "method": "baskets.share_pct@1",
+                "evidence_ref": "ev_pk6u8n0c2l4s",
+                "label": "Share of spending",
+                "display": "6.0%"
+              },
+              "change": null,
+              "flags": []
+            }
+          ],
+          "actions": [
+            {
+              "type": "ask",
+              "label": "Where did my money go?",
+              "prompt": "Where did my money go?"
+            }
+          ]
+        }
+      ],
+      "reviews": [
+        {
+          "card_id": "card_review_01",
+          "type": "review",
+          "title": "One question about a large purchase",
+          "subtitle": "Home & Tech, 28 September 2026",
+          "evidence_ref": "ev_rv1x3z5b7d9f",
+          "estimate": null,
+          "tx_ref": "txr_k7m2q9w4z8c3v6b1",
+          "date": "2026-09-28",
+          "category": "Home & Tech",
+          "merchant": {
+            "alias": "store_a",
+            "label": "Home and tech store A"
+          },
+          "amount": {
+            "value": 1080.42,
+            "unit": "eur",
+            "period": {
+              "start": "2026-09-28",
+              "end": "2026-09-28",
+              "label": "28 Sep 2026"
+            },
+            "method": "spending.total@1",
+            "evidence_ref": "ev_rv1x3z5b7d9f",
+            "label": "Home & Tech purchase",
+            "display": "€1,080.42"
+          },
+          "current_basket": {
+            "key": "unclassified",
+            "label": "Waiting for your answer"
+          },
+          "question": {
+            "en": "This purchase was much larger than your usual ones in this category. Was it needed, or was it everyday spending you chose?",
+            "fi": "Tämä ostos oli paljon tavallisia ostoksiasi suurempi tässä luokassa. Oliko se välttämätön, vai oliko se valitsemaasi arkikulutusta?"
+          },
+          "options": [
+            {
+              "basket": "unexpected_necessities",
+              "label": {
+                "en": "It was needed",
+                "fi": "Se oli välttämätön"
+              },
+              "effect": {
+                "en": "It counts as an unexpected necessity. Sentti keeps a bigger reserve for surprises like this, so your safe to spend goes down.",
+                "fi": "Se lasketaan välttämättömäksi yllätysmenoksi. Sentti pitää isomman varauksen tällaisia yllätyksiä varten, joten turvallinen käyttörahasi pienenee."
+              }
+            },
+            {
+              "basket": "everyday_spending",
+              "label": {
+                "en": "I chose it",
+                "fi": "Valitsin sen itse"
+              },
+              "effect": {
+                "en": "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this month is higher than usual.",
+                "fi": "Se lasketaan arkikulutukseksi. Turvallinen käyttörahasi pysyy ennallaan; arkikulutuksesi on tässä kuussa tavallista suurempi."
+              }
+            }
+          ],
+          "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+          "actions": [
+            {
+              "type": "open_evidence",
+              "label": "See the purchase",
+              "evidence_ref": "ev_rv1x3z5b7d9f"
+            }
+          ]
+        }
+      ],
+      "insights": [],
+      "suggested_questions": [
+        "Where did my money go?",
+        "What kind of spender am I?",
+        "What can I safely spend this week?",
+        "How could I save more?"
+      ]
+    },
+    "evidence.response": {
+      "evidence_ref": "ev_r7t9v1x3z5b7",
+      "kind": "transactions",
+      "language": "en",
+      "title": "Restaurants, September 2026",
+      "number": {
+        "value": 312.8,
+        "unit": "eur",
+        "period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30",
+          "label": "September 2026"
+        },
+        "method": "spending.total@1",
+        "evidence_ref": "ev_r7t9v1x3z5b7",
+        "label": "Restaurants",
+        "display": "€312.80"
+      },
+      "method": {
+        "id": "spending.total@1",
+        "name": "Total spending",
+        "summary": "Money spent in the chosen categories during the period. Defined in the design document, section 6.2.",
+        "doc": "docs/design/agent-core.md#62-data-tools"
+      },
+      "query": {
+        "categories": [
+          "Restaurants"
+        ],
+        "baskets": [],
+        "mcc_groups": [],
+        "merchant_id": null,
+        "period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30",
+          "label": "September 2026"
+        }
+      },
+      "rows": [
+        {
+          "tx_id": "tx_2918344",
+          "date": "2026-09-27",
+          "time": "19:42",
+          "category": "Restaurants",
+          "merchant": {
+            "id": "MRC-RES-0112",
+            "label": "Restaurant A"
+          },
+          "mcc": "5812",
+          "amount": "-24.50",
+          "currency": "EUR"
+        },
+        {
+          "tx_id": "tx_2918101",
+          "date": "2026-09-25",
+          "time": "12:05",
+          "category": "Restaurants",
+          "merchant": {
+            "id": "MRC-RES-0047",
+            "label": "Restaurant B"
+          },
+          "mcc": "5814",
+          "amount": "-11.90",
+          "currency": "EUR"
+        }
+      ],
+      "row_count": {
+        "value": 14,
+        "unit": "count",
+        "period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30",
+          "label": "September 2026"
+        },
+        "method": "evidence.row_count@1",
+        "evidence_ref": "ev_r6t8v0x2z4b6",
+        "label": "Transactions",
+        "display": "14"
+      },
+      "reconciles": true,
+      "parts": [],
+      "next_cursor": "cur_2",
+      "privacy_note": "Only you can see these transactions. They are never sent to the AI model."
+    },
+    "evidence.response_composite": {
+      "evidence_ref": "ev_m3o5q7s9u1w3",
+      "kind": "composite",
+      "language": "en",
+      "title": "Change from August to September",
+      "number": {
+        "value": 367.4,
+        "unit": "eur",
+        "period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30",
+          "label": "September vs August 2026"
+        },
+        "method": "spending.change@1",
+        "evidence_ref": "ev_m3o5q7s9u1w3",
+        "label": "Change vs August",
+        "display": "€367.40"
+      },
+      "method": {
+        "id": "spending.change@1",
+        "name": "Change between two periods",
+        "summary": "The difference between spending in two periods. Defined in the design document, section 6.2.",
+        "doc": "docs/design/agent-core.md#62-data-tools"
+      },
+      "query": null,
+      "rows": [],
+      "row_count": null,
+      "reconciles": null,
+      "parts": [
+        {
+          "role": "current",
+          "number": {
+            "value": 2315.6,
+            "unit": "eur",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30",
+              "label": "September 2026"
+            },
+            "method": "spending.total@1",
+            "evidence_ref": "ev_k3m5p7r9t1v3",
+            "label": "September spending",
+            "display": "€2,315.60"
+          }
+        },
+        {
+          "role": "baseline",
+          "number": {
+            "value": 1948.2,
+            "unit": "eur",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31",
+              "label": "August 2026"
+            },
+            "method": "spending.total@1",
+            "evidence_ref": "ev_a2c4e6g8i0k2",
+            "label": "August spending",
+            "display": "€1,948.20"
+          }
+        }
+      ],
+      "next_cursor": null,
+      "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+    },
+    "evidence.error": {
+      "error": {
+        "code": "evidence_forbidden",
+        "message": "This evidence belongs to another customer.",
+        "retryable": false
+      }
+    }
+  }
+}
