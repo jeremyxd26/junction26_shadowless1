@@ -24,18 +24,18 @@ METRICS = Path(__file__).resolve().parents[2] / "metrics"
 CUSTOMERS = ["CUST00001", "CUST00002", "CUST00006"]
 
 
-def ctx_for(conn, customer_id, language="en"):
-    return ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn, language=language)
+def ctx_for(conn, customer_id, language="en", as_of=AS_OF):
+    return ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=language)
 
 
 def next_id(customer_id):
     return f"CUST{int(customer_id[4:]) + 1:05d}"
 
 
-def run_metric(conn, file_name, customer_id):
-    """Run a metric SQL file for [customer_id, next id) and return the last result as dicts."""
+def run_metric(conn, file_name, customer_id, as_of=AS_OF):
+    """Run a metric SQL file for [customer_id, next id) at as_of and return the last result as dicts."""
     conn.execute("SELECT set_config('app.demo_today', %s, false), set_config('app.customer_from', %s, false), "
-                 "set_config('app.customer_to', %s, false)", (AS_OF.isoformat(), customer_id, next_id(customer_id)))
+                 "set_config('app.customer_to', %s, false)", (as_of.isoformat(), customer_id, next_id(customer_id)))
     rows = None
     with conn.cursor() as cur:
         cur.execute((METRICS / file_name).read_text(encoding="utf-8"))
@@ -179,6 +179,38 @@ def test_bills_due_match_03_safe_to_spend_sql_and_worked_numbers(conn, customer_
     assert all(b.due_until_payday.method == "safe_to_spend.bill_due_eur@1" for b in res.data.bills)
     assert all(b.typical_month.method == "recurring.typical_month_eur@1" for b in res.data.bills)
     assert (res.card.estimate is not None) == any(b.status == "spread" for b in res.data.bills)
+
+
+# Dates metrics.md itself checks for CUST00001 (sections 2 and 3): salary upcoming on 2026-09-14 (payday
+# the next day), upcoming on its typical day 2026-05-15 (that month's salary came on the 29th, expected
+# tomorrow), and late on 2026-05-20 (payday = month end).
+@pytest.mark.parametrize("as_of, salary_status, payday", [
+    (date(2026, 9, 14), "upcoming", date(2026, 9, 15)),
+    (date(2026, 5, 15), "upcoming", date(2026, 5, 16)),
+    (date(2026, 5, 20), "late", date(2026, 5, 31)),
+])
+def test_dates_with_salary_not_yet_paid_match_the_sql(conn, as_of, salary_status, payday):
+    ctx = ctx_for(conn, "CUST00001", as_of=as_of)
+    series = {s.key: s for s in recurring.detect(ctx.history(), as_of)}
+    sql01 = {r["series_key"]: r for r in run_metric(conn, "01_recurring.sql", "CUST00001", as_of)}
+    assert set(series) == set(sql01)
+    for key, row in sql01.items():
+        s = series[key]
+        assert (s.status, s.next_expected, s.typical_day, money(s.typical_month)) == (
+            row["status"], row["next_expected_date"], row["typical_day"], row["typical_month_eur"]), key
+        expected_late = row["late_share_12m"]
+        assert (s.late_share_12m is None) == (expected_late is None), key
+        if expected_late is not None:
+            assert s.late_share_12m.quantize(Decimal("0.01")) == expected_late, key
+    res = get_recurring_bills(ctx)
+    sql03 = run_metric(conn, "03_safe_to_spend.sql", "CUST00001", as_of)[0]
+    assert (res.data.salary_status, res.data.next_payday) == (salary_status, payday)
+    assert (res.data.salary_status, res.data.next_payday) == (sql03["salary_status"], sql03["next_payday"])
+    # The contract makes the total the sum of the rounded per-bill amounts (the items add up on the card);
+    # 03_safe_to_spend.sql rounds the unrounded sum once, so they can differ by up to a cent per bill.
+    assert abs(dec(res.data.upcoming_total) - sql03["bills_due_eur"]) <= Decimal("0.01") * len(res.data.bills)
+    for ref in res.evidence:
+        assert evidence.resolve(conn, ref, "CUST00001", limit=200).reconciles is True
 
 
 def test_series_evidence_is_the_series_transactions(conn):

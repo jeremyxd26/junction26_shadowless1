@@ -36,6 +36,7 @@ class BillItem(BaseModel):
     status: str
     status_label: str
     typical_month: Number
+    typical_day: int | None  # day of the month of the first payment; None when spread
     last_paid: date
     next_expected: date | None
     due_until_payday: Number
@@ -47,6 +48,7 @@ class IncomeItem(BaseModel):
     label: str
     status: str
     typical_month: Number
+    typical_day: int | None
     next_expected: date | None
 
 
@@ -151,7 +153,7 @@ def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | N
         bills.append((BillItem(
             bill_id=_bill_id(ctx, s), label=_series_label(s, alias_map, lang), category=s.category,
             status=s.status, status_label=_status_label(s, lang), typical_month=reg(typ[0]),
-            last_paid=s.last_date, next_expected=s.next_expected, due_until_payday=reg(due_n[0]),
+            typical_day=None if s.status == "spread" else s.typical_day, last_paid=s.last_date, next_expected=s.next_expected, due_until_payday=reg(due_n[0]),
             evidence_ref=typ[0].evidence_ref,
         ), due_n))
     bills.sort(key=lambda b: (-b[1][1], -b[0].typical_month.value, b[0].bill_id))
@@ -165,7 +167,9 @@ def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | N
         for s in series:
             if s.direction == "in" and s.category in config.INCOME_CATEGORIES:
                 income.append(IncomeItem(key=s.key, label=_series_label(s, alias_map, lang), status=s.status,
-                                         typical_month=reg(typical(s)[0]), next_expected=s.next_expected))
+                                         typical_month=reg(typical(s)[0]),
+                                         typical_day=None if s.status == "spread" else s.typical_day,
+                                         next_expected=s.next_expected))
 
     data = BillsData(window=win, bills=[b for b, _ in bills], income=income, upcoming_total=total,
                      due_period=due_period, next_payday=pay.date, salary_status=pay.salary_status)
@@ -199,13 +203,14 @@ def _model_view(data: BillsData, notes: list[str]) -> dict[str, Any]:
         "salary_status": data.salary_status,
         "upcoming_total": model_number(data.upcoming_total),
         "bills": [
-            {"bill_id": b.bill_id, "label": b.label, "status": b.status,
+            {"bill_id": b.bill_id, "label": b.label, "status": b.status, "typical_day": b.typical_day,
              "typical_month": model_number(b.typical_month), "due_until_payday": model_number(b.due_until_payday),
              "next_expected": b.next_expected.isoformat() if b.next_expected else None}
             for b in data.bills
         ],
         "income": [
-            {"key": i.key, "label": i.label, "status": i.status, "typical_month": model_number(i.typical_month),
+            {"key": i.key, "label": i.label, "status": i.status, "typical_day": i.typical_day,
+             "typical_month": model_number(i.typical_month),
              "next_expected": i.next_expected.isoformat() if i.next_expected else None}
             for i in data.income
         ],

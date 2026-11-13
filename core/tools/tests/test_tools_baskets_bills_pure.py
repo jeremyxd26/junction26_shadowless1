@@ -107,6 +107,56 @@ def test_payday_without_salary_and_skipped_bill():
     assert due.due_dates == (date(2026, 10, 3),)                          # September skipped, October counts
 
 
+class _FakeStore:
+    """Stands in for the database in evidence.write (ON CONFLICT DO NOTHING, then read back)."""
+
+    def __init__(self):
+        self.rows = {}
+
+    def cursor(self):
+        store = self
+
+        class _Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def executemany(self, sql, params):
+                for ref, _customer, spec in params:
+                    store.rows.setdefault(ref, spec.obj)
+
+        return _Cur()
+
+    def execute(self, sql, params):
+        class _Res:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def fetchall(self):
+                return self._rows
+
+        return _Res([(r, self.rows[r]) for r in params[0] if r in self.rows])
+
+
+def test_merchant_bill_goes_through_the_tool_without_its_id():
+    import json
+
+    from core.tools.bills import get_recurring_bills
+    from core.tools.context import ToolContext
+
+    ctx = ToolContext(customer_id="CUST00042", as_of=TODAY, conn=_FakeStore(), _history=history_for_series())
+    res = get_recurring_bills(ctx)
+    merchant_bill = next(b for b in res.data.bills if b.category == "Entertainment")
+    assert merchant_bill.bill_id.startswith("bill_") and len(merchant_bill.bill_id) == 15
+    assert merchant_bill.label == "Entertainment A"                       # the alias label
+    assert (merchant_bill.status, merchant_bill.typical_day) == ("done_this_month", 10)
+    text = json.dumps([res.data.model_dump(mode="json"), res.card.model_dump(mode="json"), res.model_view])
+    assert "MRC-" not in text and "CUST" not in json.dumps(res.model_view)
+    assert merchant_bill.due_until_payday.value == 9.99                   # due on 10 Oct, before payday
+
+
 # ---- baskets ---------------------------------------------------------------------------------------
 
 def test_spike_and_customer_label_move_a_transaction_between_baskets():
