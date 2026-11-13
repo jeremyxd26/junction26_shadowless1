@@ -5,12 +5,9 @@ The rules are design doc section 7.8 and contract 0.2.0 sections 6 and 10.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -19,11 +16,11 @@ from core.tools.classify import classify
 from core.tools.db import Tx
 from core.tools.reviews import ANSWERED, CLOSED, PENDING, Review
 from core.tools.selection import Selection, select
+from core.tools.tests.test_tools_metric_files_pure import BLOCK_FILES, shared_block
 
 UTC = timezone.utc
 NOW = datetime(2026, 11, 14, 10, 0, tzinfo=UTC)          # a Saturday
 AS_OF = date(2026, 9, 30)
-METRICS = Path(__file__).resolve().parents[2] / "metrics"
 
 
 def review(tx_id=1, created=NOW, basket=None, answered=None, ref=None) -> Review:
@@ -233,14 +230,11 @@ def test_selection_tx_ids_round_trip_and_filter():
     assert [c.tx.id for c in select(rows, sel)] == [1]
 
 
-def test_shared_block_identical_in_02_to_06_and_reads_tx_labels():
-    blocks = {}
-    for f in ("02_baskets.sql", "03_safe_to_spend.sql", "04_what_if.sql", "05_spender_profile.sql",
-              "06_peer_benchmark.sql"):
-        text = (METRICS / f).read_text(encoding="utf-8")
-        m = re.search(r"^-- -+ shared classification block: begin -*$\n(.*?)^-- -+ shared classification block: end",
-                      text, re.S | re.M)
-        blocks[f] = hashlib.md5(m.group(1).encode()).hexdigest()
-        assert "current_setting('app.tx_labels', true)" in m.group(1)
-        assert "pg_input_is_valid" in m.group(1)                         # a malformed setting = no labels
-    assert len(set(blocks.values())) == 1, blocks
+def test_every_copy_of_the_shared_block_reads_tx_labels():
+    """The identity of the six copies is checked in test_tools_metric_files_pure.py; here, what they hold."""
+    for f in BLOCK_FILES:
+        block = shared_block(f)
+        assert "current_setting('app.tx_labels', true)" in block
+        assert "pg_input_is_valid" in block                              # a malformed setting = no labels
+        assert "(o.tx_id = x.id AND x.flow = 'spend')" in block           # spend rows only, as classify
+        assert "AS MATERIALIZED" in block                                  # parsed once per run
