@@ -22,6 +22,8 @@ import type {
   PersonasResponse,
   ReviewCard,
   SafeToSaveCard,
+  WhatIfResponse,
+  WhatIfScenarioRequest,
 } from '../types.ts'
 import contract from './contract-examples.json'
 
@@ -36,6 +38,7 @@ const examples = contract.examples as unknown as {
   'card.safe_to_save_aleksi': SafeToSaveCard
   'card.safe_to_save_zero': SafeToSaveCard
   'card.safe_to_save_everyday': SafeToSaveCard
+  'whatif.response': WhatIfResponse
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -199,6 +202,43 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   })
 }
 
+const euro = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' })
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+/**
+ * What-if in mock mode: the contract has one response example (Restaurants, 20%). Other cuts
+ * of the same selection follow the contract's own rule (section 8, metrics.md section 4): the
+ * saving is `cut_pct` of the example's baseline, per week × 7 / 30.4375 days, per year × 12.
+ * At 20% this gives the example's numbers exactly. Any other selection gets 422 invalid_scenario.
+ */
+function mockWhatIf(scenario: WhatIfScenarioRequest): WhatIfResponse {
+  const example = examples['whatif.response']
+  const { selection, cut_pct: cut } = scenario
+  const same =
+    selection.kind === example.scenario.selection.kind &&
+    selection.value.toLowerCase() === example.scenario.selection.value.toLowerCase()
+  if (!same || !Number.isInteger(cut) || cut < 1 || cut > 100) {
+    throw new ApiError(422, {
+      code: 'invalid_scenario',
+      message: 'This what-if cannot be calculated for this selection.',
+      retryable: false,
+    })
+  }
+  const month = round2((example.baseline_per_month.value * cut) / 100)
+  const week = round2((month * 7) / 30.4375)
+  const year = round2(month * 12)
+  const response = clone(example)
+  const assumption = `Average of your last 6 full months (one-off purchases left out), cut by ${cut}%.`
+  response.scenario.cut_pct = { ...response.scenario.cut_pct, value: cut, display: `${cut}%` }
+  response.scenario.label = `Spend ${cut}% less on restaurants`
+  response.saving_per_month = { ...response.saving_per_month, value: month, display: `${euro.format(month)} a month` }
+  response.saving_per_week = { ...response.saving_per_week, value: week, display: `${euro.format(week)} a week` }
+  response.saving_per_year = { ...response.saving_per_year, value: year, display: `${euro.format(year)} a year` }
+  response.assumptions = [assumption, ...response.assumptions.slice(1)]
+  response.estimate = response.estimate && { ...response.estimate, text: assumption }
+  return response
+}
+
 export function createMockClient(): ApiClient {
   return {
     mode: 'mock',
@@ -220,5 +260,7 @@ export function createMockClient(): ApiClient {
         // The contract shows only the first page of rows; any next page is empty and the last.
         return cursor ? { ...evidence, rows: [], next_cursor: null } : evidence
       }),
+    // About the dev host's speed (0.5 s), so the sheet's loading state shows in mock mode too.
+    whatIf: (_customerId: string, scenario: WhatIfScenarioRequest) => later(() => mockWhatIf(scenario), 500),
   }
 }

@@ -1,7 +1,7 @@
 import type { BreakdownCard, OverviewResponse } from '../api/types.ts'
 import { BasketsCard, HeroCard, HeroPending, InsightCard, ReviewPlaceholder } from '../components/cards.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
-import { navigate } from '../lib/url.ts'
+import { navigate, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 function isBasketsCard(card: OverviewResponse['cards'][number]): card is BreakdownCard {
@@ -55,6 +55,16 @@ export function Overview({ overview }: { overview: OverviewResponse }) {
                 </button>
               </li>
             ))}
+            <li>
+              {/* The what-if screen with the contract's example request (Restaurants, 20%). */}
+              <button
+                type="button"
+                onClick={() => openWhatIf({ selection: { kind: 'category', value: 'Restaurants' }, cut_pct: 20 })}
+                className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 py-2 text-left text-base font-medium text-brand hover:bg-mint-tint"
+              >
+                {t.whatIfEntry}
+              </button>
+            </li>
           </ul>
         </section>
       )}
