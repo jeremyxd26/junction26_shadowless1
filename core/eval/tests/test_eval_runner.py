@@ -294,3 +294,47 @@ def test_a_declared_count_inside_a_returned_range_does_not_break_the_date():
     ans2 = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00.", outcome="answered",
                   numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
     assert run.check(case, ans2, "en", case["question"]["en"]) == []
+
+
+# ---- fourth review: a closing € before a date or amount, unit words, display suffixes ------------
+
+@pytest.mark.parametrize("text", [
+    f"Voit käyttää 180,26{NBSP}€ 15.10.2026 asti.",
+    f"Voit käyttää 180,26{NBSP}€ 2026-10-15 asti.",
+    f"Voit käyttää 180,26{NBSP}€ 15. lokakuuta 2026 asti.",
+])
+def test_a_closing_euro_sign_before_a_date_is_fine(text):
+    assert run.check(SAFE, fi_safe(text), "fi", SAFE["question"]["fi"]) == []
+
+
+def test_a_closing_euro_sign_before_another_amount_is_fine():
+    case = {**CUT, "numbers": CUT["numbers"] + [{"name": "base", "value": 229.56, "unit": "eur_per_month", "tolerance": 0.005}]}
+    ans = Answer(text=f"Säästö olisi 45,91{NBSP}€ 229,56{NBSP}€:sta kuukaudessa.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[num(45.91, "eur_per_month", f"45,91{NBSP}€"), num(229.56, "eur_per_month", f"229,56{NBSP}€")])
+    assert run.check(case, ans, "fi", "Paljonko säästäisin?") == []
+
+
+@pytest.mark.parametrize("text,lang", [("Taxis cost €52.84 over 1 ride, tip € 1 each.", "en"),
+                                       ("Taxis cost €52.84 over 1 ride, and 1 euro of tip.", "en"),
+                                       ("Taxis cost €52.84 over 1 ride, and 1 EUR of tip.", "en"),
+                                       ("Taxis cost €52.84 over 1 ride, 1 percent of spending.", "en"),
+                                       (f"Takseihin meni 52,84{NBSP}€, 1 kyyti, 1 prosenttia kulutuksesta.", "fi")])
+def test_a_count_next_to_a_currency_or_unit_word_fails(text, lang):
+    fails_with(TAXI, taxi_answer(text, lang), lang, "R1")
+
+
+def test_display_with_a_unit_suffix_states_its_value():
+    assert answer_text.display_matches("€1,209.05 a month", 1209.05, "eur_per_month", "en")
+    assert answer_text.display_matches(f"1{NBSP}209,05{NBSP}€ / kk", 1209.05, "eur_per_month", "fi")
+    assert not answer_text.display_matches("€1,209.05 a month", 1209.50, "eur_per_month", "en")
+    assert answer_text.parse_display("€1,209.05 a month 2", "en") is None  # a suffix has no digits
+
+
+def test_a_capitalised_month_after_a_number_starts_a_sentence():
+    case = {"id": "t-cap", "persona": "CUST00349", "intent": "spending", "expect": "answered",
+            "question": {"fi": "Paljonko käytin ravintoloihin heinäkuussa?"}, "expected_tools": [], "tags": ["t"],
+            "numbers": [{"name": "n", "value": 10, "unit": "count", "tolerance": 0}]}
+    jul = {"start": "2026-07-01", "end": "2026-07-31"}
+    ans = Answer(text="Ostoksia oli 10. Heinäkuussa 2026 käytit ravintoloihin.", outcome="answered",
+                 numbers=[num(10, "count", "10", jul)], labels=[], tool_calls=[])
+    assert run.check(case, ans, "fi", case["question"]["fi"]) == []

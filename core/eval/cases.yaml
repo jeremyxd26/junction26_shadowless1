@@ -53,7 +53,7 @@ cases:
 
 - id: sanna-q3-safe-to-spend
   persona: CUST00860
-  question: {en: 'What can I safely spend this week?', fi: 'Paljonko voin turvallisesti käyttää tällä viikolla?'}
+  question: {en: 'What can I safely spend this week?', fi: 'Paljonko minulla on turvallisesti käytettävissä tällä viikolla?'}
   intent: safe_to_spend
   expect: answered
   expected_tools: [get_safe_to_spend]
@@ -206,7 +206,7 @@ cases:
 
 - id: aleksi-q3-safe-to-spend
   persona: CUST00849
-  question: {en: 'What can I safely spend this week?', fi: 'Paljonko voin turvallisesti käyttää tällä viikolla?'}
+  question: {en: 'What can I safely spend this week?', fi: 'Paljonko minulla on turvallisesti käytettävissä tällä viikolla?'}
   intent: safe_to_spend
   expect: answered
   expected_tools: [get_safe_to_spend]

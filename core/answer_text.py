@@ -44,6 +44,8 @@ MONTHS_FI = {stem: i + 1 for i, stem in enumerate(("tammi", "helmi", "maalis", "
                                                    "elo", "syys", "loka", "marras", "joulu"))}
 MON_EN = r"(?P<{g}>Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
 MON_FI = r"(?P<{g}>tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu\w*"
+# After a day ("15. lokakuuta 2026") the month is in lower case; "10. Heinäkuussa" starts a new sentence.
+MON_FI_LOWER = "(?-i:" + MON_FI + ")"
 
 
 def _en(g: str) -> str:
@@ -54,6 +56,10 @@ def _fi(g: str) -> str:
     return MON_FI.format(g=g)
 
 
+def _fi_lower(g: str) -> str:
+    return MON_FI_LOWER.format(g=g)
+
+
 # Longest forms first; each match is removed before the next pattern runs.
 DATE_PATTERNS = [
     ("date", rf"(?P<y>\d{{4}})-(?P<m>\d{{2}})-(?P<d>\d{{2}})"),
@@ -62,17 +68,23 @@ DATE_PATTERNS = [
     ("date", rf"(?P<d>\d{{1,2}})\.(?P<m>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}+{_en('mn1')}(?:{_S}+(?P<y1>\d{{4}}))?{_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn2')}{_S}+(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn')}{_S}+(?P<y>\d{{4}})"),
-    ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.{_S}*{_fi('mn')}{_S}+(?P<y>\d{{4}})"),
+    ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.{_S}*{_fi_lower('mn')}{_S}+(?P<y>\d{{4}})"),
     ("date", rf"(?P<d>\d{{1,2}}){_S}+{_en('mn')},?{_S}+(?P<y>\d{{4}})"),
     ("date", rf"{_en('mn')}{_S}+(?P<d>\d{{1,2}}),{_S}+(?P<y>\d{{4}})"),
-    ("date", rf"(?P<d>\d{{1,2}})\.{_S}*{_fi('mn')}{_S}+(?P<y>\d{{4}})"),
+    ("date", rf"(?P<d>\d{{1,2}})\.{_S}*{_fi_lower('mn')}{_S}+(?P<y>\d{{4}})"),
     ("month", rf"{_en('mn')}{_S}+(?P<y>\d{{4}})"),
     ("month", rf"{_fi('mn')}{_S}+(?P<y>\d{{4}})"),
 ]
 # Not part of a longer number or word, not after a dash or minus, and not money or a percentage:
-# no mark glued before it or one space before it, none glued after it or one space after it.
-_BEFORE = rf"(?<![\w€$%.,{DASH_CLASS}])(?<![€$%] )"
-_AFTER = r"(?![\w€$%]|[.,]\d| ?[€$%])"
+# - before: no letter, digit, mark or dash glued to it, and no LEADING currency mark with one space
+#   ("€ 30"). A closing mark that follows an amount ("180,26 € 15.10.2026") is not leading: the
+#   currency sign is then itself preceded by a digit and an optional space.
+# - after: no letter, digit or mark glued to it, and no mark or unit word after one space
+#   ("1 €", "1 %", "1 euro", "1 EUR", "1 percent", "1 prosenttia").
+_LEADING_MARK = r"(?<!(?<!\d)(?<!\d )[€$] )"
+_BEFORE = rf"(?<![\w€$%.,{DASH_CLASS}]){_LEADING_MARK}"
+_UNIT_WORD = r"(?i:eur\b|euro\w*|percent\w*|per cent|prosent\w*)"
+_AFTER = rf"(?![\w€$%]|[.,]\d| ?[€$%]| {_UNIT_WORD})"
 DATE_RX = [(kind, re.compile(_BEFORE + p + _AFTER, re.I)) for kind, p in DATE_PATTERNS]
 
 
@@ -200,7 +212,7 @@ def parse_number(raw: str, language: str) -> float:
 def parse_display(display: str, language: str) -> tuple[float, str | None] | None:
     """(signed value, mark) of a display string such as "€1,234.56", "-1 234,56 €", "18,9 %" or "3".
     The mark is "eur", "pct" or None. None when the string is not one number."""
-    m = re.fullmatch(rf"{_S}*" + NUMBER_RX.pattern + rf"{_S}*", normalise(display))
+    m = re.fullmatch(rf"{_S}*" + NUMBER_RX.pattern + r"(?P<suffix>[^\d€%]*)", normalise(display))
     if not m:
         return None
     try:

@@ -84,7 +84,7 @@ Each declared Number object must also match an expected value: same unit, value 
 
 - **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
-- **Known limits**, not checked: numbers written as words ("twice", "kolme"), and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
+- **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
 
 ## License
 
