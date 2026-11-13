@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -117,6 +116,11 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
 
     sql_value = sel.value
     alias_label = None
+    if sel.kind == "mcc":
+        # Beyond the known health MCCs: no code that this customer's own Health transactions use (R9).
+        codes = set(sel.value.split(","))
+        if any(t.mcc in codes and t.category == "Health" for t in ctx.history()):
+            raise ValueError("an MCC used for health spending cannot be a what-if selection (rule R9)")
     if sel.kind == "merchant":
         history = ctx.history()
         alias_map = aliases.build(history, ctx.as_of)

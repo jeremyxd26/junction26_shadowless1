@@ -51,13 +51,13 @@ WHAT_IF_WORKED = {  # baseline / month, saving / month, / week, / year
 RESTAURANTS_20 = {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}
 
 
-def ctx_for(conn, customer_id, language="en"):
-    return ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn, language=language)
+def ctx_for(conn, customer_id, language="en", as_of=AS_OF):
+    return ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=language)
 
 
-def sql_row(conn, file_name, customer_id, settings=None):
+def sql_row(conn, file_name, customer_id, settings=None, as_of=AS_OF):
     """Independent run of a metric file for [customer_id, next id): plain session settings, one row."""
-    values = {"demo_today": AS_OF.isoformat(), "customer_from": customer_id,
+    values = {"demo_today": as_of.isoformat(), "customer_from": customer_id,
               "customer_to": f"CUST{int(customer_id[4:]) + 1:05d}", "cushion_eur": "100", **(settings or {})}
     for name, value in values.items():
         conn.execute("SELECT set_config(%s, %s, false)", (f"app.{name}", value))
@@ -151,6 +151,36 @@ def test_safe_to_spend_evidence_and_card(conn, customer_id):
         "safe_to_spend.free_until_payday_eur@1", "safe_to_spend.balance_limit_7d_eur@1",
         "safe_to_spend.budget_limit_7d_eur@1"]
     assert_model_view_clean(result.model_view, customer_id)
+
+
+# Other dates (metrics.md section 3): 2026-05-20, CUST00001's salary that month came on the 29th
+# ("late", payday = month end); 2026-09-14, salary upcoming tomorrow (N = 1). On 2026-05-20 the sum of
+# the rounded per-bill amounts (278.37) differs from 03's rounded sum (278.36); metrics wins.
+OTHER_DATES = [(date(2026, 5, 20), "late", date(2026, 5, 31)), (date(2026, 9, 14), "upcoming", date(2026, 9, 15))]
+
+
+@pytest.mark.parametrize("as_of, salary_status, payday", OTHER_DATES)
+def test_safe_to_spend_on_other_dates_equals_03(conn, as_of, salary_status, payday):
+    result = get_safe_to_spend(ctx_for(conn, "CUST00001", as_of=as_of))
+    data = result.data
+    row = sql_row(conn, "03_safe_to_spend.sql", "CUST00001", as_of=as_of)[0]
+    assert (data.salary_status, data.next_payday) == (salary_status, payday) == (row["salary_status"], row["next_payday"])
+    assert data.free_until_payday.period.end == data.next_payday == row["next_payday"]
+    assert data.free_until_payday.period.start == as_of + (date(2026, 1, 2) - date(2026, 1, 1))
+    assert dec(data.safe_to_spend) == row["safe_to_spend_7d_eur"]
+    assert dec(data.free_until_payday) == row["free_until_payday_eur"]
+    comp = {c.key: c for c in data.components}
+    assert dec(comp["bills_due"].amount) == row["bills_due_eur"]          # metrics wins, to the cent
+    signed = sum((dec(c.amount) if c.operation == "add" else -dec(c.amount) for c in data.components), D("0"))
+    assert abs(signed - dec(data.free_until_payday)) <= D("0.02")
+    assert_reconciles(conn, "CUST00001", result.evidence)
+
+
+def test_what_if_rejects_an_mcc_the_customer_uses_for_health(conn):
+    ctx = ctx_for(conn, "CUST00001")
+    health_mcc = next(t.mcc for t in ctx.history() if t.category == "Health" and t.mcc)
+    with pytest.raises(Exception, match="R9"):
+        run_what_if(ctx, {"selection": {"kind": "mcc", "value": health_mcc}, "cut_pct": 20})
 
 
 def test_safe_to_spend_in_finnish(conn):
