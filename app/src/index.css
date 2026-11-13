@@ -72,9 +72,12 @@ select {
   font-size: max(16px, 1em);
 }
 
-:focus-visible {
-  outline: 3px solid var(--color-brand);
-  outline-offset: 2px;
+/* In the base layer, so utilities such as outline-none can still override it. */
+@layer base {
+  :focus-visible {
+    outline: 3px solid var(--color-brand);
+    outline-offset: 2px;
+  }
 }
 
 /* Bottom sheet entry */

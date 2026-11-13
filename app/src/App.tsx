@@ -8,7 +8,7 @@ import { PersonaSheet } from './components/PersonaSheet.tsx'
 import { ErrorBlock, LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
-import { useLoad } from './lib/useLoad.ts'
+import { useLoad, type Loaded } from './lib/useLoad.ts'
 import { setParams, useUrl } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 import { Overview } from './screens/Overview.tsx'
@@ -48,7 +48,7 @@ export default function App() {
           ) : overview.status === 'error' || personas.status === 'error' ? (
             <ErrorBlock
               message={errorMessage(overview.status === 'error' ? overview.error : personas.status === 'error' ? personas.error : null)}
-              onRetry={overview.status === 'error' ? overview.retry : personas.status === 'error' ? personas.retry : undefined}
+              onRetry={retryFor(overview) ?? retryFor(personas)}
             >
               <button
                 type="button"
@@ -87,4 +87,11 @@ export default function App() {
 
 function errorMessage(error: unknown): string | undefined {
   return error instanceof ApiError ? error.message : undefined
+}
+
+/** Offer a retry only when the API says it may help (contract section 4). */
+function retryFor(result: Loaded<unknown>): (() => void) | undefined {
+  if (result.status !== 'error') return undefined
+  if (result.error instanceof ApiError && !result.error.retryable) return undefined
+  return result.retry
 }

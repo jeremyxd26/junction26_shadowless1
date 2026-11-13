@@ -122,18 +122,20 @@ export function BasketsCard({ card }: { card: BreakdownCard }) {
         {items.map((item) => {
           const look = BASKETS[item.key]
           return (
-            <li key={item.key} className="flex min-h-14 items-center gap-3 border-b border-line py-1.5 last:border-b-0">
+            <li key={item.key} className="flex gap-3 border-b border-line py-2.5 last:border-b-0">
               <span
                 aria-hidden="true"
                 className={`inline-flex size-10 shrink-0 items-center justify-center rounded-pill text-lg font-bold ${look.tint} ${look.color}`}
               >
                 {look.icon}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className={`block font-semibold ${look.color}`}>{item.label}</span>
-                {item.share && <span className="block text-sm text-muted">{item.share.display}</span>}
-              </span>
-              <NumberChip number={item.amount} />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-h-10 items-center justify-between gap-2">
+                  <span className={`font-semibold ${look.color}`}>{item.label}</span>
+                  {item.share && <span className="shrink-0 text-sm text-muted">{item.share.display}</span>}
+                </div>
+                <NumberChip number={item.amount} />
+              </div>
             </li>
           )
         })}
@@ -154,16 +156,12 @@ export function ReviewPlaceholder({ card }: { card: ReviewCard }) {
   const { lang, t } = useSettings()
   return (
     <CardShell className="border-mint-line">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-ink">{card.title}</h2>
-          {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
-        </div>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-waiting-tint px-2.5 py-1 text-xs font-semibold text-waiting">
-          <span aria-hidden="true">?</span>
-          {card.current_basket.label}
-        </span>
-      </div>
+      <span className="inline-flex items-center gap-1 rounded-pill bg-waiting-tint px-2.5 py-1 text-xs font-semibold text-waiting">
+        <span aria-hidden="true">?</span>
+        {card.current_basket.label}
+      </span>
+      <h2 className="mt-2 text-lg font-semibold text-ink">{card.title}</h2>
+      {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <NumberChip number={card.amount} />
         {card.merchant && <span className="text-sm text-muted">{card.merchant.label}</span>}

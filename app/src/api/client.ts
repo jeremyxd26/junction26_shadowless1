@@ -1,6 +1,5 @@
 import type { EvidenceResponse, Language, OverviewResponse, PersonasResponse } from './types.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
-import { createMockClient } from './mock/mockClient.ts'
 
 export type ApiMode = 'mock' | 'live'
 
@@ -44,8 +43,19 @@ function createLiveClient(base: string): ApiClient {
   }
 }
 
+/** The mock is loaded on first use, so a live build does not ship the example data. */
+function createLazyMockClient(): ApiClient {
+  const client = import('./mock/mockClient.ts').then((module) => module.createMockClient())
+  return {
+    mode: 'mock',
+    personas: (lang) => client.then((mock) => mock.personas(lang)),
+    overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
+    evidence: (ref, customerId, lang) => client.then((mock) => mock.evidence(ref, customerId, lang)),
+  }
+}
+
 /** Selected once at build time by VITE_API_MODE; anything but `live` means mock. */
 export const api: ApiClient =
   import.meta.env.VITE_API_MODE === 'live'
     ? createLiveClient(import.meta.env.VITE_API_BASE ?? '')
-    : createMockClient()
+    : createLazyMockClient()
