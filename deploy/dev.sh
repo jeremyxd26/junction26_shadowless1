@@ -33,6 +33,10 @@ elif sha=$(git rev-parse --quiet --verify "$ref^{commit}"); then :;
 else echo "ref not found on origin: $ref" >&2; exit 1; fi
 git checkout --quiet --force --detach "$sha"
 echo "checked out $(git log -1 --format='%h %s')"
+if [[ ! -f deploy/remote-deploy.sh || ! -f deploy/Dockerfile ]]; then
+  echo "commit $sha has no deploy/remote-deploy.sh or deploy/Dockerfile: it predates the deploy files" >&2
+  exit 1
+fi
 exec bash deploy/remote-deploy.sh "$sha"
 REMOTE
 
