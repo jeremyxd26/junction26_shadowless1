@@ -1,0 +1,86 @@
+/* Sentti design tokens.
+   Single source for colours, type, spacing, radii, elevation and motion.
+   --color-*, --font-sans, --text-*, --radius-*, --shadow-* and --ease-* use
+   Tailwind v4 theme namespaces and can move into `@theme` unchanged.
+   --space-*, --gutter, --tap-min and --duration-* are plain custom properties
+   (so is --focus-ring-width):
+   map them by hand (for example `--spacing: 4px`) or use them through var().
+   Rules for using them: app/DESIGN.md. */
+:root{
+  /* Surfaces */
+  --color-page:#F3F8F4;          /* light green tint behind everything */
+  --color-surface:#FFFFFF;       /* cards, sheets */
+  --color-sunken:#EBF2ED;        /* skeletons, bar tracks, the lesson box */
+  --color-line:#DCE6DF;          /* hairline borders (decorative) */
+  --color-line-strong:#7B8F83;   /* borders that carry meaning, 3:1 on white */
+  --color-scrim:rgba(14,58,37,.38);
+
+  /* Text */
+  --color-ink:#0E3A25;           /* primary text, dark green */
+  --color-ink-2:#26302A;         /* long body text */
+  --color-muted:#55635A;         /* secondary text, AA on page and surface */
+  --color-on-deep:#FFFFFF;
+  --color-on-deep-muted:#BFE3CB;
+
+  /* Brand greens (own values) */
+  --color-brand:#00703C;         /* links, action chips, term underline, focus ring on light surfaces */
+  --color-deep:#0B4A2E;          /* "Sentti asks" surface, send button */
+  --color-mint:#8DF29A;          /* primary button bg, text = ink */
+  --color-mint-hover:#5EE97A;
+  --color-mint-tint:#E4F5E8;     /* number chip bg, suggested question chips */
+  --color-mint-line:#9FD8AB;
+
+  /* Fact vs estimate */
+  --color-estimate:#0B6378;
+  --color-estimate-tint:#E2F1F5;
+
+  /* Status */
+  --color-danger:#B3261E;  --color-danger-tint:#FDECEC;
+  --color-warning:#8A5300; --color-warning-tint:#FFF2DA;
+  --color-up:#00703C;      /* "better" tone, always with an arrow + text */
+  --color-down:#9A4A00;    /* "worse" tone, never red for spending */
+
+  /* Baskets: icon + label + colour, always together */
+  --color-basket-essentials:#2F5DA8;  --color-basket-essentials-tint:#E8EFFA;  /* 🏠 Regular essentials */
+  --color-basket-unexpected:#9A4A00;  --color-basket-unexpected-tint:#FFEFDA;  /* 🔧 Unexpected necessities */
+  --color-basket-everyday:#A12D68;    --color-basket-everyday-tint:#FBE8F1;    /* ☕️ Everyday spending */
+  --color-waiting:#55635A;            --color-waiting-tint:#EEF2EF;            /* ? Waiting for your answer (unclassified): neutral, never a basket colour */
+
+  /* Type: Inter (SIL OFL 1.1), tabular figures for every amount */
+  --font-sans:"Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-xs:12px;   --text-xs--line-height:16px;
+  --text-sm:14px;   --text-sm--line-height:20px;
+  --text-base:16px; --text-base--line-height:24px;   /* inputs never below 16px (iOS zoom) */
+  --text-answer:16px; --text-answer--line-height:26px; /* coach answer text */
+  --text-lg:18px;   --text-lg--line-height:26px;
+  --text-xl:20px;   --text-xl--line-height:28px;     /* takeaway line */
+  --text-card-title:16px;     --text-card-title--line-height:22px;     /* card titles */
+  --text-review-amount:30px;  --text-review-amount--line-height:34px;  /* amount on the review card (#35) */
+  --text-2xl:24px;  --text-2xl--line-height:30px;
+  --text-hero:40px; --text-hero--line-height:44px;   /* safe-to-spend number */
+  --text-stage:56px;--text-stage--line-height:60px;  /* projector mode */
+
+  /* Spacing: 4px base */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px; --space-10:40px;
+  --gutter:16px;
+  --tap-min:44px;
+  --focus-ring-width:3px;        /* --color-brand on light surfaces, --color-mint on --color-deep and --color-ink */
+
+  /* Radii */
+  --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:20px; --radius-sheet:24px; --radius-pill:999px;
+
+  /* Elevation: flat by default, like the host app */
+  --shadow-none:none;
+  --shadow-float:0 6px 16px rgba(14,58,37,.18);
+  --shadow-sheet:0 -8px 28px rgba(14,58,37,.16);
+
+  /* Motion */
+  --duration-fast:150ms; --duration-base:250ms; --duration-slow:500ms; --duration-money:900ms;
+  --duration-flight:600ms;       /* the amount flying between baskets (#35) */
+  --duration-long-press:600ms;   /* hidden persona picker */
+  --ease-standard:cubic-bezier(.33,0,.34,1);
+  --ease-entry:cubic-bezier(0,0,.3,1);
+  --ease-exit:cubic-bezier(.5,0,1,1);
+  --ease-expressive:cubic-bezier(.46,0,.19,1);
+  --ease-spring:cubic-bezier(.34,1.36,.64,1);
+}

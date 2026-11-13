@@ -85,6 +85,9 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
+   - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
+   - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
    - renders the Caddy config and reloads Caddy;
@@ -97,19 +100,22 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 
 On the first deploy to a new host name, Caddy needs a few seconds to obtain the certificate, so the public check retries for up to a minute.
 
-Example run (the smoke test of this branch, before the host switch, so it checks the sslip.io name):
+Example run (a branch deploy, with both checks before the switch):
 
 ```
-deploying 'r/17-verda-dev-deploy' to 135.181.63.178
-checked out 0177340 Route only /api, /healthz and /readyz to the core service (#17)
-== building 0177340763e5b2ce7121822a37b4e544143f98bc (previous: 1e395dc61dd5447d85e1d6de5b39a0de06b0c681)
+deploying 'r/60-deploy-image-contents' to 135.181.63.178
+checked out c648379 Check the image against the checkout's run-time files before the switch (#60)
+== building c64837975d8c75f7438fdba08412482122fbfb80 (previous: 7ca4392f761dfcde2cf88c9925777c9982662d8f)
 == image contents (must not hold .env, .git or tests)
-. ./core ./core/app ./core/app/__init__.py ./core/app/db.py ./core/app/health.py ./core/app/main.py ./core/app/settings.py ./core/requirements.txt
+. ./core ./core/app ./core/app/__init__.py ./core/app/db.py ./core/app/health.py ./core/app/main.py ./core/app/settings.py ./core/config ./core/config/personas.yaml ./core/config/s_group_benefits.yaml ./core/metrics ./core/requirements.txt ./core/tools (+ 17 files in core/tools, 7 in core/metrics)
+all run-time files of the checkout are in the image
+== import check
+imports ok: core.app and 16 modules of core.tools/core.agent
 == starting
 == proxy
-deployed 0177340763e5b2ce7121822a37b4e544143f98bc; local /healthz: {"status":"ok","demo_today":"2026-09-30"}
-public check: https://135-181-63-178.sslip.io/healthz
-GET https://135-181-63-178.sslip.io/healthz -> 200
+deployed c64837975d8c75f7438fdba08412482122fbfb80; local /healthz: {"status":"ok","demo_today":"2026-09-30"}
+public check: https://sentti.jeremyxd.dev/healthz
+GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
 
 ## Roll back
@@ -156,7 +162,12 @@ The service writes only to the journal (the container runs with `--log-driver no
 - A credential-looking key (also inside names such as `GEMINI_API_KEY` or `DB_PASSWORD`) followed by `:` or `=` hides everything to the end of the line, quotes and spaces included.
 - A URL hides everything after its scheme.
 - A line with `something@host.domain` is hidden as a whole.
-- `Bearer` tokens, the word after `host`/`host name`/`server at`, host names with common top-level domains, and IPv4 and IPv6 addresses are replaced.
+- These are replaced:
+  - `Bearer` tokens;
+  - the word after `host`/`host name`/`server at`, quoted or not;
+  - user names (`user=…`, `for user "…"`);
+  - host names with common top-level domains;
+  - IPv4 and IPv6 addresses. `127.0.0.1` and `0.0.0.0` stay readable, so "listening on" lines still make sense.
 
 `bash deploy/remote-deploy.sh --self-test-mask` masks the sample lines built into the script. It exits 1 if any secret of a sample survives, or if a plain log line changes. Its output (run locally and on the instance):
 
@@ -164,7 +175,11 @@ The service writes only to the journal (the container runs with `--log-driver no
 ok   *** (line hidden: credentials at a host)          <- postgresql://u:p@ss@db.example.com/x?sslmode=require
 ok   *** (line hidden: credentials at a host)          <- error: postgresql://u:p/ss@db.example.com:5432/x failed
 ok   connection to server at "***" (x.x.x.x), port 5432 failed
-ok   host=*** user=app password= ***
+ok   host=*** user=*** password= ***
+ok   host='***' port=5432
+ok   FATAL:  password authentication failed for user "***"
+ok   connection failed: user = '***'
+ok   INFO:     Uvicorn listening on 0.0.0.0:8000 and 127.0.0.1:8000
 ok   GEMINI_API_KEY= ***
 ok   MY_SERVICE_TOKEN= ***
 ok   APP_SECRET= ***
@@ -225,7 +240,13 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 - **Firewall:** `ufw` allows only 22, 80 and 443 (`ufw status`). Verda has no provider firewall for single instances.
 - **Container port:** the container's port is published on `127.0.0.1` only. Docker's published ports bypass `ufw`, so a public binding would be open to everyone.
 - **Container:** it runs as a non-root user, with a read-only file system, 1 GB memory and a pid limit.
-- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore` (`core/app`, `core/requirements.txt`). A new runtime path, for example SQL files the API reads, must be added there and in `deploy/Dockerfile`. `remote-deploy.sh` refuses an image that contains a `tests` directory. So when `core/tools` goes in (issue #60), re-include it and then exclude its tests: `!core/tools/` followed by `core/tools/tests/` in `.dockerignore`. The later line wins.
+- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore`:
+  - `core/requirements.txt`;
+  - `core/app`, `core/tools` and `core/agent` (the service, the tools and the answer pipeline);
+  - `core/metrics/*.sql` (the metric SQL the tools run);
+  - `core/config/*.yaml` (personas and benefit rules).
+
+  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new file of a kind the completeness check already lists (`*.py` under `core/app`, `core/tools` or `core/agent`, `core/metrics/*.sql`, `core/config/*.yaml`) only needs its path in `.dockerignore`, and the check catches a forgotten one before the switch. A new **kind** of run-time file (for example `core/data/*.csv`) must be added to `.dockerignore` **and** to the `git ls-files` patterns of the completeness check in `deploy/remote-deploy.sh`; otherwise the check cannot see it.
 
 ## Setting up a new instance from scratch
 
