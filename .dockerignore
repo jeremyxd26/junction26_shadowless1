@@ -1,7 +1,15 @@
-# Allowlist: ignore everything, then re-include only what the image needs.
-# A new runtime path (for example SQL files the API reads) must be added here and in deploy/Dockerfile.
+# Allowlist: ignore everything, then re-include only what the service imports or reads at run time.
+# deploy/Dockerfile copies `core` as a whole, so this file alone decides what is in the image. A path
+# listed here that does not exist yet (core/agent) is simply absent. Later lines win.
 *
-!core/app/
 !core/requirements.txt
+!core/app/
+!core/tools/
+!core/agent/
+!core/metrics/*.sql
+!core/config/*.yaml
+
+# never in the image: tests, caches
+**/tests/
 **/__pycache__
 **/*.pyc

@@ -15,17 +15,22 @@ set -euo pipefail
 #   ':' or '=' hides everything to the end of the line, quotes and spaces included;
 # - a URL hides everything after its scheme to the end of the line;
 # - a line with something@host.domain (credentials at a host) is hidden as a whole;
-# - 'Bearer <token>', the word after 'host', 'host name' or 'server at', host-like names with a
-#   common top-level domain, IPv4 and IPv6 addresses are replaced.
+# - 'Bearer <token>', the word after 'host', 'host name' or 'server at' (quoted or not), user names
+#   ('user=…', 'for user "…"'), host-like names with a common top-level domain, IPv4 and IPv6
+#   addresses are replaced. 127.0.0.1 and 0.0.0.0 stay readable ("listening on" lines).
 mask() {
   sed -E \
     -e 's#.*[^[:space:]]@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+.*#*** (line hidden: credentials at a host)#' \
     -e 's#([A-Za-z][A-Za-z0-9+.-]*://).*#\1***#' \
     -e 's#(^|[^A-Za-z0-9])([A-Za-z0-9_]*(password|passwd|pwd|secret|token|api[_-]?key|key|authorization|credentials?|cookie|dsn|database_url))(["'"'"']?[[:space:]]*[:=]).*#\1\2\4 ***#I' \
     -e 's#(bearer)[[:space:]]+[^[:space:]]+#\1 ***#Ig' \
-    -e 's#(host name|hostname|server at|\bhost)([[:space:]]*[:=]?[[:space:]]*"?)[A-Za-z0-9._-]+#\1\2***#Ig' \
+    -e 's#(host name|hostname|server at|\bhost)([[:space:]]*[:=]?[[:space:]]*["'"'"']?)[A-Za-z0-9._-]+#\1\2***#Ig' \
+    -e 's#\b(user|username)([[:space:]]*=[[:space:]]*["'"'"']?)[^"'"'"'[:space:]]+#\1\2***#Ig' \
+    -e 's#(for user[[:space:]]+["'"'"']?)[^"'"'"'[:space:]]+#\1***#Ig' \
     -e 's#\b[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.(com|net|org|io|dev|cloud|fi|eu|co|ai|tech|xyz|info)\b#***#Ig' \
+    -e 's#\b127\.0\.0\.1\b#__LOOPBACK4__#g; s#\b0\.0\.0\.0\b#__ANY4__#g' \
     -e 's#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#x.x.x.x#g' \
+    -e 's#__LOOPBACK4__#127.0.0.1#g; s#__ANY4__#0.0.0.0#g' \
     -e 's#\b([0-9A-Fa-f]{1,4}:){5,7}[0-9A-Fa-f]{1,4}\b#x:x::x#g' \
     -e 's#([0-9A-Fa-f]{1,4}:){1,6}:([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,5})?#x:x::x#g' \
     -e 's#(^|[^0-9A-Za-z]):(:[0-9A-Fa-f]{1,4}){1,7}#\1x:x::x#g'
@@ -53,7 +58,11 @@ if [[ ${1:-} == --self-test-mask ]]; then
 postgresql://u:p@ss@db.example.com/x?sslmode=require	p@ss;db.example.com
 error: postgresql://u:p/ss@db.example.com:5432/x failed	p/ss;db.example.com
 connection to server at "db.example.com" (203.0.113.7), port 5432 failed	db.example.com;203.0.113.7
-host=db.example.com user=app password=s3cret dbname=core	db.example.com;s3cret
+host=db.example.com user=app password=s3cret dbname=core	db.example.com;s3cret;user=app
+host='db.example.com' port=5432	db.example.com
+FATAL:  password authentication failed for user "app_user"	app_user
+connection failed: user = 'app_user'	app_user
+INFO:     Uvicorn listening on 0.0.0.0:8000 and 127.0.0.1:8000	=UNCHANGED
 GEMINI_API_KEY=AIzaSyFAKE0000	AIzaSyFAKE0000
 MY_SERVICE_TOKEN=tok_abc123	tok_abc123
 APP_SECRET=sh_secret_9	sh_secret_9
@@ -89,12 +98,42 @@ echo "== building $sha (previous: $prev)"
 docker build --quiet --file deploy/Dockerfile --tag "shadowless1-core:$sha" . >/dev/null
 
 echo "== image contents (must not hold .env, .git or tests)"
-listing=$(docker run --rm --entrypoint sh "shadowless1-core:$sha" -c 'cd /srv && find . -maxdepth 3 -not -path "*/__pycache__*" | sort')
-echo "$listing" | tr '\n' ' '; echo
+listing=$(docker run --rm --entrypoint sh "shadowless1-core:$sha" -c 'cd /srv && find . -not -path "*/__pycache__*" | sort')
+echo "$listing" | grep -vE '^\./core/(metrics|tools)/.+\.(sql|py)$' | tr '\n' ' '
+echo "(+ $(grep -cE '^\./core/tools/.+\.py$' <<<"$listing") files in core/tools, $(grep -cE '^\./core/metrics/.+\.sql$' <<<"$listing") in core/metrics)"
 if grep -qE '(^|/)(\.env|\.git|tests)(/|$)' <<<"$listing"; then
   echo "refusing to deploy: the image contains .env, .git or tests" >&2
   exit 1
 fi
+
+# Import check, before the switch: the image must be able to import and build the application and
+# every module of the tools and the answer pipeline, and hold the metric SQL the tools read. A path
+# missing from /.dockerignore fails here, the running version stays untouched.
+echo "== import check"
+import_check='
+import importlib, importlib.util, pkgutil
+import core.app.main as m
+m.create_app()
+n = 1
+for pkg in ("core.tools", "core.agent"):
+    if importlib.util.find_spec(pkg) is None:
+        continue  # not in this commit (yet)
+    for info in pkgutil.walk_packages(importlib.import_module(pkg).__path__, pkg + "."):
+        if ".tests" not in info.name:
+            importlib.import_module(info.name)
+            n += 1
+if importlib.util.find_spec("core.tools.metric_sql") is not None:
+    from core.tools import metric_sql
+    sql = sorted(p.name for p in metric_sql.METRICS_DIR.glob("*.sql"))
+    assert sql, "core/metrics/*.sql is missing from the image"
+print(f"imports ok: core.app and {n - 1} modules of core.tools/core.agent")
+'
+if ! import_out=$(docker run --rm --network none --entrypoint python "shadowless1-core:$sha" -c "$import_check" 2>&1); then
+  echo "refusing to deploy: the image cannot import the application; last lines (masked):" >&2
+  tail -8 <<<"$import_out" | mask >&2
+  exit 1
+fi
+echo "$import_out" | tail -1
 
 # Switch the service to commit $1: its image and ITS unit file (from git, so a rollback never uses the
 # failed commit's unit). Every step returns its own error: `set -e` does not apply inside an `if`.

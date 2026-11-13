@@ -85,6 +85,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
+   - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present). When the tools read metric SQL it must also hold `core/metrics/*.sql`. If not, the deploy stops here and the running version stays untouched;
    - switches the service to the new image;
    - waits up to 30 s for `/healthz`;
    - renders the Caddy config and reloads Caddy;
@@ -156,7 +157,12 @@ The service writes only to the journal (the container runs with `--log-driver no
 - A credential-looking key (also inside names such as `GEMINI_API_KEY` or `DB_PASSWORD`) followed by `:` or `=` hides everything to the end of the line, quotes and spaces included.
 - A URL hides everything after its scheme.
 - A line with `something@host.domain` is hidden as a whole.
-- `Bearer` tokens, the word after `host`/`host name`/`server at`, host names with common top-level domains, and IPv4 and IPv6 addresses are replaced.
+- These are replaced:
+  - `Bearer` tokens;
+  - the word after `host`/`host name`/`server at`, quoted or not;
+  - user names (`user=…`, `for user "…"`);
+  - host names with common top-level domains;
+  - IPv4 and IPv6 addresses. `127.0.0.1` and `0.0.0.0` stay readable, so "listening on" lines still make sense.
 
 `bash deploy/remote-deploy.sh --self-test-mask` masks the sample lines built into the script. It exits 1 if any secret of a sample survives, or if a plain log line changes. Its output (run locally and on the instance):
 
@@ -164,7 +170,11 @@ The service writes only to the journal (the container runs with `--log-driver no
 ok   *** (line hidden: credentials at a host)          <- postgresql://u:p@ss@db.example.com/x?sslmode=require
 ok   *** (line hidden: credentials at a host)          <- error: postgresql://u:p/ss@db.example.com:5432/x failed
 ok   connection to server at "***" (x.x.x.x), port 5432 failed
-ok   host=*** user=app password= ***
+ok   host=*** user=*** password= ***
+ok   host='***' port=5432
+ok   FATAL:  password authentication failed for user "***"
+ok   connection failed: user = '***'
+ok   INFO:     Uvicorn listening on 0.0.0.0:8000 and 127.0.0.1:8000
 ok   GEMINI_API_KEY= ***
 ok   MY_SERVICE_TOKEN= ***
 ok   APP_SECRET= ***
@@ -225,7 +235,13 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
 - **Firewall:** `ufw` allows only 22, 80 and 443 (`ufw status`). Verda has no provider firewall for single instances.
 - **Container port:** the container's port is published on `127.0.0.1` only. Docker's published ports bypass `ufw`, so a public binding would be open to everyone.
 - **Container:** it runs as a non-root user, with a read-only file system, 1 GB memory and a pid limit.
-- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore` (`core/app`, `core/requirements.txt`). A new runtime path, for example SQL files the API reads, must be added there and in `deploy/Dockerfile`. `remote-deploy.sh` refuses an image that contains a `tests` directory. So when `core/tools` goes in (issue #60), re-include it and then exclude its tests: `!core/tools/` followed by `core/tools/tests/` in `.dockerignore`. The later line wins.
+- **Secrets:** no secret is in git, in the image or in deploy output. The image is built from the allowlist in `.dockerignore`:
+  - `core/requirements.txt`;
+  - `core/app`, `core/tools` and `core/agent` (the service, the tools and the answer pipeline);
+  - `core/metrics/*.sql` (the metric SQL the tools run);
+  - `core/config/*.yaml` (personas and benefit rules).
+
+  Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new runtime path is added to `.dockerignore` only, and the import check catches a forgotten one before the switch.
 
 ## Setting up a new instance from scratch
 
