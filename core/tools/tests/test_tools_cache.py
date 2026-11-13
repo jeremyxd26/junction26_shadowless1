@@ -195,8 +195,9 @@ def test_disk_layer_survives_a_new_process_and_is_byte_identical(tmp_path, tool)
     assert isinstance(hit.data, SpendingData) and hit.data.total.evidence_ref == fresh.data.total.evidence_ref
     reader.run("fake", FakeArgs, tool, ctx_for(), {})                 # now from memory
     assert reader.stats.disk_hits == 1 and reader.stats.hits == 2
-    assert reader.invalidate_customer("CUST00860") == 2               # memory and disk
-    assert ToolCache(mode="disk", directory=tmp_path).get(next(iter(writer._memory)), "CUST00860") is None
+    assert reader.invalidate_customer("CUST00860") == 1               # memory only (hygiene)
+    again = ToolCache(mode="disk", directory=tmp_path)                # the warmed disk row stays
+    assert again.get(next(iter(writer._memory)), "CUST00860") is not None
 
 
 def test_disk_read_checks_the_customer(tmp_path, tool):
@@ -373,3 +374,80 @@ def test_an_unwritable_cache_directory_keeps_the_memory_layer(tmp_path, tool):
     second = disk.run("fake", FakeArgs, tool, ctx_for(), {})
     assert tool.calls == 1 and dump(first) == dump(second) and disk.stats.hits == 1
     assert disk.invalidate_customer("CUST00860") == 1
+
+
+
+# ---- review fixes (#116) ---------------------------------------------------------------------------------
+
+def _corrupt(directory):
+    from core.tools.cache import DB_FILE
+
+    (directory / DB_FILE).write_bytes(b"this is not a sqlite database" * 100)
+
+
+def test_a_corrupted_disk_file_never_fails_clear_drop_or_invalidate(tmp_path, tool):
+    disk = ToolCache(mode="disk", directory=tmp_path)
+    disk.run("fake", FakeArgs, tool, ctx_for(), {})
+    key = next(iter(disk._memory))
+    _corrupt(tmp_path)
+    fresh = ToolCache(mode="disk", directory=tmp_path)
+    assert fresh.invalidate_customer("CUST00860") == 0
+    fresh.drop(key)
+    fresh.clear()
+    result = fresh.run("fake", FakeArgs, tool, ctx_for(), {})            # falls back to the tool
+    assert tool.calls == 2 and result.data.total.value == 100.25
+
+
+@pytest.mark.parametrize("mode", ["memory", "off"])
+def test_a_borrowed_connection_never_stays_on_the_callers_context(mode, tool):
+    from contextlib import contextmanager
+
+    seen = []
+
+    @contextmanager
+    def pool_connection():
+        seen.append("taken")
+        yield "pooled-connection"
+        seen.append("released")
+
+    def uses_conn(ctx, args):
+        assert ctx.conn == "pooled-connection"
+        return tool(ctx, args)
+
+    c = ToolCache(mode=mode)
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn="request-connection")   # labels key unset
+    c.run("fake", FakeArgs, uses_conn, ctx, {}, connection=pool_connection)
+    assert ctx.conn == "request-connection" and seen and seen[-1] == "released"
+    ctx.conn = None                                                      # the pipeline's contexts start empty
+    c.run("fake", FakeArgs, uses_conn, ctx, {"amount": 7}, connection=pool_connection)
+    assert ctx.conn is None
+
+
+def test_the_database_identity_is_in_the_key_and_never_the_url(mem, tool, monkeypatch):
+    from core.tools.cache import database_identity
+
+    # Built from parts at run time, so no URL with a password stands in the source (secret scan).
+    scheme, user, secret, host = "postgresql", "coach", "s3cret-pw", "db-host.example"
+    url = "".join([scheme, "://", user, ":", secret, "@", host, ":5432/coachdb"])
+    monkeypatch.setenv("DATABASE_URL", url)
+    database_identity.cache_clear()
+    try:
+        first = database_identity()
+        assert len(first) == 16 and all(ch in "0123456789abcdef" for ch in first)
+        assert "s3cret" not in first and "db-host" not in first
+        mem.run("fake", FakeArgs, tool, ctx_for(), {})
+        monkeypatch.setenv("DATABASE_URL", url.replace("coachdb", "otherdb"))
+        database_identity.cache_clear()
+        assert database_identity() != first
+        mem.run("fake", FakeArgs, tool, ctx_for(), {})                     # another database: computed again
+        assert tool.calls == 2
+        monkeypatch.setenv("DATABASE_URL", url.replace("s3cret-pw", "rotated-pw"))
+        database_identity.cache_clear()
+        assert database_identity() == first                              # a new password is the same database
+    finally:
+        database_identity.cache_clear()
+
+
+@pytest.mark.parametrize("raw, expected", [("7", 7), ("0", 1), ("-3", 1), ("lots", 512), ("", 512)])
+def test_max_entries_is_parsed_defensively(raw, expected):
+    assert ToolCache.from_env({"TOOL_CACHE_MAX_ENTRIES": raw}).max_entries == expected

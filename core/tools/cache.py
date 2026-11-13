@@ -7,6 +7,9 @@ and the code that computes them (agent-core.md section 6.1). The key holds all o
   a label write changes the key at once;
 - the code version is a hash of core/tools/*.py and core/metrics/*.sql, so a deploy never serves a
   result of older code.
+- the database identity is a hash of the database's host, port and name (never the URL), so a changed
+  DATABASE_URL never serves numbers whose evidence lives in another database. A reset of the same
+  database is caught by the warm-up, which checks that the evidence refs of every cached result exist.
 
 Correctness comes from the key alone: a changed label set, as_of or code version is a different key, so
 a stale entry is never served, whichever process wrote it. `invalidate_customer` only frees memory.
@@ -99,6 +102,25 @@ def code_version() -> str:
     return h.hexdigest()[:16]
 
 
+@lru_cache(maxsize=1)
+def database_identity() -> str:
+    """A hash of the database's host, port and name, part of every key: after a change of DATABASE_URL
+    no entry points at evidence rows of another database. Never the URL itself, never logged."""
+    from core.tools import db
+
+    url = db.database_url(required=False)
+    if not url:
+        return "no-database"
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        parts = conninfo_to_dict(url)
+    except Exception:  # noqa: BLE001 - the driver's text can repeat the URL; only a fixed marker is kept
+        return "unparsed"
+    text = "|".join(str(parts.get(k) or "") for k in ("host", "port", "dbname"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 def label_set(basket_labels: dict[int, str]) -> list[list[Any]]:
     """Sorted [tx_id, basket] pairs: labels.label_set when it exists (#68), else the same form here."""
     own = getattr(labels, "label_set", None)
@@ -136,6 +158,7 @@ class Prepared:
     hit: bool          # served from memory or disk
     source: str        # "memory", "disk", "tool" or "off"
     seconds: float
+    key: str | None = None
 
 
 def _remap(obj: Any, ids: dict[str, str], seen: set[int] | None = None) -> None:
@@ -239,7 +262,12 @@ class ToolCache:
         if mode not in MODES:   # never fail an import over a typo; serve fresh results instead
             log.error("TOOL_CACHE must be one of %s; the tool cache is off", "/".join(MODES))
             mode = "off"
-        max_entries = int(setting("TOOL_CACHE_MAX_ENTRIES", environ) or DEFAULT_MAX_ENTRIES)
+        raw = setting("TOOL_CACHE_MAX_ENTRIES", environ)
+        try:
+            max_entries = max(1, int(raw)) if raw else DEFAULT_MAX_ENTRIES
+        except ValueError:      # never fail the service's import over a typo
+            log.error("TOOL_CACHE_MAX_ENTRIES must be a whole number; using %d", DEFAULT_MAX_ENTRIES)
+            max_entries = DEFAULT_MAX_ENTRIES
         directory = setting("TOOL_CACHE_DIR", environ)
         path = Path(directory) if directory else DEFAULT_DIR
         if not path.is_absolute():
@@ -266,8 +294,8 @@ class ToolCache:
 
     @staticmethod
     def key(ctx: ToolContext, tool: str, canonical_args: str) -> str:
-        parts = [code_version(), ctx.customer_id, tool, canonical_args, ctx.as_of.isoformat(), ctx.language,
-                 ctx.labels_key]
+        parts = [code_version(), database_identity(), ctx.customer_id, tool, canonical_args, ctx.as_of.isoformat(),
+                 ctx.language, ctx.labels_key]
         return hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode("utf-8")).hexdigest()
 
     # ---- calls ----
@@ -300,7 +328,7 @@ class ToolCache:
         found = self.get(key, ctx.customer_id)
         if found is not None:
             entry, source = found
-            return Prepared(entry, True, source, time.perf_counter() - t0)
+            return Prepared(entry, True, source, time.perf_counter() - t0, key)
 
         with _connected(private, connection):
             result = fn(private, parsed)
@@ -310,7 +338,7 @@ class ToolCache:
         self.put(key, entry)
         with self._lock:
             self.stats.misses += 1
-        return Prepared(entry, False, "tool", time.perf_counter() - t0)
+        return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
                      extra_connection: Connector | None = None) -> list[Prepared]:
@@ -358,10 +386,11 @@ class ToolCache:
             return None
         t0 = time.perf_counter()
         _, canonical = args_json(args_model, args)
-        found = self.get(self.key(ctx, tool, canonical), ctx.customer_id)
+        key = self.key(ctx, tool, canonical)
+        found = self.get(key, ctx.customer_id)
         if found is None:
             return None
-        return Prepared(found[0], True, found[1], time.perf_counter() - t0)
+        return Prepared(found[0], True, found[1], time.perf_counter() - t0, key)
 
     # ---- storage ----
 
@@ -400,24 +429,36 @@ class ToolCache:
             self._memory.popitem(last=False)
 
     def invalidate_customer(self, customer_id: str) -> int:
-        """Drop every entry of one customer, after a label write. Memory hygiene only: the label set is
-        in the key, so the old entries could never be served again anyway. Returns the number dropped."""
+        """Drop the customer's entries from memory, after a label write. Memory hygiene only: the label
+        set is in the key, so the old entries can never be served again. The disk rows stay: they are
+        unreachable under the new labels, and an undo back to the earlier labels finds them warm again.
+        Returns the number dropped."""
         with self._lock:
             keys = [k for k, e in self._memory.items() if e.customer_id == customer_id]
             for k in keys:
                 del self._memory[k]
-        dropped = len(keys)
+        return len(keys)
+
+    def drop(self, key: str) -> None:
+        """Forget one entry in memory and on disk (the warm-up's evidence check)."""
+        with self._lock:
+            self._memory.pop(key, None)
         if self.mode == "disk" and self._db_path().exists():
-            with self._db() as db:
-                dropped += db.execute("DELETE FROM tool_cache WHERE customer_id = ?", (customer_id,)).rowcount
-        return dropped
+            try:
+                with self._db() as db:
+                    db.execute("DELETE FROM tool_cache WHERE key = ?", (key,))
+            except Exception as exc:  # noqa: BLE001 - a broken cache file must never fail a request
+                log.warning("tool cache: disk delete failed (%s)", type(exc).__name__)
 
     def clear(self) -> None:
         with self._lock:
             self._memory.clear()
         if self.mode == "disk" and self._db_path().exists():
-            with self._db() as db:
-                db.execute("DELETE FROM tool_cache")
+            try:
+                with self._db() as db:
+                    db.execute("DELETE FROM tool_cache")
+            except Exception as exc:  # noqa: BLE001 - corrupted, read-only or locked: memory is cleared
+                log.warning("tool cache: disk clear failed (%s)", type(exc).__name__)
 
     def __len__(self) -> int:
         return len(self._memory)
@@ -478,9 +519,13 @@ def _connected(ctx: ToolContext, connection: Connector | None) -> Iterator[ToolC
     if connection is None:
         yield ctx
         return
-    with connection() as conn:
-        ctx.conn = conn
-        yield ctx
+    saved = ctx.conn
+    try:
+        with connection() as conn:
+            ctx.conn = conn
+            yield ctx
+    finally:
+        ctx.conn = saved   # never leave a released pool connection on the caller's context
 
 
 TOOL_CACHE = ToolCache.from_env()
