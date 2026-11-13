@@ -1,0 +1,2 @@
+# Development and CI tools, pinned. The service itself needs only core/requirements.txt.
+ruff==0.17.3
