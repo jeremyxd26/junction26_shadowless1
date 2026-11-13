@@ -231,3 +231,109 @@ BILLS_TEXT: dict[str, tuple[str, str]] = {
         "{label} erääntyy palkkapäivän jälkeen, joten se ei kuulu summaan ennen palkkapäivää.",
     ),
 }
+
+
+# ---- get_safe_to_spend and run_what_if (#55) -------------------------------------------------------
+# Numbers are read from core/metrics/03_safe_to_spend.sql and 04_what_if.sql for one customer
+# (core/tools/metric_sql.py). Method ids are `<metric>.<output column>@1` (agent-core.md section 6.2).
+# Bills due before payday is NOT read here: it is the same Number get_recurring_bills returns
+# (METHODS["bills_due"], the sum of the rounded per-bill amounts), so both cards show one value.
+
+SAFE_TO_SPEND_FILE = "03_safe_to_spend.sql"
+SAFE_TO_SPEND_CUSHION_EUR = "100"   # metrics.md section 10, decision 3 (configurable; 03's default)
+WHAT_IF_FILE = "04_what_if.sql"
+USER_INPUT_METHOD = "user_input@1"
+
+SAFE_TO_SPEND_NUMBERS = (  # (key, output column) read from 03_safe_to_spend.sql as metric numbers
+    ("free_until_payday", "free_until_payday_eur"),
+    ("balance_limit", "balance_limit_7d_eur"),
+    ("budget_limit", "budget_limit_7d_eur"),
+    ("balance", "balance_eur"),
+    ("essentials_reserve", "essentials_reserve_eur"),
+    ("irregular_reserve", "irregular_reserve_eur"),
+    ("cushion", "cushion_eur"),
+)
+SAFE_TO_SPEND_COMPONENTS = ("balance", "bills_due", "essentials_reserve", "irregular_reserve", "cushion")
+
+WHAT_IF_NUMBERS = (  # (key, output column, unit value)
+    ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
+    ("saving_per_month", "saving_month_eur", "eur_per_month"),
+    ("saving_per_week", "saving_week_eur", "eur_per_week"),
+    ("saving_per_year", "saving_year_eur", "eur_per_year"),
+    ("one_off_excluded", "one_off_excluded_eur", "eur"),
+    ("regular_excluded", "regular_excluded_eur", "eur"),
+)
+
+# Categories a what-if may name: spending only, never Health on its own (R9).
+WHAT_IF_CATEGORIES = SPEND_CATEGORIES - {"Health"}
+
+SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Safe to spend in the next 7 days", "Turvallisesti käytettävissä seuraavat 7 päivää"),
+    "next_7_days": ("Next 7 days", "Seuraavat 7 päivää"),
+    "until_payday": ("Until payday on {date}", "Palkkapäivään {date} asti"),
+    "until_assumed_payday": ("Next 30 days", "Seuraavat 30 päivää"),
+    "safe_to_spend": ("Safe to spend", "Turvallisesti käytettävissä"),
+    "free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
+    "balance_limit": ("Your balance allows", "Saldosi sallii"),
+    "budget_limit": ("Your monthly budget allows", "Kuukausibudjettisi sallii"),
+    "balance": ("Balance", "Saldo"),
+    "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
+    "essentials_reserve": ("Essentials reserve", "Varaus välttämättömiin"),
+    "irregular_reserve": ("Irregular reserve", "Varaus odottamattomiin"),
+    "cushion": ("Cushion", "Puskuri"),
+    "c_balance": ("Money on your account", "Rahaa tililläsi"),
+    "c_bills_due": ("Bills due before payday", "Ennen palkkapäivää erääntyvät laskut"),
+    "c_essentials_reserve": ("Usual essentials until payday", "Tavalliset välttämättömät palkkapäivään asti"),
+    "c_irregular_reserve": ("Reserve for unexpected necessities", "Varaus odottamattomiin välttämättömiin"),
+    "c_cushion": ("Cushion", "Puskuri"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "Your balance minus bills, usual essentials and a small cushion until payday, spread over the "
+        "days to payday. It is also capped by your usual monthly budget. A recurring investment deposit "
+        "is your own saving plan, so it is kept aside too.",
+        "Saldosi miinus laskut, tavalliset välttämättömät menot ja pieni puskuri palkkapäivään asti, "
+        "jaettuna päiville ennen palkkapäivää. Summaa rajaa myös tavallinen kuukausibudjettisi. "
+        "Säännöllinen sijoitus on oma säästösuunnitelmasi, joten se pidetään myös sivussa.",
+    ),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    "note_no_salary": (
+        "No regular salary shows on this account, so safe to spend cannot be estimated reliably.",
+        "Tilillä ei näy säännöllistä palkkaa, joten turvallista käyttövaraa ei voi arvioida luotettavasti.",
+    ),
+    "note_late_salary": (
+        "This month's salary has not arrived yet, so payday is taken as the end of the month.",
+        "Tämän kuun palkka ei ole vielä tullut, joten palkkapäiväksi oletetaan kuun loppu.",
+    ),
+}
+
+WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
+    "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
+    "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
+    "cut": ("Cut you chose", "Valitsemasi leikkaus"),
+    "baseline_per_month": ("{what} in a typical month", "{what} tavallisena kuukautena"),
+    "saving_per_month": ("You would save", "Säästäisit"),
+    "saving_per_week": ("Per week", "Viikossa"),
+    "saving_per_year": ("Per year", "Vuodessa"),
+    "one_off_excluded": ("One-off purchases left out", "Pois jätetyt kertaostokset"),
+    "regular_excluded": ("Regular essentials left out", "Pois jätetyt säännölliset välttämättömät"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "Average of your last 6 full months (one-off purchases left out), cut by {pct}%.",
+        "6 viimeisen täyden kuukautesi keskiarvo (kertaostokset pois jätettyinä), {pct} % pienempänä.",
+    ),
+    "assume_rest": ("The rest of your spending stays as it is.", "Muu kulutuksesi pysyy ennallaan."),
+    "caveat_estimate": (
+        "This is an estimate, not a promise. Prices and habits change.",
+        "Tämä on arvio, ei lupaus. Hinnat ja tottumukset muuttuvat.",
+    ),
+    "caveat_unexpected": (
+        "Part of this is unexpected necessities: needed costs that can only sometimes be reduced.",
+        "Osa tästä on odottamattomia välttämättömiä menoja, joita voi vain joskus vähentää.",
+    ),
+    "caveat_not_offered": (
+        "Regular essentials are not cut in a what-if, so there is nothing to cut in this selection.",
+        "Säännöllisiä välttämättömiä menoja ei leikata, joten tässä valinnassa ei ole leikattavaa.",
+    ),
+    "mcc": ("purchases with MCC {codes}", "ostokset, MCC {codes}"),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}

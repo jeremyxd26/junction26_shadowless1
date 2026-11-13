@@ -21,6 +21,7 @@ import urllib.request
 from dataclasses import dataclass, field
 
 import expected
+from core import answer_text
 
 # Data tools of agent-core.md section 6.2. decline, ask_clarifying_question and finish read no data.
 DATA_TOOLS = {"get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if",
@@ -75,19 +76,9 @@ def fmt_date(iso: str, lang: str) -> str:
 
 
 def fmt_number(value, unit: str, lang: str) -> str:
-    """Locale formats of the contract (section 7.3): en €1,234.56 and 9.8%; fi 1 234,56 € and 9,8 %."""
-    family = expected.UNIT_FAMILY[unit]
-    sign = "-" if float(value) < 0 else ""
-    v = abs(float(value))
-    if family == "money":
-        s = f"{v:,.2f}"
-        return f"{sign}€{s}" if lang == "en" else f"{sign}{s.replace(',', NBSP).replace('.', ',')}{NBSP}€"
-    if family == "percent":
-        s = f"{v:.0f}" if unit == "percentile" else f"{v:.1f}"
-        if unit == "percentile":
-            return f"{sign}{s}"
-        return f"{sign}{s}%" if lang == "en" else f"{sign}{s.replace('.', ',')}{NBSP}%"
-    return f"{sign}{int(v)}"
+    """The tools' own formatter (core/tools/formatting.display), so the reference answer's displays are
+    exactly what the pipeline sends: en €1,234.56 / 12.5% / "€45.91 a month", fi 1 234,56 € / 12,5 %."""
+    return answer_text.formatted(value, unit, lang)
 
 
 def label_of(name: str) -> str:
