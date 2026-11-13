@@ -51,10 +51,10 @@ Component code and screens are built in their own issues and follow these rules.
 | `everyday_spending` "Everyday spending" | ☕️ | `--color-basket-everyday` `#885600` | `#FFF1D8` |
 | `unclassified` "Waiting for your answer" | ? | `--color-waiting` `#666666` | `#F5F5F5` |
 
-The 🏠 tint equals the page tint, so a 🏠 tile always sits on a white card, never directly on the page. The `unclassified` state is neutral: a dashed tile, grey text and a hatched bar. It appears only while a review is pending, and it is never an answer option.
+The 🏠 tint equals the page tint, so a 🏠 tile always sits on a white card, never directly on the page. The 🏠 strong colour equals `--color-brand`, so a 🏠 bar or chip is never shown without its icon and label; other green bars (such as "Actual" in guess first) use `--color-ink`. The `unclassified` state is neutral: a dashed tile, grey text and a hatched bar. It appears only while a review is pending, and it is never an answer option.
 
 ### 2.2 Contrast (WCAG 2.x AA)
-Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, focus rings, chevrons) need 3:1. All 44 rows pass (41 distinct colour pairs; a pair used for two purposes is listed once per use). Ratios are computed from `tokens.css`. `--color-brand` on `--color-deep` is only 1.97:1, so the focus ring on dark surfaces is `--color-mint`.
+Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, focus rings, chevrons) need 3:1. All 46 rows pass (42 distinct colour pairs; a pair used for two purposes is listed once per use). Ratios are computed from `tokens.css`. `--color-brand` on `--color-deep` is only 1.97:1 (and invisible on `--color-hero`), so the focus ring on dark surfaces is `--color-mint`.
 
 | Foreground | Background | Use | Ratio | Needs |
 |---|---|---|---|---|
@@ -73,6 +73,7 @@ Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, focus rings, ch
 | `--color-ink` `#004628` | `--color-mint-tint` `#D2FCD5` | Number chip, suggested-question chip | 9.77:1 | 4.5:1 |
 | `--color-on-hero` `#FFFFFF` | `--color-hero` `#007841` | Safe-to-spend figure on the green block | 5.58:1 | 4.5:1 |
 | `--color-on-hero-muted` `#D2FCD5` | `--color-hero` `#007841` | Secondary text on the green block | 4.95:1 | 4.5:1 |
+| `--color-on-hero-muted` `#D2FCD5` | `--color-hero` `#007841` | Down arrow and "was €…" after a review answer (#35) | 4.95:1 | 4.5:1 |
 | `--color-on-deep` `#FFFFFF` | `--color-deep` `#004628` | Review card text, user bubble | 11.01:1 | 4.5:1 |
 | `--color-on-deep-muted` `#D2FCD5` | `--color-deep` `#004628` | Review card secondary text | 9.77:1 | 4.5:1 |
 | `--color-estimate` `#363636` | `--color-estimate-tint` `#F5F5F5` | Estimate badge | 11.08:1 | 4.5:1 |
@@ -94,6 +95,7 @@ Text pairs need 4.5:1. Non-text pairs (bars, meaningful borders, focus rings, ch
 | `--color-basket-essentials` `#007841` | `--color-sunken` `#F5F5F5` | 🏠 bar on its track (non-text) | 5.12:1 | 3:1 |
 | `--color-basket-unexpected` `#006E87` | `--color-sunken` `#F5F5F5` | 🔧 bar on its track (non-text) | 5.38:1 | 3:1 |
 | `--color-basket-everyday` `#885600` | `--color-sunken` `#F5F5F5` | ☕️ bar on its track (non-text) | 5.70:1 | 3:1 |
+| `--color-ink` `#004628` | `--color-sunken` `#F5F5F5` | Guess-first "Actual" bar on its track (non-text) | 10.10:1 | 3:1 |
 | `--color-line-strong` `#808080` | `--color-surface` `#FFFFFF` | Meaningful borders (non-text) | 3.95:1 | 3:1 |
 | `--color-line-strong` `#808080` | `--color-page` `#EBF7EC` | Meaningful borders on the page (non-text) | 3.58:1 | 3:1 |
 | `--color-brand` `#007841` | `--color-surface` `#FFFFFF` | Focus ring, term underline, chevrons (non-text) | 5.58:1 | 3:1 |
@@ -196,7 +198,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - Both are at least 44 px high, 14 px, 600.
 
 ### Evidence bottom sheet
-- 24 px top radius with a grab handle; at most about 78 % of the screen, over the scrim.
+- 20 px top radius (`--radius-sheet`) with a grab handle; at most about 78 % of the screen, over the scrim.
 - **Contents:**
   - the title and the total;
   - "N transactions · reconciles ✓";
@@ -206,7 +208,8 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - `privacy_note` with a lock icon.
 
 ### Safe-to-spend widget
-- **The green block** (like the S-mobiili Bonus hero): `--color-hero` background, `--radius-xl`, no border and no shadow. Everything on it is white or `--color-on-hero-muted`.
+- **The green block** (like the S-mobiili Bonus hero): `--color-hero` background, the brand green `#007841` on purpose. The "Sentti asks" card uses the darker `--color-deep`, so a question never looks like the hero.
+- **Block style:** `--radius-xl`, no border and no shadow. Everything on it is white or `--color-on-hero-muted`.
 - **Top:** the title in `--color-on-hero-muted` (`--text-sm`, 600) and the "Estimate" badge in its on-green form.
 - **Middle:** the hero number (`--text-hero`, `--color-on-hero`) and the subtitle period. Then one sentence with "Free until payday" and the irregular reserve as number chips (mint tint, `--color-ink` text, which stays AA on the chip).
 - **Bottom:** the "How is this calculated? ›" link in white with a white chevron. It opens a sheet that writes `components` as a sentence formula, for example "balance − bills − essentials − reserve − cushion = free until payday".
@@ -227,11 +230,11 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   6. **Undo** sends `basket: null` and counts the changed numbers back. If the review is less than 7 days old, the purchase returns to "Waiting for your answer" and the question comes back. If it is older, the review closes and the purchase returns to the basket its rules give it; the card does not come back.
 - **No reload:** the overview is refetched in the background after the animation.
 - **Expiry:** a pending review expires 7 days after creation; after that its `tx_ref` returns 404 `tx_ref_not_found`. The app then removes the card quietly and shows no error.
-- **Direction of change:** "It was needed" lowers safe to spend, and the hero then shows a grey down arrow with "was €…" and the reserve line. "I chose it" leaves safe to spend unchanged ("stays the same"). Red is never used for this.
+- **Direction of change:** "It was needed" lowers safe to spend, and the hero then shows a down arrow with "was €…" in `--color-on-hero-muted` (4.95:1 on the green block) and the reserve line. Grey `--color-muted` or `--color-down` are never used on the green block (1.03:1 and 1.11:1). "I chose it" leaves safe to spend unchanged ("stays the same"). Red is never used for this.
 
 ### Guess first (#37)
 - The number is blurred (10 px) and hidden from screen readers. Four range chips (for example €50 / €100 / €200 / €300+), "Skip, just show me" and "Reveal".
-- **Reveal:** two bars grow from 0 over 500 ms: "Your guess" (hatched) and "Actual" (solid brand), with neutral copy.
+- **Reveal:** two bars grow from 0 over 500 ms: "Your guess" (hatched) and "Actual" (solid `--color-ink`, so it never reads as the 🏠 basket), with neutral copy.
 - At most one per screen. Never used for safe to spend, Health or other sensitive categories.
 
 ### What-if slider
@@ -261,7 +264,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 
 ## 5. Accessibility and WebView
 - **Contrast:** all text pairs meet AA (section 2.2). Colour is never the only signal (WCAG 1.4.1).
-- **Focus:** a `--focus-ring-width` (3 px) outline with a 2 px offset: `--color-brand` on light surfaces, `--color-mint` on dark ones (`--color-deep`, `--color-ink`). `--color-brand` on those dark surfaces is only 1.66:1 and 2.05:1, so it is never used there.
+- **Focus:** a `--focus-ring-width` (3 px) outline with a 2 px offset: `--color-brand` on light surfaces, `--color-mint` on dark ones (`--color-deep`, `--color-ink`, `--color-hero`). `--color-brand` is only 1.97:1 on `--color-deep` and `--color-ink` and invisible on `--color-hero` (the same green), so it is never used there.
 - **Targets:** at least 44 × 44 px everywhere, including inline chips (extended with a pseudo-element or padding).
 - **Viewport:** `viewport-fit=cover`, safe-area padding on the composer and sheets, and height from `100dvh` minus `env(safe-area-inset-bottom)`.
 - **No service worker in production:** WKWebView does not run it. Mock data is for development only.
