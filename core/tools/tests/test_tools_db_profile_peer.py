@@ -16,11 +16,14 @@ from pathlib import Path
 
 import pytest
 
-from core.tools import config, evidence
-from core.tools.baskets import get_basket_breakdown
+from core.tools import config, evidence, labels
+from core.tools.baskets import get_basket_breakdown, months_with_history
+from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.peer import get_peer_benchmark, peer_status
+from core.tools.models import Period
+from core.tools.peer import get_peer_benchmark, metric_selection, peer_status
 from core.tools.profile import DECIDING, get_spender_profile, profile_key
+from core.tools.selection import select, value_of
 
 AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
@@ -200,6 +203,22 @@ def test_peer_benchmark_equals_06_and_the_worked_numbers(conn, peer_rows, custom
     assert (row["peer_group"], data.peer_group.size.value) == (group, n)
 
 
+@pytest.mark.parametrize("customer_id", EVERYONE)
+def test_own_value_of_every_metric_equals_06(conn, peer_rows, customer_id):
+    # `you` is computed from the customer's rows (its evidence lists them); it must equal 06 for all 13
+    # metrics, not only the ones the tool is called with above. No extra 06 run: the module cache is reused.
+    ctx = ctx_for(conn, customer_id)
+    history = ctx.history()
+    rows = classify(history, AS_OF, labels.basket_labels(conn, customer_id, AS_OF))
+    assert set(peer_rows[customer_id]) == set(config.PEER_METRICS)
+    for metric, row in peer_rows[customer_id].items():
+        period = Period(start=row["period_start"], end=row["period_end"], label="")
+        n_months = months_with_history(period.start, period.end, history[0].tx_date)
+        sel = metric_selection(metric, period)
+        value = value_of(select(rows, sel), sel, config.METHODS["peer_you"], {"n_months": n_months})
+        assert value == row["you_month_eur"], metric
+
+
 @pytest.mark.parametrize("customer_id", PERSONAS)
 def test_persona_group_sizes_match_personas_yaml(conn, peer_rows, customer_id):
     # personas.yaml peer_group.comparable_others: the same count for every metric of the customer
@@ -282,4 +301,6 @@ def test_one_call_of_each_tool_is_fast_enough(conn):
     get_peer_benchmark(ctx, {"metric": "spend_total"})
     t2 = time.perf_counter()
     print(f"get_spender_profile {1000 * (t1 - t0):.0f} ms, get_peer_benchmark {1000 * (t2 - t1):.0f} ms")
-    assert t1 - t0 < 10 and t2 - t1 < 10   # generous: the shared database is sometimes slow
+    # Idle: about 0.4 s and 0.7 s. Under load the shared database is 10-20x slower, so the bound is the
+    # statement timeout; the printed times are what the PR reports.
+    assert t1 - t0 < 60 and t2 - t1 < 60
