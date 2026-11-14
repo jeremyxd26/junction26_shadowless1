@@ -250,7 +250,12 @@ _MD_IMAGE = re.compile(r"!\[([^\]\n]*)\]\([^)\n]*\)")
 _MD_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\n]*\)")
 _MD_REFERENCE_LINK = re.compile(r"\[([^\]\n]+)\][ \t]?\[[^\]\n]*\]")
 _MD_HEADING = re.compile(r"(?m)^[ \t]*#{1,6}[ \t]+")
-_MD_BULLET = re.compile(r"(?m)^[ \t]*(?:[-*+\u2022]|\d{1,2}[.)])[ \t]+")
+_MD_BULLET = re.compile(r"(?m)^[ \t]*[-*+\u2022][ \t]+")
+# A numbered list marker, but not a date that starts a line ("15. lokakuuta 2026 on palkkapäiväsi"): it is
+# stripped only when two or more lines carry one and the line does not go on with a month name.
+_MD_NUMBERED = re.compile(r"(?m)^[ \t]*\d{1,2}[.)][ \t]+(?!(?:tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys"
+                          r"|loka|marras|joulu)kuu|(?:january|february|march|april|may|june|july|august|september"
+                          r"|october|november|december)\b)", re.I)
 _MD_EMPHASIS = re.compile(r"\*+|__+|`+")
 
 
@@ -264,6 +269,8 @@ def plain_text(text: str) -> str:
     text = _MD_REFERENCE_LINK.sub(r"\1", text)
     text = _MD_HEADING.sub("", text)
     text = _MD_BULLET.sub("", text)
+    if len(_MD_NUMBERED.findall(text)) >= 2:
+        text = _MD_NUMBERED.sub("", text)
     return _MD_EMPHASIS.sub("", text).strip()
 
 
@@ -271,9 +278,9 @@ def plain_text(text: str) -> str:
 # no calculation failed, a draft that says a figure is unavailable describes the plan, not the data, and is
 # rejected. With a failed calculation, saying so is right (the composer prompt asks for it).
 UNAVAILABLE_CLAIM = re.compile(
-    r"\b(?:not|n't|no)\b[^.!?]{0,40}\b(?:available|calculated|computed|calculate|compute|work(?:ed)? out)\b"
-    r"|\bunavailable\b|\bcannot be (?:calculated|computed|shown)\b"
-    r"|\bei\b[^.!?]{0,40}\b(?:saatavilla|saatavissa|laskettu\w*|laskea|voida laskea|voitu laskea)\b",
+    r"\b(?:not|n't)\b[^.!?,;]{0,50}\bavailable\b|\bno\s+(?:data|figure|number|calculation)s?\s+(?:is\s+|are\s+)?available\b"
+    r"|\bunavailable\b|\b(?:could\s*not|couldn't|cannot|can't|can\s+not)\s+(?:be\s+)?(?:calculat|comput|work)\w*"
+    r"|\bcannot\s+be\s+shown\b|\bei\s+ole\s+(?:saatavilla|saatavissa|laskettu\w*)\b|\bei\s+(?:voitu|voida)\s+laskea\b",
     re.I)
 
 
@@ -284,10 +291,32 @@ CONTENTS_CLAIM = re.compile(
     r"|\b(?:includes|covers|contains)\s+your\b|\bsisältä(?:ä|vät|en)\b|\bpitää\s+sisällään\b", re.I)
 
 
+def _category_labels() -> list[str]:
+    from core.tools import config
+
+    labels = set()
+    for table in (config.CATEGORY_LABELS, config.BASKET_LABELS, config.MCC_GROUP_LABELS):
+        for en, fi in table.values():
+            labels.update({en.lower(), fi.lower()})
+    labels.update(key.lower() for key in config.CATEGORY_LABELS)
+    return sorted(labels, key=len, reverse=True)
+
+
 def contents_claim(text: str) -> str | None:
-    """The words in which a draft says what a category contains, or None."""
-    m = CONTENTS_CLAIM.search(text)
-    return m.group(0) if m else None
+    """The words in which a draft says what a CATEGORY contains, or None: the verb ("which includes",
+    "sisältää") must follow a category label closely, and what it introduces is neither a number token nor
+    another category label ("including the {{n7}} for housing" and "your balance, which covers the next
+    week" are fine; "on health, which includes your gym visits" is not)."""
+    labels = _category_labels()
+    for m in CONTENTS_CLAIM.finditer(text):
+        before = text[max(0, m.start() - 40):m.start()].lower()
+        if not any(re.search(r"\b" + re.escape(label) + r"\b", before) for label in labels):
+            continue
+        after = re.sub(r"^\s*(?:your|the|all|kaikki|sinun)?\s*", "", text[m.end():m.end() + 60]).lower()
+        if after.startswith("{{") or any(after.startswith(label) for label in labels):
+            continue
+        return m.group(0)
+    return None
 
 
 def unavailable_claim(text: str) -> str | None:
@@ -386,12 +415,12 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
 # again renders as "€3,010.59 a month a month" (live, #288; r-w3 met it in a template, #390).
 _PERIOD_UNITS = {"eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
 _PERIOD_WORDS = re.compile(
-    r"\s*(?:,\s*)?(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"
+    r"[ \t]*(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"
     r"|/\s*(?:pv|vk|kk|v)\b|päivässä\b|viikossa\b|kuukaudessa\b|kuussa\b|vuodessa\b|vuosittain\b"
     r"|kuukausittain\b|viikoittain\b)", re.I)
 _REPEATED_RENDERED = re.compile(
-    r"\b((?:a|per) (?:day|week|month|year))\W+\1\b|(/ ?(?:pv|vk|kk|v))\W*\2\b"
-    r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)\W+\3\b", re.I)
+    r"\b((?:a|per) (?:day|week|month|year))[ \t]+\1\b|(/ ?(?:pv|vk|kk|v))[ \t]*\2\b"
+    r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)[ \t]+\3\b", re.I)
 
 
 def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:

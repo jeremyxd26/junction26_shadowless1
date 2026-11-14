@@ -230,7 +230,7 @@ def test_default_registry_builds_with_the_tools_present():
 @pytest.mark.parametrize("draft, plain", [
     ("an estimated **{{n1}}** is safe to spend.", "an estimated {{n1}} is safe to spend."),
     ("__September__ was *cheaper* than `August`.", "September was cheaper than August."),
-    ("## Your spending\n- Groceries: {{n1}}\n* Bills: {{n2}}\n1. Rest", "Your spending\nGroceries: {{n1}}\nBills: {{n2}}\nRest"),
+    ("## Your spending\n- Groceries: {{n1}}\n* Bills: {{n2}}\n1. Rest", "Your spending\nGroceries: {{n1}}\nBills: {{n2}}\n1. Rest"),
     ("See [your card](https://example.org/x) and ![a chart](c.png).", "See your card and a chart."),
     ("[ref]: https://example.org\nRead [the card][ref].", "Read the card."),
     ("28.9.2026 you spent {{n1}}.", "28.9.2026 you spent {{n1}}."),
@@ -259,7 +259,7 @@ MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), U
 @pytest.mark.parametrize("text, lang", [
     ("In August 2026 you spent {{n1}} a month.", "en"),             # live: "€3,010.59 a month a month"
     ("In August 2026 you spent {{n1}} per month on average.", "en"),
-    ("In August 2026 you spent {{n1}}, monthly.", "en"),
+    ("In August 2026 you spent {{n1}} monthly.", "en"),
     ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
     ("Elokuussa 2026 käytit {{n1}} / kk.", "fi"),
 ])
@@ -273,3 +273,52 @@ def test_the_same_number_without_the_repeated_period_is_fine():
     from core.agent.validator import repeated_period
 
     assert repeated_period("In August 2026 you spent {{n1}} on average.", {"n1": MONTHLY}) is None
+
+
+# ---- review of #401: ordinary drafts that must not be rejected ---------------------------------------------
+
+def test_abbreviations_end_no_sentence():
+    from core.answer_text import length_problems
+
+    assert length_problems("You spent approx. {{n1}} on groceries, e.g. {{n2}} on dairy.", 2) == []
+    assert length_problems("Käytit esim. ruokaan {{n1}}, mm. maitoon {{n2}}.", 2) == []
+
+
+def test_a_finnish_date_that_starts_a_line_is_no_list_number():
+    assert plain_text("15. lokakuuta 2026 on palkkapäiväsi.") == "15. lokakuuta 2026 on palkkapäiväsi."
+    assert plain_text("1. First point.\n2. Second point.") == "First point.\nSecond point."
+
+
+@pytest.mark.parametrize("text, rejected", [
+    ("You have no bills due, so {{n7}} is available to spend this week.", False),
+    ("I do not have a calculated safe-to-spend limit available for this week.", True),
+    ("That figure cannot be calculated right now.", True),
+    ("Tätä ei ole saatavilla.", True),
+    ("Summaa ei voitu laskea.", True),
+])
+def test_only_real_not_available_claims_are_found(text, rejected):
+    from core.agent.validator import unavailable_claim
+
+    assert bool(unavailable_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text, rejected", [
+    ("You spent {{n1}} on health, which includes your gym visits.", True),
+    ("Restaurants took {{n1}}, including your gym membership.", True),
+    ("Your bills are {{n1}}, including the {{n7}} for housing.", False),
+    ("You keep an amount that still covers your bills until payday.", False),
+    ("Your balance of {{n8}}, which covers the next week, is enough.", False),
+    ("Summa {{n7}} sisältää kaikki ostosi tällä viikolla.", False),
+])
+def test_a_contents_claim_is_about_a_category_only(text, rejected):
+    from core.agent.validator import contents_claim
+
+    assert bool(contents_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text", ["You saved {{n1}}, a year after you started.",
+                                  "You spent {{n1}}; a month earlier it was less."])
+def test_a_period_word_that_starts_a_new_phrase_is_no_repeat(text):
+    from core.agent.validator import repeated_period
+
+    assert repeated_period(text, {"n1": MONTHLY}) is None
