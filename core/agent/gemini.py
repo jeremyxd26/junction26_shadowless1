@@ -70,7 +70,8 @@ class Prompt:
 
 
 def load_prompt(name: str, prompts_dir: Path = PROMPTS_DIR) -> Prompt:
-    """Read a prompt at start-up, so a missing file fails when the service starts, not mid-answer."""
+    """Read a prompt when the model is built (the service builds it on the first ask). A missing file
+    then leaves the service on the rule model (make_agent_model) instead of failing every answer."""
     text = (prompts_dir / f"{name}.md").read_text(encoding="utf-8").strip()
     if not text:
         raise ValueError(f"prompt {name} is empty")
@@ -94,16 +95,23 @@ def _usage(u: CallUsage) -> Usage:
                  cost_usd=u.cost_usd)
 
 
+def _escape_tags(text: str) -> str:
+    """< and > as JSON unicode escapes: data cannot close the tag around it or open a new one (R11)."""
+    return text.replace("<", "\\u003c").replace(">", "\\u003e")
+
+
 def _data(tag: str, value: Any) -> str:
-    """A quoted data block: JSON inside a tag, so text in it cannot pass for an instruction (R11)."""
+    """A quoted data block: JSON (or a plain list of lines) inside a tag, with < and > escaped, so
+    nothing in it (an earlier question, a label, a validator message) can pass for an instruction or
+    close the block (R11)."""
     body = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    return f"<{tag}>\n{body}\n</{tag}>"
+    return f"<{tag}>\n{_escape_tags(body)}\n</{tag}>"
 
 
 def _quoted(text: str) -> str:
-    """The user's text as one JSON string. Quotes and backslashes are escaped by JSON, and < and > as
-    JSON unicode escapes, so the text cannot close the tag around it or open a new one (R11)."""
-    return json.dumps(text, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    """The user's text as one JSON string. Quotes and backslashes are escaped by JSON; _data escapes
+    < and >, so the text cannot close the tag around it or open a new one (R11)."""
+    return json.dumps(text, ensure_ascii=False)
 
 
 # ---- planner request ----------------------------------------------------------------------------------
@@ -200,6 +208,8 @@ class GeminiModel:
         self.schema = answer_schema()
 
     def plan(self, request: PlanInput) -> PlanResult:
+        if request.round == 1:
+            self.client.start_answer(request)   # the answer's request count and deadline (gemini_client.py)
         try:
             reply = self.client.plan(self.planner.text, plan_contents(request), request.tools)
         except GeminiError as exc:
@@ -298,6 +308,8 @@ class RulesFirstModel:
         self.composer_prompt = model.composer_prompt
 
     def plan(self, request: PlanInput) -> PlanResult:
+        if request.round == 1:
+            self.client.start_answer(request)   # also when the rules plan: the composer call belongs to it
         if any(isinstance(turn, dict) for turn in request.model_turns):
             return self.model.plan(request)          # a later round of a Gemini-planned answer
         result = self.rules.plan(request)
