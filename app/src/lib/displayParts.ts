@@ -35,3 +35,22 @@ export function displayParts(display: string): DisplayPart[] {
 export function chipWrapping(inText: boolean): string {
   return inText ? 'whitespace-nowrap' : 'shrink-0 max-w-[calc(100%+8px)] text-center'
 }
+
+/**
+ * The display as unbreakable segments: each part with the spaces that follow it, so the only break
+ * is between the amount and the words after it. Joined, they are exactly the display.
+ */
+export function displaySegments(display: string): string[] {
+  const segments: string[] = []
+  for (const part of displayParts(display)) {
+    const lead = /^\s*/.exec(part.text)![0]
+    const rest = part.text.slice(lead.length)
+    if (segments.length > 0) segments[segments.length - 1] += lead
+    else if (lead) segments.push(lead)
+    if (rest) {
+      if (segments.length === 1 && segments[0] === lead && lead) segments[0] += rest
+      else segments.push(rest)
+    }
+  }
+  return segments
+}
