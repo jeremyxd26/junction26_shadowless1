@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.12 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.13 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.12. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.13. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -27,7 +27,8 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 9. [`GET /api/evidence/{ref}`](#9-get-apievidenceref)
 10. [`POST /api/baskets/label`](#10-post-apibasketslabel)
 11. [`POST /api/bill/explain`](#11-post-apibillexplain)
-12. [Changelog](#12-changelog)
+12. [`POST /api/tts`](#12-post-apitts) (an answer read aloud, audio)
+13. [Changelog](#13-changelog)
 
 ---
 
@@ -35,7 +36,7 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 
 | Topic | Rule |
 |---|---|
-| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7). |
+| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7) and a successful `/api/tts` response, which is a WAV file (section 12). |
 | Customer | Demo mode has no login: the app picks a persona from `/api/personas` and sends its `customer_id`. In production the customer comes from the bank session and the field is ignored. The core never lets the AI model choose the customer. **Only the persona customers are served:** any other `customer_id`, also a real customer of the dataset, gets 404 `customer_not_found`, exactly like an id that does not exist (section 4). |
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
 | Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language. A POST body that cannot be read or does not validate (400 `invalid_request`) has no language: it is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` always in English. A `/api/ask` message over 500 characters with `auto` is answered in English too, because its language is not detected. |
@@ -1395,7 +1396,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 |---|---|---|
 | 400 | `invalid_request` | Malformed body or a bad parameter. A what-if selection the core refuses is a 422 `invalid_scenario` instead (section 8.1). |
 | 404 | `customer_not_found` | Unknown `customer_id`, or any customer that is not a persona (section 1): both get the same answer. |
-| 404 | `not_found` | Unknown route: the path names no endpoint of this contract. |
+| 404 | `not_found` | Unknown route: the path names no endpoint of this contract. On `POST /api/tts`, also an answer that is unknown, belongs to another customer or has no text: all three get the same body (section 12). |
 | 405 | `invalid_request` | A known path with a method it does not take. The `Allow` header lists the methods it takes. |
 | 404 | `evidence_not_found` | Unknown or expired `ref`. |
 | 403 | `evidence_forbidden` | The evidence belongs to a different customer. |
@@ -1403,10 +1404,10 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 422 | `invalid_bill` | The bill explanation cannot use the request: both or neither of `barcode` and `fields`, `payee` beside `fields`, or a barcode that cannot be used. The body carries `reason`, and `message` is the sentence for that reason (section 11.1). |
 | 404 | `tx_ref_not_found` | Unknown `tx_ref`, the ref of an expired review, or one that belongs to another customer. All three get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
 | 422 | `basket_not_allowed` | The basket is not one of the review's two options (section 10). |
-| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. |
+| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. On `POST /api/tts` also a used-up daily voice budget, or too many voice requests at once (section 12). |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
-| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. |
+| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -5357,7 +5358,75 @@ A reading of a sample with a barcode:
 
 ---
 
-## 12. Changelog
+## 12. `POST /api/tts`
+
+(#730, built in #732.) Reads one of Sentti's answers aloud with a Gemini TTS voice and returns the audio as a WAV file. The app calls it only in a live build, when the user taps the speaker button of an answer; the device's own voice is the fallback (section 12.4).
+
+**The request names an answer, never a text.** The body carries the customer and the `answer_id` of one of this customer's `/api/ask` answers (section 7). The core reads the text from that answer's audit record: `text_rendered`, the text with the numbers filled in, as the user saw it. So the endpoint can only read out the service's own answers.
+
+**What is sent where.** The app sends the two ids and a language, nothing else. On a cache miss the core sends the answer's `text_rendered` to the Gemini API, and nothing else about the customer: no customer id, no answer id. On a cache hit nothing is sent. The core keeps the audio in its cache (section 12.3) and one line per request to the model in its own ledger (time, model, result, latency; no text). Its log lines carry the answer id and the outcome, never the text or the key.
+
+### 12.1 Request
+
+| Field | Type | Meaning |
+|---|---|---|
+| `customer_id` | string | Persona: `CUST` and five digits. |
+| `answer_id` | string | The `answer_id` of one of this customer's answers (`meta` and `done` in section 7.2): `ans_` and eight lowercase letters or digits. |
+| `language` | `en` or `fi` | Optional, default `en`. The language of an error message only: it does not change the voice. A body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English (section 1). |
+
+An unknown field is 400 `invalid_request`, a `text` among them: there is no way to send a text to be read. So is a `customer_id` or an `answer_id` of another shape. The app sends `Accept: audio/wav`; the core answers the same without it.
+
+<!-- example: tts.request -->
+```json
+{
+  "customer_id": "CUST00042",
+  "answer_id": "ans_7f3k9q2m",
+  "language": "en"
+}
+```
+
+The core checks in this order:
+1. The body (400 `invalid_request`).
+2. The persona allowlist, with no database (404 `customer_not_found`, section 1).
+3. The address window: 20 requests a minute per client address (429 `rate_limited`). Every request that gets this far counts, cache hits and `not_found` answers too.
+4. The answer: its audit record must exist, belong to the body's customer and have a `text_rendered` that is not empty (404 `not_found` otherwise).
+5. The cache (section 12.3): a hit is the 200 response at once.
+6. A request to the model, within the daily budget (section 12.3).
+
+### 12.2 Response
+
+**200:** the body is the audio, not JSON: `Content-Type: audio/wav`, with `Cache-Control: private, max-age=3600`.
+- The model answers headerless 16-bit PCM (`audio/L16`) or a WAV file. The core wraps PCM as a mono 16-bit WAV at the sample rate its type names (24 kHz when it names none), and passes a WAV on unchanged.
+- The audio speaks the words of `text_rendered`. Only the text goes to the model, with no language setting; the voice is the server's (`TTS_MODEL` and `TTS_VOICE`, default `gemini-3.8-flash-tts` with the prebuilt voice `Sulafat`, `docs/deploy.md`).
+
+**Errors** use the envelope of section 4, in the body's `language`:
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | The body cannot be read or does not validate: an unknown field (also `text`), a `customer_id` or `answer_id` of another shape, a `language` other than `en` or `fi`. |
+| 404 | `customer_not_found` | The customer is not a persona (section 1). |
+| 404 | `not_found` | The answer is unknown, belongs to another customer, or has no text. All three get the same body, so a caller cannot tell whether another customer's answer exists. The audit record holds no viewer key (#144): the binding is the customer plus an answer id nobody can guess. |
+| 429 | `rate_limited` | With `Retry-After` in seconds: over 20 requests a minute from one address (until the oldest leaves the minute); the daily voice budget is used up (until the oldest request leaves the 24 hours, at least 60); two requests to the model are already running (5). The last two happen only for a text not in the cache. |
+| 503 | `model_unavailable` | A text not in the cache whose voice cannot be made: no `GEMINI_API_KEY`, `TTS_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the text is over 2,000 characters, or the request to the model failed (a timeout, a network or server error, the provider's own rate limit, no audio in its answer). |
+| 500 | `internal` | Anything else (section 4). |
+
+### 12.3 Cache and daily budget
+
+**Cache.** One WAV file per text on the service's disk (`var/tts-cache`, `docs/deploy.md`), named by the SHA-256 of the model, the voice, the answer's language and its `text_rendered`. The key holds no customer id or answer id, so a later answer with the same text in the same language is the same file. A hit sends no request to the model and costs no budget. It is served also while the budget is used up, while `TTS_DAILY_BUDGET` is `0`, while `var/model-off` exists and without `GEMINI_API_KEY`. The files have no expiry: they stay until someone deletes them. Another model or voice gives new files.
+
+**Daily budget.** `TTS_DAILY_BUDGET` requests to the model in any rolling 24 hours, default 100; `0` turns new requests off (a cache miss is then 503). Failed requests count too. The voice has its own ledger, `var/tts-requests.jsonl`, apart from the chat's budget. At most two requests to the model run at once. The core waits up to `TTS_TIMEOUT_S` seconds for one (default 25, at most 60).
+
+### 12.4 The app and the device voice
+
+- **Mock build** (`VITE_API_MODE` is not `live`): the app never calls this endpoint. The device voice reads `text_rendered`, and the text stays on the device: only voices that run on the device are picked (`localService: true`).
+- **Live build:** on a tap, the app posts this request with the answer's `done.answer_id` and the persona's `customer_id`, and plays the WAV through the Web Audio API. It gives up after 8 seconds (`TTS_TIMEOUT_MS` in `app/src/lib/speech.ts`).
+- **Fallback:** any error status, a network failure, audio it cannot decode, those 8 seconds, a browser without the Web Audio API, or an answer without an id: the app reads the same `text_rendered` with a device voice for the answer's language. Without one, nothing plays. The app does not retry and does not read `Retry-After`.
+- A request the app gave up on still runs to the end in the core and fills the cache, so the next tap on the same answer is a hit. This is why `TTS_TIMEOUT_S` is longer than the app's 8 seconds.
+- Nothing plays without a tap. Stopping, or tapping another answer, aborts the request, and a late response never plays.
+
+---
+
+## 13. Changelog
 
 | Version | Change |
 |---|---|
@@ -5380,3 +5449,4 @@ A reading of a sample with a barcode:
 | 0.3.10 | Documents what the service already returns, no new field (#569, #524). Section 2.1: the method `national_context.monthly_eur@1`, a value cited from Statistics Finland's household budget survey (table 14q4, survey year 2022), not computed from the customer's data. The national line beside the peer comparison of Groceries or Transportation in `/api/ask` cites it, so it is in the `numbers` event; no card or estimate carries it. Section 9: such a value opens as a `composite` with no parts (`parts` and `rows` empty, `reconciles` `null`), and its `title` and evidence `label` name the table's age band, which the answer's label does not. New example `evidence.response_national` for Sanna, as the service returns it. |
 | 0.3.11 | Texts for the screen, no new field (#554).<br>- `GET /api/personas?lang=fi`: every `tagline` is Finnish, like the other texts (section 1).<br>- `GET /api/evidence/{ref}`: `method.summary` says in one plain sentence what the number is made of, in the request language; it never names a file. Examples `evidence.response_metric` and `evidence.response_peer` changed.<br>- The review card's `why` says what an answer changes: "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend." Examples `card.review` and `overview.response_pending` changed. |
 | 0.3.12 | Wording only, no new field (#699). Section 6: the overview's `ai_disclosure` no longer says "show it on the first chat screen". The app keeps an "AI" tag visible on every chat screen and can show the text one tap away from it, as it does since #691; this matches `done.ai_disclosure` (section 7), which the app can show once. No example changed. |
+| 0.3.13 | Documents what the service already does (#730, #733); nothing new is built.<br>- New section 12, `POST /api/tts` (built in #732): the body names one of the customer's answers by `answer_id`, never a text. The core reads the answer's `text_rendered` from its audit record and returns it read aloud as a WAV file (`audio/wav`). New example `tts.request`.<br>- A disk cache keyed by the SHA-256 of model, voice, language and text, and an own daily budget, `TTS_DAILY_BUDGET` requests in any rolling 24 hours (default 100). A cache hit needs neither the model nor the budget.<br>- Errors, no new code: 404 `not_found` for an answer that is unknown, another customer's or without text; 429 `rate_limited` with `Retry-After` (20 a minute per address, the used-up budget, too many at once); 503 `model_unavailable` when the voice cannot be made. Section 4's rows for these codes say so.<br>- What is sent where, and the app's side: only a live build calls it, gives up after 8 seconds and then reads the answer with the device voice; a mock build uses the device voice only (section 12.4).<br>- Section 1: a successful `/api/tts` response is the second exception to JSON bodies.<br><br>The changelog is now section 13. |
