@@ -33,7 +33,12 @@ N_MONTHS = {
 
 
 class PeriodOutOfRange(ValueError):
-    """The period has no day inside [DATA_START, as_of]."""
+    """The period has no day inside [DATA_START, as_of]. `reason` says which side it misses (#379):
+    "period_before_data" (it ends before the data starts) or "period_in_future" (it starts after as_of)."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -87,7 +92,8 @@ def preset_dates(arg: PeriodArg, as_of: date) -> tuple[date, date]:
 def clamp(start: date, end: date, as_of: date) -> tuple[date, date, bool]:
     new_start, new_end = max(start, config.DATA_START), min(end, as_of)
     if new_start > new_end:
-        raise PeriodOutOfRange(f"no data between {start.isoformat()} and {end.isoformat()}")
+        raise PeriodOutOfRange(f"no data between {start.isoformat()} and {end.isoformat()}",
+                               reason="period_before_data" if end < config.DATA_START else "period_in_future")
     return new_start, new_end, (new_start, new_end) != (start, end)
 
 

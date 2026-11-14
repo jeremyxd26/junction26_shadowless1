@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import calendar
 import re
+from datetime import date
 from typing import Any
 
 from core import answer_text
@@ -87,6 +89,26 @@ NO_DATA = ("There are no transactions for that period in your data.",
 TOOL_FAILED = ("Some of the data could not be computed right now.",
                "Osaa tiedoista ei voitu laskea juuri nyt.")
 NOTHING = ("I could not find data for that question.", "En löytänyt tietoja tähän kysymykseen.")
+# Missing data (#379): what is missing, then what Sentti can answer instead, as chips the rules recognise.
+# The future names the last day of the data (a returned date); the past names no date, the chip does.
+MISSING = {
+    "period_in_future": ("My data ends on {end}, so I can't see future months. I can show what you typically have "
+                         "left each month, or whether your money lasts until payday.",
+                         "Tietoni ulottuvat {end} asti, joten en näe tulevia kuukausia. Voin näyttää, paljonko "
+                         "sinulle tavallisesti jää kuukaudessa tai riittävätkö rahasi palkkapäivään."),
+    "period_before_data": ("My data does not reach back that far, so I can't see that period. I can show any month "
+                           "since my data starts, or the past year.",
+                           "Tietoni eivät ulotu niin kauas taaksepäin, joten en näe sitä jaksoa. Voin näyttää minkä "
+                           "tahansa kuukauden aineiston alusta lähtien tai viimeisen vuoden."),
+}
+MISSING_CHIPS = {
+    "period_in_future": (("How could I save more?", "Will my money last until payday?"),
+                         ("Miten voisin säästää enemmän?", "Riittävätkö rahani palkkapäivään?")),
+    "period_before_data": (("How much did I spend in {month_en}?", "How much did I spend over the past year?"),
+                           ("Paljonko käytin {month_fi}?", "Paljonko käytin viimeisen vuoden aikana?")),
+}
+FI_MONTH_STEMS = ("tammi", "helmi", "maalis", "huhti", "touko", "kesä", "heinä", "elo", "syys", "loka", "marras",
+                  "joulu")
 CLARIFY_GENERAL = {
     "question": ("What would you like to know about your money?", "Mitä haluaisit tietää raha-asioistasi?"),
     "options": (("Where did my money go?", "What can I safely spend this week?", "How could I save more?"),
@@ -184,6 +206,23 @@ def follow_ups(question: str, language: str, refused: bool = False, views: list 
                and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
     out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
+
+
+def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
+                        as_of: date) -> tuple[str, list[str]] | None:
+    """The answer and its chips when the tools found nothing but a missing-data reason (#379): no view, and
+    every error carries a reason this module writes. None for anything else (the composer writes)."""
+    if views or not errors or not all(e.get("reason") in MISSING for e in errors):
+        return None
+    reasons = {e["reason"] for e in errors}
+    reason = "period_in_future" if "period_in_future" in reasons else "period_before_data"
+    end = f"{as_of.day}.{as_of.month}.{as_of.year}" if language == "fi" else \
+        f"{as_of.day} {calendar.month_name[as_of.month]} {as_of.year}"
+    first = tools_config.DATA_START
+    chips = [c.format(month_en=f"{calendar.month_name[first.month]} {first.year}",
+                      month_fi=f"{FI_MONTH_STEMS[first.month - 1]}kuussa {first.year}")
+             for c in pick(MISSING_CHIPS[reason], language)]
+    return pick(MISSING[reason], language).format(end=end), chips
 
 
 def lesson(key: str | None, language: str) -> dict[str, str] | None:
