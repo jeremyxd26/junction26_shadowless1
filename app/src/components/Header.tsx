@@ -234,11 +234,14 @@ export function AboutButton({ onOpen }: { onOpen: () => void }) {
       className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
     >
       Sentti
-      <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
-      <svg data-icon="info" aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
-      </svg>
+      {/* One element (Renat's review): the AI tag and the ⓘ in a single outlined pill, named "How Sentti works". */}
+      <span className="inline-flex items-center gap-0.5 rounded-sm border border-brand py-px pr-0.5 pl-1 text-xs font-bold leading-4 text-brand">
+        <span>AI</span>
+        <svg data-icon="info" aria-hidden="true" viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.25">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
+        </svg>
+      </span>
     </button>
   )
 }
