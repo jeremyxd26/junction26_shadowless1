@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Card, Language, ReviewCard } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
-import { BASKETS } from '../lib/baskets.ts'
 import { strings } from '../lib/i18n.ts'
 import { OpeningContext, type Opening, type ShownReview } from '../lib/openingContext.ts'
 import { reviewPlacement, threadReview, THREAD_REVIEW_START } from '../lib/reviewPointer.ts'
@@ -173,12 +172,14 @@ describe('the answered line (#452)', () => {
   })
   afterAll(() => vi.unstubAllGlobals())
 
-  const icon = BASKETS.unexpected_necessities.icon
+  // The basket icon is an inline SVG (no emoji); the sentence keeps it aria-hidden between the words.
+  const icon = '<svg aria-hidden="true" data-icon="basket"'
 
   it('EN: "You put this in <icon> <label>." with the label from the API, and no button', () => {
     const html = render(opening(NEEDED))
     expect(html).toContain(`data-review-answered="${TX}"`)
-    expect(html).toContain(`You put this in <span aria-hidden="true">${icon}</span> Unexpected necessities.`)
+    expect(html).toContain(`You put this in <span aria-hidden="true">${icon}`)
+    expect(html).toContain('</svg></span> Unexpected necessities.')
     expect(html).not.toContain('<button')
     expect(html).not.toContain(reviewStrings('en').asked)
     expect(html).not.toContain('data-review-card')
@@ -186,7 +187,8 @@ describe('the answered line (#452)', () => {
 
   it('FI: "Laitoit tämän koriin <icon> <label>."', () => {
     const html = render(opening(NEEDED_FI), 'fi')
-    expect(html).toContain(`Laitoit tämän koriin <span aria-hidden="true">${icon}</span> Välttämättömät.`)
+    expect(html).toContain(`Laitoit tämän koriin <span aria-hidden="true">${icon}`)
+    expect(html).toContain('</svg></span> Välttämättömät.')
     expect(html).not.toContain('<button')
   })
 

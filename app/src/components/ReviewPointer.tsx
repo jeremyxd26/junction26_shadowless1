@@ -37,7 +37,7 @@ export function ReviewPointer({ card }: { card: ReviewCard }) {
   return <ThreadReviewCard card={card} owner={owner} state={state} dispatch={dispatch} />
 }
 
-/** "You put this in 🔧 Unexpected necessities.": the opening's answer, with the API's label (#452). */
+/** "You put this in <wrench> Unexpected necessities.": the opening's answer, with the API's label (#452). */
 function AnsweredLine({ answered }: { answered: AnsweredReview }) {
   const { lang } = useSettings()
   const s = reviewStrings(lang)
