@@ -2079,10 +2079,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     }
   ],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```
@@ -2419,10 +2419,10 @@ The same overview when safe to spend cannot be computed for a known reason: `her
   "reviews": [],
   "insights": [],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```
@@ -2935,10 +2935,10 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
   ],
   "insights": [],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```

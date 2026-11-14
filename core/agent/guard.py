@@ -261,7 +261,9 @@ EN_WORDS = re.compile(
 
 
 # Characters that end a line or a page become spaces: "ignore<VT>your<FF>instructions" is three words (#537).
-_SPACES = frozenset(chr(c) for c in (0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029))
+# no-break spaces (U+00A0, U+2007, U+202F) are spaces too: a chip or a question text the app shows holds them
+# inside a date (#662), and the rules match words with plain spaces
+_SPACES = frozenset(chr(c) for c in (0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029, 0x00A0, 0x2007, 0x202F))
 
 
 def _invisible(o: int) -> bool:
