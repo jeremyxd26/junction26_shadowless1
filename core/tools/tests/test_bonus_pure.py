@@ -215,6 +215,25 @@ def test_every_number_has_a_formatter_display_and_derived_ones_reconcile():
     assert (rate["source"], rate["rule"]) == (["G4", "G7", "G8"], "payment_benefit.percent")
 
 
+@pytest.mark.parametrize("language, label", [("en", "See Bonus to fund in S-mobiili"),
+                                             ("fi", "Katso Bonus rahastoon S-mobiilissa")])
+def test_an_offered_estimate_offers_the_host_bonus_to_fund_screen(language, label):
+    """#267: the card names the bank's Bonus to fund section only, never a fund or returns."""
+    result, _ = run(language=language)
+    assert result.data.status == "estimate"
+    actions = result.card.model_dump(mode="json")["actions"]
+    host = [a for a in actions if a["type"] == "open_host_screen"]
+    assert host == [{"type": "open_host_screen", "label": label, "evidence_ref": None, "prompt": None,
+                     "target": "bonus_to_fund"}]
+    assert not any(ch.isdigit() for ch in label) and len(actions) <= 2
+
+
+def test_an_estimate_not_offered_has_no_host_screen_action():
+    result, _ = run(share_pct=10)                                       # 40 a month: below the lowest row
+    assert result.data.status == "not_offered"
+    assert [a["type"] for a in result.card.model_dump(mode="json")["actions"]] == ["open_evidence"]
+
+
 def test_below_the_lowest_level_the_card_says_why():
     result, store = run(share_pct=10)                                  # 40 a month: below 50
     d = result.data

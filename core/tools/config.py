@@ -14,6 +14,7 @@ Sources (also listed in the PR of issue #31):
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 # First day of the dataset. Periods are clamped to [DATA_START, as_of] (agent-core.md section 4).
 DATA_START = date(2024, 10, 1)
@@ -78,6 +79,9 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # get_balance_forecast (#257, metrics.md section 3.3)
+    "daily_pace": "balance_forecast.daily_pace_eur@1",
+    "bills_to_date": "balance_forecast.bills_to_date_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -187,6 +191,128 @@ SERIES_LABELS: dict[str, tuple[str, str]] = {
     "salary": ("Salary", "Palkka"),
     "other_income": ("Other income", "Muut tulot"),
     "salary_sweep": ("Salary sweep", "Palkan siirto"),
+}
+
+# ---- the bill explanation (#242, contracts/api.md section 11) ----------------------------------------
+# Known payee names of each kind of recurring bill, matched exactly after normalisation (case, spaces and
+# punctuation ignored), like the bills' labels. A real bank knows the counterparty of earlier payments;
+# the synthetic dataset has none, so this table stands in for that history in the demo. Fictional
+# companies only; the sample bills (#249) use the same strings.
+PAYEE_ALIASES: dict[str, tuple[str, ...]] = {
+    "housing_payment": ("Esimerkki Asunnot Oy",),
+    "utilities_payment": ("Esimerkki Energia Oy", "Esimerkki Vesi Oy"),
+}
+BILL_AMOUNT_MAX = Decimal("100000.00")
+BILL_ABOVE_USUAL_RATIO = Decimal("1.5")    # a matched bill at least 150% of its typical month (decision 10)
+BILL_ABOVE_LARGEST_RATIO = Decimal("1")    # any other bill above the largest typical month of the regular bills
+BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (and not before it)
+
+BILL_TEXT: dict[str, tuple[str, str]] = {
+    "amount": ("Amount due", "Maksettava summa"),
+    "match_matched": ("This is your regular {label} bill.", "Tämä on tavallinen laskusi: {label}."),
+    "match_not_matched": ("This payee is not one of your regular bills.",
+                          "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
+    "match_no_payee": ("Add the payee's name to compare this bill with your regular bills.",
+                       "Lisää maksunsaajan nimi, niin laskua verrataan tavallisiin laskuihisi."),
+    "comparison": ("vs your usual {label} bill", "verrattuna tavalliseen laskuusi: {label}"),
+    "change": ("Difference from the usual amount", "Ero tavalliseen summaan"),
+    "basket_regular": ("It counts as regular essentials, like your other {label} payments.",
+                       "Se kuuluu säännöllisiin välttämättömiin menoihin, kuten muutkin laskusi: {label}."),
+    "basket_other": ("It is not one of your regular bills, so it would count as an unexpected necessity. "
+                     "Nothing is saved.",
+                     "Se ei ole tavallisten laskujesi joukossa, joten se olisi odottamaton välttämätön meno. "
+                     "Mitään ei tallenneta."),
+    "counted": ("Added to the bills before payday", "Lisätään laskuihin ennen palkkapäivää"),
+    "free_after": ("Free until payday after this bill", "Vapaana palkkapäivään asti tämän laskun jälkeen"),
+    "balance_after": ("Your balance allows, after this bill", "Saldosi sallii tämän laskun jälkeen"),
+    "after": ("Safe to spend after this bill", "Turvallisesti käytettävissä tämän laskun jälkeen"),
+    "effect_after_payday": ("Due on {due}, after your payday on {payday}, so it changes nothing before then.",
+                            "Eräpäivä on {due}, palkkapäiväsi {payday} jälkeen, joten se ei muuta mitään "
+                            "ennen sitä."),
+    # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
+    # free until payday, then at most one sts_* sentence on the weekly number.
+    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
+                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+                      "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+                      "(ennen laskua {free_before})."),
+    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
+                       "covers this one, so nothing changes.",
+                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+                       "tämän laskun, joten mikään ei muutu."),
+    "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
+                    "payday goes from {free_before} to {free_after}.",
+                    "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
+                    "palkkapäivää: palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
+    "sts_moves": ("Your weekly safe to spend goes from {before} to {after}.",
+                  "Viikon turvallisesti käytettävissä oleva summasi on {after} (ennen laskua {before})."),
+    "sts_budget": ("Your weekly safe to spend stays {before}: your monthly budget limits it, not your balance.",
+                   "Viikon turvallisesti käytettävissä oleva summasi pysyy ennallaan, {before}: sitä rajaa "
+                   "kuukausibudjettisi, ei saldosi."),
+    "sts_negative": ("This bill takes more than is free until payday, so your weekly safe to spend is {after}.",
+                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten viikon turvallisesti "
+                     "käytettävissä oleva summasi on {after}."),
+    # warnings: a small note that never repeats a signal (contracts/api.md 11.2); today only a past due date
+    "warn_past": ("The due date has passed. The payee may charge late-payment interest, so pay it soon.",
+                  "Eräpäivä on mennyt. Maksunsaaja voi periä viivästyskorkoa, joten maksa lasku pian."),
+    # signals: the warning signs, never a verdict (#242 decision 10); a failed check says what to do
+    "sig_iban_check_failed": ("This account number does not pass its check. Compare it with the paper bill "
+                              "before paying.",
+                              "Tilinumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun ennen maksamista."),
+    "sig_reference_check_failed": ("This reference number does not pass its check. Compare it with the paper bill "
+                                   "before paying.",
+                                   "Viitenumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun ennen maksamista."),
+    "sig_new_payee": ("This payee is not one of your regular bills.",
+                      "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
+    # No ratio in the words: the threshold is a setting (BILL_ABOVE_USUAL_RATIO), the text stays true for any
+    "sig_above_usual": ("This bill is {amount}, much more than usual ({typical}).",
+                        "Tämä lasku on {amount}, paljon tavallista enemmän ({typical})."),
+    "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
+                          "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
+    "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
+    "action": ("Add to payments", "Lisää maksuihin"),
+}
+# The message of a 422 invalid_bill, by reason (contracts/api.md section 11.1).
+BILL_REFUSAL_TEXT: dict[str, tuple[str, str]] = {
+    "one_of_barcode_or_fields": ("Send the barcode or the bill's details, one of the two.",
+                                 "Lähetä viivakoodi tai laskun tiedot, toinen niistä."),
+    "payee_with_fields": ("Put the payee's name inside the bill's details.",
+                          "Kirjoita maksunsaajan nimi laskun tietoihin."),
+    "barcode_length": ("This barcode cannot be read. Check it, or type the details from the bill.",
+                       "Viivakoodia ei voi lukea. Tarkista se tai kirjoita laskun tiedot."),
+    "barcode_check": ("This barcode does not pass its check. Compare it with the paper bill, or type the fields.",
+                      "Viivakoodi ei läpäise tarkistusta. Vertaa sitä paperilaskuun tai kirjoita tiedot."),
+    "amount_missing": ("This barcode has no amount. Type the details from the bill.",
+                       "Viivakoodissa ei ole summaa. Kirjoita laskun tiedot."),
+    "due_date_missing": ("This barcode has no due date. Type the details from the bill.",
+                         "Viivakoodissa ei ole eräpäivää. Kirjoita laskun tiedot."),
+    "amount_too_large": ("This bill is over the largest amount this service explains.",
+                         "Lasku on suurempi kuin suurin summa, jonka tämä palvelu selittää."),
+}
+for _reason in ("barcode_version", "barcode_chars", "due_date"):   # read like a wrong length
+    BILL_REFUSAL_TEXT[_reason] = BILL_REFUSAL_TEXT["barcode_length"]
+# The four fixed glossary entries of a bill explanation: term -> ((label en, fi), (text en, fi)).
+BILL_GLOSSARY: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {
+    "reference_number": (
+        ("Reference number (viitenumero)", "Viitenumero"),
+        ("The number that tells the payee which bill a payment is for; its last digit is a check digit, so "
+         "most typing errors are caught.",
+         "Numero, josta maksunsaaja tietää, mitä laskua maksu koskee; sen viimeinen numero on tarkiste, joten "
+         "useimmat kirjoitusvirheet huomataan.")),
+    "due_date": (
+        ("Due date (eräpäivä)", "Eräpäivä"),
+        ("The last day to pay the bill without a late-payment charge.",
+         "Viimeinen päivä, jona lasku maksetaan ilman viivästysmaksua.")),
+    "virtual_barcode": (
+        ("Virtual barcode (virtuaaliviivakoodi)", "Virtuaaliviivakoodi"),
+        ("A 54-digit code that holds the account, amount, reference number and due date, so the bill can be "
+         "paid without typing them.",
+         "54-numeroinen koodi, jossa ovat tili, summa, viitenumero ja eräpäivä, joten laskun voi maksaa "
+         "kirjoittamatta niitä.")),
+    "late_payment_interest": (
+        ("Late-payment interest (viivästyskorko)", "Viivästyskorko"),
+        ("Interest the payee may charge for each day a bill is paid after its due date.",
+         "Korko, jonka maksunsaaja voi periä jokaiselta päivältä, jonka lasku maksetaan eräpäivän jälkeen.")),
 }
 
 COUNT_WORDS: dict[int, tuple[str, str]] = {
@@ -535,6 +661,70 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     ),
 }
 
+# ---- get_balance_forecast (#257, metrics.md section 3.3) ------------------------------------------
+# Number labels have no digits except a date written exactly as the number's own period label (the
+# validator accepts it); the card's row labels are card text only and may carry dates.
+FORECAST_BALANCE_METHOD = "balance_forecast.balance_eur@1"   # composite, formula `balance_forecast`
+FORECAST_BASKETS = ("everyday_spending", "regular_essentials")   # the usual spending of the daily pace
+FORECAST_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Balance until payday", "Saldo palkkapäivään asti"),
+    "balance_now": ("Balance today", "Saldo tänään"),
+    "bills_until_payday": ("Bills before payday", "Laskut ennen palkkapäivää"),
+    "daily_pace": ("Usual spending", "Tavallinen kulutus"),   # the display says "a day" / "/ pv"
+    "bills_to_date": ("Bills due by then", "Siihen mennessä erääntyvät laskut"),
+    "lowest": ("Lowest point, {date}", "Alin kohta, {date}"),
+    "lowest_day_before_payday": ("Lowest point, the day before payday, {date}",
+                                 "Alin kohta, palkkapäivää edeltävä päivä, {date}"),
+    "day_before_payday": ("Day before payday, {date}", "Palkkapäivää edeltävä päivä, {date}"),
+    "below_zero": ("First day below zero, {date}", "Ensimmäinen päivä miinuksella, {date}"),
+    "after_bills": ("After bills, {date}", "Laskujen jälkeen, {date}"),
+    "row_today": ("Today", "Tänään"),
+    "row_bills": ("{bills} paid", "{bills} maksettu"),
+    "row_below_zero": ("below zero", "miinuksella"),
+    "row_lowest": ("lowest point", "alin kohta"),
+    "row_day_before_payday": ("day before payday", "palkkapäivää edeltävä päivä"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "If you spend as usual: about {pace}, the middle one of your last three full months' daily "
+        "averages of everyday spending and essentials, bills left out. Bills come on their usual days. "
+        "Salary and other money coming in before payday are not counted.",
+        "Jos kulutat tavalliseen tapaan: noin {pace}, kolmen viimeisen täyden kuukauden "
+        "päiväkeskiarvoista keskimmäinen, arkikulutus ja välttämättömät menot ilman laskuja. Laskut tulevat "
+        "tavallisina päivinään. Palkkaa tai muita ennen palkkapäivää tulevia rahoja ei lasketa mukaan.",
+    ),
+    "note_comfortable": ("Your balance stays comfortably above the bills due before payday.",
+                         "Saldosi pysyy selvästi suurempana kuin ennen palkkapäivää erääntyvät laskut."),
+    "note_above_zero": ("Your balance stays above zero until payday if you spend as usual, but with little to spare.",
+                        "Saldosi pysyy plussalla palkkapäivään asti, jos kulutat tavalliseen tapaan, mutta "
+                        "liikkumavaraa on vähän."),
+    "note_below_zero": ("If you spend as usual, your balance goes below zero on {date}.",
+                        "Jos kulutat tavalliseen tapaan, saldosi menee miinukselle {date}."),
+    "note_estimate": (
+        "This is an estimate: it assumes you spend as usual and your bills come on their usual days, and "
+        "it leaves out money coming in before payday.",
+        "Tämä on arvio: se olettaa, että kulutat tavalliseen tapaan ja laskut tulevat tavallisina päivinään, "
+        "eikä siinä ole mukana ennen palkkapäivää tulevia rahoja.",
+    ),
+    "note_payday_bills": (
+        "Bills due on payday itself are in the bills before payday, but not in the balance the day before.",
+        "Palkkapäivänä erääntyvät laskut ovat mukana ennen palkkapäivää erääntyvissä laskuissa, mutta eivät "
+        "edellisen päivän saldossa.",
+    ),
+    "note_no_salary": (
+        "No regular salary shows on this account, so payday is assumed to be a month away.",
+        "Tilillä ei näy säännöllistä palkkaa, joten palkkapäivän oletetaan olevan kuukauden päästä.",
+    ),
+    "note_late_salary": (
+        "This month's salary has not arrived yet, so payday is taken as the end of the month.",
+        "Tämän kuun palkka ei ole vielä tullut, joten palkkapäiväksi oletetaan kuun loppu.",
+    ),
+    "note_no_data": ("Your balance until payday cannot be estimated: there are no transactions to start from.",
+                     "Saldoa palkkapäivään asti ei voi arvioida: aloitukseen ei ole tapahtumia."),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    "whatif_label": ("What could I cut?", "Mistä voisin vähentää?"),
+    "whatif_prompt": ("What if I cut my spending?", "Entä jos vähentäisin kulutustani?"),
+}
+
 # ---- get_safe_to_save (#165, metrics.md section 3.1) ----------------------------------------------
 # Read from the same row of 03_safe_to_spend.sql as get_safe_to_spend (one run per request). Monthly
 # figures describe a typical month of the last 6 complete months; the stock describes today + 1 to payday.
@@ -551,6 +741,8 @@ SAFE_TO_SAVE_NUMBERS = (  # (key, output column, unit value)
 SENSITIVE_CATEGORIES = frozenset({"Health"})   # never named by the safe-to-save reason (R9)
 
 SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
+    # #267: the step into the bank's own app; names the destination only (no fund, no advice, no returns)
+    "host_monthly_saving": ("See monthly saving in S-mobiili", "Katso kuukausisäästäminen S-mobiilissa"),
     "title": ("Safe to save", "Turvallisesti säästettävissä"),
     "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
     "estimate_text": (
@@ -694,6 +886,8 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.
 BONUS_TEXT: dict[str, tuple[str, str]] = {
+    # #267: the step into the bank's own app; names the destination only (no fund, no advice, no returns)
+    "host_bonus_to_fund": ("See Bonus to fund in S-mobiili", "Katso Bonus rahastoon S-mobiilissa"),
     "title": ("S-Bonus estimate", "S-Bonus-arvio"),
     "scenario": ("If {share} of your grocery spending went to S-Group stores",
                  "Jos {share} ruokaostoksistasi tehtäisiin S-ryhmän kaupoissa"),

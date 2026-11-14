@@ -307,7 +307,10 @@ def _card(data: BonusEstimateData, language: str) -> Card:
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="metric", title=_t("title", language), subtitle=data.scenario, evidence_ref=ref,
         estimate={"label": _t("estimate_label", language), "text": text},
-        actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
+        actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
+                 # #267: one step into the bank's Bonus to fund, only when the estimate is offered
+                 *([Action(type="open_host_screen", target="bonus_to_fund", label=_t("host_bonus_to_fund", language))]
+                   if data.status == "estimate" else [])],
         status=None,
         primary=data.total_month,
         secondary=secondary,

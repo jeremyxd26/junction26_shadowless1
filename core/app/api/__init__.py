@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from . import errors, evidence, labels, overview, personas, viewer, whatif
+from . import bill, errors, evidence, labels, overview, personas, viewer, whatif
 
 
 def register(app: FastAPI) -> None:
@@ -18,3 +18,4 @@ def register(app: FastAPI) -> None:
     app.include_router(whatif.router)
     app.include_router(labels.router)  # POST /api/baskets/label (#68)
     app.include_router(viewer.router)  # GET /api/viewer/reset (#144)
+    app.include_router(bill.router)    # POST /api/bill/explain (#242)

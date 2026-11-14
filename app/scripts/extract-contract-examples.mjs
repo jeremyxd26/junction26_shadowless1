@@ -19,6 +19,13 @@ const NEEDED = [
   'evidence.response_composite',
   'evidence.error',
   'error.response',
+  'label.request',
+  'label.response',
+  'label.request_wanted',
+  'label.response_wanted',
+  'label.request_undo',
+  'label.response_undo',
+  'label.error',
   // POST /api/ask (section 7)
   'ask.sse.meta',
   'ask.sse.status',
@@ -42,7 +49,20 @@ const NEEDED = [
   'card.safe_to_save_aleksi',
   'card.safe_to_save_zero',
   'card.safe_to_save_everyday',
+  'card.profile',
+  'card.peer',
+  'card.whatif',
+  'card.review',
+  'overview.response_no_hero',
   'whatif.response',
+  // POST /api/bill/explain and the sample-bill reading (section 11)
+  'bill.request',
+  'bill.request_fields',
+  'bill.error',
+  'bill.response',
+  'bill.response_unknown',
+  'bill.read_response',
+  'host.payment_draft',
 ]
 
 const text = readFileSync(contractPath, 'utf8')

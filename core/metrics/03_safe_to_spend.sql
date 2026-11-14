@@ -6,6 +6,10 @@
 --   app.customer_to    end of the customer_id range, exclusive          (default CUST00100)
 --   app.tx_labels      the customer's transaction labels, JSON {"<id>": "<basket>"} (default none)
 --   app.cushion_eur    money kept untouched on the account              (default 100)
+--   app.extra_bill_due_eur  a bill shown by the customer, due before payday, on top of the bills due:
+--                      lowers free_until_payday (and so the balance limit) by exactly this amount; euros
+--                      with cents, more than 0 and at most 100000.00, checked by core/tools/metric_sql.py
+--                      (default none: every column is as without it; the bill explanation, #242)
 -- One row per customer. Every component the coach may quote is a column. Euros, 2 decimals.
 -- Safe to save (section 3.1) is part of this row; the bills behind bills_due_eur, one row per bill, are
 -- the per-bill output 03_safe_to_spend_bills.sql (section 3.2), which shares this file up to bill_items.
@@ -276,7 +280,8 @@ calc AS (
            COALESCE(rr.window_days, 0)                                AS window_days,
            et.category                                                AS top_everyday_category,
            COALESCE(et.category_eur / NULLIF(rr.window_days, 0), 0)   AS top_everyday_per_day,
-           COALESCE(NULLIF(current_setting('app.cushion_eur', true), ''), '100')::numeric AS cushion_eur
+           COALESCE(NULLIF(current_setting('app.cushion_eur', true), ''), '100')::numeric AS cushion_eur,
+           COALESCE(NULLIF(current_setting('app.extra_bill_due_eur', true), ''), '0')::numeric AS extra_bill_due_eur
     FROM horizon h
     CROSS JOIN params p
     JOIN balance b USING (customer_id)
@@ -291,7 +296,7 @@ limits AS (
            c.irregular_per_day  * c.days_to_payday AS irregular_reserve_eur,
            -- A. balance limit: what the account can carry until payday without dropping below the cushion
            c.balance_eur - c.bills_due_eur - (c.essentials_per_day + c.irregular_per_day) * c.days_to_payday
-               - c.cushion_eur AS free_until_payday_eur,
+               - c.cushion_eur - c.extra_bill_due_eur AS free_until_payday_eur,
            -- B. budget limit: the typical month's money left after commitments, essentials and the irregular reserve
            c.income_month_eur - c.sweep_month_eur - c.committed_month_eur
                - (c.essentials_per_day + c.irregular_per_day) * 30.4375 AS free_month_eur
