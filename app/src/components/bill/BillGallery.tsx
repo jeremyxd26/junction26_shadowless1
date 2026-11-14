@@ -1,0 +1,67 @@
+import { useCallback } from 'react'
+import { billApi } from '../../api/bill.ts'
+import type { BillSample } from '../../api/billTypes.ts'
+import { ApiError } from '../../api/errors.ts'
+import { billStrings } from '../../lib/billStrings.ts'
+import { useSettings } from '../../lib/settings.ts'
+import { useLoad } from '../../lib/useLoad.ts'
+import { ErrorBlock, LoadingBlock } from '../States.tsx'
+
+interface Props {
+  onPick: (sampleId: string) => void
+}
+
+/** The sample bills (contract 11.4, `GET /api/bill/samples`) as a two-column grid of tiles. */
+export function BillGallery({ onPick }: Props) {
+  const { lang } = useSettings()
+  const s = billStrings(lang)
+  const load = useCallback(() => billApi.samples(lang), [lang])
+  const result = useLoad(`bill-samples|${lang}`, load)
+
+  return (
+    <section aria-labelledby="bill-gallery-title" className="flex flex-col gap-3">
+      <div>
+        <h2 id="bill-gallery-title" className="text-card-title font-bold text-brand">
+          {s.galleryTitle}
+        </h2>
+        <p className="mt-0.5 text-sm text-muted">{s.galleryHint}</p>
+      </div>
+      {result.status === 'loading' && <LoadingBlock lines={3} />}
+      {result.status === 'error' && (
+        <ErrorBlock
+          message={result.error instanceof ApiError ? result.error.message : undefined}
+          onRetry={result.error instanceof ApiError && !result.error.retryable ? undefined : result.retry}
+        />
+      )}
+      {result.status === 'ready' && (
+        <ul className="grid grid-cols-2 gap-3">
+          {result.data.samples.map((sample) => (
+            <li key={sample.sample_id}>
+              <SampleTile sample={sample} onPick={onPick} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function SampleTile({ sample, onPick }: { sample: BillSample; onPick: (sampleId: string) => void }) {
+  const { lang } = useSettings()
+  const s = billStrings(lang)
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(sample.sample_id)}
+      className="flex min-h-11 w-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-left transition-colors duration-(--duration-fast) hover:border-brand active:bg-mint-tint"
+    >
+      <span className="block bg-sunken p-3">
+        <img src={sample.image_url} alt="" className="mx-auto aspect-[4/5] w-full max-w-36 rounded-sm shadow-sm" />
+      </span>
+      <span className="flex flex-col gap-0.5 px-3 py-2">
+        <span className="text-base font-semibold text-ink">{sample.title}</span>
+        <span className="text-xs text-muted">{s.sampleLanguage[sample.language] ?? sample.language}</span>
+      </span>
+    </button>
+  )
+}
