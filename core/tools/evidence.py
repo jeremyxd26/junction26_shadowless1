@@ -18,7 +18,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from core.tools import aliases, labels
+from core.tools import aliases
 from core.tools.classify import classify
 from core.tools.db import load_transactions
 from core.tools.selection import Selection, select, value_of
@@ -49,7 +49,8 @@ def make_ref(spec: dict[str, Any]) -> str:
 
 
 def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection, value: Decimal,
-                      params: dict[str, Any] | None = None) -> dict[str, Any]:
+                      params: dict[str, Any] | None = None,
+                      label_set: list[list[Any]] | None = None) -> dict[str, Any]:
     spec = {
         "v": SPEC_VERSION,
         "kind": "transactions",
@@ -61,6 +62,8 @@ def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection
     }
     if params:  # only when set (for example n_months), so refs of other numbers do not change
         spec["params"] = params
+    if label_set:  # the customer's labels in effect (#68); only when there are any, as for params
+        spec["labels"] = label_set
     return spec
 
 
@@ -251,11 +254,14 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
 
         source = spec["source"]
         # A stored spec is data: only the files the tools write metric specs for, and never a setting
-        # that would move the customer range or as_of (run() refuses those as well).
+        # that is reserved (it would move the customer range or as_of) or malformed. The same check as
+        # run() makes, before anything runs; a refusal is 403 evidence_forbidden, not a 500 (#122).
         if source["file"] not in config.METRIC_EVIDENCE_FILES:
             raise EvidenceForbidden(ref)
-        if any(metric_sql.is_reserved_setting(name) for name in source["settings"]):
-            raise EvidenceForbidden(ref)
+        try:
+            metric_sql.check_settings(source["settings"])
+        except ValueError:
+            raise EvidenceForbidden(ref) from None
         row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
@@ -267,7 +273,9 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
 
     sel = Selection.from_spec(spec["selection"])
     history = load_transactions(conn, customer_id, as_of)
-    overrides = labels.basket_labels(conn, customer_id, as_of)  # the same labels the tools used
+    # The labels the number was computed with (#68), not today's: a ref issued before a label keeps
+    # resolving to the number as it was. A spec without labels was computed without any.
+    overrides = {int(tx_id): basket for tx_id, basket in spec.get("labels", [])}
     rows = select(classify(history, as_of, overrides), sel)
     try:
         reconciles = value_of(rows, sel, spec["method"], spec.get("params")) == value

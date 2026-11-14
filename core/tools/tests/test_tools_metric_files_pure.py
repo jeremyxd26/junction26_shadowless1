@@ -38,3 +38,34 @@ def test_per_bill_file_returns_one_statement_result():
     code = "\n".join(line.split("--")[0] for line in text.splitlines())  # comments removed
     assert code.count(";") == 2  # SET statement_timeout; and the one WITH ... SELECT
     assert code.rstrip().endswith(";") and "SELECT i.customer_id" in code
+
+
+# Every file that carries the shared classification block (params .. cls). core/marts/build.py takes its
+# copy from 02, so a block that is the same here is also the one the marts are built with.
+BLOCK_FILES = ("02_baskets.sql", "03_safe_to_spend.sql", "03_safe_to_spend_bills.sql", "04_what_if.sql",
+               "05_spender_profile.sql", "06_peer_benchmark.sql")
+BLOCK = re.compile(r"^-- -+ shared classification block: begin -*$\n(.*?)^-- -+ shared classification block: end",
+                   re.S | re.M)
+
+
+def shared_block(file_name: str) -> str:
+    match = BLOCK.search((METRICS / file_name).read_text(encoding="utf-8"))
+    assert match, f"{file_name}: shared classification block not found"
+    return match.group(1)
+
+
+def test_shared_classification_block_is_identical_in_all_six_files():
+    blocks = {f: shared_block(f) for f in BLOCK_FILES}
+    assert sorted(p.name for p in METRICS.glob("*.sql") if BLOCK.search(p.read_text(encoding="utf-8"))) == \
+        sorted(BLOCK_FILES)                                   # no copy is missed when a file is added
+    reference = blocks["02_baskets.sql"]
+    assert [f for f, b in blocks.items() if b != reference] == []
+
+
+def test_marts_build_reads_the_same_block():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("marts_build", METRICS.parent / "marts" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    assert build.shared_block() == shared_block("02_baskets.sql")

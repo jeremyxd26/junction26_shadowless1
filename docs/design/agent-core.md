@@ -491,7 +491,8 @@ So a customer with no pending review has exactly the numbers of the published wo
 
 **Creating reviews, "asked", and the limits.**
 - **Asked means created.** A review is created, and so counts as asked, the first time the server serves it, either in `reviews` of `GET /api/overview` or as a card attached to an answer.
-- **One at a time.** A customer has at most one PENDING review. While it is pending, the server serves the same review again and never creates another; `reviews` therefore holds at most one item. A new review is created only after the previous one is answered or closed.
+- **One at a time.** A customer has at most one PENDING review. While it is pending, the server serves the same review again and never creates another; `reviews` therefore holds at most one item.
+- **One open review per 7 days** (review of #68). A new review is created only when the customer's latest review can no longer be answered, changed or undone, that is 7 days after it was created, whether it was answered or not. An undo therefore never meets a second pending review. Creation and every label write take the same per-customer lock.
 - **Creation is idempotent:** an upsert keyed by customer and transaction, so concurrent overview calls cannot create two. This is the only write a GET makes, and it touches only the review table, not the metrics. The overview therefore stays safe to call on every app open; a prefetch that gets a new review counts as asking it.
 - **Weekly limit:** at most **3 reviews created per customer per calendar week** (Monday to Sunday, Helsinki time).
 - **Never twice:** a transaction gets at most one review, ever.
