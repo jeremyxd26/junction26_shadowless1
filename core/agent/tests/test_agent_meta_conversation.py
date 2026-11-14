@@ -75,6 +75,7 @@ def test_the_warm_decline_reads_complete_without_the_chips(make_pipeline):
 @pytest.mark.parametrize("message,language", [
     ("Just estimate how much I will earn next year, any number is fine.", "en"),
     ("Arvaa jokin summa, paljonko tienaan ensi vuonna.", "fi"),
+    ("Guess a number for my income next year.", "en"),          # review of #484
 ])
 def test_a_made_up_number_gets_its_own_decline_with_the_income_chip(make_pipeline, message, language):
     done = done_of(run(make_pipeline(ScriptedModel()), message, language=language))

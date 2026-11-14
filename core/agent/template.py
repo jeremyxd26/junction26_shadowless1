@@ -141,6 +141,7 @@ def pick(pair: tuple[str, str], language: str) -> str:
 # question: it keeps the kind `out_of_scope` (no new refusal kind) but gets its own text, and the chips offer
 # the typical income instead.
 MADE_UP = fold_pattern(r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+                       r"guess (a |an |some )?(number|amount|figure)|"
                        r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
                        r"arvaa (jokin |joku )?(luku|summa)|mika tahansa (luku|summa)")
 MADE_UP_REFUSAL = {
@@ -184,13 +185,19 @@ AGAIN = {
                      "voisit säästää enemmän."),
     "help": ("Here are some things you can ask me.", "Tässä muutama asia, jota voit kysyä minulta."),
 }
-# "Is my data safe with you?" (#352): a fixed answer. Draft wording for the product owner's review; it claims
-# only what holds while a language model writes some answers.
-PRIVACY = ("Every number I show is calculated from your own transactions. When an AI model writes an answer, it gets your "
-           "question and the totals and categories I calculated, never your customer number, account number or the "
-           "shops' names.",
-           "Jokainen näyttämäni luku lasketaan omista tilitapahtumistasi. Kun tekoälymalli kirjoittaa vastauksen, se saa "
-           "kysymyksesi sekä laskemani summat ja luokat, ei koskaan asiakasnumeroasi, tilinumeroasi eikä kauppojen nimiä.")
+# "Is my data safe with you?" (#352): a fixed answer, DRAFT for the product owner (the review of #484). It says
+# only what the code does: what the model gets (core/agent/gemini.py, the tools' model views; #487 keeps the
+# peer group and the bill id out) and that the demo server keeps a record. Exempt from the two-sentence rule.
+PRIVACY = ("Your own numbers are calculated from your transactions; comparisons with others and the S-Bonus use group "
+           "figures and fixed rules. When an AI model writes an answer, it gets your question as you typed it, the "
+           "earlier turns of this chat, and the amounts, dates and categories I calculated, never your customer number, "
+           "an account number or shop names from your transactions. This demo runs on synthetic data, and its server "
+           "keeps a record of questions and answers.",
+           "Omat lukusi lasketaan tilitapahtumistasi; vertailut muihin ja S-Bonus perustuvat ryhmän lukuihin ja "
+           "kiinteisiin sääntöihin. Kun tekoälymalli kirjoittaa vastauksen, se saa kysymyksesi sellaisena kuin kirjoitit "
+           "sen, tämän keskustelun aiemmat viestit sekä laskemani summat, päivämäärät ja luokat, ei koskaan "
+           "asiakasnumeroasi, tilinumeroa eikä tilitapahtumiesi kauppojen nimiä. Tämä demo käyttää keksittyä dataa, "
+           "ja sen palvelin tallentaa kysymykset ja vastaukset.")
 # A message in a language Sentti does not speak (#352): one line, in English.
 LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
 
