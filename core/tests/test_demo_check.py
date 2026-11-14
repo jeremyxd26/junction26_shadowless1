@@ -31,10 +31,15 @@ def num(value, ref="ev_000000000001"):
 class Stub:
     """The service's demo path, with switches for the failure cases."""
 
-    def __init__(self, saving=45.91, off=(), hero_after_needed=180.26):
+    def __init__(self, saving=45.91, off=(), hero_after_needed=180.26, undo="ok", reconciles=True, ask_429=False,
+                 malformed_whatif=False):
         self.saving = saving
         self.off = set(off)
         self.hero_after_needed = hero_after_needed
+        self.undo = undo                  # ok | 500 | drop
+        self.reconciles = reconciles
+        self.ask_429 = ask_429
+        self.malformed_whatif = malformed_whatif
         self.state = "pending"
         self.paths: list[str] = []
 
@@ -67,19 +72,27 @@ class Stub:
             return 404, {"error": {"code": "customer_not_found", "message": "We couldn't find this customer."}}
         if path.startswith("/api/evidence/"):
             if query.get("customer_id") == [LEAD]:
-                return 200, {"evidence_ref": path.rsplit("/", 1)[1], "rows": []}
+                return 200, {"evidence_ref": path.rsplit("/", 1)[1], "rows": [], "reconciles": self.reconciles}
             return 403, {"error": {"code": "evidence_forbidden", "message": "Not yours."}}
         if path == "/api/whatif" and method == "POST":
-            return 200, {"saving_per_month": num(self.saving)}
+            if self.malformed_whatif:
+                return 200, ["not", "an", "object"]
+            return 200, {"baseline_per_month": num(229.56), "saving_per_month": num(self.saving)}
         if path == "/api/baskets/label" and method == "POST" and "label" not in self.off:
             if body.get("tx_ref") != TX_REF:
                 return 404, {"error": {"code": "tx_ref_not_found", "message": "No such purchase."}}
             if body.get("basket") is None:
+                if self.undo == "500":
+                    return 500, {"error": {"code": "internal", "message": "Something went wrong."}}
+                if self.undo == "drop":
+                    return "drop", None
                 self.state = "pending"
                 return 200, {"review_state": "pending", "changes": []}
             self.state = "answered"
             return 200, {"review_state": "answered",
                          "changes": [{"key": "safe_to_spend", "before": num(221.58), "after": num(180.26)}]}
+        if path == "/api/ask" and method == "POST" and self.ask_429:
+            return 429, {"error": {"code": "rate_limited", "message": "Too many requests."}}
         if path == "/api/ask" and method == "POST" and "ask" not in self.off:
             return 200, {"outcome": "answered", "warnings": [], "cited": ["n1"],
                          "numbers": {"n1": num(180.26, "ev_000000000008")}}
@@ -97,8 +110,14 @@ def serve():
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length)) if length else None
                 status, payload = stub.handle(method, url.path, parse_qs(url.query), body)
+                if status == "drop":  # close the connection without an answer
+                    self.close_connection = True
+                    self.connection.shutdown(2)
+                    return
                 raw = json.dumps(payload).encode()
                 self.send_response(status)
+                if status == 429:
+                    self.send_header("Retry-After", "37")
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
@@ -179,3 +198,55 @@ def test_no_ask_and_ask_limit(serve):
     assert all(" SKIPPED " in row for row in lines if row.startswith("ask:"))
     code, lines = run(url, "--ask-limit", "1")
     assert code == 0 and stub.paths.count("POST /api/ask") == 1
+
+
+@pytest.mark.parametrize("mode", ["500", "drop"])
+@pytest.mark.parametrize("earlier_failure", [False, True])
+def test_a_failed_undo_is_loud_whatever_happened_before(serve, mode, earlier_failure):
+    # Review of PR #180: the undo is judged in every case; a failed one names the persona, the tx_ref,
+    # the status and the repair commands, and the run exits 1.
+    stub = Stub(undo=mode, hero_after_needed=999.0 if earlier_failure else 180.26)
+    code, lines = run(serve(stub), "--no-ask")
+    text = "\n".join(lines)
+    assert code == 1
+    loud = next(row for row in lines if row.startswith("UNDO FAILED"))
+    assert f"{LEAD} may be left answered" in loud and TX_REF in loud
+    assert ("status 500" in loud) if mode == "500" else ("request failed" in loud)
+    assert "python core/scripts/reset_reviews.py CUST00860" in text and "curl -s -X POST" in text
+    assert " FAIL " in line(lines, "spike review")
+    if earlier_failure:
+        assert "hero after Needed" in line(lines, "spike review")
+
+
+def test_evidence_that_does_not_reconcile_fails(serve):
+    code, lines = run(serve(Stub(reconciles=False)), "--no-ask")
+    assert code == 1 and "reconciles" in line(lines, "evidence refs") and " FAIL " in line(lines, "evidence refs")
+    assert run(serve(Stub(reconciles=None)), "--no-ask")[0] == 0   # null: nothing to add up
+
+
+def test_a_malformed_response_fails_its_stage_and_the_run_goes_on(serve):
+    code, lines = run(serve(Stub(malformed_whatif=True)), "--no-ask")
+    assert code == 1 and " FAIL " in line(lines, "what-if")
+    assert " PASS " in line(lines, "spike review")              # the later stages still ran
+
+
+def test_a_429_stops_the_questions_with_retry_after(serve):
+    stub = Stub(ask_429=True)
+    code, lines = run(serve(stub))
+    first = line(lines, "ask: Where did my money go?")
+    assert code == 1 and " FAIL " in first and "Retry-After 37" in first
+    assert stub.paths.count("POST /api/ask") == 1
+    assert all(" SKIPPED " in row for row in lines if row.startswith("ask:") and "Where did" not in row)
+
+
+def test_not_deployed_lines_name_the_route_and_status(serve):
+    stub = Stub(off={"label", "ask"})
+    stub.state = "answered"
+    code, lines = run(serve(stub))
+    assert "POST /api/baskets/label -> 404" in line(lines, "spike review")
+    assert "POST /api/ask -> 404" in line(lines, "ask: Where did my money go?")
+
+
+def test_the_time_limit_ends_the_run(serve):
+    code, lines = run(serve(Stub()), "--no-ask", "--time-limit", "0")
+    assert code == 1 and "time limit" in line(lines, "health and readiness")

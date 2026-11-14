@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Demo path smoke check (issue #130): one command against a running service.
 
-    python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev
+    python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all
     python scripts/demo_check.py --base-url http://localhost:8000 --no-ask      # no model calls
 
 Stages, in the order the presenter walks them: health, personas, the lead persona's overview, its
@@ -10,13 +10,15 @@ the four brief questions through /api/ask (JSON mode).
 
 One line per stage: name, PASS / FAIL / NOT DEPLOYED / SKIPPED, the time, and for a failure the
 expected and the received value. A route that answers 405, or 404 without one of the service's own
-error codes, is NOT DEPLOYED. Exit code 0 only when no stage failed; --require-all also fails on
-NOT DEPLOYED.
+error codes, is NOT DEPLOYED (the line names the route and the status). Exit code 0 only when no stage
+failed; --require-all also fails on NOT DEPLOYED.
 
 Rules: standard library only; no secrets; no retries. The only writes are the label answer and its
-undo for the lead persona, and the undo runs even when a step fails. A cookie jar keeps the viewer
-cookie (#144), so the label answer is this run's own. Without --no-ask, at most four questions go to
-the model (--ask-limit), so do not run it in a loop.
+undo for the lead persona. The undo always runs once the answer was sent, and its result is checked
+whatever happened before; a failed undo prints a loud line with the repair commands. A cookie jar keeps
+the viewer cookie (#144), so the label answer is this run's own. Without --no-ask, at most four
+questions go to the model (--ask-limit); a 429 stops the questions. The whole run ends within
+--time-limit seconds (the undo is exempt), so do not run it in a loop.
 """
 
 from __future__ import annotations
@@ -41,10 +43,11 @@ REFERENCE: dict[str, tuple[Any, str]] = {
     "unexpected_necessities": (521.15, "docs/design/personas.md:136 (spike answered Needed, or no review)"),
     "unexpected_necessities_pending": (341.08, "docs/design/personas.md:136 (without the 1,080.42 one-off)"),
     "everyday_spending": (600.41, "docs/design/personas.md:136"),
-    "unclassified_pending": (180.07, "docs/design/personas.md:89 (the 1,080.42 one-off over 6 months)"),
+    "unclassified_pending": (180.07, "docs/design/personas.md:89: 1,080.42 / 6 (the one-off over the 6-month window)"),
     "spike_amount": (1080.42, "docs/design/personas.md:89"),
-    "safe_to_spend": (180.26, "docs/design/personas.md:109"),
-    "safe_to_spend_pending": (221.58, "issue #130 Facts (the review pending; not in personas.md)"),
+    "safe_to_spend": (180.26, "docs/design/personas.md:109; contracts/api.md section 10 (after Needed)"),
+    "safe_to_spend_pending": (221.58, "contracts/api.md section 10 (while the review is pending)"),
+    "what_if_baseline_month": (229.56, "docs/design/personas.md:191 (dining out)"),
     "what_if_saving_month": (45.91, "docs/design/personas.md:191 (dining out, 20%)"),
 }
 NON_PERSONA = "CUST00001"   # a customer of the data who is not a persona (#101)
@@ -52,8 +55,10 @@ UNKNOWN = "CUST99999"       # no such customer
 BRIEF_QUESTIONS = ("Where did my money go?", "What kind of spender am I?", "What can I safely spend this week?",
                    "How could I save more?")
 TOLERANCE = 0.005
-TIMEOUT_S = 30
-ASK_TIMEOUT_S = 90
+TIMEOUT_S = 15
+ASK_TIMEOUT_S = 45
+TIME_LIMIT_S = 60
+REPAIR_SCRIPT = f"python core/scripts/reset_reviews.py {LEAD}"
 
 
 def ref(name: str) -> Any:
@@ -66,31 +71,44 @@ def ref(name: str) -> Any:
 class Response:
     status: int
     body: Any  # parsed JSON, or None
+    route: str = ""
+    retry_after: str | None = None
 
 
 class Client:
-    """One base URL and one cookie jar; every request is sent once (no retries)."""
+    """One base URL and one cookie jar; every request is sent once (no retries). Requests stop at the
+    deadline, except those sent with `exempt=True` (the undo)."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, time_limit: float = TIME_LIMIT_S) -> None:
         self.base = base_url.rstrip("/")
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.requests = 0
+        self.deadline = time.monotonic() + time_limit
 
-    def call(self, method: str, path: str, body: Any = None, timeout: float = TIMEOUT_S) -> Response:
+    def left(self) -> float:
+        return self.deadline - time.monotonic()
+
+    def call(self, method: str, path: str, body: Any = None, timeout: float = TIMEOUT_S,
+             exempt: bool = False) -> Response:
+        if not exempt:
+            if self.left() <= 0:
+                raise TimeLimit()
+            timeout = max(1.0, min(timeout, self.left()))
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Accept": "application/json", "Content-Type": "application/json"})
         self.requests += 1
+        retry_after = None
         try:
             with self.opener.open(req, timeout=timeout) as r:
                 status, raw = r.status, r.read()
         except urllib.error.HTTPError as e:
-            status, raw = e.code, e.read()
+            status, raw, retry_after = e.code, e.read(), e.headers.get("Retry-After")
         try:
             parsed = json.loads(raw) if raw else None
         except ValueError:
             parsed = None
-        return Response(status, parsed)
+        return Response(status, parsed, f"{method} {path.split('?')[0]}", retry_after)
 
 
 def not_deployed(r: Response) -> bool:
@@ -117,6 +135,14 @@ class NotDeployed(Exception):
     pass
 
 
+class TimeLimit(Exception):
+    pass
+
+
+class RateLimited(Exception):
+    pass
+
+
 def expect(what: str, expected: Any, got: Any) -> None:
     ok = (isinstance(expected, float) and isinstance(got, (int, float)) and abs(got - expected) <= TOLERANCE) \
         or expected == got
@@ -126,8 +152,8 @@ def expect(what: str, expected: Any, got: Any) -> None:
 
 def ok_json(r: Response, what: str, status: int = 200) -> Any:
     if not_deployed(r):
-        raise NotDeployed()
-    if r.status != status or r.body is None:
+        raise NotDeployed(f"{r.route} -> {r.status}")
+    if r.status != status or not isinstance(r.body, dict):
         raise StageFailed(f"{what} status", status, f"{r.status} {error_code(r) or ''}".strip())
     return r.body
 
@@ -175,31 +201,40 @@ class Check:
         self.out = out
         self.results: list[Result] = []
         self.overview: dict | None = None
+        self.undo_failed = False
+        self.stop_asking: str | None = None
+
+    def line(self, res: Result) -> None:
+        self.results.append(res)
+        self.out(f"{res.name:<44} {res.status:<13} {res.ms:>6} ms  {res.detail}".rstrip())
 
     def stage(self, name: str, fn: Callable[[], str | None]) -> None:
         t = time.perf_counter()
         try:
             note = fn() or ""
             status = "PASS"
-        except NotDeployed:
-            status, note = "NOT DEPLOYED", ""
+        except NotDeployed as e:
+            status, note = "NOT DEPLOYED", str(e)
         except StageFailed as e:
+            status, note = "FAIL", str(e)
+        except TimeLimit:
+            status, note = "FAIL", "time limit reached before this stage finished"
+        except RateLimited as e:
             status, note = "FAIL", str(e)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             status, note = "FAIL", f"request failed ({type(e).__name__})"
-        res = Result(name, status, int((time.perf_counter() - t) * 1000), note)
-        self.results.append(res)
-        self.out(f"{res.name:<44} {res.status:<13} {res.ms:>6} ms  {res.detail}".rstrip())
+        except Exception as e:  # noqa: BLE001 - a malformed response fails this stage, not the run
+            status, note = "FAIL", f"unexpected response ({type(e).__name__})"
+        self.line(Result(name, status, int((time.perf_counter() - t) * 1000), note))
 
     def skip(self, name: str, why: str) -> None:
-        self.results.append(Result(name, "SKIPPED", 0, why))
-        self.out(f"{name:<44} {'SKIPPED':<13} {0:>6} ms  {why}")
+        self.line(Result(name, "SKIPPED", 0, why))
 
     # 1
     def health(self) -> str:
         expect("/healthz", 200, self.c.call("GET", "/healthz").status)
         r = self.c.call("GET", "/readyz")
-        expect("/readyz", (200, "ready"), (r.status, (r.body or {}).get("status")))
+        expect("/readyz", (200, "ready"), (r.status, (r.body or {}).get("status") if isinstance(r.body, dict) else None))
         return ""
 
     # 2
@@ -226,11 +261,12 @@ class Check:
             expect("unexpected_necessities", ref("unexpected_necessities"), b.get("unexpected_necessities"))
             expect("unclassified", None, b.get("unclassified"))
         hero = ov.get("hero")
+        state = "review pending" if review is not None else "no review card"
         if hero is None:
-            return "review pending" if review else "no review card; hero not present"
+            return f"{state}; hero not present"
         expected = ref("safe_to_spend_pending") if review is not None else ref("safe_to_spend")
         expect("hero safe to spend", expected, value(hero.get("primary")))
-        return "review pending" if review else "no review card"
+        return state
 
     # 4
     def evidence(self) -> str:
@@ -240,11 +276,12 @@ class Check:
         if not refs:
             raise StageFailed("evidence refs in the overview", "at least one", 0)
         for e in refs:
-            r = self.c.call("GET", f"/api/evidence/{e}?customer_id={LEAD}")
-            ok_json(r, f"evidence {e}")
+            body = ok_json(self.c.call("GET", f"/api/evidence/{e}?customer_id={LEAD}"), f"evidence {e}")
+            if body.get("reconciles") is False:  # null is fine: nothing to add up
+                raise StageFailed(f"evidence {e} reconciles", "true or null", False)
         r = self.c.call("GET", f"/api/evidence/{refs[0]}?customer_id={OTHER_PERSONA}")
         expect("a ref asked for another persona", (403, "evidence_forbidden"), (r.status, error_code(r)))
-        return f"{len(refs)} refs resolve; another persona gets 403"
+        return f"{len(refs)} refs resolve and reconcile; another persona gets 403"
 
     # 5
     def allowlist(self) -> str:
@@ -259,6 +296,7 @@ class Check:
         body = {"customer_id": LEAD, "language": "en",
                 "scenario": {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}}
         res = ok_json(self.c.call("POST", "/api/whatif", body), "/api/whatif")
+        expect("baseline_per_month", ref("what_if_baseline_month"), value(res.get("baseline_per_month")))
         expect("saving_per_month", ref("what_if_saving_month"), value(res.get("saving_per_month")))
         return ""
 
@@ -272,12 +310,15 @@ class Check:
             probe = self.c.call("POST", "/api/baskets/label", {"customer_id": LEAD, "tx_ref": "txr_0000000000000000",
                                                                "basket": "unexpected_necessities", "language": "en"})
             if not_deployed(probe):
-                raise NotDeployed()
-            raise StageFailed("a pending review card for the lead persona", "present", "none "
-                              "(reset: python core/scripts/reset_reviews.py CUST00860)")
+                raise NotDeployed(f"{probe.route} -> {probe.status}")
+            raise StageFailed("a pending review card for the lead persona", "present",
+                              f"none (repair: {REPAIR_SCRIPT})")
         tx_ref = review["tx_ref"]
         label = {"customer_id": LEAD, "tx_ref": tx_ref, "language": "en"}
+        failure: Exception | None = None
+        sent = False
         try:
+            sent = True  # from here on an answer may have been written, so the undo must run
             res = ok_json(self.c.call("POST", "/api/baskets/label", {**label, "basket": "unexpected_necessities"}),
                           "label Needed")
             expect("review_state after Needed", "answered", res.get("review_state"))
@@ -290,20 +331,46 @@ class Check:
                    baskets(after).get("unexpected_necessities"))
             if after.get("hero") is not None:
                 expect("hero after Needed", ref("safe_to_spend"), value(after["hero"].get("primary")))
+        except Exception as e:  # noqa: BLE001 - judged after the undo, below
+            failure = e
         finally:
-            # Always leave the persona pending, whatever failed above.
-            undo = self.c.call("POST", "/api/baskets/label", {**label, "basket": None})
-        expect("undo", (200, "pending"), (undo.status, (undo.body or {}).get("review_state")))
+            undo_ok, undo_detail = self.undo(label) if sent else (True, "")
+        if not undo_ok:
+            self.undo_failed = True
+            self.out(f"UNDO FAILED - {LEAD} may be left answered (tx_ref {tx_ref}, {undo_detail})")
+            self.out(f"  repair: curl -s -X POST {self.c.base}/api/baskets/label -H 'Content-Type: application/json' "
+                     f"-d '{json.dumps({**label, 'basket': None})}'")
+            self.out(f"  or, reliably: {REPAIR_SCRIPT}  (with per-viewer answers, #144, a bare curl acts as "
+                     f"another viewer, so the reset script is the repair that always works)")
+        if failure is not None:
+            raise failure
+        if not undo_ok:
+            raise StageFailed("undo", "200, review_state 'pending'", undo_detail)
         back = ok_json(self.c.call("GET", f"/api/overview/{LEAD}"), "overview after undo")
         expect("review card back after undo", tx_ref, (pending_review(back) or {}).get("tx_ref"))
         if back.get("hero") is not None:
             expect("hero after undo", ref("safe_to_spend_pending"), value(back["hero"].get("primary")))
         return "Needed then undo; left pending"
 
+    def undo(self, label: dict) -> tuple[bool, str]:
+        """Send the undo (exempt from the time limit) and judge it; never raises."""
+        try:
+            r = self.c.call("POST", "/api/baskets/label", {**label, "basket": None}, exempt=True)
+        except Exception as e:  # noqa: BLE001 - a dropped connection is a failed undo, reported loudly
+            return False, f"request failed ({type(e).__name__})"
+        state = r.body.get("review_state") if isinstance(r.body, dict) else None
+        if r.status == 200 and state == "pending":
+            return True, ""
+        return False, f"status {r.status}, review_state {state!r}"
+
     # 8
     def ask(self, question: str) -> str:
         body = {"customer_id": LEAD, "message": question, "language": "en"}
-        res = ok_json(self.c.call("POST", "/api/ask", body, timeout=ASK_TIMEOUT_S), "/api/ask")
+        r = self.c.call("POST", "/api/ask", body, timeout=ASK_TIMEOUT_S)
+        if r.status == 429:
+            self.stop_asking = f"rate limited (429), Retry-After {r.retry_after or '?'} s"
+            raise RateLimited(f"{self.stop_asking}; the remaining questions are not sent")
+        res = ok_json(r, "/api/ask")
         expect("outcome", "answered", res.get("outcome"))
         expect("fallback warning", False, "llm_unavailable" in (res.get("warnings") or []))
         numbers = res.get("numbers") or {}
@@ -312,8 +379,9 @@ class Check:
         return f"{len(res.get('cited') or [])} numbers, each with an evidence ref"
 
 
-def run(base_url: str, ask: bool = True, ask_limit: int = 4, out: Callable[[str], None] = print) -> list[Result]:
-    check = Check(Client(base_url), out)
+def run(base_url: str, ask: bool = True, ask_limit: int = 4, out: Callable[[str], None] = print,
+        time_limit: float = TIME_LIMIT_S) -> tuple[list[Result], Check]:
+    check = Check(Client(base_url, time_limit), out)
     check.stage("health and readiness", check.health)
     check.stage("personas (four, lead first)", check.personas)
     check.stage(f"overview {LEAD}", check.overview_stage)
@@ -327,10 +395,12 @@ def run(base_url: str, ask: bool = True, ask_limit: int = 4, out: Callable[[str]
             check.skip(name, "--no-ask")
         elif i >= ask_limit:
             check.skip(name, f"--ask-limit {ask_limit}")
+        elif check.stop_asking:
+            check.skip(name, f"not sent: {check.stop_asking}")
         else:
             check.stage(name, lambda q=question: check.ask(q))
     out(f"-- {check.c.requests} requests to {base_url}")
-    return check.results
+    return check.results, check
 
 
 def main(argv: list[str] | None = None, out: Callable[[str], None] = print) -> int:
@@ -339,12 +409,15 @@ def main(argv: list[str] | None = None, out: Callable[[str], None] = print) -> i
     ap.add_argument("--no-ask", action="store_true", help="skip /api/ask (it may call the language model)")
     ap.add_argument("--ask-limit", type=int, default=len(BRIEF_QUESTIONS), help="at most this many questions")
     ap.add_argument("--require-all", action="store_true", help="NOT DEPLOYED counts as a failure")
+    ap.add_argument("--time-limit", type=float, default=TIME_LIMIT_S, help="seconds for the whole run (default 60)")
     args = ap.parse_args(argv)
-    results = run(args.base_url, ask=not args.no_ask, ask_limit=max(0, args.ask_limit), out=out)
+    results, check = run(args.base_url, ask=not args.no_ask, ask_limit=max(0, args.ask_limit), out=out,
+                         time_limit=args.time_limit)
     failed = [r for r in results if r.status == "FAIL" or (args.require_all and r.status == "NOT DEPLOYED")]
     counts = {s: sum(r.status == s for r in results) for s in ("PASS", "FAIL", "NOT DEPLOYED", "SKIPPED")}
-    out("-- " + ", ".join(f"{n} {s.lower()}" for s, n in counts.items()) + (" -> FAIL" if failed else " -> OK"))
-    return 1 if failed else 0
+    verdict = " -> FAIL" if failed or check.undo_failed else " -> OK"
+    out("-- " + ", ".join(f"{n} {s.lower()}" for s, n in counts.items()) + verdict)
+    return 1 if failed or check.undo_failed else 0
 
 
 if __name__ == "__main__":

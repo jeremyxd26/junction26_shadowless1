@@ -127,22 +127,28 @@ GET https://sentti.jeremyxd.dev/healthz -> 200
 After `bash deploy/dev.sh` (and before the demo), run:
 
 ```
-python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --no-ask   # no model calls
-python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev            # plus the four brief questions
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --no-ask   # no model calls
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all            # plus the four brief questions
 ```
 
-The script checks, against the reference values at its top (`docs/design/personas.md`):
+Every stage is live on dev now, so use `--require-all`: a stage that answers NOT DEPLOYED then fails the check.
+
+The script checks, against the reference values at its top (`docs/design/personas.md`, `contracts/api.md`):
 - health;
 - the personas;
-- Sanna's overview and its evidence refs;
+- Sanna's overview, and that its evidence refs resolve and reconcile;
 - the persona allowlist;
 - the what-if;
 - the spike review ("Needed", then undo);
 - optionally `/api/ask`.
 
-It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED for a route the service does not have yet. It exits 1 on any FAIL; with `--require-all`, also on NOT DEPLOYED.
+It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED (with the route and status). It exits 1 on any FAIL.
 
-It uses the standard library only and needs no secrets, and it never retries. The only writes are the label answer and its undo, and it always leaves the review pending. Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them), so do not run it in a loop.
+It uses the standard library only and needs no secrets. It never retries, and the whole run ends within `--time-limit` seconds (default 60).
+
+The only writes are the label answer and its undo. The undo always runs and is always checked. If it fails, the script prints `UNDO FAILED - CUST00860 may be left answered`, with the `tx_ref` and the repair. The reliable repair is `python core/scripts/reset_reviews.py CUST00860`: with per-viewer answers, a bare curl acts as another viewer.
+
+Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
 
 ## The app
 
