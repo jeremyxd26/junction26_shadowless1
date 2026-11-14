@@ -439,7 +439,7 @@ Features over the window (all per month unless noted):
 - `net_income` = (income − Salary Sweep) / n_months, where income = Salary + Other Income (Invest Withdraw is not income; section 2.3)
 - `spend` = spend flow / n_months; `saving` = Invest Deposit / n_months
 - `keep_rate` = (net_income − spend) / net_income, in % (investment deposits count as kept); only computed when net_income > 0
-- basket shares of spend; `one_off_share`: one-off purchases outside Health as a share of spend (Health one-offs are left out so that health spending can never set a label, R9)
+- basket shares of spend; `one_off_share`: one-off purchases outside Health as a share of spend (Health one-offs are left out so that health spending can never set a label, R9). Every share is of **all spending**, as on the basket card: a purchase whose spike review is pending (`unclassified`, #68) stays in the total and in the one-off amount, so the profile does not change while a question waits (#235, decision B).
 - `everyday_weekend_pct`: share of everyday spending on Saturday or Sunday
 - `everyday_tx_month`, `everyday_avg_ticket_eur`, `top_everyday_category`
 - `months_out_over_in`: months where spend + saving exceeded that month's income − sweep (same income definition)
@@ -476,6 +476,17 @@ R9: no feature uses Health or health MCCs on their own; labels and traits contai
 | CUST00002 | stretched | went_below_zero (11 tx), frequent_small_purchases (13.3/month) | −4.5% | 1,628.40 | 1,702.17 | 25.3% |
 | CUST00006 | saver | salary_moved_elsewhere | 24.8% | 337.13 | 253.54 | 19.7% |
 
+**The four review states of the lead persona** (CUST00860, its 1,080.42 Home & Tech purchase of 2026-09-28; the labels as `app.tx_labels`). Shares in %:
+
+| State | Profile | One-off share | Everyday share | Unexpected share |
+|---|---|---|---|---|
+| no review | big_ticket | 6.0 | 19.9 | 17.3 |
+| pending (`unclassified`) | big_ticket | 6.0 | 19.9 | 11.3 |
+| "Needed" (unexpected necessities) | big_ticket | 6.0 | 19.9 | 17.3 |
+| "My choice" (everyday spending) | big_ticket | 6.0 | 25.9 | 11.3 |
+
+Before #235, the pending state gave 6.4 / 21.2 / 12.1: the total left the pending purchase out, but the one-off amount kept it.
+
 ## 6. Peer benchmark by age band and postal area
 
 An estimate (R13): "people like you" are customers in the same age band and area.
@@ -487,6 +498,7 @@ An estimate (R13): "people like you" are customers in the same age band and area
 - Metrics (month averages over the window): total spend, the three baskets, and the categories Groceries, Restaurants, Transportation, Entertainment, Lifestyle, Travel, Home & Tech, Utilities, Housing. **Health is not benchmarked** (R9).
 - `percentile` = share of the other peers in the group who spend less; `vs_median_pct` = you / peer median − 1.
 - Who is counted: `peer_median`, `peer_p25` and `peer_p75` describe the whole group, the customer included (one value among 21 or more moves them little, and the group statistics can then be computed once per group). `peer_n` and `percentile` count only the other members.
+- In the smallest group that is shown (21 members: 20 others and the customer), `percentile_cont` falls on whole positions (5, 10 and 15 of 0–20). Each of the three quantiles is then one member's exact monthly value, not an interpolation. It is still shown only as a group statistic, without any id, and no request can narrow the group further.
 
 **Output** (`06_peer_benchmark.sql`, one row per customer and metric): `you_month_eur`, `peer_median_month_eur`, `peer_p25_month_eur`, `peer_p75_month_eur`, `percentile`, `vs_median_pct`, `shown`, `comparable`, `peer_level`, `peer_group`, `peer_n`, `peer_source` (`marts` or `range`), `period_start`, `period_end`. The coach uses a row only when `shown` is true.
 

@@ -21,6 +21,7 @@ A failure inside the stream becomes one `error` event; exception text never leav
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import re
 import threading
@@ -42,6 +43,8 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
+from core.app.api import texts as api_texts
+from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
@@ -54,12 +57,15 @@ MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool c
 # A second lane runs only on a connection that is free at once, so one answer never queues for a
 # second connection that another request needs (core/app/db.py holds a small pool).
 SPARE_WAIT_S = 0.05
+# The pending review's card joins an answer whose tools touched the spike's basket or category
+# (contracts/api.md section 7.2): any basket or safe-to-spend answer, or a category filter naming it.
+SPIKE_TOOLS = frozenset({"get_basket_breakdown", "get_safe_to_spend"})
+CATEGORY_TOOLS = frozenset({"get_spending", "run_what_if"})
+UNCLASSIFIED = "unclassified"   # the basket of a purchase whose review is pending (core.tools.reviews)
 
-ERRORS = {
-    "data_unavailable": (("Your data can't be loaded right now. Please try again in a minute.",
-                          "Tietojasi ei voi ladata juuri nyt. Yritä uudelleen hetken kuluttua."), True),
-    "internal": (("Something went wrong. Please try again.", "Jokin meni vikaan. Yritä uudelleen."), True),
-}
+# The `error` event's texts are the API's catalogue (core/app/api/texts.py), so a failure reads the same
+# before the stream (503) and inside it.
+ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
 
@@ -115,12 +121,36 @@ def error_envelope(code: str, language: str) -> dict[str, Any]:
     return {"code": code, "message": template.pick(texts, language), "retryable": retryable}
 
 
+@dataclass(frozen=True)
+class LabelSteps:
+    """The server's own label steps of an answer (#68, #196): the functions the overview uses.
+
+    - `establish(ctx)` runs at a fixed point of every answer, before the model plans anything, so the
+      model's plan cannot decide whether a review is created (R6). It finds or creates the pending spike
+      review (core.tools.reviews.ensure_pending_for) and fills ctx._labels, which every tool call of the
+      answer then shares: no tool call reads the labels again.
+    - `card(ctx, review)` builds the pending review's card (core.tools.review_card.build).
+    - `enabled()` says whether spike reviews are on (for the audit record).
+    No model tool can write a label; only the app's label endpoint does (contract section 10)."""
+
+    establish: Callable[[ToolContext], Any]
+    card: Callable[[ToolContext, Any], dict[str, Any] | None]
+    enabled: Callable[[], bool]
+
+
 @dataclass
 class AskRequest:
     customer_id: str
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
+    # The viewer session key (#144, #253): a hash of the viewer cookie, from known_viewer(request). The
+    # answer's labels are this viewer's answers; None reads the shared state. Never logged, never in a
+    # model view or the audit record.
+    viewer: str | None = None
+    # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
+    # with the `llm_unavailable` warning, and no model request is made.
+    model_allowed: bool = True
 
 
 @dataclass
@@ -147,6 +177,12 @@ class _Answer:
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
+    label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
+    ok_calls: list[dict[str, Any]] = field(default_factory=list)  # the data calls that returned a result
+    # Why the model may not be used for this answer (#232: "model_window"; the adapter's own reasons come
+    # with #244). Set at one place before planning (Pipeline._model_unavailable); it decides the
+    # `llm_unavailable` warning, and a plan by the rules then still makes an "answered" outcome.
+    model_unavailable: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -163,8 +199,10 @@ class _Answer:
 class Pipeline:
     def __init__(self, registry: Registry, model: Model, data: DataAccess, *, as_of: date,
                  store: ConversationStore | None = None, audit: AuditLog | None = None,
-                 fallback: Model | None = None, clock: Callable[[], float] = time.perf_counter) -> None:
+                 fallback: Model | None = None, clock: Callable[[], float] = time.perf_counter,
+                 labels: LabelSteps | None = None) -> None:
         self.registry = registry
+        self.labels = labels  # None: no label step (tests without a database)
         self.model = model
         self.data = data
         self.as_of = as_of
@@ -217,8 +255,12 @@ class Pipeline:
         a.flags = guard.flags(message)
 
         # The customer is bound here, from the request, and never from model output (R4).
+        # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
+        # every tool call's copy of ctx keeps it.
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
-                          numbers=LockedNumberRegistry())
+                          numbers=LockedNumberRegistry(), viewer=req.viewer)
+        # The label state, as the overview establishes it (#196): before the model plans, once per answer.
+        review = self._establish_labels(ctx, a)  # `pending` below is the round's list of calls
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -226,6 +268,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        a.model_unavailable = self._model_unavailable(req)
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -254,6 +297,10 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
+                # The rules asked back in the model's place: say so. A rules decline is a refusal either way.
+                if "decline" not in controls and (planner_fallback or a.model_unavailable) \
+                        and "llm_unavailable" not in a.warnings:
+                    a.warnings.append("llm_unavailable")
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -278,6 +325,7 @@ class Pipeline:
             for (call, args), record in zip(pending, records):
                 a.calls.append({"name": call.name, "args": call.args})
                 if "view" in record:
+                    a.ok_calls.append({"name": call.name, "args": call.args})
                     views.append(record.pop("view"))
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
@@ -289,14 +337,22 @@ class Pipeline:
 
         numbers = ctx.numbers.all()
         allowed = allowed_from(numbers.values(), views, self.as_of)
+        if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
+            self._attach_review(ctx, review, emit, a)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=planner_fallback, a=a)
+        draft, used_template = self._compose(compose_in, numbers, allowed,
+                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
-        if a.outcome == "fallback":
+        if a.model_unavailable is not None:
+            # The model may not be used: the rules planned, the tools ran and the template wrote. That is an
+            # answer, with the warning (the rule agreed for #232 and #244).
+            a.outcome = "answered"
+        else:
+            a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
+        if (a.outcome == "fallback" or a.model_unavailable is not None) and "llm_unavailable" not in a.warnings:
             a.warnings.append("llm_unavailable")
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
@@ -311,7 +367,79 @@ class Pipeline:
                                    "answer": TOKEN.sub("[number]", text)})
         return lang
 
+    def _establish_labels(self, ctx: ToolContext, a: _Answer) -> Any:
+        """The pending review (or None) and the answer's labels on ctx, with one connection."""
+        if self.labels is None:
+            return None
+        try:
+            with self.data.connection() as conn:
+                ctx.conn = conn
+                try:
+                    pending = self.labels.establish(ctx)
+                finally:
+                    ctx.conn = None
+        except (psycopg.OperationalError, PoolTimeout):
+            raise DataUnavailable() from None
+        if ctx._labels is not None:
+            # The tool cache (#86) keys results by the label state and would read the labels again for
+            # every call whose context has no key; the answer's labels give it the same key at once.
+            from core.tools.cache import labels_key_of
+
+            ctx.labels_key = labels_key_of(ctx._labels)
+        values = list((ctx._labels or {}).values())
+        a.label_state = {"spike_reviews": "on" if self.labels.enabled() else "off",
+                         "labels": sum(v != UNCLASSIFIED for v in values),
+                         "pending": sum(v == UNCLASSIFIED for v in values)}
+        return pending
+
+    def _attach_review(self, ctx: ToolContext, pending: Any, emit: Emit, a: _Answer) -> None:
+        """Add the pending review's card when the answer's tools touched the spike's basket or category
+        (contract section 7.2). It counts towards the three cards; it is the server's, never the model's."""
+        # Only calls that returned a result count (review of #231): a failed call touched nothing.
+        names = {c["name"] for c in a.ok_calls}
+        filtered = [c for c in a.ok_calls if c["name"] in CATEGORY_TOOLS]
+        if len(a.cards) >= MAX_CARDS or not (names & SPIKE_TOOLS or filtered):
+            return
+        def names_category(category: Any) -> bool:
+            return any(json.dumps(category) in json.dumps(c["args"]) for c in filtered)
+
+        category = None
+        if not names & SPIKE_TOOLS:
+            # The spike's category from the history the tools already loaded, so a card that would not be
+            # sent takes no connection and writes no evidence. The history is often not loaded (a what-if
+            # by category runs metric SQL only; the label step reads it only when it creates a review):
+            # then the card is built and its own category decides, below.
+            category = next((t.category for t in ctx._history or [] if t.id == getattr(pending, "tx_id", None)), None)
+            if category is not None and not names_category(category):
+                return
+        try:
+            with self.data.connection() as conn:
+                ctx.conn = conn
+                try:
+                    card = self.labels.card(ctx, pending)
+                finally:
+                    ctx.conn = None
+        except (DataUnavailable, psycopg.OperationalError, PoolTimeout):
+            log.warning("review card not added (data unavailable)")  # the answer itself stands
+            return
+        if card is None:
+            return
+        if not names & SPIKE_TOOLS and category is None and not names_category(card.get("category")):
+            return
+        a.cards.append(card["card_id"])
+        emit("card", {"card": card})
+
+    @staticmethod
+    def _model_unavailable(req: AskRequest) -> str | None:
+        """The one place that decides whether the model may be used for this answer (#232; #244 adds the
+        adapter's reasons: an off-switch, the budget, a pause)."""
+        return "model_window" if not getattr(req, "model_allowed", True) else None
+
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
+        if a.model_unavailable is not None:  # the rules plan, no model request
+            plan = self.fallback.plan(request)
+            a.planner_turns.append({"round": request.round, "source": "rules", "model_unavailable": a.model_unavailable})
+            return plan, "rules" if plan.recognised else "fallback"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:
@@ -334,12 +462,20 @@ class Pipeline:
         MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S
         (DataAccess.connection_if_free), so the calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
         a call that waits for the one before it (ids, cards and audit keys follow the call order) then
-        always waits on a call that holds a connection and can finish."""
+        always waits on a call that holds a connection and can finish.
+        Tool results go through the tool cache (#86): the customer's label state is read once per answer
+        before the lanes start, and a cached result runs no SQL."""
+        if pending and TOOL_CACHE.enabled:
+            try:
+                TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)   # copied into every call's context
+            except (psycopg.OperationalError, PoolTimeout):
+                raise DataUnavailable() from None
         records: list[dict[str, Any] | None] = [None] * len(pending)
         done = [threading.Event() for _ in pending]
         queue = deque(range(len(pending)))
         lock = threading.Lock()
         failures: list[BaseException] = []
+        failed_at: set[int] = set()  # the calls that failed, by index
 
         def take() -> int | None:
             with lock:
@@ -350,25 +486,33 @@ class Pipeline:
                 with lock:
                     if not queue or failures:
                         return
-                taken = False
                 try:
                     with (self.data.connection_if_free(SPARE_WAIT_S) if spare else self.data.connection()) as conn:
                         i = take()
                         if i is None:
                             return
-                        taken = True
+                        call, args = pending[i]
+                        before = done[i - 1] if i else None
                         try:
-                            call, args = pending[i]
-                            before = done[i - 1] if i else None
                             own = dataclasses.replace(ctx, conn=conn, numbers=_InCallOrder(ctx.numbers, before))
-                            records[i] = self._run_tool(own, call, args, lang, emit, a, before)
+                            records[i] = self._run_tool(own, call, args, lang, emit, a, before,
+                                                        lambda i=i: any(j < i for j in failed_at))
                             with a.lock:  # later calls reuse the customer's loaded history
                                 if ctx._history is None and own._history is not None:
                                     ctx._history = own._history
+                        except BaseException as exc:  # noqa: BLE001 - re-raised by the caller below
+                            # Recorded BEFORE done[i] is set, so a later call that waits for this one
+                            # sees the failure and sends no card before the `error` event (#168).
+                            with lock:
+                                failures.append(exc)
+                                failed_at.add(i)
+                            return
                         finally:
+                            if before is not None:
+                                before.wait()  # done[i] means that every earlier call has finished too
                             done[i].set()
                 except DataUnavailable as exc:
-                    if not spare or taken:
+                    if not spare:
                         with lock:
                             failures.append(exc)
                     return  # a spare lane without a free connection: the first lane runs the rest
@@ -391,15 +535,19 @@ class Pipeline:
         return [r for r in records if r is not None]
 
     def _run_tool(self, ctx: ToolContext, call: FunctionCall, args: Any, lang: str, emit: Emit, a: _Answer,
-                  before: threading.Event | None = None) -> dict[str, Any]:
+                  before: threading.Event | None = None,
+                  failed: Callable[[], bool] = lambda: False) -> dict[str, Any]:
         """Run one call on ctx.conn. Its card and audit entry are recorded only after the calls before
-        it (`before`), so the three surviving cards and the audit keys follow the call order."""
+        it (`before`), so the three surviving cards and the audit keys follow the call order. When an
+        earlier call failed (`failed`), the answer ends with an `error` event, so this call sends no card."""
         spec = self.registry.tools[call.name]
         emit("status", {"stage": "tool", "tool": call.name, "label": template.pick(spec.status_label, lang)})
         t = self.clock()
         record: dict[str, Any] = {"name": call.name, "args": call.args}
         try:
-            result = spec.fn(ctx, args)
+            # Through the tool cache (#86), on the lane's connection: a cached result runs no SQL, and its
+            # numbers are registered in call order like a fresh call's.
+            result = TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, ctx, args)
         except DataUnavailable:
             raise
         except (psycopg.OperationalError, PoolTimeout):
@@ -417,9 +565,10 @@ class Pipeline:
             card = spec.card_builder(result)
             if before is not None:
                 before.wait()
+            stopped = failed()  # an earlier call found the database down: the answer ends with `error`
             with a.lock:
                 a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
-                send = card is not None and len(a.cards) < MAX_CARDS
+                send = card is not None and not stopped and len(a.cards) < MAX_CARDS
                 if send:
                     a.cards.append(card.card_id)
             if send:  # once the tool and the calls before it have finished, before the composer starts
@@ -447,7 +596,7 @@ class Pipeline:
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
                     return draft, False
-        fallback = template.template_draft(request.data, request.errors, lang, allowed)
+        fallback = template.template_draft(request.data, request.errors, lang, allowed, request.question)
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
@@ -525,6 +674,8 @@ class Pipeline:
             "warnings": a.warnings,
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
+            "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
+            "model_unavailable": a.model_unavailable,  # why the model was not used (#232, #244)
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

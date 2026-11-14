@@ -14,13 +14,15 @@
   error of the tool is a bug and stays a 500.
 - A cut of regular essentials is not an error: the tool returns the status `not_offered`.
 - Error messages are in the body's `language` (contract section 1), through `request.state.language`.
+- The labels are the viewer's (#144, core.app.api.viewer), as on the overview: after a viewer answers a
+  spike review, their what-if starts from the same state as their hero; other viewers are unaffected.
 """
 
 from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from pydantic import ValidationError
 
 from core.tools import aliases
@@ -31,6 +33,7 @@ from core.tools.what_if import RunWhatIfArgs, WhatIfRefused, run_what_if
 from .deps import customer_connection
 from .errors import ApiError
 from .schemas import WhatIfRequest, WhatIfResponse
+from .viewer import viewer_of
 
 router = APIRouter()
 
@@ -64,9 +67,9 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
 
 
 @router.post("/api/whatif", response_model=WhatIfResponse)
-def post_whatif(request: Request, body: WhatIfRequest) -> WhatIfResponse:
+def post_whatif(request: Request, response: Response, body: WhatIfRequest) -> WhatIfResponse:
     request.state.language = body.language  # every error from here on is in the body's language
     with customer_connection(request, body.customer_id) as conn:   # allowlist first, no database (#101)
         ctx = ToolContext(customer_id=body.customer_id, as_of=request.app.state.settings.demo_today, conn=conn,
-                          language=body.language)
+                          language=body.language, viewer=viewer_of(request, response))  # #144: this viewer's answers
         return build(ctx, body)

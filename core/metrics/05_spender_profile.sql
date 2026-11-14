@@ -4,6 +4,7 @@
 --   app.demo_today     "today"; no transaction after it is read        (default 2026-09-30)
 --   app.customer_from  first customer_id of the range, inclusive        (default CUST00000)
 --   app.customer_to    end of the customer_id range, exclusive          (default CUST00100)
+--   app.tx_labels      the customer's transaction labels, JSON {"<id>": "<basket>"} (default none)
 -- One row per customer: the features over the last 6 complete months, then one primary label
 -- chosen by the first matching rule, and any number of the five trait tags. No feature uses the
 -- Health category or health MCCs on its own (rule R9): they only count inside the basket totals.
@@ -44,10 +45,22 @@ merchant_recurring AS (   -- card merchants charged once a month at a stable amo
        AND count(*) = count(DISTINCT date_trunc('month', tx.tx_date))
        AND stddev_samp(tx.amount_eur) / NULLIF(abs(avg(tx.amount_eur)), 0) <= 0.10
 ),
-overrides (customer_id, merchant_id, mcc, category, basket) AS (
-    -- User overrides, most specific match wins (merchant > mcc > category). Empty here; in the
-    -- product this is the basket_overrides table described in metrics.md.
-    SELECT NULL::text, NULL::text, NULL::text, NULL::text, NULL::text WHERE false
+overrides (customer_id, tx_id, merchant_id, mcc, category, basket) AS MATERIALIZED (
+    -- User overrides, most specific match wins (transaction > merchant > mcc > category).
+    -- Transaction level: the customer's labels from spike reviews (metrics.md section 1.1), passed as
+    -- JSON {"<transaction id>": "<basket>"} in app.tx_labels by core/tools/metric_sql.py. A missing,
+    -- empty or malformed setting means no labels; keys that are not ids and values that are not one
+    -- of the four basket states are ignored. They apply to the spend flow only, as in classify.py.
+    -- Rule level (merchant, mcc, category): empty here; in the product this is the basket_overrides
+    -- table described in metrics.md.
+    SELECT NULL::text, CASE WHEN l.key ~ '^[0-9]{1,18}$' THEN l.key::bigint END,
+           NULL::text, NULL::text, NULL::text, l.value
+    FROM (SELECT COALESCE(current_setting('app.tx_labels', true), '') AS s) setting,
+         jsonb_each_text(CASE WHEN NOT pg_input_is_valid(setting.s, 'jsonb')    THEN '{}'::jsonb
+                              WHEN jsonb_typeof(setting.s::jsonb) <> 'object' THEN '{}'::jsonb
+                              ELSE setting.s::jsonb END) AS l
+    WHERE l.key ~ '^[0-9]{1,18}$'
+      AND l.value IN ('unclassified', 'regular_essentials', 'unexpected_necessities', 'everyday_spending')
 ),
 cls AS (
     SELECT x.*,
@@ -83,9 +96,10 @@ cls AS (
     ) x
     LEFT JOIN LATERAL (
         SELECT o.basket FROM overrides o
-        WHERE o.customer_id = x.customer_id
-          AND (o.merchant_id = x.merchant_id OR o.mcc = x.mcc OR o.category = x.category)
-        ORDER BY (o.merchant_id IS NOT NULL) DESC, (o.mcc IS NOT NULL) DESC
+        WHERE (o.tx_id = x.id AND x.flow = 'spend')
+           OR (o.customer_id = x.customer_id
+               AND (o.merchant_id = x.merchant_id OR o.mcc = x.mcc OR o.category = x.category))
+        ORDER BY (o.tx_id IS NOT NULL) DESC, (o.merchant_id IS NOT NULL) DESC, (o.mcc IS NOT NULL) DESC
         LIMIT 1
     ) o ON true
 ),
@@ -118,6 +132,7 @@ f AS (
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'transfer'), 0) / m.n_months         AS sweep_month,
            count(DISTINCT date_trunc('month', w.tx_date)) FILTER (WHERE w.flow = 'transfer')   AS sweep_months,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend'), 0) / m.n_months            AS spend_month,
+           COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend'), 0)                         AS spend_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'saving'), 0) / m.n_months           AS saving_month,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'regular_essentials'), 0)          AS regular_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'unexpected_necessities'), 0)      AS unexpected_eur,
@@ -134,7 +149,10 @@ f AS (
 g AS (
     SELECT f.*,
            f.income_month - f.sweep_month                                         AS net_income_month,
-           f.regular_eur + f.unexpected_eur + f.everyday_eur                      AS spend_total,
+           -- Shares are of all spending, as on the basket card (#235): a purchase whose spike review is
+           -- pending (`unclassified`, #68) stays in the total, so the shares and the one-off share use
+           -- one denominator and the profile does not change while a question waits.
+           f.spend_eur                                                            AS spend_total,
            (SELECT count(*) FROM monthly mo WHERE mo.customer_id = f.customer_id
               AND mo.out_total > COALESCE(mo.net_in, 0))                          AS months_out_over_in
     FROM f

@@ -36,6 +36,7 @@ class Selection:
     series_key: str | None = None       # a recurring series: a tx_type, or a merchant id for card
                                         # purchases (metrics.md section 2); replaces the flow filter
     series_keys: tuple[str, ...] | None = None  # several series (the bills due total); () = none
+    tx_ids: tuple[int, ...] | None = None       # exactly these transactions (a reviewed purchase, #68)
 
     def to_spec(self) -> dict[str, Any]:
         spec: dict[str, Any] = {
@@ -53,6 +54,8 @@ class Selection:
             spec["series_key"] = self.series_key
         if self.series_keys is not None:
             spec["series_keys"] = list(self.series_keys)
+        if self.tx_ids is not None:
+            spec["tx_ids"] = list(self.tx_ids)
         return spec
 
     @classmethod
@@ -71,6 +74,7 @@ class Selection:
             group_not_in=tuple(group.get("not_in") or ()),
             series_key=spec.get("series_key"),
             series_keys=tuple(spec["series_keys"]) if "series_keys" in spec else None,
+            tx_ids=tuple(int(i) for i in spec["tx_ids"]) if "tx_ids" in spec else None,
         )
 
     def with_group(self, by: str, key: str | None = None, not_in: tuple[str, ...] = ()) -> Selection:
@@ -121,6 +125,8 @@ def select(rows: list[CTx], sel: Selection) -> list[CTx]:
     for c in rows:
         if not (sel.start <= c.tx.tx_date <= sel.end) or not _in_direction(c, sel):
             continue
+        if sel.tx_ids is not None and c.tx.id not in sel.tx_ids:
+            continue
         if sel.baskets and c.basket not in sel.baskets:
             continue
         if sel.mcc_groups and c.mcc_group not in sel.mcc_groups:
@@ -151,7 +157,8 @@ def _monthly_totals(rows: list[CTx]) -> list[Decimal]:
 
 SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"]}
 COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"]}
-MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"]}
+MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"],
+                     config.METHODS["peer_you"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}
 SCALED_MEDIAN_METHODS = {config.METHODS["bill_due"]}
 SUM_OF_SCALED_MEDIANS_METHODS = {config.METHODS["bills_due"]}
@@ -162,7 +169,8 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
 
     - spending.total, baskets.total_eur: sum of the selected amounts.
     - spending.n_tx, evidence.row_count: number of rows.
-    - baskets.month_avg_eur, spender_profile.spend_month_eur: sum / params["n_months"] (metrics.md 1, 5).
+    - baskets.month_avg_eur, spender_profile.spend_month_eur, peer_benchmark.you_month_eur:
+      sum / params["n_months"] (metrics.md sections 1, 5 and 6).
     - recurring.typical_month_eur: median of the monthly totals of the series (metrics.md section 2).
     - safe_to_spend.bill_due_eur: that unrounded median * factor_num / factor_den, rounded once, as
       in the `bills` step of 03_safe_to_spend.sql (occurrences before payday, or N / 30.4375).

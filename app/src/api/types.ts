@@ -138,6 +138,27 @@ export interface SafeToSaveCard extends CardBase {
   reason: SafeToSaveReason | null
 }
 
+/** Contract section 3, card `bills`: one row per bill due before payday. */
+export interface BillItem {
+  bill_id: string
+  label: string
+  category: string
+  cadence: string
+  status: 'spread' | 'done_this_month' | 'upcoming' | 'late' | 'skipped_this_month' | string
+  status_label: string
+  typical_month: Num
+  last_paid: string | null
+  next_expected: string | null
+  due_until_payday: Num
+  evidence_ref: string | null
+}
+
+export interface BillsCard extends CardBase {
+  type: 'bills'
+  total: Num
+  items: BillItem[]
+}
+
 /** Any card; the app renders the types it knows and skips the rest. */
 export type Card = MetricCard | BreakdownCard | ReviewCard | SafeToSaveCard | (CardBase & { type: string })
 

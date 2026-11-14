@@ -74,10 +74,23 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
   ) : (
     date
   )
-  // What the question does not say itself: category and date (unless tokens carry them), merchant.
+  // The core fills the question in (contract 0.2.2: "€1,080.42 at Home & Tech on 28 September 2026 —
+  // needed, or your choice?"). Its amount, found as the API's own `display` string, becomes the
+  // amount chip; `{{n1}}` / `{{date}}` tokens, if a question carries them, become chips too.
+  const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
+  const inline = tokens.has('n1') || amountAt >= 0
+  const amountChip = <NumberChip number={card.amount} size="lead" />
+  const sentence = tokens.has('n1')
+    ? fill(question, { n1: amountChip, date: dateChip })
+    : [
+        question.slice(0, amountAt),
+        <span key="amount">{amountChip}</span>,
+        ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
+      ]
+  // What the sentence does not say itself: category and date (a filled-in question has them), merchant.
   const meta = [
-    tokens.size === 0 ? card.category : null,
-    tokens.has('date') ? null : date,
+    inline ? null : card.category,
+    inline || tokens.has('date') ? null : date,
     card.merchant?.label ?? null,
   ].filter((part): part is string => Boolean(part))
 
@@ -110,14 +123,16 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
         </button>
       </div>
 
-      {tokens.has('n1') ? (
-        // Tokens in the question: the amount and the date sit in the sentence as chips. On the 48px
-        // line each 40px chip keeps a touch area of about 46px (measured), with no overlap between lines.
-        <p className="mt-3 text-xl font-bold leading-12 text-on-deep">
-          {fill(question, { n1: <NumberChip number={card.amount} size="lead" />, date: dateChip })}
-        </p>
+      {inline ? (
+        // The amount (and a date token) sit in the sentence as chips. On the 48px line each 40px chip
+        // keeps a touch area of about 46px (measured), with no overlap between lines.
+        <>
+          <p className="mt-3 text-xl font-bold leading-12 text-on-deep">{sentence}</p>
+          {meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
+        </>
       ) : (
-        // Plain question (DESIGN.md order): the amount, then date, category and merchant, then the question.
+        // A question without the amount (DESIGN.md order): the amount, then date, category and merchant,
+        // then the question.
         <>
           <div className="mt-3">
             <NumberChip number={card.amount} size="lg" />
@@ -126,7 +141,6 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
           <p className="mt-3 text-lg font-semibold text-on-deep">{fill(question, { date: dateChip })}</p>
         </>
       )}
-      {tokens.has('n1') && meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         {card.options.map((option) => {

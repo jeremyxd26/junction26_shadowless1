@@ -1,11 +1,16 @@
 // Mock mode only (`/cards`): every card example of the contract on one page, so each card
 // renderer can be checked at 375 px without a persona that happens to have that card.
 // A live build does not include this page (see App.tsx).
-import type { SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { Card, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { AnswerCard } from '../components/AnswerCard.tsx'
+import { BillsCards } from '../components/BillsCard.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
+
+/** The contract has no standalone `bills` example; it is a card of `overview.response`. */
+const OVERVIEW_CARDS = (examples['overview.response'] as { cards: Card[] }).cards
 
 const SAFE_TO_SAVE = [
   'card.safe_to_save',
@@ -26,6 +31,15 @@ export default function CardGallery() {
           <SafeToSaveCard card={examples[name] as SafeToSaveData} />
         </section>
       ))}
+      <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">overview.response → cards[type=bills]</p>
+        <BillsCards cards={OVERVIEW_CARDS} />
+      </section>
+      {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
+      <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">card.review → in an answer</p>
+        <AnswerCard card={examples['card.review'] as Card} />
+      </section>
     </div>
   )
 }

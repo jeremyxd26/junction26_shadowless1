@@ -14,6 +14,8 @@ const en = {
   language: 'Language',
   askTitle: 'Ask Sentti',
   insightsTitle: 'Worth a look',
+  billsNext: (date: string) => `Next ${date}`,
+  billsRounding: 'Each bill is rounded on its own, so together they can differ from the total by up to €0.01 per bill.',
   status: {
     ok: 'On track this week',
     below_usual: 'Less room than usual',
@@ -68,6 +70,8 @@ const fi: Strings = {
   language: 'Kieli',
   askTitle: 'Kysy Senttiltä',
   insightsTitle: 'Huomioita',
+  billsNext: (date: string) => `Seuraava ${date}`,
+  billsRounding: 'Jokainen lasku pyöristetään erikseen, joten yhteensä ne voivat poiketa kokonaissummasta enintään 0,01 € laskua kohden.',
   status: {
     ok: 'Hyvällä mallilla tällä viikolla',
     below_usual: 'Tavallista vähemmän liikkumavaraa',

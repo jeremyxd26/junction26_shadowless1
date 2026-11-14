@@ -12,7 +12,6 @@ import copy
 import json
 import re
 import typing
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,8 +19,6 @@ from pydantic import BaseModel, ValidationError
 
 from core.app.api import errors, schemas, texts
 from core.tools import config as tools_config
-from core.tools.formatting import display
-from core.tools.models import Unit
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
@@ -31,36 +28,51 @@ MODELS: dict[str, type[BaseModel]] = {
     "error.response": schemas.ErrorResponse,
     "personas.response": schemas.PersonasResponse,
     "overview.response": schemas.OverviewResponse,
+    "overview.response_pending": schemas.OverviewResponse,
+    "overview.response_no_hero": schemas.OverviewResponse,   # contract 0.2.2: hero null
+    "card.review": schemas.ReviewCard,
     "evidence.response": schemas.EvidenceResponse,
     "evidence.response_composite": schemas.EvidenceResponse,
+    "label.request": schemas.LabelRequest,
+    "label.request_wanted": schemas.LabelRequest,
+    "label.request_undo": schemas.LabelRequest,
+    "label.response": schemas.LabelResponse,
+    "label.response_wanted": schemas.LabelResponse,
+    "label.response_undo": schemas.LabelResponse,
+    "label.error": schemas.ErrorResponse,
     "whatif.request": schemas.WhatIfRequest,
     "whatif.request_basket": schemas.WhatIfRequest,
     "whatif.response": schemas.WhatIfResponse,
+    "card.safe_to_save": schemas.SafeToSaveCard,            # #165
+    "card.safe_to_save_aleksi": schemas.SafeToSaveCard,
+    "card.safe_to_save_zero": schemas.SafeToSaveCard,
+    "card.safe_to_save_everyday": schemas.SafeToSaveCard,
+    "evidence.response_metric": schemas.EvidenceResponse,   # contract 0.2.2
+    "evidence.response_peer": schemas.EvidenceResponse,     # contract 0.2.2
+    "whatif.error": schemas.ErrorResponse,                  # contract 0.2.2
+    "bill.request": schemas.BillExplainRequest,             # contract 0.3.0 (#243); endpoint with #242
+    "bill.request_fields": schemas.BillExplainRequest,
+    "bill.response": schemas.BillExplainResponse,
+    "bill.response_unknown": schemas.BillExplainResponse,
+    # bill.error joins with #242, which adds invalid_bill and its `reason` (PENDING_ERROR_CODES);
+    # bill.read_response with #250 (section 11.4, not implemented yet)
 }
 
 # Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
 # version), as paths with [] for every list item, each with the value it would have in the example.
 # The check fills them into a copy of the example; test_additions_are_still_missing fails once the
-# contract carries one, so it is removed here.
-ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {
-    "evidence.response": {  # #79, Renat: rows carry their amount's display
-        "$.rows[].display": lambda row: display(Decimal(row["amount"]), Unit.EUR, "en"),
-    },
-}
+# contract carries one, so it is removed here. Empty since contract 0.2.2 (rows[].display is in it).
+ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {}
 
 # Contract fields the models do not implement yet, by example name, with the issue that adds them.
-# Contract 0.2.0 added these to the overview. Whoever implements one removes it here:
-# test_pending_entries_are_still_missing fails while a field is both implemented and listed.
-PENDING: dict[str, set[str]] = {
-    "overview.response": {
-        "$.safe_to_save",  # the safe_to_save card (#53/#55)
-    },
-}
-# `reviews` is implemented as an always-empty list; the review item shape and the label logic are #68.
-# Error codes of the label endpoint, POST /api/baskets/label (contract 0.2.0, section 10, #68).
-PENDING_ERROR_CODES = {"tx_ref_not_found", "basket_not_allowed"}
-# Error codes the service has ahead of the contract (agreed additions; the text follows in the next version).
-ERROR_CODE_ADDITIONS = {"not_found"}  # #79: an unknown route
+# Whoever implements one removes it here: test_pending_entries_are_still_missing fails while a field
+# is both implemented and listed. Empty since #165 implemented `safe_to_save` (both overview examples).
+PENDING: dict[str, set[str]] = {}
+# Error codes the models do not have yet: invalid_bill comes with the bill endpoint (#242),
+# model_unavailable with the bill reading (#250).
+PENDING_ERROR_CODES: set[str] = {"invalid_bill", "model_unavailable"}
+# Error codes the service has ahead of the contract. Empty since contract 0.2.2 (not_found is in it).
+ERROR_CODE_ADDITIONS: set[str] = set()
 
 
 def contract_text() -> str:

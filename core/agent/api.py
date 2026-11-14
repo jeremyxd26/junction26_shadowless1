@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import unicodedata
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -28,11 +29,14 @@ from psycopg_pool import PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
+from core.agent import guard
 from core.agent.audit import AuditLog
 from core.app.api import deps
+from core.app.api.errors import envelope
+from core.app.api.viewer import known_viewer
 from core.agent.conversation import ConversationStore
-from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
-from core.agent.rules import RuleModel
+from core.agent.gemini import make_agent_model
+from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, LabelSteps, Pipeline, error_envelope
 from core.agent.toolset import default_registry
 
 router = APIRouter()
@@ -41,12 +45,6 @@ PING_S = 10.0
 MAX_MESSAGE = 500
 CONNECTION_TIMEOUT_S = 5.0
 CUSTOMER_SQL = "SELECT 1 FROM customers WHERE customer_id = %s"
-
-ERROR_TEXT = {
-    "invalid_request": "The request is not valid.",
-    "customer_not_found": "We couldn't find this customer.",
-    "rate_limited": "Too many questions at once. Please wait a moment.",
-}
 
 
 class AskBody(BaseModel):
@@ -95,49 +93,69 @@ def _env_int(name: str, default: int) -> int:
 
 
 class AskLimits:
-    """Per-process limits on POST /api/ask, checked before the stream opens (security issue #85).
+    """Per-process limits on POST /api/ask, checked before the stream opens (security issues #85, #232).
+    Sliding one-minute windows; 0 turns a window off.
 
-    Three sliding one-minute windows; 0 turns a limit off:
+    Model windows protect the language-model budget. When one is used up the question is still
+    answered, by the rule planner and the template, with the `llm_unavailable` warning and no model
+    request, so a room on one Wi-Fi address can never switch the chat off for everyone:
     - per client address (ASK_RATE_LIMIT_PER_MIN, default 10): the address uvicorn reports. In the
       image uvicorn runs with --proxy-headers behind Caddy, which replaces X-Forwarded-For, so this is
       the address Caddy saw; changing the customer_id in the body never resets it;
-    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together, which
-      also caps how often one customer can be asked about from many addresses;
-    - per address and customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10): keyed by both, so one
-      address that uses up its window for a persona never blocks that persona for anyone else (on
-      the public demo, every visitor asks about the same four personas).
-    A request counts only if every limit allows it.
+    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together;
+    - per address and customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10).
+    The hard ceiling protects the service itself; only it answers 429 with Retry-After:
+    - per client address (ASK_HARD_LIMIT_PER_MIN, default 120);
+    - global (ASK_HARD_LIMIT_GLOBAL_PER_MIN, default 600).
+    A request counts towards the model windows only when it may use the model.
     """
 
-    def __init__(self, per_address: int, global_: int, per_customer: int) -> None:
-        self.limits = {"address": per_address, "global": global_, "customer": per_customer}
+    def __init__(self, per_address: int, global_: int, per_customer: int, hard_address: int = 0,
+                 hard_global: int = 0) -> None:
+        self.model = {"address": per_address, "global": global_, "customer": per_customer}
+        self.hard = {"hard_address": hard_address, "hard_global": hard_global}
         self._hits: dict[tuple[str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
     @classmethod
     def from_env(cls) -> AskLimits:
         return cls(_env_int("ASK_RATE_LIMIT_PER_MIN", 10), _env_int("ASK_RATE_LIMIT_GLOBAL_PER_MIN", 60),
-                   _env_int("ASK_RATE_LIMIT_CUSTOMER_PER_MIN", 10))
+                   _env_int("ASK_RATE_LIMIT_CUSTOMER_PER_MIN", 10), _env_int("ASK_HARD_LIMIT_PER_MIN", 120),
+                   _env_int("ASK_HARD_LIMIT_GLOBAL_PER_MIN", 600))
 
-    def allow(self, address: str, customer_id: str) -> tuple[bool, int]:
+    def _retry(self, limits: dict[str, int], keys: dict[str, str], now: float) -> int:
+        """Seconds until every window of `limits` has room again; 0 when all have room now."""
+        retry = 0
+        for kind, limit in limits.items():
+            if limit <= 0:
+                continue
+            hits = self._hits[(kind, keys[kind])]
+            while hits and now - hits[0] > 60:
+                hits.popleft()
+            if len(hits) >= limit:
+                retry = max(retry, int(60 - (now - hits[0])) + 1)
+        return retry
+
+    def _record(self, limits: dict[str, int], keys: dict[str, str], now: float) -> None:
+        for kind, limit in limits.items():
+            if limit > 0:
+                self._hits[(kind, keys[kind])].append(now)
+
+    def check(self, address: str, customer_id: str) -> tuple[str, int]:
+        """("model", 0): answer as usual; ("rules", 0): answer without the model; ("refuse", seconds):
+        the hard ceiling, 429 with Retry-After."""
         now = time.monotonic()
-        keys = {"address": address, "global": "*", "customer": f"{address} {customer_id}"}
+        keys = {"address": address, "global": "*", "customer": f"{address} {customer_id}",
+                "hard_address": address, "hard_global": "*"}
         with self._lock:
-            retry = 0
-            for kind, limit in self.limits.items():
-                if limit <= 0:
-                    continue
-                hits = self._hits[(kind, keys[kind])]
-                while hits and now - hits[0] > 60:
-                    hits.popleft()
-                if len(hits) >= limit:
-                    retry = max(retry, int(60 - (now - hits[0])) + 1)
+            retry = self._retry(self.hard, keys, now)
             if retry:
-                return False, retry
-            for kind, limit in self.limits.items():
-                if limit > 0:
-                    self._hits[(kind, keys[kind])].append(now)
-            return True, 0
+                return "refuse", retry
+            self._record(self.hard, keys, now)
+            if self._retry(self.model, keys, now):
+                return "rules", 0
+            self._record(self.model, keys, now)
+            return "model", 0
 
 
 def trusted_proxies() -> set[str]:
@@ -170,13 +188,22 @@ class Agent:
 
 
 def build_agent(app) -> Agent:
-    """The service's agent: the built-in tools, the keyword model (until the Gemini adapter) and the
-    app's pool. Tests put their own Agent on app.state.agent instead."""
+    """The service's agent: the built-in tools, the model (the rule planner first and Gemini for the
+    rest; the rule model alone when no Gemini key is set) and the app's pool. Tests put their own
+    Agent on app.state.agent instead."""
     data = PoolData(app)
     audit = AuditLog()
-    pipeline = Pipeline(default_registry(), RuleModel(), data, as_of=app.state.settings.demo_today,
-                        store=ConversationStore(), audit=audit)
+    model = make_agent_model(app.state.settings)  # rules first, then Gemini; the rule model without a key
+    pipeline = Pipeline(default_registry(), model, data, as_of=app.state.settings.demo_today,
+                        store=ConversationStore(), audit=audit, labels=label_steps())
     return Agent(pipeline=pipeline, data=data, audit=audit)
+
+
+def label_steps() -> LabelSteps:
+    """The overview's label functions (#68, #196): the same state for an answer as for the overview."""
+    from core.tools import review_card, reviews
+
+    return LabelSteps(establish=reviews.ensure_pending_for, card=review_card.build, enabled=reviews.enabled)
 
 
 def get_agent(app) -> Agent:
@@ -184,11 +211,6 @@ def get_agent(app) -> Agent:
     if agent is None:
         agent = app.state.agent = build_agent(app)
     return agent
-
-
-def _error(status: int, code: str, message: str, retryable: bool = False, headers: dict | None = None) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message, "retryable": retryable}}, status_code=status,
-                        headers=headers)
 
 
 def _sse(event: str, payload: dict[str, Any]) -> str:
@@ -244,10 +266,20 @@ def _collect(pipeline: Pipeline, req: AskRequest) -> tuple[int, dict[str, Any]]:
 
     pipeline.run(req, emit)
     if error is not None or done is None:
-        envelope = (error or {}).get("error") or error_envelope("internal", meta.get("language", "en"))
-        return (503 if envelope["code"] == "data_unavailable" else 500), {"error": envelope}
+        failure = (error or {}).get("error") or error_envelope("internal", meta.get("language", "en"))
+        return (503 if failure["code"] == "data_unavailable" else 500), {"error": failure}
     body = {**meta, **done, "numbers": {k: v for k, v in numbers.items() if k in done["cited"]}, "cards": cards}
     return 200, body
+
+
+# Characters that render as nothing although they are letters or symbols (braille blank, Hangul fillers).
+BLANK_LOOKALIKES = {"\u2800", "\u3164", "\u115f", "\u1160", "\uffa0"}
+
+
+def _visible(message: str) -> str:
+    """The message without blank look-alikes and combining marks: empty means nothing to answer (#105)."""
+    return "".join(ch for ch in message
+                   if ch not in BLANK_LOOKALIKES and not unicodedata.category(ch).startswith("M")).strip()
 
 
 @router.post("/api/ask")
@@ -256,23 +288,35 @@ async def ask(request: Request):
     try:
         body = AskBody.model_validate(await request.json())
     except (ValidationError, ValueError, TypeError):
-        return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
-    message = body.message.strip()
-    if not message or len(body.message) > MAX_MESSAGE:
-        return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
+        return envelope("invalid_request", "en")  # a body that cannot be read has no language
+    # Every error from here on is in the request's language (as /api/whatif): the body's `language`,
+    # else the question's detected language. The length is checked first, so a huge message is refused
+    # before any work on its text, and the detector never sees more than MAX_MESSAGE characters.
+    if len(body.message) > MAX_MESSAGE:
+        return envelope("invalid_request", body.language if body.language in ("en", "fi") else "en")
+    lang = body.language if body.language in ("en", "fi") else guard.detect_language(guard.clean(body.message)) or "en"
+    request.state.language = lang
+    # Empty after the input guard (only spaces, zero-width or bidi marks, blank look-alikes or combining
+    # marks): 400 before any model call (issue #105).
+    message = guard.clean(body.message)
+    if not _visible(message):
+        return envelope("invalid_request", lang)
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
-    allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
-    if not allowed:
-        return _error(429, "rate_limited", ERROR_TEXT["rate_limited"], True, {"Retry-After": str(retry_after)})
+    decision, retry_after = agent.limits.check(client_address(request), body.customer_id)
+    if decision == "refuse":  # the hard ceiling (#232); a used-up model window answers without the model
+        return envelope("rate_limited", lang, headers={"Retry-After": str(retry_after)})
     try:
         exists = await run_in_threadpool(agent.data.customer_exists, body.customer_id)
     except DataUnavailable:
-        return JSONResponse({"error": error_envelope("data_unavailable", "en")}, status_code=503)
+        return envelope("data_unavailable", lang)
     if not exists:
-        return _error(404, "customer_not_found", ERROR_TEXT["customer_not_found"])
+        return envelope("customer_not_found", lang)
 
+    # The viewer's answers decide the labels (#253), as on the overview. known_viewer never sets a cookie:
+    # this route returns its own Response, and the overview has issued the cookie already.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
-                     conversation_id=body.conversation_id)
+                     conversation_id=body.conversation_id, model_allowed=decision == "model",
+                     viewer=known_viewer(request))
     if "text/event-stream" in request.headers.get("accept", ""):
         return StreamingResponse(_stream(agent.pipeline, req), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -281,18 +325,23 @@ async def ask(request: Request):
 
 
 def audit_api_enabled() -> bool:
-    """The audit read endpoint is off unless AUDIT_API=1 (meant for local eval runs): on the dev service
-    /api/* is public, and a record holds a customer's question, tool calls and model views."""
+    """The audit read endpoint exists only with AUDIT_API=1 (meant for local eval runs): on the dev
+    service /api/* is public, and a record holds a customer's question, tool calls and model views."""
     return os.environ.get("AUDIT_API", "").strip() == "1"
 
 
-@router.get("/api/audit/{answer_id}")
+# Registered by core/app/main.py only when audit_api_enabled() at start-up (issue #189): with the switch
+# off, /api/audit/... is an ordinary unknown path, so nobody can tell that the route exists.
+audit_router = APIRouter()
+
+
+@audit_router.get("/api/audit/{answer_id}")
 async def audit_record(answer_id: str, request: Request):
     """Internal: the audit record of one answer (agent-core.md section 9.1). Not part of the app contract.
-    Answers 404 unless AUDIT_API=1. The audit files are written either way."""
-    if not audit_api_enabled() or not answer_id.startswith("ans_") or len(answer_id) > 32:
-        return _error(404, "not_found", "No such answer.")
+    The audit files are written whether or not the route exists."""
+    if not answer_id.startswith("ans_") or len(answer_id) > 32:
+        return envelope("not_found", "en")
     record = await run_in_threadpool(get_agent(request.app).audit.find, answer_id)
     if record is None:
-        return _error(404, "not_found", "No such answer.")
+        return envelope("not_found", "en")
     return JSONResponse(record)

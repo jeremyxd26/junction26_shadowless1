@@ -14,10 +14,12 @@ in core/tests/test_api_contract.py.
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated, Any, Literal, Union
+import re
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 
 class Model(BaseModel):
@@ -154,11 +156,74 @@ class BillsCard(CardBase):
 Card = Annotated[Union[MetricCard, BreakdownCard, BillsCard], Field(discriminator="type")]
 
 
+# The review card (contract 0.2.0 section 3, #68): the coach asks about one spending spike.
+AnswerBasket = Literal["unexpected_necessities", "everyday_spending"]
+BasketKey = Literal["regular_essentials", "unexpected_necessities", "everyday_spending"]
+
+
+class Bilingual(Model):
+    en: str
+    fi: str
+
+
+class MerchantAlias(Model):
+    alias: str
+    label: str
+
+
+class BasketRef(Model):
+    key: Literal["regular_essentials", "unexpected_necessities", "everyday_spending", "unclassified"]
+    label: str
+
+
+class ReviewOption(Model):
+    basket: AnswerBasket
+    label: Bilingual
+    effect: Bilingual
+
+
+class ReviewCard(CardBase):
+    type: Literal["review"]
+    tx_ref: str
+    date: date
+    category: str
+    merchant: MerchantAlias | None
+    amount: Number
+    current_basket: BasketRef
+    question: Bilingual
+    options: list[ReviewOption] = Field(min_length=2, max_length=2)
+    why: str
+
+
+class SaveReasonCategory(Model):
+    key: str
+    label: str
+
+
+class SaveReason(Model):
+    kind: Literal["essentials_exceed_income", "largest_everyday_category"]
+    category: SaveReasonCategory | None
+    amount: Number
+    text: str
+
+
+class SafeToSaveCard(CardBase):
+    """The overview's `safe_to_save` card (section 3; metrics.md section 3.1), from get_safe_to_save (#165)."""
+    type: Literal["safe_to_save"]
+    monthly: Number
+    monthly_components: list[Component]
+    stock: Number
+    stock_explanation: str
+    stock_components: list[Component]
+    reason: SaveReason | None
+
+
 # ---- errors (section 4) -----------------------------------------------------------------------------
 
 class ErrorBody(Model):
     code: Literal["invalid_request", "customer_not_found", "evidence_not_found", "evidence_forbidden",
-                  "invalid_scenario", "rate_limited", "data_unavailable", "llm_unavailable", "internal",
+                  "invalid_scenario", "tx_ref_not_found", "basket_not_allowed", "rate_limited",
+                  "data_unavailable", "llm_unavailable", "internal",
                   "not_found"]  # not_found: contract addition (#79), an unknown route
     message: str
     retryable: bool
@@ -216,12 +281,11 @@ class OverviewResponse(Model):
     greeting: str
     ai_disclosure: str
     hero: MetricCard | None  # safe to spend in the next 7 days (#79); null on a known tool failure
+    safe_to_save: SafeToSaveCard | None  # what a typical month leaves (#165); null on a known tool failure
     cards: list[Card]
-    # Always [] until the spike review exists: #68 narrows the item to its review card model.
-    reviews: list[dict[str, Any]]
+    reviews: list[ReviewCard] = Field(max_length=1)  # the pending spike review, if any (#68)
     insights: list[Insight]
     suggested_questions: list[str]
-    # EXTENSION POINT (contract 0.2.0): `safe_to_save: SafeToSaveCard` (#53/#55) is added here.
 
 
 # ---- GET /api/evidence/{ref} (section 9) -----------------------------------------------------------
@@ -325,3 +389,180 @@ class WhatIfResponse(Model):
     caveats: list[str]
     estimate: Estimate
     evidence_ref: str
+# ---- POST /api/baskets/label (section 10, #68) ------------------------------------------------------
+
+class LabelRequest(Model):
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 400, not silently dropped
+
+    customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
+    tx_ref: str = Field(max_length=64)
+    # Required and nullable: null undoes the label. A value that is not a basket key is a 400; a basket
+    # key that is not one of the review's two options is a 422 basket_not_allowed (checked later).
+    basket: BasketKey | None
+    language: Language = "en"
+
+
+class LabelState(Model):
+    basket: AnswerBasket
+    label: str
+    labelled_at: str  # ISO 8601 with offset (section 1)
+
+
+class LabelMessage(Model):
+    text: str
+    text_rendered: str
+    numbers: dict[str, NumberWithId]
+
+
+class Change(Model):
+    key: str
+    label: str
+    before: Number
+    after: Number
+
+
+class LabelResponse(Model):
+    customer_id: str
+    as_of: date
+    language: Language
+    tx_ref: str
+    label: LabelState | None
+    review_state: Literal["answered", "pending", "closed"]
+    changed: bool
+    message: LabelMessage
+    changes: list[Change]
+    refetch: list[str]
+
+
+# ---- POST /api/bill/explain (section 11, contract 0.3.0; the endpoint comes with #242) ----------------
+
+BILL_AMOUNT = r"^[0-9]{1,6}(\.[0-9]{1,2})?$"   # euros with at most two decimals, ASCII digits only
+BILL_AMOUNT_MAX = Decimal("100000.00")
+ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def _iso_date(value: object) -> object:
+    """Only `YYYY-MM-DD` (then a real date, checked by pydantic): the lax date type would take 0 as
+    1970-01-01 or accept a timestamp."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not ISO_DATE.fullmatch(value):
+        raise ValueError("a date must be written YYYY-MM-DD")
+    return value
+
+
+IsoDate = Annotated[date, BeforeValidator(_iso_date)]
+
+
+class BillFieldsRequest(Model):
+    model_config = ConfigDict(extra="forbid")
+
+    payee: str = Field(min_length=1, max_length=70)
+    iban: str = Field(min_length=1, max_length=42)
+    reference: str = Field(min_length=1, max_length=35)
+    amount: str = Field(pattern=BILL_AMOUNT)   # a decimal string: more than 0, at most 100000.00
+    due_date: IsoDate
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_in_range(cls, value: str) -> str:
+        if not Decimal(0) < Decimal(value) <= BILL_AMOUNT_MAX:
+            raise ValueError("amount must be more than 0 and at most 100000.00")
+        return value
+
+
+class BillExplainRequest(Model):
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 400, not silently dropped
+
+    customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
+    language: Language = "en"
+    # Exactly one of `barcode` and `fields`. Both or neither, or `payee` beside `fields`, is a 422
+    # invalid_bill that the endpoint checks: a validation error here would be a 400.
+    barcode: str | None = Field(default=None, max_length=80)
+    payee: str | None = Field(default=None, min_length=1, max_length=70)  # only beside a barcode
+    fields: BillFieldsRequest | None = None
+
+
+class BillRead(Model):
+    source: Literal["barcode", "fields"]
+    payee: str | None
+    iban: str        # formatted for display
+    reference: str   # formatted for display
+    amount: Number   # bill_barcode@1 or user_input@1, no evidence ref
+    due_date: date
+
+
+class BillChecks(Model):
+    iban: Literal["pass", "fail"]
+    reference: Literal["pass", "fail"]
+    due_date: Literal["pass", "past"]
+
+
+class BillMatch(Model):
+    status: Literal["matched", "not_matched", "no_payee"]
+    bill_id: str | None
+    label: str | None
+    text: str
+
+
+class BillBasket(Model):
+    key: BasketKey
+    label: str
+    text: str
+
+
+class BillSafeToSpend(Model):
+    """The bill applied to the balance side like a bill due before payday, and the hero's own computation
+    run again: free until payday and safe to spend, each before and after (null after payday)."""
+
+    effect: Literal["after_payday", "excess_only", "full"]
+    next_payday: date
+    reserved: Number | None                # excess_only: the matched bill's due_until_payday
+    counted: Number | None                 # what the bill adds to the bills due before payday
+    free_until_payday_before: Number       # the hero's "Free until payday"
+    free_until_payday_after: Number | None
+    before: Number                         # the hero's primary
+    after: Number | None                   # recomputed by the hero's function, never by subtraction
+    text: str
+
+
+class BillSignal(Model):
+    code: Literal["iban_check_failed", "reference_check_failed", "new_payee", "amount_above_usual", "short_term"]
+    text: str
+    numbers: list[Number]   # the Numbers whose display the text cites, in order
+
+
+class GlossaryEntry(Model):
+    term: Literal["reference_number", "due_date", "virtual_barcode", "late_payment_interest"]
+    label: str
+    text: str
+
+
+class PaymentDraft(Model):
+    payee: str | None
+    iban: str        # normalised, no spaces
+    reference: str   # normalised, no spaces
+    amount: Number
+    due_date: date
+
+
+class AddToPaymentsAction(Model):
+    type: Literal["add_to_payments"]
+    label: str
+    draft: PaymentDraft
+
+
+class BillExplainResponse(Model):
+    customer_id: str
+    as_of: date
+    language: Language
+    bill: BillRead
+    checks: BillChecks
+    match: BillMatch
+    comparison: Comparison | None
+    basket: BillBasket
+    safe_to_spend: BillSafeToSpend | None  # null when safe to spend cannot be computed (as the hero)
+    glossary: list[GlossaryEntry]
+    actions: list[AddToPaymentsAction] = Field(max_length=1)
+    warnings: list[str]
+    signals: list[BillSignal]   # warning signs, never a verdict (#242, decision 10)

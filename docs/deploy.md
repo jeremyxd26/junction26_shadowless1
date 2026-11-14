@@ -85,7 +85,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), the model prompts `core/agent/prompts/*.md`, `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
    - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
    - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
    - **app build** (when the commit has `app/package.json`; see "The app" below). It runs in a throwaway `node:22.21.1-slim` container from the commit's tracked files and is checked for secrets. A failed build or a secret match stops the deploy here too, with nothing switched;
@@ -122,6 +122,41 @@ public check: https://sentti.jeremyxd.dev/healthz
 GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
 
+### Check the demo path after a deploy
+
+After `bash deploy/dev.sh` (and before the demo), run:
+
+```
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --no-ask   # no model calls
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all            # plus the four brief questions
+```
+
+Every stage is live on dev now, so use `--require-all`: a stage that answers NOT DEPLOYED then fails the check.
+
+The script checks, against the reference values at its top (`docs/design/personas.md`, `contracts/api.md`):
+- health;
+- the personas;
+- Sanna's overview, and that its evidence refs resolve and reconcile;
+- the persona allowlist;
+- the what-if;
+- the spike review ("Needed", then undo);
+- optionally `/api/ask`.
+
+It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED (with the route and status). It exits 1 on any FAIL.
+
+It uses the standard library only and needs no secrets. It never retries, and the whole run ends within `--time-limit` seconds (default 60).
+
+The only writes are the label answer and its undo. The undo always runs and is always checked. If it fails, the script prints `UNDO FAILED - CUST00860 may be left answered`, with the `tx_ref` and the repair. The reliable repair is `python core/scripts/reset_reviews.py CUST00860`: with per-viewer answers, a bare curl acts as another viewer.
+
+Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
+
+### Limits of `/api/ask` at the venue
+
+At the venue, every visitor on the shared Wi-Fi arrives from one client address.
+- **Model windows:** 10 a minute per address, 60 globally, 10 per address and persona. They protect the language-model budget. When one is used up, questions are still answered, by the rules and the template, with the "model unavailable" warning.
+- **Hard ceiling:** 120 a minute per address, 600 globally. It protects the service. Only it answers 429.
+- **Presenter:** use a network of your own (a phone hotspot), so the room's questions never share your address or your model window.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
@@ -149,6 +184,20 @@ The core writes its own data under `var/` at the repository root, which is `/srv
 | `/var/lib/shadowless1/var` | `/srv/var` | uid 10001 (the container user `app`), `700` |
 
 The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
+
+### The tool cache (#86)
+
+The service keeps tool results in memory and in `/srv/var/cache/tools.sqlite3` (host: `/var/lib/shadowless1/var/cache/tools.sqlite3`). `TOOL_CACHE=off|memory|disk` switches it (default `disk`). The end of `remote-deploy.sh` fills it for the four demo personas (`docker exec shadowless1-core timeout 280 python -m core.tools.warmup`, at most 300 s, never fatal). Run the same line by hand to warm it again. It prints one line per call: `tool` (computed now), `disk` or `memory` (already cached) or `recomputed` (its evidence was missing).
+
+A cached number's evidence ref points into `coach_evidence` in the database.
+
+**After a database reset or a data reload:**
+1. Stop the service.
+2. Delete the cache file: `rm /var/lib/shadowless1/var/cache/tools.sqlite3*`.
+3. Start the service.
+4. Run the warm-up.
+
+A warm-up alone is not enough. It recomputes only the entries whose refs it checks, and entries for other keys would still point at evidence rows that no longer exist. A changed `DATABASE_URL` needs no step: the database's identity is part of every key.
 
 ## Roll back
 
@@ -184,6 +233,8 @@ previous version 1e395dc61dd5447d85e1d6de5b39a0de06b0c681 is running again
 ## Logs
 
 The logs stay on the instance and are not shipped anywhere. The journal is readable only by root and the `adm`/`systemd-journal` groups.
+
+The service masks the values of its secret settings as `***` in every log line, whichever logger writes it (`core/app/secret_mask.py`, #198). Secret settings are the names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`, together with its password and every host (in any connection-string form libpq accepts; loopback names excepted) and the URL-encoded forms of each. The mask covers the message and its arguments (the access log's request line included), extra fields and exception text with chained causes. A settings error at start-up names the setting but never echoes its value.
 
 ```bash
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowless1-core -n 100 --no-pager   # service
@@ -244,6 +295,8 @@ The service reads `/etc/shadowless1/core.env` every time it starts. The file is 
 | `GEMINI_API_KEY` | |
 | `GEMINI_MODEL` | unset for now |
 | `CORS_ORIGINS` | comma-separated; empty means the local dev servers. Add the app's origin here when it has a URL. |
+| `DB_POOL_MAX` | the pool's most connections, 1 to 20; unset means 10 (the shared database allows 100) |
+| `API_DOCS` | leave unset: the interactive API docs stay off on the dev host (`1` is for local development) |
 
 Set now: `DATABASE_URL`, `DEMO_TODAY` and `GEMINI_API_KEY`. `GEMINI_MODEL` and `CORS_ORIGINS` are unset, so they take their defaults. They were written over SSH stdin, never on a command line, with quotes stripped; on the instance only the URL's shape was checked.
 
@@ -280,12 +333,13 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   - `core/config/*.yaml` (personas and benefit rules).
 
   Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new file of a kind the completeness check already lists (`*.py` under `core/app`, `core/tools` or `core/agent`, `core/metrics/*.sql`, `core/config/*.yaml`) only needs its path in `.dockerignore`, and the check catches a forgotten one before the switch. A new **kind** of run-time file (for example `core/data/*.csv`) must be added to `.dockerignore` **and** to the `git ls-files` patterns of the completeness check in `deploy/remote-deploy.sh`; otherwise the check cannot see it.
+- **Request size** (`deploy/Caddyfile`, #210): the API routes accept bodies up to 65536 bytes, 64 KiB (`request_body { max_size 64KiB }`; Caddy reads `KB` as 1000 bytes). The largest legitimate body is a question of 500 characters in a small JSON envelope. A larger request gets 413 from Caddy itself, with the security headers below and no `Server` header. A request whose `Content-Length` is over 65536 (leading zeros included) is refused before any byte goes to the service. A body without a `Content-Length` (HTTP/1.1 chunked, or an HTTP/2 or HTTP/3 stream) is cut off at 65536 bytes by `request_body`; the service then sees a client disconnect, and the client gets 413. Caddy 2.6 reports that case as a 502 inside the proxy, and `handle_errors` maps it to 413, while other 502s (the core down) stay 502.
 - **Response headers** (`deploy/Caddyfile`, #102):
 
   | Applies to | Header |
   |---|---|
   | every response | `Strict-Transport-Security: max-age=31536000` (no `preload`: the parent domain is shared), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; the `Server` header is removed, also the core's `server: uvicorn` |
-  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` |
+  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` (#272: answers depend on the customer and the viewer cookie; set at once for Caddy's own errors and again when the response is written, replacing anything the service sends) |
   | the app (`index.html` and the other non-asset paths) | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'` |
 
   The app's policy follows the app owner's needs on #102: the Vite build emits external script and style files, no inline script, and the font is bundled. The app calls `/api` on its own origin. Images come from the app or `data:` URIs, so rendered markdown cannot load an outside image. Only the app's own origin may frame it; the S-mobiili WebView loads the module top-level and is not affected. A demo page on another origin that frames the app needs that origin added to `frame-ancestors`.
