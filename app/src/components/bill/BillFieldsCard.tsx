@@ -65,7 +65,7 @@ export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
 
   useEffect(() => {
     if (focusTarget) document.getElementById(`${id}-${focusTarget.key}`)?.focus()
-  }, [focusTarget, editingAll, id])
+  }, [focusTarget, id])
 
   return (
     <div className="flex flex-col gap-3">
