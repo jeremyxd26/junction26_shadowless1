@@ -94,6 +94,15 @@ def texts():
         for key in sorted(short.CASES):
             draft, v, views = short.answer(key, lang)
             out.append((f"short:{key}:{lang}", draft["text"], v.numbers, _labels_in(views), True, []))
+        # The texts that keep their reason: a hidden peer comparison and an S-Bonus that is not offered.
+        v = short.Views(lang)
+        views = [{**short.peer(v, lang), "shown": False, "reason": "group_too_small"}]
+        draft = template.template_draft(views, [], lang, None, "How do I compare with people like me?")
+        out.append((f"short:peers_hidden:{lang}", draft["text"], v.numbers, _labels_in(views), True, []))
+        v = short.Views(lang)
+        views = [short.bonus(v, lang, status="not_offered")]
+        draft = template.template_draft(views, [], lang, None, "How much S-Bonus could I get?")
+        out.append((f"short:bonus_not_offered:{lang}", draft["text"], v.numbers, _labels_in(views), True, []))
         for key in sorted(_goal_views(human.Views(lang))):
             v = human.Views(lang)
             views = _goal_views(v)[key]
