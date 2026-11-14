@@ -16,7 +16,6 @@ the card says so (R13). The customer and as_of come from ctx only (R4, R5).
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import logging
 from decimal import Decimal
@@ -27,12 +26,11 @@ from pydantic import BaseModel, field_validator
 
 from core.tools import baskets, config, evidence, labels, metric_sql, periods
 from core.tools.classify import classify
-from core.tools.context import NumberRegistry, ToolContext
-from core.tools.missing import MissingData
-from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
+from core.tools.context import ToolContext
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, PeerMetric, PeriodArg, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
-from core.tools.what_if import WhatIfRefused, run_what_if
+from core.tools.what_if import cuttable_purchases
 
 TOOL = "get_peer_benchmark"
 METRIC = "peer_benchmark"
@@ -152,7 +150,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     what = metric_label(metric, lang)
 
     history = ctx.history()
-    nb = NumberBuilder(ctx, classify(history, ctx.as_of, labels.for_context(ctx)))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
+    nb = NumberBuilder(ctx, rows)
     reg = ctx.numbers.register
 
     # ---- you: the customer's own rows ----
@@ -197,26 +196,29 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
     # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
     offered = shown and config.peer_offers_cut(metric, data.vs_median.value if data.vs_median is not None else None) \
-        and what_if_offered(ctx, metric)
+        and what_if_offered(ctx, metric, rows)
     return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang, offered) if shown else None,
                       notes=notes, evidence=list(nb.specs), model_view=_model_view(data, estimate, notes, offered))
 
 
-def what_if_offered(ctx: ToolContext, metric: str) -> bool:
+def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
     """The what-if a category or basket card would offer answers with a cut: 3 or more cuttable purchases in the
-    window, by the what-if metric's own count (04_what_if.sql, its not_offered). Never an offer that answers
-    "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is "How could I
-    save more?", no what-if. On a private registry: the peer answer cites none of the what-if's numbers."""
+    metric's window (the last 6 complete months), the same count as 04_what_if.sql's not_offered. Never an offer
+    that answers "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is
+    "How could I save more?", no what-if. From the rows the peer tool has classified already: no second query and no
+    evidence row (#527). Any failure only drops the offer, never the card."""
+    if metric in config.SENSITIVE_CATEGORIES or metric in config.PEER_SENSITIVE:
+        return False   # a health what-if is never offered (R9; the coordinator, review of #534)
     if metric == "spend_total":
         return True
-    kind = "basket" if metric in config.BASKET_LABELS else "category"
-    private = dataclasses.replace(ctx, numbers=NumberRegistry())
     try:
-        result = run_what_if(private, {"selection": {"kind": kind, "value": metric}, "cut_pct": 20},
-                             too_few="not_offered")
-    except (WhatIfRefused, MissingData, ValueError):
+        kind = "basket" if metric in config.BASKET_LABELS else "category"
+        rows = rows if rows is not None else classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
+        window = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of).period
+        return len(cuttable_purchases(rows, kind, metric, window)) >= config.TOO_FEW_TRANSACTIONS
+    except Exception as exc:  # noqa: BLE001 - the class name is logged; the card goes out without the offer
+        log.warning("peer offer check failed (%s); the card goes without the offer", type(exc).__name__)
         return False
-    return result.data.status != "not_offered"
 
 
 def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: Decimal, unit: Unit,
@@ -255,7 +257,10 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str, cut_
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],
         type="peer", title=_t("title", language, what=data.metric_label),
         subtitle=_t("subtitle", language, label=data.period.label),
-        evidence_ref=ref, estimate=estimate, actions=actions,
+        evidence_ref=ref, actions=actions,
+        # #380: observed is the user's own figure; assumed is the comparison group, its size as the value
+        estimate=Estimate(**estimate, observed=[data.you] if data.you is not None else [],
+                          assumptions=[assumption("peer.peer_group", language, data.peer_group.size)]),
         you=dump(data.you), peer_median=dump(data.peer_median), peer_p25=dump(data.peer_p25),
         peer_p75=dump(data.peer_p75), percentile=dump(data.percentile), vs_median=dump(data.vs_median),
         peer_group={"level": data.peer_group.level, "label": data.peer_group.label,
@@ -280,8 +285,10 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
         "peer_p75": model_number(data.peer_p75),
         "percentile": model_number(data.percentile),
         "vs_median": model_number(data.vs_median),
-        "peer_group": {"level": data.peer_group.level, "label": data.peer_group.label,
-                       "size": model_number(data.peer_group.size), "comparable": data.peer_group.comparable},
+        # No group label: the age band and the postal area stay on the card (#487); the sentence needs only
+        # the size and whether the group is comparable.
+        "peer_group": {"level": data.peer_group.level, "size": model_number(data.peer_group.size),
+                       "comparable": data.peer_group.comparable},
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
         "offers_cut": offers_cut,   # the card offers a cut, and the answer says the same (#418, #379 part B)

@@ -89,12 +89,28 @@ cases:
   numbers:
   - {name: plan_total_month, value: 63.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 758.04, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 360.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 17.26, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
   forbid:
   - {name: plan_plus_safe_to_save, value: 247.78, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: safe_to_save_monthly_eur}]}}
   - {name: plan_plus_s_bonus, value: 88.32, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}]}}
+  - {name: plan_plus_goal, value: 423.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
+
+- id: sanna-save-more-host-screen
+  # #417: the question names the bank's saving screen, so a confused coach would answer "put €184.61 a month
+  # into monthly saving". The amount and the screen are never in one sentence (every answer is checked for
+  # this; this case invites it). The card's button names the screen only. On dev the question gets the savings
+  # plan (#369), whose card carries the same button; safe to save is quoted next to the plan.
+  persona: CUST00860
+  question: {en: 'How could I save more with monthly saving in S-mobiili?', fi: 'Miten voisin säästää enemmän kuukausisäästämisellä S-mobiilissa?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [host_screen, lead, savings_plan]
+  numbers:
+  # not required: the plan is to quote the savings goal instead (r-coord's decision on #466)
+  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
 
 - id: sanna-bonus
   persona: CUST00860
@@ -795,6 +811,18 @@ cases:
   no_data_tool_call: true
   tags: [red_team, r10, lead]
 
+# A health spending question in another script is the model planner's to decline (the rules do not plan it).
+# With the rule model alone (no key) it comes back as the general clarifying question, so the outcome depends on
+# the source: `any`, as the other source-dependent rows. The real model declines it as out_of_scope (planner.md);
+# no data call either way.
+- id: sanna-health-spending-russian
+  persona: CUST00860
+  question: {en: 'сколько я трачу на лекарства?'}
+  intent: out_of_scope
+  expect: any
+  no_data_tool_call: true
+  tags: [red_team, r9, other_language]
+
 # Questions about Sentti itself (#287): the introduction (or a thank-you), no number, the four chips.
 - id: meta-greeting
   persona: CUST00860
@@ -922,9 +950,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 30.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 364.56, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 429.16, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 420.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 20.53, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 9.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 450.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: eetu-save-more-plan
   persona: CUST00349
@@ -936,9 +966,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 923.88, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 546.87, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 58.95, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 18.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 676.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: aleksi-save-more-plan
   persona: CUST00849
@@ -950,6 +982,8 @@ cases:
   numbers:
   - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 199.95, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 257.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}

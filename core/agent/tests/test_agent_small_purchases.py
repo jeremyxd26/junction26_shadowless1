@@ -136,6 +136,69 @@ def test_the_summary_sentence_in_finnish():
                                                "31 ostosta, noin 32,03 € / kk, suurin osa ravintoloissa ja kahviloissa.")
 
 
+def purchases(category: str, n: int, amount: str = "-3.10") -> list:
+    """n small purchases of one category spread over July to September."""
+    return [tx(i, date(2026, 7, 1) + timedelta(days=(i * 3) % 92), category, amount) for i in range(1, n + 1)]
+
+
+@pytest.mark.parametrize("category,en,fi", [
+    ("Restaurants", "most of them at restaurants and cafés.", "suurin osa ravintoloissa ja kahviloissa."),
+    ("Entertainment", "most of them on entertainment.", "suurin osa viihteessä."),
+    ("Lifestyle", "most of them on lifestyle shopping.", "suurin osa lifestyle-ostoksissa."),
+])
+def test_each_category_takes_its_own_preposition(category, en, fi):
+    """#465: "most of them at entertainment" read wrong; each category carries its preposition."""
+    assert rendered(purchases(category, 12)).endswith(en)
+    assert rendered(purchases(category, 12), "fi").endswith(fi)
+
+
+def test_a_category_outside_the_table_is_on_its_label():
+    view = {"tool": "get_small_purchases", "period_preset": "last_3_months", "takeaway": {"kind": "summary"},
+            "count": {"id": "n1", "value": 12, "unit": "count", "label": "x"},
+            "total": {"id": "n2", "value": 37.2, "unit": "eur", "label": "x"},
+            "max_amount": {"id": "n3", "value": 10.0, "unit": "eur", "label": "x"},
+            "categories": [{"key": "Groceries", "label": "Groceries", "share": {"value": 80.0}}]}
+    assert template.small_purchases_sentence(view, "en")[0].endswith("most of them on groceries.")
+    fi_view = {**view, "categories": [{"key": "Groceries", "label": "Ruokaostokset", "share": {"value": 80.0}}]}
+    assert template.small_purchases_sentence(fi_view, "fi")[0].endswith("suurin osa luokassa Ruokaostokset.")
+
+
+def test_one_month_has_no_monthly_average():
+    """#465: for one month the average a month would only repeat the total."""
+    text, cited = compose(august(*FIVE), period={"preset": "last_month"})
+    assert "small_purchases.month_avg_eur@1" not in [n.method for n in cited.values()]
+    assert rendered(august(*FIVE), period={"preset": "last_month"}) == (
+        "You spent €25.00 on 5 small purchases last month, the largest part at restaurants and cafés.")
+    assert "/ kk" not in rendered(august(*FIVE), "fi", period={"preset": "last_month"})
+
+
+@pytest.mark.parametrize("language,expected", [
+    ("en", "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at "
+           "restaurants and cafés."),
+    ("fi", "Käytit 96,10 € pieniin ostoksiin viimeisen kolmen kuukauden aikana: 31 ostosta, enintään 25,00 €, "
+           "suurin osa ravintoloissa ja kahviloissa."),
+])
+def test_a_limit_other_than_the_default_is_named_in_place_of_the_monthly_average(language, expected):
+    """#465: "of €25.00 or less", the limit's own Number; still three numbers (the monthly average gives way)."""
+    text, cited = compose(restaurants(31), language, max_amount=25)
+    assert rendered(restaurants(31), language, max_amount=25) == expected
+    assert [n.method for n in cited.values()] == ["small_purchases.total_eur@1", "small_purchases.count@1",
+                                                  "small_purchases.max_amount_eur@1"]
+
+
+def test_a_limit_other_than_the_default_in_the_few_and_none_sentences():
+    assert rendered(restaurants(4), max_amount=25) == ("Only 4 small purchases of €25.00 or less in the last three "
+                                                      "months, €12.40 in all: not much to see here.")
+    assert rendered(restaurants(4), "fi", max_amount=25) == ("Vain 4 pientä ostosta viimeisen kolmen kuukauden "
+                                                            "aikana, enintään 25,00 €, yhteensä 12,40 €: tässä ei "
+                                                            "ole paljon nähtävää.")
+    none = [tx(1, date(2026, 8, 3), "Groceries", "-30.00")]
+    assert rendered(none, max_amount=25) == "No small purchases of €25.00 or less in the last three months."
+    assert rendered(none, "fi", max_amount=25) == ("Ei yhtään pientä ostosta viimeisen kolmen kuukauden aikana, "
+                                                  "enintään 25,00 €.")
+    assert not any("rajalla" in rendered(h, "fi", max_amount=25) for h in (restaurants(31), restaurants(4), none))
+
+
 def test_the_largest_part_when_no_category_has_more_than_half():
     assert rendered(august(*FIVE)).endswith("the largest part at restaurants and cafés.")   # Restaurants 38.8 %
 
@@ -198,3 +261,24 @@ def test_more_than_the_plain_question_is_not_claimed_even_in_two_clauses(questio
 def test_the_plain_question_and_its_save_more_keep_their_rules(question, lang, tools):
     assert names(plan(question, lang)) == tools
 
+
+
+@pytest.mark.parametrize("question,lang", [
+    # #527: every compound question with the plain small-purchases question is unclaimed, whatever the other part
+    ("what are my small purchases and what bills are coming?", "en"),
+    ("what are my small purchases? and how could I save more?", "en"),
+    ("what are my small purchases, and where did my money go?", "en"),
+    ("Mihin pienet ostokset menevät ja mitä laskuja on tulossa?", "fi"),
+])
+def test_every_compound_with_the_plain_question_is_unclaimed(question, lang):
+    result = plan(question, lang)
+    assert not result.recognised and not [n for n in names(result) if n.startswith("get_")]
+
+
+@pytest.mark.parametrize("question,tool", [
+    # a what-if or a comparison ABOUT the small purchases, in one clause, goes on to its own rule
+    ("How could I save on small purchases?", "get_safe_to_save"),
+    ("how do my small purchases compare with other people like me?", "get_peer_benchmark"),
+])
+def test_one_clause_about_the_small_purchases_keeps_its_rule(question, tool):
+    assert tool in names(plan(question, "en"))

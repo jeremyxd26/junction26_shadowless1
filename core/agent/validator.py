@@ -448,7 +448,7 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
 
 
 # A token whose display carries its period ("€229.56 a month", "229,56 € / kk") followed by a period word
-# again renders as "€3,010.59 a month a month" (live, #288; r-w3 met it in a template, #390).
+# again renders as "€3,010.59 a month a month" (live, #288; also seen in a template, #390).
 _PERIOD_UNITS = {"eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
 _PERIOD_WORDS = re.compile(
     r"[ \t]*(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"
@@ -474,6 +474,28 @@ def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
 def render(text: str, numbers: dict[str, Number]) -> str:
     """Replace every token with its Number's localised display (text_rendered)."""
     return TOKEN.sub(lambda m: numbers[m.group(1)].display, text)
+
+
+# ---- #417: an amount is never joined to the bank's screen or product in one sentence --------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" next to that button reads like personal investment advice. The amount sentence and the bank's
+# screen stay apart; the button names the screen only. Model drafts only: it runs in the orchestrator's
+# _compose with the other model-draft checks. A template is never replaced for it; templates are held to
+# it by tests that render each tool's template in English and Finnish. The words: answer_text.bank_action.
+_MONEY_UNITS = {"eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
+
+
+def amount_with_bank_product(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first sentence with an amount (the token of a euro Number) that puts something into the bank's
+    screen or product (answer_text.bank_action), rendered; or None. A plain statement passes ("Your monthly
+    saving is {{n1}}."), as does a sentence with only one of them ("an AI money coach inside S-mobiili")."""
+    for sentence in answer_text.SENTENCE_BREAK.split(text):
+        if not answer_text.bank_action(sentence):
+            continue
+        if any(t in numbers and numbers[t].unit.value in _MONEY_UNITS for t in TOKEN.findall(sentence)):
+            return TOKEN.sub(lambda m: numbers[m.group(1)].display if m.group(1) in numbers else m.group(0),
+                             sentence).strip()
+    return None
 
 
 # ---- model-draft checks for the composer defects seen on the stand (#398) ------------------------------------

@@ -13,6 +13,7 @@ from __future__ import annotations
 import calendar
 import re
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from core import answer_text
@@ -42,9 +43,11 @@ REFUSAL: dict[str, dict[str, Any]] = {
     },
     "out_of_scope": {
         "label": ("This is outside what I can help with", "Tämä ei kuulu siihen, missä voin auttaa"),
-        # The warmer generic decline (#287, the product owner's text); the four brief questions follow as chips.
-        "text": ("That's outside my lane — I'm your money coach. I can help with things like:",
-                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi näissä:"),
+        # The warmer generic decline (#287, the product owner's first sentence). It reads complete without the
+        # four brief questions that follow as chips (#352): a full stop and two examples in words.
+        "text": ("That's outside my lane — I'm your money coach. I can help with things like your spending or your bills.",
+                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
+                 "laskuissasi."),
     },
     "unsafe": {
         "label": ("I can't help with that request", "En voi auttaa tässä pyynnössä"),
@@ -190,8 +193,29 @@ def pick(pair: tuple[str, str], language: str) -> str:
     return pair[1] if language == "fi" else pair[0]
 
 
-def refusal(kind: str, language: str) -> tuple[str, dict[str, str]]:
-    entry = REFUSAL[kind]
+# A request to make up or forecast a number about the user's own money (#352, decision 3) is no off-topic
+# question: it keeps the kind `out_of_scope` (no new refusal kind) but gets its own text, and the chips offer
+# the typical income instead.
+MADE_UP = fold_pattern(r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+                       r"guess (a |an |some )?(number|amount|figure)|"
+                       r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
+                       r"arvaa (jokin |joku )?(luku|summa)|mika tahansa (luku|summa)")
+MADE_UP_REFUSAL = {
+    "label": ("I only use numbers from your transactions", "Käytän vain tilitapahtumiesi lukuja"),
+    "text": ("I only use numbers from your own transactions, so I can't make up or forecast an amount. I can show "
+             "your typical monthly income instead.",
+             "Käytän vain omien tilitapahtumiesi lukuja, joten en voi keksiä tai ennustaa summaa. Voin näyttää "
+             "tavallisen kuukausitulosi."),
+}
+MADE_UP_CHIP = ("How much income did I get last month?", "Paljonko tuloja sain viime kuussa?")
+
+
+def made_up_request(question: str) -> bool:
+    return bool(re.search(MADE_UP, fold(question)))
+
+
+def refusal(kind: str, language: str, question: str = "") -> tuple[str, dict[str, str]]:
+    entry = MADE_UP_REFUSAL if kind == "out_of_scope" and made_up_request(question) else REFUSAL[kind]
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
 
 
@@ -205,10 +229,44 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
 THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+# #352: the full introduction once per conversation; a later greeting, identity, capabilities or help
+# message gets one short sentence (no "Hi") and the chips.
+AGAIN = {
+    "greeting": ("Hello again — what would you like to know about your money?",
+                 "Hei taas — mitä haluaisit tietää raha-asioistasi?"),
+    "identity": ("I'm Sentti, an AI money coach that works with your own transactions.",
+                 "Olen Sentti, tekoälyvalmentaja, joka käyttää omia tilitapahtumiasi."),
+    "capabilities": ("I can show where your money goes, what's safe to spend this week and how you could save more.",
+                     "Voin näyttää, mihin rahasi menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten "
+                     "voisit säästää enemmän."),
+    "help": ("Here are some things you can ask me.", "Tässä muutama asia, jota voit kysyä minulta."),
+}
+# "Is my data safe with you?" (#352): a fixed answer, DRAFT for the product owner (the review of #484). It says
+# only what the code does: what the model gets (core/agent/gemini.py, the tools' model views; #487 keeps the
+# peer group and the bill id out) and that the demo server keeps a record. Exempt from the two-sentence rule.
+PRIVACY = ("Your own numbers are calculated from your transactions; comparisons with others and the S-Bonus use group "
+           "figures and fixed rules. When an AI model writes an answer, it gets your question as you typed it, the "
+           "earlier turns of this chat, and the amounts, dates and categories I calculated, never your customer number, "
+           "an account number or shop names from your transactions. This demo runs on synthetic data, and its server "
+           "keeps a record of questions and answers.",
+           "Omat lukusi lasketaan tilitapahtumistasi; vertailut muihin ja S-Bonus perustuvat ryhmän lukuihin ja "
+           "kiinteisiin sääntöihin. Kun tekoälymalli kirjoittaa vastauksen, se saa kysymyksesi sellaisena kuin kirjoitit "
+           "sen, tämän keskustelun aiemmat viestit sekä laskemani summat, päivämäärät ja luokat, ei koskaan "
+           "asiakasnumeroasi, tilinumeroa eikä tilitapahtumiesi kauppojen nimiä. Tämä demo käyttää keksittyä dataa, "
+           "ja sen palvelin tallentaa kysymykset ja vastaukset.")
+# A message in a language Sentti does not speak (#352): one line, in English.
+LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
 
 
-def meta_text(intent: str, language: str) -> str:
-    return pick(THANKS if intent == "thanks" else INTRO, language)
+def meta_text(intent: str, language: str, introduced: bool = False) -> str:
+    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation."""
+    if intent == "thanks":
+        return pick(THANKS, language)
+    if intent == "privacy":
+        return pick(PRIVACY, language)
+    if intent == "language":
+        return pick(LANGUAGE, language)
+    return pick(AGAIN[intent] if introduced and intent in AGAIN else INTRO, language)
 
 
 def brief_questions(language: str) -> list[str]:
@@ -533,15 +591,19 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
 # period in words. The limit stays on the card. Words always stand between a count and a date, so a count
 # never reads as a day of a month. No advice, no judgement.
 SMALL_SENTENCE = {
-    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
-                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
-    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
-            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
-    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    "summary": ("You spent {total} on {count} small purchases{limit} {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{limit}{month}, {where_part}."),
+    "few": ("Only {count} {noun}{limit} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}{limit}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases{limit} {period}.", "Ei yhtään pientä ostosta {period}{limit}."),
     # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
     "month": (", about {month}", ", noin {month}"),
-    "most": ("most of them at {where}", "suurin osa {where}"),
-    "largest": ("the largest part at {where}", "eniten {where}"),
+    # a limit other than the default (#465): its Number, in the place of the monthly average. Finnish says
+    # "enintään" ("at most"); "rajalla" read as "right at the limit" (review of #476)
+    "limit": (" of {limit} or less", ", enintään {limit}"),
+    # SMALL_PURCHASE_WHERE carries each category's preposition ("at restaurants and cafés", "on entertainment")
+    "most": ("most of them {where}", "suurin osa {where}"),
+    "largest": ("the largest part {where}", "eniten {where}"),
     "noun_one": ("small purchase", "pieni ostos"),
     "noun_many": ("small purchases", "pientä ostosta"),
     "label": ("in {label}", "jaksolla {label}"),
@@ -575,7 +637,7 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     or the period is missing."""
     if view.get("tool") != "get_small_purchases":
         return None
-    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+    nums = {k: view.get(k) for k in ("count", "total", "per_month", "max_amount")}
 
     def has(key: str) -> bool:
         return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
@@ -586,33 +648,41 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
     kind = (view.get("takeaway") or {}).get("kind")
     s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    # The limit is named only when it is not the default (#465); then it takes the monthly average's place.
+    other_limit = has("max_amount") and \
+        Decimal(str(nums["max_amount"].get("value"))) != Decimal(tools_config.SMALL_PURCHASE_MAX_EUR)
+    limit = s("limit").format(limit=token["max_amount"]) if other_limit else ""
+    limit_ids = [nums["max_amount"]["id"]] if other_limit else []
     if kind == "none":
-        text, ids = s("none").format(period=when), []
+        text, ids = s("none").format(period=when, limit=limit), limit_ids
     elif kind == "few":
         noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
-        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
-        ids = [nums[k]["id"] for k in ("count", "total")]
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"], limit=limit)
+        ids = [nums["count"]["id"]] + limit_ids + [nums["total"]["id"]]
     else:
         categories = view.get("categories") or []
         largest = categories[0] if categories else {}
         key, label = largest.get("key"), largest.get("label") or ""
         where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
-                 else (label.lower() if language == "en" else label))
+                 else pick(tools_config.SMALL_PURCHASE_WHERE_OTHER, language).format(
+                     label=label.lower() if language == "en" else label))
         share = (largest.get("share") or {}).get("value")
-        if re.search(r"\d", where):
+        if not label and key not in tools_config.SMALL_PURCHASE_WHERE or re.search(r"\d", where):
             return None
         where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
-        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        month = s("month").format(month=token["per_month"]) if has("per_month") and not other_limit else ""
         text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
-                                   where_part=where_part)
-        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+                                   where_part=where_part, limit=limit)
+        ids = ([nums[k]["id"] for k in ("total", "count")] + limit_ids
+               + ([nums["per_month"]["id"]] if month else []))
     return text[:1].upper() + text[1:], ids
 
 
 # The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
-# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
-# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
-# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# (coordinator, #411): the total and the total a year with the cuts, then the savings goal set aside first, the
+# same Number the safe-to-spend answer cites (#468; never added in, left out at 0). A cut share is said in words
+# when the setting has them (the view's `cut_words`), else cited as its Number; a cited cut share takes the
+# place of the year, then of the goal, so the answer never cites more than three
 # numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
 # amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
 # to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
@@ -621,15 +691,16 @@ PLAN_SENTENCE = {
              "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
     "plan_no_year": ("These changes could add about {total}: {cuts}.",
                      "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
-    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "goal": ("That is on top of the about {goal} you set aside first.",
+             "Tämä on sen lisäksi, että laitat ensin sivuun noin {goal}."),
     "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
     "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
     "each": ("eating out and spending on {other}, each {cut} less",
              "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
     "and": (" and ", " ja "),
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
-    "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
-                  "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
+    "none_goal": ("None of the usual cuts would add much here; you already set aside about {goal} first.",
+                  "Tavalliset vähennykset eivät lisäisi tässä paljon; laitat jo ensin sivuun noin {goal}."),
 }
 PLAN_MAX_NUMBERS = 3
 
@@ -643,12 +714,12 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     def num(node: Any) -> dict[str, Any] | None:
         return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
 
-    save = num(view.get("safe_to_save"))
-    save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
+    goal = num(view.get("savings_goal"))
+    goal = goal if goal and isinstance(goal.get("value"), (int, float)) and goal["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
     if view.get("kind") != "plan":
-        return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
+        return (s("none_goal").format(goal=tok(goal)), [goal["id"]]) if goal else (s("none"), [])
     total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
     if not (total and year and levers):
@@ -678,9 +749,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     else:
         cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
                ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
-    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
-    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
-    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    # The total and any cited cut share first, then the goal, then the year, within three numbers.
+    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
     cuts_text = s("and").join(cuts)
@@ -688,9 +759,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
         sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
     else:
         sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
-    if with_save:
-        sentences.append(s("save").format(save=tok(save)))
-    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    if with_goal:
+        sentences.append(s("goal").format(goal=tok(goal)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([goal["id"]] if with_goal else [])
     return " ".join(sentences), ids
 
 

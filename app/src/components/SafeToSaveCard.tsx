@@ -16,25 +16,26 @@ function ComponentRows({ components, total }: { components: Component[]; total?:
   return (
     <ul className="mt-3 flex flex-col">
       {components.map((component, index) => (
-        <li key={component.key} className="flex min-h-12 items-center justify-between gap-3 py-1.5">
-          <span className="min-w-0 text-base text-ink-2">
+        // With large text the amount moves under the label instead of running past the card (#493).
+        <li key={component.key} className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+          <span className="min-w-[min(4rem,100%)] flex-1 basis-0 text-base text-ink-2">
             {(index > 0 || component.operation === 'subtract') && (
               <span className="mr-1.5 font-semibold text-ink">{SIGN[component.operation]}</span>
             )}
             {component.label}
           </span>
-          <span className="shrink-0">
+          <span className="ml-auto max-w-full shrink-0">
             <NumberChip number={component.amount} />
           </span>
         </li>
       ))}
       {total && (
-        <li className="mt-1 flex min-h-12 items-center justify-between gap-3 border-t border-line pt-2">
-          <span className="min-w-0 text-base font-bold text-ink">
+        <li className="mt-1 flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2">
+          <span className="min-w-[min(4rem,100%)] flex-1 basis-0 text-base font-bold text-ink">
             <span className="mr-1.5">=</span>
             {total.label}
           </span>
-          <span className="shrink-0">
+          <span className="ml-auto max-w-full shrink-0">
             <NumberChip number={total.number} />
           </span>
         </li>

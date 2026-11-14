@@ -29,6 +29,13 @@ class Model(BaseModel):
 Language = Literal["en", "fi"]
 UnitName = Literal["eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year", "percent",
                    "percentile", "count", "days", "months"]
+# #380: the closed list of assumption codes (contracts/api.md section 3, Estimates); equal to
+# core.tools.models.ASSUMPTION_CODES (a test checks it).
+AssumptionCode = Literal[
+    "cut_share", "bonus_all_at_s_group", "bonus_share", "bonus_level", "spending_as_usual",
+    "reserve_for_unexpected", "next_months_like_last", "savings_goal_first", "cushion", "bills_pro_rata",
+    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown", "budget_from_usual_month",
+    "bonus_household", "bonus_table", "bonus_payment_card", "bonus_goods"]
 
 
 # ---- shared objects (section 2) --------------------------------------------------------------------
@@ -63,9 +70,19 @@ class Comparison(Model):
 
 # ---- cards (section 3) ------------------------------------------------------------------------------
 
+class Assumption(Model):
+    """#380: one assumption of an estimate; `code` from the closed list of contracts/api.md section 3."""
+    code: AssumptionCode
+    text: str
+    value: Number | None = None
+
+
 class Estimate(Model):
+    """`{label, text}` and, since #380, what the estimate observed and what it assumes."""
     label: str
     text: str
+    observed: list[Number] = []
+    assumptions: list[Assumption] = []
 
 
 class OpenEvidenceAction(Model):
@@ -220,6 +237,8 @@ class SafeToSaveCard(CardBase):
     """The overview's `safe_to_save` card (section 3; metrics.md section 3.1), from get_safe_to_save (#165)."""
     type: Literal["safe_to_save"]
     monthly: Number
+    weekly: Number      # #417: monthly x 7 / 30.4375
+    daily: Number       # #417: monthly / 30.4375
     monthly_components: list[Component]
     stock: Number
     stock_explanation: str
