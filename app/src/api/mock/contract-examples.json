@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.13",
+  "contract_version": "0.3.14",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",

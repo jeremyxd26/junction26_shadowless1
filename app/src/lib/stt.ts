@@ -1,6 +1,11 @@
-// Speaking a question (#735): a tap records at most 15 s with MediaRecorder, the clip goes to POST /api/stt,
-// and the core gives back the words as text, which land in the composer; the user taps send. Nothing is
-// stored on the device (no file, no blob: URL) and the core stores neither the audio nor the text.
+// Speaking a question (#735). What is sent, and when:
+// - Only on a tap of the mic: MediaRecorder records at most 15 s of audio (a second tap stops sooner).
+// - That clip goes to the core (POST /api/stt, contracts/api.md section 13), and from the core to the model
+//   provider (Gemini) for transcription. The core sends back the words as text.
+// - No audio is stored: the clip stays in memory for the one request (no file, no blob: URL, no storage),
+//   and the core stores neither the audio nor the text.
+// - The text lands in the composer. Nothing is sent to the coach until the user taps send.
+// - In the demo frame the iframe needs allow="microphone" (app/src/demo/main.ts).
 // A live build only: a mock build has no core to send the clip to, so it shows no mic button.
 import type { Language } from '../api/types.ts'
 import { MAX_QUESTION } from './useChat.ts'
