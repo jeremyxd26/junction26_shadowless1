@@ -3,15 +3,13 @@ import { createPortal } from 'react-dom'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { BasketKey, LabelChange, LabelResponse, Num, OverviewResponse, ReviewCard } from '../api/types.ts'
-import { BasketsCard, HeroCard, HeroPending, InsightCard, type NumberMotion } from '../components/cards.tsx'
+import { HeroSummary, type NumberMotion } from '../components/cards.tsx'
 import { ReviewAnswered, ReviewAsking, type ReviewError } from '../components/ReviewCard.tsx'
 import { Toast } from '../components/Toast.tsx'
 import { BASKETS } from '../lib/baskets.ts'
-import { applyChanges, isBasketsCard } from '../lib/changes.ts'
+import { applyChanges } from '../lib/changes.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
-import { BillsCards } from '../components/BillsCard.tsx'
-import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
-import { askInThread, openWhatIf } from '../lib/url.ts'
+import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
@@ -114,7 +112,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     () => (overlay && overlayLive ? applyChanges(overview, overlay.changes, labels) : overview),
     [overview, overlay, overlayLive, labels],
   )
-  const baskets = view.cards.find(isBasketsCard)
 
   useEffect(() => {
     if (!focusCard.current) return
@@ -261,20 +258,20 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     later(prefersReducedMotion() ? 0 : tokenMs('--duration-base', 250), () => {
       setClosing(false)
       setPhase({ kind: 'not_sure' })
-      document.getElementById('baskets-title')?.focus({ preventScroll: true })
+      // The card is gone: the next thing on the screen is the first question chip.
+      document.querySelector<HTMLElement>('[data-turn="opening"] ul[aria-label] button')?.focus({ preventScroll: true })
     })
   }
 
   const visibleToast = toast && shownToast === toast.seq ? toast : null
 
   return (
-    <div className={`flex flex-col gap-4 ${visibleToast ? 'pb-40' : 'pb-4'}`}>
-      <div>
-        <p className="text-xl font-semibold text-ink">{view.greeting}</p>
-        {/* The AI disclosure once, on the overview, in the API's words when it sends them. */}
-        <p className="mt-0.5 text-xs text-muted">{view.ai_disclosure || t.disclosure}</p>
-      </div>
-      {view.hero ? <HeroCard card={view.hero} motion={motion ?? undefined} /> : <HeroPending />}
+    <div className={`flex flex-col gap-3 ${visibleToast ? 'pb-40' : ''}`}>
+      {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
+          header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
+          overview sheet, not here. */}
+      <p className="text-xl font-semibold leading-7 text-ink">{view.greeting}</p>
+      {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
 
       {card && phase.kind === 'asking' && (
         <ReviewAsking
@@ -290,53 +287,22 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       )}
       {card && phase.kind === 'answered' && <ReviewAnswered ref={cardRef} card={card} basket={phase.basket} />}
 
-      {baskets && <BasketsCard card={baskets} motion={motion ?? undefined} />}
-      <BillsCards cards={view.cards} />
-      {view.safe_to_save && <SafeToSaveCard card={view.safe_to_save} />}
-
-      {view.insights.length > 0 && (
-        <section aria-labelledby="insights-title" className="flex flex-col gap-3">
-          <h2 id="insights-title" className="text-base font-semibold text-ink">
-            {t.insightsTitle}
-          </h2>
-          {view.insights.map((insight) => (
-            <InsightCard key={insight.insight_id} insight={insight} />
-          ))}
-        </section>
-      )}
-
       {view.suggested_questions.length > 0 && (
-        <section aria-labelledby="ask-title" className="mt-2">
-          <h2 id="ask-title" className="text-base font-semibold text-ink">
-            {t.askTitle}
-          </h2>
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {view.suggested_questions.map((question) => (
-              <li key={question}>
-                <button
-                  type="button"
-                  onClick={() => askInThread(question)}
-                  className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
-                >
-                  {question}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        // The first three questions as sent, stacked; each is asked in this thread.
+        <ul aria-label={t.questionsLabel} className="flex flex-col items-start gap-2">
+          {view.suggested_questions.slice(0, 3).map((question) => (
+            <li key={question}>
+              <button
+                type="button"
+                onClick={() => askInThread(question)}
+                className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
+              >
+                {question}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-
-      {/* The what-if screen with the contract's example request (Restaurants, 20%), the demo step.
-          Outside the questions list, so it shows even when the API sends no questions. */}
-      <div>
-        <button
-          type="button"
-          onClick={() => openWhatIf({ selection: { kind: 'category', value: 'Restaurants' }, cut_pct: 20 })}
-          className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 py-2 text-left text-base font-medium text-brand hover:bg-mint-tint"
-        >
-          {t.whatIfEntry}
-        </button>
-      </div>
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">
@@ -382,7 +348,6 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
     const target = document.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
     let cancelled = false
     const animations: Animation[] = []
-    const waits: number[] = []
 
     if (!element || !source || !target) {
       onEvent(run, 'start')
@@ -428,38 +393,21 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
         .catch(() => undefined)
     }
 
-    // On a short screen (375 × 812) the basket rows sit below the fold, or where the toast will
-    // come up. Then the hero counts first, at the top, and only after that the page glides to
-    // the rows and the amount flies.
+    // The flight never moves the page: a question asked meanwhile must stay in view. When the rows
+    // are not on screen (above the header or where the toast comes up), the amount does not fly
+    // and the numbers simply change.
     const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
     const floor = window.innerHeight - TOAST_SPACE
     const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
-    const hidden = rows.some((box) => !box || box.top < header || box.bottom > floor)
-    let stopWaiting = () => {}
-    if (hidden) {
-      waits.push(
-        window.setTimeout(() => {
-          if (cancelled) return
-          let started = false
-          const go = () => {
-            if (started) return
-            started = true
-            window.removeEventListener('scrollend', go)
-            fly()
-          }
-          stopWaiting = () => window.removeEventListener('scrollend', go)
-          window.addEventListener('scrollend', go)
-          waits.push(window.setTimeout(go, 700))
-          target.closest('li')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        }, tokenMs('--duration-money', 900)),
-      )
-    } else {
-      fly()
+    if (rows.some((box) => !box || box.top < header || box.bottom > floor)) {
+      onEvent(run, 'start')
+      onEvent(run, 'land')
+      onEvent(run, 'done')
+      return
     }
+    fly()
     return () => {
       cancelled = true
-      stopWaiting()
-      for (const id of waits) window.clearTimeout(id)
       for (const animation of animations) animation.cancel()
     }
   }, [run, basket, onEvent])
