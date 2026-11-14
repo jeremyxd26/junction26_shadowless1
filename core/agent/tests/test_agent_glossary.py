@@ -20,15 +20,18 @@ from core.tools.models import Args, Number, Period, ToolResult, Unit
 
 QUESTIONS = {   # term -> questions that must match it (English and Finnish frames, inflected Finnish names)
     "safe_to_spend": ["What is safe to spend?", "What's safe to spend?", "Explain safe to spend",
+                      "What is safe to spend, please?", "What's \"safe to spend\"?",
                       "Mitä tarkoittaa turvallisesti käytettävissä?", "Mitä on turvallisesti käytettävissä oleva summa?"],
     "safe_to_save": ["What is safe to save?", "Define safe to save", "Mitä tarkoittaa turvallisesti säästettävissä?"],
     "regular_essentials": ["What are regular essentials?", "Mitä ovat säännölliset välttämättömät?",
+                           "Mikä on säännöllinen välttämätön meno?",
                            "Mitä säännölliset välttämättömät menot tarkoittaa?"],
     "unexpected_necessities": ["What are unexpected necessities?", "What does unexpected necessities mean?",
-                               "Mitä ovat odottamattomat välttämättömät?"],
+                               "Mitä ovat odottamattomat välttämättömät?", "Mikä on odottamaton välttämätön meno?"],
     "everyday_spending": ["What is everyday spending?", "Mitä on arjen kulutus?", "Mikä on arkikulutus?"],
-    "regular_bill": ["What is a regular bill?", "What are recurring bills?", "Mikä on säännöllinen lasku?"],
-    "buffer": ["What is a buffer?", "What's a cushion?", "Mikä on puskuri?", "Selitä puskuri"],
+    "regular_bill": ["What is a regular bill?", "What is a recurring bill?", "Mikä on säännöllinen lasku?"],
+    "buffer": ["What is a buffer?", "What's a cushion?", "Mikä on puskuri?", "Selitä puskuri", "Mikä on puskuri, kiitos?",
+               'Mikä on "puskuri"?'],
     "pay_yourself_first": ["What does pay yourself first mean?", "Mitä tarkoittaa maksa ensin itsellesi?"],
     "due_date": ["What is a due date?", "Mikä on eräpäivä?", "Mitä eräpäivä tarkoittaa?", "mika on erapaiva"],
     "reference_number": ["What is a reference number?", "Mikä on viitenumero?", "Selitä viitenumero."],
@@ -49,6 +52,8 @@ NOT_A_TERM_QUESTION = [
     "What is interest on my loan?", "Should I pay interest?", "What is safe to spend this week?",
     "What is the due date of my rent?", "Explain my regular bills", "What is a budget, in Python?",
     "budget", "",
+    "What are recurring bills?", "What are my recurring bills?", "Mitä ovat toistuvat laskut?",   # the list (D1)
+    "What is a bud\u0433et?", "What is a \uff42udget?",              # a Cyrillic homoglyph, a fullwidth letter
 ]
 
 
@@ -132,7 +137,7 @@ def test_a_term_with_its_own_number_is_answered_with_the_definition_and_that_num
     pipeline = make_pipeline(RuleModel(), glossary_registry())
     done = done_of(run(pipeline, "What is safe to spend?", language="en"))
     assert done["outcome"] == "answered" and done["refusal"] is None
-    assert done["text_rendered"] == glossary.BY_KEY["safe_to_spend"].text[0] + " Yours right now is €221.58."
+    assert done["text_rendered"] == glossary.BY_KEY["safe_to_spend"].text[0] + " Yours this week is €221.58."
     assert len(done["cited"]) == 1
     turns = audit_records(pipeline)[-1]["planner_turns"]
     assert turns == [{"round": 1, "source": "rules", "glossary": "safe_to_spend",
@@ -170,3 +175,39 @@ def test_any_other_message_goes_the_usual_way(make_pipeline, question):
     pipeline = make_pipeline(RuleModel(), glossary_registry())
     run(pipeline, question, language="en")
     assert not any(t.get("glossary") for t in audit_records(pipeline)[-1]["planner_turns"])
+
+
+@pytest.mark.parametrize("question", ["What is a bud\u200bget?", "What is a bud\u00adget?"])
+def test_an_invisible_character_inside_the_term_is_the_plain_term_after_clean(make_pipeline, question):
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    run(pipeline, question, language="en")
+    assert [t.get("glossary") for t in audit_records(pipeline)[-1]["planner_turns"]] == ["budget"]
+
+
+REVIEW_CARD = {"card_id": "card_review", "type": "review", "category": "Home & Tech", "tx_ref": "txr_abcdefghijklmnop"}
+
+
+def with_pending_review(pipeline):
+    from types import SimpleNamespace
+
+    from core.agent.orchestrator import LabelSteps
+
+    def establish(ctx):
+        ctx._labels = {606016: "unclassified"}
+        return SimpleNamespace(tx_id=606016)
+    pipeline.labels = LabelSteps(establish=establish, card=lambda ctx, review: REVIEW_CARD, enabled=lambda: True)
+    return pipeline
+
+
+def test_a_pending_reviews_card_comes_with_a_term_whose_tool_touches_the_spike(make_pipeline):
+    events = run(with_pending_review(make_pipeline(RuleModel(), glossary_registry())), "What is safe to spend?",
+                 language="en")
+    assert [p["card"] for e, p in events if e == "card"] == [REVIEW_CARD]
+    assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_a_term_with_no_tool_brings_no_review_card(make_pipeline):
+    # contract section 7.2: the card comes with an answer whose tools touched the spike's basket or category
+    events = run(with_pending_review(make_pipeline(RuleModel(), glossary_registry())), "What is a budget?",
+                 language="en")
+    assert [p for e, p in events if e == "card"] == []
