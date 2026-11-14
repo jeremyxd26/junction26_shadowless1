@@ -10,10 +10,12 @@
    written next to a token (the token's display carries its own), and two tokens need a word between
    them ("{{n2}} {{n4}}" renders as one number). The same check then runs on the
    rendered text, where only the cited displays may stand as whole tokens, so nothing glued to a
-   token passes.
+   token passes. No number written in words either (issue #123): a magnitude word anywhere, a
+   cardinal next to a unit of money or percent, or a Unicode number character other than a digit.
 4. The draft's language is the resolved language (R14).
 5. Deny lists: sensitive inferences (R9), investment instructions (R7), promises on estimates (R13).
-6. No URLs, markdown links, HTML, headings or code; at most two **bold** spans of emphasis.
+6. No URLs (any scheme, or "//host"), markdown links or images (inline or reference style, or a link
+   definition), HTML, headings or code; at most two **bold** spans of emphasis.
 7. `lesson_key` is in the lesson catalogue or null.
 """
 
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -69,7 +72,102 @@ MARKUP = {
     "html": re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>"),
     "heading": re.compile(r"(^|\n)\s*#"),
     "code": re.compile(r"`"),
+    # Issue #105: reference-style links and images ("[here][j]", "![chart][c]", "[x][]"), link
+    # definitions ("[c]: target"), URL schemes with or without "//", and protocol-relative "//host".
+    "reference_link": re.compile(r"\[[^\]\n]*\]\[[^\]\n]*\]"),
+    "link_definition": re.compile(r"(^|\n)[ \t]{0,3}\[[^\]\n]+\]:"),
+    "url_scheme": re.compile(r"\b(java|vb)script\s*:|\b(data|file|mailto|tel|sms|ftp|blob|intent)\s*:(?=\S)|"
+                             r"\b[a-z][a-z0-9+.\-]*://", re.I),
+    "protocol_relative_link": re.compile(r"(^|[^\w:/])//[^\s/]"),
 }
+
+# Issue #123: numbers written as words (R1). A magnitude word states an amount anywhere; a cardinal
+# word does when a unit of money or percent stands next to it. Other uses stay allowed: "one-off",
+# "no one", "the next seven days", "yksin", "yhtä paljon", "osata", "tasata", "sataa" (it rains).
+# Any Unicode number character that is not a decimal digit (Roman numerals, fractions, superscripts;
+# categories No and Nl) is rejected: NFKC does not turn them into digits, so the digit rule cannot see
+# them.
+_EN_UNITS = (r"zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
+             r"sixteen|seventeen|eighteen|nineteen")
+_EN_TENS = r"twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+_EN_CARDINAL = rf"(?:(?:{_EN_TENS})(?:[- ]?(?:one|two|three|four|five|six|seven|eight|nine))?|{_EN_UNITS})"
+_FI_DIGIT_WORDS = (r"yksi|yhden|yhtä|kaksi|kahden|kahta|kolme|kolmen|kolmea|neljä|neljän|neljää|viisi|viiden|viittä|"
+                   r"kuusi|kuuden|kuutta|seitsemän|seitsemää|kahdeksan|kahdeksaa|yhdeksän|yhdeksää")
+_FI_CARDINAL = rf"(?:nolla|{_FI_DIGIT_WORDS}|kymmenen|kymmentä|\w+toista|\w+kymmentä\w*)"
+_CARDINAL = rf"(?:{_EN_CARDINAL}|{_FI_CARDINAL})"
+# Case forms of "sata" (100) and "tuhat" (1000) as whole words. "sataa" alone is the verb "it rains":
+# it counts only inside a compound ("kaksisataa").
+_SATA = (r"sata|sadan|sadassa|sadasta|sataan|sadalla|sadalta|sadalle|sadaksi|sadat|satojen|satoja|sadoissa|"
+         r"sadoista|satoihin|sadoilla|sadoilta|sadoille|sadoiksi|sadoin")
+_TUHAT = (r"tuhat|tuhannen|tuhatta|tuhannessa|tuhannesta|tuhanteen|tuhannella|tuhannelta|tuhannelle|tuhanneksi|"
+          r"tuhannet|tuhansien|tuhansia|tuhansissa|tuhansista|tuhansiin|tuhansilla|tuhansilta|tuhansille|"
+          r"tuhansiksi|tuhansin")
+_UNIT_WORDS = (r"euros?|euroa|euron|euroon|euroilla|cents?|senttiä|dollars?|bucks?|quid|usd|pounds?|kruunu\w*|"
+               r"kronor|kroner|kronur|krona|percent|per\s?cent|pct|prosent\w*|promille\w*|per\s?mille|permille")
+_UNIT = rf"(?:€|\$|£|‰|%|eur\b|(?:{_UNIT_WORDS})\b)"
+# A unit word right after a token repeats the unit its display already carries ("{{n1}} euros").
+UNIT_WORD_AFTER_TOKEN = re.compile(rf"\{{\{{n[0-9]+\}}\}}\s*(?:{_UNIT_WORDS})\b", re.I)
+NUMBER_WORDS = re.compile(
+    r"\b(?:hundreds?|thousands?|millions?|billions?|trillions?)\b|"
+    rf"\b(?:{_SATA}|{_TUHAT})\b|"
+    rf"\b(?:{_FI_DIGIT_WORDS})(?:sat|sad|tuhat|tuhan|tuhans)\w*|"     # compounds: kaksisataa, kolmentuhannen
+    r"\bmiljoon\w*|\bmiljard\w*|"
+    r"\btonni\w*|\bsatas\w*|\bsatanen\b|\bkymp\w*|\bvitonen\b|\bvitosen\b|"  # slang
+    r"\ba\s+grand\b(?!\s+(?:total|scheme|plan|tour))|"
+    rf"\b{_CARDINAL}\s+grand\b|\b{_CARDINAL}\s*k\b|"
+    rf"\b{_CARDINAL}\s*{_UNIT}|"                                      # fifty euros, twenty percent
+    rf"(?:€|\$|£|\beur\b|\beuros?\b|\busd\b)\s*{_CARDINAL}\b",         # €twenty, EUR twenty
+    re.I)
+
+# Obfuscation (review of #129): model text may hold no Unicode format character (category Cf: zero-
+# width space, soft hyphen, word joiner, BOM, bidi marks) and no combining mark left after NFC (our
+# Finnish letters are precomposed). The word and link rules also run on a folded copy: NFKC (fullwidth
+# letters become ASCII) with a hyphen between two letters removed ("hun-dred"). A word that mixes Latin
+# with Cyrillic or Greek letters (a homoglyph, as a Cyrillic "о" in "thousand") is rejected.
+_HYPHEN_IN_WORD = re.compile(r"(?<=[^\W\d_])[-‐‑‒–—](?=[^\W\d_])")
+_WORD = re.compile(r"[^\W\d_]+")
+
+
+def fold(text: str) -> str:
+    """The copy the word and link rules also run on: NFKC, format characters and combining marks
+    removed, and hyphens inside a word removed."""
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Cf", "Mn", "Me"))
+    return _HYPHEN_IN_WORD.sub("", text)
+
+
+def strip_marks(text: str) -> str:
+    """A second folded copy with every accent removed (NFKD): a combining mark typed after a letter
+    composes into a new letter ("n" + acute = "ń") and would hide "hundred" from the folded copy. The
+    word rules also run on this copy; it is never shown or stored."""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Cf", "Mn", "Me"))
+    return _HYPHEN_IN_WORD.sub("", text)
+
+
+def hidden_characters(text: str) -> list[str]:
+    """Format characters and combining marks that remain after NFC."""
+    return [ch for ch in unicodedata.normalize("NFC", text) if unicodedata.category(ch) in ("Cf", "Mn", "Me")]
+
+
+def _script(ch: str) -> str:
+    name = unicodedata.name(ch, "")
+    return name.split(" ", 1)[0] if name else ""
+
+
+def mixed_script_words(text: str) -> list[str]:
+    """Words that mix Latin letters with Cyrillic or Greek ones."""
+    out = []
+    for word in _WORD.findall(unicodedata.normalize("NFC", text)):
+        scripts = {_script(ch) for ch in word}
+        if "LATIN" in scripts and scripts & {"CYRILLIC", "GREEK"}:
+            out.append(word)
+    return out
+
+
+def number_characters(text: str) -> list[str]:
+    """Unicode number characters other than decimal digits (categories No and Nl), such as "Ⅿ" or "½"."""
+    return [ch for ch in text if unicodedata.category(ch) in ("No", "Nl")]
 
 
 class AnswerDraft(BaseModel):
@@ -124,9 +222,23 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     for name, rx in DENY.items():
         if rx.search(text):
             errors.append(f"not allowed: {name}")
+    folded = fold(text)
     for name, rx in MARKUP.items():
-        if rx.search(text):
+        if rx.search(text) or rx.search(folded):
             errors.append(f"no {name.replace('_', ' ')} allowed")
+    if hidden_characters(text):
+        errors.append("no invisible characters or combining marks")
+    if mixed_script_words(text):
+        errors.append("a word mixes Latin with Cyrillic or Greek letters")
+    if UNIT_WORD_AFTER_TOKEN.search(text) or UNIT_WORD_AFTER_TOKEN.search(folded):
+        errors.append("no unit word after a number token: the token's display carries its own")
+    words = TOKEN.sub(" ", text)
+    found = (NUMBER_WORDS.search(words) or NUMBER_WORDS.search(TOKEN.sub(" ", folded))
+             or NUMBER_WORDS.search(TOKEN.sub(" ", strip_marks(text))))
+    if found:
+        errors.append(f"a number written in words: '{found.group(0).strip()}'; cite every number as a {{{{id}}}} token")
+    if number_characters(words):
+        errors.append("a number character that is not a digit; cite every number as a {{id}} token")
     bold = text.count("**")
     if bold % 2 or bold // 2 > MAX_BOLD_SPANS or "*" in text.replace("**", ""):
         errors.append(f"at most {MAX_BOLD_SPANS} **bold** spans and no other emphasis")
