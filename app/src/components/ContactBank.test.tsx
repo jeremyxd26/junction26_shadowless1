@@ -29,7 +29,7 @@ async function answerOf(conversation_id: string | null): Promise<Answer> {
 }
 
 const render = (answer: Answer) =>
-  renderToStaticMarkup(<TurnView turn={{ id: 1, question: request.message, answer }} latest suggestions={[]} onAsk={() => {}} onRetry={() => {}} />)
+  renderToStaticMarkup(<TurnView turn={{ kind: 'ask', id: 1, question: request.message, answer }} latest suggestions={[]} onAsk={() => {}} onRetry={() => {}} />)
 
 describe('contract 0.3.3 in the thread (#439, security review #457 row 2)', () => {
   beforeEach(() => {
