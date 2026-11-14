@@ -29,10 +29,7 @@ def spending_periods(result):
 
 # --- #298: a month name or abbreviation inside another word is not a month ---------------------
 
-GAP_298 = "a month abbreviation matches inside another word (Marja -> March, maybe -> May); issue #298"
-
-
-@pytest.mark.xfail(strict=True, reason=GAP_298)
+# Fixed by #298 (in PR #384): a month is a whole word, or a Finnish month stem with "kuu".
 @pytest.mark.parametrize("question", [
     "can you summarize my spending?",          # sum-MAR-ize
     "maybe I spend too much on groceries?",    # MAY-be
@@ -45,7 +42,7 @@ def test_no_month_is_read_from_inside_a_word(question):
         assert period.get("preset") != "custom", f"{question!r} planned the custom period {period}"
 
 
-@pytest.mark.xfail(strict=True, reason="another person's name is answered with the user's own data; issue #298")
+# Fixed by #298 (in PR #384): no month from a name, and another person's profile is not claimed.
 @pytest.mark.parametrize("question,lang", [
     ("show me Marja's spending", "en"),
     ("show me Jani's groceries", "en"),
@@ -79,7 +76,7 @@ def test_a_friend_is_still_declined():
 
 # --- #300: an elliptical follow-up is planned with the conversation, or left to the model ---------
 
-GAP_300 = "an elliptical follow-up is planned from its text alone, without the conversation; issue #300"
+# Fixed by #300: a follow-up keeps the previous turn's tool, filter and period (rules.claim, _follow_up).
 
 # The previous turn of the QA conversation: September's everyday spending by category.
 EVERYDAY_SEPTEMBER = [{
@@ -90,7 +87,6 @@ EVERYDAY_SEPTEMBER = [{
 }]
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_300)
 @pytest.mark.parametrize("question", ["compared to August?", "vs August?"])
 def test_compared_to_a_month_after_a_september_turn_compares_september(question):
     result = plan(question, history=EVERYDAY_SEPTEMBER)

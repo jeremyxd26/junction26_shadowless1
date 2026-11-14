@@ -76,6 +76,7 @@ FORMULAS = {
     "scale": ("base",),                        # base * factor_num / factor_den, cents (params rounding: down)
     "sum": None,                               # sum of all parts, cents
     "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
+    "mean": ("total", "count"),                # total / count, cents (the average small purchase, #256)
     # S-Bonus estimate (#158). The rule's values and its source travel in params, so a ref names the
     # exact table row or rate it was computed with (core/config/s_group_benefits.yaml).
     # bonus_level, percent_of and rate_of work on the unrounded scaled base, base * share_num / share_den
@@ -121,6 +122,8 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return money(sum(values.values(), Decimal("0")))
     if formula == "minimum":
         return money(min(values["a"], values["b"]))
+    if formula == "mean":
+        return money(values["total"] / values["count"])
     if formula == "rule_value":
         return Decimal(str((params or {})["value"]))
     if formula == "bonus_level":
