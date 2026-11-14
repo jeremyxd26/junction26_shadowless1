@@ -17,15 +17,18 @@ import { SafeToSaveCard } from './SafeToSaveCard.tsx'
 function CardHeader({ card }: { card: Card }) {
   const { lang } = useSettings()
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
+    // With large text the marker moves under the title instead of covering it (#541).
+    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+      <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
         <h3 className={CARD_TITLE}>{card.title}</h3>
         {card.subtitle && <p className="mt-0.5 text-sm text-muted">{card.subtitle}</p>}
       </div>
       {card.estimate ? (
-        <EstimateBadge estimate={card.estimate} />
+        <span className="ml-auto shrink-0">
+          <EstimateBadge estimate={card.estimate} />
+        </span>
       ) : (
-        <span className="max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>
+        <span className="ml-auto max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>
       )}
     </div>
   )
@@ -100,8 +103,9 @@ function BreakdownAnswer({ card }: { card: BreakdownCard }) {
       <ul className="mt-2 flex flex-col">
         {card.items.map((item) => (
           <li key={item.key} className="border-t border-line py-2.5">
-            <div className="flex min-h-11 items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {/* With large text the amount moves under the label instead of covering it (#541). */}
+            <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="flex min-w-[min(6rem,100%)] flex-1 basis-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-bold text-brand">{item.label}</span>
                 {item.flags.map((flag) =>
                   s.flags[flag] ? (
@@ -111,7 +115,9 @@ function BreakdownAnswer({ card }: { card: BreakdownCard }) {
                   ) : null,
                 )}
               </div>
-              <NumberChip number={item.amount} />
+              <span className="ml-auto max-w-full shrink-0">
+                <NumberChip number={item.amount} />
+              </span>
             </div>
             {(item.change || item.share) && (
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm leading-8">

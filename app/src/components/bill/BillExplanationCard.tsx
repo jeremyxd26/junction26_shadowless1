@@ -53,12 +53,16 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
   return (
     <CardShell>
       {/* With large text the fact label wraps inside its own column instead of running past the card. */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
           <h3 className={CARD_TITLE}>{comparison ? s.vsUsualTitle : s.thisBillTitle}</h3>
           {comparison && <p className="text-sm text-muted">{comparison.label}</p>}
         </div>
-        {comparison && <span className="max-w-[45%] min-w-0 pt-0.5 text-right text-xs break-words text-muted">{chatStrings(lang).fact}</span>}
+        {comparison && (
+          <span className="ml-auto max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">
+            {chatStrings(lang).fact}
+          </span>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
