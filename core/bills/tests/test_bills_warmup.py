@@ -86,3 +86,56 @@ def test_the_sample_without_a_barcode_scores_its_empty_barcode_as_correct():
     t = TRUTH["sample_4"]
     fields = {k: {"value": t[k], "status": "unchecked"} for k in ("payee", "iban", "reference", "amount", "due_date")}
     assert not t.get("barcode") and warmup.score(fields, t) == (6, 6, 0)
+
+
+
+# ---- #511: the step's own failures and an unwritable cache ---------------------------------------------------
+
+def test_a_missing_gallery_file_returns_zero_and_says_so(tmp_path, monkeypatch):
+    def missing():
+        raise FileNotFoundError("samples.json")
+
+    monkeypatch.setattr(gallery, "answer_key", missing)
+    lines = []
+    assert warmup.run(client(tmp_path, ByImage()), lines.append) == (0, 0)
+    assert lines == ["bill readings skipped: the sample gallery could not be read (FileNotFoundError)"]
+
+
+def test_a_missing_sample_file_skips_that_sample_only(tmp_path, monkeypatch):
+    first = gallery.gallery()[0]
+    gone = [type(first)(first.sample_id, first.title, first.language, tmp_path / "gone.png", first.version),
+            *gallery.gallery()[1:]]
+    monkeypatch.setattr(gallery, "gallery", lambda: tuple(gone))
+    lines = []
+    assert warmup.run(client(tmp_path, ByImage()), lines.append) == (18, 18)
+    assert lines[0] == f"bill reading {first.sample_id}: its image could not be read (FileNotFoundError)"
+
+
+def test_a_raising_client_is_one_line_per_sample_and_main_returns_zero(tmp_path, monkeypatch, capsys):
+    class Broken:
+        ledger = None
+
+        def extract(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    lines = []
+    assert warmup.run(Broken(), lines.append) == (0, 0)
+    assert len(lines) == 4 and all("first reading failed (RuntimeError)" in line for line in lines)
+    monkeypatch.setattr(warmup, "reading_client", lambda: Broken())
+    assert warmup.main() == 0 and "bill reading" in capsys.readouterr().out
+
+    def no_setup():
+        raise ImportError("no SDK")
+
+    monkeypatch.setattr(warmup, "reading_client", no_setup)
+    assert warmup.main() == 0 and "could not be set up (ImportError)" in capsys.readouterr().out
+
+
+def test_an_unwritable_cache_folder_costs_at_most_one_request_per_sample(tmp_path, monkeypatch):
+    from core.agent import gemini_client
+
+    monkeypatch.setattr(gemini_client.GeminiClient, "_write_cache", lambda self, *args, **kwargs: None)
+    transport, lines = ByImage(), []
+    warmup.run(client(tmp_path, transport), lines.append)
+    assert transport.requests == 4                                # one per sample, never two
+    assert all("second reading: not in the cache" in line for line in lines[:4])
