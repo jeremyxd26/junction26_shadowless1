@@ -214,10 +214,16 @@ BILL_AMOUNT_MAX = Decimal("100000.00")
 BILL_ABOVE_USUAL_RATIO = Decimal("1.5")    # a matched bill at least 150% of its typical month (decision 10)
 BILL_ABOVE_LARGEST_RATIO = Decimal("1")    # any other bill above the largest typical month of the regular bills
 BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (and not before it)
+# A matched bill is the regular bill only when it fits it (#400): a once-a-month series and at least half of its
+# typical month. Otherwise it is a bill from the same payee category (a quarterly water bill among utilities).
+BILL_FIT_MIN_RATIO = Decimal("0.5")
 
 BILL_TEXT: dict[str, tuple[str, str]] = {
     "amount": ("Amount due", "Maksettava summa"),
     "match_matched": ("This is your regular {label} bill.", "Tämä on tavallinen laskusi: {label}."),
+    # #400: the same payee category, but not the regular bill (another billing period or another amount)
+    "match_category": ("This bill is from the same payee category as your regular {label} payments.",
+                       "Tämä lasku on samasta maksunsaajaluokasta kuin tavalliset maksusi: {label}."),
     "match_not_matched": ("This payee is not one of your regular bills.",
                           "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
     "match_no_payee": ("Add the payee's name to compare this bill with your regular bills.",
@@ -239,14 +245,14 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                             "ennen sitä."),
     # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
     # free until payday, then at most one sts_* sentence on the weekly number.
-    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
-                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
-                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+    "effect_excess": ("{reserved} is already set aside for your {label} payments before payday on {payday}, so "
+                      "only the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
                       "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
-                       "covers this one, so nothing changes.",
-                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+    "effect_covered": ("{reserved} is already set aside for your {label} payments before payday on {payday}, "
+                       "which covers this one, so nothing changes.",
+                       "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
                        "tämän laskun, joten mikään ei muutu."),
     "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
@@ -275,6 +281,11 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     # No ratio in the words: the threshold is a setting (BILL_ABOVE_USUAL_RATIO), the text stays true for any
     "sig_above_usual": ("This bill is {amount}, much more than usual ({typical}).",
                         "Tämä lasku on {amount}, paljon tavallista enemmän ({typical})."),
+    # #400: a bill of the same payee category is compared with the category's whole month, and says so
+    "sig_above_category": ("This bill is {amount}, much more than all your {label} payments in a usual month "
+                           "({typical}).",
+                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi ({label}) tavallisena "
+                           "kuukautena ({typical})."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
@@ -911,6 +922,35 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                   "Mikään ei muuttunut: tämä vastaus on jo tallennettu."),
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
                       "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
+}
+# The effect of an answer (#382), built from the real difference of the overview's numbers before and
+# after, within the answer length rule (two sentences, three numbers). {amount} is the purchase, {before}
+# and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
+# when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
+LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
+    "moved": ("Your safe to spend this week goes from {before} to {after}: {amount} {why}.",
+              "Tämän viikon turvallisesti käytettävissä oleva summa on nyt {after}, kun se oli {before}: "
+              "{amount} {why}."),
+    "basket": ("{amount} {why}.", "{amount} {why}."),
+    "why_unexpected_reserve": ("now counts as an unexpected necessity, so the reserve grows",
+                               "lasketaan nyt odottamattomaksi välttämättömäksi menoksi, joten varaus kasvaa"),
+    "why_unexpected": ("now counts as an unexpected necessity",
+                       "lasketaan nyt odottamattomaksi välttämättömäksi menoksi"),
+    "why_everyday": ("now counts as everyday spending", "lasketaan nyt arjen kulutukseksi"),
+    "why_pending": ("is waiting for your answer again", "odottaa taas vastaustasi"),
+    "why_closed": ("is back in the group the rules give it", "on taas siinä ryhmässä, johon säännöt sen sijoittavat"),
+    "save_moved": ("This week's safe to spend stays the same, but what you can typically put aside goes from "
+                   "{before} to {after}.",
+                   "Tämän viikon turvallisesti käytettävissä oleva summa pysyy samana, mutta tavallisesti "
+                   "säästöön jäävä summa on nyt {after}, kun se oli {before}."),
+    "same_budget": ("This does not change this week's safe to spend: your monthly budget, not this purchase, sets "
+                    "the limit.",
+                    "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: kuukausibudjettisi, ei "
+                    "tämä ostos, asettaa rajan."),
+    "same_balance": ("This does not change this week's safe to spend: your balance sets the limit, and this "
+                     "purchase is already in it.",
+                     "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
+                     "ja tämä ostos näkyy siinä jo."),
 }
 # ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.

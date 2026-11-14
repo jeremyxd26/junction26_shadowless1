@@ -480,6 +480,16 @@ A bill the customer shows (`POST /api/bill/explain`, contracts/api.md section 11
 
 **Matching the payee.** The match is exact after normalisation (Unicode NFKC, case folded, only letters and digits kept). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each recurring series (`config.PAYEE_ALIASES`): "Esimerkki Asunnot Oy" for housing, and "Esimerkki Energia Oy" and "Esimerkki Vesi Oy" for utilities. A real bank knows the counterparty of earlier payments; the synthetic data has none, so the table stands in for it in the demo, with fictional companies only. Only spending series can match: an investment deposit is a saving, not a bill. There is no fuzzy matching.
 
+**Your regular bill, or a bill of the same payee category (#400).** A matched bill is "your regular … bill" only when it fits that bill (`bill_explain.fits_regular`):
+- the series is paid once a month, not `spread` over several payments a month;
+- the amount is at least half of its typical month (`config.BILL_FIT_MIN_RATIO`).
+
+Otherwise the bill is from the same payee category, for example a quarterly water bill among the utilities, which are several payees and billing periods in one series:
+- it is never called "your regular bill", and the text says "the same payee category as your regular Utilities payments";
+- there is no comparison, so no percentage against the category's monthly total;
+- the warning sign `amount_above_usual` still applies against the category's typical month, and then names that basis ("much more than all your Utilities payments in a usual month");
+- the basket (regular essentials) and the effect on safe to spend are as for a match.
+
 **Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
 
 | Code | Rule |

@@ -4,6 +4,7 @@
 import type { Action } from '../api/types.ts'
 import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
+import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Turn } from '../lib/useChat.ts'
@@ -107,6 +108,16 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
     // The what-if sheet (#154) takes the action's scenario unchanged.
     return (
       <button type="button" className={ACTION_CHIP} onClick={() => openWhatIf(action.scenario)}>
+        {action.label}
+      </button>
+    )
+  }
+  if (action.type === 'open_host_screen') {
+    // Into the bank app's own screen (#268); a target the app does not know renders nothing.
+    const target = hostScreenTarget(action.target)
+    if (!target) return null
+    return (
+      <button type="button" className={ACTION_CHIP} onClick={() => openHostScreen(target)}>
         {action.label}
       </button>
     )

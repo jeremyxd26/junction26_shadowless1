@@ -27,6 +27,13 @@ export type HandOverPayloads = {
 
 export type HandOverName = keyof HandOverPayloads
 
+const HOST_SCREEN_TARGETS: readonly HostScreenTarget[] = ['monthly_saving', 'bonus_to_fund']
+
+/** The action's `target` when the app knows it, else null: an unknown target renders nothing. */
+export function hostScreenTarget(target: unknown): HostScreenTarget | null {
+  return HOST_SCREEN_TARGETS.find((known) => known === target) ?? null
+}
+
 export interface HandOverOptions {
   /** Do not show the notice when no host takes the message (e.g. the demo's own mock sheets). */
   silent?: boolean
@@ -57,4 +64,9 @@ export function handOver<N extends HandOverName>(
     window.dispatchEvent(new CustomEvent<HandOverDetail>(HANDOVER_EVENT, { detail: { name } }))
   }
   return false
+}
+
+/** The action `open_host_screen`: sends `sentti.openHostScreen` with `{target}` and nothing else. */
+export function openHostScreen(target: HostScreenTarget, options?: HandOverOptions): boolean {
+  return handOver('openHostScreen', { target }, options)
 }

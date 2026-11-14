@@ -350,6 +350,13 @@ class Check:
                    baskets(after).get("unexpected_necessities"))
             if after.get("hero") is not None:
                 expect("hero after Needed", ref("safe_to_spend"), value(after["hero"].get("primary")))
+            effect = res.get("effect")
+            if effect is not None:  # #382: the effect's numbers are the overview's, and it says something
+                items = {i.get("key"): i for i in effect.get("items") or []}
+                if after.get("hero") is not None:
+                    expect("effect safe_to_spend after Needed", value(after["hero"].get("primary")),
+                           value((items.get("safe_to_spend") or {}).get("after")))
+                expect("effect text after Needed", True, bool(effect.get("text_rendered")))
         except Exception as e:  # noqa: BLE001 - judged after the undo, below
             failure = e
         finally:

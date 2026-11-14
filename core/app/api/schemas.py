@@ -447,6 +447,21 @@ class Change(Model):
     after: Number
 
 
+class EffectItem(Model):
+    key: str  # safe_to_spend, safe_to_save, irregular_reserve, or the basket the purchase moved into
+    label: str
+    before: NumberWithId
+    after: NumberWithId
+
+
+class LabelEffect(Model):
+    """#382: the headline numbers before and after the answer, and the text built from their difference."""
+    items: list[EffectItem]
+    text: str
+    text_rendered: str
+    numbers: dict[str, NumberWithId]
+
+
 class LabelResponse(Model):
     customer_id: str
     as_of: date
@@ -457,6 +472,7 @@ class LabelResponse(Model):
     changed: bool
     message: LabelMessage
     changes: list[Change]
+    effect: LabelEffect | None = None  # null when nothing changed (#382)
     refetch: list[str]
 
 

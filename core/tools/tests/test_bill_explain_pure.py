@@ -34,8 +34,8 @@ def num(value, ref, method="spending.total@1", unit=Unit.EUR, period=UNTIL_PAYDA
                   display=display(Decimal(str(value)), unit, lang, method))
 
 
-def item(key, label, category, typical, due, lang="en") -> BillItem:
-    return BillItem(bill_id=f"bill_{key}", label=label, category=category, status="done_this_month",
+def item(key, label, category, typical, due, lang="en", status="done_this_month") -> BillItem:
+    return BillItem(bill_id=f"bill_{key}", label=label, category=category, status=status,
                     status_label="", typical_month=num(typical, f"ev_typ{key[:9]:0<9}", "recurring.typical_month_eur@1",
                                                        Unit.EUR_PER_MONTH, WINDOW, lang=lang),
                     typical_day=1, last_paid=date(2026, 9, 1), next_expected=date(2026, 10, 1),
@@ -45,7 +45,7 @@ def item(key, label, category, typical, due, lang="en") -> BillItem:
 
 def items(lang="en") -> list[BillItem]:
     return [item("housing_payment", "Housing", "Housing", "836.65", "836.65", lang),
-            item("utilities_payment", "Utilities", "Utilities", "186.40", "93.20", lang),
+            item("utilities_payment", "Utilities", "Utilities", "186.40", "93.20", lang, status="spread"),
             item("investment_deposit", "Investment deposit", "Invest Deposit", "2000.00", "2000.00", lang)]
 
 
@@ -358,12 +358,52 @@ def test_a_past_due_date_is_a_warning_and_keeps_the_draft(fake):
     assert "late-payment interest" in out["warnings"][0]
 
 
-def test_the_sign_amount_above_usual_cites_its_numbers(fake):
+def test_the_sign_amount_above_usual_cites_its_numbers_and_names_its_basis(fake):
+    """Sample 2 (electricity among the utilities, a `spread` series): the sign stays, and it names the
+    category's whole month as its basis (#400)."""
     fake.row = {"free_until_payday_eur": Decimal("12441.31"), "balance_limit_7d_eur": Decimal("5806.08")}
     out = explain(fields_bill(payee="Esimerkki Energia Oy", amount="312.70", due=date(2026, 10, 13)), "fi")
     sign = next(s for s in out["signals"] if s["code"] == "amount_above_usual")
-    assert sign["text"] == "Tämä lasku on 312,70 €, paljon tavallista enemmän (186,40 € / kk)."
+    assert sign["text"] == ("Tämä lasku on 312,70 €, paljon enemmän kuin kaikki maksusi (Utilities) tavallisena "
+                            "kuukautena (186,40 € / kk).")
     assert [n["display"] for n in sign["numbers"]] == ["312,70 €", "186,40 € / kk"]
+    assert out["comparison"] is None
+
+
+# ---- #400: a bill from the same payee category is not "your regular bill" -----------------------------------
+
+def test_the_quarterly_water_sample_is_a_bill_of_the_same_category_without_a_percentage(fake):
+    """Sample 4 (Esimerkki Vesi Oy, EUR 42.75, due 20 Oct): utilities is a `spread` series of several payments a
+    month, so a water bill is not "your regular Utilities bill" and is not compared with that monthly total."""
+    out = explain(fields_bill(payee="Esimerkki Vesi Oy", amount="42.75", due=date(2026, 10, 20), reference="12344"))
+    m = out["match"]
+    assert (m["status"], m["bill_id"], m["label"]) == ("matched", "bill_utilities_payment", "Utilities")
+    assert m["text"] == "This bill is from the same payee category as your regular Utilities payments."
+    assert "your regular Utilities bill" not in repr(out)
+    assert out["comparison"] is None
+    assert "%" not in repr([s["text"] for s in out["signals"]]) and not [
+        s for s in out["signals"] if s["code"] in ("amount_above_usual", "new_payee")]
+    assert out["basket"]["key"] == "regular_essentials"
+
+
+def test_a_monthly_bill_that_fits_is_still_your_regular_bill(fake):
+    fake.row = {"free_until_payday_eur": Decimal("12517.56"), "balance_limit_7d_eur": Decimal("5841.53")}
+    out = explain(be.read_barcode(barcode(euros="000886", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy"))
+    assert out["match"]["text"] == "This is your regular Housing bill." and out["comparison"] is not None
+
+
+@pytest.mark.parametrize("amount,regular", [("418.33", True), ("418.32", False), ("100.00", False)])
+def test_a_much_smaller_amount_does_not_fit_the_regular_bill(fake, amount, regular):
+    """At least half of the typical month (Housing EUR 836.65 -> 418.33 fits, 418.32 does not)."""
+    out = explain(fields_bill(payee="Esimerkki Asunnot Oy", amount=amount, due=date(2026, 10, 20)))
+    assert (out["comparison"] is not None) is regular
+    assert ("your regular Housing bill" in out["match"]["text"]) is regular
+
+
+def test_fits_regular():
+    housing, utilities = ITEMS[0], ITEMS[1]
+    assert be.fits_regular(housing, Decimal("836.65")) and not be.fits_regular(utilities, Decimal("186.40"))
+    assert not be.fits_regular(housing, Decimal("418.32")) and be.fits_regular(housing, Decimal("5000"))
 
 
 def test_a_covered_bill_says_only_that_nothing_changes_even_when_nothing_is_free(fake):

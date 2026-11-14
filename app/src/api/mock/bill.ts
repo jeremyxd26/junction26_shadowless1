@@ -4,14 +4,17 @@
 // - `bill.read_response`, `bill.response`, `bill.response_unknown` and `bill.error`.
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
-// - the English displays of the housing reading and the readings of the other two samples.
+// - the readings of the other two samples.
+// The housing sample returns the contract's `bill.read_response` unchanged, in both languages (its
+// displays are Finnish, as in the contract).
 // Every company is fictional (the contract's own "Esimerkki" names); the IBANs are test numbers.
 //
 // Explain rules of the mock:
 // - the contract's barcode → `bill.response`; any other 54-digit barcode → `bill.error`
 //   (`barcode_check`); a barcode that is not 54 digits → `barcode_length` or `barcode_chars`;
-// - any `fields` → `bill.response_unknown` with the typed payee, IBAN, reference and due date
-//   echoed into `bill`; its sentences, checks and numbers stay the example's.
+// - any `fields` → `bill.response_unknown` as an ECHO: the typed payee, IBAN, reference and due
+//   date are copied into `bill` as sent, unformatted and unchecked. Its amount, checks,
+//   sentences and numbers stay the example's, so they do not describe what was typed.
 // Texts of the responses stay English in Finnish, as in the what-if mock.
 import type { BillApi } from '../bill.ts'
 import { BillApiError } from '../bill.ts'
@@ -136,29 +139,13 @@ function field(
   return { value, display, status, source, note }
 }
 
-/** The contract's reading is Finnish; the English displays are provisional. */
-const HOUSING_EN_DISPLAY: Partial<Record<keyof BillReadResponse['fields'], string>> = {
-  amount: '€812.40',
-  due_date: '1 Oct 2026',
-}
-
 const REFERENCE_NOTE: Record<Language, string> = {
   en: 'This reference number does not pass its check. Compare it with the paper bill.',
   fi: 'Tämä viitenumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun.',
 }
 
 function readSample(sampleId: string, lang: Language): BillReadResponse {
-  if (sampleId === 'sample_2') {
-    const reading = clone(examples['bill.read_response'])
-    reading.language = lang
-    if (lang === 'en') {
-      for (const [key, display] of Object.entries(HOUSING_EN_DISPLAY)) {
-        const read = reading.fields[key as keyof BillReadResponse['fields']]
-        if (read && display) read.display = display
-      }
-    }
-    return reading
-  }
+  if (sampleId === 'sample_2') return clone(examples['bill.read_response'])
   if (sampleId === 'sample_1') {
     // The typed bill of the contract (bill.request_fields), as a reader would see it on paper.
     return {

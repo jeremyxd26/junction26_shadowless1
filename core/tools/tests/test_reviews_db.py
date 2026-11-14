@@ -93,9 +93,14 @@ def test_pending_needed_wanted_undo(tx):
     moved = {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in wanted["changes"]}
     assert moved == {"unexpected_necessities": (521.15, 341.08), "everyday_spending": (600.41, 780.48),
                      "irregular_reserve": (256.3, 167.74), "safe_to_spend": (97.46, 138.79)}
-    n1 = wanted["message"]["numbers"]["n1"]
-    assert (n1["value"], "{{n1}}" in wanted["message"]["text"]) == (1080.42, True)
-    assert "€1,080.42 higher than usual" in wanted["message"]["text_rendered"]
+    # #382: the confirmation is the real effect, built from the numbers that moved.
+    amount = next((i, n) for i, n in wanted["message"]["numbers"].items() if n["method"] == "spending.total@1")
+    assert (amount[1]["value"], "{{" + amount[0] + "}}" in wanted["message"]["text"]) == (1080.42, True)
+    sts = next(c for c in wanted["changes"] if c["key"] == "safe_to_spend")
+    assert wanted["message"]["text_rendered"] == (f"Your safe to spend this week goes from {sts['before']['display']} "
+                                                  f"to {sts['after']['display']}: {amount[1]['display']} now counts "
+                                                  f"as everyday spending.")
+    assert wanted["effect"]["text"] == wanted["message"]["text"]
 
     # Undo within 7 days: pending again, with exactly the pending numbers.
     undone = label_answer.answer(conn, LEAD, AS_OF, pending.tx_ref, None, "en", now)
