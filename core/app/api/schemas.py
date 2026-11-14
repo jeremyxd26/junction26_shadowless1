@@ -193,6 +193,29 @@ class ReviewCard(CardBase):
     why: str
 
 
+class SaveReasonCategory(Model):
+    key: str
+    label: str
+
+
+class SaveReason(Model):
+    kind: Literal["essentials_exceed_income", "largest_everyday_category"]
+    category: SaveReasonCategory | None
+    amount: Number
+    text: str
+
+
+class SafeToSaveCard(CardBase):
+    """The overview's `safe_to_save` card (section 3; metrics.md section 3.1), from get_safe_to_save (#165)."""
+    type: Literal["safe_to_save"]
+    monthly: Number
+    monthly_components: list[Component]
+    stock: Number
+    stock_explanation: str
+    stock_components: list[Component]
+    reason: SaveReason | None
+
+
 # ---- errors (section 4) -----------------------------------------------------------------------------
 
 class ErrorBody(Model):
@@ -256,11 +279,11 @@ class OverviewResponse(Model):
     greeting: str
     ai_disclosure: str
     hero: MetricCard | None  # safe to spend in the next 7 days (#79); null on a known tool failure
+    safe_to_save: SafeToSaveCard | None  # what a typical month leaves (#165); null on a known tool failure
     cards: list[Card]
     reviews: list[ReviewCard] = Field(max_length=1)  # the pending spike review, if any (#68)
     insights: list[Insight]
     suggested_questions: list[str]
-    # EXTENSION POINT (contract 0.2.0): `safe_to_save: SafeToSaveCard` (#53/#55) is added here.
 
 
 # ---- GET /api/evidence/{ref} (section 9) -----------------------------------------------------------

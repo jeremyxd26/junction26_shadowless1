@@ -151,6 +151,37 @@ def metric_spec(customer_id: str, as_of: date, method: str, file: str, column: s
     return spec
 
 
+def peer_spec(customer_id: str, as_of: date, method: str, file: str, metric: str, column: str,
+              settings: dict[str, str], value: Decimal, period: dict[str, str] | None = None) -> dict[str, Any]:
+    """A peer-group statistic read from 06_peer_benchmark.sql for one customer and metric (#69).
+
+    Kind `peer_aggregate` (agent-core.md section 5.2): resolving it re-runs the file for the same
+    customer, as_of and settings, picks the metric's row and returns the group statistics only
+    (median, quartiles, group size, level), never another customer's rows.
+    """
+    spec = {
+        "v": SPEC_VERSION,
+        "kind": "peer_aggregate",
+        "customer_id": customer_id,
+        "as_of": as_of.isoformat(),
+        "method": method,
+        "source": {"file": file, "metric": metric, "column": column, "settings": dict(sorted(settings.items()))},
+        "value": str(value),
+    }
+    if period:
+        spec["params"] = {"period": period}
+    return spec
+
+
+# The group statistics a peer_aggregate resolution shows: (role, output column of 06, method id).
+PEER_PARTS = (
+    ("peer_median", "peer_median_month_eur", "peer_benchmark.peer_median_month_eur@1"),
+    ("peer_p25", "peer_p25_month_eur", "peer_benchmark.peer_p25_month_eur@1"),
+    ("peer_p75", "peer_p75_month_eur", "peer_benchmark.peer_p75_month_eur@1"),
+    ("peer_n", "peer_n", "peer_benchmark.peer_n@1"),
+)
+
+
 def period_param(period) -> dict[str, str]:
     """{start, end} of a Period, as stored in params.period of a spec."""
     return {"start": period.start.isoformat(), "end": period.end.isoformat()}
@@ -299,6 +330,31 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
         return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value, spec=spec)
+
+    if spec["kind"] == "peer_aggregate":  # #69: re-run 06 for this customer; statistics only, no rows
+        from core.tools import config, metric_sql
+
+        source = spec["source"]
+        if source["file"] != config.PEER_FILE:  # the file is fixed in code, never taken from a stored spec
+            raise ValueError("peer evidence must come from 06_peer_benchmark.sql")
+        settings = {"peer_min_n": config.PEER_MIN_N}   # pinned from config, never from the stored spec
+        if "tx_labels" in source["settings"]:          # the labels the number was computed with (#68)
+            settings["tx_labels"] = source["settings"]["tx_labels"]
+        try:
+            metric_sql.check_settings(settings)        # the same check as the metric branch (#122)
+        except ValueError:
+            raise EvidenceForbidden(ref) from None
+        rows = [r for r in metric_sql.run(conn, config.PEER_FILE, customer_id, as_of, settings)
+                if r.get("customer_id") == customer_id and r.get("metric") == source["metric"]]
+        row = rows[0] if len(rows) == 1 else None
+        column = row.get(source["column"]) if row else None
+        recomputed = None if column is None else metric_sql.decimal(column)
+        parts = []
+        if row is not None and row.get("shown"):
+            parts = [{"role": role, "method": method, "value": str(row[col])} for role, col, method in PEER_PARTS]
+            parts.append({"role": "peer_level", "method": None, "value": row["peer_level"]})
+        return Resolution(ref, "peer_aggregate", spec["method"], value, parts=parts, reconciles=recomputed == value,
+                          spec=spec)
 
     if spec["kind"] != "transactions":
         # A kind this version cannot re-run: the evidence still opens, without a reconciliation check.
