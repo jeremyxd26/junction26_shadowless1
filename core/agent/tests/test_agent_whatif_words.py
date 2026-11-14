@@ -236,6 +236,83 @@ def test_a_tax_deduction_stays_as_it_was():
     assert ask("Paljonko kotitalousvähennys on?", "fi").rule is None
 
 
+# ---- #497: spending on takeaway, bars and cinemas is filtered; a name is no group ------------------------------
+
+@pytest.mark.parametrize("question,lang,group", [
+    ("how much did I spend on takeaway last month", "en", "takeaway"),
+    ("how much did I spend on bars last month", "en", "bars"),
+    ("how much did I spend on the cinema last month", "en", "cinemas"),
+    ("paljonko kulutin baareihin viime kuussa", "fi", "bars"),
+    ("Paljonko käytin noutoruokaan viime kuussa?", "fi", "takeaway"),
+    ("Paljonko käytin elokuviin syyskuussa?", "fi", "cinemas"),
+])
+def test_spending_on_a_sub_group_is_filtered_never_the_total(question, lang, group):
+    found = ask(question, lang)
+    assert found.rule == "spending" and first(found).args["filter"] == {"mcc_groups": [group]}, (question, found)
+
+
+@pytest.mark.parametrize("question", ["What is the main takeaway from my spending last month?",
+                                      "What's the key takeaway from my September spending?",
+                                      "Give me one takeaway about my spending in August"])
+def test_a_takeaway_as_a_key_point_is_no_takeaway_filter(question):
+    found = ask(question)
+    assert found.rule == "spending" and "filter" not in first(found).args, (question, found)
+
+
+@pytest.mark.parametrize("question", ["how much did I spend at Barsa last month",
+                                      "how much did I spend at Cinemax last month"])
+def test_spending_at_a_name_no_filter_maps_is_never_the_total(question):
+    found = ask(question)
+    assert found.rule is None and not found.calls and found.reason == "named_object", (question, found)
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("what if I cut Cinemax by 10%", "en"),
+    ("what if I cut the cinema club by 10%", "en"),
+    ("what if I cut the Barbarian pub by 10%", "en"),
+    ("what if I cut parking fines by 50%", "en"),
+    ("Entä jos vähentäisin pysäköintisakkoja 50 %?", "fi"),
+])
+def test_a_name_or_a_compound_is_not_the_whole_group(question, lang):
+    found = ask(question, lang)
+    assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], (question, found)
+
+
+@pytest.mark.parametrize("question,lang,expected", [   # unchanged by #497
+    ("how much did I spend on taxis last month", "en", ("spending", {"mcc_groups": ["taxi"]})),
+    ("how much did I spend on parking in August", "en", ("spending", {"mcc_groups": ["parking"]})),
+    ("How much did I spend on restaurants last month?", "en", ("spending", {"categories": ["Restaurants"]})),
+    ("how much did I spend at Restaurants last month", "en", ("spending", {"categories": ["Restaurants"]})),
+])
+def test_the_known_filters_keep_their_decisions(question, lang, expected):
+    found = ask(question, lang)
+    assert (found.rule, first(found).args.get("filter")) == expected, (question, found)
+
+
+# ---- #509: what a basket holds, with or without "my", and with a named period ---------------------------------
+
+@pytest.mark.parametrize("question,lang,basket,preset", [
+    ("what counts as everyday spending", "en", "everyday_spending", "last_6_months"),
+    ("what is everyday spending", "en", "everyday_spending", "last_6_months"),
+    ("What is in everyday spending?", "en", "everyday_spending", "last_6_months"),   # the card's own label
+    ("what counts as an unexpected necessity", "en", "unexpected_necessities", "last_6_months"),
+    ("mitä arjen kulutukseen kuuluu", "fi", "everyday_spending", "last_6_months"),
+    ("mitä kuuluu arjen kulutukseen", "fi", "everyday_spending", "last_6_months"),
+    ("what is in my everyday spending in August", "en", "everyday_spending", "last_month"),
+    ("what is in my everyday spending this month", "en", "everyday_spending", "this_month"),
+    ("Mitä arjen kulutukseeni kuuluu elokuussa?", "fi", "everyday_spending", "last_month"),
+])
+def test_what_a_basket_holds_is_its_spending_by_category(question, lang, basket, preset):
+    found = ask(question, lang)
+    assert found.rule == "basket_contents", (question, found)
+    assert first(found).args == {"period": {"preset": preset}, "filter": {"baskets": [basket]}, "group_by": "category"}
+
+
+def test_the_amount_of_a_basket_is_still_the_spending_question():
+    found = ask("What is my everyday spending in August?")
+    assert found.rule == "spending" and first(found).args["period"] == {"preset": "last_month"}
+
+
 # ---- #370: the Finnish weather is a whole word ---------------------------------------------------------
 
 def test_a_word_ending_in_saa_is_not_the_weather():

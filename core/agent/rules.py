@@ -61,11 +61,23 @@ CATEGORY_WORDS = [
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
     (r"\btransportation\b|liikkumi\w*", "Transportation"),   # the peer card's label (#403)
 ]
+# A word inside a compound that names something else is no group (#497): "parking fines", "pysäköintisakko",
+# "the cinema club", "elokuvakerho"; and "Cinemax" is no cinema (whole words only).
+PARKING_WORDS = r"parking(?!\s+(fines?|tickets?)\b)|pysäköin(?!\w*sak)\w*|parkki(?!\w*sak)\w*"
+# "takeaway" the food, not "the main takeaway from …" / "one takeaway" (a key point)
+TAKEAWAY_WORDS = (r"(?<!key )(?<!main )(?<!big )(?<!biggest )(?<!one )take-?aways?(?!\s+(from|of)\b)|"
+                  r"fast food|noutoruo\w*|pikaruo\w*")
+BAR_WORDS = r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*"
+CINEMA_WORDS = r"\bcinemas?\b(?!\s+club)|\bmovies\b|elokuv(?!\w*kerho)\w*|leffa\w*|leffoi\w*"
 MCC_GROUP_WORDS = [
     (r"tax(i|is)\b|taksi\w*|takse\w*", "taxi"),   # "takseihin", "takseja" (#346)
     (r"public transport|joukkoliiken\w*|bus(es)?\b|tram", "public_transport"),
     (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*", "fuel"),
-    (r"parking|pysäköin\w*", "parking"),
+    (PARKING_WORDS, "parking"),
+    # the sub-groups of the spending filter (#497): a spending question about them is filtered, never the total
+    (TAKEAWAY_WORDS, "takeaway"),
+    (BAR_WORDS, "bars"),
+    (CINEMA_WORDS, "cinemas"),
 ]
 MONTHS = {**{m.lower(): i for i, m in enumerate(calendar.month_name) if m},
           **{m.lower(): i for i, m in enumerate(calendar.month_abbr) if m}, "sept": 9,
@@ -232,11 +244,29 @@ WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
     (r"public transport|joukkoliiken\w*|\bbus(es)?\b|bussi\w*|busse\w*|\btrams?\b|ratikka\w*|raitiovaun\w*",
      config.MCC_GROUPS["public_transport"]),
     (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*|bensii\w*|tankkau\w*", config.MCC_GROUPS["fuel"]),
-    (r"parking|pysäköin\w*|parkki\w*", config.MCC_GROUPS["parking"]),
-    (r"take-?aways?|fast food|noutoruo\w*|pikaruo\w*", ("5814",)),
-    (r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*", ("5813",)),
-    (r"cinemas?|\bmovies\b|elokuv\w*|leffa\w*|leffoi\w*", ("7832",)),
+    (PARKING_WORDS, config.MCC_GROUPS["parking"]),
+    (TAKEAWAY_WORDS, config.MCC_SUBGROUPS["takeaway"]),
+    (BAR_WORDS, config.MCC_SUBGROUPS["bars"]),
+    (CINEMA_WORDS, config.MCC_SUBGROUPS["cinemas"]),
 ]]
+# A named place, not a whole group (#497): a capitalised word right before a group noun ("the Barbarian pub", not
+# at the start of a sentence), or a capitalised name after "at" / "from" that no filter maps ("at Barsa", "at
+# Cinemax"). Read on the message as typed. The what-if asks back; the spending rule never answers it with a total.
+NAMED_PLACE = re.compile(r"(?<!^)(?<![.!?]\s)\b(?!I\b)[A-Z][\w'&-]*\s+(?:pubs?|bars?|cinemas?|takeaways?|"
+                         r"tax(?:i|is)|parking)\b")
+AT_NAME = re.compile(r"\b(?:at|from)\s+(?:the\s+)?([A-Z][\w'&-]*)")
+
+
+def named_object(question: str) -> bool:
+    """The message names a place (a merchant, a club) rather than a group or category (#497)."""
+    if NAMED_PLACE.search(question):
+        return True
+    for m in AT_NAME.finditer(question):
+        word = fold(m.group(1))
+        if word in MONTHS or any(re.search(rx, word) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            continue   # "at Restaurants", "in August": a known filter or a period, no name
+        return True
+    return False
 # The baskets a what-if can cut (#403: the peer card's buttons for them); regular essentials are never cut.
 WHAT_IF_BASKET_WORDS = [(fold_pattern(rx), basket) for rx, basket in [
     (r"everyday spending|arjen kulutu\w*", "everyday_spending"),
@@ -274,6 +304,8 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q)}
     baskets = {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, q)}
     selections = len(categories) + len(codes) + len(baskets)
+    if codes and named_object(question):
+        return "unmapped", None   # "the Barbarian pub" is a place, not all bars (#497)
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
     if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
@@ -465,12 +497,17 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
 # the card's window (the last 6 months) or a period the user named.
 BASKET_CONTENTS_BASKETS = [
     (r"everyday spending|arjen kulutuk\w*", "everyday_spending"),
-    (r"unexpected necessities|odottamattom\w* välttämättöm\w*", "unexpected_necessities"),
-    (r"regular essentials|säännöllis\w* välttämättöm\w*", "regular_essentials"),
+    (r"unexpected necessit\w*|odottamattom\w* välttämättöm\w*", "unexpected_necessities"),
+    (r"regular essentials?|säännöllis\w* välttämättöm\w*", "regular_essentials"),
 ]
-BASKET_CONTENTS = (r"\bwhat('s| is) in my (everyday spending|unexpected necessities|regular essentials)\b|"
-                   r"\bmitä (arjen kulutukseeni|odottamattomiin välttämättömiin( menoihini)?|"
-                   r"säännöllisiin välttämättömiin( menoihini)?) kuuluu\b")
+# The question of what a basket holds, with or without "my" (#509): the baskets card's own label is "What is in
+# everyday spending?" / "Mitä arjen kulutukseen kuuluu?". "What is my everyday spending" asks an amount: not here.
+_BASKETS_EN = r"(everyday spending|unexpected necessit(y|ies)|regular essentials?)"
+_BASKETS_FI = (r"(arjen kulutukse(en|eni)|odottamattomiin välttämättömiin( menoihin(i)?)?|"
+               r"säännöllisiin välttämättömiin( menoihin(i)?)?)")
+BASKET_CONTENTS = (r"\bwhat('s| is| are) (in (my )?)?(an? )?" + _BASKETS_EN + r"\b|"
+                   r"\bwhat counts as (an? )?" + _BASKETS_EN + r"\b|\bwhat goes (in|into) (my )?" + _BASKETS_EN + r"\b|"
+                   r"\bmitä " + _BASKETS_FI + r" kuuluu\b|\bmitä kuuluu " + _BASKETS_FI + r"\b")
 INTENTS = [
     ("basket_contents", BASKET_CONTENTS),
     # Small everyday purchases (#256): only the plain question is claimed (small_purchases_whole); a cut or a
@@ -715,6 +752,8 @@ def _beats(a: str, b: str, q: str, spending: dict | None) -> bool:
         return not category and not re.search(COMPARE, q)   # the breakdown compares nothing
     if (a, b) == ("spending", "where_money_went"):
         return category and spending is not None and not re.search(COMPARE, q)   # "break down my restaurant spending"
+    if a == "basket_contents" and b in ("spending", "where_money_went"):
+        return True   # it reads the named period itself ("… everyday spending in August", #509)
     if (a, b) == ("what_if", "safe_to_spend"):
         return bool(re.search(PERCENT + "|" + HALF, q))   # "cut my restaurant budget by 20%"
     if (a, b) == ("what_if", "recurring_bills"):
@@ -773,7 +812,7 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return _claimed(intent, [("get_bonus_estimate", share)], tools, lang)
     if intent == "peers":
         return _claimed(intent, [("get_peer_benchmark", {"metric": "spend_total"})], tools, lang)
-    kind, what_if = plan_what_if(q)
+    kind, what_if = plan_what_if(question)
     if kind == "health":
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if kind == "unmapped":
@@ -806,6 +845,10 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
+    if "spending" in found and named_object(question):
+        found.remove("spending")   # a named place is never answered with a group's or the whole total (#497)
+        if not found:
+            return Claim(None, reason="named_object")   # the model, or the general question back (not the period)
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)
