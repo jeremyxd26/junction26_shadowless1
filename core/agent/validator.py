@@ -92,7 +92,11 @@ _EN_CARDINAL = (r"(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|
 _FI_CARDINAL = (r"(nolla|yksi|yhden|kaksi|kahden|kahta|kolme|kolmen|kolmea|neljä|neljän|neljää|viisi|viiden|viittä|"
                 r"kuusi|kuuden|kuutta|seitsemän|seitsemää|kahdeksan|kahdeksaa|yhdeksän|yhdeksää|kymmenen|"
                 r"kymmentä|\w+toista|\w+kymmentä\w*)")
-_UNIT = r"(€|eur\b|euros?\b|euroa\b|euron\b|euroon\b|euroilla\b|cents?\b|senttiä\b|percent\b|per\s?cent\b|%|prosent\w*)"
+_UNIT_WORDS = (r"euros?|euroa|euron|euroon|euroilla|cents?|senttiä|dollars?|usd|pounds?|kruunu\w*|kronor|kroner|kronur|"
+               r"krona|percent|per\s?cent|prosent\w*|promille\w*|per\s?mille|permille")
+_UNIT = rf"(€|\$|£|‰|%|eur\b|(?:{_UNIT_WORDS})\b)"
+# A unit word right after a token repeats the unit its display already carries ("{{n1}} euros").
+UNIT_WORD_AFTER_TOKEN = re.compile(rf"\{{\{{n[0-9]+\}}\}}\s*(?:{_UNIT_WORDS})\b", re.I)
 NUMBER_WORDS = re.compile(
     r"\b(hundreds?|thousands?|millions?|billions?|trillions?)\b|"
     r"\b\w*(sata|sataa|sadan|satoja|sadoin|tuhat|tuhatta|tuhannen|tuhansia|tuhansien)\b|"
@@ -160,6 +164,8 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     for name, rx in MARKUP.items():
         if rx.search(text):
             errors.append(f"no {name.replace('_', ' ')} allowed")
+    if UNIT_WORD_AFTER_TOKEN.search(text):
+        errors.append("no unit word after a number token: the token's display carries its own")
     words = TOKEN.sub(" ", text)
     found = NUMBER_WORDS.search(words)
     if found:

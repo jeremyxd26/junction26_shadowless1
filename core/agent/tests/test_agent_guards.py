@@ -78,6 +78,13 @@ def test_inline_links_stay_rejected(text):
     "Tuhansia euroja meni asumiseen.",
     "You spent about ½ of it on rent.",                  # a fraction character
     "You spent {{n1}}, about ten euros more.",
+    "Ero on kolme promillea.",                                # per mille, dollars and kronor as units (r-w4, #59)
+    "That is five dollars a week.",
+    "Se maksoi viisi kruunua.",
+    "You spent {{n1}} euros.",                                # a unit word right after a token
+    "Osuus on {{n2}} promillea.",
+    "That is {{n3}} percent of it.",
+    "Säästö on {{n1}} euroa kuussa.",
 ])
 def test_numbers_in_words_and_number_characters_are_rejected(text):
     assert rejected(text)
@@ -96,6 +103,9 @@ def test_numbers_in_words_and_number_characters_are_rejected(text):
     "Tip: check your bills before payday.",
     "Satama, sataman ja satamassa eivät ole lukuja.",
     "Viimeiset kolme kuukautta",                              # the default clarifying option
+    "Your euro spending in August 2026 was {{n1}}, and most of it went to rent.",
+    "Want to see what a cut would save? Ask, for example: what if I cut restaurants by half?",
+    "Haluatko nähdä, paljonko vähennys säästäisi? Kysy esimerkiksi: entä jos vähentäisin ravintoloita puoleen?",
 ])
 def test_ordinary_text_still_passes(text):
     assert check_text(text, ALLOWED) == []
