@@ -176,6 +176,10 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
         # purchases) and taxi"
         lead_kind, lead = "mcc_groups", [f"{n} ({card})" if n in carded else n for n in groups]
         if cats:
+            if lead[-1].endswith(f" ({card})") and len(lead) < config.FILTER_LABEL_CAP:   # listed, not counted
+                # one bracket, never two in a row: "Restaurants (card purchases, Housing)" (#567)
+                lead[-1] = lead[-1][:-len(f" ({card})")]
+                brackets.append(card)
             brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
     else:
         lead_kind = next(k for k in ("categories", "baskets", "merchant") if k in named)

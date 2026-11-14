@@ -552,6 +552,33 @@ cases:
   - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
   - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
 
+- id: eetu-save-more-already-saving
+  persona: CUST00349
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving]
+  numbers:
+  - {name: already_saving_month, value: 242.95, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}}
+  - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  forbid:
+  - {name: plan_plus_already_saving, value: 319.94, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}]}}
+  - {name: savings_goal_beside_the_transfer, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
+
+- id: kaisa-save-more-no-regular-transfer
+  persona: CUST00849
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving, zero_state]
+  numbers:
+  - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, required: false, source: {query: savings_plan, column: total_year_eur}}
+  forbid:
+  - {name: savings_goal_beside_the_neutral_line, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
+
 - id: marja-taxi-this-month-none
   persona: CUST00493
   question: {en: 'How much have I spent on taxis this month?'}
@@ -1077,6 +1104,104 @@ cases:
   tags: [peers, national, sensitive]
   forbid_text:
   - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
+# QA regression cases 2 (#562): the questions of the QA tables of #346, #347, #395 and #552 as they were asked
+# on the dev environment, with the outcome the QA review considers right. No values: the plans and texts are
+# checked in core/agent/tests/test_agent_qa_cases_2.py.
+# An answered case needs SQL-derived values (expected.py --write on the database), so the cases without values
+# expect `any` with their data tool: a refusal or a clarifying question calls no data tool and fails them.
+- id: sanna-qa-taxi-what-if
+  persona: CUST00860
+  question: {en: 'what if I took 10% fewer taxis?', fi: 'mitä jos käyttäisin takseihin 10 % vähemmän?'}
+  intent: what_if
+  expect: any
+  expected_tools: [run_what_if]
+  tags: [qa, what_if]
+
+- id: sanna-qa-health-what-if
+  persona: CUST00860
+  question: {en: 'what if I spend 20% less at the pharmacy?'}
+  intent: what_if
+  expect: refused
+  refusal_kinds: [out_of_scope]
+  no_data_tool_call: true
+  tags: [qa, r9]
+
+- id: sanna-qa-unknown-category-gym
+  persona: CUST00860
+  question: {en: 'how much do I spend on the gym?', fi: 'paljonko kulutan kuntosaliin?'}
+  intent: unknown_object
+  expect: any
+  expected_tools: [get_basket_breakdown]
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-unknown-word
+  persona: CUST00849
+  question: {en: 'how much did I spend on flurbles last month?'}
+  intent: unknown_object
+  expect: any
+  expected_tools: [get_basket_breakdown]
+  tags: [qa, missing_data]
+
+- id: eetu-qa-month-before-data
+  persona: CUST00349
+  question: {en: 'how much did I spend in September 2024?'}
+  intent: spending
+  expect: no_data
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: sanna-qa-range-at-data-start
+  persona: CUST00860
+  question: {en: 'how much did I spend from October 2024 to January 2025?'}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-last-five-years
+  persona: CUST00849
+  question: {en: 'how much did I spend over the last 5 years?'}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: sanna-qa-next-month
+  persona: CUST00860
+  question: {en: 'what will I spend next month?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: sanna-qa-saved-by-christmas
+  persona: CUST00860
+  question: {en: 'how much will I have saved by Christmas?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-afford-holiday-in-march
+  persona: CUST00849
+  question: {en: 'will I be able to afford a 2000 euro holiday in March?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: eetu-qa-average-travel-one-purchase
+  persona: CUST00349
+  question: {en: "what's my average monthly travel spending?"}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data, too_few]
+
+- id: sanna-qa-why-safe-to-spend-lower
+  persona: CUST00860
+  question: {en: 'why is my safe to spend lower than it was?'}
+  intent: safe_to_spend
+  expect: any
+  expected_tools: [get_safe_to_spend]
+  tags: [qa, q3_safe_to_spend, lead]
 
 # The glossary (#568): "What is X?" for exactly one term is our fixed definition, with the customer's own Number
 # where an existing Number means exactly that, and never the composer. A term with no own Number is `meta`: answered,

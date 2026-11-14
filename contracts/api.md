@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.9 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #417, #420, #421, #433, #511 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.11 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #417, #420, #421, #433, #511, #554 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.9. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.11. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -863,7 +863,7 @@ The `review` card for Sanna's Home & Tech purchase (values from the dataset):
       }
     }
   ],
-  "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+  "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
   "actions": [
     { "type": "open_evidence", "label": "See the purchase", "evidence_ref": "ev_rv1x3z5b7d9f" }
   ]
@@ -2927,7 +2927,7 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
           }
         }
       ],
-      "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+      "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
       "actions": [
         { "type": "open_evidence", "label": "See the purchase", "evidence_ref": "ev_rv1x3z5b7d9f" }
       ]
@@ -3794,7 +3794,7 @@ A `metric` number (Sanna's budget limit for the next 7 days, from `core/metrics/
   "method": {
     "id": "safe_to_spend.budget_limit_7d_eur@1",
     "name": "Your monthly budget allows",
-    "summary": "Calculated by core/metrics/03_safe_to_spend.sql.",
+    "summary": "What a typical month leaves free, minus your savings goal, scaled to 7 days.",
     "doc": "docs/design/metrics.md#3-safe-to-spend"
   },
   "query": null,
@@ -3825,7 +3825,7 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
   "method": {
     "id": "peer_benchmark.peer_median_month_eur@1",
     "name": "Typical for similar people",
-    "summary": "Calculated by core/metrics/06_peer_benchmark.sql.",
+    "summary": "A figure of a group of at least 20 similar customers, compared with your own monthly average; no one's own data is shown.",
     "doc": "docs/design/metrics.md#6-peer-benchmark"
   },
   "query": null,
@@ -5343,3 +5343,4 @@ A reading of a sample with a barcode:
 | 0.3.6 | Estimates separate what was observed from what is assumed (#380).<br><br>New:<br>- `estimate` gains `observed` (Number[]: the Numbers the estimate is built from, Numbers the tool already computed, with their evidence refs) and `assumptions` (`{code, text, value}`[]: what it assumes; `text` is one plain sentence without digits, `value` a Number or `null`). The Numbers inside an estimate are complete objects: the app reads them from the estimate, never by id from the answer's `numbers` map. Section 3, Estimates.<br>- A closed list of assumption codes in one table (section 3, Estimates): `spending_as_usual`, `reserve_for_unexpected`, `cushion`, `savings_goal_first`, `budget_from_usual_month`, `bills_on_usual_days`, `next_months_like_last`, `cut_share`, `bonus_all_at_s_group`, `bonus_share`, `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods`, `bonus_level`, `bills_pro_rata`, `peer_group`, `no_income_before_payday`, `cuts_as_shown`. The app ignores a code it does not know.<br>- Every card that sets `estimate` has at least one assumption: the safe-to-spend card (both limbs: the balance and the bills, and the budget limit of a typical month), the S-Bonus card (every fixed assumption), the balance forecast, `safe_to_save`, `bills`, `peer`, `whatif` and the savings plan. The `POST /api/whatif` response's `estimate` carries the same fields. The `stores` example has `estimate: null` until a tool builds that card.<br>- Nothing is computed differently: the hero's Numbers and evidence refs are unchanged.<br><br>Changed examples: every example with an `estimate` gains the two fields: `card.peer`, `card.whatif`, `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response` (hero, safe to save, bills), `overview.response_no_hero`, `overview.response_pending` and `whatif.response`; `card.stores` has `estimate: null`. New examples for the kinds without a card example: `estimate.bonus`, `estimate.forecast` and `estimate.savings_plan`. |
 | 0.3.7 | Reading a sample bill is implemented (#250).<br><br>Changed:<br>- Section 11.4 is no longer marked "not implemented yet".<br>- Only an IBAN or a reference can be `checked`, by its own check digits. A language model transcribes the barcode, which has no check digit over the amount or the due date, so `amount`, `due_date`, `payee` and `barcode` are always `unchecked`. The example `bill.read_response` shows this.<br>- A field is also dropped when it is implausible: a due date more than two years from today, an amount of 0 or above 100 000.00, an amount such as "12.345".<br>- A cached reading is served even while the model may not be used; only a reading not in the cache answers 503 `model_unavailable` (sections 4 and 11.4). A reading with no usable field is 503 too.<br>- Section 11.4 also says that an IBAN or a reference failing its check digits is kept as `unchecked` with a note, that a barcode value disagreeing with the printed one keeps the barcode's value as `unchecked` with a note, and that readings have their own rate window (429) (#511). |
 | 0.3.9 | A clarification, no new field (#433). Section 11.2: a matched bill has a `comparison` only when it fits the customer's regular bill (paid once a month, at least half of its typical month; #400). A matched bill that does not fit has `comparison` `null`, and `match.text` names the payee category ("This bill is from the same payee category as your regular Utilities payments."). New example `bill.response_category`: the gallery's water sample for Sanna, with its `forecast` (0.3.4) as the service returns it. `signals`: for a category match, `amount_above_usual` is measured against the category's whole month and says so. `comparison.change_pct` is never `null` (a comparison needs a typical amount above 0). |
+| 0.3.11 | Texts for the screen, no new field (#554).<br>- `GET /api/personas?lang=fi`: every `tagline` is Finnish, like the other texts (section 1).<br>- `GET /api/evidence/{ref}`: `method.summary` says in one plain sentence what the number is made of, in the request language; it never names a file. Examples `evidence.response_metric` and `evidence.response_peer` changed.<br>- The review card's `why` says what an answer changes: "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend." Examples `card.review` and `overview.response_pending` changed. |
