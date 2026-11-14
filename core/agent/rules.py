@@ -42,6 +42,7 @@ DECLINE_RULES = [
                           r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
     ("out_of_scope", r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+                     r"guess (a |an |some )?(number|amount|figure)|"
                      r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
                      r"arvaa (jokin |joku )?(luku|summa)|mikä tahansa (luku|summa)|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
                      r"medicine|headache|lääke|päänsärky|weather|sää\b|recipe"),
