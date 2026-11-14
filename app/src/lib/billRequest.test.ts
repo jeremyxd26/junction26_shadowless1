@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { BillExplainRequest, BillReadResponse } from '../api/billTypes.ts'
 import contract from '../api/mock/contract-examples.json'
-import { buildExplainRequest, initialInputs, normaliseAmount, type FieldInputs } from './billRequest.ts'
+import {
+  buildExplainRequest,
+  firstProblemField,
+  initialInputs,
+  normaliseAmount,
+  problemOnReadField,
+  type FieldInputs,
+} from './billRequest.ts'
 
 const examples = contract.examples as unknown as Record<string, unknown>
 const reading = examples['bill.read_response'] as BillReadResponse
@@ -83,6 +90,9 @@ describe('normaliseAmount', () => {
     ['100000', '100000'],
     ['100000.00', '100000.00'],
     ['0.01', '0.01'],
+    ['099999', '99999'],
+    ['000000.50', '0.50'],
+    ['007', '7'],
   ])('accepts %j as %j', (typed, amount) => {
     expect(normaliseAmount(typed)).toEqual({ amount })
   })
@@ -94,9 +104,46 @@ describe('normaliseAmount', () => {
     ['€12', 'amount_format'],
     ['-5', 'amount_format'],
     ['0,00', 'amount_range'],
+    ['0', 'amount_range'],
+    ['00.00', 'amount_range'],
     ['100000.01', 'amount_range'],
     ['200000', 'amount_range'],
   ])('refuses %j (%s)', (typed, problem) => {
     expect(normaliseAmount(typed)).toEqual({ problem })
+  })
+})
+
+describe('a read value that fails validation', () => {
+  it('reports an out-of-range read amount when there is no barcode, on the read field', () => {
+    const noBarcode = structuredClone(reading)
+    noBarcode.fields.barcode = null
+    noBarcode.fields.amount = { ...noBarcode.fields.amount!, value: '150000.00', display: '150 000,00 €' }
+    const result = buildExplainRequest({ ...base, reading: noBarcode, inputs: initialInputs(noBarcode) })
+    expect(result).toEqual({ ok: false, missingCustomer: false, problems: { amount: 'amount_range' } })
+    if (result.ok) return
+    expect(problemOnReadField(result.problems, noBarcode)).toBe(true)
+    expect(firstProblemField(result.problems)).toBe('amount')
+  })
+
+  it('reports a read payee over 70 characters on the barcode path', () => {
+    const long = structuredClone(reading)
+    long.fields.payee = { ...long.fields.payee!, value: 'E'.repeat(71), display: 'E'.repeat(71) }
+    const result = buildExplainRequest({ ...base, reading: long, inputs: initialInputs(long) })
+    expect(result).toEqual({ ok: false, missingCustomer: false, problems: { payee: 'too_long' } })
+    if (result.ok) return
+    expect(problemOnReadField(result.problems, long)).toBe(true)
+  })
+
+  it('does not ask for edit mode when the problem is on a field that was not read', () => {
+    const missing = structuredClone(reading)
+    missing.fields.barcode = null
+    missing.fields.reference = null
+    const result = buildExplainRequest({ ...base, reading: missing, inputs: initialInputs(missing) })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.problems).toEqual({ reference: 'required' })
+    expect(problemOnReadField(result.problems, missing)).toBe(false)
+    expect(firstProblemField({ due_date: 'required', iban: 'too_long' })).toBe('iban')
+    expect(firstProblemField({})).toBeNull()
   })
 })

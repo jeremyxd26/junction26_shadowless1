@@ -62,6 +62,19 @@ The flow column of the shared classification block (`02_baskets.sql` to `06_peer
 - Utilities come about 3 times a month at varying amounts (median CV of the monthly total 31%).
 - No card merchant charges a customer once a month at a stable amount, so "subscriptions" are empty in this data; recurrence comes from bill and income types.
 
+**Estimates: what is observed and what is assumed (#380).** Every card that shows an estimate lists, in `estimate.observed`, the Numbers it is built from (the tool's own Numbers, same refs) and, in `estimate.assumptions`, what it assumes, with a code from the closed list of `contracts/api.md` section 3 (Estimates). Nothing is computed differently; each assumption below is what the formula of its section already uses.
+
+| Estimate | Observed | Assumptions (`code`: value) | Where the formula is |
+|---|---|---|---|
+| Safe to spend | the balance; the bills due before payday; the budget limit | `spending_as_usual`: the essentials reserve; `reserve_for_unexpected`: the irregular reserve; `cushion`: the cushion; `bills_on_usual_days`; `budget_from_usual_month` (the budget limit, which binds for every persona); `savings_goal_first`: the goal | section 3 |
+| Safe to save | the month's components (free month and everyday month, or the shortfall) | `next_months_like_last` | section 3.1 |
+| What-if | the baseline a month | `next_months_like_last`; `cut_share`: the customer's own cut (`user_input@1`, no ref) | section 4 |
+| S-Bonus | the grocery spending a month | `bonus_all_at_s_group` (share 100%) or `bonus_share`: the share; `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods` (the fixed assumptions, `config.BONUS_ASSUMPTIONS`); `bonus_level`: the Bonus percentage | `docs/domain/s-group-benefits.md` section 4 |
+| Bills (pro rata) | the total until payday | `bills_pro_rata` | section 3.2 |
+| Peer benchmark | the customer's own figure | `peer_group`: the group size | section 6 |
+| Balance forecast | the balance today; the bills until payday | `spending_as_usual`: the daily pace (everyday spending and essentials; unexpected costs are not counted); `bills_on_usual_days`; `no_income_before_payday` | section 3.3 |
+| Savings plan (#369) | the levers' baselines a month (`what_if.baseline_month_eur@1`) | `next_months_like_last`; `cuts_as_shown`, one per lever: its cut share | `core/tools/savings_plan.py` |
+
 ## 1. Three baskets — "Where did my money go?"
 
 Keys (shared with #5) and labels from the partner brief:
@@ -349,6 +362,8 @@ else:                reason = largest_everyday_category, amount = that category'
 - **What it means.** Free until payday is what is left after the bills due before payday, both reserves and the cushion. Safe to save also keeps the usual everyday spending until payday. If the customer moves the whole amount, what is left still covers bills, reserves, the cushion and a normal everyday spending pace until payday.
 - **Pay yourself first (#391).** Safe to spend is computed after the savings goal (section 3), whose default is this figure before the review's answer, rounded down to 10 €. So safe to spend × 30.4375/7 + goal is the free month, and the two never overlap. Safe to save keeps this formula. The card's subtitle quotes the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when safe to save is below the goal, compares the two ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."). The stock figure is unchanged: moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday.
 - **R13 and R7.** It is an estimate, shown with its formula in plain words. It is not investment advice: the coach never says where to put the money (no product, no instrument).
+- **Three scales (#417).** The card shows the headline `safe_to_save_monthly` also a week and a day: `monthly × 7 / 30.4375` (`safe_to_save.week_eur@1`) and `monthly / 30.4375` (`safe_to_save.day_eur@1`). Both are composites (formula `scale`) of the rounded monthly Number, so they reconcile with it to the cent and their evidence opens it. Each is rounded on its own: the day × 30.4375 can differ from the month by up to about 0.15, and seven days need not equal the week. They scale the headline, not the savings goal: the goal of section 3 is set aside before safe to spend, and the safe-to-save subtitle compares the month with it.
+- **The amount and the bank's screen stay apart (#417).** No answer puts an amount into the bank's screen or product in one sentence: moving, putting, sending, setting, adding, starting, opening or investing into, to or in S-mobiili, monthly saving or a fund (`core/answer_text.py` `bank_action`). A plain statement of a figure passes ("Your monthly saving is €184.61.", "In S-mobiili your balance is €5,864.86."). The card's button names the screen only and carries no amount (contract: `open_host_screen`).
 - **Edge cases.**
   - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
   - With no salary series, payday is assumed in 30 days (section 3), so the result is conservative.
@@ -779,16 +794,17 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 |---|---|---|
 | `count`, `total_eur` | The small purchases in the period | `transactions`, listing exactly these purchases |
 | `avg_eur` | `total / count`, when there is at least one | composite `mean` |
-| `month_avg_eur` | `total / months`, when the period is whole calendar months (the default is) | composite `scale` |
+| `month_avg_eur` | `total / months`, when the period is two or more whole calendar months (the default is); for one month it would only repeat the total, so there is none (#465) | composite `scale` |
 | `flexible_total_eur` | Everyday spending in the period, refunds netted | `transactions` |
 | `share_pct` | The total's share of everyday spending; per category, its share of the small total | composite `share_pct` |
 | `max_amount_eur` | The limit used | composite `rule_value` |
 
 **The answer.** One sentence, at most three numbers, the period in words:
-- **Five or more:** the total first, the count and the monthly average, and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part at …" when no category holds more than half of the small total.
+- **Five or more:** the total first, the count and the monthly average (none for one month), and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part …" when no category holds more than half of the small total.
+- **Where:** each category takes its own preposition (`config.SMALL_PURCHASE_WHERE`, #465): "at restaurants and cafés", "on entertainment", "on lifestyle shopping", and "on <label>" for any other category. Finnish uses the case of each phrase ("ravintoloissa ja kahviloissa", "viihteessä"), and "luokassa <label>" otherwise.
 - **Fewer than 5** (`config.SMALL_PURCHASE_MIN_COUNT`): "Only 4 small purchases in the last three months, €28.73 in all: not much to see here."
 - **None:** it says so.
-- **The limit** (€10.00) stays on the card.
+- **The limit:** the default (€10.00) stays on the card. A limit the user asked for is named with its own Number, in the place of the monthly average, so there are still at most three numbers (#465): "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at restaurants and cafés." In Finnish: "… 31 ostosta, enintään 25,00 €, …" (review of #476: "rajalla" read as "right at the limit").
 
 **The rule** (`core/agent/rules.py`) claims only the plain question. After the trigger (plural forms only), the default period and a fixed list of filler words are removed, nothing may be left. An amount, another period, a filter or a "stop", in words or digits, hands the message on to the next planner (review of #390).
 
@@ -824,28 +840,28 @@ The card's second action asks the what-if question for the largest category with
 | `savings_plan.cut_pct@1` | a lever's cut share, a setting (20, 10) | composite `rule_value`, so an answer cites it as a number, never as bare digits |
 
 **These are savings from spending below the usual pace.** They add to what can be set aside, never to safe to spend. Next to the plan:
-- safe to save a month (section 3.1) is shown as it is today, never added in. It is the safe-to-save tool's own headline (its `monthly`), the same Number and ref;
+- the savings goal set aside first (#391, `safe_to_spend.savings_goal_eur@1`) is named next to the plan, never added in, and left out when it is 0 (#468). It is the Number the safe-to-spend answer cites (the same ref), and the same in every review state, so the two answers of one conversation name one monthly figure. Safe to save's own `monthly` (€364.31 while the review is pending, €184.61 after "Needed") is no longer quoted by the plan; the safe-to-save card and its answer keep their texts;
 - the S-Bonus is never shown with the plan: no amount on the card, in the model view or in the answer, so nothing can put it next to the total (coordinator, #411). When the estimate is offered, the answer's first follow-up is its own question, "How much S-Bonus could I get?" ("Paljonko S-Bonusta voisin saada?"), which the bonus rule answers with its own Number and evidence. The view's `follow_up` carries it, and `template.follow_ups` puts it first;
 - nothing in the plan quotes safe to spend;
-- a failure of safe to save or the S-Bonus leaves that extra out; the plan still stands.
+- a failure of the goal or the S-Bonus leaves that extra out; the plan still stands.
 
 **The answer**, at most two sentences and three numbers, the plan's total a month first (review of #411):
 - "These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and spending a tenth less on lifestyle."
-- "You could already set aside about €184.61 a month."
-- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then safe to save's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
+- "That is on top of the about €360.00 a month you set aside first." (#468; left out when the goal is 0)
+- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then the goal's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
 - **The card:** the levers' own amounts are its rows, each keyed by its category and labelled in words ("Restaurants, a fifth less"; "Lifestyle, less than usual" for a share without words). The estimate text is the assumption in words. The card has no digit outside a Number or the period.
-- **No lever:** "None of the usual cuts would add much here; you could already set aside about €184.61 a month." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
+- **No lever:** "None of the usual cuts would add much here; you already set aside about €360.00 a month first." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
 - **The bank button:** the card's action is `open_host_screen` with `monthly_saving`, labelled "See monthly saving in S-mobiili", the one label of #267. No amount is joined to the bank screen.
 - **The model view** gives every number as a Number: each lever's cut share as a Number and, for the shares above, in words. No label carries digits.
 
 **The personas** (as of 2026-09-30, the what-if window 2026-04 to 2026-09):
 
-| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Safe to save a month |
+| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Savings goal a month (#468) |
 |---|---|---|---|---|---|
-| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 184.61 |
-| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 429.16 |
-| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 546.87 |
-| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 199.95 |
+| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 360.00 |
+| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 420.00 |
+| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 600.00 |
+| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 190.00 |
 
 **Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.
 

@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.4 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420, #421 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.6 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #380, #382, #417, #420, #421 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.4. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.6. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -123,7 +123,7 @@ Fields common to all cards:
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
-| `estimate` | object or null | `{label, text}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, and the `bills` (pro rata amounts), `peer`, `whatif` and `stores` cards. The app must show `label` (for example "Estimate") and make `text` (the assumption in plain words) reachable. |
+| `estimate` | object or null | `{label, text, observed, assumptions}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, the S-Bonus `metric` card, the balance forecast, and the `safe_to_save`, `bills` (pro rata amounts), `peer` and `whatif` cards (and the savings plan's `breakdown` card). The app must show `label` (for example "Estimate") and make `text` (the estimate in plain words) reachable. `observed` and `assumptions` (since 0.3.6, #380) separate what was observed from what is assumed: see Estimates below. |
 | `actions` | Action[] | Buttons, at most 2. See below. |
 
 Card-specific fields:
@@ -142,7 +142,263 @@ Card-specific fields:
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{alias, label}` or null (no merchant id; the label has no digits), `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now. While the review is pending this is always `unclassified` ("Waiting for your answer"): the purchase is in no basket total and not in the reserve.<br>- `question` `{en, fi}`: the question in both languages, with the purchase's amount (its display), category and date filled in, for example "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?".<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` ("Needed" / "Välttämätön") and `everyday_spending` ("My choice" / "Oma valinta"). The three basket keys stay the only answer options; `unclassified` is never one.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response_pending` |
-| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `weekly`, `daily` (Numbers, #417): the same headline a week and a day, `monthly` × 7 / 30.4375 (`safe_to_save.week_eur@1`) and `monthly` / 30.4375 (`safe_to_save.day_eur@1`), each a composite whose evidence opens `monthly`. When `monthly` is 0 both are present with 0.00. Each is rounded to cents on its own, so `daily` × 30.4375 can differ from `monthly` by up to about 0.15, and seven times `daily` need not equal `weekly` on screen.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. No answer text puts an amount into the bank's screen or product (since 0.3.5, #417). | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+
+Estimates (since 0.3.6, #380). Every `estimate` separates what was observed in the customer's transactions from what is assumed, so the app can show "Based on …" and "We assume …" from the structure; the answer text does not list them.
+- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. The Numbers inside an estimate (in `observed` and in each assumption's `value`) are complete Number objects: the app reads them from the estimate and never looks them up by id in the answer's `numbers` map, which holds only the Numbers the text cites. Some appear nowhere else in the response (the forecast's daily pace). Where the same Number is on the card too, it has the same value and evidence ref.
+- `assumptions` (`{code, text, value}`[]): what the estimate assumes. `code` is from the closed list below; `text` is one plain sentence in the request language with no digits; `value` is a Number when the assumption uses one (for example the savings goal), else `null`. A `value` with `method` `user_input@1` (the what-if's own cut) has no evidence ref.
+- Every card that sets `estimate` has at least one assumption. The app ignores a code it does not know.
+
+| `code` | Used by | Meaning (`value`) |
+|---|---|---|
+| `spending_as_usual` | safe to spend; balance forecast | Spending goes on at the recent pace: usual essentials until payday (the essentials reserve); for the forecast, the usual everyday spending and essentials at the daily pace, with unexpected costs not counted (the pace). |
+| `reserve_for_unexpected` | safe to spend | A reserve for unexpected costs is kept, as large as recent months needed (the irregular reserve). |
+| `cushion` | safe to spend | A small cushion is kept aside until payday (the cushion). |
+| `savings_goal_first` | safe to spend | A monthly amount for saving, worked out from a typical month, is put aside first (the goal, `safe_to_spend.savings_goal_eur@1`). |
+| `next_months_like_last` | `safe_to_save`; `whatif`; savings plan | The coming months are like the last six (no value). |
+| `cut_share` | `whatif` | The customer's own cut of the selected spending, the rest unchanged (the cut, `user_input@1`). |
+| `bonus_all_at_s_group` | S-Bonus | All grocery shopping is at S Group stores: a what-if, not a fact (the share, 100%). |
+| `bonus_share` | S-Bonus | The given share of grocery shopping is at S Group stores (the share). |
+| `bonus_level` | S-Bonus | The Bonus level is the one that monthly spending reaches (the Bonus percentage). |
+| `bills_pro_rata` | `bills` | Bills paid several times a month count pro rata until payday (no value). |
+| `peer_group` | `peer` | The comparison group; only group statistics are shown (the group size). |
+| `bills_on_usual_days` | safe to spend; balance forecast | Bills come on their usual days, at their usual amounts (no value). |
+| `no_income_before_payday` | balance forecast | Salary and other money coming in before payday are not counted (no value). |
+| `cuts_as_shown` | savings plan | The plan's cut happens as shown and the rest of spending stays as it is; one per lever (the cut share). |
+| `budget_from_usual_month` | safe to spend | Income, regular bills and usual essentials of a typical month repeat, as in the last months: the budget limit (no value). |
+| `bonus_household` | S-Bonus | The customer is the only shopper in a co-op household (no value). |
+| `bonus_table` | S-Bonus | The default Bonus table applies, not the KPO or Koillismaa table (no value). |
+| `bonus_payment_card` | S-Bonus | Payment with an S-Etukortti Visa, which adds the payment benefit (no value). |
+| `bonus_goods` | S-Bonus | None of it is alcohol, tobacco or lottery, which earn no Bonus (no value). |
+
+Examples for the estimate kinds that have no card example here:
+
+The S-Bonus estimate's `estimate` for Sanna (the `metric` card of `get_bonus_estimate`):
+
+<!-- example: estimate.bonus -->
+```json
+{
+  "label": "Estimate",
+  "text": "A what-if on your own grocery spending, not a statement about where you shop. Assumes you are the only shopper in a co-op household. Assumes the default Bonus table, not the KPO or Koillismaa table. Assumes payment with an S-Etukortti Visa, which adds the payment benefit. Assumes none of it is alcohol, tobacco or lottery, which earn no Bonus. Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop.",
+  "observed": [
+    {
+      "value": 628.86,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "spender_profile.spend_month_eur@1",
+      "evidence_ref": "ev_51a5025d7a8c",
+      "label": "Your grocery spending a month",
+      "display": "€628.86 a month"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "bonus_all_at_s_group",
+      "text": "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+      "value": {
+        "value": 100.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.share_pct@1",
+        "evidence_ref": "ev_1372e65d9b6b",
+        "label": "Assumed share at S-Group stores",
+        "display": "100%"
+      }
+    },
+    {
+      "code": "bonus_household",
+      "text": "You are the only shopper in a co-op household.",
+      "value": null
+    },
+    {
+      "code": "bonus_table",
+      "text": "The default Bonus table applies, not the KPO or Koillismaa table.",
+      "value": null
+    },
+    {
+      "code": "bonus_payment_card",
+      "text": "You pay with an S-Etukortti Visa, which adds the payment benefit.",
+      "value": null
+    },
+    {
+      "code": "bonus_goods",
+      "text": "None of it is alcohol, tobacco or lottery, which earn no Bonus.",
+      "value": null
+    },
+    {
+      "code": "bonus_level",
+      "text": "The Bonus level is the one your monthly purchases at S Group reach.",
+      "value": {
+        "value": 3.5,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.bonus_percent@1",
+        "evidence_ref": "ev_d68dd599f0df",
+        "label": "Bonus level",
+        "display": "3.5%"
+      }
+    }
+  ]
+}
+```
+
+The balance forecast's `estimate` for Sanna (the `breakdown` card of `get_balance_forecast`):
+
+<!-- example: estimate.forecast -->
+```json
+{
+  "label": "Estimate",
+  "text": "If you spend as usual: about €66.79 a day, the middle one of your last three full months' daily averages of everyday spending and essentials, bills left out. Bills come on their usual days. Salary and other money coming in before payday are not counted.",
+  "observed": [
+    {
+      "value": 14276.35,
+      "unit": "eur",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30",
+        "label": "30 Sep 2026"
+      },
+      "method": "safe_to_spend.balance_eur@1",
+      "evidence_ref": "ev_bb521762fd8b",
+      "label": "Balance today",
+      "display": "€14,276.35"
+    },
+    {
+      "value": 928.5,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.bills_due_eur@1",
+      "evidence_ref": "ev_e6923f27178b",
+      "label": "Bills before payday",
+      "display": "€928.50"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "spending_as_usual",
+      "text": "Your usual everyday spending and essentials continue, at the middle one of your last three full months' daily averages; unexpected costs are not counted.",
+      "value": {
+        "value": 66.79,
+        "unit": "eur_per_day",
+        "period": {
+          "start": "2026-07-01",
+          "end": "2026-09-30",
+          "label": "1 Jul – 30 Sep 2026"
+        },
+        "method": "balance_forecast.daily_pace_eur@1",
+        "evidence_ref": "ev_d75230f1a1f0",
+        "label": "Usual spending",
+        "display": "€66.79 a day"
+      }
+    },
+    {
+      "code": "bills_on_usual_days",
+      "text": "Bills come on their usual days.",
+      "value": null
+    },
+    {
+      "code": "no_income_before_payday",
+      "text": "Salary and other money coming in before payday are not counted.",
+      "value": null
+    }
+  ]
+}
+```
+
+The savings plan's `estimate` for Sanna (the `breakdown` card of `get_savings_plan`, #369): `observed` are the levers' baselines (`what_if.baseline_month_eur@1`), the spending each cut applies to; each lever's cut share is the value of a `cuts_as_shown` assumption.
+
+<!-- example: estimate.savings_plan -->
+```json
+{
+  "label": "Estimate",
+  "text": "About, if you cut these as shown and the rest of your spending stays as it is.",
+  "observed": [
+    {
+      "value": 229.56,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_1833132fc943",
+      "label": "Restaurants in a typical month",
+      "display": "€229.56 a month"
+    },
+    {
+      "value": 172.58,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_7b6c78c00ec6",
+      "label": "Lifestyle in a typical month",
+      "display": "€172.58 a month"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "next_months_like_last",
+      "text": "The coming months are like the average of your last six full months.",
+      "value": null
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 20.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_de73cb569d75",
+        "label": "Cut in Restaurants",
+        "display": "20.0%"
+      }
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 10.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_8ff96819e08c",
+        "label": "Cut in Lifestyle",
+        "display": "10.0%"
+      }
+    }
+  ]
+}
+```
 
 Actions:
 
@@ -193,7 +449,41 @@ The host message it sends:
   "evidence_ref": "ev_q1s3u5w7y9a1",
   "estimate": {
     "label": "Estimate",
-    "text": "Compared with at least 20 other customers of your age band and area. Only group statistics are shown."
+    "text": "Compared with at least 20 other customers of your age band and area. Only group statistics are shown.",
+    "observed": [
+      {
+        "value": 271.3,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "peer_benchmark.you_month_eur@1",
+        "evidence_ref": "ev_q6s8u0w2y4a6",
+        "label": "You",
+        "display": "€271.30 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "peer_group",
+        "text": "You are compared with other customers of your group; only group statistics are shown.",
+        "value": {
+          "value": 23,
+          "unit": "count",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "peer_benchmark.peer_n@1",
+          "evidence_ref": "ev_q5s7u9w1y3a5",
+          "label": "Other people in the group",
+          "display": "23"
+        }
+      }
+    ]
   },
   "you": {
     "value": 271.3, "unit": "eur_per_month",
@@ -257,10 +547,7 @@ The host message it sends:
   "title": "Your grocery stores",
   "subtitle": "Price level per visit, last 12 months",
   "evidence_ref": "ev_p5r7t9v1x3z5",
-  "estimate": {
-    "label": "Estimate",
-    "text": "The data has receipt totals, not shelf prices. A higher level means people pay more per visit there, which mixes prices with basket size."
-  },
+  "estimate": null,
   "items": [
     {
       "merchant": { "id": "MRC-GRO-0035", "label": "Grocery store A" },
@@ -429,7 +716,49 @@ The host message it sends:
   "title": "Spend 20% less on restaurants",
   "subtitle": "Based on your last 6 full months",
   "evidence_ref": "ev_w3y5a7c9e1g3",
-  "estimate": { "label": "Estimate", "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%." },
+  "estimate": {
+    "label": "Estimate",
+    "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%.",
+    "observed": [
+      {
+        "value": 268.4,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.baseline_month_eur@1",
+        "evidence_ref": "ev_w1y3a5c7e9g1",
+        "label": "Restaurants in a typical month",
+        "display": "€268.40 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
+      {
+        "code": "cut_share",
+        "text": "You cut this spending by the share you chose, and the rest stays as it is.",
+        "value": {
+          "value": 20,
+          "unit": "percent",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Cut you chose",
+          "display": "20%"
+        }
+      }
+    ]
+  },
   "result": {
     "scenario": {
       "selection": { "kind": "category", "value": "Restaurants" },
@@ -553,13 +882,60 @@ The `safe_to_save` card of the overview for Sanna after she answered "needed" (v
   "evidence_ref": "ev_sn3m5o7n9t1h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 783.79,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_sn5f7m9o1n3t",
+        "label": "Free in a typical month",
+        "display": "€783.79 a month"
+      },
+      {
+        "value": 599.18,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_sn6e8v0m2o4n",
+        "label": "Everyday spending in a typical month",
+        "display": "€599.18 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 184.61, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
     "label": "Typically left each month", "display": "€184.61 a month"
+  },
+  "weekly": {
+    "value": 42.46, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_749abec0592c",
+    "label": "Typically left each week", "display": "€42.46 a week"
+  },
+  "daily": {
+    "value": 6.07, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_889b8f0ab767",
+    "label": "Typically left each day", "display": "€6.07 a day"
   },
   "monthly_components": [
     {
@@ -636,13 +1012,60 @@ For Aleksi (CUST00849, values from the dataset), a tight but positive month: no 
   "evidence_ref": "ev_al1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 725.47,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_al2f4m6o8n0t",
+        "label": "Free in a typical month",
+        "display": "€725.47 a month"
+      },
+      {
+        "value": 525.52,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_al3e5v7m9o1n",
+        "label": "Everyday spending in a typical month",
+        "display": "€525.52 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 199.95, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_al1m3o5n7t9h",
     "label": "Typically left each month", "display": "€199.95 a month"
+  },
+  "weekly": {
+    "value": 45.98, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_05799f6c2369",
+    "label": "Typically left each week", "display": "€45.98 a week"
+  },
+  "daily": {
+    "value": 6.57, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_7a45a12c7293",
+    "label": "Typically left each day", "display": "€6.57 a day"
   },
   "monthly_components": [
     {
@@ -719,13 +1142,47 @@ When a typical month leaves nothing, the headline is 0 and `reason` says why. Fi
   "evidence_ref": "ev_zr1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 1.59,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.essentials_shortfall_month_eur@1",
+        "evidence_ref": "ev_zr2s4h6o8r0t",
+        "label": "Bills, essentials and the reserve above income",
+        "display": "€1.59 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 0.0, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_zr1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_522c23d671c0",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_4a8389c56043",
+    "label": "Typically left each day", "display": "€0.00 a day"
   },
   "monthly_components": [
     {
@@ -800,13 +1257,60 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
   "evidence_ref": "ev_ev1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 398.89,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_ev2f4m6o8n0t",
+        "label": "Free in a typical month",
+        "display": "€398.89 a month"
+      },
+      {
+        "value": 585.33,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_ev3e5v7m9o1n",
+        "label": "Everyday spending in a typical month",
+        "display": "€585.33 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 0.0, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ev1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_ffef639a75e4",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_04893f26096a",
+    "label": "Typically left each day", "display": "€0.00 a day"
   },
   "monthly_components": [
     {
@@ -1013,7 +1517,128 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     "evidence_ref": "ev_s2t4w6y8a0c2",
     "estimate": {
       "label": "Estimate",
-      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first."
+      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first.",
+      "observed": [
+        {
+          "value": 1640.15,
+          "unit": "eur",
+          "period": {
+            "start": "2026-09-30",
+            "end": "2026-09-30",
+            "label": "30 Sep 2026"
+          },
+          "method": "safe_to_spend.balance_eur@1",
+          "evidence_ref": "ev_b4l6n8p0r2t4",
+          "label": "Balance",
+          "display": "€1,640.15"
+        },
+        {
+          "value": 842.19,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.bills_due_eur@1",
+          "evidence_ref": "ev_u6b8d0f2h4j6",
+          "label": "Bills before payday",
+          "display": "€842.19"
+        },
+        {
+          "value": 248.5,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_s5t7w9y1a3c5",
+          "label": "Your monthly budget allows",
+          "display": "€248.50"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "spending_as_usual",
+          "text": "Your usual essentials continue until payday, at the pace of recent months.",
+          "value": {
+            "value": 134.76,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.essentials_reserve_eur@1",
+            "evidence_ref": "ev_e1s3r5v7e9a1",
+            "label": "Essentials reserve",
+            "display": "€134.76"
+          }
+        },
+        {
+          "code": "reserve_for_unexpected",
+          "text": "A reserve for unexpected costs is kept, as large as recent months needed.",
+          "value": {
+            "value": 167.46,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.irregular_reserve_eur@1",
+            "evidence_ref": "ev_i1r3r5v7e9a2",
+            "label": "Irregular reserve",
+            "display": "€167.46"
+          }
+        },
+        {
+          "code": "cushion",
+          "text": "A small cushion is kept aside until payday.",
+          "value": {
+            "value": 100.0,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.cushion_eur@1",
+            "evidence_ref": "ev_f8h0j2l4n6p8",
+            "label": "Cushion",
+            "display": "€100.00"
+          }
+        },
+        {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
+          "code": "savings_goal_first",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
+          "value": {
+            "value": 430.0,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "safe_to_spend.savings_goal_eur@1",
+            "evidence_ref": "ev_got7w9y1a3c5",
+            "label": "Set aside first each month",
+            "display": "€430.00 a month"
+          }
+        }
+      ]
     },
     "status": "ok",
     "primary": {
@@ -1119,13 +1744,60 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     "evidence_ref": "ev_ai2m4o6n8t0h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 1080.55,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month",
+          "display": "€1,080.55 a month"
+        },
+        {
+          "value": 648.97,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month",
+          "display": "€648.97 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 431.58, "unit": "eur_per_month",
       "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month", "display": "€431.58 a month"
+    },
+    "weekly": {
+      "value": 99.25, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week", "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day", "display": "€14.18 a day"
     },
     "monthly_components": [
       {
@@ -1272,7 +1944,29 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       "evidence_ref": "ev_u6b8d0f2h4j6",
       "estimate": {
         "label": "Estimate",
-        "text": "Utilities are paid about three times a month, so the amount until payday is pro rata."
+        "text": "Utilities are paid about three times a month, so the amount until payday is pro rata.",
+        "observed": [
+          {
+            "value": 842.19,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.bills_due_eur@1",
+            "evidence_ref": "ev_u6b8d0f2h4j6",
+            "label": "Bills before payday",
+            "display": "€842.19"
+          }
+        ],
+        "assumptions": [
+          {
+            "code": "bills_pro_rata",
+            "text": "Bills paid several times a month count pro rata until payday.",
+            "value": null
+          }
+        ]
       },
       "total": {
         "value": 842.19, "unit": "eur",
@@ -1412,7 +2106,42 @@ The same overview when safe to spend cannot be computed for a known reason: `her
     "evidence_ref": "ev_ai2m4o6n8t0h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 1080.55,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month",
+          "display": "€1,080.55 a month"
+        },
+        {
+          "value": 648.97,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month",
+          "display": "€648.97 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 431.58,
@@ -1426,6 +2155,32 @@ The same overview when safe to spend cannot be computed for a known reason: `her
       "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month",
       "display": "€431.58 a month"
+    },
+    "weekly": {
+      "value": 99.25,
+      "unit": "eur_per_week",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.week_eur@1",
+      "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week",
+      "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18,
+      "unit": "eur_per_day",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.day_eur@1",
+      "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day",
+      "display": "€14.18 a day"
     },
     "monthly_components": [
       {
@@ -1694,7 +2449,128 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
     "evidence_ref": "ev_sa4s6t8s0p2d",
     "estimate": {
       "label": "Estimate",
-      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first."
+      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first.",
+      "observed": [
+        {
+          "value": 14276.35,
+          "unit": "eur",
+          "period": {
+            "start": "2026-09-30",
+            "end": "2026-09-30",
+            "label": "30 Sep 2026"
+          },
+          "method": "safe_to_spend.balance_eur@1",
+          "evidence_ref": "ev_pn9b1a3l5a7n",
+          "label": "Balance",
+          "display": "€14,276.35"
+        },
+        {
+          "value": 928.5,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.bills_due_eur@1",
+          "evidence_ref": "ev_pn0b2i4l6l8s",
+          "label": "Bills before payday",
+          "display": "€928.50"
+        },
+        {
+          "value": 138.79,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_pn8b0u2d4g6t",
+          "label": "Your monthly budget allows",
+          "display": "€138.79"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "spending_as_usual",
+          "text": "Your usual essentials continue until payday, at the pace of recent months.",
+          "value": {
+            "value": 423.99,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.essentials_reserve_eur@1",
+            "evidence_ref": "ev_pn2e4s6s8e0n",
+            "label": "Essentials reserve",
+            "display": "€423.99"
+          }
+        },
+        {
+          "code": "reserve_for_unexpected",
+          "text": "A reserve for unexpected costs is kept, as large as recent months needed.",
+          "value": {
+            "value": 167.74,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.irregular_reserve_eur@1",
+            "evidence_ref": "ev_sa3i5r7r9e1g",
+            "label": "Irregular reserve",
+            "display": "€167.74"
+          }
+        },
+        {
+          "code": "cushion",
+          "text": "A small cushion is kept aside until payday.",
+          "value": {
+            "value": 100.0,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.cushion_eur@1",
+            "evidence_ref": "ev_sn7c9u1s3h5n",
+            "label": "Cushion",
+            "display": "€100.00"
+          }
+        },
+        {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
+          "code": "savings_goal_first",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
+          "value": {
+            "value": 360.0,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "safe_to_spend.savings_goal_eur@1",
+            "evidence_ref": "ev_go8b0u2d4g6t",
+            "label": "Set aside first each month",
+            "display": "€360.00 a month"
+          }
+        }
+      ]
     },
     "status": "ok",
     "primary": {
@@ -1799,13 +2675,60 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
     "evidence_ref": "ev_sa6m8o0n2t4h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 963.49,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_pn5f7m9o1n3t",
+          "label": "Free in a typical month",
+          "display": "€963.49 a month"
+        },
+        {
+          "value": 599.18,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_pn6e8v0m2o4n",
+          "label": "Everyday spending in a typical month",
+          "display": "€599.18 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 364.31, "unit": "eur_per_month",
       "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
       "label": "Typically left each month", "display": "€364.31 a month"
+    },
+    "weekly": {
+      "value": 83.78, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_0e9e53429269",
+      "label": "Typically left each week", "display": "€83.78 a week"
+    },
+    "daily": {
+      "value": 11.97, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_dd7a337adc06",
+      "label": "Typically left each day", "display": "€11.97 a day"
     },
     "monthly_components": [
       {
@@ -2716,7 +3639,49 @@ A store switch is not a what-if scenario. It is shown in the `stores` card with 
     "The rest of your spending stays as it is."
   ],
   "caveats": ["This is an estimate, not a promise. Prices and habits change."],
-  "estimate": { "label": "Estimate", "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%." },
+  "estimate": {
+    "label": "Estimate",
+    "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%.",
+    "observed": [
+      {
+        "value": 268.4,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.baseline_month_eur@1",
+        "evidence_ref": "ev_w1y3a5c7e9g1",
+        "label": "Restaurants in a typical month",
+        "display": "€268.40 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
+      {
+        "code": "cut_share",
+        "text": "You cut this spending by the share you chose, and the rest stays as it is.",
+        "value": {
+          "value": 20,
+          "unit": "percent",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Cut you chose",
+          "display": "20%"
+        }
+      }
+    ]
+  },
   "evidence_ref": "ev_w3y5a7c9e1g3"
 }
 ```
@@ -4244,3 +5209,5 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
 | 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
 | 0.3.4 | After 0.3.3. The forecast balance on a bill's due date (#421).<br><br>New:<br>- `forecast` in the response of section 11 (`POST /api/bill/explain`): `{status, before, already_counted, counted, after, shortfall, text, chip}`, or `null`. It is `null` when the balance forecast cannot be computed: no transactions, no balance, the bills due of the two paths differ, or a failed consistency check of the forecast; the rest of the explanation is unchanged. `status` is one of `covered`, `tight` (below a server constant, €100), `not_covered` and `outside_forecast`. `before` is the balance forecast's own Number for the due date. A bill already among the forecast's bills takes only its excess over what the forecast subtracts for it by the due date. `chip` is an `ask` action with the forecast question, for `not_covered` only. The status never removes the payment draft.<br>- Methods `bill.forecast_counted_eur@1`, `bill.forecast_after_eur@1` and `bill.forecast_shortfall_eur@1`, which open as `composite`.<br><br>Changed examples: `bill.response` (`covered`, with €780.00 already in the forecast for the housing bill on 1 Oct) and `bill.response_unknown` (`outside_forecast`, due after payday). New example `bill.response_not_covered` (CUST00849, €700.00 due on 14 Oct: €58.57 short, with the `shortfall` and the `chip`). |
+| 0.3.5 | Safe to save at three scales, and the amount kept apart from the bank's screen (#417).<br><br>New:<br>- `weekly` and `daily` (Numbers) on the `safe_to_save` card: the headline `monthly` a week (`monthly` × 7 / 30.4375, method `safe_to_save.week_eur@1`) and a day (`monthly` / 30.4375, method `safe_to_save.day_eur@1`). Both are composites whose evidence opens `monthly`, so they reconcile with it to the cent.<br>- Rule: no answer text puts an amount into the bank's screen or product (S-mobiili, monthly saving, a fund) in one sentence: moving, putting, sending, setting, adding, starting, opening or investing into, to or in it. A plain statement of a figure passes. The `open_host_screen` labels name the screen only: one label per target, no digit, no currency sign, no action verb such as "start saving", "put", "move" or "invest".<br><br>Changed examples: every `safe_to_save` card gains `weekly` and `daily`: `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, and the cards in `overview.response`, `overview.response_no_hero` and `overview.response_pending`. No label text changes. |
+| 0.3.6 | Estimates separate what was observed from what is assumed (#380).<br><br>New:<br>- `estimate` gains `observed` (Number[]: the Numbers the estimate is built from, Numbers the tool already computed, with their evidence refs) and `assumptions` (`{code, text, value}`[]: what it assumes; `text` is one plain sentence without digits, `value` a Number or `null`). The Numbers inside an estimate are complete objects: the app reads them from the estimate, never by id from the answer's `numbers` map. Section 3, Estimates.<br>- A closed list of assumption codes in one table (section 3, Estimates): `spending_as_usual`, `reserve_for_unexpected`, `cushion`, `savings_goal_first`, `budget_from_usual_month`, `bills_on_usual_days`, `next_months_like_last`, `cut_share`, `bonus_all_at_s_group`, `bonus_share`, `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods`, `bonus_level`, `bills_pro_rata`, `peer_group`, `no_income_before_payday`, `cuts_as_shown`. The app ignores a code it does not know.<br>- Every card that sets `estimate` has at least one assumption: the safe-to-spend card (both limbs: the balance and the bills, and the budget limit of a typical month), the S-Bonus card (every fixed assumption), the balance forecast, `safe_to_save`, `bills`, `peer`, `whatif` and the savings plan. The `POST /api/whatif` response's `estimate` carries the same fields. The `stores` example has `estimate: null` until a tool builds that card.<br>- Nothing is computed differently: the hero's Numbers and evidence refs are unchanged.<br><br>Changed examples: every example with an `estimate` gains the two fields: `card.peer`, `card.whatif`, `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response` (hero, safe to save, bills), `overview.response_no_hero`, `overview.response_pending` and `whatif.response`; `card.stores` has `estimate: null`. New examples for the kinds without a card example: `estimate.bonus`, `estimate.forecast` and `estimate.savings_plan`. |

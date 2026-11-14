@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Path, Query, Request
 
-from core.tools import config, evidence, periods
+from core.tools import config, evidence, periods, spending
 from core.tools.formatting import display
 from core.tools.models import Unit
 from core.tools.numbers import json_value
@@ -65,6 +65,14 @@ def _label_of(spec: dict[str, Any], language: str) -> str:
         return config.label(config.MCC_GROUP_LABELS[sel["mcc_groups"][0]], language)
     if len(sel["baskets"]) == 1 and sel["baskets"][0] in config.BASKET_LABELS:
         return config.label(config.BASKET_LABELS[sel["baskets"][0]], language)
+    if spec["method"] == config.METHODS["total"]:
+        # A filtered sum is never "Total spending" (#399): every part of the filter is named, as the tool names
+        # it; a merchant the view cannot name (its alias needs the history) gets a neutral label.
+        named = spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], None, language)
+        if named:
+            return named
+        if sel.get("merchant_id"):
+            return config.label(config.TEXT["spending_merchant"], language)
     return texts.pick(info.name, language)
 
 

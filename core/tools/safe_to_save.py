@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from core.tools import config, evidence, metric_sql, periods, recurring
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.safe_to_spend import metric_row, weekly_numbers
 
@@ -61,6 +61,8 @@ class SaveReason(BaseModel):
 
 class SafeToSaveData(BaseModel):
     monthly: Number
+    weekly: Number                  # #417: monthly x 7 / 30.4375, the same figure a week
+    daily: Number                   # #417: monthly / 30.4375, the same figure a day
     monthly_components: list[SaveComponent]
     stock: Number
     stock_explanation: str
@@ -128,6 +130,15 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
     free_month = value("free_month_eur")
     free_until_payday = value("free_until_payday_eur")
     monthly = shown("monthly")
+    # #417: the headline at three scales. Composites of the monthly Number (its evidence opens the month),
+    # computed from the rounded month so they reconcile to the cent by the stated formula.
+    monthly_value = metric_sql.decimal(row["safe_to_save_monthly_eur"])
+    per_week = reg(nb.composite(config.SAFE_TO_SAVE_WEEK_METHOD, "scale", {"base": (monthly, monthly_value)},
+                              Unit.EUR_PER_WEEK, month, _t("weekly", lang),
+                              params={"factor_num": 7, "factor_den": "30.4375"})[0])
+    per_day = reg(nb.composite(config.SAFE_TO_SAVE_DAY_METHOD, "scale", {"base": (monthly, monthly_value)},
+                             Unit.EUR_PER_DAY, month, _t("daily", lang),
+                             params={"factor_num": 1, "factor_den": "30.4375"})[0])
     # By 03's own reason, which follows the sign of the unrounded free month: a free month between -0.005
     # and 0 rounds to 0.00 but is still a shortfall (review of #191).
     if row.get("save_reason") == "essentials_exceed_income":
@@ -172,7 +183,7 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
 
     _check(row, free_month, free_until_payday)
     data = SafeToSaveData(
-        monthly=monthly, monthly_components=monthly_components, stock=stock,
+        monthly=monthly, weekly=per_week, daily=per_day, monthly_components=monthly_components, stock=stock,
         stock_explanation=_t("stock_explanation", lang), stock_components=stock_components, reason=reason,
         savings_goal=goal, safe_to_spend_week=safe_week, subtitle=subtitle,
     )
@@ -198,14 +209,19 @@ def _card(data: SafeToSaveData, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="safe_to_save", title=_t("title", language), subtitle=data.subtitle, evidence_ref=ref,
-        estimate={"label": config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
-                  "text": _t("estimate_text", language)},
+        # #380: observed are the month's components (free month and everyday month, or the shortfall)
+        estimate=Estimate(label=config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
+                          text=_t("estimate_text", language),
+                          observed=[c.amount for c in data.monthly_components],
+                          assumptions=[assumption("safe_to_save.next_months_like_last", language)]),
         actions=[Action(type="open_evidence", label=config.label(config.SAFE_TO_SPEND_TEXT["how"], language),
                         evidence_ref=ref),
                  # #267: one step into the bank's monthly saving, only when a typical month leaves money
                  *([Action(type="open_host_screen", target="monthly_saving",
                            label=_t("host_monthly_saving", language))] if data.monthly.value > 0 else [])],
         monthly=data.monthly,
+        weekly=data.weekly,
+        daily=data.daily,
         monthly_components=[c.model_dump() for c in data.monthly_components],
         stock=data.stock,
         stock_explanation=data.stock_explanation,
@@ -224,6 +240,8 @@ def _model_view(data: SafeToSaveData) -> dict[str, Any]:
     return {
         "tool": TOOL,
         "monthly": model_number(data.monthly),
+        "weekly": model_number(data.weekly),
+        "daily": model_number(data.daily),
         "monthly_components": components(data.monthly_components),
         "stock": model_number(data.stock),
         "stock_explanation": data.stock_explanation,
