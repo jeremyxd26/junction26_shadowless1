@@ -102,7 +102,7 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
   return compact ? (
     <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
   ) : (
-    <p className="mt-2 text-xl font-bold leading-[26px] text-on-deep">{sentence}</p>
+    <p className="mt-1.5 text-lg font-semibold leading-[1.3] text-on-deep">{sentence}</p>
   )
 }
 
