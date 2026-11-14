@@ -92,6 +92,7 @@ FORMULAS = {
 # A composite part can be a value the user gave instead of a stored number (#242: a bill's amount, read
 # from its barcode or typed). Such a part carries its value inline and has no ref; only these methods.
 INPUT_METHODS = frozenset({"user_input@1", "bill_barcode@1"})
+INPUT_MAX = Decimal("100000.00")   # the largest inline value: a bill amount (contracts/api.md 11.1)
 
 
 def _scaled(base: Decimal, p: dict[str, Any]) -> Decimal:
@@ -240,8 +241,10 @@ def input_spec(inline: Any, as_of: str) -> dict[str, Any]:
         value = Decimal(str(inline["value"]))
     except InvalidOperation:
         raise ValueError("not a decimal value") from None
-    if not value.is_finite():
-        raise ValueError("not a finite value")
+    # A bill amount (the only inline part today): more than 0, at most 100,000.00, in cents. Checked in
+    # this order, so a huge exponent (1e10000) is refused before any arithmetic on it.
+    if not value.is_finite() or not Decimal(0) < value <= INPUT_MAX or value != value.quantize(Decimal("0.01")):
+        raise ValueError("not a bill amount")
     period = inline["period"]
     start, end = date.fromisoformat(period["start"]), date.fromisoformat(period["end"])
     return {"kind": "input", "method": inline["method"], "value": str(value), "as_of": as_of,

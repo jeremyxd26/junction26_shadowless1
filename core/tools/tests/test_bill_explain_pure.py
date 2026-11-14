@@ -114,6 +114,16 @@ def test_an_rf_reference_typed_or_scanned_gives_the_same_draft():
     assert be.canonical_reference("RF04000") == "RF040" and be.canonical_reference("12344") == "12344"
 
 
+def test_an_alphanumeric_rf_reference_keeps_its_zeros():
+    """Review of #349 (Codex): the zeros of an alphanumeric RF body are part of the reference the payee
+    issued; stripping them would hand the host a different payment reference."""
+    rf = _valid_rf("00ABC1")
+    typed = fields_bill(reference=rf)
+    assert typed.reference_ok and typed.reference == rf          # RF..00ABC1, not RF..ABC1
+    out_draft = be.canonical_reference(rf)
+    assert out_draft == rf and be.canonical_reference("RF9600ABC1") == "RF9600ABC1"
+
+
 # ---- matching -------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("payee, key", [
@@ -352,8 +362,45 @@ def test_the_sign_amount_above_usual_cites_its_numbers(fake):
     fake.row = {"free_until_payday_eur": Decimal("12441.31"), "balance_limit_7d_eur": Decimal("5806.08")}
     out = explain(fields_bill(payee="Esimerkki Energia Oy", amount="312.70", due=date(2026, 10, 13)), "fi")
     sign = next(s for s in out["signals"] if s["code"] == "amount_above_usual")
-    assert sign["text"] == "Tämä lasku on 312,70 €, vähintään puolitoista kertaa tavallinen (186,40 € / kk)."
+    assert sign["text"] == "Tämä lasku on 312,70 €, paljon tavallista enemmän (186,40 € / kk)."
     assert [n["display"] for n in sign["numbers"]] == ["312,70 €", "186,40 € / kk"]
+
+
+def test_a_covered_bill_says_only_that_nothing_changes_even_when_nothing_is_free(fake):
+    """Review of #349: a covered bill with a negative free until payday said "nothing changes" and then
+    "takes more than is free"; nothing was counted, so only the first sentence is true."""
+    fake.hero = hero(before="0.00", free="-50.00", balance="0.00", budget="166.84")
+    out = explain(be.read_barcode(barcode(euros="000836", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy"))
+    text = out["safe_to_spend"]["text"]
+    assert "nothing changes" in text and "takes more" not in text and fake.runs == []
+
+
+def _strings(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _strings(v)
+
+
+VERDICT = re.compile(r"fraud|scam|phish|criminal|huijau|huijari|petos|rikollin|kalastel", re.I)
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_no_response_string_is_a_verdict(fake, lang):
+    """Decision 10 of #242: warning signs, never a verdict. Every string of responses that raise every
+    sign (a failed IBAN and reference, a new payee, an amount above usual, a short term, a past date)."""
+    fake.row = {"free_until_payday_eur": Decimal("-100.00"), "balance_limit_7d_eur": Decimal("0.00")}
+    bills = [fields_bill(iban="FI71 1234 5600 0098 77", reference="12345", amount="9000.00", due=date(2026, 10, 2)),
+             fields_bill(payee="Esimerkki Energia Oy", amount="312.70", due=date(2026, 10, 3)),
+             fields_bill(due=date(2026, 9, 1))]
+    for bill in bills:
+        out = explain(bill, lang)
+        assert not [s for s in _strings(out) if VERDICT.search(s)]
+    assert not [s for pair in config.BILL_TEXT.values() for s in pair if VERDICT.search(s)]
 
 
 def test_the_payee_as_sent_never_enters_a_sentence(fake):
@@ -435,6 +482,8 @@ def test_an_inline_part_must_be_a_value_the_user_gave():
     for bad in ({"method": "user_input@1", "value": "x", "period": {"start": "2026-10-01", "end": "2026-10-01"}},
                 {"method": "spending.total@1", "value": "1", "period": {"start": "2026-10-01", "end": "2026-10-01"}},
                 {"method": "user_input@1", "value": "Infinity", "period": {"start": "2026-10-01", "end": "2026-10-01"}},
+                *({"method": "bill_barcode@1", "value": v, "period": {"start": "2026-10-01", "end": "2026-10-01"}}
+                  for v in ("1e10000", "0", "-5.00", "100000.01", "1.234", "NaN")),
                 {"method": "user_input@1", "value": "1", "period": {"start": "1 Oct", "end": "2026-10-01"}},
                 None):
         with pytest.raises(ValueError):
