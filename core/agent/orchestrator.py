@@ -54,8 +54,8 @@ from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_in
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import GENERAL_BORROWING as GENERAL_BORROWING_WORDS
-from core.answer_text import (answer_kind, find_dates, general_language_problems, general_problems, length_problems,
-                              scan_numbers)
+from core.answer_text import (GENERAL_NON_ANSWER, answer_kind, find_dates, general_language_problems, general_problems,
+                              length_problems, scan_numbers)
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -113,6 +113,26 @@ GENERAL_MONEY_WORDS = re.compile(
     r"|\bprices?\b|\bexpenses?\b|budjet|puskur|hatavar|saast|lasku|erapaiva|viite|herateost|ostos|\braha|kulu|menot"
     r"|tulot|palkka|maksa|hinta|hinnat|vuokra\w*|tilau\w*|bonu\w*", re.I)
 MAX_DATA_CALLS = 6
+_NOTHING_ALLOWED = Allowed(frozenset(), frozenset())
+
+
+def general_draft_problems(raw: Any, language: str) -> tuple[AnswerDraft | None, list[str]]:
+    """Every check a general draft passes before it is shown (#572), in order: the validator with no Numbers and
+    nothing allowed (no digit, no date, no markup, the right language field), then the length rule for "general",
+    general_problems (no number in any form, no name but Sentti, S-Pankki and S-mobiili, no product, borrowing,
+    health, link, judging or statement about the user's own money), the positive language check, the draft checks
+    and no "I could not work this out" (composer.md's text for empty <data>). Returns the draft and the reasons."""
+    draft, errors = validate(raw, language=language, numbers={}, allowed=_NOTHING_ALLOWED)
+    if errors:
+        return draft, errors
+    text = draft.text
+    errors = (length_problems(text, 0, kind="general") + general_problems(text)
+              + general_language_problems(text, language) + draft_problems(text, {}, has_data=True))
+    m = GENERAL_NON_ANSWER.search(text) or GENERAL_NON_ANSWER.search(guard.fold(text))
+    if m:
+        errors.append(f"'{m.group(0)}': a general answer explains the topic in plain words; it never says it could "
+                      f"not work something out")
+    return draft, errors
 MAX_CARDS = 3
 MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool connection each
 # A second lane runs only on a connection that is free at once, so one answer never queues for a
@@ -1111,7 +1131,6 @@ class Pipeline:
         borrowing and other draft checks. One retry with the reasons."""
         if a.composer_unavailable is not None:
             return None
-        nothing = Allowed(frozenset(), frozenset())
         errors: list[str] = []
         for _ in range(2):  # the call and one retry with the errors
             t = self.clock()
@@ -1121,11 +1140,7 @@ class Pipeline:
                 errors = [f"the model call failed ({type(exc).__name__})"]
                 a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                 continue
-            draft, errors = validate(result.text, language=request.language, numbers={}, allowed=nothing)
-            if not errors:
-                errors = (length_problems(draft.text, 0, kind="general") + general_problems(draft.text)
-                          + general_language_problems(draft.text, request.language)
-                          + draft_problems(draft.text, {}, has_data=True))
+            draft, errors = general_draft_problems(result.text, request.language)
             a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                         "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
             if not errors:

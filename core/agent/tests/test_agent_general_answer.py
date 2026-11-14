@@ -524,3 +524,258 @@ def test_the_length_rule_by_kind():
     assert answer_text.length_problems(three, 0, kind="template") == ["too long: 3 sentences, at most 2"]
     assert answer_text.length_problems(" ".join(["word"] * 36) + ".", 0, kind="template") == [
         "too long: 36 words, at most 35"]
+
+
+# ---- the review of #618, pass 3: the output side closed as classes ----------------------------------------------
+# Every row the pass-3 review found leaking (borrowing by paraphrase, banks, brands and products, statements about the
+# user's own money), and rows of the same classes written before the checks (hold-out), are rejected; careful plain
+# words and habit advice pass. The checks are classes: borrowing (paying later, in parts, in the red, an advance, a
+# pawn shop, someone else's money), a financial product (interest, or a verb of getting or using one with a product
+# noun), a name (a capitalised word inside a sentence, except Sentti, S-Pankki and S-mobiili), and second person as
+# the subject of a state, a sufficiency or a judgement.
+
+PASS3_BORROWING = [
+    ("You could borrow from a friend until payday.", "en"),
+    ("Put it on plastic and sort it out later.", "en"),
+    ("Buy now and settle it next month.", "en"),
+    ("Buy it now, pay later.", "en"),
+    ("Spread the cost over several payments.", "en"),
+    ("Pay in four parts.", "en"),
+    ("Go into the red for a few days.", "en"),
+    ("Let your account go overdrawn.", "en"),
+    ("Ask your employer for an advance on your salary.", "en"),
+    ("Ask your boss for money before payday.", "en"),
+    ("Use a pawn shop for quick cash.", "en"),
+    ("Sell something to raise quick cash.", "en"),
+    ("Swipe a card and repay it slowly.", "en"),
+    ("Take out a payday lender.", "en"),
+    ("Ask family to lend you some.", "en"),
+    ("Ask family for a bit of help until payday.", "en"),
+    ("Use the buy-now option at checkout.", "en"),
+    ("Split the purchase into monthly payments.", "en"),
+    ("Run up a tab.", "en"),
+    ("Rolling the balance over is costly.", "en"),
+    ("Interest on what you owe adds up.", "en"),
+    ("Take a cash advance.", "en"),
+    ("Use a line of credit.", "en"),
+    ("Consolidate what you owe.", "en"),
+    ("Osta nyt, maksa my\u00f6hemmin.", "fi"),
+    ("Osta nyt ja maksa vasta ensi kuussa.", "fi"),
+    ("Jaa maksu useampaan er\u00e4\u00e4n.", "fi"),
+    ("Anna tilin menn\u00e4 miinukselle.", "fi"),
+    ("Tili miinukselle auttaa hetken.", "fi"),
+    ("Pyyd\u00e4 palkkaennakkoa ty\u00f6nantajalta.", "fi"),
+    ("Pyyd\u00e4 kaverilta rahaa palkkap\u00e4iv\u00e4\u00e4n asti.", "fi"),
+    ("K\u00e4yt\u00e4 luottorajaa.", "fi"),
+    ("Maksa kortilla ja hoida lasku my\u00f6hemmin.", "fi"),
+    ("Maksa eriss\u00e4.", "fi"),
+    ("Ota ennakkoa palkasta.", "fi"),
+    ("Pantti auttaa nopeasti.", "fi"),
+    ("K\u00e4yt\u00e4 tilin ylitysoikeutta.", "fi"),
+    ("K\u00e4yt\u00e4 pikavippi\u00e4.", "fi"),
+    ("Ota viivekorollinen maksuaika.", "fi"),
+    ("Maksuaikaa saa pyyt\u00e4m\u00e4ll\u00e4.", "fi"),
+    ("Charge it now and deal with the bill next month.", "en"),
+    ("You can always pay it off bit by bit later.", "en"),
+    ("Many shops let you split the price into smaller chunks over time.", "en"),
+    ("A friend might be able to front you the money until payday.", "en"),
+    ("Dip below zero on your account for a few days if needed.", "en"),
+    ("Ask the store about paying in parts.", "en"),
+    ("Put it on a tab and settle up when your salary comes.", "en"),
+    ("Use the checkout option that lets you defer payment.", "en"),
+    ("Voit maksaa sen osissa my\u00f6hemmin.", "fi"),
+    ("Pyyd\u00e4 vanhemmilta rahaa lainaksi palkkap\u00e4iv\u00e4\u00e4n asti.", "fi"),
+    ("Tilin saa hetkeksi pakkaselle, jos on pakko.", "fi"),
+    ("Valitse kassalla maksu kuukausieriss\u00e4.", "fi"),
+]
+PASS3_PRODUCTS = [
+    ("Open a high-interest account and let it grow.", "en"),
+    ("Open an account that pays more.", "en"),
+    ("Avaa korkeakorkoinen tili.", "fi"),
+    ("Avaa tili, joka maksaa korkoa.", "fi"),
+    ("Use a bank app to track it.", "en"),
+    ("Use an application for tracking.", "en"),
+    ("Use a mobile wallet.", "en"),
+    ("Try online banking for saving.", "en"),
+    ("Get a cashback card.", "en"),
+    ("Get a prepaid card for control.", "en"),
+    ("Use Visa for it.", "en"),
+    ("Use Wise to move it.", "en"),
+    ("Open an ISA.", "en"),
+    ("Look into a 401k.", "en"),
+    ("Buy a stock now and then.", "en"),
+    ("Collect dividends.", "en"),
+    ("Buy a property.", "en"),
+    ("Get travel insurance.", "en"),
+    ("Get a life insurance.", "en"),
+    ("Use Wolt less often.", "en"),
+    ("Shop at Lidl instead of K-Market.", "en"),
+    ("Buy from Amazon.", "en"),
+    ("Use Swedbank for it.", "en"),
+    ("Open an SEB account.", "en"),
+    ("Try the Lunar app.", "en"),
+    ("A budgeting app helps.", "en"),
+    ("K\u00e4yt\u00e4 budjettisovellusta.", "fi"),
+    ("K\u00e4yt\u00e4 Excelia.", "fi"),
+    ("K\u00e4yt\u00e4 Woltia v\u00e4hemm\u00e4n.", "fi"),
+    ("Ostele Lidlist\u00e4.", "fi"),
+    ("K\u00e4yt\u00e4 Visaa.", "fi"),
+    ("Avaa s\u00e4\u00e4st\u00f6tili.", "fi"),
+    ("K\u00e4yt\u00e4 verkkopankkia.", "fi"),
+    ("K\u00e4yt\u00e4 mobiilimaksua.", "fi"),
+    ("Try Monzo or a similar service to keep track.", "en"),
+    ("Shop at Prisma for cheaper groceries.", "en"),
+    ("Open a separate high-yield account for it.", "en"),
+    ("A credit card with cashback can help.", "en"),
+    ("Get a money-tracking app on your phone.", "en"),
+    ("Sign up for a savings plan at your bank.", "en"),
+    ("Consider an index tracker for the long term.", "en"),
+    ("Spotify Premium is worth cancelling if you rarely use it.", "en"),
+    ("Revolut makes budgeting easy.", "en"),
+    ("Hanki luottokortti, jossa on bonuksia.", "fi"),
+    ("K\u00e4yt\u00e4 K-Ruokaa tarjousten seuraamiseen.", "fi"),
+    ("Ota k\u00e4ytt\u00f6\u00f6n budjetointisovellus.", "fi"),
+    ("Hanki kotivakuutus yll\u00e4tysten varalle.", "fi"),
+]
+PASS3_OWN_STATE = [
+    ("You are saving enough already.", "en"),
+    ("Your buffer is fine.", "en"),
+    ("You are doing well with your budget.", "en"),
+    ("You spend too much on takeaway.", "en"),
+    ("Your spending looks normal.", "en"),
+    ("You should save more.", "en"),
+    ("You probably have enough in your buffer.", "en"),
+    ("Your savings are on track.", "en"),
+    ("You are overspending.", "en"),
+    ("You are doing great.", "en"),
+    ("Your bills are manageable.", "en"),
+    ("You can afford it.", "en"),
+    ("You have enough money for this.", "en"),
+    ("Your income is high enough.", "en"),
+    ("You have a healthy buffer already.", "en"),
+    ("A buffer helps you cover surprises, and yours is probably big enough.", "en"),
+    ("Most people in your situation do fine.", "en"),
+    ("Since you earn well, you can save more.", "en"),
+    ("Based on your spending, you should cut back.", "en"),
+    ("You are not saving enough.", "en"),
+    ("Your budget is too tight.", "en"),
+    ("You are living beyond your means.", "en"),
+    ("S\u00e4\u00e4st\u00e4t jo tarpeeksi.", "fi"),
+    ("Puskurisi on kunnossa.", "fi"),
+    ("Sinulla on riitt\u00e4v\u00e4sti puskuria.", "fi"),
+    ("Kulutat liikaa ruokaan.", "fi"),
+    ("Kulutuksesi n\u00e4ytt\u00e4\u00e4 normaalilta.", "fi"),
+    ("Sinun pit\u00e4isi s\u00e4\u00e4st\u00e4\u00e4 enemm\u00e4n.", "fi"),
+    ("Sinulla on varaa t\u00e4h\u00e4n.", "fi"),
+    ("Olet hyv\u00e4ll\u00e4 tolalla.", "fi"),
+    ("Tilanteesi on hyv\u00e4.", "fi"),
+    ("Et s\u00e4\u00e4st\u00e4 tarpeeksi.", "fi"),
+    ("You're already doing a good job with your savings.", "en"),
+    ("Your finances look healthy.", "en"),
+    ("You don't need a bigger buffer.", "en"),
+    ("You're spending more than you should.", "en"),
+    ("Your current buffer should cover surprises.", "en"),
+    ("With your income, saving a bit more is easy.", "en"),
+    ("It looks like you are on the right track.", "en"),
+    ("You have plenty of room in your budget.", "en"),
+    ("You've saved enough for now.", "en"),
+    ("Your spending on food is too high.", "en"),
+    ("Taloutesi on hyv\u00e4ss\u00e4 kunnossa.", "fi"),
+    ("S\u00e4\u00e4st\u00f6si riitt\u00e4v\u00e4t hyvin.", "fi"),
+    ("Sinulla on jo tarpeeksi s\u00e4\u00e4st\u00f6j\u00e4.", "fi"),
+    ("Kulutat enemm\u00e4n kuin sinun pit\u00e4isi.", "fi"),
+    ("Olet s\u00e4\u00e4st\u00e4nyt hyvin.", "fi"),
+]
+PLAIN_WORDS = [
+    ("A budget is a simple plan for where your money goes each month. Start by listing what comes in and what goes out, then set aside something for saving before you spend. Look at it again every month and adjust what does not fit.", "en"),
+    ("A buffer is money you keep aside for surprises, so a broken phone or a late bill does not throw your month off. There is no single right size, because it depends on your costs and how steady your income is. Many people start small and let it grow over time.", "en"),
+    ("Paying on the due date usually works best, as long as you do not forget it. Paying early gives you peace of mind but leaves less money in your account in the meantime. Whichever you choose, a reminder on the due date helps you stay on time.", "en"),
+    ("An e-invoice is a bill that arrives straight in your online bank instead of on paper. You check it, approve it once, and the payment goes out on the due date. It is a handy way to avoid missed bills.", "en"),
+    ("A bonus is a nice chance to strengthen your buffer first. After that, you could set a part aside for a goal you care about and enjoy a little of it too. There is no need to decide everything at once.", "en"),
+    ("To save on groceries, plan your meals before you shop and stick to a list. Buying only what you need cuts waste, and cooking at home more often usually costs less than eating out. Small habits like these add up quietly.", "en"),
+    ("Whether to cancel a subscription depends on how often you really use it. A good habit is to review them now and then and keep only the ones that give you value. Your own spending view can show what you pay for them.", "en"),
+    ("Many people spend a big share of their income on rent, especially in cities. It is common, but it can leave less room for saving, so it helps to know where the rest of your money goes. I can show how your spending looks if you like.", "en"),
+    ("Living paycheck to paycheck usually eases when you build a small buffer and know your bills ahead of time. Start by seeing what is due before payday, then set aside something small each month. Slow, steady steps work better than big jumps.", "en"),
+    ("It is normal to feel uneasy about spending. A calm look at where the money went is a good first step, without blame. You can then pick one small change and see how it goes.", "en"),
+    ("A saving habit is easiest when it is automatic and small. Setting something aside right after payday, before you spend, works for many people. You can then raise it a little whenever it feels comfortable.", "en"),
+    ("A good first step with impulse buys is to wait a day before a non-essential purchase. If you still want it the next day, it is probably a real want. This simple pause keeps you in control without feeling guilty.", "en"),
+    ("A reference number on a bill tells the recipient which bill your payment belongs to. You type it in exactly as printed when you pay, so the payment is matched automatically. Without it, a payment can get delayed.", "en"),
+    ("A healthy buffer gives you room to breathe when something unexpected happens. It is worth keeping it separate from your daily spending so you do not use it by accident. Take stock of it now and then.", "en"),
+    ("Before a big purchase, it helps to think twice and check that it fits your month. Looking at what is coming up in bills and what you usually spend gives a clear picture. Double-check this before you decide.", "en"),
+    ("Budjetti on yksinkertainen suunnitelma siit\u00e4, mihin rahasi menev\u00e4t kuukaudessa. Kirjaa ensin tulot ja menot ja laita s\u00e4\u00e4st\u00f6\u00f6n jotain ennen kuin kulutat. Tarkista suunnitelma kuukausittain ja korjaa sit\u00e4 tarvittaessa.", "fi"),
+    ("Puskuri on raha, jonka pid\u00e4t sivussa yll\u00e4tysten varalta. Sopiva koko riippuu menoistasi ja tulojesi vakaudesta. Moni aloittaa pienest\u00e4 ja kasvattaa sit\u00e4 ajan my\u00f6t\u00e4.", "fi"),
+    ("S\u00e4\u00e4st\u00f6tavoite antaa s\u00e4\u00e4st\u00e4miselle suunnan ja helpottaa pysymist\u00e4 suunnitelmassa. Kun tied\u00e4t, mit\u00e4 varten s\u00e4\u00e4st\u00e4t, on helpompi j\u00e4tt\u00e4\u00e4 turhat ostokset v\u00e4liin. Pienikin tavoite auttaa.", "fi"),
+    ("Ruokakuluissa auttaa, kun suunnittelet ateriat etuk\u00e4teen ja teet ostoslistan. Kotona kokkaaminen tulee yleens\u00e4 edullisemmaksi kuin ulkona sy\u00f6minen. Pienet tavat kasvattavat s\u00e4\u00e4st\u00f6\u00e4 hiljaa.", "fi"),
+    ("Viitenumero kertoo laskun saajalle, mihin laskuun maksusi kuuluu. Kirjoita se maksaessasi t\u00e4sm\u00e4lleen kuten laskussa lukee. N\u00e4in maksu kohdistuu oikein.", "fi"),
+    ("A budget works best when it is simple. List your regular costs, decide what you want to set aside, and see what is left for the rest. If something does not fit, adjust it next month.", "en"),
+    ("Building a buffer starts with a small, regular transfer right after payday. Keep it apart from your everyday money so it is there when a surprise comes. It grows faster than you might expect.", "en"),
+    ("An e-invoice comes straight to your online bank, so you do not need to type in the details. You check it and approve it, and it is paid on the due date. If you agree to direct payment, it is paid automatically.", "en"),
+    ("To avoid impulse buys, give yourself a pause before paying for something you did not plan. Unsubscribing from shop newsletters also helps. Over time the urge often fades.", "en"),
+    ("If money feels tight before payday, look at which bills are coming and plan around them. Cutting small extras for a while can ease the pressure. Sentti can show your upcoming bills.", "en"),
+    ("A reference number links your payment to the right bill. Copy it exactly from the invoice when you pay. That way the payment finds its place without delay.", "en"),
+    ("Budjetti auttaa n\u00e4kem\u00e4\u00e4n, mihin rahat menev\u00e4t. Kirjaa ensin s\u00e4\u00e4nn\u00f6lliset menot ja p\u00e4\u00e4t\u00e4, paljonko haluat laittaa sivuun. Loput j\u00e4\u00e4v\u00e4t muuhun k\u00e4ytt\u00f6\u00f6n.", "fi"),
+    ("Puskuria kannattaa ker\u00e4t\u00e4 pienin erin heti palkkap\u00e4iv\u00e4n j\u00e4lkeen. Pid\u00e4 se erill\u00e4\u00e4n arjen rahoista, niin se on tallessa yll\u00e4tysten varalle.", "fi"),
+    ("Her\u00e4teostoksia voi v\u00e4ltt\u00e4\u00e4, kun pit\u00e4\u00e4 pienen tauon ennen maksamista. Jos tuote tuntuu viel\u00e4 seuraavana p\u00e4iv\u00e4n\u00e4 tarpeelliselta, se on todenn\u00e4k\u00f6isesti harkittu ostos.", "fi"),
+    ("Er\u00e4p\u00e4iv\u00e4 on viimeinen p\u00e4iv\u00e4, jolloin lasku pit\u00e4\u00e4 maksaa. Maksun voi ajastaa er\u00e4p\u00e4iv\u00e4lle, jolloin raha pysyy tilill\u00e4 siihen asti.", "fi"),
+    ("Use the savings vault feature.", "en"),
+    ("Use a round-up feature.", "en"),
+    ("Use a standing order to move money.", "en"),
+    ("Set up automatic transfer to savings on payday.", "en"),
+    ("Keep it in a separate account.", "en"),
+    ("Keep your buffer in your account.", "en"),
+    ("Use cash envelopes.", "en"),
+    ("Keep a spreadsheet of costs.", "en"),
+    ("Siirr\u00e4 rahat toiselle tilille.", "fi"),
+    ("Pid\u00e4 puskuri erillisell\u00e4 tilill\u00e4.", "fi"),
+    ("Kannattaa tehd\u00e4 pysyv\u00e4ism\u00e4\u00e4r\u00e4ys.", "fi"),
+]
+
+
+@pytest.mark.parametrize("text,lang", PASS3_BORROWING + PASS3_PRODUCTS + PASS3_OWN_STATE)
+def test_every_pass3_class_row_is_rejected(text, lang):
+    _draft, reasons = orchestrator_checks(text, lang)
+    assert reasons, text
+
+
+@pytest.mark.parametrize("text,lang", PLAIN_WORDS)
+def test_careful_plain_words_and_habit_advice_pass(text, lang):
+    _draft, reasons = orchestrator_checks(text, lang)
+    assert reasons == [], (text, reasons)
+
+
+def orchestrator_checks(text, lang):
+    from core.agent.orchestrator import general_draft_problems
+    return general_draft_problems({"language": lang, "text": text, "cited": [], "lesson_key": None}, lang)
+
+
+@pytest.mark.parametrize("text,lang", [("Use Wise to move it.", "en"), ("Open an SEB account.", "en"),
+                                       ("Käytä Woltia vähemmän.", "fi"), ("Shop at Lidl instead of K-Market.", "en")])
+def test_a_name_inside_a_sentence_is_rejected_and_the_allowed_names_pass(text, lang):
+    assert any("a name" in r or "brand" in r for r in answer_text.general_problems(text)), text
+    for allowed in ("I can show it in Sentti.", "In Finnish, a budget is called budjetti."):
+        assert answer_text.general_problems(allowed) == [], allowed
+    # S-Pankki and S-mobiili are no name to the name check; the product list of the first review still rejects
+    # them as a product in a general answer (red-team row B: "Use the S-mobiili savings goal for it.")
+    assert answer_text._proper_nouns("An e-invoice arrives in S-mobiili or in the S-Pankki online bank.") == []
+
+
+def test_the_composers_empty_data_text_is_no_general_answer(make_pipeline):
+    # composer.md tells the composer to say it could not work it out when <data> is empty; on the general route that
+    # draft is retried with the reason, and the fixed text with the offer goes out (review of #618, pass 3)
+    empty = {"language": "en", "text": "I could not work this out right now. I can show where your money went.",
+             "cited": [], "lesson_key": None}
+    model = ScriptedModel(plans=[WORDS], drafts=[empty, empty])
+    pipe = make_pipeline(model)
+    d = done(run(pipe, BUFFER))
+    assert d["text"].startswith(template.pick(template.GENERAL_FALLBACK, "en"))
+    attempts = general_attempts(pipe)
+    assert len(attempts) == 2 and any("could not work" in r for r in attempts[0]["validation"]), attempts
+    assert "could not work" in " ".join(model.compose_inputs[1].validation_errors)
+
+
+def test_the_fixed_texts_pass_every_check_of_a_general_answer():
+    for lang in ("en", "fi"):
+        for topic in template.GENERAL_OFFERS:
+            offer, _chip = template.pick(template.GENERAL_OFFERS[topic], lang)
+            text = f"{template.pick(template.GENERAL_FALLBACK, lang)} {offer}"
+            assert answer_text.general_problems(text) + answer_text.general_language_problems(text, lang) == [], text

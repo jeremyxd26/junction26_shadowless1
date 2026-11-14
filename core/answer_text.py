@@ -260,6 +260,8 @@ _GENERAL_NUMBER_WORD = re.compile(
     r"|kaksi|kahde\w*|kolme\w*|kolmen|neljä\w*|neljän|viisi|viide\w*|kuusi|kuude\w*|seitsemä\w*|kahdeksa\w*"
     r"|yhdeksä\w*|\w*kymmen\w*|\w+toista|sata\w*|sadan|tuha\w*|miljoon\w*|miljardi\w*|puolet|puolikas\w*|puoli"
     r"|neljännes\w*|kolmannes\w*|prosent\w*|tusina\w*|pari"
+    # multiples and colloquial counts (review of #618, pass 3): "doubling", "treble", "tuplasti", "kaks", "viis"
+    r"|doubl(?:ing|ed|es)|trebl\w*|tupla\w*|kaks|viis|tenner|fiver|nil"
     # "a couple of months", "a pair of", "puolen vuoden", "puoleen tuloista", "kolmas osa" (closing review of #618)
     r"|(?:a\s+)?couple\s+of|couple\s+(?:is|are|will|would|of|weeks?|months?|days?|years?)|a\s+pair\s+of|pairs\s+of"
     r"|puolen|puoleen|(?:kolmas|neljäs|viides|kymmenes)\s+osa\w*"
@@ -340,6 +342,114 @@ GENERAL_BORROWING = re.compile(
     r"|\badvance\s+on\s+(?:your|my|the)\s+(?:pay|salary|paycheck|wages?)\b|\bbuy\s+now,?\s+pay\s+later\b"
     r"|\w*(?:laina|lainoj|luotto|luoto|luoton|velka|velan|velat|velko|vippi|vipin|vipp|rahoitu|osamaks|tilinylit)\w*"
     r"|\bmaksa\s+myöhemmin\b", re.I)
+
+# ---- The output side as classes (review of #618, pass 3): positive checks on the draft and its folded copies --------
+# Borrowing as a class, beyond the stems above: paying or settling later or bit by bit, a purchase split into payments,
+# an account in the red or below zero, an advance, a pawn shop, a tab, money asked from someone until payday, what one
+# owes; Finnish maksa myöhemmin / vasta, erissä / erään, miinukselle, pakkaselle, ennakko, pantti, maksuaika. Accents
+# are folded in one copy, so the Finnish forms are written without them. Draft side only: the question gate keeps
+# GENERAL_BORROWING.
+_GENERAL_BORROWING_CLASS = re.compile(
+    r"\b(?:pay|settle|sort|deal|cover|repay|clear|handle|hoida|maksa|kuittaa|suorita)\w*(?:\s+\w+){0,3}?\s+(?:later"
+    r"|next\s+(?:week|month|year|payday)|afterwards|over\s+time|bit\s+by\s+bit|slowly|in\s+(?:parts|pieces|chunks"
+    r"|stages|portions|instal\w*)|myohemmin|ensi\s+(?:kuussa|viikolla)|jalkikateen|perasta|osissa)\b"
+    r"|\bbuy(?:ing)?[\s-]+(?:it\s+)?now\b|\bpay(?:ing)?\s+(?:it\s+|them\s+)?(?:later|off)\b|\brepay\w*|\bdefer\w*"
+    r"|\b(?:split|spread|divide|break)\w*(?:\s+\w+){0,3}?\s+(?:into|over|across)(?:\s+\w+){0,2}?\s+(?:payments?"
+    r"|instal\w*|parts|pieces|chunks|months|portions)\b|\b(?:monthly|several|multiple|smaller|equal)\s+(?:payments"
+    r"|instal\w*)\b|\bin(?:to)?\s+the\s+red\b|\boverdr[ae]w\w*|\bbelow\s+zero\b|\bnegative\s+balance\b"
+    r"|\b(?:an?|the|cash|salary|pay|payday|wage)\s+advances?\b|\badvance\s+on\b|\bpawn\w*|\bquick\s+cash\b"
+    r"|\bfast\s+cash\b|\b(?:a|the|your)\s+tab\b|\brun\s+up\b|\bfront\s+you\b|\b(?:owe|owed|owing|iou)\b"
+    r"|\bconsolidat\w*|\broll\w*(?:\s+\w+){0,2}?\s+over\b"
+    r"|\b(?:ask|beg)\w*(?:\s+\w+){0,3}?\s+(?:for\s+)?(?:some\s+|a\s+bit\s+of\s+|a\s+little\s+)?(?:money|cash|funds"
+    r"|help)\b|\bpyyda\w*(?:\s+\w+){0,2}?\s+rahaa\b"
+    r"|\b(?:erissa|eraan|erina|eriin|kuukausierissa|kuukausieriin)\b|\bmiinukse\w*|\bpakkase(?:lle|lla)\b"
+    r"|\w*ennakko(?:a|ja|n|t|na|sta|lla|lle)?\b|\bpant(?:ti|ata|taa|taamalla)\w*|\bmaksua(?:ika|ikaa|jan|jalla)\w*"
+    r"|\bviivekor\w*|\w*ylitysoik\w*", re.I)
+# A financial product recommended without a name: interest or yield, or a verb of getting or using one with a product
+# noun ("Open an account that pays more.", "Get travel insurance.", "Try online banking.", "Avaa korkeakorkoinen
+# tili.", "Käytä verkkopankkia."). Keeping money in an account is a habit, so "keep" and "siirrä" are no such verb.
+_GENERAL_PRODUCT_CLASS = re.compile(
+    r"\binterest\b(?!\s+in\b)|\bhigh[\s-]*(?:interest|yield)\w*|\bkorko\w*|\w*korkoi\w*|\bindex\s+\w+"
+    r"|\b(?:savings|pension)\s+plans?\b|\bdividend\w*"
+    r"|\b(?:open|get|take\s+out|sign\s+up\s+for|apply\s+for|switch\s+to|buy|use|try|choose|pick|consider"
+    r"|look\s+into|download|install|set\s+up)\b(?:\s+[\w-]+){0,4}?\s+(?:accounts?|cards?|insurance|polic(?:y|ies)"
+    r"|wallets?|stocks?|shares|propert(?:y|ies)|funds?|apps?|applications?|banking|deposits?)\b"
+    r"|\b(?:avaa|hanki|ota|vaihda|valitse|kayta|lataa|asenna|osta|harkitse)\w*(?:\s+\w+){0,3}?\s+\w*(?:tili|tilin"
+    r"|tilia|kortti|kortin|korttia|vakuutu\w*|sovellu\w*|osake\w*|osakke\w*|asunto\w*|lompako\w*|pankki\w*"
+    r"|mobiilimaksu\w*)\b|\w*sovellu\w*", re.I)
+# A brand or a shop written in lowercase, or at the start of a sentence, where the proper-noun check cannot see it
+_GENERAL_BRAND = re.compile(
+    r"\b(?:wolt|lidl|amazon|visa|monzo|swedbank|seb|prisma|k-?market|k-?ruoka|k-?citymarket|s-?market|alepa|tokmanni"
+    r"|ikea|zalando|foodora|ebay|etsy|temu|shein)\b", re.I)
+# Proper nouns: a capitalised word that does not start a sentence, or a word with a capital after its first letter,
+# names a bank, a brand, a shop or a product; only these may stand in a general answer (and the pronoun "I", and the
+# names of the two languages and the country: "In Finnish, a budget is called budjetti.").
+_PROPER_NOUN_ALLOWED = re.compile(r"(?:I(?:['’](?:m|ll|ve|d))?|Sentt?i\w*|S-[Pp]ank\w*|S-mobiil\w*|English|Finnish"
+                                  r"|Finland|Finns?|Suom\w*)")
+_WORD = re.compile(r"[^\W\d_]+(?:[-'’][^\W\d_]+)*")
+
+
+def _proper_nouns(text: str) -> list[str]:
+    """The capitalised words of a draft that are not sentence-initial, and any word with a capital after its first
+    letter ("SEB", "iPhone", "MobilePay"), except the allowed names (review of #618, pass 3)."""
+    found = []
+    for sentence in SENTENCE_BREAK.split(text):
+        words = _WORD.findall(sentence)
+        for i, word in enumerate(words):
+            if _PROPER_NOUN_ALLOWED.fullmatch(word):
+                continue
+            inner_capital = any(ch.isupper() for ch in word[1:].replace("-", ""))
+            if inner_capital or (i > 0 and word[0].isupper()):
+                found.append(word)
+    return found
+
+
+# A statement about the user's own money: the general route reads no data, so it never asserts the user's state
+# ("You are saving enough.", "Your buffer is fine.", "You can afford it.", "Puskurisi on kunnossa.", "Sinulla on varaa
+# tähän."). Second person as the subject of a main clause with a state, a sufficiency or a judgement; "if you are
+# unsure", "when you're ready", "kun säästät" and "jos sinulla on" are conditions, not claims.
+_NOT_A_CLAIM = (r"(?<!\bif )(?<!\bwhen )(?<!\bwhenever )(?<!\bwhether )(?<!\bunless )(?<!\bwhile )(?<!\bonce )"
+                r"(?<!\buntil )(?<!\bso )(?<!\bthat )(?<!\bcase )(?<!\blong as )(?<!\bbefore )(?<!\bafter )"
+                r"(?<!\bwhat )(?<!\bhow )(?<!\bhow much )(?<!\bkun )(?<!\bjos )(?<!\bjotta )")
+_GENERAL_OWN_STATE = re.compile(
+    _NOT_A_CLAIM + r"\byou(?:['’]re|\s+are|\s+were|['’]ve\s+been|\s+have\s+been)\b(?!\s+not\s+alone\b)"
+    r"|" + _NOT_A_CLAIM + r"\byou(?:\s+\w+)?(?:\s+have|['’]ve|\s+got)\s+(?!to\b)(?:\w+\s+){0,2}?(?:enough|plenty"
+    r"|a\s+healthy|a\s+good|a\s+solid|a\s+big|room|too|more\s+than|saved|spent|done|covered)\b"
+    r"|" + _NOT_A_CLAIM + r"\byou\s+(?:can|could|can['’]t|cannot)\s+(?:\w+\s+)?afford\b"
+    r"|\byou\s+(?:\w+\s+)?(?:spend|earn|save|owe|make|pay|manage)\w*\s+(?:\w+\s+){0,2}?(?:too|enough|well|a\s+lot"
+    r"|more\s+than|less\s+than|plenty|little|fine|great)\b"
+    r"|" + _NOT_A_CLAIM + r"\byou\s+(?:should|need\s+to|must|ought\s+to|have\s+to|can|could)\s+(?:\w+\s+)?"
+    r"(?:save|spend|cut|earn)\s+"
+    r"(?:\w+\s+)?(?:more|less|back|down)\b"
+    r"|\byou\s+(?:don['’]t|do\s+not|won['’]t|will\s+not)\s+need\s+(?:a\s+|any\s+)?(?:bigger|larger|smaller|more"
+    r"|less|extra)\b"
+    r"|(?:\b(?:based\s+on|given|judging\s+by|looking\s+at)|(?:^|(?<=[.!?] ))with)\s+your\s+(?:own\s+)?(?:income"
+    r"|spending|salary|savings|buffer|budget|situation|money|finances|bills|expenses|balance|habits|earnings)\b"
+    # "your buffer is fine", never the embedded question "how steady your income is" or "how your spending looks"
+    r"|(?<!\bhow )(?<!\bwhere )(?<!\bwhat )(?<!\bwhether )(?<!\bif )\byours?\b(?:\s+(?:own|current|monthly|total"
+    r"|overall|food|grocery|emergency|regular|present))*\s+(?:buffer|savings?|spending|money|finances|balance|income"
+    r"|salary|budget|bills|expenses|costs|situation|account|habits|cash|wallet|fund|position|cushion|earnings)"
+    r"(?:\s+(?:on|for)\s+\w+)?\s+(?:is|are|was|were|looks?|seems?|sounds?|appears?|feels?|isn['’]t|aren['’]t|covers?"
+    r"|should\s+(?:cover|be\s+(?:enough|fine|ok|okay|big|large|sufficient))|will\s+(?:cover|be)|can\s+cover)\b"
+    r"(?=\s+\w)|\byours\s+(?:is|are|looks?|seems?|should)\b"
+    r"|\b(?:people|others|someone|anyone)\s+(?:in\s+your\s+(?:situation|position|shoes)|like\s+you)\b"
+    # Finnish, accents folded: säästät / kulutat ... tarpeeksi / liikaa, "puskurisi on", "sinulla on", "olet"
+    r"|" + _NOT_A_CLAIM + r"\b(?:saastat|kulutat|kaytat|tienaat|ansaitset|maksat|tuhlaat|parjaat|et\s+(?:saasta"
+    r"|kuluta|kayta|tienaa|ansaitse|maksa|parjaa))\b(?:\s+\w+){0,3}?\s+(?:jo\s+)?(?:tarpeeksi|riittavasti|liikaa"
+    r"|liian|hyvin|paljon|vahan|enemman|vahemman|kuin)\b"
+    r"|\b(?:puskuri|saasto|raha|tili|saldo|tulo|meno|kulu|kulutukse|taloute|tilantee|budjetti|palkka|lasku"
+    r"|varallisuute)\w*si\s+(?:\w+\s+)?(?:on|ovat|oli|olivat|nayttaa|nayttavat|vaikuttaa|vaikuttavat|riittaa"
+    r"|riittavat|kattaa|kattavat)\b"
+    r"|" + _NOT_A_CLAIM + r"\bsinulla\s+(?:on|oli|ei\s+ole)\b"
+    r"|\bsinun\s+(?:pitaisi|kannattaisi|tulisi|taytyy|pitaa)\s+(?:\w+\s+)?(?:saastaa|kuluttaa|kayttaa|vahentaa)"
+    r"(?:\s+\w+)?\s+(?:enemman|vahemman)\b"
+    r"|" + _NOT_A_CLAIM + r"\bolet\b", re.I)
+# A draft that says it could not work the question out (composer.md's line for empty <data>) is no answer in words
+GENERAL_NON_ANSWER = re.compile(
+    r"\bI\s+(?:could\s*not|couldn['’]t|cannot|can['’]t|can\s+not|was\s+unable\s+to|am\s+unable\s+to"
+    r"|wasn['’]t\s+able\s+to|don['’]t\s+have|do\s+not\s+have)\b|\bunable\s+to\s+(?:work|figure|calculat|comput"
+    r"|answer)\w*|\ben\s+(?:pystynyt|pysty|voinut|voi|osannut|osaa|onnistunut|loytanyt)\b"
+    r"|\bei\s+(?:onnistunut|voitu|loytynyt)\b", re.I)
 # The language of a general answer (reviews of #618): a positive check, so a language nobody listed is caught too.
 # Every letter is of the asked language's alphabet (English: a to z, é; Finnish: a to z, å, ä, ö, é), every sentence
 # reads as that language (an English one has an English word, a Finnish one a Finnish word or ending), and no sentence
@@ -369,6 +479,8 @@ _ENGLISH_WORD = re.compile(r"\b(?:the|a|an|is|are|you|your|and|of|to|it|for|with
                            re.I)
 # A Finnish word by its ending, for a Finnish sentence with no Finnish letter ("Budjetti on suunnitelma.")
 _FINNISH_ENDING = re.compile(r"\b\w{3,}(?:tti|ssa|ssä|sta|stä|lla|llä|lta|ltä|ksi|nen|aan|ään|uu|yy)\b", re.I)
+# On the Finnish side only (review of #618, pass 3): the clitics -kin / -kaan and the verb endings -aa / -ää / -vat
+_FINNISH_ENDING_WIDE = re.compile(r"\b\w{3,}(?:kin|kaan|kään|aa|ää|vat|vät)\b", re.I)
 
 
 def general_language_problems(text: str, language: str) -> list[str]:
@@ -391,7 +503,8 @@ def general_language_problems(text: str, language: str) -> list[str]:
                 problems.append(f"'{sentence.strip()[:40]}': not an English sentence; answer only in English")
                 break
         else:
-            if english >= 2 or not (_FINNISH_COMMON.search(sentence) or _FINNISH_ENDING.search(sentence)):
+            if english >= 2 or not (_FINNISH_COMMON.search(sentence) or _FINNISH_ENDING.search(sentence)
+                                    or _FINNISH_ENDING_WIDE.search(sentence)):
                 problems.append(f"'{sentence.strip()[:40]}': not a Finnish sentence; answer only in Finnish")
                 break
     return problems
@@ -431,10 +544,21 @@ def general_problems(text: str) -> list[str]:
                     (GENERAL_BORROWING, "borrowing: a general answer never mentions a loan, credit or any "
                                         "borrowing"),
                     (_GENERAL_JUDGING, "judging or joking: a general answer never judges the user or jokes "
-                                       "about spending")):
+                                       "about spending"),
+                    (_GENERAL_BORROWING_CLASS, "borrowing: a general answer never suggests paying later, in parts, "
+                                               "in the red, with an advance or with someone else's money"),
+                    (_GENERAL_PRODUCT_CLASS, "a financial product: a general answer recommends no account, card, "
+                                             "insurance, app, interest or investment"),
+                    (_GENERAL_BRAND, "a brand or a shop: a general answer names none"),
+                    (_GENERAL_OWN_STATE, "the user's own money: a general answer reads no data, so it never says "
+                                         "how the user is doing, what they can afford or what their money is")):
         m = next((found for found in (rx.search(c) for c in copies) if found), None)
         if m:
             problems.append(f"'{m.group(0)}': {why}")
+    names = next((found for found in (_proper_nouns(c) for c in copies[:2]) if found), None)
+    if names:
+        problems.append(f"'{names[0]}': a name: a general answer names no bank, brand, shop or product (only Sentti, "
+                        f"S-Pankki and S-mobiili)")
     return problems
 
 
