@@ -70,8 +70,8 @@ ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {}
 # Whoever implements one removes it here: test_pending_entries_are_still_missing fails while a field
 # is both implemented and listed. Empty since #165 implemented `safe_to_save` (both overview examples).
 PENDING: dict[str, set[str]] = {}
-# Error codes the models do not have yet: model_unavailable comes with the bill reading (#250).
-PENDING_ERROR_CODES: set[str] = {"model_unavailable"}
+# Error codes the models do not have yet. Empty since the bill reading (#250) brought model_unavailable.
+PENDING_ERROR_CODES: set[str] = set()
 # Error codes the service has ahead of the contract. Empty since contract 0.2.2 (not_found is in it).
 ERROR_CODE_ADDITIONS: set[str] = set()
 

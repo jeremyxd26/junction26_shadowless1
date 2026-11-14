@@ -234,7 +234,8 @@ class ErrorBody(Model):
                   "invalid_scenario", "tx_ref_not_found", "basket_not_allowed", "rate_limited",
                   "data_unavailable", "llm_unavailable", "internal",
                   "not_found",  # not_found: contract addition (#79), an unknown route
-                  "invalid_bill"]  # the bill explanation (#242); its body adds `reason` (BillErrorBody)
+                  "invalid_bill",  # the bill explanation (#242); its body adds `reason` (BillErrorBody)
+                  "model_unavailable"]  # a bill reading cannot use the model (#250, section 11.4)
     message: str
     retryable: bool
 
