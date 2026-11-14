@@ -140,6 +140,16 @@ def args_json(args_model: type[BaseModel], args: Any) -> tuple[BaseModel, str]:
     return parsed, json.dumps(parsed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
+# Results that must not be stored, by tool: they depend on a state outside the key that is about to
+# change. The peer benchmark reads the marts only when their build for as_of is complete and otherwise
+# falls back to the customer's range (no group, "not shown"); such a result is served but never cached,
+# so a warm-up during a mart build cannot pin "not shown" until the next deploy. A rebuild of complete
+# marts with other data for the same as_of is a data reload, which the cache-reset runbook covers.
+DO_NOT_STORE: dict[str, Callable[[ToolResult], bool]] = {
+    "get_peer_benchmark": lambda result: getattr(result.data, "peer_source", "marts") != "marts",
+}
+
+
 # ---- entries --------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -384,7 +394,9 @@ class ToolCache:
             if ctx._history is None and private._history is not None:
                 ctx._history = private._history   # the transactions read by this call serve the next one
             entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
-            self.put(key, entry)
+            skip = DO_NOT_STORE.get(tool)
+            if skip is None or not skip(result):
+                self.put(key, entry)
             with self._lock:
                 self.stats.misses += 1
         except BaseException as exc:

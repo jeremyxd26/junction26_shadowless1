@@ -615,3 +615,23 @@ def test_an_owner_never_waits_and_a_finished_key_is_not_in_flight():
 @pytest.mark.parametrize("raw, expected", [("2.5", 2.5), ("abc", 5.0), ("", 5.0), ("-1", 0.0)])
 def test_wait_seconds_are_parsed_defensively(raw, expected):
     assert ToolCache.from_env({"TOOL_CACHE_WAIT_S": raw}).wait_s == expected
+
+
+
+def test_a_peer_result_from_incomplete_marts_is_served_but_never_stored(mem):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def peer(source):
+        def tool(ctx, args):
+            calls.append(source)
+            return ToolResult(tool="get_peer_benchmark", data=SimpleNamespace(peer_source=source), model_view={})
+        return tool
+
+    mem.run("get_peer_benchmark", FakeArgs, peer("range"), ctx_for(), {})     # marts not built for as_of
+    mem.run("get_peer_benchmark", FakeArgs, peer("range"), ctx_for(), {})
+    assert calls == ["range", "range"] and len(mem) == 0                     # computed each time, not pinned
+    mem.run("get_peer_benchmark", FakeArgs, peer("marts"), ctx_for(), {})     # the build is complete now
+    mem.run("get_peer_benchmark", FakeArgs, peer("marts"), ctx_for(), {})
+    assert calls == ["range", "range", "marts"] and len(mem) == 1
