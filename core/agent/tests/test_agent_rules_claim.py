@@ -148,8 +148,8 @@ TABLE = [
     ("fi", "Mitkä ovat säännölliset kuukausilaskuni?", "recurring_bills"),
     # near misses: a bare word of one rule inside another question is no claim
     ("en", "can I afford to buy bitcoin?", NOT_CLAIMED),            # an investment word: the planner decides
-    ("fi", "Mihin voin sijoittaa rahani?", NOT_CLAIMED),            # where money SHOULD go, not where it went
-    ("fi", "Mihin rahat kannattaa sijoittaa?", NOT_CLAIMED),
+    ("fi", "Mihin voin sijoittaa rahani?", "decline"),       # where to invest, not where money went: R7 (#650)
+    ("fi", "Mihin rahat kannattaa sijoittaa?", "decline"),
     ("en", "where should my money go?", NOT_CLAIMED),
     ("en", "how many days do I have left until payday?", "recurring_bills"),
     ("fi", "Kuinka monta päivää on jäljellä palkkapäivään?", "recurring_bills"),
@@ -226,7 +226,7 @@ TABLE = [
     ("en", "how much did I spend on flurbles last month?", "unknown_object"),
     ("fi", "paljonko käytin kuntosaliin viime kuussa?", "unknown_object"),
     ("en", "how much did I spend at Lidl in May?", "unknown_object"),
-    ("en", "how much did I spend at the weekend last month?", "spending"),
+    ("en", "how much did I spend at the weekend last month?", NOT_CLAIMED),   # a week part is asked back (#639)
     ("en", "how much did I spend on doctor visits last month?", "spending"),   # the Health total (#571)
     ("fi", "paljonko voin käyttää seuraavan viikon aikana", NOT_CLAIMED),
     ("fi", "paljonko voin käyttää kuussa", NOT_CLAIMED),
@@ -671,6 +671,40 @@ def test_the_future_cue_carries_its_own_month_and_the_last_year_is_twelve_months
     assert [args["period"] for name, args in data_calls(plan(question, lang))] == [period]
 
 
+# #543: the Finnish twelve months in their forms, the plural genitive and the number in words, plan the last 12 months
+# like "viimeisen 12 kuukauden" (before: the period question). The English question is unchanged.
+@pytest.mark.parametrize("question, lang", [
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden?", "fi"),
+    ("Paljonko käytin asumiseen viimeisen 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisen kahdentoista kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten kahdentoista kuukauden aikana?", "fi"),
+    ("How much did I spend on rent in the last 12 months?", "en"),
+])
+def test_the_finnish_twelve_months_in_their_forms_plan_the_last_12_months(question, lang):
+    assert data_calls(plan(question, lang)) == [
+        ("get_spending", {"filter": {"categories": ["Housing"]}, "period": {"preset": "last_12_months"}})]
+
+
+# #651: the three and the six months in the singular and the plural genitive, with the digit or the word, plan their
+# presets (before: the plural asked for the period). The English questions are unchanged.
+@pytest.mark.parametrize("question, lang, preset", [
+    ("Paljonko käytin ravintoloihin viimeisten kolmen kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisten 3 kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisen kolmen kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisen 3 kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisten kuuden kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisten 6 kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisen kuuden kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisen 6 kuukauden aikana?", "fi", "last_6_months"),
+    ("How much did I spend on restaurants in the last three months?", "en", "last_3_months"),
+    ("How much did I spend on restaurants in the last 6 months?", "en", "last_6_months"),
+])
+def test_the_finnish_three_and_six_months_in_their_forms_plan_their_presets(question, lang, preset):
+    assert data_calls(plan(question, lang)) == [
+        ("get_spending", {"filter": {"categories": ["Restaurants"]}, "period": {"preset": preset}})]
+
+
 # ---- #379 part B: periods counted back, next week, this week, next month's rent, another script ------------
 
 def custom(start, end):
@@ -742,7 +776,6 @@ def test_an_unknown_object_second_or_another_script_is_not_claimed(question, lan
     # near misses: what follows "and" is a period word, a category, or no object at all
     ("how much did I spend on restaurants and in total last month?", "en", {"categories": ["Restaurants"]}),
     ("how much did I spend on groceries and for last month?", "en", {"categories": ["Groceries"]}),
-    ("how much did I spend on restaurants and at the weekend last month?", "en", {"categories": ["Restaurants"]}),
     ("how much did I spend on restaurants and the rest last month?", "en", {"categories": ["Restaurants"]}),
     ("how much did I spend on restaurants and on travel last month?", "en",
      {"categories": ["Restaurants", "Travel"]}),
@@ -1115,15 +1148,25 @@ def test_a_thing_as_the_subject_of_cost_gets_the_unknown_thing_breakdown(lang, q
 
 
 @pytest.mark.parametrize("lang,question", [
+    ("en", "What does my phone plan cost me?"),
+    ("en", "What does the car insurance cost me?"),
+    ("fi", "Paljonko vakuutus maksaa?"),
+])
+def test_a_bill_as_the_subject_of_cost_gets_what_the_bill_rules_give(lang, question):
+    # what "How much is my insurance bill?" gives today: the bills tool (#623, decided in the PR)
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
+
+
+@pytest.mark.parametrize("lang,question", [
     ("en", "What did my insurance cost me last month?"),
     ("en", "What did the car insurance cost me last month?"),
     ("en", "What did my phone plan cost me last month?"),
     ("fi", "Paljonko vakuutus maksoi viime kuussa?"),
     ("fi", "Paljonko maksoin vakuutuksen viime kuussa?"),
 ])
-def test_a_bill_as_the_subject_of_cost_gets_what_the_bill_rules_give(lang, question):
-    # what "How much is my insurance bill?" gives today: the bills tool (#623, decided in the PR)
-    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
+def test_a_past_cost_of_a_bill_gets_the_unknown_thing_breakdown(lang, question):
+    # the bills tool shows what is due now, never what one bill cost in a past period (#639, review of #635)
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_basket_breakdown"]
 
 
 @pytest.mark.parametrize("lang,question,flt", [

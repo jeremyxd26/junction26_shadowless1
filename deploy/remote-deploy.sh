@@ -173,8 +173,9 @@ tail -1 <<<"$import_out" | mask
 # ---- the app (app/, a static Vite build) ------------------------------------------------------------
 # Built here, before the switch, in a throwaway Node container from the files of the commit (git
 # archive: tracked files only, never a local .env). The container has network, because npm downloads
-# the packages, but no capabilities and no service setting. The only build setting is the public
-# VITE_API_MODE=live (the app calls /api on the same origin). The result is installed as
+# the packages, but no capabilities and no service setting. The build settings are two public switches:
+# VITE_API_MODE=live (the app calls /api on the same origin) and VITE_BILL_LIVE=true (the bill screen calls
+# the core's bill endpoints instead of the mock). Neither is a secret. The result is installed as
 # $app_root/<sha>; the served link $app_root/current moves to it only after the core passed its health
 # check. No Node on the request path: Caddy serves the files. A commit whose build is already installed
 # (a redeploy, a rollback to the previous commit) reuses it: no npm, and the served directory is never
@@ -240,7 +241,7 @@ else
   if ! docker run --rm --user 1000:1000 --memory 2g --pids-limit 512 \
          --cap-drop ALL --security-opt no-new-privileges \
          --volume "$app_work/app:/app" --volume "$npm_cache:/home/node/.npm" --workdir /app \
-         --env VITE_API_MODE=live "$node_image" \
+         --env VITE_API_MODE=live --env VITE_BILL_LIVE=true "$node_image" \
          sh -c 'npm ci --no-audit --no-fund --loglevel=error && npm run build' > "$app_work/build.log" 2>&1 \
      || [[ ! -f $app_work/app/dist/index.html ]]; then
     echo "refusing to deploy: the app build failed (the running version stays untouched); last lines (masked):" >&2

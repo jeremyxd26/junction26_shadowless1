@@ -7,8 +7,10 @@ import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { isClientTurn } from '../lib/thread.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
+import { ClientTurnView } from './ClientTurnView.tsx'
 import { TokenText } from './cards.tsx'
 import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
@@ -33,11 +35,12 @@ export function InfoIcon() {
   )
 }
 
-export function SenttiLabel({ s }: { s: Strings }) {
+/** "Sentti" with the AI tag; a client turn (#319), which the AI model does not write, shows it without. */
+export function SenttiLabel({ s, ai = true }: { s: Strings; ai?: boolean }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
-      <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>
+      {ai && <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>}
     </p>
   )
 }
@@ -153,6 +156,7 @@ interface Props {
 export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
+  if (isClientTurn(turn)) return <ClientTurnView turn={turn} label={<SenttiLabel s={s} ai={false} />} />
   const { answer } = turn
   const { done } = answer
   const streaming = answer.status === 'streaming'
