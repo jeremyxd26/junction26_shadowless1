@@ -1,7 +1,8 @@
 // The bill's actions (#331, contract 11.2-11.3), each shown only when the response carries it,
 // picked by `type`, never by index:
 // - "Add to payments": a tap hands the draft's five contract fields to the host app; in a plain
-//   browser the "continues in the bank app" notice shows (HostNotice, mounted by the page);
+//   browser the "continues in the bank app" notice shows (HostNotice, mounted once at the app
+//   root, #431);
 // - `open_host_screen` (since 0.3.3, `contact_bank`): the way to a human at the bank, through the
 //   same path as every other host-screen chip; a target the app does not know renders nothing.
 // `warnings` (today only a past due date) are a small note beside them, also without a button.
