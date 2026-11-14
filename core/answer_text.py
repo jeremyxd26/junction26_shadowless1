@@ -17,7 +17,7 @@ digits are left over.
 
 A date expression needs a year: "15 Oct 2026", "October 15, 2026", "September 2026",
 "1–15 Jun 2026", "1 Jun – 15 Aug 2026", "2026-10-15", "15.10.2026", "1.–15.6.2026",
-"1.6.–15.8.2026", "syyskuu 2026", "syyskuussa 2026", "15. lokakuuta 2026".
+"1.6.–15.8.2026", "1.10.2024–31.1.2025", "syyskuu 2026", "syyskuussa 2026", "15. lokakuuta 2026".
 
 Known limits (documented, not chased): numbers written as words ("twice", "kolme"), and wrong
 wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the
@@ -65,10 +65,12 @@ def _fi_lower(g: str) -> str:
 # Longest forms first; each match is removed before the next pattern runs.
 DATE_PATTERNS = [
     ("date", rf"(?P<y>\d{{4}})-(?P<m>\d{{2}})-(?P<d>\d{{2}})"),
+    ("range", rf"(?P<d1>\d{{1,2}})\.(?P<m1>\d{{1,2}})\.(?P<y1>\d{{4}}){_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m2>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.(?P<m1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m2>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("date", rf"(?P<d>\d{{1,2}})\.(?P<m>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}+{_en('mn1')}(?:{_S}+(?P<y1>\d{{4}}))?{_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn2')}{_S}+(?P<y>\d{{4}})"),
+    ("range", rf"(?P<d1>\d{{1,2}}){_S}+{_en('mn1')}(?:{_S}+(?P<y1>\d{{4}}))?{_S}+and{_S}+(?P<d2>\d{{1,2}}){_S}+{_en('mn2')}{_S}+(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn')}{_S}+(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.{_S}*{_fi_lower('mn')}{_S}+(?P<y>\d{{4}})"),
     ("date", rf"(?P<d>\d{{1,2}}){_S}+{_en('mn')},?{_S}+(?P<y>\d{{4}})"),
