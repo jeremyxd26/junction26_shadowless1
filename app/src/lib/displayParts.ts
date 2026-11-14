@@ -28,12 +28,12 @@ export function displayParts(display: string): DisplayPart[] {
 
 /**
  * Chips in running text never wrap. A standalone chip does not shrink below its content in a flex
- * row (like a nowrap chip); only its max width, the container plus 8px of slack that stays inside
- * the card's padding, makes it wrap. So a chip that fitted at normal text size by a hair keeps its
- * one-line look.
+ * row (like a nowrap chip), and is at most as wide as its container; past that its display wraps
+ * between the amount and the words after it (DisplayText). A chip whose text used to spill into
+ * its own padding, hidden by nowrap, now wraps instead (#493).
  */
 export function chipWrapping(inText: boolean): string {
-  return inText ? 'whitespace-nowrap' : 'shrink-0 max-w-[calc(100%+8px)] text-center'
+  return inText ? 'whitespace-nowrap' : 'shrink-0 max-w-full text-center'
 }
 
 /**

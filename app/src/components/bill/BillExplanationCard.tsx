@@ -108,8 +108,9 @@ function SafeToSpendCard({ safe }: { safe: BillSafeToSpend }) {
   const estimate = useEstimateToggle()
   return (
     <CardShell>
-      <div className="flex items-start justify-between gap-3">
-        <h3 className={`min-w-0 pt-2.5 ${CARD_TITLE}`}>{s.safeTitle}</h3>
+      {/* With large text the Estimate badge moves under the title instead of squeezing it (#493). */}
+      <div className="flex flex-wrap items-start justify-between gap-x-3">
+        <h3 className={`min-w-[min(10rem,100%)] flex-1 basis-0 pt-2.5 ${CARD_TITLE}`}>{s.safeTitle}</h3>
         <EstimateBadge estimate={s.estimate} control={estimate.control} />
       </div>
       {estimate.open && <EstimateNote estimate={s.estimate} id={estimate.id} />}

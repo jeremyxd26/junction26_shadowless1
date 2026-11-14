@@ -316,9 +316,11 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
           )
         })}
       </ul>
-      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-muted">
-        <span>{card.total.label}</span>
-        <NumberChip number={card.total} size="inline" />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+        <span className="min-w-[min(5rem,100%)] flex-1 basis-0">{card.total.label}</span>
+        <span className="ml-auto max-w-full shrink-0">
+          <NumberChip number={card.total} size="inline" wrap />
+        </span>
       </div>
     </CardShell>
   )

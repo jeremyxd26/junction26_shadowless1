@@ -17,8 +17,10 @@ const sizes: Record<Size, string> = {
   lead: 'relative min-h-9 px-2.5 text-[19px] leading-6 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
   // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
-  lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
-  hero: 'min-h-16 px-5 text-(length:--text-hero) leading-(--text-hero--line-height) tracking-tight',
+  // The amount of a large chip never breaks, so with very large text its size is capped by the
+  // screen width (13vw / 17vw); at normal text size, 320 px and up, the cap is never reached (#493).
+  lg: 'min-h-14 px-4 text-[length:min(var(--text-review-amount),13vw)] leading-(--text-review-amount--line-height) tracking-tight',
+  hero: 'min-h-16 px-5 text-[length:min(var(--text-hero),17vw)] leading-(--text-hero--line-height) tracking-tight',
 }
 
 const tones: Record<Tone, string> = {
