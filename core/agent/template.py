@@ -15,6 +15,7 @@ from typing import Any
 
 from core import answer_text
 from core.tools import config as tools_config
+from core.agent import answer_sentences
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -62,11 +63,18 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
-             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
-WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
-                 "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
-WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
-                     "Haluatko nähdä, mitä vähentäminen tekisi? Kerro luokka ja kuinka paljon.")
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän|"
+             # the everyday ways of asking it (#340); the rules read the same words (rules.plan_what_if)
+             r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
+             r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
+             r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
+             r"\bput (more |some )?(money )?aside\b|"
+             r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
+# One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
+WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
+                 "Kerro, kuinka paljon vähentäisit luokassa {category}, niin näytän säästön.")
+WHAT_IF_OFFER_ANY = ("Name a category and how much you would cut it by, and I'll show what you'd save.",
+                     "Kerro luokka ja kuinka paljon vähentäisit, niin näytän säästön.")
 # The peer benchmark's reasons for showing nothing (#216): the reason only, never a number.
 PEER_REASON = {
     "group_too_small": ("There are too few people like you in the data to compare with.",
@@ -87,11 +95,17 @@ CLARIFY_GENERAL = {
 }
 # "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
 # the card's own "why" text; {amount} is the card amount's token.
-REVIEW_PURCHASE = (
+REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-length rule)
     "That was your {category} purchase on {date}: {amount}. It is the large purchase I asked you about: "
-    "was it needed, or your choice? {why}",
+    "was it needed, or your choice?",
     "Se oli ostoksesi {date} luokassa {category}: {amount}. Tästä isosta ostoksesta kysyin sinulta: oliko se "
-    "välttämätön hankinta vai oma valinta? {why}",
+    "välttämätön hankinta vai oma valinta?",
+)
+REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
+    "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
+    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
+    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
@@ -161,10 +175,14 @@ def brief_questions(language: str) -> list[str]:
     return [pick(q, language) for q in BRIEF_QUESTIONS]
 
 
-def follow_ups(question: str, language: str, refused: bool = False) -> list[str]:
-    """The partner's four questions minus the one just asked (agent-core.md section 7.6)."""
+def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
+    """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
+    question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the
+    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411)."""
     asked = question.strip().lower()
-    out = [pick(q, language) for q in BRIEF_QUESTIONS if pick(q, language).lower() != asked]
+    offered = [v["follow_up"] for v in views or [] if isinstance(v, dict) and isinstance(v.get("follow_up"), str)
+               and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
+    out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
 
 
@@ -203,7 +221,7 @@ NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
 BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
-BILL_WORDS = r"\bbills?\b|\blasku\w*"
+BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
@@ -333,16 +351,175 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
 
 
-PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
+# Small purchases as one takeaway sentence (#256), in the voice of the brief and within the length rule (review
+# of #390): the takeaway number first, at most three numbers (the total, the count, the monthly average), the
+# period in words. The limit stays on the card. Words always stand between a count and a date, so a count
+# never reads as a day of a month. No advice, no judgement.
+SMALL_SENTENCE = {
+    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
+    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
+    "month": (", about {month}", ", noin {month}"),
+    "most": ("most of them at {where}", "suurin osa {where}"),
+    "largest": ("the largest part at {where}", "eniten {where}"),
+    "noun_one": ("small purchase", "pieni ostos"),
+    "noun_many": ("small purchases", "pientä ostosta"),
+    "label": ("in {label}", "jaksolla {label}"),
+}
+# A preset period in words, without digits (review of #390: the period named in words). The validator accepts a
+# month only when it equals a returned period exactly, so "from July to September 2026" would not pass; these do.
+PRESET_WORDS = {
+    "last_3_months": ("in the last three months", "viimeisen kolmen kuukauden aikana"),
+    "last_6_months": ("in the last six months", "viimeisen kuuden kuukauden aikana"),
+    "last_12_months": ("in the last twelve months", "viimeisen kahdentoista kuukauden aikana"),
+    "last_month": ("last month", "viime kuussa"),
+    "this_month": ("this month", "tässä kuussa"),
+    "this_week": ("this week", "tällä viikolla"),
+    "last_week": ("last week", "viime viikolla"),
+    "year_to_date": ("this year", "tänä vuonna"),
+}
+
+
+def period_words(view: dict[str, Any], language: str) -> str | None:
+    """The period of a small-purchases view: a preset in words ("in the last three months", "viime kuussa"),
+    another period by its label ("in 3–24 Aug 2026"); None when there is neither."""
+    preset = view.get("period_preset")
+    if preset in PRESET_WORDS:
+        return pick(PRESET_WORDS[preset], language)
+    label = view.get("period")
+    return pick(SMALL_SENTENCE["label"], language).format(label=label) if isinstance(label, str) else None
+
+
+def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The small-purchases takeaway as one sentence, and the ids it cites (at most three); None when a number
+    or the period is missing."""
+    if view.get("tool") != "get_small_purchases":
+        return None
+    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+
+    def has(key: str) -> bool:
+        return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
+
+    when = period_words(view, language)
+    if not (has("count") and has("total") and when):
+        return None
+    token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
+    kind = (view.get("takeaway") or {}).get("kind")
+    s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    if kind == "none":
+        text, ids = s("none").format(period=when), []
+    elif kind == "few":
+        noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
+        ids = [nums[k]["id"] for k in ("count", "total")]
+    else:
+        categories = view.get("categories") or []
+        largest = categories[0] if categories else {}
+        key, label = largest.get("key"), largest.get("label") or ""
+        where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
+                 else (label.lower() if language == "en" else label))
+        share = (largest.get("share") or {}).get("value")
+        if re.search(r"\d", where):
+            return None
+        where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
+        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
+                                   where_part=where_part)
+        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+    return text[:1].upper() + text[1:], ids
+
+
+# The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
+# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
+# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
+# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
+# amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
+# to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
+PLAN_SENTENCE = {
+    "plan": ("These changes could add about {total}, about {year}: {cuts}.",
+             "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
+    "plan_no_year": ("These changes could add about {total}: {cuts}.",
+                     "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
+    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
+    "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
+    "each": ("eating out and spending on {other}, each {cut} less",
+             "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
+    "and": (" and ", " ja "),
+    "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
+    "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
+                  "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
+}
+PLAN_MAX_NUMBERS = 3
+
+
+def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The savings-plan takeaway (at most two sentences, three numbers) and the ids it cites; None when it
+    cannot be built."""
+    if view.get("tool") != "get_savings_plan":
+        return None
+
+    def num(node: Any) -> dict[str, Any] | None:
+        return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
+
+    save = num(view.get("safe_to_save"))
+    save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
+    s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
+    tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    if view.get("kind") != "plan":
+        return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
+    total, year = num(view.get("total_month")), num(view.get("total_year"))
+    levers = view.get("levers") or []
+    if not (total and year and levers):
+        return None
+    first_key = tools_config.SAVINGS_PLAN_FIRST[0]
+    shares, cut_ids = {}, []                 # lever key -> its share in words or as a token
+    for lever in levers:
+        words, cut = lever.get("cut_words"), num(lever.get("cut"))
+        if isinstance(words, str) and words and not re.search(r"\d", words):
+            shares[lever.get("key")] = words
+        elif cut is not None:
+            shares[lever.get("key")] = tok(cut)   # "15.0%": a cut share without words is cited, never typed
+            if cut["id"] not in cut_ids:           # two equal shares are one Number: said and counted once
+                cut_ids.append(cut["id"])
+        else:
+            return None
+    first = next((lv for lv in levers if lv.get("key") == first_key), None)
+    other_lever = next((lv for lv in levers if lv.get("key") != first_key), None)
+    other = ""
+    if other_lever is not None:
+        other = other_lever.get("category") or ""
+        if not other or re.search(r"\d", other):
+            return None
+        other = other.lower() if language == "en" else other   # "luokassa Ostokset ja vapaa-aika"
+    if first and other_lever and shares[first["key"]] == shares[other_lever["key"]]:
+        cuts = [s("each").format(cut=shares[first["key"]], other=other)]
+    else:
+        cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
+               ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
+    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
+    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
+        return None
+    cuts_text = s("and").join(cuts)
+    if with_year:
+        sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
+    else:
+        sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
+    if with_save:
+        sentences.append(s("save").format(save=tok(save)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    return " ".join(sentences), ids
 
 
 def lead_sentences(view: dict[str, Any], language: str) -> list[str]:
-    """Text that comes before a tool's numbers: the spender profile's own label and description, so
-    the answer to "What kind of spender am I?" names the type (review of #246). Text, never a number."""
-    profile = view.get("profile") if view.get("tool") == "get_spender_profile" else None
-    if isinstance(profile, dict) and isinstance(profile.get("label"), str):
-        description = profile.get("description") if isinstance(profile.get("description"), str) else ""
-        return [pick(PROFILE_LEAD, language).format(label=profile["label"], description=description).strip()]
+    """Text that comes before a tool's numbers. None today: the spender profile names its type in its own
+    sentence (answer_sentences.profile, #342), so the answer stays within two sentences."""
     return []
 
 
@@ -396,7 +573,17 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
 
     sentences: list[str] = []
     cited: list[str] = []
-    for view in views:
+    q = fold(question)
+    # #342: human sentences for the tools answer_sentences writes; the others (profile, peer, S-Bonus,
+    # safe to spend, an unknown tool) keep their own form below.
+    owns = [answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
+                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
+            for view in views]
+    generic = views   # the views that get the sentence-per-tool form below
+    if views and all(own is not None for own in owns):
+        offer = what_if_offer(views, language) if save_more_plan(views, question) else None
+        sentences, generic = own_answer([own[0] for own in owns], bool(errors), offer), []
+    for view, own in zip(generic, owns):
         # One sentence per tool: "<period>: <label>: {{n1}}; <label>: {{n2}}." Items are joined with
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
         # would read as a date). Signed values keep their sign in the token's display.
@@ -405,11 +592,17 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = safe_to_spend_sentence(view, language)
+        custom = (safe_to_spend_sentence(view, language)
+                  or small_purchases_sentence(view, language)
+                  or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])
             cited += custom[1]
             chosen = []  # the sentence above cites them
+        if own and not set(own[1]) & set(cited) and len(cited) + len(own[1]) <= MAX_TEMPLATE_NUMBERS:
+            sentences += own[0]   # the tool's notes stay on its card (Renat's length rule)
+            cited += own[1]
+            continue
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
@@ -430,7 +623,7 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)
-    if sentences and save_more_plan(views, question):
+    if generic and sentences and save_more_plan(views, question):
         sentences.append(what_if_offer(views, language))
     if errors:
         if not views and all(e.get("error") == "period_out_of_range" for e in errors):
@@ -439,4 +632,30 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             sentences.append(pick(TOOL_FAILED, language))
     if not sentences:
         sentences.append(pick(NOTHING, language))
-    return {"language": language, "text": " ".join(sentences), "cited": cited, "lesson_key": None}
+    text = " ".join(sentences)
+    if not generic:   # own_answer may leave a view out: cite exactly the tokens the text says, in order
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+    return {"language": language, "text": text, "cited": cited, "lesson_key": None}
+
+
+TOKEN = re.compile(r"\{\{(n\d+)\}\}")
+ANSWER_SENTENCES = 2   # Renat's length rule on #342: the whole answer
+ANSWER_NUMBERS = 3
+
+
+def own_answer(views: list[list[str]], errors: bool, offer: str | None) -> list[str]:
+    """The answer when answer_sentences writes every view (#342, review of #365): the first view that says
+    something is the takeaway and is always said whole; a later view is said only while the answer stays
+    within two sentences and three numbers, otherwise it is left out whole and its card shows it. The
+    save-more offer and the error sentence count as sentences."""
+    room = ANSWER_SENTENCES - (1 if errors else 0)
+    sentences: list[str] = []
+    tokens: set[str] = set()
+    for texts in views:
+        more = tokens | set(TOKEN.findall(" ".join(texts)))
+        if not sentences or (len(sentences) + len(texts) <= room and len(more) <= ANSWER_NUMBERS):
+            sentences += texts
+            tokens = more
+    if offer and sentences and len(sentences) < room:
+        sentences.append(offer)
+    return sentences

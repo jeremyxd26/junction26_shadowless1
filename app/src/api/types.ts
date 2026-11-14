@@ -1,4 +1,4 @@
-// Types for the parts of contracts/api.md (0.2.1) the app uses so far:
+// Types for the parts of contracts/api.md (0.3.2) the app uses so far:
 // sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask), 8 (what-if), 9 (evidence)
 // and 10 (labels).
 // The app ignores fields it does not know (contract section 1), so these types list only what it reads.
@@ -52,6 +52,8 @@ export type Action =
   | { type: 'open_evidence'; label: string; evidence_ref: string }
   | { type: 'ask'; label: string; prompt: string }
   | { type: 'open_whatif'; label: string; scenario: unknown }
+  /** Contract 0.3.1: one step into the host app's own screen; `target` from a closed list the app checks. */
+  | { type: 'open_host_screen'; label: string; target: string }
 
 export interface CardBase {
   card_id: string
@@ -215,6 +217,8 @@ export interface EvidenceRow {
   /** Decimal string with the bank sign: "-24.50" is 24.50 out (contract section 9). */
   amount: string
   currency: string
+  /** The amount written by the server in the request language, with the bank sign: `-€24.50`, `-24,50 €`. Shown as sent. */
+  display: string
 }
 
 export interface EvidenceResponse {
@@ -295,6 +299,9 @@ export interface AskStatus {
 
 export type AskOutcome = 'answered' | 'clarify' | 'refused' | 'fallback'
 
+/** The `done.warnings` codes of contract section 7.2; the app ignores any other code. */
+export type AskWarning = 'llm_unavailable' | 'tool_failed' | 'period_clamped' | 'conversation_reset'
+
 export interface AskDone {
   answer_id: string
   outcome: AskOutcome | string
@@ -307,7 +314,8 @@ export interface AskDone {
   lesson: { key: string; title: string; text: string } | null
   refusal: { kind: string; label: string } | null
   clarify: { question: string; options: string[] } | null
-  warnings: string[]
+  /** Known codes are `AskWarning`; unknown codes may arrive and are ignored. */
+  warnings: (AskWarning | (string & {}))[]
 }
 
 /** One validated event of the /api/ask stream (contract section 7.2). */

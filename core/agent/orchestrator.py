@@ -49,8 +49,9 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
-from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
-from core.answer_text import scan_numbers
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
+                                  render, repeated_period, unavailable_claim, validate)
+from core.answer_text import find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -85,6 +86,23 @@ WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bif i\b|\bcut\b|\breduc|\bjos\b|vähen
 PURCHASE_REFERENCE = re.compile(
     r"\bwhat\s+(?:was|is|were)\b|\bwhat'?s\b|\bthat\b|\bpurchase\w*|\bpayment\b|\bcharge\b|\bbought\b"
     r"|\bostos\w*|\bmaksu\w*|\bmikä\s+(?:se|oli|tämä|tuo)\b|\bmitä\s+(?:se|oli)\b|\bostin\b", re.I)
+# A question about Sentti's own question (#398): "why are you asking me about 1080 euros?", "miksi kysyt
+# siitä ostoksesta?". With a pending review it means the review's purchase, with its amount or with none.
+SENTTI_QUESTION = re.compile(
+    r"\bwhy\s+(?:are|do|did)\s+you\s+ask(?:ing)?\b|\bwhy\s+(?:this|that|the)\s+question\b"
+    r"|\bwhat\s+is\s+(?:this|that|the|your)\s+question\b|\bwhat\s+are\s+you\s+asking\b"
+    r"|\bmiksi\s+kysy(?:t|tte|it|tit)\b|\bmiksi\s+(?:tämä|tuo|se)\s+kysymys\b"
+    r"|\b(?:mitä|mistä)\s+(?:tämä|tuo|se)\s+kysymys\b|\bmitä\s+kysyt\b", re.I)
+# After the question phrase and the amount, only these may be left, or the message asks something else
+# ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
+REVIEW_FILLER = re.compile(
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
+    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+# A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
+# nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
+REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
+REVIEW_BARE = re.compile(r"(?:about|me|this|that|it|minulta|sitä|tätä|siitä|tästä|sita|tata|siita|tasta)", re.I)
+_AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
 
@@ -193,6 +211,8 @@ class _Answer:
     clarify: dict[str, Any] | None = None
     text: str | None = None
     text_rendered: str | None = None
+    introduced: bool = False   # the answer is Sentti's introduction, which itself says Sentti is an AI (#420)
+    offer_contact: bool = False   # the rules' "I can't answer that one yet" answer (PlanResult.offer_contact)
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
@@ -201,6 +221,10 @@ class _Answer:
     # "no_model" (no key), "off", "budget", "pause" (decided before planning by
     # Pipeline._model_unavailable), or "error" (it was asked and failed).
     model_unavailable: str | None = None
+    # Per role (#383): the account-level reason above, or the role's own ("role_paused", "model_refused").
+    # The planner's decides whether the model plans; the composer's whether it writes.
+    planner_unavailable: str | None = None
+    composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
@@ -259,6 +283,7 @@ class Pipeline:
     def _run(self, req: AskRequest, emit: Emit, a: _Answer) -> str:
         conv, reset = self.store.resolve(req.conversation_id, req.customer_id)
         a.conversation = conv
+        emit = self._with_answer_fields(emit, a)
         message = guard.clean(req.message)
         a.question = message
         detected = guard.detect_language(message)
@@ -298,6 +323,8 @@ class Pipeline:
         planner_fallback = False
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
+        a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
+        a.composer_unavailable = a.model_unavailable or self._role_unavailable("compose")
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -340,16 +367,26 @@ class Pipeline:
                                           "status": "ok" if kind == "control" else "not_run"})
                 # The rules answered in the model's place: after a planner error, or for a question
                 # they do not recognise while the model may not be used (#244).
-                in_place = source == "fallback" or (a.model_unavailable is not None
+                in_place = source == "fallback" or (a.planner_unavailable is not None
                                                     and not getattr(plan, "recognised", True))
-                if in_place:
+                if in_place or (model_failed and "decline" not in controls):   # a rules refusal carries none
+                    # An empty plan the rules replaced carries the warning like a failed one: the note and the
+                    # warning always come together (#383, from the review of #368).
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
+                clarify = controls["ask_clarifying_question"]
+                if source == "model" and not self._options_work(clarify.options, lang, history, message):
+                    # A tapped option is sent as the next message: one the rules do not recognise would
+                    # get another clarifying question when the model is off (#304). The rules' own
+                    # clarifying question for this message is sent instead.
+                    a.planner_turns.append({"round": rnd, "source": "rules", "error": "clarify options not recognised"})
+                    clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341, r-coord's decision).
-                return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=model_failed)
+                a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
+                return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
                 responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
@@ -389,8 +426,10 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback
-                                             or a.model_unavailable not in (None, "no_model"), a=a)
+                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
+        # With no key ("no_model") the template writes directly: running the rule model's own template
+        # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
+        # own state decides, not the planner's (#383).
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
         # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
@@ -398,7 +437,7 @@ class Pipeline:
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
         if used_template:
-            a.model_unavailable = a.model_unavailable or "error"
+            a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
@@ -408,7 +447,7 @@ class Pipeline:
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.follow_ups(message, lang),
+                      "cited": cited, "follow_ups": template.follow_ups(message, lang, views=views),
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
@@ -500,14 +539,27 @@ class Pipeline:
             log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
             return "error"
 
+    def _role_unavailable(self, kind: str) -> str | None:
+        """A role's own reason ("role_paused", "model_refused") or None; a model without roles has none."""
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe(kind)
+        except TypeError:          # a scripted model whose unavailable_reason takes no role
+            return None
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model role state unreadable (%s)", type(exc).__name__)
+            return None
+
     @staticmethod
     def _warn_llm_unavailable(a: _Answer) -> None:
         if "llm_unavailable" not in a.warnings:
             a.warnings.append("llm_unavailable")
 
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
-        if a.model_unavailable is not None and a.model_unavailable != "no_model":
-            # The model may not be used: the rules plan, with no model request (#244).
+        if a.planner_unavailable is not None and a.planner_unavailable != "no_model":
+            # The planner may not be used: the rules plan, with no model request (#244, #383).
             return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
@@ -661,6 +713,23 @@ class Pipeline:
                     a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                     continue
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
+                if not errors:
+                    # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
+                    # gets the reason and the template writes after it.
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    claim = None if request.errors else unavailable_claim(draft.text)
+                    if claim:
+                        # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
+                        errors.append(f"'{claim}': no calculation failed; say what the data shows instead")
+                    inside = contents_claim(draft.text)
+                    if inside:
+                        # No tool says what a category contains (#395).
+                        errors.append(f"'{inside}': name a category only by its label, never what it contains")
+                    repeated = repeated_period(draft.text, numbers)
+                    if repeated:
+                        # "€3,010.59 a month a month": model drafts only. A template that trips it would be
+                        # replaced by the "nothing found" text; templates are checked by tests instead.
+                        errors.append(f"'{repeated}': the number's display already says how often; write it once")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
@@ -673,9 +742,32 @@ class Pipeline:
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
 
+    @staticmethod
+    def _with_answer_fields(emit: Emit, a: _Answer) -> Emit:
+        """Every `done` event gets `actions` and `ai_disclosure` (#420, contract 0.3.3):
+        - a refusal, the rules' "I can't answer that one yet" answer (a.offer_contact) and the "nothing
+          found" fallback (outcome `fallback`) carry the way to a human, `open_host_screen` with target
+          `contact_bank`; the general clarifying question does not;
+        - the first answer of a conversation carries the AI disclosure, unless it is the introduction,
+          which says it itself; a later answer never repeats it."""
+        def send(event: str, payload: dict[str, Any]) -> None:
+            if event == "done":
+                lang = a.language.get("resolved") or "en"
+                disclose = a.conversation is not None and not a.conversation.disclosed and not a.introduced
+                if a.conversation is not None:
+                    a.conversation.disclosed = True
+                payload = {**payload,
+                           "actions": [tool_config.contact_bank_action(lang)]
+                           if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
+                           else payload.get("actions", []),
+                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
+            emit(event, payload)
+        return send
+
     def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
         """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
         which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        a.introduced = template.meta_text(intent, lang) == template.pick(template.INTRO, lang)
         text = self._deliver(template.meta_text(intent, lang), {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
@@ -697,8 +789,29 @@ class Pipeline:
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 
+    def _options_work(self, options: list[str], lang: str, history: list[dict[str, Any]], message: str) -> bool:
+        """Every option of a model-written clarifying question is a next message the rules recognise
+        (a full question such as "Where did my money go?", or "Last month" after this question)."""
+        after = history + [{"question": message, "calls": [], "results": []}]
+        for option in options:
+            plan = self.fallback.plan(PlanInput(question=plain_text(option), language=lang, as_of=self.as_of.isoformat(),
+                                                tools=self.registry.schemas(), history=after))
+            if not getattr(plan, "recognised", True) or any(c.name == "ask_clarifying_question" for c in plan.calls):
+                return False
+        return True
+
+    def _rules_clarify(self, plan_in: PlanInput, lang: str) -> Any:
+        """The rules' clarifying question for this message, or their general one."""
+        for call in self.fallback.plan(plan_in).calls:
+            if call.name == "ask_clarifying_question":
+                return self.registry.parse(call.name, call.args)[1]
+        return dataclasses.make_dataclass("Clarify", ["question", "options"])(
+            template.pick(template.CLARIFY_GENERAL["question"], lang),
+            list(template.pick(template.CLARIFY_GENERAL["options"], lang)))
+
     def _clarify(self, args: Any, lang: str, emit: Emit, a: _Answer, not_worked_out: bool = False) -> str:
-        question, options = args.question, list(args.options)
+        # Plain text (#302): a model may write markdown here too.
+        question, options = plain_text(args.question), [plain_text(o) for o in args.options]
         # The clarifying question is model text: it passes the same text rules (R1, R9, R7).
         if any(check_text(t, Allowed(frozenset({self.as_of}), frozenset())) for t in [question, *options]):
             question = template.pick(template.CLARIFY["question"], lang)
@@ -724,14 +837,39 @@ class Pipeline:
         except (DataUnavailable, psycopg.OperationalError, PoolTimeout):
             return None
 
+    @staticmethod
+    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> tuple[bool, list[date]]:
+        """The message asks only about Sentti's question: after the question phrase, the amount and any date,
+        nothing is left but filler words and punctuation (a confident full match, as the other rules).
+        Without an amount it also needs an anchor (a purchase word or "this question", in the phrase or
+        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Returns the
+        dates it removed: the caller checks they are the purchase's own date."""
+        spans, rest = find_dates(message[:phrase.start()] + " " + message[phrase.end():], blank_all=True)
+        words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
+        dates = [span.start for span in spans]
+        if any(not REVIEW_FILLER.fullmatch(w) for w in words):
+            return False, dates
+        if has_amount:
+            return True, dates
+        anchored = (any(REVIEW_ANCHOR.fullmatch(w) for w in words) or re.search(r"question|kysym", phrase.group(0), re.I)
+                    or all(REVIEW_BARE.fullmatch(w) for w in words))
+        return bool(anchored), dates
+
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
         """Answer "what was that €1,080?" (#341) when an amount in the question is within a euro of the
-        pending review's purchase: the purchase's category, date and amount, why Sentti asks, and the
-        review card. False (the normal path answers) for any other question."""
+        pending review's purchase, and "why are you asking me about 1080 euros?" or "why are you asking
+        about that purchase?" (#398), a question about Sentti's own question, with the review's amount or
+        with none: the purchase's category, date and amount, why Sentti asks, and the review card. False
+        (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
-        if not asked or WHAT_IF_WORDS.search(message) or not PURCHASE_REFERENCE.search(message) or a.flags:
+        phrase = SENTTI_QUESTION.search(message)
+        about_question, named_dates = (self._only_about_the_review(message, phrase, bool(asked)) if phrase
+                                       else (False, []))
+        if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
+        if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
+            return False
         # A refusal rule always wins, as for the introduction (#287): "should I invest €1,080 in bitcoin?"
         # or "will the bank approve my €1,080 loan?" is refused on the normal path.
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
@@ -741,9 +879,14 @@ class Pipeline:
             return False
         # A probe on a private registry first, so a question with another amount registers no number.
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
-        if probe is None or not any(abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR
-                                    for v in asked):
+        if probe is None:
             return False
+        # Any amount in the question must be the purchase's; a question about Sentti's question may name none.
+        if (asked or not about_question) and not any(
+                abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
+            return False
+        if about_question and any(d != date.fromisoformat(probe["date"]) for d in named_dates):
+            return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
         card = self._review_card(ctx, review)
         if card is None:
             return False
@@ -753,8 +896,8 @@ class Pipeline:
         when = (f"{purchase_day.day}.{purchase_day.month}.{purchase_day.year}" if lang == "fi"
                 else f"{purchase_day.day} {MONTHS_EN[purchase_day.month - 1]} {purchase_day.year}")
         category = tool_config.label(tool_config.CATEGORY_LABELS.get(card["category"], (card["category"],) * 2), lang)
-        text = template.pick(template.REVIEW_PURCHASE, lang).format(
-            category=category, date=when, amount="{{" + number_id + "}}", why=card["why"])
+        text = template.pick(template.REVIEW_WHY if about_question else template.REVIEW_PURCHASE, lang).format(
+            category=category, date=when, amount="{{" + number_id + "}}")
         draft, errors = validate({"language": lang, "text": text, "cited": [number_id], "lesson_key": None},
                                  language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
         if errors or draft is None:
@@ -824,6 +967,8 @@ class Pipeline:
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
             "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
+            "planner_unavailable": a.planner_unavailable,     # per role (#383)
+            "composer_unavailable": a.composer_unavailable,
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

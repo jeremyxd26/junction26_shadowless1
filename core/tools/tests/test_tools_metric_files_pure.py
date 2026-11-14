@@ -43,7 +43,7 @@ def test_per_bill_file_returns_one_statement_result():
 # Every file that carries the shared classification block (params .. cls). core/marts/build.py takes its
 # copy from 02, so a block that is the same here is also the one the marts are built with.
 BLOCK_FILES = ("02_baskets.sql", "03_safe_to_spend.sql", "03_safe_to_spend_bills.sql", "04_what_if.sql",
-               "05_spender_profile.sql", "06_peer_benchmark.sql")
+               "05_spender_profile.sql", "06_peer_benchmark.sql", "08_small_purchases.sql")
 BLOCK = re.compile(r"^-- -+ shared classification block: begin -*$\n(.*?)^-- -+ shared classification block: end",
                    re.S | re.M)
 

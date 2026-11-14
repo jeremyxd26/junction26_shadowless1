@@ -203,6 +203,16 @@ def bill_effect(due: date, next_payday: date, amount: Decimal, reserved: Decimal
     return "full", money(amount)
 
 
+def fits_regular(item: BillItem, amount: Decimal) -> bool:
+    """A matched bill is the customer's regular bill only when its rhythm and amount fit that bill (#400): the
+    series is paid once a month (not `spread` over several payments a month, which mixes payees and billing
+    periods, like utilities), and the amount is at least config.BILL_FIT_MIN_RATIO of its typical month.
+    Otherwise it is a bill from the same payee category: never "your regular bill", and no percentage
+    against a monthly total."""
+    typical = Decimal(str(item.typical_month.value))
+    return item.status != "spread" and typical > 0 and amount >= typical * config.BILL_FIT_MIN_RATIO
+
+
 def signal_codes(bill: BillInput, match_status: str, typical: Decimal | None, largest: Decimal | None,
                  as_of: date) -> list[str]:
     """The warning signs of decision 10 (#242), in a fixed order; never a verdict."""
@@ -221,6 +231,13 @@ def signal_codes(bill: BillInput, match_status: str, typical: Decimal | None, la
     if 0 <= (bill.due_date - as_of).days < config.BILL_SHORT_TERM_DAYS:
         codes.append("short_term")
     return codes
+
+
+def contact_bank_wanted(codes: list[str]) -> bool:
+    """The way to the bank (#420, decided in the review of #435): a failed IBAN or reference check, or an
+    unknown payee together with another sign. An unknown payee, a short term or a high amount alone do not
+    bring it."""
+    return bool({"iban_check_failed", "reference_check_failed"} & set(codes)) or ("new_payee" in codes and len(codes) > 1)
 
 
 def draft_allowed(bill: BillInput) -> bool:
@@ -256,15 +273,18 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
 
     items = get_recurring_bills(ctx, {"include_income": False}).data.bills
     status, item = match_bill(bill.payee, items)
-    if status == "matched":
+    is_regular = item is not None and fits_regular(item, bill.amount)
+    if is_regular:
         match_text = _t("match_matched", lang, label=item.label)
+    elif item is not None:   # the same payee category, not the regular bill (#400)
+        match_text = _t("match_category", lang, label=item.label)
     else:
         match_text = _t(f"match_{status}", lang)
     match = {"status": status, "bill_id": item.bill_id if item else None, "label": item.label if item else None,
              "text": match_text}
 
     comparison = None
-    if item is not None:
+    if is_regular:
         typical, typical_v = item.typical_month, _value(item.typical_month)
         parts = {"current": (amount_n, bill.amount), "baseline": (typical, typical_v)}
         # Each composite of the bill records its period: its first part can be the inline bill amount, which
@@ -279,6 +299,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         comparison = {"baseline": _dump(typical), "change": _dump(reg(change)), "change_pct": _dump(change_pct),
                       "tone": "worse" if change_v > 0 else "better" if change_v < 0 else "neutral",
                       "label": _t("comparison", lang, label=item.label)}
+    if item is not None:
         basket = {"key": "regular_essentials", "label": config.label(config.BASKET_LABELS["regular_essentials"], lang),
                   "text": _t("basket_regular", lang, label=item.label)}
     else:
@@ -297,7 +318,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
     largest = max(regular, key=lambda i: _value(i.typical_month)).typical_month if regular else None
     codes = signal_codes(bill, status, _value(item.typical_month) if item else None,
                          _value(largest) if largest else None, ctx.as_of)
-    signals = [_signal(code, lang, amount_n, item, largest) for code in codes]
+    signals = [_signal(code, lang, amount_n, item, largest, is_regular) for code in codes]
 
     # a small note that never repeats a signal: a failed check is a signal, a past due date a warning
     warnings = [_t("warn_past", lang)] if due < ctx.as_of else []
@@ -307,6 +328,8 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         actions.append({"type": "add_to_payments", "label": _t("action", lang),
                         "draft": {"payee": bill.payee, "iban": bill.iban, "reference": bill.reference,
                                   "amount": _dump(amount_n), "due_date": due.isoformat()}})
+    if contact_bank_wanted(codes):   # #420: the way to a human at the bank
+        actions.append(config.contact_bank_action(lang))
 
     evidence.write(ctx.conn, nb.specs)
     return {
@@ -326,10 +349,13 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
     }
 
 
-def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, largest: Number | None) -> dict[str, Any]:
+def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, largest: Number | None,
+            regular: bool) -> dict[str, Any]:
     if code == "amount_above_usual" and item is not None:
-        return {"code": code, "text": _t("sig_above_usual", lang, amount=amount_n.display,
-                                         typical=item.typical_month.display),
+        # the basis is named: the regular bill's usual amount, or all payments of the category a month (#400)
+        key = "sig_above_usual" if regular else "sig_above_category"
+        return {"code": code, "text": _t(key, lang, amount=amount_n.display, typical=item.typical_month.display,
+                                         label=item.label),
                 "numbers": [_dump(amount_n), _dump(item.typical_month)]}
     if code == "amount_above_usual":
         return {"code": code, "text": _t("sig_above_largest", lang, amount=amount_n.display, largest=largest.display),

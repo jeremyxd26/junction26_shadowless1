@@ -56,7 +56,7 @@ With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prom
   - The pipeline retries a failed call once, and the adapter never retries the same model again. A 503 tries the fallback model once, and flash is then skipped for 3 minutes.
   - One answer sends at most 8 requests and gets 15 s for all its model calls: each planner call at most 9 s and each composer call at most 5 s, within those 15 s. A question the rules plan gives the composer its 5 s, not the rest of the 15 s, because the template writes the same answer at once.
   - A timeout, a network error or a 503 (on the fallback model too) fails only that call. It never pauses the model for other users, and the same answer sends no second request of that kind (#341).
-  - A 429, 401, 403 or 404 pauses model calls for 5 minutes, and three malformed, empty or blocked responses in a row pause them for 30 s.
+  - A 429, 401 or 403 pauses model calls for 5 minutes. A 404 (a model id the key cannot use) moves that role to its fallback and pauses nothing; the log says so, and after `GEMINI_MODEL_REFUSAL_S` seconds (default 600, between 60 and 3600) the id gets one probe. A role paused after a failure streak, or left with no usable model id, makes the model unavailable for the answer: the rules plan and the template writes, with no request tried. Three malformed, empty or blocked responses in a row pause that role (planner or composer) for 30 s, not the other one.
 
 The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
 
@@ -103,6 +103,12 @@ GEMINI_PLANNER=model python core/eval/run.py --source core.agent.gemini_eval:mak
 python core/agent/gemini_eval.py "What if I cut it a little?"     # free-form questions
 ```
 Every request counts against the team's daily model budget. Keep the cache on, and run each pass once. A repeated run is served from the cache. The offline tests replay recorded exchanges from `core/agent/tests/recordings/` and need no key and no network.
+
+To re-make a recording after a prompt change, record with the tool cache off, so every tool really runs and is written into the recording, and with the models the service runs, for example:
+```
+TOOL_CACHE=off GEMINI_PLANNER_MODEL=gemini-3.5-flash-lite GEMINI_PLANNER_THINKING=minimal GEMINI_COMPOSER_MODEL=gemini-3.5-flash-lite GEMINI_COMPOSER_THINKING=minimal python core/agent/gemini_eval.py "Where did my money go?" --record var/recordings
+```
+Add `GEMINI_PLANNER=model` for a question the rules would plan. Then copy the file from `var/recordings/` into `core/agent/tests/recordings/` under a descriptive name.
 
 ## Dev environment
 

@@ -254,7 +254,7 @@ for _id, _unit, _name, _summary in [
 ]:
     METHODS[f"bonus_estimate.{_id}@1"] = MethodInfo(_unit, _name, _summary, BONUS_DOC)
 
-# The bill explanation (#242, contracts/api.md section 11; the rules in metrics.md section 3.3). The two
+# The bill explanation (#242, contracts/api.md section 11; the rules in metrics.md section 3.4). The two
 # input methods appear in an evidence view only as the inline part of a bill composite: an amount in euros.
 BILL_DOC = METRICS_DOC + "#34-a-bill-and-safe-to-spend-242"
 for _id, _unit, _name, _summary in [
@@ -282,6 +282,45 @@ for _id, _unit, _name, _summary in [
       "Pienempi kahdesta: laskun kanssa uudelleen laskettu saldoraja ja kuukausibudjetin raja.")),
 ]:
     METHODS[_id] = MethodInfo(_unit, _name, _summary, BILL_DOC)
+# Small purchases (#256): the output columns of 08_small_purchases.sql, metrics.md section 12.
+SMALL_DOC = METRICS_DOC + "#12-small-purchases-256"
+for _id, _unit, _name, _summary in [
+    ("count", Unit.COUNT, ("Small purchases", "Pieniä ostoksia"),
+     ("Purchases in restaurants, entertainment and lifestyle of at most the small amount, in the period.",
+      "Ravintola-, viihde- ja elämäntapaostokset, enintään pienen summan suuruiset, jakson aikana.")),
+    ("total_eur", Unit.EUR, ("Small purchases in total", "Pienet ostokset yhteensä"),
+     ("The sum of those small purchases.", "Näiden pienten ostosten summa.")),
+    ("avg_eur", Unit.EUR, ("Average small purchase", "Pienen ostoksen keskihinta"),
+     ("The total divided by the number of small purchases.", "Summa jaettuna pienten ostosten määrällä.")),
+    ("month_avg_eur", Unit.EUR_PER_MONTH, ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
+     ("The total divided by the number of whole months in the period.",
+      "Summa jaettuna jakson kokonaisten kuukausien määrällä.")),
+    ("share_pct", Unit.PERCENT, ("Share", "Osuus"),
+     ("A part of a total, in percent: the small purchases of everyday spending, or a category of the small "
+      "purchases.", "Osa kokonaisuudesta prosentteina: pienet ostokset arjen kulutuksesta tai luokka pienistä "
+      "ostoksista.")),
+    ("flexible_total_eur", Unit.EUR, ("Everyday spending", "Arjen kulutus"),
+     ("Everyday spending in the period, refunds netted.", "Arjen kulutus jakson aikana, palautukset vähennettyinä.")),
+    ("max_amount_eur", Unit.EUR, ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),
+     ("The limit a purchase must not exceed to count as small.", "Raja, jota pieneksi laskettu ostos ei ylitä.")),
+]:
+    METHODS[f"small_purchases.{_id}@1"] = MethodInfo(_unit, _name, _summary, SMALL_DOC)
+
+# The savings plan (#369, metrics.md section 13): the sum of its cut levers, each a what-if saving.
+PLAN_DOC = METRICS_DOC + "#13-savings-plan-369"
+METHODS["savings_plan.total_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
+    ("The sum of the plan's cuts, each the what-if saving of a different category, so nothing is counted twice.",
+     "Suunnitelman vähennysten summa; kukin on eri luokan mitä jos -säästö, joten mitään ei lasketa kahdesti."),
+    PLAN_DOC)
+METHODS["savings_plan.total_year_eur@1"] = MethodInfo(
+    Unit.EUR_PER_YEAR, ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
+    ("The monthly total times twelve.", "Kuukausisumma kertaa kaksitoista."), PLAN_DOC)
+METHODS["savings_plan.cut_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Cut share", "Vähennyksen osuus"),
+    ("How much of a category's usual spending the plan cuts, a setting of the plan.",
+     "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
+    PLAN_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

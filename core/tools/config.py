@@ -82,6 +82,14 @@ METHODS = {
     # get_balance_forecast (#257, metrics.md section 3.3)
     "daily_pace": "balance_forecast.daily_pace_eur@1",
     "bills_to_date": "balance_forecast.bills_to_date_eur@1",
+    # get_small_purchases (#256; metrics.md section 12, 08_small_purchases.sql: the output columns)
+    "small_count": "small_purchases.count@1",
+    "small_total": "small_purchases.total_eur@1",
+    "small_avg": "small_purchases.avg_eur@1",
+    "small_share": "small_purchases.share_pct@1",
+    "small_flexible": "small_purchases.flexible_total_eur@1",
+    "small_max": "small_purchases.max_amount_eur@1",
+    "small_month_avg": "small_purchases.month_avg_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -206,10 +214,16 @@ BILL_AMOUNT_MAX = Decimal("100000.00")
 BILL_ABOVE_USUAL_RATIO = Decimal("1.5")    # a matched bill at least 150% of its typical month (decision 10)
 BILL_ABOVE_LARGEST_RATIO = Decimal("1")    # any other bill above the largest typical month of the regular bills
 BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (and not before it)
+# A matched bill is the regular bill only when it fits it (#400): a once-a-month series and at least half of its
+# typical month. Otherwise it is a bill from the same payee category (a quarterly water bill among utilities).
+BILL_FIT_MIN_RATIO = Decimal("0.5")
 
 BILL_TEXT: dict[str, tuple[str, str]] = {
     "amount": ("Amount due", "Maksettava summa"),
     "match_matched": ("This is your regular {label} bill.", "Tämä on tavallinen laskusi: {label}."),
+    # #400: the same payee category, but not the regular bill (another billing period or another amount)
+    "match_category": ("This bill is from the same payee category as your regular {label} payments.",
+                       "Tämä lasku on samasta maksunsaajaluokasta kuin tavalliset maksusi: {label}."),
     "match_not_matched": ("This payee is not one of your regular bills.",
                           "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
     "match_no_payee": ("Add the payee's name to compare this bill with your regular bills.",
@@ -231,14 +245,14 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                             "ennen sitä."),
     # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
     # free until payday, then at most one sts_* sentence on the weekly number.
-    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
-                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
-                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+    "effect_excess": ("{reserved} is already set aside for your {label} payments before payday on {payday}, so "
+                      "only the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
                       "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
-                       "covers this one, so nothing changes.",
-                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+    "effect_covered": ("{reserved} is already set aside for your {label} payments before payday on {payday}, "
+                       "which covers this one, so nothing changes.",
+                       "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
                        "tämän laskun, joten mikään ei muutu."),
     "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
@@ -267,6 +281,11 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     # No ratio in the words: the threshold is a setting (BILL_ABOVE_USUAL_RATIO), the text stays true for any
     "sig_above_usual": ("This bill is {amount}, much more than usual ({typical}).",
                         "Tämä lasku on {amount}, paljon tavallista enemmän ({typical})."),
+    # #400: a bill of the same payee category is compared with the category's whole month, and says so
+    "sig_above_category": ("This bill is {amount}, much more than all your {label} payments in a usual month "
+                           "({typical}).",
+                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi ({label}) tavallisena "
+                           "kuukautena ({typical})."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
@@ -386,6 +405,23 @@ METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
 
 PROFILE_FILE = "05_spender_profile.sql"
 PEER_FILE = "06_peer_benchmark.sql"
+# The peer comparison invites a change only when the customer spends more than the median by more than
+# this many percent (#418); within the margin either way it is "about the same", below it the answer says
+# that is already their saving. Compared on the value as the text shows it (one decimal).
+PEER_ACTION_MARGIN_PCT = 1.0
+# Spending that is not cut (regular essentials, housing, utilities, groceries): no offer to cut it.
+PEER_NO_CUT_ACTION = frozenset({"regular_essentials", "Housing", "Utilities", "Groceries"})
+
+
+def peer_gap_shown(value) -> float:
+    """The peer gap in percent as the text shows it (one decimal), so "0.0%" is never said as a gap."""
+    return round(float(value), 1)
+
+
+def peer_offers_cut(metric: str, value) -> bool:
+    """The peer answer offers a cut (the text and the card's action together, #418): above the median by more
+    than the margin, for spending that can be cut."""
+    return value is not None and metric not in PEER_NO_CUT_ACTION and peer_gap_shown(value) > PEER_ACTION_MARGIN_PCT
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
@@ -595,7 +631,8 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
         "Samankaltaisia asiakkaita on liian vähän vertailuun, joten vertailua ei näytetä.",
     ),
     "action_label": ("How could I spend less here?", "Miten voisin kuluttaa tähän vähemmän?"),
-    "action_prompt": ("How could I spend less on {what}?", "Miten voisin kuluttaa vähemmän: {what}?"),
+    # The category's offer is the what-if itself; the what-if rule then asks by how much (#418).
+    "action_prompt": ("What if I cut {what}?", "Entä jos vähentäisin luokassa {what}?"),
     "action_prompt_total": ("How could I save more?", "Miten voisin säästää enemmän?"),
 }
 
@@ -882,6 +919,46 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
                       "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
 }
+# The effect of an answer (#382), built from the real difference of the overview's numbers before and
+# after, within the answer length rule (two sentences, three numbers). {amount} is the purchase, {before}
+# and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
+# when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
+LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
+    "moved": ("Your safe to spend this week goes from {before} to {after}: {amount} {why}.",
+              "Tämän viikon turvallisesti käytettävissä oleva summa on nyt {after}, kun se oli {before}: "
+              "{amount} {why}."),
+    "basket": ("{amount} {why}.", "{amount} {why}."),
+    "why_unexpected_reserve": ("now counts as an unexpected necessity, so the reserve grows",
+                               "lasketaan nyt odottamattomaksi välttämättömäksi menoksi, joten varaus kasvaa"),
+    "why_unexpected": ("now counts as an unexpected necessity",
+                       "lasketaan nyt odottamattomaksi välttämättömäksi menoksi"),
+    "why_everyday": ("now counts as everyday spending", "lasketaan nyt arjen kulutukseksi"),
+    "why_pending": ("is waiting for your answer again", "odottaa taas vastaustasi"),
+    "why_closed": ("is back in the group the rules give it", "on taas siinä ryhmässä, johon säännöt sen sijoittavat"),
+    "save_moved": ("This week's safe to spend stays the same, but what you can typically put aside goes from "
+                   "{before} to {after}.",
+                   "Tämän viikon turvallisesti käytettävissä oleva summa pysyy samana, mutta tavallisesti "
+                   "säästöön jäävä summa on nyt {after}, kun se oli {before}."),
+    "same_budget": ("This does not change this week's safe to spend: your monthly budget, not this purchase, sets "
+                    "the limit.",
+                    "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: kuukausibudjettisi, ei "
+                    "tämä ostos, asettaa rajan."),
+    "same_balance": ("This does not change this week's safe to spend: your balance sets the limit, and this "
+                     "purchase is already in it.",
+                     "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
+                     "ja tämä ostos näkyy siinä jo."),
+}
+# ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------
+# The label of the `open_host_screen` action with target `contact_bank`: the bank's own contact screen,
+# carried by every refusal and by a bill explanation with warning signs. It names the destination only.
+HOST_CONTACT_BANK: tuple[str, str] = ("Contact S-Pankki", "Ota yhteyttä S-Pankkiin")
+
+
+def contact_bank_action(language: str) -> dict[str, str]:
+    """The action as the API sends it: type, label and target, nothing else (contracts/api.md section 3)."""
+    return {"type": "open_host_screen", "label": label(HOST_CONTACT_BANK, language), "target": "contact_bank"}
+
+
 # ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.
@@ -922,3 +999,72 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+
+# ---- small purchases (#256, metrics.md section 12, 08_small_purchases.sql) --------------------------
+# The flexible everyday categories whose small purchases are counted: the everyday_spending basket's
+# categories except Travel (classify.basket_of). The default limit is a setting; the tool allows 1..25.
+SMALL_PURCHASE_CATEGORIES: tuple[str, ...] = ("Entertainment", "Lifestyle", "Restaurants")
+SMALL_PURCHASE_MAX_EUR = "10.00"     # euros, the default of max_amount (and 08's app.small_max)
+SMALL_PURCHASE_MAX_RANGE = (1, 25)   # the allowed max_amount, in euros
+SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (decision 5 of #256)
+# The default period: the last 3 complete months; one month holds too few small purchases for any of the
+# personas (coordinator, #256, after the persona data). 08_small_purchases.sql has the same default.
+SMALL_PURCHASE_DEFAULT_PERIOD = "last_3_months"
+# Where the small purchases of a category happen, as the takeaway sentence names them ("most of them at
+# restaurants and cafés"); a category's label otherwise.
+SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {
+    "Restaurants": ("restaurants and cafés", "ravintoloissa ja kahviloissa"),
+    "Entertainment": ("entertainment", "viihteessä"),
+    "Lifestyle": ("lifestyle shopping", "lifestyle-ostoksissa"),
+}
+SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Small purchases", "Pienet ostokset"),
+    "count": ("Small purchases", "Pieniä ostoksia"),
+    "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
+    "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "month_average": ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
+    "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
+    "flexible": ("Everyday spending", "Arjen kulutus"),
+    "max_amount": ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),
+    "category_share": ("Share of small purchases", "Osuus pienistä ostoksista"),
+    "show": ("Show the purchases", "Näytä ostokset"),
+    # The what-if question for the largest category, with no amount: the user says how much (#142).
+    "action_label": ("What if I cut {what}?", "Kokeile vähentää: {what}"),
+    "action_prompt": ("What if I cut {what}?", "Mitä jos vähentäisin kulutusta luokassa {what}?"),
+}
+
+# ---- the savings plan (#369, metrics.md section 13) ---------------------------------------------------
+# "How could I save more?": a few cuts below the usual pace, from the what-if tool, with one total a month and
+# a year. The two cut levers are always different categories, so nothing is counted twice; small purchases are
+# no lever (in the data they are restaurant visits, which the first lever covers). The S-Bonus is never shown
+# with the plan: its question is the answer's first follow-up (coordinator, #411). The bank button uses the one
+# label of SAFE_TO_SAVE_TEXT["host_monthly_saving"] (#267).
+SAVINGS_PLAN_FIRST = ("Restaurants", 20)             # eating out, cut by 20 %
+SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the flexible everyday categories
+SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
+SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
+SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1",
+                        "cut_pct": "savings_plan.cut_pct@1"}
+# A cut share in words, so no answer needs a digit for it; any other share is cited as its Number (#411).
+SAVINGS_PLAN_CUT_WORDS: dict[int, tuple[str, str]] = {
+    10: ("a tenth", "kymmenyksen"), 20: ("a fifth", "viidenneksen"), 25: ("a quarter", "neljänneksen"),
+    50: ("half", "puolet"),
+}
+# No lever reaches the threshold: the baskets card, where the money goes (coordinator, #411), over the same
+# window as the earlier save-more answer.
+SAVINGS_PLAN_NONE_BASKETS = {"period": {"preset": "last_6_months"}}
+SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Your savings plan", "Säästösuunnitelmasi"),
+    "total_month": ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
+    "total_year": ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
+    # card rows in words: no digit outside a Number on the card (review of #411)
+    "lever": ("{what}, {words} less", "{what}, {words} vähemmän"),
+    "lever_no_words": ("{what}, less than usual", "{what}, tavallista vähemmän"),
+    "cut": ("Cut in {what}", "Vähennys: {what}"),
+    # the answer's first follow-up when the S-Bonus estimate is offered; the bonus rule claims it as written
+    "bonus_follow_up": ("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
+                      "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}

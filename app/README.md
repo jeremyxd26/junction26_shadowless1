@@ -1,6 +1,6 @@
 # Sentti app
 
-The mobile web module of Sentti: a 375 px wide app that runs inside the bank's mobile app (a WebView). It opens on the overview: this week's safe to spend, the three spending baskets and questions to ask. Every number is a chip that opens how it was calculated.
+Sentti is an embeddable web module for S-mobiili, 375 px, inside a WebView. It opens on this week's safe to spend, the three spending baskets and questions to ask; the chat-first thread is specified in `DESIGN.md` section 3. Every number is a chip that opens how it was calculated.
 
 Stack: Vite, React, TypeScript and Tailwind CSS. The build is static. In production it is served from the same host as the core, so the API is `/api` on the same origin.
 
@@ -39,7 +39,7 @@ What mock mode has, and what it does not invent:
 - Overviews: Sanna (pending review) and Aino (CUST00042). Other personas get the contract's `customer_not_found` error.
 - Evidence: the two contract examples; the safe-to-spend parts and the review purchase, built from the overview's own data. Other numbers show their method with a note that the contract has no example for them yet.
 - Review answers (`POST /api/baskets/label`): the contract's label examples. "It was needed", "I chose it", undo, the same answer twice (`changed: false`) and a basket that is not an option (422) all work. The mock remembers the answer until the page reloads: the next overview has the example's `after` numbers, no review card and no waiting row. Undoing "I chose it" has no contract example, so it is that example run backwards. The basket shares in that overview are each basket amount over the total, as the core counts them; the contract has no example of the overview after an answer.
-- Chat (`POST /api/ask`): the contract's examples as a `text/event-stream` byte stream with realistic delays, read by the same parser as live mode. The contract's refusal question (or any question about stocks or investing), its clarify question ("How much did I spend?") and its Finnish question get their examples, turned into stream events; every other question gets the full stream example. `?mock=error` plays the error-stream example, `?mock=fallback` a fallback answer (the contract has no fallback example: it is the full stream's card with the contract's template line "Here is what I found for September." and the `llm_unavailable` warning), and `?mock=slow` makes every delay four times longer. Unknown personas get `customer_not_found` before the stream.
+- Chat (`POST /api/ask`): the contract's examples as a `text/event-stream` byte stream with realistic delays, read by the same parser as live mode. The contract's refusal question (or any question about stocks or investing), its clarify question ("How much did I spend?") and its Finnish question get their examples, turned into stream events; every other question gets the full stream example. `?mock=error` plays the error-stream example, `?mock=template` a model-off answer (the full stream's card, the contract's template line "Here is what I found for September.", outcome `answered` with the `llm_unavailable` warning, which shows the template note), `?mock=fallback` a fallback answer (the same card with the core's fixed short text "I could not find data for that question.", outcome `fallback`, no note), and `?mock=slow` makes every delay four times longer. Unknown personas get `customer_not_found` before the stream.
 - What-if: the contract's one example (Restaurants, 20%). The mock scales the contract example for other cuts by the contract's rule (the saving is the cut of the baseline; per week × 7 / 30.4375, per year × 12), so 20% gives the example's numbers exactly, and writes the amounts in the request language like the core (`€53.68 a month` / `53,68 € / kk`). Any other selection answers 422 `invalid_scenario` with the contract's message, in English or Finnish.
 - The examples are English only. With `?lang=fi`, the app's own texts and the review question switch to Finnish; the API texts stay as served.
 
@@ -51,9 +51,9 @@ Open Sanna (`?persona=CUST00860`, the default in mock mode). Answer one of the t
 
 | URL | Shows |
 |---|---|
-| `/` | Overview |
-| `/chat` | Chat with Sentti on the `/api/ask` stream |
-| `/chat?q=<question>` | Chat that sends `<question>` at once (the overview's question chips), then drops `q` from the URL |
+| `/` | The thread: Sentti's opening turn (the overview), then the questions and answers on the `/api/ask` stream, with the composer at the bottom |
+| `/?q=<question>` | The thread sends `<question>` at once, then drops `q` from the URL. The question chips and the cards' ask actions set it on `/` by replacing the entry, so asking adds no history entry. |
+| `/chat` | An old link: redirects to `/` (the query kept) by replacing the entry, so Back never returns to it |
 | `?evidence=<ref>` | The evidence sheet over the current screen. Back closes it. |
 | `?whatif=<kind>:<value>&cut=<pct>` | The what-if sheet, for example `?whatif=category:Restaurants&cut=20`. `kind` is `category`, `basket`, `mcc` or `merchant`; `cut` is a whole percentage from 1 to 100 (20 if missing). Releasing the slider updates `cut`. Back closes it. |
 | `?persona=<customer_id>` | Demo persona. A long press on the header opens the persona and language switch. |

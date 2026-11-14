@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { EvidenceResponse, EvidenceRow } from '../api/types.ts'
-import { formatDate, formatRowAmount } from '../lib/i18n.ts'
+import { formatDate } from '../lib/i18n.ts'
 import { useLoad } from '../lib/useLoad.ts'
 import { closeEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -105,7 +105,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
                   </p>
                 </div>
                 <span className="shrink-0 font-semibold tabular-nums text-ink">
-                  {formatRowAmount(row.amount, row.currency, lang)}
+                  {row.display}
                 </span>
               </li>
             ))}

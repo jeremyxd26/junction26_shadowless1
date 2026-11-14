@@ -1,20 +1,20 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client.ts'
-import { ApiError } from './api/errors.ts'
 import type { Language } from './api/types.ts'
 import { EvidenceSheet } from './components/EvidenceSheet.tsx'
+import { OpeningProvider, OpeningTurn } from './components/OpeningTurn.tsx'
 import { WhatIfSheet } from './components/WhatIfSheet.tsx'
 import { Header } from './components/Header.tsx'
+import { HostNotice } from './components/HostNotice.tsx'
 import { PersonaSheet } from './components/PersonaSheet.tsx'
-import { ErrorBlock, LoadingBlock } from './components/States.tsx'
+import { LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
 import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
 import { useChat } from './lib/useChat.ts'
-import { useLoad, type Loaded } from './lib/useLoad.ts'
-import { setParams, useUrl, whatIfFromParams } from './lib/url.ts'
+import { useLoad } from './lib/useLoad.ts'
+import { redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
-import { Overview } from './screens/Overview.tsx'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
 const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
@@ -39,49 +39,47 @@ export default function App() {
     document.documentElement.lang = lang
   }, [lang])
 
+  // The first screen is the thread on `/`; an old `/chat` link lands there without a Back entry.
+  useEffect(() => {
+    if (path === '/chat') redirectChatToThread()
+  }, [path])
+
   const settings: Settings = useMemo(() => ({ lang, customerId, t: strings(lang) }), [lang, customerId])
   const { t } = settings
   const closePersonas = useCallback(() => setPersonaSheet(false), [])
-  // The chat lives here, so its conversation survives a trip to the overview and back.
+  // The conversation lives here, next to the opening; a persona switch starts it empty.
   const chat = useChat(customerId, lang)
   const ready = overview.status === 'ready' ? overview.data : null
-  const isChat = path === '/chat'
+  const overviewFailed = overview.status === 'error' || personas.status === 'error'
 
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
         <Header onLongPress={() => setPersonaSheet(true)} />
-        <main
-          className={`flex-1 px-4 pt-2 ${isChat ? 'pb-[calc(env(safe-area-inset-bottom)+88px)]' : 'pb-[calc(env(safe-area-inset-bottom)+16px)]'}`}
-        >
+        {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
+        <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
           {path === '/cards' && CardGallery ? (
             <Suspense fallback={<LoadingBlock lines={6} />}>
               <CardGallery />
             </Suspense>
-          ) : isChat ? (
-            <Chat
-              chat={chat}
-              question={params.get('q')}
-              disclosure={ready?.ai_disclosure || t.disclosure}
-              suggestions={ready?.suggested_questions.length ? ready.suggested_questions : chatStrings(lang).starters}
-            />
-          ) : overview.status === 'ready' ? (
-            <Overview overview={overview.data} onRefresh={overview.refresh} />
-          ) : overview.status === 'error' || personas.status === 'error' ? (
-            <ErrorBlock
-              message={errorMessage(overview.status === 'error' ? overview.error : personas.status === 'error' ? personas.error : null)}
-              onRetry={retryFor(overview) ?? retryFor(personas)}
-            >
-              <button
-                type="button"
-                onClick={() => setPersonaSheet(true)}
-                className="min-h-11 rounded-pill border border-mint-line bg-surface px-5 font-semibold text-brand"
-              >
-                {t.switchPersona}
-              </button>
-            </ErrorBlock>
           ) : (
-            <LoadingBlock lines={6} />
+            <OpeningProvider overview={overview}>
+              <Chat
+                chat={chat}
+                question={params.get('q')}
+                disclosure={ready?.ai_disclosure || t.disclosure}
+                suggestions={ready?.suggested_questions.length ? ready.suggested_questions : chatStrings(lang).starters}
+                opening={
+                  <OpeningTurn
+                    key={customerId ?? 'no-persona'}
+                    overview={overview}
+                    personas={personas}
+                    onSwitchPersona={() => setPersonaSheet(true)}
+                  />
+                }
+                starters={overviewFailed ? chatStrings(lang).starters : undefined}
+              />
+            </OpeningProvider>
           )}
           {api.mode === 'mock' && (
             <p className="mt-6 text-center text-xs text-muted">
@@ -107,17 +105,9 @@ export default function App() {
           onClose={closePersonas}
         />
       )}
+      {/* Once for every screen and sheet: "This continues in the bank app." when no host takes a
+          hand-over (#431). Last, so it sits above an open sheet. */}
+      <HostNotice />
     </SettingsContext.Provider>
   )
-}
-
-function errorMessage(error: unknown): string | undefined {
-  return error instanceof ApiError ? error.message : undefined
-}
-
-/** Offer a retry only when the API says it may help (contract section 4). */
-function retryFor(result: Loaded<unknown>): (() => void) | undefined {
-  if (result.status !== 'error') return undefined
-  if (result.error instanceof ApiError && !result.error.retryable) return undefined
-  return result.retry
 }

@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 # Metrics a what-if never cuts (regular essentials, metrics.md section 4): the card offers no
 # "spend less" follow-up for them.
-NO_CUT_ACTION = frozenset({"regular_essentials", "Housing", "Utilities", "Groceries"})
+NO_CUT_ACTION = config.PEER_NO_CUT_ACTION
 
 
 class PeerPeriod(str, Enum):
@@ -215,8 +215,10 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
         prompt = _t("action_prompt_total", language)
     else:
         prompt = _t("action_prompt", language, what=data.metric_label.lower() if language == "en" else data.metric_label)
-    actions = [] if data.metric in NO_CUT_ACTION else [Action(type="ask", label=_t("action_label", language),
-                                                              prompt=prompt)]
+    # A cut is offered only above the median and for spending that can be cut (#418); the text says the
+    # same offer (answer_sentences.peer), so the two always appear together.
+    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None)
+    actions = [Action(type="ask", label=_t("action_label", language), prompt=prompt)] if offered else []
     dump = lambda n: n.model_dump() if n is not None else None  # noqa: E731
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],

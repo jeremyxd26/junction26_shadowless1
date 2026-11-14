@@ -1,0 +1,552 @@
+{
+ "question": "What kind of spender am I?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [
+  {
+   "name": "get_spender_profile",
+   "args": {},
+   "numbers": [
+    {
+     "value": 6.0,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.one_off_share_pct@1",
+     "evidence_ref": "ev_1fa7ff8d9625",
+     "label": "One-off purchases, share of spending",
+     "display": "6.0%",
+     "id": "n1"
+    },
+    {
+     "value": 15.4,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.keep_rate_pct@1",
+     "evidence_ref": "ev_f9a45a3beda2",
+     "label": "Kept from income",
+     "display": "15.4%",
+     "id": "n2"
+    },
+    {
+     "value": 3558.38,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.net_income_month_eur@1",
+     "evidence_ref": "ev_b249a82ff273",
+     "label": "Income a month",
+     "display": "€3,558.38 a month",
+     "id": "n3"
+    },
+    {
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.spend_month_eur@1",
+     "evidence_ref": "ev_3445621e6f78",
+     "label": "Spending a month",
+     "display": "€3,010.59 a month",
+     "id": "n4"
+    },
+    {
+     "value": 0.0,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.saving_month_eur@1",
+     "evidence_ref": "ev_158ad026a153",
+     "label": "Investments a month",
+     "display": "€0.00 a month",
+     "id": "n5"
+    },
+    {
+     "value": 62.7,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.regular_share_pct@1",
+     "evidence_ref": "ev_e39bf19fb4fc",
+     "label": "Regular essentials, share of spending",
+     "display": "62.7%",
+     "id": "n6"
+    },
+    {
+     "value": 11.3,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.unexpected_share_pct@1",
+     "evidence_ref": "ev_7f655dc194a1",
+     "label": "Unexpected necessities, share of spending",
+     "display": "11.3%",
+     "id": "n7"
+    },
+    {
+     "value": 19.9,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.everyday_share_pct@1",
+     "evidence_ref": "ev_c9e3aad0e665",
+     "label": "Everyday spending, share of spending",
+     "display": "19.9%",
+     "id": "n8"
+    },
+    {
+     "value": 28.2,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.everyday_weekend_pct@1",
+     "evidence_ref": "ev_e139ba3a2b3b",
+     "label": "Everyday spending at weekends",
+     "display": "28.2%",
+     "id": "n9"
+    },
+    {
+     "value": 39.59,
+     "unit": "eur",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.everyday_avg_ticket_eur@1",
+     "evidence_ref": "ev_e440beef6f31",
+     "label": "Average everyday purchase",
+     "display": "€39.59",
+     "id": "n10"
+    },
+    {
+     "value": 15.2,
+     "unit": "count",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.everyday_tx_month@1",
+     "evidence_ref": "ev_25181c7238c4",
+     "label": "Everyday purchases a month",
+     "display": "15.2 a month",
+     "id": "n11"
+    },
+    {
+     "value": 3.0,
+     "unit": "months",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.months_out_over_in@1",
+     "evidence_ref": "ev_80fdbc7ffb3c",
+     "label": "Months when more went out than came in",
+     "display": "3 months",
+     "id": "n12"
+    },
+    {
+     "value": 0,
+     "unit": "count",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.n_tx_below_zero@1",
+     "evidence_ref": "ev_1f5a82941658",
+     "label": "Payments that took the balance below zero",
+     "display": "0",
+     "id": "n13"
+    }
+   ],
+   "model_view": {
+    "tool": "get_spender_profile",
+    "period": "1 Apr – 30 Sep 2026",
+    "profile": {
+     "key": "big_ticket",
+     "label": "Big ticket",
+     "description": "Large one-off purchases make up a notable part of your spending."
+    },
+    "traits": [
+     {
+      "key": "frequent_small_purchases",
+      "label": "Many small purchases",
+      "note": "You make many small everyday purchases each month."
+     }
+    ],
+    "features": [
+     {
+      "key": "one_off_share",
+      "decides_label": true,
+      "value": {
+       "id": "n1",
+       "value": 6.0,
+       "unit": "percent",
+       "label": "One-off purchases, share of spending"
+      }
+     },
+     {
+      "key": "keep_rate",
+      "decides_label": false,
+      "value": {
+       "id": "n2",
+       "value": 15.4,
+       "unit": "percent",
+       "label": "Kept from income"
+      }
+     },
+     {
+      "key": "net_income",
+      "decides_label": false,
+      "value": {
+       "id": "n3",
+       "value": 3558.38,
+       "unit": "eur_per_month",
+       "label": "Income a month"
+      }
+     },
+     {
+      "key": "spend",
+      "decides_label": false,
+      "value": {
+       "id": "n4",
+       "value": 3010.59,
+       "unit": "eur_per_month",
+       "label": "Spending a month"
+      }
+     },
+     {
+      "key": "saving",
+      "decides_label": false,
+      "value": {
+       "id": "n5",
+       "value": 0.0,
+       "unit": "eur_per_month",
+       "label": "Investments a month"
+      }
+     },
+     {
+      "key": "regular_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n6",
+       "value": 62.7,
+       "unit": "percent",
+       "label": "Regular essentials, share of spending"
+      }
+     },
+     {
+      "key": "unexpected_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n7",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Unexpected necessities, share of spending"
+      }
+     },
+     {
+      "key": "everyday_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n8",
+       "value": 19.9,
+       "unit": "percent",
+       "label": "Everyday spending, share of spending"
+      }
+     },
+     {
+      "key": "everyday_weekend_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n9",
+       "value": 28.2,
+       "unit": "percent",
+       "label": "Everyday spending at weekends"
+      }
+     },
+     {
+      "key": "everyday_avg_ticket_eur",
+      "decides_label": false,
+      "value": {
+       "id": "n10",
+       "value": 39.59,
+       "unit": "eur",
+       "label": "Average everyday purchase"
+      }
+     },
+     {
+      "key": "everyday_tx_month",
+      "decides_label": false,
+      "value": {
+       "id": "n11",
+       "value": 15.2,
+       "unit": "count",
+       "label": "Everyday purchases a month"
+      }
+     },
+     {
+      "key": "months_out_over_in",
+      "decides_label": false,
+      "value": {
+       "id": "n12",
+       "value": 3.0,
+       "unit": "months",
+       "label": "Months when more went out than came in"
+      }
+     },
+     {
+      "key": "n_tx_below_zero",
+      "decides_label": false,
+      "value": {
+       "id": "n13",
+       "value": 0,
+       "unit": "count",
+       "label": "Payments that took the balance below zero"
+      }
+     }
+    ],
+    "top_everyday_category": {
+     "key": "Restaurants",
+     "label": "Restaurants"
+    },
+    "notes": []
+   }
+  },
+  {
+   "name": "get_peer_benchmark",
+   "args": {
+    "metric": "spend_total",
+    "period": "last_6_months"
+   },
+   "numbers": [
+    {
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.you_month_eur@1",
+     "evidence_ref": "ev_3221b995c108",
+     "label": "You",
+     "display": "€3,010.59 a month",
+     "id": "n14"
+    },
+    {
+     "value": 2975.65,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.peer_median_month_eur@1",
+     "evidence_ref": "ev_a82c33408469",
+     "label": "Typical for your group",
+     "display": "€2,975.65 a month",
+     "id": "n15"
+    },
+    {
+     "value": 2313.0,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.peer_p25_month_eur@1",
+     "evidence_ref": "ev_088cd9a60183",
+     "label": "Lower quarter",
+     "display": "€2,313.00 a month",
+     "id": "n16"
+    },
+    {
+     "value": 3713.9,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.peer_p75_month_eur@1",
+     "evidence_ref": "ev_663ec64c205d",
+     "label": "Upper quarter",
+     "display": "€3,713.90 a month",
+     "id": "n17"
+    },
+    {
+     "value": 51,
+     "unit": "percentile",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.percentile@1",
+     "evidence_ref": "ev_4185c52b4773",
+     "label": "Your position",
+     "display": "51st percentile",
+     "id": "n18"
+    },
+    {
+     "value": 1.2,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.vs_median_pct@1",
+     "evidence_ref": "ev_0dcd9633ebf2",
+     "label": "Compared with typical",
+     "display": "1.2% more",
+     "id": "n19"
+    },
+    {
+     "value": 118,
+     "unit": "count",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "peer_benchmark.peer_n@1",
+     "evidence_ref": "ev_e3a50e69ace1",
+     "label": "Other people in the group",
+     "display": "118",
+     "id": "n20"
+    }
+   ],
+   "model_view": {
+    "tool": "get_peer_benchmark",
+    "metric": "spend_total",
+    "metric_label": "Total spending",
+    "period": "1 Apr – 30 Sep 2026",
+    "shown": true,
+    "reason": null,
+    "you": {
+     "id": "n14",
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "label": "You"
+    },
+    "peer_median": {
+     "id": "n15",
+     "value": 2975.65,
+     "unit": "eur_per_month",
+     "label": "Typical for your group"
+    },
+    "peer_p25": {
+     "id": "n16",
+     "value": 2313.0,
+     "unit": "eur_per_month",
+     "label": "Lower quarter"
+    },
+    "peer_p75": {
+     "id": "n17",
+     "value": 3713.9,
+     "unit": "eur_per_month",
+     "label": "Upper quarter"
+    },
+    "percentile": {
+     "id": "n18",
+     "value": 51,
+     "unit": "percentile",
+     "label": "Your position"
+    },
+    "vs_median": {
+     "id": "n19",
+     "value": 1.2,
+     "unit": "percent",
+     "label": "Compared with typical"
+    },
+    "peer_group": {
+     "level": "age_band+area3",
+     "label": "Age 35-44, postal area 005",
+     "size": {
+      "id": "n20",
+      "value": 118,
+      "unit": "count",
+      "label": "Other people in the group"
+     },
+     "comparable": true
+    },
+    "estimate": "Compared with at least 20 other customers of your age band and postal area. Only group statistics are shown.",
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"For 1 Apr \\u2013 30 Sep 2026, large one-off purchases make up a notable part of your spending at {{n1}}, and your total spending is {{n19}} than the median of people like you.\",\n  \"cited\": [\"n1\", \"n19\"],\n  \"lesson_key\": \"peer_context\"\n}",
+         "thought_signature": "EmAKXgFpFH0TzraRdiPJdWOs0GIRe56al0yG1gOjSJKQ34IVNqT1I4DShLesfgRXtMKwLboAHSKagqmMjEi0Ybnu5b6ykNYULDqf0w1qNxJncuZEm94MWvsZk9nFc9tP75o="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3813,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 99
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_spender_profile",
+   "get_peer_benchmark",
+   "finish"
+  ],
+  "text": "For 1 Apr – 30 Sep 2026, large one-off purchases make up a notable part of your spending at {{n1}}, and your total spending is {{n19}} than the median of people like you.",
+  "text_rendered": "For 1 Apr – 30 Sep 2026, large one-off purchases make up a notable part of your spending at 6.0%, and your total spending is 1.2% more than the median of people like you."
+ }
+}

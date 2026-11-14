@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.1 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.3 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.1. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.3. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -151,13 +151,14 @@ Actions:
 | `open_evidence` | `label`, `evidence_ref` | Open the evidence sheet. |
 | `ask` | `label`, `prompt` | Send `prompt` to `/api/ask` in the same conversation. |
 | `open_whatif` | `label`, `scenario` (same shape as the `scenario` of a `/api/whatif` request, section 8.1) | Open the what-if screen with this scenario. |
-| `open_host_screen` | `label`, `target`: `monthly_saving` or `bonus_to_fund` | Send the host message `sentti.openHostScreen` with `{target}`; the host opens its own screen (below). |
+| `open_host_screen` | `label`, `target`: `monthly_saving`, `bonus_to_fund` or `contact_bank` | Send the host message `sentti.openHostScreen` with `{target}`; the host opens its own screen (below). |
 
 **`open_host_screen`** (since 0.3.1, #267) leads from a card to a screen of the host app (S-mobiili). It is one step into the bank's own app: Sentti recommends nothing there and moves no money.
 - `target` comes from a closed list, and no other value is ever sent:
   - `monthly_saving`: the host's monthly saving screen. Carried by the `safe_to_save` card when `monthly` is above 0; when `monthly` is 0 the card has no such action.
   - `bonus_to_fund`: the host's Bonus to fund screen. Carried by the S-Bonus estimate, a `metric` card titled "S-Bonus estimate" in answers to the S-Bonus question, only when the estimate is offered. When the Bonus would be 0 because spending is below the lowest level of the table, the card has no such action.
-- `label` names the destination only, for example "See monthly saving in S-mobiili" / "Katso kuukausisäästäminen S-mobiilissa" and "See Bonus to fund in S-mobiili" / "Katso Bonus rahastoon S-mobiilissa". It has no digits, no fund or product name, nothing about returns and no "you should".
+  - `contact_bank` (since 0.3.3, #420): the host's own way to contact S-Pankki, a human at the bank. Carried in `/api/ask` by every refusal, by the "I can't answer that one yet" answer and by the "nothing found" fallback (`done.actions`, section 7), and by a bill explanation with a failed check or an unknown payee together with another sign (`actions`, section 11). Sentti hands over and says nothing about what the bank will do.
+- `label` names the destination only, for example "See monthly saving in S-mobiili" / "Katso kuukausisäästäminen S-mobiilissa" and "See Bonus to fund in S-mobiili" / "Katso Bonus rahastoon S-mobiilissa", and "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". It has no digits, no fund or product name, nothing about returns and no "you should".
 - The action carries no amount, no evidence ref and no customer data. The app sends the host only `{target}`: the message `sentti.openHostScreen` in the app's `sentti.<name>` envelope (`docs/integration.md` section 3; the envelope of PR #175). The host shows its own screen with its own figures and terms. The service expects no answer and stores nothing.
 - The host ignores a target it does not know. The app renders an action whose target it does not know as nothing. In the demo build, which has no host, the app opens a mock host sheet for the target instead (#268).
 - Issues #267 and #268 wrote the message name as `sentti.open_host_screen`. It follows the camelCase names of the app's envelope, as `sentti.openTransaction` and `sentti.paymentDraft` (section 11.3) do, so it is `sentti.openHostScreen`. The action type in this API stays `open_host_screen`.
@@ -2075,7 +2076,7 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 | `card` | 0 to 3 times, as soon as a tool finishes | `card` (section 3). The server, never the model, may add one `review` card when the answer's tools touched the spike's basket or category. If a review is pending, it adds that one and never a second; otherwise it may create the next within the weekly limit of section 6. The card counts towards the 3 cards. |
 | `numbers` | Before the first `delta` that uses them | `numbers`: a map from id to Number object |
 | `delta` | 1 or more times | `text`: the next piece of the answer, with number tokens. A token is never split across two deltas. Append the pieces in order. In version 0.1 the core validates the whole answer first and then sends it sentence by sentence. Finer streaming may come later without a contract change. |
-| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with tokens), `text_rendered`, `cited` (number ids used), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below) |
+| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with tokens), `text_rendered`, `cited` (number ids used), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below), `actions` (Action[], since 0.3.3: see below), `ai_disclosure` (string or null, since 0.3.3: see below) |
 | `error` | Last, once, on failure | `error`: `{code, message, retryable}`, the same envelope as an HTTP error (section 4) |
 
 `outcome` is one of:
@@ -2083,6 +2084,10 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 - `clarify`: the coach asks a question back.
 - `refused`: out of scope; see `refusal.kind`.
 - `fallback`: no usable answer could be built. Even the template's text failed the validator, so the core sends its fixed short text ("I could not find data for that question."). A recognised question whose template answered in the model's place is `answered` with `llm_unavailable`, never `fallback`. A question the rules did not recognise, with the AI model unavailable, gets the general clarifying question (`clarify` with `llm_unavailable`).
+
+`actions` (since 0.3.3, #420) holds the answer's actions (section 3). A refusal, the rules' "I can't answer that one yet" answer (`outcome` `clarify`) and the "nothing found" fallback (`outcome` `fallback`) carry exactly one, the way to a human: `open_host_screen` with target `contact_bank`, label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". Every other answer has `[]`, including the general clarifying question.
+
+`ai_disclosure` (since 0.3.3, #420) is the overview's `ai_disclosure` text on the first answer of a conversation, so the app can show once that Sentti is an AI. It is `null` when that first answer is Sentti's introduction (the introduction says it), and on every later answer of the conversation. A new conversation (including after `conversation_reset`) discloses again.
 
 `refusal.kind` is one of `investment_advice`, `credit_decision` (for example "Will the bank approve my mortgage?"), `out_of_scope`, `other_person_data` or `unsafe`.
 
@@ -2290,7 +2295,9 @@ The events of the example answer, one by one:
   },
   "refusal": null,
   "clarify": null,
-  "warnings": []
+  "warnings": [],
+  "actions": [],
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
 }
 ```
 
@@ -2325,7 +2332,7 @@ event: delta
 data: {"text":"A one-off doesn't change your usual month, but eating out is a habit: small, frequent costs are the easiest place to adjust."}
 
 event: done
-data: {"answer_id":"ans_7f3k9q2m","outcome":"answered","text":"September cost {{n1}}, which is {{n3}} more than August. Most of the increase is Travel at {{n5}}, which looks like a one-off, and Restaurants, up {{n8}}. A one-off doesn't change your usual month, but eating out is a habit: small, frequent costs are the easiest place to adjust.","text_rendered":"September cost €2,315.60, which is €367.40 more than August. Most of the increase is Travel at €240.00, which looks like a one-off, and Restaurants, up €91.70. A one-off doesn't change your usual month, but eating out is a habit: small, frequent costs are the easiest place to adjust.","cited":["n1","n3","n5","n8"],"follow_ups":["What if I spend 20% less on restaurants?","How could I save more?","What can I safely spend this week?"],"lesson":{"key":"one_off_vs_habit","title":"One-offs and habits","text":"A one-off cost, like a trip, shows up once. A habit, like eating out, repeats every month, so a small change there adds up over a year."},"refusal":null,"clarify":null,"warnings":[]}
+data: {"answer_id":"ans_7f3k9q2m","outcome":"answered","text":"September cost {{n1}}, which is {{n3}} more than August. Most of the increase is Travel at {{n5}}, which looks like a one-off, and Restaurants, up {{n8}}. A one-off doesn't change your usual month, but eating out is a habit: small, frequent costs are the easiest place to adjust.","text_rendered":"September cost €2,315.60, which is €367.40 more than August. Most of the increase is Travel at €240.00, which looks like a one-off, and Restaurants, up €91.70. A one-off doesn't change your usual month, but eating out is a habit: small, frequent costs are the easiest place to adjust.","cited":["n1","n3","n5","n8"],"follow_ups":["What if I spend 20% less on restaurants?","How could I save more?","What can I safely spend this week?"],"lesson":{"key":"one_off_vs_habit","title":"One-offs and habits","text":"A one-off cost, like a trip, shows up once. A habit, like eating out, repeats every month, so a small change there adds up over a year."},"refusal":null,"clarify":null,"warnings":[],"actions":[],"ai_disclosure":"Explanations are written by AI. The numbers are calculated from your transactions."}
 ```
 
 A stream that fails before any answer:
@@ -2443,7 +2450,9 @@ A question in Finnish (`language: "auto"` detects `fi`):
   "lesson": null,
   "refusal": null,
   "clarify": null,
-  "warnings": []
+  "warnings": [],
+  "actions": [],
+  "ai_disclosure": "Selitykset kirjoittaa tekoäly. Luvut lasketaan tilitapahtumistasi."
 }
 ```
 
@@ -2481,7 +2490,51 @@ Refusal texts are fixed, reviewed templates, not free AI text. A refusal looks l
   "lesson": null,
   "refusal": { "kind": "investment_advice", "label": "Investment advice is outside what I can help with" },
   "clarify": null,
-  "warnings": []
+  "warnings": [],
+  "actions": [
+    { "type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank" }
+  ],
+  "ai_disclosure": null
+}
+```
+
+The same refusal as the first message of a conversation (`conversation_id` null) also carries the AI disclosure (#420):
+
+<!-- example: ask.json.request_refusal_first -->
+```json
+{
+  "customer_id": "CUST00042",
+  "conversation_id": null,
+  "message": "Should I put my savings into tech stocks?",
+  "language": "auto"
+}
+```
+
+<!-- example: ask.json.response_refusal_first -->
+```json
+{
+  "answer_id": "ans_8d2f4h6k",
+  "conversation_id": "conv_7m3p9r2t",
+  "language": "en",
+  "as_of": "2026-09-30",
+  "outcome": "refused",
+  "text": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+  "text_rendered": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+  "cited": [],
+  "numbers": {},
+  "cards": [],
+  "follow_ups": [
+    "How much could I set aside each month?",
+    "What are my fixed bills?"
+  ],
+  "lesson": null,
+  "refusal": { "kind": "investment_advice", "label": "Investment advice is outside what I can help with" },
+  "clarify": null,
+  "warnings": [],
+  "actions": [
+    { "type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank" }
+  ],
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
 }
 ```
 
@@ -2517,7 +2570,9 @@ Refusal texts are fixed, reviewed templates, not free AI text. A refusal looks l
     "question": "Which period do you mean?",
     "options": ["This month", "Last month", "The last three months"]
   },
-  "warnings": []
+  "warnings": [],
+  "actions": [],
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
 }
 ```
 
@@ -2902,8 +2957,9 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 | `language` | `en` or `fi` | Optional, default `en`. Error messages are in this language too, once the body validates. A body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English (section 1). |
 
 **What the answers do** (`metrics.md` section 1.1). While the review is pending, the purchase is `unclassified`: in no basket and not in the reserve. No answer raises safe to spend above the value shown while the question was pending. Undo and changing the answer only move between the documented states.
-- **"Needed"** (`unexpected_necessities`): the purchase joins that basket and its reserve, so the reserve grows and safe to spend goes **down**. Sanna: 221.58 → 180.26. The message says Sentti keeps a reserve for surprises like this.
-- **"My choice"** (`everyday_spending`): the purchase joins everyday spending, and safe to spend **stays the same**. It stays a one-off, outside the everyday run rate. The message says this month's everyday spending is higher than usual by the amount.
+- **"Needed"** (`unexpected_necessities`): the purchase joins that basket and its reserve, so the reserve grows and safe to spend goes **down**. Sanna: 221.58 → 180.26.
+- **"My choice"** (`everyday_spending`): the purchase joins everyday spending, and safe to spend **stays the same**. It stays a one-off, outside the everyday run rate.
+- **The message is the real effect** (#382): it is built from the overview's numbers before and after the answer, never a fixed promise. When safe to spend moves, it says from what to what and where the purchase went. When it does not, it says where the purchase went and then either what safe to save did or why safe to spend stays (which limit binds). Two sentences at most.
 
 **Rules:**
 - **Idempotent:** sending the same answer again returns 200 with `changed: false` and an empty `changes` list.
@@ -2921,6 +2977,10 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 - `changed`: whether anything changed.
 - `message`: `{text, text_rendered, numbers}`. It is a localised confirmation whose numbers are tokens, as in section 2.4.
 - `changes`: the overview numbers that moved, each `{key, label, before: Number, after: Number}`. It is empty when `changed` is false. Before and after have different `evidence_ref`s, because evidence keeps resolving to the numbers as they were.
+- `effect` (#382): `{items, text, text_rendered, numbers}`, or `null` when `changed` is false.
+  - `items`: the headline numbers, each `{key, label, before: Number, after: Number}` with ids: `safe_to_spend`, `safe_to_save` (the overview's monthly figure, when the overview shows it), `irregular_reserve`, and the basket the purchase moved into (`unclassified` after an undo while open). Every item is listed even when its value did not move, so the app can show "no change". `before` and `after` are exactly the overview's numbers before and after, with their evidence refs.
+  - `text`, `text_rendered`, `numbers`: the effect as one or two sentences with number tokens (section 2.4), the same text as `message`. The app shows it in the card's confirmation.
+  - An undo returns the same structure with the sides swapped.
 - **Rounding:** derived figures are computed from unrounded values and rounded once, so a figure can differ by 0.01 from the same sum of displayed figures (for example 12,360.83 against 12,656.12 − 295.28 = 12,360.84).
 - `refetch`: what to reload for everything else.
 
@@ -2951,9 +3011,28 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Thanks. Sentti now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-    "text_rendered": "Thanks. Sentti now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-    "numbers": {}
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Your safe to spend this week goes from €221.58 to €180.26: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n2": {
+        "id": "n2", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
   },
   "changes": [
     {
@@ -3053,6 +3132,92 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        },
+        "after": {
+          "id": "n2", "value": 180.26, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€180.26"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        },
+        "after": {
+          "id": "n4", "value": 184.61, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
+          "label": "Typically left each month", "display": "€184.61 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        },
+        "after": {
+          "id": "n6", "value": 256.3, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sb3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€256.30"
+        }
+      },
+      {
+        "key": "unexpected_necessities", "label": "Unexpected necessities, monthly average",
+        "before": {
+          "id": "n7", "value": 341.08, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sa1u3n5e7x9p",
+          "label": "Unexpected necessities, monthly average", "display": "€341.08 a month"
+        },
+        "after": {
+          "id": "n8", "value": 521.15, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sb1u3n5e7x9p",
+          "label": "Unexpected necessities, monthly average", "display": "€521.15 a month"
+        }
+      }
+    ],
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Your safe to spend this week goes from €221.58 to €180.26: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n2": {
+        "id": "n2", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
@@ -3075,11 +3240,11 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Thanks. This counts as everyday spending, so your everyday spending this month is {{n1}} higher than usual. Your safe to spend stays the same.",
-    "text_rendered": "Thanks. This counts as everyday spending, so your everyday spending this month is €1,080.42 higher than usual. Your safe to spend stays the same.",
+    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
     "numbers": {
-      "n1": {
-        "id": "n1", "value": 1080.42, "unit": "eur",
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
         "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
         "label": "Home & Tech purchase", "display": "€1,080.42"
@@ -3120,6 +3285,80 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        },
+        "after": {
+          "id": "n2", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_wc4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        },
+        "after": {
+          "id": "n4", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_wc6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        },
+        "after": {
+          "id": "n6", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_wc3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        }
+      },
+      {
+        "key": "everyday_spending", "label": "Everyday spending, monthly average",
+        "before": {
+          "id": "n7", "value": 600.41, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sb2e4v6e8r0y",
+          "label": "Everyday spending, monthly average", "display": "€600.41 a month"
+        },
+        "after": {
+          "id": "n8", "value": 780.48, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sa2e4v6e8r0y",
+          "label": "Everyday spending, monthly average", "display": "€780.48 a month"
+        }
+      }
+    ],
+    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "numbers": {
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
@@ -3142,9 +3381,28 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
   "review_state": "pending",
   "changed": true,
   "message": {
-    "text": "Undone. This purchase is waiting for your answer again.",
-    "text_rendered": "Undone. This purchase is waiting for your answer again.",
-    "numbers": {}
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Your safe to spend this week goes from €180.26 to €221.58: €1,080.42 is waiting for your answer again.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n2": {
+        "id": "n2", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
   },
   "changes": [
     {
@@ -3244,6 +3502,92 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 180.26, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€180.26"
+        },
+        "after": {
+          "id": "n2", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 184.61, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
+          "label": "Typically left each month", "display": "€184.61 a month"
+        },
+        "after": {
+          "id": "n4", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 256.3, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sb3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€256.30"
+        },
+        "after": {
+          "id": "n6", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        }
+      },
+      {
+        "key": "unclassified", "label": "Waiting for your answer, monthly average",
+        "before": {
+          "id": "n7", "value": 0.0, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_na0u2n4c6l8a",
+          "label": "Waiting for your answer, monthly average", "display": "€0.00 a month"
+        },
+        "after": {
+          "id": "n8", "value": 180.07, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_pu1n3c5l7a9s",
+          "label": "Waiting for your answer, monthly average", "display": "€180.07 a month"
+        }
+      }
+    ],
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Your safe to spend this week goes from €180.26 to €221.58: €1,080.42 is waiting for your answer again.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n2": {
+        "id": "n2", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
@@ -3368,7 +3712,7 @@ A barcode whose reference fails its check:
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
 | `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €221.58: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
-| `actions` | At most one: `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Otherwise `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
+| `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank, when `signals` holds `iban_check_failed` or `reference_check_failed`, or `new_payee` together with another sign; `new_payee`, `short_term` or `amount_above_usual` alone do not bring it. Pick an action by its `type`, never by its index: with a failed check, `contact_bank` is the only action. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
 | `warnings` | Sentences the app may show as a small note, as `warnings` are elsewhere in this contract; empty when there is nothing to note. A warning never repeats a signal. Today there is one: a due date in the past, that the payee may charge late-payment interest, without an amount. |
 | `signals` | Warning signs, `{code, text, numbers}`[], empty when there are none, in the order of the codes below. This is what the app shows as "warning signs", never as a verdict: no text says that a bill is a fraud. `text` is one plain sentence in the request language, or two for a failed check (what failed and what to do); `numbers` are the Number objects whose `display` it cites, in order (empty when it cites none). The codes:<br>- `iban_check_failed`, `reference_check_failed`: the check digit does not pass (`checks`), for example "This reference number does not pass its check. Compare it with the paper bill before paying."<br>- `new_payee`: the payee matches no regular bill, by label or by known payee name (`match.status` `not_matched` or `no_payee`).<br>- `amount_above_usual`: for a matched bill, the amount is at least 150% of its typical monthly amount; for any other bill, it is above the largest typical monthly amount of the customer's regular bills. Both thresholds are server settings with these defaults.<br>- `short_term`: the due date is fewer than 7 days after `as_of` and not before it (a past due date is in `checks` and `warnings`).<br>Only the two failed checks remove the payment draft; the other signs do not. |
 
@@ -3571,7 +3915,9 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
     { "term": "virtual_barcode", "label": "Virtual barcode (virtuaaliviivakoodi)", "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them." },
     { "term": "late_payment_interest", "label": "Late-payment interest (viivästyskorko)", "text": "Interest the payee may charge for each day a bill is paid after its due date." }
   ],
-  "actions": [],
+  "actions": [
+    { "type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank" }
+  ],
   "warnings": [],
   "signals": [
     { "code": "reference_check_failed", "text": "This reference number does not pass its check. Compare it with the paper bill before paying.", "numbers": [] },
@@ -3587,7 +3933,7 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
 | Direction | `type` | `payload` |
 |---|---|---|
 | module → host | `sentti.paymentDraft` | The action's `draft`: `{payee, iban, reference, amount, due_date}`. `amount` is a Number object (section 2.1), so the host shows the same `display` the customer saw. `payee` can be `null`; the host then asks for it. |
-| module → host | `sentti.openHostScreen` | `{target}` and nothing else, `target` being `monthly_saving` or `bonus_to_fund`: from the action `open_host_screen` (since 0.3.1; section 3, Actions; example `host.open_host_screen`). The host opens its own screen for the target and ignores a target it does not know. |
+| module → host | `sentti.openHostScreen` | `{target}` and nothing else, `target` being `monthly_saving`, `bonus_to_fund` or `contact_bank` (since 0.3.3): from the action `open_host_screen` (since 0.3.1; section 3, Actions; example `host.open_host_screen`). The host opens its own screen for the target and ignores a target it does not know. |
 
 <!-- example: host.payment_draft -->
 ```json
@@ -3660,3 +4006,5 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.2.2 | Documents what the service already returns or what was decided (#134); nothing new is built.<br><br>1. Evidence rows carry `display`, the amount formatted like a Number's display; `amount` stays the exact decimal string (section 9; #106).<br>2. Evidence kinds: `metric` (a re-run of the metric definition, `reconciles`, `rows` always a list) and the shape of `peer_aggregate` (group statistics as parts with `evidence_ref: null`, the level in the group size's label); new examples `evidence.response_metric` and `evidence.response_peer` (sections 2.1 and 9; #73, #106, #95).<br>3. Errors: `not_found` (404) for an unknown route; a wrong method is 405 `invalid_request` with `Allow` (section 4; #106).<br>4. `POST /api/whatif`: every refused selection answers 422 `invalid_scenario` with the same body; `language` defaults to `en`; `cut_pct` is a JSON integer; a merchant alias is accepted and the merchant id echoed; `unexpected_necessities` is allowed; new example `whatif.error` (section 8.1; #106).<br>5. Only the persona customers are served; any other id answers 404 `customer_not_found` (sections 1, 4, 5 and 9; #125).<br>6. `hero` is `null` when safe to spend cannot be computed for a known reason; the app hides the card (section 6; #106).<br>7. The hero subtitle shows the period's dates, "1–7 Oct 2026" / "1.–7.10.2026" (section 6; #113, #133).<br>8. The display rules of the one formatter (section 2.1; #111).<br>9. The review card texts as decided on #68: the question with the amount, category and date filled in, the buttons "Needed" / "My choice" ("Välttämätön" / "Oma valinta"), and the Finnish effect texts with "turvallisesti käytettävissä" (sections 3 and 6).<br><br>Also: error messages follow `?lang` for a GET, the body's `language` for a POST, and the detected language for `/api/ask` with `auto`. A POST body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` in English (sections 1, 4, 7.1, 8.1 and 10.1).<br><br>Facts added after the first draft:<br>10. The first overview creates the review (with #196, also the first `/api/ask` answer); an undo after the 7 days closes it (section 6, as in 10.1).<br>11. With #144 (PR #199): the per-viewer cookie `sentti_viewer` set by the overview, and a rate limit on the label write, answered with 429 `rate_limited` and `Retry-After` (sections 6 and 10).<br>12. `safe_to_save`: when free until payday is negative, `stock` is 0 and `stock_components` is empty (section 3; #165).<br>13. The reason text of `card.safe_to_save_everyday` names the category in a form that works for every everyday category (#165).<br>14. The "My choice" button's text in sections 10.1 and 10.2; the `metric` rows are always a list; the `peer_aggregate` shape as #69 builds it; which hero number opens as which evidence kind (section 9).<br>15. New example `overview.response_no_hero`: the overview when safe to spend cannot be computed (section 6). |
 | 0.3.0 | The bill explanation (#243; built in #242).<br><br>New:<br>- Section 11, `POST /api/bill/explain`: a bill as a virtual barcode or as typed fields. The response carries `bill`, `checks`, `match`, `comparison`, `basket`, `safe_to_spend`, `glossary`, `actions`, `warnings` and `signals`. Examples `bill.request`, `bill.request_fields`, `bill.response`, `bill.response_unknown` and `bill.error`.<br>- The payee is matched exactly against the recurring bills' labels and a fixed table of fictional payee names, which stands in for the counterparty history a real bank has.<br>- `safe_to_spend`: the bill is applied to the balance side like a bill due before payday, and the hero's own computation runs again: `free_until_payday` and safe to spend, each before and after.<br>- `signals`: warning signs with the codes `iban_check_failed`, `reference_check_failed`, `new_payee`, `amount_above_usual` and `short_term`, never a verdict (#242, decision 10).<br>- The action `add_to_payments` and the host message `sentti.paymentDraft` (section 11.3, example `host.payment_draft`): the host shows, confirms and executes the payment; Sentti does not pay.<br>- Section 11.4, decided and not implemented yet: `GET /api/bill/samples` and `POST /api/bill/read` with `sample_id`; a reading is a proposal of fields marked `checked` or `unchecked` that the user confirms (#249, #250; example `bill.read_response`).<br>- Section 1: a bill reading is the third exception of the Number rule; its fields are strings.<br>- Error codes 422 `invalid_bill`, whose body adds `reason`, and, with the reading, 503 `model_unavailable` (section 4).<br>- Method `bill_barcode@1`, a value read from a bill's virtual barcode, with no evidence ref (sections 2.1 and 9), and the `bill.*` methods of the numbers the bill explanation computes, whose composite evidence has a bill part without a ref.<br><br>The changelog is now section 12. |
 | 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |
+| 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
+| 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
