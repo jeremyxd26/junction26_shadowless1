@@ -46,7 +46,7 @@ REFUSAL: dict[str, dict[str, Any]] = {
         # The warmer generic decline (#287, the product owner's first sentence). It reads complete without the
         # four brief questions that follow as chips (#352): a full stop and two examples in words.
         "text": ("That's outside my lane — I'm your money coach. I can help with things like your spending or your bills.",
-                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
+                 "Tämä ei kuulu osaamiseeni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
                  "laskuissasi."),
     },
     "unsafe": {
@@ -147,9 +147,11 @@ REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-len
 )
 REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
     "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
-    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "was it needed, or your choice? Your answer decides which basket it goes into, which can change your safe "
+    "to spend.",
     "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
-    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+    "se välttämätön hankinta vai oma valinta? Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+    "turvallisesti käytettävissä olevaa summaa.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
@@ -214,8 +216,28 @@ def made_up_request(question: str) -> bool:
     return bool(re.search(MADE_UP, fold(question)))
 
 
+# A health question beyond its plain total (#571: a what-if, a comparison, advice, an inference) keeps the kind
+# `out_of_scope` but gets its own neutral text: what Sentti does show, without a judgement.
+HEALTH_WORDS = fold_pattern(r"\bhealth(care)?\b(?![\s-](?:club|food|insurance|conscious|kick|bar|store|shop)s?\b)|"
+                            r"tervey(?!s(?:ruo|kaup|vakuut|baar|klub))\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|"
+                            r"lääkär\w*|dentist\w*|hammaslääk\w*|\bchemists?\b|\bmedicines?\b(?! balls?)|"
+                            r"\bheadaches?\b|päänsär\w*|\billness\w*|\bsick\b|sairas\w*")
+HEALTH_REFUSAL = {
+    "label": ("I don't comment on health", "En kommentoi terveyttä"),
+    "text": ("I can tell you what you spent on health in a period, but I don't comment on it, compare it or give "
+             "health advice.",
+             "Voin kertoa, paljonko käytit terveyteen jonkin jakson aikana, mutta en kommentoi sitä, vertaa sitä enkä "
+             "anna terveysneuvoja."),
+}
+
+
 def refusal(kind: str, language: str, question: str = "") -> tuple[str, dict[str, str]]:
-    entry = MADE_UP_REFUSAL if kind == "out_of_scope" and made_up_request(question) else REFUSAL[kind]
+    if kind == "out_of_scope" and made_up_request(question):
+        entry = MADE_UP_REFUSAL
+    elif kind == "out_of_scope" and re.search(HEALTH_WORDS, fold(question)):
+        entry = HEALTH_REFUSAL
+    else:
+        entry = REFUSAL[kind]
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
 
 

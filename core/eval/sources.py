@@ -109,6 +109,8 @@ def method_of(src: dict) -> str:
         return "user_input@1"
     if "metric" in src:
         return f"{src['metric']}.{src['column']}@1"
+    if src.get("query") == "national":   # #569: a cited table value beside the peer comparison
+        return "national_context.monthly_eur@1"
     if src.get("query") == "bonus":  # the tool's own method ids (core/tools/bonus.py, #216)
         return f"bonus_estimate.{src['column']}_eur@1"
     if src.get("query") == "savings_plan":

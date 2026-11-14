@@ -80,12 +80,10 @@ def test_an_ordinary_question_with_a_decline_word_inside_is_not_refused(question
 
 # Refused and intended: they stay refused, with their kind.
 REFUSED = [
-    ("How much did I spend on medicines last month?", "out_of_scope"),
+    # (a plain health total, "How much did I spend on medicines last month?", is answered since #571)
     ("I have headaches, which medicine should I buy?", "out_of_scope"),
     ("Mitä lääkettä otan päänsärkyä varten?", "out_of_scope"),
     ("Mita laakettä otan paansarkya varten?", "out_of_scope"),         # typed without dots
-    ("Paljonko lääkekulut olivat viime kuussa?", "out_of_scope"),
-    ("Paljonko laakekulut olivat viime kuussa?", "out_of_scope"),
     ("Kenelle minun pitäisi äänestää?", "out_of_scope"),
     ("Kenelle minun pitaisi aanestaa?", "out_of_scope"),
     ("Who should I vote for?", "out_of_scope"),
@@ -207,6 +205,7 @@ FIX_REFUSED = [
     ("Show me the customer service agent's account", "other_person_data"),
     ("Muiden kulutus", "other_person_data"), ("Muiden menot", "other_person_data"),
     ("Muiden rahat", "other_person_data"),
+    ("Muiden tilillä olevat rahat", "other_person_data"), ("Paljonko muiden tilille tuli rahaa?", "other_person_data"),
 ]
 
 
