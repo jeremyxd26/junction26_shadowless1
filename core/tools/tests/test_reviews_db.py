@@ -100,7 +100,7 @@ def test_pending_needed_wanted_undo(tx):
     amount = next((i, n) for i, n in wanted["message"]["numbers"].items() if n["method"] == "spending.total@1")
     assert (amount[1]["value"], "{{" + amount[0] + "}}" in wanted["message"]["text"]) == (1080.42, True)
     sts = next(c for c in wanted["changes"] if c["key"] == "safe_to_spend")
-    assert wanted["message"]["text_rendered"] == (f"Your safe to spend this week goes from {sts['before']['display']} "
+    assert wanted["message"]["text_rendered"] == (f"Left to spend this week goes from {sts['before']['display']} "
                                                   f"to {sts['after']['display']}: {amount[1]['display']} now counts "
                                                   f"as everyday spending.")
     assert wanted["effect"]["text"] == wanted["message"]["text"]

@@ -1174,9 +1174,8 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
 # and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
 # when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
 LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
-    "moved": ("Your safe to spend this week goes from {before} to {after}: {amount} {why}.",
-              "Tämän viikon turvallisesti käytettävissä oleva summa on nyt {after}, kun se oli {before}: "
-              "{amount} {why}."),
+    "moved": ("Left to spend this week goes from {before} to {after}: {amount} {why}.",
+              "Tämän viikon käyttövara on nyt {after}, kun se oli {before}: {amount} {why}."),
     "basket": ("{amount} {why}.", "{amount} {why}."),
     "why_unexpected_reserve": ("now counts as an unexpected necessity, so the reserve grows",
                                "lasketaan nyt odottamattomaksi välttämättömäksi menoksi, joten varaus kasvaa"),
@@ -1185,17 +1184,17 @@ LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
     "why_everyday": ("now counts as everyday spending", "lasketaan nyt arjen kulutukseksi"),
     "why_pending": ("is waiting for your answer again", "odottaa taas vastaustasi"),
     "why_closed": ("is back in the group the rules give it", "on taas siinä ryhmässä, johon säännöt sen sijoittavat"),
-    "save_moved": ("This week's safe to spend stays the same, but what you can typically put aside goes from "
+    "save_moved": ("Left to spend this week stays the same, but what you can typically put aside goes from "
                    "{before} to {after}.",
-                   "Tämän viikon turvallisesti käytettävissä oleva summa pysyy samana, mutta tavallisesti "
+                   "Tämän viikon käyttövara pysyy samana, mutta tavallisesti "
                    "säästöön jäävä summa on nyt {after}, kun se oli {before}."),
-    "same_budget": ("This does not change this week's safe to spend: your monthly budget, not this purchase, sets "
-                    "the limit.",
-                    "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: kuukausibudjettisi, ei "
+    "same_budget": ("This does not change what is left to spend this week: your monthly budget, not this purchase, "
+                    "sets the limit.",
+                    "Tämä ei muuta tämän viikon käyttövaraa: kuukausibudjettisi, ei "
                     "tämä ostos, asettaa rajan."),
-    "same_balance": ("This does not change this week's safe to spend: your balance sets the limit, and this "
+    "same_balance": ("This does not change what is left to spend this week: your balance sets the limit, and this "
                      "purchase is already in it.",
-                     "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
+                     "Tämä ei muuta tämän viikon käyttövaraa: saldosi asettaa rajan, "
                      "ja tämä ostos näkyy siinä jo."),
 }
 # ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------

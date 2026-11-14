@@ -35,7 +35,7 @@ def text(before, after, basket, state="answered", language="en") -> str:
 
 def test_safe_to_spend_moved_says_from_what_to_what_and_why():
     t = text(side(221.58), side(180.26, reserve=256.3), "unexpected_necessities")
-    assert t == ("Your safe to spend this week goes from {{safe_to_spend.before}} to {{safe_to_spend.after}}: "
+    assert t == ("Left to spend this week goes from {{safe_to_spend.before}} to {{safe_to_spend.after}}: "
                  "{{amount}} now counts as an unexpected necessity, so the reserve grows.")
 
 
@@ -47,8 +47,8 @@ def test_the_reserve_is_named_only_when_it_grew():
 def test_zero_difference_says_why_by_the_binding_limit():
     budget_bound = text(side(221.58, balance=5000.0, budget=221.58), side(221.58, balance=5000.0, budget=221.58),
                         "everyday_spending")
-    assert budget_bound == ("{{amount}} now counts as everyday spending. This does not change this week's safe to "
-                            "spend: your monthly budget, not this purchase, sets the limit.")
+    assert budget_bound == ("{{amount}} now counts as everyday spending. This does not change what is left to spend "
+                            "this week: your monthly budget, not this purchase, sets the limit.")
     balance_bound = text(side(40.0, balance=40.0, budget=300.0), side(40.0, balance=40.0, budget=300.0),
                          "everyday_spending", language="fi")
     assert balance_bound.endswith("saldosi asettaa rajan, ja tämä ostos näkyy siinä jo.")
@@ -56,7 +56,7 @@ def test_zero_difference_says_why_by_the_binding_limit():
 
 def test_safe_to_save_moving_alone_is_said_without_adding_the_two():
     t = text(side(221.58, save=364.31), side(221.58, save=184.61), "unexpected_necessities")
-    assert t.endswith("This week's safe to spend stays the same, but what you can typically put aside goes from "
+    assert t.endswith("Left to spend this week stays the same, but what you can typically put aside goes from "
                       "{{safe_to_save.before}} to {{safe_to_save.after}}.")
 
 

@@ -133,14 +133,14 @@ def test_the_lead_persona_text_names_what_really_moved(client):
     reserve = "so the reserve grows" if items["irregular_reserve"]["after"]["value"] > \
         items["irregular_reserve"]["before"]["value"] else ""
     if sts["before"]["value"] != sts["after"]["value"]:
-        assert effect["text_rendered"].startswith(f"Your safe to spend this week goes from {sts['before']['display']} "
+        assert effect["text_rendered"].startswith(f"Left to spend this week goes from {sts['before']['display']} "
                                                   f"to {sts['after']['display']}: {amount} now counts as an unexpected "
                                                   f"necessity")
     elif save["before"]["value"] != save["after"]["value"]:
         assert effect["text_rendered"].endswith(f"what you can typically put aside goes from {save['before']['display']} "
                                                 f"to {save['after']['display']}.")
     else:
-        assert "does not change this week's safe to spend" in effect["text_rendered"]
+        assert "does not change what is left to spend this week" in effect["text_rendered"]
     assert reserve in effect["text_rendered"] or sts["before"]["value"] == sts["after"]["value"]
     as_viewer(client, viewer.new_value())                                   # another viewer did not move
     assert client.get("/api/overview/CUST00860").json()["hero"]["primary"] == pending["hero"]["primary"]
