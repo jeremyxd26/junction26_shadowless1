@@ -127,7 +127,7 @@ def test_the_request_is_a_chat_completion_with_the_image_as_a_data_url(tmp_path)
     image_url = "data:image/png;base64," + base64.b64encode(IMAGES["sample_1"]).decode("ascii")
     assert user["content"][1] == {"type": "image_url", "image_url": {"url": image_url}}
     assert body["response_format"] == {"type": "json_schema", "json_schema": {"name": "bill_read", "schema": READ_SCHEMA}}
-    assert timeout == DEFAULT_TIMEOUT_S
+    assert DEFAULT_TIMEOUT_S - 1.0 < timeout <= DEFAULT_TIMEOUT_S   # the deadline minus the time already spent
 
 
 @pytest.mark.parametrize("sample_id", sorted(TRUTH))
