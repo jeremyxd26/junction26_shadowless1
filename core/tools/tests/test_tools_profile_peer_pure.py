@@ -1,8 +1,10 @@
 """Pure-logic tests for get_spender_profile and get_peer_benchmark (no database)."""
 
 import json
+import re
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -68,6 +70,36 @@ def test_labels_descriptions_and_notes_carry_no_digits_and_no_sensitive_terms():
         for text in (en, fi):
             assert not any(ch.isdigit() for ch in text), text
             assert "health" not in text.lower() and "terve" not in text.lower(), text
+
+
+def test_05_decides_with_the_thresholds_of_config():
+    """The label rule of 05 and of profile_key use the same constants (#687: the threshold is checked once)."""
+    sql = (Path(__file__).resolve().parents[2] / "metrics" / config.PROFILE_FILE).read_text(encoding="utf-8")
+    t = config.PROFILE_THRESHOLDS
+    found = {
+        "big_ticket_one_off_share": r"one_off_share, 0\) >= (\d+)\s+THEN 'big_ticket'",
+        "everyday_heavy_share": r"everyday_share, 0\) >= (\d+)\s+THEN 'everyday_heavy'",
+        "saver_keep_rate": r"keep_rate >= (\d+)\s+THEN 'saver'",
+        "weekend_spender_share": r"weekend_share, 0\) >= (\d+) THEN 'weekend_spender'",
+        "frequent_purchases_month": r"everyday_tx_month >= (\d+) THEN 'frequent_small_purchases'",
+    }
+    for name, pattern in found.items():
+        match = re.search(pattern, sql)
+        assert match and int(match.group(1)) == t[name], name
+
+
+@pytest.mark.parametrize("language", [0, 1])
+def test_big_ticket_text_holds_at_the_threshold_and_beside_many_small_purchases(language):
+    """#687: at one_off_share = 5 % (often one purchase, next to the trait "Many small purchases") the
+    description claims no size of share; it says what the one-off rule measures, a purchase far above
+    the customer's usual one."""
+    text = config.PROFILE_DESCRIPTIONS["big_ticket"][language].lower()
+    for claim in ("notable", "large part", "large share", "most of", "merkittävä", "suuri osa", "valtaosa"):
+        assert claim not in text, claim
+    assert ("one-off" in text and "usually" in text) if language == 0 else \
+        ("kertaostos" in text and "tavalli" in text)
+    assert config.PROFILE_LABELS["big_ticket"] == ("Big ticket", "Isot hankinnat")   # the label stays
+    assert config.PROFILE_THRESHOLDS["big_ticket_one_off_share"] == 5                 # and the threshold
 
 
 def test_profile_takes_no_arguments():
