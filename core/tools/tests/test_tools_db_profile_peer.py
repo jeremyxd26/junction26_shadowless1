@@ -204,6 +204,31 @@ def test_profile_evidence_card_and_model_view(conn, customer_id):
     assert "Health" not in json.dumps(card.model_dump(), default=str)
 
 
+# #687: the label, its description and the traits each persona's card shows, and the one-off share beside
+# them. Sanna's one 1,080.42 purchase is 6.0 % of her spending, next to "Many small purchases".
+PERSONA_LABELS = {
+    "CUST00860": ("big_ticket", "6.0", ["frequent_small_purchases"]),
+    "CUST00493": ("steady", "0.0", ["frequent_small_purchases"]),
+    "CUST00349": ("everyday_heavy", "4.3", ["regular_investor", "frequent_small_purchases"]),
+    "CUST00849": ("steady", "0.0", ["went_below_zero", "frequent_small_purchases"]),
+}
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+@pytest.mark.parametrize("customer_id", PERSONAS)
+def test_persona_label_description_and_traits(conn, customer_id, language):
+    key, one_off, traits = PERSONA_LABELS[customer_id]
+    card = get_spender_profile(ctx_for(conn, customer_id, language)).card
+    assert card.profile == {"key": key, "label": config.label(config.PROFILE_LABELS[key], language),
+                            "description": config.label(config.PROFILE_DESCRIPTIONS[key], language)}
+    assert [t["key"] for t in card.traits] == traits
+    shown = {f["key"]: f for f in card.features}
+    assert D(str(shown["one_off_share"]["value"]["value"])) == D(one_off)
+    assert shown["one_off_share"]["decides_label"] == (key == "big_ticket")
+    if key == "big_ticket":   # the text claims no size of share at 6.0 % (#687)
+        assert "notable" not in card.profile["description"] and "merkittävä" not in card.profile["description"]
+
+
 def test_profile_in_finnish(conn):
     result = get_spender_profile(ctx_for(conn, "CUST00860", "fi"))
     assert result.data.profile.label == "Isot hankinnat"
