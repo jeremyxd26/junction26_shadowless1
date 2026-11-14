@@ -94,10 +94,10 @@ REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-len
     "välttämätön hankinta vai oma valinta?",
 )
 REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
-    "I asked because {amount} on {category} on {date} stands out from your usual spending: was it needed, "
-    "or your choice? Your answer only changes how your own spending is grouped.",
-    "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisesta kulutuksestasi: oliko se "
-    "välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+    "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
+    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
+    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")

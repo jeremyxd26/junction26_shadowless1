@@ -164,7 +164,8 @@ def test_a_question_about_senttis_question_with_another_amount_takes_the_normal_
     "why are you asking about my bank account number",
     "why did you ask me to log in",
     "why do you ask so many questions",      # decided: the normal path ("so many questions" is not filler)
-    "why do you ask about it?",               # no amount and no anchor: the normal path
+    "why are you asking about my neighbour's purchase",   # "my" is filler only before filler
+    "why are you asking me about my purchase on 3 May 2026?",   # another date than the purchase's
 ])
 def test_a_message_asking_something_else_takes_the_normal_path(question):
     from core.agent.rules import RuleModel
@@ -193,3 +194,25 @@ def sentences(text: str) -> int:
 def test_the_what_was_answer_is_two_sentences():
     done, _, _ = ask("what was that €1,080?", "en")
     assert done["text_rendered"].startswith("That was your") and sentences(done["text"]) == 2
+
+
+
+# ---- second review of #402: recall --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("question, language", [
+    ("what is this question about", "en"),
+    ("what is this question about?", "en"),
+    ("mistä tämä kysymys tulee?", "fi"),
+    ("why do you ask about this?", "en"),
+    ("why are you asking about it", "en"),
+    ("why are you asking me about my purchase?", "en"),
+    ("why are you asking about that big purchase", "en"),
+    ("why are you asking me about my purchase on 28 September 2026?", "en"),
+    ("miksi kysyt siita ostoksesta", "fi"),
+    ("miksi kysyt siitä isosta ostoksesta 28.9.2026?", "fi"),
+])
+def test_these_ask_about_senttis_question_and_get_the_why_answer(question, language):
+    done, events, _ = ask(question, language)
+    assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"], question
+    assert done["text_rendered"].startswith("I asked because" if language == "en" else "Kysyin, koska")
+    assert ("usual purchases in that category" if language == "en" else "tavallisista ostoksistasi") in done["text_rendered"]

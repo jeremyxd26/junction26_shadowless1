@@ -50,7 +50,7 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
-from core.answer_text import scan_numbers
+from core.answer_text import find_dates, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -95,11 +95,12 @@ SENTTI_QUESTION = re.compile(
 # After the question phrase and the amount, only these may be left, or the message asks something else
 # ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
 REVIEW_FILLER = re.compile(
-    r"(?:about|me|this|that|the|it|purchase|question|euros?|eur|siitä|tästä|tuosta|sitä|tätä|minulta"
-    r"|osto\w*|kysym\w*|euro\w*)", re.I)
-# A question about Sentti's question without an amount needs one of these, or nothing left at all.
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
+    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+# A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
+# nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
-REVIEW_BARE = re.compile(r"(?:me|this|that|sitä|tätä|minulta)", re.I)
+REVIEW_BARE = re.compile(r"(?:about|me|this|that|it|minulta|sitä|tätä|siitä|tästä|sita|tata|siita|tasta)", re.I)
 _AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
@@ -741,17 +742,22 @@ class Pipeline:
             return None
 
     @staticmethod
-    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> bool:
-        """The message asks only about Sentti's question: after the question phrase and the amount, nothing is
-        left but filler words and punctuation (a confident full match, as the other rules). Without an amount
-        it also needs an anchor (a purchase word, "this question") or nothing left ("why do you ask?")."""
-        rest = _AMOUNT_TEXT.sub(" ", message[:phrase.start()] + " " + message[phrase.end():])
-        words = re.findall(r"[\w']+", rest)
+    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> tuple[bool, list[date]]:
+        """The message asks only about Sentti's question: after the question phrase, the amount and any date,
+        nothing is left but filler words and punctuation (a confident full match, as the other rules).
+        Without an amount it also needs an anchor (a purchase word or "this question", in the phrase or
+        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Returns the
+        dates it removed: the caller checks they are the purchase's own date."""
+        spans, rest = find_dates(message[:phrase.start()] + " " + message[phrase.end():], blank_all=True)
+        words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
+        dates = [span.start for span in spans]
         if any(not REVIEW_FILLER.fullmatch(w) for w in words):
-            return False
+            return False, dates
         if has_amount:
-            return True
-        return any(REVIEW_ANCHOR.fullmatch(w) for w in words) or all(REVIEW_BARE.fullmatch(w) for w in words)
+            return True, dates
+        anchored = (any(REVIEW_ANCHOR.fullmatch(w) for w in words) or re.search(r"question|kysym", phrase.group(0), re.I)
+                    or all(REVIEW_BARE.fullmatch(w) for w in words))
+        return bool(anchored), dates
 
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
@@ -762,7 +768,8 @@ class Pipeline:
         (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
         phrase = SENTTI_QUESTION.search(message)
-        about_question = phrase is not None and self._only_about_the_review(message, phrase, bool(asked))
+        about_question, named_dates = (self._only_about_the_review(message, phrase, bool(asked)) if phrase
+                                       else (False, []))
         if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
@@ -782,6 +789,8 @@ class Pipeline:
         if (asked or not about_question) and not any(
                 abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
+        if about_question and any(d != date.fromisoformat(probe["date"]) for d in named_dates):
+            return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
         card = self._review_card(ctx, review)
         if card is None:
             return False
