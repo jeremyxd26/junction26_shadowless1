@@ -217,6 +217,8 @@ export interface EvidenceRow {
   /** Decimal string with the bank sign: "-24.50" is 24.50 out (contract section 9). */
   amount: string
   currency: string
+  /** The amount written by the server in the request language, with the bank sign: `-€24.50`, `-24,50 €`. Shown as sent. */
+  display: string
 }
 
 export interface EvidenceResponse {
