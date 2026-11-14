@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from agent_fakes import CANARY, FakeArgs, FakeData, audit_records, db_down_tool, failing_tool, registry, run
 
 from core.agent.model import FunctionCall, ModelError, ScriptedModel
@@ -34,12 +36,12 @@ def test_spending_question_end_to_end(make_pipeline):
 
 
 def test_numbers_event_comes_before_the_first_sentence_that_cites_it(make_pipeline):
-    draft = {"language": "en", "text": "Here is August 2026. It cost {{n1}}. There were {{n2}} visits.",
-             "cited": ["n1", "n2"], "lesson_key": None}
+    draft = {"language": "en", "text": "August 2026 cost {{n1}}. There were {{n2}} visits.",
+             "cited": ["n1", "n2"], "lesson_key": None}   # two sentences: the answer-length rule (#288)
     events = run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[draft])))
     stream = [(e, p) for e, p in events if e in ("numbers", "delta")]
-    assert [e for e, _ in stream] == ["delta", "numbers", "delta", "numbers", "delta"]
-    assert list(stream[1][1]["numbers"]) == ["n1"] and list(stream[3][1]["numbers"]) == ["n2"]
+    assert [e for e, _ in stream] == ["numbers", "delta", "numbers", "delta"]
+    assert list(stream[0][1]["numbers"]) == ["n1"] and list(stream[2][1]["numbers"]) == ["n2"]
 
 
 def test_invented_number_is_rejected_retried_then_template(make_pipeline):
@@ -109,7 +111,10 @@ def test_clarifying_question_ends_the_turn(make_pipeline):
     events = run(make_pipeline(ScriptedModel(plans=[[ask]])), "How much did I spend?")
     done = dict(events)["done"]
     assert done["outcome"] == "clarify"
-    assert done["clarify"] == {"question": "Which period do you mean?", "options": ["This month", "Last month"]}
+    # This registry has no spending tool, so the rules cannot take "This month" as a next message, and
+    # their own clarifying question replaces the model's (#304). With the service's tools it is kept.
+    assert done["clarify"] == {"question": "Which period do you mean?",
+                               "options": ["This month", "Last month", "The last three months"]}
 
 
 def test_clarifying_question_with_a_number_is_replaced(make_pipeline):
@@ -320,3 +325,51 @@ def test_no_later_card_before_the_error_when_a_call_finds_the_database_down(make
     events = run(make_pipeline(model, reg=reg, data=FakeData()))
     order = [e if e != "card" else p["card"]["card_id"] for e, p in events if e in ("card", "error", "done")]
     assert order == ["card_tool0", "error"]
+
+
+# ---- #288: the answer-length rule ---------------------------------------------------------------------------
+
+def test_a_draft_over_the_length_rule_is_retried_with_the_reason(make_pipeline):
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    short = {"language": "en", "text": "August 2026 cost {{n1}}, over {{n2}} visits.", "cited": ["n1", "n2"],
+             "lesson_key": None}
+    model = ScriptedModel(plans=[SPEND], drafts=[long, short])
+    pipe = make_pipeline(model)
+    done = dict(run(pipe))["done"]
+    assert done["outcome"] == "answered" and done["text"] == short["text"] and "llm_unavailable" not in done["warnings"]
+    attempts = audit_records(pipe)[-1]["composer_attempts"]
+    assert attempts[0]["validation"] == ["too long: 3 sentences, at most 2"] and attempts[1]["validation"] == "ok"
+
+
+def test_two_drafts_over_the_length_rule_end_in_the_template(make_pipeline):
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[long, long]))
+    done = dict(run(pipe))["done"]
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert audit_records(pipe)[-1]["composer_attempts"][-1]["raw"] == "template"
+
+
+# ---- #316: no "not available" when nothing failed ----------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "I do not have a calculated safe-to-spend limit available for this week, but August 2026 cost {{n1}}.",
+    "That figure cannot be calculated; August 2026 cost {{n1}}.",
+])
+def test_a_draft_saying_a_figure_is_not_available_is_rejected_when_nothing_failed(make_pipeline, text):
+    bad = {"language": "en", "text": text, "cited": ["n1"], "lesson_key": None}
+    good = {"language": "en", "text": "August 2026 cost {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == good["text"]
+    assert "no calculation failed" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
+
+
+def test_saying_a_failed_part_could_not_be_calculated_is_fine(make_pipeline):
+    draft = {"language": "en", "text": "August 2026 cost {{n1}}; the rest could not be calculated right now.",
+             "cited": ["n1"], "lesson_key": None}
+    model = ScriptedModel(plans=[[SPEND[0], FunctionCall("broken_tool", {}), FunctionCall("finish")]], drafts=[draft])
+    pipe = make_pipeline(model, registry(ToolSpec("broken_tool", "Fails.", FakeArgs, failing_tool, ("x", "x"))))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == draft["text"] and "tool_failed" in done["warnings"]

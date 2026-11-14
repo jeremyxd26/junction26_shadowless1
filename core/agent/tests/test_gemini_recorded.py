@@ -25,7 +25,9 @@ from core.agent.gemini_client import GeminiClient
 from core.agent.orchestrator import AskRequest, Pipeline
 from core.agent.registry import Registry, ToolSpec
 from core.agent.rules import RuleModel
+from core.agent.model import PlanInput
 from core.agent.toolset import default_registry
+from core.answer_text import length_problems
 from core.tools.models import Number, ToolResult
 
 RECORDINGS = sorted((Path(__file__).parent / "recordings").glob("*.json"))
@@ -93,7 +95,7 @@ def test_a_recorded_exchange_replays_without_network(path):
         pytest.skip(f"tools not in this checkout: {sorted(missing)}")
     replay = Replay(fixture["exchanges"])
     gemini = GeminiModel(GeminiClient(fixture["model"], replay, cache="off", fallback_model=None,
-                                      sleep=lambda s: None))
+                                      compose_model=fixture.get("compose_model"), sleep=lambda s: None))
     model = gemini if fixture["planner"] == "model" else RulesFirstModel(RuleModel(), gemini)
     audit = Audit()
     pipeline = Pipeline(recorded_registry(fixture), model, NoDatabase(), as_of=date.fromisoformat(fixture["as_of"]),
@@ -112,6 +114,11 @@ def test_a_recorded_exchange_replays_without_network(path):
     assert replay.exchanges == []                       # every recorded response was used
     for marker in RAW_ROW_MARKERS:                      # R3: no raw rows, ids or balances in the answer
         assert marker not in done["text_rendered"]
+    for text in (done["text"], done["text_rendered"]):   # #302: plain text, even when the model wrote markdown
+        assert not any(mark in text for mark in ("*", "`", "__", "](", "\n#"))
+    if done["outcome"] == "answered":
+        # #288: one takeaway and at most one more sentence, at most three numbers (Renat's rule)
+        assert length_problems(done["text"], len(set(done["cited"]))) == []
 
 
 def test_the_recordings_cover_the_required_exchanges():
@@ -135,3 +142,58 @@ def test_recordings_hold_no_key_and_no_http_headers():
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"A[I]za[0-9A-Za-z_-]{30,}", text)          # the shape of a Google API key
         assert "x-goog-api-key" not in text.lower() and "headers" not in text and "key=" not in text
+
+
+def test_some_recorded_responses_hold_markdown_that_the_answer_drops():
+    """#302: real composer responses with **bold** (recorded before the prompt asked for plain text); the
+    replay above proves their answers come out without it."""
+    drafts = [json.loads(json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["response"]["candidates"][0]
+                         ["content"]["parts"][-1]["text"])["text"]
+              for p in RECORDINGS if json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["kind"] == "compose"]
+    assert any("**" in d for d in drafts)
+
+
+
+# ---- #288: what the new prompts must show in real answers ------------------------------------------------
+
+def load(name: str) -> dict:
+    return json.loads((Path(__file__).parent / "recordings" / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def cited_methods(fixture: dict) -> list[str]:
+    numbers = {n["id"]: n for t in fixture["tools"] for n in t["numbers"]}
+    return [numbers[i]["method"] for i in re.findall(r"\{\{(n\d+)\}\}", fixture["expect"]["text"])]
+
+
+def test_a_spending_question_without_a_period_is_asked_back_with_options_the_rules_recognise():
+    """#304: "How much did I spend?" names no period: the planner asks back instead of picking August,
+    and every option works as the next message when the model is off."""
+    fixture = load("clarify-how-much-did-i-spend-en")
+    assert fixture["expect"]["outcome"] == "clarify" and fixture["expect"]["tool_calls"] == ["ask_clarifying_question"]
+    call = fixture["exchanges"][0]["response"]["candidates"][0]["content"]["parts"][0]["function_call"]
+    rules = RuleModel()
+    for option in call["args"]["options"]:
+        plan = rules.plan(PlanInput(question=option, language="en", as_of=fixture["as_of"],
+                                    tools=default_registry().schemas()))
+        assert plan.recognised and plan.calls[0].name != "ask_clarifying_question", option
+
+
+def test_a_merchant_total_of_several_purchases_is_not_called_one_visit():
+    """#301: Restaurant A's €24.88 adds up two purchases; the answer calls it a total, never a visit."""
+    fixture = load("merchant-restaurants-total-en")
+    groups = [g for t in fixture["tools"] for g in t["model_view"].get("groups") or []]
+    several = {g["amount"]["id"] for g in groups if (g.get("transactions") or 0) > 1}
+    text = fixture["expect"]["text"]
+    assert several & set(re.findall(r"\{\{(n\d+)\}\}", text))          # the answer cites such a total
+    assert not re.search(r"\b(?:visit|bill|purchase|receipt)\b", text, re.I)
+
+
+def test_the_spender_type_answer_cites_the_comparison_with_similar_people():
+    """r-w6's comparison: both models left the peer numbers out of every spender-type answer."""
+    assert any(m.startswith("peer_benchmark.") for m in cited_methods(load("spender-type-peers-en")))
+
+
+def test_the_what_if_answer_states_its_baseline():
+    """r-w6's comparison: flash-lite left the dining baseline out three times in eight."""
+    methods = cited_methods(load("what-if-restaurants-baseline-en"))
+    assert "what_if.baseline_month_eur@1" in methods and "what_if.saving_month_eur@1" in methods

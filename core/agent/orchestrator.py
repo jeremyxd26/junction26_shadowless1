@@ -49,8 +49,9 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
-from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
-from core.answer_text import scan_numbers
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, plain_text, render,
+                                  unavailable_claim, validate)
+from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -346,10 +347,17 @@ class Pipeline:
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
+                clarify = controls["ask_clarifying_question"]
+                if source == "model" and not self._options_work(clarify.options, lang, history, message):
+                    # A tapped option is sent as the next message: one the rules do not recognise would
+                    # get another clarifying question when the model is off (#304). The rules' own
+                    # clarifying question for this message is sent instead.
+                    a.planner_turns.append({"round": rnd, "source": "rules", "error": "clarify options not recognised"})
+                    clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341, r-coord's decision).
-                return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=model_failed)
+                return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
                 responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
@@ -661,6 +669,14 @@ class Pipeline:
                     a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                     continue
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
+                if not errors:
+                    # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
+                    # gets the reason and the template writes after it.
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    claim = None if request.errors else unavailable_claim(draft.text)
+                    if claim:
+                        # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
+                        errors.append(f"'{claim}': no calculation failed; say what the data shows instead")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
@@ -697,8 +713,29 @@ class Pipeline:
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 
+    def _options_work(self, options: list[str], lang: str, history: list[dict[str, Any]], message: str) -> bool:
+        """Every option of a model-written clarifying question is a next message the rules recognise
+        (a full question such as "Where did my money go?", or "Last month" after this question)."""
+        after = history + [{"question": message, "calls": [], "results": []}]
+        for option in options:
+            plan = self.fallback.plan(PlanInput(question=plain_text(option), language=lang, as_of=self.as_of.isoformat(),
+                                                tools=self.registry.schemas(), history=after))
+            if not getattr(plan, "recognised", True) or any(c.name == "ask_clarifying_question" for c in plan.calls):
+                return False
+        return True
+
+    def _rules_clarify(self, plan_in: PlanInput, lang: str) -> Any:
+        """The rules' clarifying question for this message, or their general one."""
+        for call in self.fallback.plan(plan_in).calls:
+            if call.name == "ask_clarifying_question":
+                return self.registry.parse(call.name, call.args)[1]
+        return dataclasses.make_dataclass("Clarify", ["question", "options"])(
+            template.pick(template.CLARIFY_GENERAL["question"], lang),
+            list(template.pick(template.CLARIFY_GENERAL["options"], lang)))
+
     def _clarify(self, args: Any, lang: str, emit: Emit, a: _Answer, not_worked_out: bool = False) -> str:
-        question, options = args.question, list(args.options)
+        # Plain text (#302): a model may write markdown here too.
+        question, options = plain_text(args.question), [plain_text(o) for o in args.options]
         # The clarifying question is model text: it passes the same text rules (R1, R9, R7).
         if any(check_text(t, Allowed(frozenset({self.as_of}), frozenset())) for t in [question, *options]):
             question = template.pick(template.CLARIFY["question"], lang)

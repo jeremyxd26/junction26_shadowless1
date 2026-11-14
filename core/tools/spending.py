@@ -193,13 +193,16 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
 
     # ---- groups ----
     groups: list[SpendingGroup] = []
+    group_counts: list[int] = []   # per group, in group order: how many transactions its amount adds up
     if args.group_by is not GroupBy.NONE:
         by = args.group_by.value
         if by == "basket" and base.direction == "in":
             raise ValueError("group_by 'basket' applies to spending only (direction 'out')")
         sums: dict[str, Decimal] = defaultdict(Decimal)
+        counts: dict[str, int] = defaultdict(int)   # transactions per group, for the model view (#301)
         for c in select(rows, base):
             sums[group_key(c, by)] += amount(c, base.direction)
+            counts[group_key(c, by)] += 1
         if by in TIME_GROUPINGS:
             keys, rest = sorted(sums), []
         else:
@@ -231,6 +234,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
                                             Unit.EUR, period, change_label)[0])
             groups.append(SpendingGroup(key=public_key, label=label, amount=reg(amount_n[0]),
                                         share=share, change=change_n))
+            group_counts.append(sum(counts[k] for k in rest) if key == "other" else counts[key])
 
     data = SpendingData(period=period, total=total, tx_count=tx_count, comparison=comparison, groups=groups)
     evidence.write(ctx.conn, nb.specs)
@@ -240,7 +244,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         card=_card(args, data, lang),
         notes=notes,
         evidence=list(nb.specs),
-        model_view=_model_view(data, base.direction, notes),
+        model_view=_model_view(data, base.direction, notes, group_counts),
     )
 
 
@@ -261,8 +265,14 @@ def _card(args: GetSpendingArgs, data: SpendingData, language: str) -> Card:
                 items=[g.model_dump() for g in data.groups], **common)
 
 
-def _model_view(data: SpendingData, direction: str, notes: list[str]) -> dict[str, Any]:
-    """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3)."""
+def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None) -> dict[str, Any]:
+    """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3).
+
+    A group's amount is the total of all its transactions in the period. The view says so, and gives
+    the number of transactions it adds up (#301): a merchant's total of two purchases was read as
+    "your largest visit". The count is context for the wording only. It has no id, so the answer
+    cannot cite it."""
+    counts = counts if counts is not None else [None] * len(data.groups)
     comparison = None
     if data.comparison is not None:
         comparison = {
@@ -280,9 +290,10 @@ def _model_view(data: SpendingData, direction: str, notes: list[str]) -> dict[st
         "tx_count": _model_number(data.tx_count),
         "comparison": comparison,
         "groups": [
-            {"key": g.key, "label": g.label, "amount": _model_number(g.amount), "share": _model_number(g.share),
-             "change": _model_number(g.change), "flags": g.flags}
-            for g in data.groups
+            {"key": g.key, "label": g.label, "amount": _model_number(g.amount),
+             "amount_is": "total_for_period", "transactions": n,
+             "share": _model_number(g.share), "change": _model_number(g.change), "flags": g.flags}
+            for g, n in zip(data.groups, counts)
         ],
         "notes": list(notes),
     }

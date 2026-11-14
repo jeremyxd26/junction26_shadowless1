@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names
 from core.agent.toolset import KNOWN_TOOLS, default_registry
-from core.agent.validator import Allowed, validate
+from core.agent.validator import Allowed, plain_text, validate
 from core.agent.validator import render as validator_render
 from core.tools.formatting import display
 from core.tools.models import Number, Unit
@@ -223,3 +223,54 @@ def test_default_registry_builds_with_the_tools_present():
     assert set(reg.names()) <= {k.function for k in KNOWN_TOOLS}
     for schema in reg.schemas():  # field names at any depth; descriptions may mention the customer
         assert not any("customer" in name.lower() for name in property_names(schema["parameters_json_schema"]))
+
+
+# ---- #302: plain text ------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("draft, plain", [
+    ("an estimated **{{n1}}** is safe to spend.", "an estimated {{n1}} is safe to spend."),
+    ("__September__ was *cheaper* than `August`.", "September was cheaper than August."),
+    ("## Your spending\n- Groceries: {{n1}}\n* Bills: {{n2}}\n1. Rest", "Your spending\nGroceries: {{n1}}\nBills: {{n2}}\nRest"),
+    ("See [your card](https://example.org/x) and ![a chart](c.png).", "See your card and a chart."),
+    ("[ref]: https://example.org\nRead [the card][ref].", "Read the card."),
+    ("28.9.2026 you spent {{n1}}.", "28.9.2026 you spent {{n1}}."),
+])
+def test_plain_text_drops_markdown_and_keeps_words_and_tokens(draft, plain):
+    assert plain_text(draft) == plain
+
+
+def test_a_draft_with_markdown_passes_as_plain_text():
+    """The strip runs before the checks: a draft is not rejected only for markup that is dropped (a link
+    keeps its text), and the delivered text has none of it."""
+    numbers = {"n1": N1}
+    raw = {"language": "en", "text": "In August 2026 you spent **{{n1}}** on [groceries](https://example.org).",
+           "cited": ["n1"], "lesson_key": None}
+    draft, errors = validate(raw, language="en", numbers=numbers, allowed=ALLOWED)
+    assert errors == [] and draft.text == "In August 2026 you spent {{n1}} on groceries."
+
+
+# ---- #288: a period written again after a number that already carries it -----------------------------------
+
+MONTHLY = Number(id="n1", value=3010.59, unit=Unit.EUR_PER_MONTH, period=AUG, method="baskets.month_avg_eur@1",
+                 evidence_ref="ev_m", label="Total spending", display=display(Decimal("3010.59"), Unit.EUR_PER_MONTH, "en"))
+MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), Unit.EUR_PER_MONTH, "fi")})
+
+
+@pytest.mark.parametrize("text, lang", [
+    ("In August 2026 you spent {{n1}} a month.", "en"),             # live: "€3,010.59 a month a month"
+    ("In August 2026 you spent {{n1}} per month on average.", "en"),
+    ("In August 2026 you spent {{n1}}, monthly.", "en"),
+    ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
+    ("Elokuussa 2026 käytit {{n1}} / kk.", "fi"),
+])
+def test_a_period_after_a_number_that_carries_it_is_rejected(text, lang):
+    numbers = {"n1": MONTHLY if lang == "en" else MONTHLY_FI}
+    _, errors = validate({"language": lang, "text": text, "cited": ["n1"], "lesson_key": None},
+                         language=lang, numbers=numbers, allowed=ALLOWED)
+    assert any("already says how often" in e for e in errors), errors
+
+
+def test_the_same_number_without_the_repeated_period_passes():
+    _, errors = validate({"language": "en", "text": "In August 2026 you spent {{n1}} on average.", "cited": ["n1"],
+                          "lesson_key": None}, language="en", numbers={"n1": MONTHLY}, allowed=ALLOWED)
+    assert errors == []

@@ -1,0 +1,55 @@
+{
+ "question": "How much did I spend?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [],
+ "exchanges": [
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_3902334836922250803",
+          "args": {
+           "options": [
+            "This month",
+            "Last month",
+            "The last three months"
+           ],
+           "question": "Which period would you like to check?"
+          },
+          "name": "ask_clarifying_question"
+         },
+         "thought_signature": "EmAKXgFpFH0Tpny8bNtDHcg6MByWDBCH5h1DiMnv-t-bh5o2Yiol9CCNAHvblqYmkDV11_ohzUAWgSFhtsjrZ96TTV8kn-Z3TFLmwUak2deJIJXVCAzzomczS8CFAA8pzSI="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3797,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 45
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "clarify",
+  "refusal_kind": null,
+  "tool_calls": [
+   "ask_clarifying_question"
+  ],
+  "text": "Which period would you like to check?",
+  "text_rendered": "Which period would you like to check?"
+ }
+}
