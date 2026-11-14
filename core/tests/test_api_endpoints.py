@@ -373,7 +373,7 @@ def test_whatif_errors_are_in_the_bodys_language(clean_env, monkeypatch):
     def unknown(conn, customer_id):
         raise ApiError("customer_not_found")
 
-    monkeypatch.setattr(whatif, "require_customer", unknown)
+    monkeypatch.setattr(deps, "require_customer", unknown)   # what-if checks through deps.customer_connection
     response = _post_whatif(monkeypatch, {**WHATIF, "language": "fi"}, lambda ctx, args: None)
     assert_envelope(response, 404, "customer_not_found")
     assert response.json()["error"]["message"] == "Asiakasta ei löytynyt."
