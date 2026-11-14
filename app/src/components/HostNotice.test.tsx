@@ -48,7 +48,7 @@ describe('HostNotice (#431)', () => {
 
   it('closed, only the empty live region is rendered, so the text is announced once when it appears', () => {
     expect(view(false)).toBe(
-      '<div class="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[60] mx-auto flex max-w-[480px] justify-center px-4"><div role="status" aria-live="polite"></div></div>',
+      '<div data-sheet-keep="" class="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[60] mx-auto flex max-w-[480px] justify-center px-4"><div role="status" aria-live="polite"></div></div>',
     )
   })
 
