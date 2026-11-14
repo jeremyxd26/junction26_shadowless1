@@ -28,7 +28,7 @@ from core.tools.context import ToolContext
 from core.tools.models import MERCHANT_ALIAS_PATTERN
 from core.tools.what_if import RunWhatIfArgs, WhatIfRefused, run_what_if
 
-from .deps import connection, require_customer
+from .deps import customer_connection
 from .errors import ApiError
 from .schemas import WhatIfRequest, WhatIfResponse
 
@@ -66,8 +66,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
 @router.post("/api/whatif", response_model=WhatIfResponse)
 def post_whatif(request: Request, body: WhatIfRequest) -> WhatIfResponse:
     request.state.language = body.language  # every error from here on is in the body's language
-    with connection(request) as conn:
-        require_customer(conn, body.customer_id)
+    with customer_connection(request, body.customer_id) as conn:   # allowlist first, no database (#101)
         ctx = ToolContext(customer_id=body.customer_id, as_of=request.app.state.settings.demo_today, conn=conn,
                           language=body.language)
         return build(ctx, body)

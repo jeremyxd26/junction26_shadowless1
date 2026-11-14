@@ -233,14 +233,15 @@ UNIT_MARKS = {"eur": {"eur"}, "eur_per_day": {"eur"}, "eur_per_week": {"eur"}, "
               "days": {None}, "months": {None}}
 
 
-def formatted(value, unit: str, language: str) -> str:
-    """What the server's formatter (core/tools/formatting.display) writes for this value and unit."""
+def formatted(value, unit: str, language: str, method: str | None = None) -> str:
+    """What the server's formatter (core/tools/formatting.display) writes for this value, unit and
+    method: the method decides some forms ("20%" for a typed cut, "32.3% more" for the peer gap)."""
     from decimal import Decimal
 
     from core.tools.formatting import display
     from core.tools.models import Unit
 
-    return display(Decimal(str(value)), Unit(unit), language)
+    return display(Decimal(str(value)), Unit(unit), language, method)
 
 
 def _same(a: str, b: str) -> bool:
@@ -248,25 +249,28 @@ def _same(a: str, b: str) -> bool:
     return normalise(a).replace("\u2212", "-") == normalise(b).replace("\u2212", "-")
 
 
-def same_value(a, b, unit: str) -> bool:
+def same_value(a, b, unit: str, method: str | None = None) -> bool:
     """Two values are the same number for the user: counts, days and months exactly; money and
-    percentages when the formatter shows them the same (no tolerance on the raw value, so 45.915,
-    shown as 45.92, is not 45.91)."""
+    percentages when the formatter shows them the same for this method (no tolerance on the raw
+    value, so 45.915, shown as 45.92, is not 45.91)."""
     if unit in ("count", "days", "months"):
         return float(a) == float(b)
     try:
-        return formatted(a, unit, "en") == formatted(b, unit, "en")
+        return formatted(a, unit, "en", method) == formatted(b, unit, "en", method)
     except (ValueError, ArithmeticError):
         return False
 
 
-def display_matches(display: str, value: float, unit: str, language: str | None = None) -> bool:
+def display_matches(display: str, value: float, unit: str, language: str, method: str | None = None) -> bool:
     """A declared Number object's display is valid only if it EQUALS what the server's formatter
-    writes for its value and unit, in English or Finnish. A display is never free text, so no suffix
-    or unit word is parsed: "1 euro" on a count or "€45.91 a year" on a monthly value never match."""
-    if unit not in UNIT_MARKS:
+    writes for its value, unit and method in the answer's own language. A display is never free text, so
+    no suffix or unit word is parsed: "1 euro" on a count or "€45.91 a year" on a monthly value never
+    match, and "20.0%" for a cut the user typed (method user_input@1, shown as "20%") does not either.
+    The language is required and only its form counts: "4,120" is 4120 in English but reads as 4.12 in
+    Finnish, so a Finnish answer must say "4 120" (review of #128)."""
+    if unit not in UNIT_MARKS or language not in ("en", "fi"):
         return False
     try:
-        return any(_same(display or "", formatted(value, unit, lang)) for lang in ("en", "fi"))
+        return _same(display or "", formatted(value, unit, language, method))
     except (ValueError, ArithmeticError):
         return False
