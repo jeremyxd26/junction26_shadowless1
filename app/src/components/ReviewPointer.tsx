@@ -3,7 +3,7 @@ import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { BasketKey, ReviewCard } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
-import { useOpening } from '../lib/openingContext.ts'
+import { useOpening, type AnsweredReview } from '../lib/openingContext.ts'
 import {
   reviewPlacement,
   threadReview,
@@ -20,6 +20,8 @@ import { ReviewAnswered, ReviewAsking } from './ReviewCard.tsx'
  * - when the opening (or an earlier turn) shows it, this answer only points there: one line and a
  *   44 px "Show" button that scrolls to that card, which is on the screen whenever this shows;
  * - otherwise this answer shows the review card itself, with working answer buttons;
+ * - once the opening's question is answered, this answer says which basket the purchase went to,
+ *   with no button; after Undo it points to the question again (#452);
  * - once that card is closed (Not sure, or the review is gone), this answer shows nothing more: it
  *   does not turn into a pointer to the card a later answer then shows.
  * The card's state lives here, so it outlives the card itself.
@@ -30,8 +32,22 @@ export function ReviewPointer({ card }: { card: ReviewCard }) {
   const [state, dispatch] = useReducer(threadReview, THREAD_REVIEW_START)
   const placement = reviewPlacement(card.tx_ref, owner, opening, state.kind === 'not_sure')
   if (placement === 'none') return null
+  if (placement === 'answered' && opening?.answered) return <AnsweredLine answered={opening.answered} />
   if (placement === 'pointer') return <Pointer card={card} />
   return <ThreadReviewCard card={card} owner={owner} state={state} dispatch={dispatch} />
+}
+
+/** "You put this in 🔧 Unexpected necessities.": the opening's answer, with the API's label (#452). */
+function AnsweredLine({ answered }: { answered: AnsweredReview }) {
+  const { lang } = useSettings()
+  const s = reviewStrings(lang)
+  return (
+    <div data-review-answered={answered.txRef} className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-sm font-semibold text-ink">
+        {s.putIn} <span aria-hidden="true">{BASKETS[answered.basketKey]?.icon}</span> {answered.basketLabel}.
+      </p>
+    </div>
+  )
 }
 
 function Pointer({ card }: { card: ReviewCard }) {

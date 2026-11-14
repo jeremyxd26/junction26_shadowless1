@@ -6,12 +6,14 @@ import type { Opening } from './openingContext.ts'
 /**
  * - `none`: this answer showed the review card itself and the person closed it (Not sure, or the
  *   review is gone): the answer shows nothing more, and never turns into a pointer to a later card.
- * - `pointer`: the opening shows the question about this purchase (asking or answered), or an
- *   earlier turn in the thread shows it: one line and a "Show" button that scrolls to that card.
+ * - `answered`: the opening's question about this purchase is answered (and not undone): one line
+ *   that says which basket it went to, with no button (#452).
+ * - `pointer`: the opening asks about this purchase, or an earlier turn in the thread shows its
+ *   card: one line and a "Show" button that scrolls to that card.
  * - `card`: nobody shows it (Not sure, another purchase, no question in the opening, or outside
  *   the thread): this answer shows the review card itself, with its answer buttons.
  */
-export type ReviewPlacement = 'none' | 'pointer' | 'card'
+export type ReviewPlacement = 'none' | 'answered' | 'pointer' | 'card'
 
 /** `closed`: this answer showed the review card and it was closed (`ThreadReview` kind `not_sure`). */
 export function reviewPlacement(
@@ -22,6 +24,7 @@ export function reviewPlacement(
 ): ReviewPlacement {
   if (closed) return 'none'
   if (!opening) return 'card'
+  if (opening.answered?.txRef === txRef) return 'answered'
   if (opening.shownReview?.txRef === txRef) return 'pointer'
   const holder = opening.threadReviews[txRef]
   return holder && holder !== owner ? 'pointer' : 'card'

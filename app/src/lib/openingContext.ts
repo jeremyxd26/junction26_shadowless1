@@ -1,9 +1,19 @@
 import { createContext, useContext } from 'react'
+import type { BasketKey } from '../api/types.ts'
 
-/** The "Sentti asks" card the opening shows right now, as the overview reports it (#450). */
-export interface ShownReview {
+/**
+ * The "Sentti asks" card the opening shows right now, as the overview reports it (#450). Once it is
+ * answered, it also names the basket, with the label the label response gave (#452).
+ */
+export type ShownReview =
+  | { txRef: string; phase: 'asking' }
+  | { txRef: string; phase: 'answered'; basketKey: BasketKey; basketLabel: string }
+
+/** The opening's question, answered (Needed or My choice) and not undone (#452). */
+export interface AnsweredReview {
   txRef: string
-  phase: 'asking' | 'answered'
+  basketKey: BasketKey
+  basketLabel: string
 }
 
 /**
@@ -17,6 +27,8 @@ export interface Opening {
   shownReview: ShownReview | null
   /** The overview reports the card it shows; null when it shows none. */
   reportReview: (shown: ShownReview | null) => void
+  /** The opening's question once answered, with its basket; null while asking, after Undo, or none. */
+  answered: AnsweredReview | null
   /** Review cards answered inside the thread (#450), by `tx_ref`: the turn that shows it. */
   threadReviews: Record<string, string>
   /** A thread turn shows the review card for `txRef`; the first one keeps it until it releases it. */
