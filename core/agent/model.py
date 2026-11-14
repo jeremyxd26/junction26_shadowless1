@@ -92,6 +92,7 @@ class ComposeInput:
     errors: list[dict[str, Any]] = field(default_factory=list)  # {"tool": name, "error": code}
     previous_turn: dict[str, Any] | None = None       # question and answer, numbers masked as [number]
     validation_errors: list[str] = field(default_factory=list)  # set on the retry
+    general: bool = False                             # a general money answer in plain words, no data (#572)
 
 
 @dataclass(frozen=True)

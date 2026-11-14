@@ -521,11 +521,25 @@ def _length_case():
             "tags": ["t"], "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005}]}
 
 
-def test_an_answer_over_two_sentences_fails_the_length_rule():
+def test_an_answer_over_three_sentences_fails_the_length_rule():
     q3 = {"start": "2026-07-01", "end": "2026-09-30"}
-    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual.",
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+                      "Most of it was at weekends.",
                  outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
-    assert run.check(_length_case(), ans, "en") == ["length: too long: 3 sentences, at most 2"]
+    assert run.check(_length_case(), ans, "en") == ["length: too long: 4 sentences, at most 3"]
+
+
+def test_a_why_answer_may_have_four_sentences_and_not_five():
+    # #572: a why or how question gets up to four sentences; an ordinary one three
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    case = dict(_length_case(), question={"en": "Why did I spend so much on restaurants in the last 3 months?"})
+    four = ("From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+            "Most of it was at weekends.")
+    ans = Answer(text=four, outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == []
+    ans = Answer(text=four + " Lunches were the rest.", outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)],
+                 labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == ["length: too long: 5 sentences, at most 4"]
 
 
 def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_one_word():
@@ -612,3 +626,87 @@ def test_the_below_median_case_forbids_the_invitation_and_passes_its_own_sentenc
     above = [t.format(vs="14.6% more", metric="restaurants") for t in PEER["total"] + PEER["metric"]]
     assert not any(re.search(pattern, t, re.I) for t in below), below
     assert all(re.search(pattern, t, re.I) for t in above), above
+
+
+# ---- #572: a general money question in plain words (expect: words) ------------------------------------------
+
+def _words_case():
+    return {"id": "t-words", "persona": "CUST00860", "intent": "general_money", "expect": "words",
+            "question": {"en": "How big should my emergency buffer be?"}, "no_data_tool_call": True, "tags": ["t"]}
+
+
+def test_a_plain_words_answer_passes():
+    ans = Answer(text="A buffer is money you keep aside for surprises. Many people build it up first, with a small "
+                      "transfer on payday.", outcome="answered", labels=[], tool_calls=[])
+    assert run.check(_words_case(), ans, "en", _words_case()["question"]["en"]) == []
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("Keep about three months of costs aside.", "plain words: 'three'"),
+    ("Keep 3 months of costs aside.", "R1"),
+    ("Put it into an index fund.", "plain words: 'index fund'"),
+    ("Spara tre månaders utgifter.", "plain words: 'Spara'"),
+    ("Take a car loan.", "plain words: 'loan'"),
+    ("A buffer helps. Build it first. Save on payday. Keep it apart. Check it monthly.", "length: too long: 5 sentences"),
+])
+def test_a_number_a_product_or_a_fifth_sentence_fails_a_plain_words_answer(text, reason):
+    ans = Answer(text=text, outcome="answered", labels=[], tool_calls=[])
+    fails = run.check(_words_case(), ans, "en", _words_case()["question"]["en"])
+    assert any(f.startswith(reason) for f in fails), fails
+
+
+def test_a_plain_words_case_needs_the_answer_and_no_tool():
+    question = _words_case()["question"]["en"]
+    asked_back = Answer(text="What would you like to know about your money?", outcome="clarify", labels=[], tool_calls=[])
+    assert run.check(_words_case(), asked_back, "en", question) == ["outcome clarify, expected answered"]
+    with_data = Answer(text="A buffer is money for surprises.", outcome="answered", labels=[],
+                       tool_calls=["get_safe_to_spend"])
+    assert run.check(_words_case(), with_data, "en", question) == ["data tools called: ['get_safe_to_spend']"]
+
+
+@pytest.mark.parametrize("kind", ["out_of_scope", "investment_advice"])
+def test_a_refusal_never_passes_a_plain_words_case(kind):
+    # the plain-words check holds whatever the switch: a decline is not plain words (review of #618, pass 3)
+    question = _words_case()["question"]["en"]
+    refused = Answer(text="That's outside my lane.", outcome="refused", refusal_kind=kind, labels=[], tool_calls=[])
+    assert "outcome refused, expected answered" in run.check(_words_case(), refused, "en", question)
+
+
+def _asked_cases(monkeypatch, tmp_path, *argv):
+    """The case ids run.main asks, with the check stubbed (no database) and no switch file unless a test makes one."""
+    asked = []
+    monkeypatch.setattr(run, "GENERAL_ON", tmp_path / "general-on")
+    monkeypatch.setattr(run, "make_source", lambda args, doc: lambda persona, question, lang: Answer(
+        text="", outcome="answered", labels=[], tool_calls=[]))
+    monkeypatch.setattr(run, "check", lambda case, ans, lang, question="", deriver=None: asked.append(case["id"]) or [])
+    monkeypatch.setattr(sys, "argv", ["run.py", "--lang", "en", *argv])
+    with pytest.raises(SystemExit):
+        run.main()
+    return asked
+
+
+def test_with_the_switch_off_the_eval_asks_exactly_the_cases_without_the_general_tag(monkeypatch, tmp_path):
+    import expected
+    cases = expected.load(expected.CASES)["cases"]
+    general = [c["id"] for c in cases if "general" in c["tags"]]
+    assert len(general) == 10 and all(c["expect"] in ("words", "refused") for c in cases if c["id"] in general)
+    off = _asked_cases(monkeypatch, tmp_path)                      # auto: no var/general-on
+    assert off == [c["id"] for c in cases if "general" not in c["tags"]]
+    assert _asked_cases(monkeypatch, tmp_path, "--general", "off") == off
+    on = _asked_cases(monkeypatch, tmp_path, "--general", "on")
+    assert on == [c["id"] for c in cases]
+    (tmp_path / "general-on").write_text("", encoding="utf-8")   # auto with the switch file
+    assert _asked_cases(monkeypatch, tmp_path) == on
+
+
+def test_the_eval_reads_the_same_switch_file_as_the_pipeline():
+    from core.agent import orchestrator
+    assert run.GENERAL_ON == orchestrator.GENERAL_ON
+
+
+def test_a_plain_words_case_must_say_no_data_tool_call():
+    import expected
+    case = _words_case()
+    case.pop("no_data_tool_call")
+    errors = expected.validate({"cases": [case]})
+    assert any("no_data_tool_call" in e for e in errors), errors

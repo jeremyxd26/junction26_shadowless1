@@ -24,8 +24,9 @@ is checked for (rules of docs/design/research-bank-assistants.md):
   forbid       a value a confused coach would give does not appear
   forbid_text  a phrase the case rules out does not appear (a pattern, case-insensitive)
   deny lists   no sensitive inference (R9), no buy/sell instruction (R7), no promise (R13)
-  length       an answered outcome is at most two sentences, about 35 words and three numbers (the
-               answer-length rule, #288; core/answer_text.py length_problems, shared with the pipeline)
+  length       an answered outcome is at most three sentences, 55 words and three numbers; four sentences and
+               75 words for a why or how question (the answer-length rule, #288, #572; core/answer_text.py
+               length_problems, shared with the pipeline)
   bank screen  no sentence names both an amount and the bank's screen or product (#417)
 It prints one line per question, a summary per tag, and exits 1 on any failure. A source that does
 not report its tool calls or keys fails those checks as "unverified"; it never passes them.
@@ -64,6 +65,11 @@ DENY = {
 }
 
 ANY_OUTCOMES = ("answered", "refused", "clarify")
+# The general route's switch (#572), the same file as core.agent.orchestrator.GENERAL_ON: the cases tagged `general`
+# (expect: words, and the general-sounding questions that stay declined) run only while the route is on, so with it
+# off the eval asks exactly dev's cases (review of #618, pass 3). `--general on|off` overrides the local file, for a
+# source whose switch lives elsewhere (--source api).
+GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"
 
 
 def _iso(value) -> date | None:
@@ -127,7 +133,13 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
     if case["expect"] == "no_data" and ans.follow_ups is not None and not ans.follow_ups:
         fails.append("chips: a period without data offers what Sentti can answer instead (#379)")
-    if case["expect"] in ("refused", "no_data", "meta"):
+    if case["expect"] == "words":   # plain words (#572); no tool: no_data_tool_call
+        for problem in answer_text.general_problems(ans.text or "") + \
+                answer_text.general_language_problems(ans.text or "", lang):
+            fails.append(f"plain words: {problem}")
+        for problem in answer_text.length_problems(ans.text or "", 0, kind="general"):
+            fails.append(f"length: {problem}")
+    if case["expect"] in ("refused", "no_data", "meta", "words"):
         for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")
     else:
@@ -193,7 +205,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append(f"forbidden value {f['name']} = {f['value']} appears")
     if case["expect"] == "answered" and ans.outcome == "answered" and not getattr(ans, "length_exempt", False):
         displays = [str(x.get("display") or "") for x in declared]
-        for problem in answer_text.length_problems(ans.text, len(declared), displays=displays):
+        for problem in answer_text.length_problems(ans.text, len(declared), displays=displays,
+                                                   kind=answer_text.answer_kind(question)):
             fails.append(f"length: {problem}")
     for f in case.get("forbid_text") or []:
         m = re.search(f["pattern"], ans.text, re.I)
@@ -236,6 +249,9 @@ def main() -> None:
     ap.add_argument("--tag", action="append", help="only cases with this tag (repeatable)")
     ap.add_argument("--persona", action="append", help="only this customer_id (repeatable)")
     ap.add_argument("--case", action="append", help="only this case id (repeatable)")
+    ap.add_argument("--general", choices=["auto", "on", "off"], default="auto",
+                    help="the general route (#572): cases tagged general run only when it is on; auto reads "
+                         "var/general-on in this checkout")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Finnish text on any console
 
@@ -248,6 +264,12 @@ def main() -> None:
              if (not args.tag or set(args.tag) & set(c["tags"]))
              and (not args.persona or c["persona"] in args.persona)
              and (not args.case or c["id"] in args.case)]
+    general_on = args.general == "on" or (args.general == "auto" and GENERAL_ON.exists())
+    held = [c["id"] for c in cases if "general" in c["tags"] and not general_on]
+    if held:
+        print(f"SKIP  {len(held)} cases tagged general: the general route is off (var/general-on absent; "
+              f"--general on runs them): {', '.join(held)}", flush=True)
+        cases = [c for c in cases if c["id"] not in held]
     source = make_source(args, doc)
 
     deriver = Deriver(str(doc["as_of"]))

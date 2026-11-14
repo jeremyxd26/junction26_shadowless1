@@ -78,7 +78,8 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused", "meta", "any")
+# "words": a general money question answered in plain words (#572): no tool, no number, at most four sentences
+EXPECTS = ("answered", "no_data", "refused", "meta", "any", "words")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 
@@ -283,6 +284,8 @@ def validate(doc: dict) -> list[str]:
                 errors.append(f"{cid}: refusal_kinds must be a subset of {REFUSAL_KINDS}")
         if c.get("expect") == "answered" and not (c.get("numbers") or c.get("labels")):
             errors.append(f"{cid}: an answered case needs expected numbers or labels")
+        if c.get("expect") == "words" and (c.get("numbers") or c.get("expected_tools") or not c.get("no_data_tool_call")):
+            errors.append(f"{cid}: a plain-words case expects no number and no tool (no_data_tool_call: true)")
         for kind, item in items(c):
             for key in ("name", "source"):
                 if key not in item:

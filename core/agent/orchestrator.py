@@ -38,21 +38,24 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, NamedTuple, Protocol
 
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import glossary, guard, offers, template, validator, why_review
+from core.agent import glossary, guard, offers, rules, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.registry import CONTROL, GENERAL_CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
-from core.answer_text import find_dates, length_problems, scan_numbers
+from core.answer_text import GENERAL_BORROWING as GENERAL_BORROWING_WORDS
+from core.answer_text import (GENERAL_NON_ANSWER, answer_kind, find_dates, general_language_problems, general_problems,
+                              length_problems, scan_numbers)
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -64,7 +67,73 @@ from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 log = logging.getLogger("uvicorn.error")
 
 MAX_ROUNDS = 2
+# The general route's switch (#572): read once per answer (no restart). Only while this file exists is answer_in_words
+# declared to the planner and a planned one answered in plain words. Without it (the default, in code and on the
+# stand) the planner's declarations and the prompts are exactly dev's, so no model cache empties (review of #618,
+# pass 3), and an answer_in_words call (which no declaration then offers) still gets dev's out_of_scope decline.
+# Creating the file adds one declaration, so the planner's model cache empties once.
+GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"
+# The rules' verdict that leaves a message to a plain-words answer (#572): not claimed with no reason (their general
+# question back). Their period question ("How much do I spend on takeaway?") is an own-figures question, and a flagged,
+# other-person, competing, follow-up or unknown-thing message never goes there either (review of #618).
+GENERAL_REASONS = ("",)
+# Borrowing named in the message ("is it smart to take a quick loan?", "miten saan lainaa?"): never a plain-words
+# answer; the planner's credit decline, or the rules' plan (#572 B7, D8). Matched on the folded message; the same
+# list rejects borrowing in a general draft (answer_text.GENERAL_BORROWING).
+GENERAL_BORROWING = GENERAL_BORROWING_WORDS
+# A product, a bank, a card, an account or an investment named in the message ("Which savings account should I open?",
+# "Should I switch to a cheaper bank or card?"): the planner's investment decline or the rules' plan, never plain words
+# (#572 B5, B6; review of #618). An emergency or rainy-day fund is a buffer; "take into account" is plain words.
+GENERAL_PRODUCT_QUESTION = re.compile(
+    r"(?<!into )\baccounts?\b|\bbanks?\b|\bbanking\b|\bcards?\b|\bapps?\b|(?<!emergency )(?<!rainy day )"
+    r"(?<!rainy-day )\bfunds?\b|\bstocks?\b|\bshares\b|\binvest\w*|\bcrypto\w*|\bbitcoin\b|\binsurance\b"
+    r"|\bdeposits?\b|\bpension\w*|\bretirement\b|\bgold\b|\bbrokers?\b|\btili\b|\btilin\b|\btilille\b|\btilit\b"
+    r"|\btilia\b|\w*pankki\w*|\w*pankin\b|\w*kortti\w*|\w*kortin\b|\bsovellu\w*|\w*rahasto\w*|\w*osake\w*"
+    r"|\bsijoit\w*|\w*vakuutu\w*|\btalletu\w*|\belake\w*|\bkulta\w*", re.I)
+# An own-figures question ("How much did I spend…", "And how much did I spend the month before?", "How about my
+# savings?", "Paljonko kulutin ruokaan?"): the user's data, never a plain-words answer, also as a follow-up in a running
+# conversation (review of #618). Matched on the folded message.
+GENERAL_OWN_FIGURES = re.compile(
+    r"\b(?:did|do|have|had)\s+(?:i|we)\s+(?:spend|spent|pay|paid|buy|bought|earn|earned|save|saved|get)\b"
+    r"|\b(?:i|we)\s+(?:spent|paid|bought|earned|saved)\b|\bhow\s+much\s+(?:do|did|have|can|could|will)\s+(?:i|we)\b"
+    r"|\bmy\s+(?:spending|savings|balance|income|salary|paycheck|bills|account|money|expenses|budget|purchases"
+    r"|transactions|rent|subscriptions?|bonus)\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b|\bkaytinko\b"
+    r"|\bpaljonko\s+(?:kaytin|kulutin|maksoin|minulla|olen|minun)\b|\bminun\s+(?:kulu|saast|tili|tulo|palk|lasku|raha)\w*"
+    r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni)\b"
+    # the first person asking about their own state (closing review of #618): "Am I saving enough?", "Is my buffer big
+    # enough?", "Do I have too many subscriptions?", "How am I doing?", "Onko puskurini riittävä?", "Olenko …?"
+    r"|\b(?:am|was)\s+i\b|\b(?:is|are|was|were)\s+my\b|\bdo\s+i\s+have\b|\bhow\s+am\s+i\b|\bonko\s+minulla\b"
+    r"|\bolenko\b|\b\w{3,}ni\b", re.I)
+# A general money question names its money topic (#572): a bare follow-up ("why?", "tell me more") or a message about
+# anything else never gets a plain-words answer, in the first turn or later. Matched on the folded message.
+GENERAL_MONEY_WORDS = re.compile(
+    r"budget|buffer|emergency|rainy|\bsav(?:e|es|ing|ings)\b|\bbills?\b|invoice|due date|reference number|direct debit"
+    r"|impulse|purchase|\bmoney\b|\bspend|afford|\bhabits?\b|\bpay(?:ing|ments?)?\b|\bincome\b|\bsalary\b|\bcosts?\b"
+    r"|\bfinances\b|\bfinancial\b|\bbonus\w*|\bpaycheck\w*|\bpaychecks?\b|\brent\b|\bsubscriptions?\b"
+    r"|\bprices?\b|\bexpenses?\b|budjet|puskur|hatavar|saast|lasku|erapaiva|viite|herateost|ostos|\braha|kulu|menot"
+    r"|tulot|palkka|maksa|hinta|hinnat|vuokra\w*|tilau\w*|bonu\w*", re.I)
 MAX_DATA_CALLS = 6
+_NOTHING_ALLOWED = Allowed(frozenset(), frozenset())
+
+
+def general_draft_problems(raw: Any, language: str) -> tuple[AnswerDraft | None, list[str]]:
+    """Every check a general draft passes before it is shown (#572), in order: the validator with no Numbers and
+    nothing allowed (no digit, no date, no markup, the right language field), then the length rule for "general",
+    general_problems (no number in any form, no name but Sentti (S-Pankki and S-mobiili are still products), no
+    product, borrowing, health, link, judging or statement about the user's own money), the positive language check,
+    the draft checks and no "I could not work this out" (composer.md's text for empty <data>). Returns the draft and
+    the reasons."""
+    draft, errors = validate(raw, language=language, numbers={}, allowed=_NOTHING_ALLOWED)
+    if errors:
+        return draft, errors
+    text = draft.text
+    errors = (length_problems(text, 0, kind="general") + general_problems(text)
+              + general_language_problems(text, language) + draft_problems(text, {}, has_data=True))
+    m = GENERAL_NON_ANSWER.search(text) or GENERAL_NON_ANSWER.search(guard.fold(text))
+    if m:
+        errors.append(f"'{m.group(0)}': a general answer explains the topic in plain words; it never says it could "
+                      f"not work something out")
+    return draft, errors
 MAX_CARDS = 3
 MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool connection each
 # A second lane runs only on a connection that is free at once, so one answer never queues for a
@@ -330,6 +399,9 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary, why, general (#572)
+    general_fallback: bool = False       # a general answer's fixed text with its fixed offer went out (#572)
+    general_on: bool = False             # the general route's switch, read once at the start of the answer (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
     health_dropped: str | None = None
@@ -404,6 +476,8 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
+        a.kind = answer_kind(message)   # a why/how answer may be longer (#572); "general" on the general route
+        a.general_on = GENERAL_ON.exists()   # once per answer, so the declarations and the route agree (#572)
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -448,15 +522,34 @@ class Pipeline:
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
             plan_in = PlanInput(
-                question=message, language=lang, as_of=self.as_of.isoformat(), tools=self.registry.schemas(),
-                history=history, responses=list(responses), model_turns=list(model_turns), guard_flags=a.flags,
-                round=rnd)
+                question=message, language=lang, as_of=self.as_of.isoformat(),
+                tools=self.registry.schemas(general=a.general_on), history=history, responses=list(responses),
+                model_turns=list(model_turns), guard_flags=a.flags, round=rnd)
             plan, source = self._plan(plan_in, a)
             if rnd == 1 and source == "model" and plan.calls and all(c.name == "finish" for c in plan.calls):
                 # The model planned a question with no data call (#341): the composer could then only
                 # introduce Sentti, with no number and no card. The rules plan it instead, and a
                 # question they do not recognise gets their general clarifying question.
                 a.planner_turns.append({"round": rnd, "source": "model", "error": "no data call",
+                                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                plan, source = self.fallback.plan(plan_in), "rules"
+                model_failed = True
+            if any(c.name == "answer_in_words" for c in plan.calls) and not a.general_on:
+                # the general route is switched off, so no declaration offered it: dev's out_of_scope decline
+                a.planner_turns.append({"round": rnd, "source": source, "error": "answer_in_words: switched off",
+                                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                return self._refuse("out_of_scope", lang, emit, a)
+            if any(c.name == "answer_in_words" for c in plan.calls):
+                refused = self._general_refused(plan_in, plan.calls, a)
+                if refused is None:
+                    a.planner_turns.append({"round": rnd, "source": source, "calls": [
+                        {"name": c.name, "args": c.args, "status": "ok"} for c in plan.calls],
+                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                    return self._answer_in_words(message, lang, emit, a)
+                # #572: a plain-words answer only for a general money question the rules leave open, in the first
+                # round and alone; otherwise the rules plan the message, as for an empty plan (#341), with its note
+                # and warning on the question back (review of #618)
+                a.planner_turns.append({"round": rnd, "source": source, "error": f"answer_in_words: {refused}",
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
@@ -905,7 +998,7 @@ class Pipeline:
                 if not errors:
                     # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
                     # gets the reason and the template writes after it.
-                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))), kind=a.kind)
                     claim = None if request.errors else unavailable_claim(draft.text)
                     if claim:
                         # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
@@ -967,6 +1060,93 @@ class Pipeline:
                            "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
             emit(event, payload)
         return send
+
+    def _general_refused(self, plan_in: PlanInput, calls: list[FunctionCall], a: _Answer) -> str | None:
+        """Why the planner's answer_in_words is not followed, or None when it is (#572). Only in the first round,
+        alone (with `finish` at most), never for a flagged message or a health topic, and only for a message the
+        rules leave open: no rule claims it and it is no refusal, guard or other-person case of theirs (also when
+        the model plans every question, GEMINI_PLANNER=model)."""
+        if plan_in.round != 1:
+            return "not the first round"
+        if any(c.name not in ("answer_in_words", "finish") for c in calls):
+            return "not alone"
+        args_model = GENERAL_CONTROL["answer_in_words"][0]
+        try:
+            for c in calls:
+                if c.name == "answer_in_words":
+                    args_model.model_validate(c.args or {})
+        except ValueError:   # pydantic's ValidationError: the function takes no arguments
+            return "invalid arguments"
+        if a.flags:
+            return "flagged"
+        folded = guard.fold(plan_in.question)
+        if re.search(rules.HEALTH, folded):
+            return "health"
+        if GENERAL_BORROWING.search(folded):
+            return "borrowing"
+        if GENERAL_PRODUCT_QUESTION.search(folded):
+            return "a product, bank, card, account or investment"
+        if GENERAL_OWN_FIGURES.search(folded):
+            return "own figures"
+        if not GENERAL_MONEY_WORDS.search(folded):
+            return "no money topic"
+        # judged as a message of its own: in a running conversation the rules send every message that is not complete
+        # on its own to their follow-up rule, which would close the route after the first turn (the money words above
+        # keep a bare "why?" out)
+        verdict = rules.claim(dataclasses.replace(plan_in, history=[], responses=[], model_turns=[]))
+        if verdict.rule is not None or verdict.reason not in GENERAL_REASONS:
+            return f"the rules: {verdict.rule or verdict.reason}"
+        return None
+
+    def _answer_in_words(self, message: str, lang: str, emit: Emit, a: _Answer) -> str:
+        """A general money question in plain words (#572): no tool, no number, no card and no action. The composer
+        writes it under the general checks (_compose_general); when no draft passes, or the model may not write, the
+        fixed text with the fixed offer of the nearest tool. The offer's question is the chip, which the rules
+        answer for this customer."""
+        a.kind = "general"
+        offer, chip = template.general_offer(message, lang)
+        conv = a.conversation
+        prev = conv.turns[-1] if conv is not None and conv.turns else None
+        request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
+                               previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
+                               general=True)
+        text = self._compose_general(request, a)
+        if text is None:
+            # the fixed text writes in the model's place (its drafts failed, or it may not write): the warning, as for
+            # any template answer in the model's place (#244); never a designed answer
+            a.general_fallback = True
+            text = f"{template.pick(template.GENERAL_FALLBACK, lang)} {offer}"
+            a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
+            self._warn_llm_unavailable(a)
+        text = self._deliver(text, {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": [chip], "lesson": None, "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _compose_general(self, request: ComposeInput, a: _Answer) -> str | None:
+        """The composer's plain-words answer to a general money question, or None (#572). A draft cites nothing and
+        states no number at all: no digit and no date (the validator with no Numbers and nothing allowed), no
+        number word, Roman numeral, product, health or link (general_problems); at most four sentences; and the
+        borrowing and other draft checks. One retry with the reasons."""
+        if a.composer_unavailable is not None:
+            return None
+        errors: list[str] = []
+        for _ in range(2):  # the call and one retry with the errors
+            t = self.clock()
+            try:
+                result = self.model.compose(ComposeInput(**{**request.__dict__, "validation_errors": errors}))
+            except Exception as exc:  # noqa: BLE001
+                errors = [f"the model call failed ({type(exc).__name__})"]
+                a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
+                continue
+            draft, errors = general_draft_problems(result.text, request.language)
+            a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
+                                        "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
+            if not errors:
+                return draft.text
+        return None
 
     def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer, foreign: bool = False) -> str:
         """Sentti's introduction (or a thank-you, the privacy answer, the language line) and the four brief
