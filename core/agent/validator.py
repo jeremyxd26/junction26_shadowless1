@@ -91,9 +91,35 @@ _EN_UNITS = (r"zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twel
              r"sixteen|seventeen|eighteen|nineteen")
 _EN_TENS = r"twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
 _EN_CARDINAL = rf"(?:(?:{_EN_TENS})(?:[- ]?(?:one|two|three|four|five|six|seven|eight|nine))?|{_EN_UNITS})"
-_FI_DIGIT_WORDS = (r"yksi|yhden|yhtä|kaksi|kahden|kahta|kolme|kolmen|kolmea|neljä|neljän|neljää|viisi|viiden|viittä|"
-                   r"kuusi|kuuden|kuutta|seitsemän|seitsemää|kahdeksan|kahdeksaa|yhdeksän|yhdeksää")
-_FI_CARDINAL = rf"(?:nolla|{_FI_DIGIT_WORDS}|kymmenen|kymmentä|\w+toista|\w+kymmentä\w*)"
+def _fi_cases(stem_strong: str, stem_weak: str, partitive: str, illative: str, essive: str,
+              nominative: str, genitive: str | None = None) -> list[str]:
+    """The singular case forms of a Finnish numeral: nominative, genitive, partitive, the six local
+    cases, translative and essive ("kaksi": kahden, kahta, kahdessa, kahdesta, kahteen, kahdella,
+    kahdelta, kahdelle, kahdeksi, kahtena). Vowel harmony follows the stem: a stem without a, o or u
+    takes front endings ("viisi": viidessä, viidellä; "neljä": neljässä)."""
+    weak = stem_weak
+    front = not any(v in weak for v in "aou")
+    ssa, sta, lla, lta = ("ssä", "stä", "llä", "ltä") if front else ("ssa", "sta", "lla", "lta")
+    return [nominative, genitive or weak + "n", partitive, weak + ssa, weak + sta, illative,
+            weak + lla, weak + lta, weak + "lle", weak + "ksi", essive]
+
+
+_FI_NUMERALS = (
+    _fi_cases("yhte", "yhde", "yhtä", "yhteen", "yhtenä", "yksi")
+    + _fi_cases("kahte", "kahde", "kahta", "kahteen", "kahtena", "kaksi")
+    + _fi_cases("kolme", "kolme", "kolmea", "kolmeen", "kolmena", "kolme")
+    + _fi_cases("neljä", "neljä", "neljää", "neljään", "neljänä", "neljä")
+    + _fi_cases("viite", "viide", "viittä", "viiteen", "viitenä", "viisi")
+    + _fi_cases("kuute", "kuude", "kuutta", "kuuteen", "kuutena", "kuusi")
+    + _fi_cases("seitsemä", "seitsemä", "seitsemää", "seitsemään", "seitsemänä", "seitsemän", "seitsemän")
+    + _fi_cases("kahdeksa", "kahdeksa", "kahdeksaa", "kahdeksaan", "kahdeksana", "kahdeksan", "kahdeksan")
+    + _fi_cases("yhdeksä", "yhdeksä", "yhdeksää", "yhdeksään", "yhdeksänä", "yhdeksän", "yhdeksän")
+    + _fi_cases("nolla", "nolla", "nollaa", "nollaan", "nollana", "nolla")
+)
+# Every case form of the digit words, "kymmenen" and its forms, and any word built on "kymmen" (tens:
+# kahdellakymmenellä, kahdenkymmenen) or ending in "toista" (teens: kahdeksallatoista).
+_FI_DIGIT_WORDS = "|".join(sorted(set(_FI_NUMERALS), key=len, reverse=True))
+_FI_CARDINAL = rf"(?:{_FI_DIGIT_WORDS}|\w*kymmen\w*|\w+toista)"
 _CARDINAL = rf"(?:{_EN_CARDINAL}|{_FI_CARDINAL})"
 # Case forms of "sata" (100) and "tuhat" (1000) as whole words. "sataa" alone is the verb "it rains":
 # it counts only inside a compound ("kaksisataa").
@@ -102,8 +128,12 @@ _SATA = (r"sata|sadan|sadassa|sadasta|sataan|sadalla|sadalta|sadalle|sadaksi|sad
 _TUHAT = (r"tuhat|tuhannen|tuhatta|tuhannessa|tuhannesta|tuhanteen|tuhannella|tuhannelta|tuhannelle|tuhanneksi|"
           r"tuhannet|tuhansien|tuhansia|tuhansissa|tuhansista|tuhansiin|tuhansilla|tuhansilta|tuhansille|"
           r"tuhansiksi|tuhansin")
-_UNIT_WORDS = (r"euros?|euroa|euron|euroon|euroilla|cents?|senttiä|dollars?|bucks?|quid|usd|pounds?|kruunu\w*|"
-               r"kronor|kroner|kronur|krona|percent|per\s?cent|pct|prosent\w*|promille\w*|per\s?mille|permille")
+# The Finnish currency and percent words in every case: euro (euroa, euron, eurolla, euroksi, eurosta,
+# euroissa, …), sentti, prosentti, promille.
+_FI_EURO = r"euro(?:a|n|on|lla|lta|lle|ksi|ssa|sta|na|t|jen|ja|issa|ista|ihin|illa|ilta|ille|iksi|in)?"
+_UNIT_WORDS = (rf"euros?|{_FI_EURO}|cents?|sent(?:ti|in|tiä|tiin|illä|iltä|ille|iksi|issä|istä|tinä)|dollars?|bucks?|"
+               r"quid|usd|pounds?|kruunu\w*|kronor|kroner|kronur|krona|percent|per\s?cent|pct|prosent\w*|promille\w*|"
+               r"per\s?mille|permille")
 _UNIT = rf"(?:€|\$|£|‰|%|eur\b|(?:{_UNIT_WORDS})\b)"
 # A unit word right after a token repeats the unit its display already carries ("{{n1}} euros").
 UNIT_WORD_AFTER_TOKEN = re.compile(rf"\{{\{{n[0-9]+\}}\}}\s*(?:{_UNIT_WORDS})\b", re.I)
@@ -112,9 +142,10 @@ NUMBER_WORDS = re.compile(
     rf"\b(?:{_SATA}|{_TUHAT})\b|"
     rf"\b(?:{_FI_DIGIT_WORDS})(?:sat|sad|tuhat|tuhan|tuhans)\w*|"     # compounds: kaksisataa, kolmentuhannen
     r"\bmiljoon\w*|\bmiljard\w*|"
-    r"\btonni\w*|\bsatas\w*|\bsatanen\b|\bkymp\w*|\bvitonen\b|\bvitosen\b|"  # slang
-    r"\ba\s+grand\b(?!\s+(?:total|scheme|plan|tour))|"
-    rf"\b{_CARDINAL}\s+grand\b|\b{_CARDINAL}\s*k\b|"
+    r"\btonn(?:i|in|ia|issa|ista|iin|illa|ilta|ille|iksi|ina|it|ien|eja|eissa|eista|eihin|eilla|eilta|eille)\b|"
+    r"\bsatas\w*|\bsatanen\b|\bkymp\w*|\bvitonen\b|\bvitosen\b|"  # slang ("tonnikala" passes)
+    r"\ba\s+grand\b(?!\s+(?:total|scheme|plan|tour|idea|day|time|opening|view))|"
+    rf"\b{_CARDINAL}\s+grand\b|\b{_CARDINAL}\s*k\b(?!-)|"         # "five k", not "Seven K-Market"
     rf"\b{_CARDINAL}\s*{_UNIT}|"                                      # fifty euros, twenty percent
     rf"(?:€|\$|£|\beur\b|\beuros?\b|\busd\b)\s*{_CARDINAL}\b",         # €twenty, EUR twenty
     re.I)

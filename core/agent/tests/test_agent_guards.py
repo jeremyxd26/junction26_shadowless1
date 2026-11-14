@@ -196,3 +196,41 @@ def test_ordinary_finnish_verbs_and_brackets_still_pass(text):
 def test_blank_look_alikes_and_mark_only_messages_are_empty(client, message):
     response = ask(client, message)
     assert response.status_code == 400 and client.model.plan_inputs == []
+
+
+# ---- review of PR #219: inflected Finnish cardinals next to an inflected unit -------------------------
+
+@pytest.mark.parametrize("text", [
+    "Säästäisit kahdellakymmenellä eurolla.",
+    "Säästäisit kolmellakymmenellä eurolla.",
+    "Säästäisit kymmenellä eurolla.",
+    "Menot laskisivat viidelläkymmenellä prosentilla.",
+    "Säästäisit kahdeksallatoista eurolla.",
+    "Se maksoi kahdenkymmenen euron verran.",
+    "Se on neljänkymmenen prosentin osuus.",
+    "Säästäisit yhdellä eurolla.",
+    "Säästäisit kolmella eurolla.",
+    "Säästäisit viidellä eurolla.",
+    "Kulutus nousi neljässä eurossa.",                          # inessive unit
+    "Summa muuttui kahdeksi euroksi.",                          # translative
+    "Viidestä eurosta jäi jäljelle osa.",                       # elative
+    "Kuuteen euroon asti.",                                     # illative
+    "Se maksoi tonnin.",                                        # tonni as a whole word with case forms
+    "Tonneilla euroilla.",
+])
+def test_inflected_finnish_cardinals_and_units_are_rejected(text):
+    assert rejected(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Söin tonnikalaa lounaaksi.",                               # tonnikala is not "tonni"
+    "Ostit ruokaa Seven K-Marketista.",                         # K-Market is not "k" after a number
+    "That was a grand idea.",
+    "Käytit yhtä paljon kuin viime kuussa.",
+    "Kuusi kuukautta sitten ja kolmen kuukauden aikana.",       # lengths of time, no unit
+    "Euroopan unionissa hinnat vaihtelevat.",                   # Euroopan is not "euroa"
+    "Kymmenen minuutin päästä.",
+    "Viidessä kategoriassa kulutus pysyi ennallaan.",           # a numeral without a unit
+])
+def test_ordinary_finnish_still_passes(text):
+    assert check_text(text, ALLOWED) == []
