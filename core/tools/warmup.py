@@ -15,9 +15,9 @@ evidence rows are gone from coach_evidence (a reset database) is treated as a mi
 one query per persona checks the refs.
 
 Viewers (#144): the warm-up runs without a viewer, so it warms the shared label state. That is the
-state every new viewer starts with (a viewer without answers sees the shared state), so a new viewer's
-first overview is a hit once the pending spike review exists (the warm-up creating it first is #240);
-a viewer who answered gets entries of their own label set.
+state every new viewer starts with (a viewer without answers sees the shared state). The warm-up first
+finds or creates the pending spike review, as the overview does (#240), so a new viewer's first overview
+is a hit; a viewer who answered gets entries of their own label set.
 
 Limits: only the customers of core/config/personas.yaml, never more; one database connection with the
 tools' 60 s statement timeout; the tools write their evidence specs, as on any request.
