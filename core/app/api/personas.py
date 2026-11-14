@@ -41,7 +41,8 @@ def build(language: str, as_of) -> PersonasResponse:
             "age_band": p["age_band"],
             "postal_area": {"code": p["postal_area"]["code"], "label": p["postal_area"]["label"]},
             "profile": {"key": p["profile"]["key"], "label": profile_label},
-            "tagline": p["tagline"],  # the YAML has English taglines only
+            # #554: the tagline in the response language, like every other text (contract section 1)
+            "tagline": (p.get("tagline_fi") or p["tagline"]) if language == "fi" else p["tagline"],
             "default_language": p["default_language"],
         })
     return PersonasResponse(as_of=as_of, language=language, personas=out)

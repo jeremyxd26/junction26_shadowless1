@@ -35,11 +35,19 @@ export function ProfileCard({ card, header }: { card: ProfileData; header: React
       {features.length > 0 && (
         <ul className="mt-3 flex flex-col">
           {features.map((feature) => (
-            <li key={feature.key} className="flex min-h-11 items-center justify-between gap-3 border-t border-line py-1">
-              <span className={`min-w-0 text-sm ${feature.decides_label ? 'font-semibold text-ink' : 'text-muted'}`}>
+            // With large text the chip moves under the label instead of running past the card (#541).
+            <li
+              key={feature.key}
+              className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line py-1"
+            >
+              <span
+                className={`min-w-[min(5rem,100%)] flex-1 basis-0 text-sm ${feature.decides_label ? 'font-semibold text-ink' : 'text-muted'}`}
+              >
                 {feature.value.label}
               </span>
-              <NumberChip number={feature.value} size="inline" />
+              <span className="ml-auto max-w-full shrink-0">
+                <NumberChip number={feature.value} size="inline" wrap />
+              </span>
             </li>
           ))}
         </ul>

@@ -149,7 +149,9 @@ def test_some_recorded_responses_hold_markdown_that_the_answer_drops():
     replay above proves their answers come out without it."""
     drafts = [json.loads(json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["response"]["candidates"][0]
                          ["content"]["parts"][-1]["text"])["text"]
-              for p in RECORDINGS if json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["kind"] == "compose"]
+              for p in RECORDINGS
+              # a template answer has no exchange (#552: "why is my safe to spend so low?")
+              if (json.loads(p.read_text(encoding="utf-8"))["exchanges"] or [{}])[-1].get("kind") == "compose"]
     assert any("**" in d for d in drafts)
 
 
