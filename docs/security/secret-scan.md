@@ -9,6 +9,36 @@ Two checks prove that no secret is in the repository, its history or its GitHub 
 
 `.gitleaks.toml` and the CI job come from #83 (PR #94). They are in `dev`, and the gitleaks parts of this page apply once they reach `main`.
 
+## A branch before a merge, without CI
+
+`scripts/scan_diff_secrets.py` (#472) reads only the lines a branch adds. It is the check to run when the CI secret scan cannot run, and a quick one before any merge:
+
+```
+git fetch origin "+refs/heads/*:refs/remotes/origin/*" "+refs/pull/*/head:refs/pull/*/head"
+python scripts/scan_diff_secrets.py --pr 443                  # a pull request head against origin/dev
+python scripts/scan_diff_secrets.py --base origin/dev         # the current branch against origin/dev
+python scripts/scan_diff_secrets.py --range A..B              # what a range of commits added
+```
+
+What it reads:
+- by default, every commit from the merge base to the head, and the final diff. A secret that one commit adds and a later one removes is still found: a merge commit brings that history into `dev` and `main`;
+- a merge commit as its remerge diff (git 2.36 or newer): only the lines written while resolving it. What a merge brings from its parents is read in their own commits, or is already in the base;
+- `--net-only`: the final diff alone;
+- added lines only, binary files read as text.
+
+What it reports:
+- common key shapes, and values assigned to a key, secret, password or token name, quoted or not (`export API_TOKEN=...`, `password: ...`);
+- database URLs with a password that the allowlist does not cover (path and value together). The allowlist is the base's copy of `.gitleaks.toml`, so a branch cannot allowlist its own value; a branch that edits `.gitleaks.toml` or `.gitleaksignore` gets a note;
+- literal values of the local `.env`;
+- added env files: `.env`, `.env.*`, `*.env`, except `*.example`.
+
+Output: one line per kind and file, with the commits it was seen in. Never a value. Exit codes:
+- 1 on a finding;
+- 0 when clean;
+- 2 when it cannot run: a missing ref (named, with the fetch command), an unreadable `.env` or `.gitleaks.toml`, or no git. It then prints `NOT RUN:` and the reason.
+
+It does not replace gitleaks, which has many more rules and reads the whole history in CI. The history, pull request heads and GitHub texts are covered by `scan_env_values.py` below.
+
 ## Before the repository goes public
 
 Run both checks right before the switch, from the main checkout with an up-to-date `.env`:
