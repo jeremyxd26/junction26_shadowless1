@@ -78,6 +78,9 @@ class PlanResult:
     # True only when the rule planner's answer is the template's own words, never the composer model's: "why is
     # my safe to spend lower?" names the limit that binds from the data (#552). No model adapter sets it.
     template_answer: bool = False
+    # True only when the rule planner answers a question about the S-Bonus RECEIVED with the estimate: the template
+    # then says first that the Bonus received is not in this account's data (#639). No model adapter sets it.
+    bonus_received: bool = False
 
 
 @dataclass(frozen=True)

@@ -367,6 +367,11 @@ def _quotable(word: str) -> bool:
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
 
 
+# #639: a question about the S-Bonus received gets the estimate after this line; the Bonus received is no data here
+BONUS_RECEIVED_LEAD = ("I can't see the S-Bonus you have received so far in this account's data, so here is an estimate "
+                       "instead.",
+                       "En näe tämän tilin tiedoista, paljonko S-Bonusta olet saanut tähän mennessä, joten tässä on "
+                       "arvio.")
 UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
                    "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
 

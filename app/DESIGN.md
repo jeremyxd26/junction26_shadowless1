@@ -217,7 +217,7 @@ Sum: 28 + 12 + 100 + 12 + 204 + 12 + 148 = 516, so the last chip ends at 576: 16
 
 **The #35 moment in this layout:** after "It was needed":
 1. The question card collapses to one line (a check, the chosen label).
-2. The big card counts from `changes[].before` to `after` (for example €221.58 → €180.26).
+2. The big card counts from `changes[].before` to `after` (for example €138.79 → €97.46).
 3. Sentti answers right under the question with a short turn: a **mini basket row** where the amount (€1,080.42) flies from "Waiting for your answer" into the chosen basket, and under it `effect.text` with its tokens as chips. On a core without `effect`, a client sentence without a number comes first instead ("Moved to 🔧 Unexpected necessities", the basket label from the API).
 4. With `effect` there is no toast: Undo is on the answered card (see "Toast" in "Shell"). Without `effect`, the toast with Undo appears above the composer.
 
@@ -337,7 +337,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
 - **The one exception: counter frames.** When a number changes after a review answer (#35), it counts from one API `display` to the next. The frames in between are computed by `src/lib/motion.ts` (#157); the first and the last frame are the API's `display` strings. The frames are `aria-hidden`, and the accessible text is the final `display`. The chip cannot be tapped while it counts. With reduced motion there are no frames: the number cross-fades to the new `display`.
 - **Evidence rows** are no exception: each row of `GET /api/evidence/{ref}` carries `display`, its amount written by the server in the request language with the bank sign (`-€24.50`, FI `-24,50 €`; contract section 9), and the app shows it as sent. The row's `amount` stays the exact decimal string and is never formatted by the app.
-- **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
+- **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €138.79", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 
 ## 5. Accessibility and WebView
