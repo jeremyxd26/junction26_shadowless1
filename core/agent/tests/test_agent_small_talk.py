@@ -89,4 +89,4 @@ def test_a_small_talk_reply_is_one_or_two_lines():
     for lang in ("en", "fi"):
         for text in [template.meta_text("how_are_you", lang)] + [template.meta_text("joke", lang, turn=i)
                                                                   for i in range(len(template.JOKES))]:
-            assert len(re.findall(r"[.!?](?:\s|$)", text)) <= 3 and len(text) <= 160, text
+            assert len(re.findall(r"[.!?](?:\s|$)", text)) <= 2 and len(text) <= 160, text

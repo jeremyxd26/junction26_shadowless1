@@ -288,8 +288,8 @@ JOKES = (
      "Kolikko meni terapiaan, koska se tunsi olonsa vähän sentimentaaliseksi."),
     ("A piggy bank is the most patient pet there is: it waits for years and never complains.",
      "Säästöpossu on maailman kärsivällisin lemmikki: se odottaa vuosia eikä valita kertaakaan."),
-    ("The best way to double your money? Fold the note in half and put it back in your wallet.",
-     "Paras tapa tuplata rahansa? Taita seteli kahtia ja laita se takaisin lompakkoon."),
+    ("The best way to double your money: fold the note in half and put it back in your wallet.",
+     "Paras tapa tuplata rahansa: taita seteli kahtia ja laita se takaisin lompakkoon."),
 )
 JOKE_OFFER = ("Now, want to see where your money went?", "Katsotaanko nyt, mihin rahasi menivät?")
 SMALL_TALK_CHIP = {"how_are_you": BRIEF_QUESTIONS[2], "joke": BRIEF_QUESTIONS[0]}
