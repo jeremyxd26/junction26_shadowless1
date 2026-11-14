@@ -68,7 +68,7 @@ SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to s
              r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
              r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
              r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
-             r"\b(how much|amount) (could|can|would) i save\b|\bput (more |some )?(money )?aside\b|"
+             r"\bput (more |some )?(money )?aside\b|"
              r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
 # One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
 WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
