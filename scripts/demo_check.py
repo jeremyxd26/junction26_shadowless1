@@ -200,6 +200,8 @@ class Result:
 
 
 class Check:
+    expect_model = "any"   # --expect-model: on | off | any
+
     def __init__(self, client: Client, out: Callable[[str], None] = print) -> None:
         self.c = client
         self.out = out
@@ -405,7 +407,12 @@ class Check:
             raise RateLimited(f"{self.stop_asking}; the remaining questions are not sent")
         res = ok_json(r, "/api/ask")
         expect("outcome", "answered", res.get("outcome"))
-        expect("fallback warning", False, "llm_unavailable" in (res.get("warnings") or []))
+        # #244: with the model off the template answers with llm_unavailable, still "answered".
+        warned = "llm_unavailable" in (res.get("warnings") or [])
+        if self.expect_model == "on":
+            expect("llm_unavailable warning (model on)", False, warned)
+        elif self.expect_model == "off":
+            expect("llm_unavailable warning (model off)", True, warned)
         numbers = res.get("numbers") or {}
         missing = [i for i in res.get("cited") or [] if not (numbers.get(i) or {}).get("evidence_ref")]
         expect("cited numbers without an evidence ref", [], missing)
@@ -413,8 +420,9 @@ class Check:
 
 
 def run(base_url: str, ask: bool = True, ask_limit: int = 4, out: Callable[[str], None] = print,
-        time_limit: float = TIME_LIMIT_S) -> tuple[list[Result], Check]:
+        time_limit: float = TIME_LIMIT_S, expect_model: str = "any") -> tuple[list[Result], Check]:
     check = Check(Client(base_url, time_limit), out)
+    check.expect_model = expect_model
     check.stage("health and readiness", check.health)
     check.stage("personas (four, lead first)", check.personas)
     check.stage(f"overview {LEAD}", check.overview_stage)
@@ -443,9 +451,12 @@ def main(argv: list[str] | None = None, out: Callable[[str], None] = print) -> i
     ap.add_argument("--ask-limit", type=int, default=len(BRIEF_QUESTIONS), help="at most this many questions")
     ap.add_argument("--require-all", action="store_true", help="NOT DEPLOYED counts as a failure")
     ap.add_argument("--time-limit", type=float, default=TIME_LIMIT_S, help="seconds for the whole run (default 60)")
+    ap.add_argument("--expect-model", choices=("on", "off", "any"), default="any",
+                    help="on: answers must not carry llm_unavailable; off: they must (the template wrote them); "
+                         "any: not checked (default)")
     args = ap.parse_args(argv)
     results, check = run(args.base_url, ask=not args.no_ask, ask_limit=max(0, args.ask_limit), out=out,
-                         time_limit=args.time_limit)
+                         time_limit=args.time_limit, expect_model=args.expect_model)
     failed = [r for r in results if r.status == "FAIL" or (args.require_all and r.status == "NOT DEPLOYED")]
     counts = {s: sum(r.status == s for r in results) for s in ("PASS", "FAIL", "NOT DEPLOYED", "SKIPPED")}
     verdict = " -> FAIL" if failed or check.undo_failed else " -> OK"

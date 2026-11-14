@@ -129,6 +129,7 @@ After `bash deploy/dev.sh` (and before the demo), run:
 ```
 python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --no-ask   # no model calls
 python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all            # plus the four brief questions
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --expect-model off  # model off: answers carry llm_unavailable
 ```
 
 Every stage is live on dev now, so use `--require-all`: a stage that answers NOT DEPLOYED then fails the check.
