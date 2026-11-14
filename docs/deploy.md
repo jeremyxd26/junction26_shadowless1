@@ -213,6 +213,8 @@ previous version 1e395dc61dd5447d85e1d6de5b39a0de06b0c681 is running again
 
 The logs stay on the instance and are not shipped anywhere. The journal is readable only by root and the `adm`/`systemd-journal` groups.
 
+The service masks the values of its secret settings as `***` in every log line, whichever logger writes it (`core/app/secret_mask.py`, #198). Secret settings are the names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`, together with its password, its host and the URL-encoded forms. The mask covers the message and its arguments (the access log's request line included), extra fields and exception text with chained causes. A settings error at start-up names the setting but never echoes its value.
+
 ```bash
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowless1-core -n 100 --no-pager   # service
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u caddy -n 50 --no-pager              # proxy and TLS
