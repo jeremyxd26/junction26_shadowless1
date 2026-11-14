@@ -52,7 +52,18 @@ describe('HostNotice (#431)', () => {
     )
   })
 
-  it('is mounted exactly once, at the app root', () => {
+  it('is mounted exactly once in the whole app, at the app root', () => {
     expect(appSource.match(/<HostNotice \/>/g)).toHaveLength(1)
+    // Every source file under src/ (tests excluded): a second mount would announce the text twice.
+    const sources = import.meta.glob<string>(['../**/*.tsx', '!../**/*.test.tsx'], {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    })
+    expect(Object.keys(sources)).toContain('../screens/CardGallery.tsx')
+    const mounts = Object.entries(sources).flatMap(([path, source]) =>
+      (source.match(/<HostNotice \/>/g) ?? []).map(() => path),
+    )
+    expect(mounts).toEqual(['../App.tsx'])
   })
 })

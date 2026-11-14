@@ -289,19 +289,22 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 highlighted ? look.tint.split(' ')[0] : ''
               } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
             >
-              <div className="flex items-center gap-3">
+              {/* With large text the amount moves under the label instead of running past the card (#493). */}
+              <div className="flex flex-wrap items-center gap-3">
                 <span
                   aria-hidden="true"
                   className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
                 >
                   {look.icon}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className={`font-semibold leading-5 ${look.color}`}>{item.label}</p>
+                {/* At least 6rem for the label; when that does not fit beside the amount, the amount moves
+                    under it instead of covering it (#493). */}
+                <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
+                  <p className={`min-w-0 break-words hyphens-auto font-semibold leading-5 ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
-                <span data-amount-key={item.key} className="shrink-0">
-                  <NumberChip number={item.amount} size="inline" count={motion?.counts[item.key]} />
+                <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">
+                  <NumberChip number={item.amount} size="inline" wrap count={motion?.counts[item.key]} />
                 </span>
               </div>
               {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
@@ -315,9 +318,11 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
           )
         })}
       </ul>
-      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-muted">
-        <span>{card.total.label}</span>
-        <NumberChip number={card.total} size="inline" />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+        <span className="min-w-[min(5rem,100%)] flex-1 basis-0">{card.total.label}</span>
+        <span className="ml-auto max-w-full shrink-0">
+          <NumberChip number={card.total} size="inline" wrap />
+        </span>
       </div>
     </CardShell>
   )

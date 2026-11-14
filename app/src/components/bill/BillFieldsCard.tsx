@@ -12,11 +12,18 @@ import { buildExplainRequest, FIELD_KEYS, initialInputs, type FieldInputs } from
 import { billStrings } from '../../lib/billStrings.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CARD_TITLE, CardShell } from '../cards.tsx'
+import { ErrorBlock } from '../States.tsx'
+import type { FlowError } from './billFlowState.ts'
 
 interface Props {
   reading: BillReadResponse | null
   /** True while the explanation is on its way: the buttons wait. */
   busy: boolean
+  /**
+   * The last explain error (already localised). "Try again", offered only when it is retryable,
+   * confirms again with the fields as they are now, so edits made after the error are sent.
+   */
+  error: FlowError | null
   onConfirm: (request: BillExplainRequest) => void
 }
 
@@ -27,7 +34,7 @@ const PRIMARY =
 const SECONDARY =
   'inline-flex min-h-12 w-full items-center justify-center rounded-pill border border-line-strong bg-surface px-5 text-base font-semibold text-ink-2 hover:bg-sunken'
 
-export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
+export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
   const { lang, customerId } = useSettings()
   const s = billStrings(lang)
   const id = useId()
@@ -47,6 +54,7 @@ export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
+      {error && <ErrorBlock message={error.message} onRetry={error.retryable ? confirm : undefined} />}
       <CardShell>
         <h3 className={CARD_TITLE}>{s.cardTitle}</h3>
         {reading && <p className="text-sm text-muted">{s.cardSubtitle}</p>}
