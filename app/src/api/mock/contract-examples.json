@@ -1,6 +1,18 @@
 {
   "contract_version": "0.3.1",
   "examples": {
+    "action.open_host_screen": {
+      "type": "open_host_screen",
+      "label": "See monthly saving in S-mobiili",
+      "target": "monthly_saving"
+    },
+    "host.open_host_screen": {
+      "type": "sentti.openHostScreen",
+      "v": 1,
+      "payload": {
+        "target": "monthly_saving"
+      }
+    },
     "card.peer": {
       "card_id": "card_peer_01",
       "type": "peer",
