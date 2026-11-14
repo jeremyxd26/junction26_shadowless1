@@ -60,7 +60,8 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # "How could I save more?" without a category or a cut: the answer shows the basket shares and the bills
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
-SAVE_MORE = r"save more|saving more|säästää enemmän|säästäisin enemmän|säästämään enemmän|säästöä enemmän"
+SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
 WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
                  "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
 WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
@@ -218,7 +219,10 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
             if isinstance(view.get("reason"), str):
                 extra.append(view["reason"])
         else:
-            picks += [_num(view.get(k)) for k in ("total_month", "total_year", "grocery_month", "bonus_month")]
+            # The share is cited too: the user's own number when they gave one ("Share at S-Group
+            # stores"), else the assumed default ("Assumed share ..."), so a "half" answer never reads
+            # like one for all groceries (review of #246).
+            picks += [_num(view.get(k)) for k in ("total_month", "share", "total_year", "grocery_month")]
             assumptions = [a for a in view.get("assumptions") or [] if isinstance(a, str)]
             if assumptions:
                 extra.append(assumptions[-1])  # "...a what-if, not a fact about where you shop."
@@ -252,6 +256,19 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         picks = list(_numbers_in(view))
     out = [p for p in picks if p is not None][:TAKEAWAY_SIZE]
     return out, extra
+
+
+PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
+
+
+def lead_sentences(view: dict[str, Any], language: str) -> list[str]:
+    """Text that comes before a tool's numbers: the spender profile's own label and description, so
+    the answer to "What kind of spender am I?" names the type (review of #246). Text, never a number."""
+    profile = view.get("profile") if view.get("tool") == "get_spender_profile" else None
+    if isinstance(profile, dict) and isinstance(profile.get("label"), str):
+        description = profile.get("description") if isinstance(profile.get("description"), str) else ""
+        return [pick(PROFILE_LEAD, language).format(label=profile["label"], description=description).strip()]
+    return []
 
 
 def save_more_plan(views: list[dict[str, Any]], question: str) -> bool:
@@ -312,6 +329,7 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         period = view.get("period")
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
+        sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue

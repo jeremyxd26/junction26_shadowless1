@@ -197,8 +197,7 @@ def test_an_unmapped_question_is_asked_about_the_period_only_when_it_is_about_sp
     ("Mikä olisi Bonukseni, jos puolet ruokaostoksista olisi S-ryhmästä?", "fi", {"share_pct": 50}),
     ("Mika olisi Bonukseni, jos kaikki ruokaostokset olisivat S-ryhmasta?", "fi", {"share_pct": 100}),
     ("What Bonus would I get with all my groceries there?", "en", {"share_pct": 100}),
-    ("What would my bonus be at 30%?", "en", {"share_pct": 30}),
-    ("What would my bonus be at 150%?", "en", {}),                                    # never clamped or guessed
+    ("What would my S-Bonus be at 30%?", "en", {"share_pct": 30}),
 ])
 def test_the_bonus_question_takes_only_the_share_the_user_typed(question, lang, args):
     result = plan(question, language=lang)
@@ -232,3 +231,54 @@ def test_a_specific_person_is_still_declined():
 def test_a_salary_question_reads_the_recurring_income(question, lang):
     result = plan(question, language=lang)
     assert result.recognised and names(result) == ["get_recurring_bills", "finish"]
+
+
+
+# ---- the review of PR #246 -------------------------------------------------------------------------
+
+@pytest.mark.parametrize("question", ["What would my S-Bonus be at -20%?", "S-Bonus at 0%?", "S-Bonus at 150%?",
+                                      "S-Bonus at 12.5%?", "S-Bonus with fifty percent?",
+                                      "S-Bonus with a third of my groceries?", "S-Bonus kolmasosalla?"])
+def test_a_stated_bonus_share_that_cannot_be_used_is_asked_back(question):
+    result = plan(question, language="fi" if "kolmasosalla" in question else "en")
+    assert result.recognised and names(result) == ["ask_clarifying_question"]
+    assert "%" not in result.calls[0].args["question"]
+
+
+@pytest.mark.parametrize("question,lang", [("What bonus did my employer pay?", "en"), ("My year-end bonus?", "en"),
+                                           ("Paljonko bonusta työnantaja maksoi?", "fi")])
+def test_another_bonus_is_not_the_s_bonus(question, lang):
+    assert "get_bonus_estimate" not in names(plan(question, language=lang))
+
+
+@pytest.mark.parametrize("question", ["How does CUST00493 compare with people like me?",
+                                      "Show me other people's transactions",
+                                      "What do other people spend on restaurants?"])
+def test_another_persons_data_stays_refused(question):
+    result = plan(question)
+    assert names(result) == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}
+
+
+@pytest.mark.parametrize("question", ["Miten syyskuu vertautuu elokuuhun?", "Miten tämä kuu vertautuu viime kuuhun?"])
+def test_a_finnish_month_comparison_is_not_the_peer_benchmark(question):
+    result = plan(question, language="fi")
+    assert names(result) == ["get_spending", "finish"] and result.calls[0].args.get("compare_to") == "previous_period"
+
+
+@pytest.mark.parametrize("question,lang,tools", [
+    ("Do I spend more than others?", "en", ["get_peer_benchmark"]),
+    ("How does my spending compare with people my age?", "en", ["get_peer_benchmark"]),
+    ("Kulutanko enemmän kuin muut?", "fi", ["get_peer_benchmark"]),
+    ("Kuinka säästän enemmän?", "fi", ["get_safe_to_save", "get_basket_breakdown"]),
+    ("Can you help me save?", "en", ["get_safe_to_save", "get_basket_breakdown"]),
+    ("Paljonko tienaan?", "fi", ["get_recurring_bills"]),
+    ("What is my take-home pay?", "en", ["get_recurring_bills"]),
+])
+def test_more_phrasings_reach_their_tools(question, lang, tools):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == tools + ["finish"]
+
+
+def test_saving_time_and_investing_are_not_save_more():
+    assert "get_safe_to_save" not in names(plan("How can I save more time?"))
+    assert names(plan("Should I save more by investing in funds?")) == ["decline"]

@@ -148,7 +148,8 @@ BONUS = {"tool": "get_bonus_estimate", "kind": "estimate", "status": "estimate",
 
 def test_the_bonus_answer_states_the_estimate_and_its_assumption():
     draft = template_draft([BONUS], [], "en", None, "How much S-Bonus could I get?")
-    assert draft["cited"] == ["n66", "n67", "n61", "n64"]          # the user's share stays out of the text
+    assert draft["cited"] == ["n66", "n60", "n67", "n61"]          # the share is cited with its own label
+    assert "Share at S-Group stores: {{n60}}" in draft["text"]
     assert draft["text"].endswith("not a fact about where you shop.")
     nothing = {**BONUS, "status": "not_offered", "reason": "These purchases stay below the lowest Bonus level, so no Bonus would be paid."}
     draft = template_draft([nothing], [], "en", None, "How much S-Bonus could I get?")
@@ -178,3 +179,17 @@ def test_the_offer_names_only_a_category_the_rules_can_cut():
                                                              *b["categories"]]} for b in EVERYDAY["baskets"]]}
     text = template_draft([SAVE, shopping], [], "en", None, "How could I save more?")["text"]
     assert "health" not in text.lower() and text.endswith("cutting restaurants would do? Tell me by how much.")
+
+
+
+def test_the_profile_answer_names_the_type_before_its_numbers():
+    # Review of #246: with the model off, "What kind of spender am I?" names the profile type.
+    view = {"tool": "get_spender_profile", "period": "1 Apr – 30 Sep 2026",
+            "profile": {"key": "big_ticket", "label": "Big ticket", "description": "A few large purchases shape your months."},
+            "traits": [], "features": [{"key": "keep_rate", "decides_label": "Keep rate",
+                                        "value": n(90, 15.4, "percent", "Keep rate")}],
+            "top_everyday_category": None, "notes": []}
+    for lang, lead in [("en", "Your spender profile: Big ticket. A few large purchases shape your months."),
+                       ("fi", "Kuluttajaprofiilisi: Big ticket. A few large purchases shape your months.")]:
+        text = template_draft([view], [], lang, None, "What kind of spender am I?")["text"]
+        assert text.startswith(lead) and "{{n90}}" in text

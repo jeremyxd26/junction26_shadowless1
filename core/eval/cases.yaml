@@ -101,6 +101,10 @@ cases:
   tags: [bonus, lead]
   numbers:
   - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: bonus_total_month, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
+  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
+  forbid:
+  - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
 
 - id: sanna-bonus-half
   persona: CUST00860
@@ -111,6 +115,9 @@ cases:
   tags: [bonus, lead]
   numbers:
   - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
+  forbid:
+  - {name: bonus_total_month_default, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
 
 - id: sanna-peer-comparison
   persona: CUST00860
