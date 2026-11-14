@@ -60,6 +60,8 @@ def test_every_estimate_resolves_what_it_observed_and_says_what_it_assumed(conn,
                 # decision 4: each listed Number is one of the answer's, with its id
                 assert all(n.id for n in est.observed), where
                 assert all(a.value.id for a in est.assumptions if a.value is not None), where
+                if name == "savings_plan":    # #503 review: the baselines, not the savings
+                    assert all(n.method == "what_if.baseline_month_eur@1" for n in est.observed), where
                 refs = [n.evidence_ref for n in est.observed]
                 refs += [a.value.evidence_ref for a in est.assumptions if a.value is not None and a.value.evidence_ref]
                 for ref in refs:

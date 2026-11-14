@@ -109,7 +109,9 @@ def plan_card(language):
                                   language))
               for i, (c, v) in enumerate((("Restaurants", "45.91"), ("Lifestyle", "17.26")))]
     total = num("63.17", Unit.EUR_PER_MONTH, "savings_plan.total_month_eur@1", "ev_plan_total", "n1", language)
-    return sp._card(levers, total, language)
+    baselines = [num(v, Unit.EUR_PER_MONTH, "what_if.baseline_month_eur@1", f"ev_base_{i}", f"n{9 + i}", language)
+                 for i, v in enumerate(("229.56", "172.58"))]
+    return sp._card(levers, total, language, baselines)
 
 
 def estimate_cards(language):
@@ -179,7 +181,9 @@ def test_observed_and_values_are_the_cards_own_numbers(language):
     """Nothing new is computed: each observed Number and each value is a Number the tool already built, with
     its ref. The bonus share and the forecast's balance, bills and pace are on the model view, not the card."""
     off_card = {"bonus": {"share"}, "bonus_not_offered": {"share"},
-                "forecast_below_zero": {"balance", "bills", "pace"}, "forecast_comfortable": {"balance", "bills", "pace"}}
+                "forecast_below_zero": {"balance", "bills", "pace"}, "forecast_comfortable": {"balance", "bills", "pace"},
+                # the plan (dev): the levers' baselines and cut shares are in the answer, the card shows the savings
+                "savings_plan": {"baseline 1", "baseline 2", "cut 1", "cut 2"}}
     for name, card in estimate_cards(language):
         dumped = card.model_dump(mode="json")
         on_card = {(n["evidence_ref"], n["value"]) for n in numbers_on(dumped)}
@@ -237,3 +241,13 @@ def test_the_closed_list_is_one_list_in_the_tools_the_schema_and_the_contract():
     assert sorted(codes) == sorted(ASSUMPTION_CODES) and len(codes) == len(set(codes))
     used = {k.split(".", 1)[1] for k in config.ASSUMPTION_TEXT}
     assert used <= set(ASSUMPTION_CODES)
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_the_plan_observes_the_baselines_and_assumes_each_cut(language):
+    """#503 review (dev, #369): the plan's observed are the levers' baselines, never the savings (which are the
+    estimate); each lever's cut share is the value of a cuts_as_shown assumption."""
+    est = plan_card(language).estimate
+    assert est.observed and all(n.method == "what_if.baseline_month_eur@1" for n in est.observed)
+    assert [a.code for a in est.assumptions] == ["next_months_like_last", "cuts_as_shown", "cuts_as_shown"]
+    assert all(a.value is not None and a.value.unit.value == "percent" for a in est.assumptions[1:])

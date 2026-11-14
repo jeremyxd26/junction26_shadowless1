@@ -93,8 +93,12 @@ def test_two_levers_their_total_and_twelve_times_it(fake):
     assert [(lv.cut.value, lv.cut.method, lv.cut.unit.value) for lv in d.levers] == [
         (20, "savings_plan.cut_pct@1", "percent"), (10, "savings_plan.cut_pct@1", "percent")]
     assert all(fake.specs[lv.cut.evidence_ref]["formula"] == "rule_value" for lv in d.levers)
-    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save
-    assert len(ctx.numbers.all()) == 7
+    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save; then
+    # (#380, #503 review) the two levers' baselines for the card's estimate, after all of them, so n1..n7 stay
+    registered = ctx.numbers.all()
+    assert len(registered) == 9
+    assert [registered[f"n{i}"].method for i in (8, 9)] == ["what_if.baseline_month_eur@1"] * 2
+    assert [n.id for n in result.card.estimate.observed] == ["n8", "n9"]
 
 
 def test_the_two_cut_levers_are_always_different_categories(fake):
