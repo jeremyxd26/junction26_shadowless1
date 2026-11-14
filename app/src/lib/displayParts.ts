@@ -37,20 +37,28 @@ export function chipWrapping(inText: boolean): string {
 }
 
 /**
- * The display as unbreakable segments: each part with the spaces that follow it, so the only break
- * is between the amount and the words after it. Joined, they are exactly the display.
+ * The display as unbreakable segments. A new segment starts only after one that ends with a space
+ * (the space stays with it), so a break is possible only at a real space between the amount and
+ * the words after it: "€780.00 " | "a month". "72nd percentile" or an IBAN "FI21 1234 …" are never
+ * cut between letters and digits. Joined, the segments are exactly the display.
  */
 export function displaySegments(display: string): string[] {
   const segments: string[] = []
   for (const part of displayParts(display)) {
-    const lead = /^\s*/.exec(part.text)![0]
-    const rest = part.text.slice(lead.length)
-    if (segments.length > 0) segments[segments.length - 1] += lead
-    else if (lead) segments.push(lead)
-    if (rest) {
-      if (segments.length === 1 && segments[0] === lead && lead) segments[0] += rest
-      else segments.push(rest)
+    const last = segments.length - 1
+    if (last >= 0 && !/\s$/.test(segments[last])) {
+      // The previous segment has no trailing space: no break here, the part joins it.
+      const lead = /^\s*/.exec(part.text)![0]
+      if (!lead) {
+        segments[last] += part.text
+        continue
+      }
+      segments[last] += lead
+      const rest = part.text.slice(lead.length)
+      if (rest) segments.push(rest)
+      continue
     }
+    segments.push(part.text)
   }
   return segments
 }

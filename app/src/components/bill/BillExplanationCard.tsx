@@ -91,7 +91,9 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
           {look.icon}
         </span>
         <div className="min-w-0">
-          <p className={`flex min-h-10 items-center font-semibold ${look.color}`}>{basket.label}</p>
+          <p className={`flex min-h-10 items-center font-semibold ${look.color}`}>
+            <span className="min-w-0 break-words hyphens-auto">{basket.label}</span>
+          </p>
           <p className="text-sm text-ink-2">{basket.text}</p>
         </div>
       </div>
@@ -110,7 +112,7 @@ function SafeToSpendCard({ safe }: { safe: BillSafeToSpend }) {
     <CardShell>
       {/* With large text the Estimate badge moves under the title instead of squeezing it (#493). */}
       <div className="flex flex-wrap items-start justify-between gap-x-3">
-        <h3 className={`min-w-[min(10rem,100%)] flex-1 basis-0 pt-2.5 ${CARD_TITLE}`}>{s.safeTitle}</h3>
+        <h3 className={`min-w-[min(9rem,100%)] flex-1 basis-0 pt-2.5 ${CARD_TITLE}`}>{s.safeTitle}</h3>
         <EstimateBadge estimate={s.estimate} control={estimate.control} />
       </div>
       {estimate.open && <EstimateNote estimate={s.estimate} id={estimate.id} />}

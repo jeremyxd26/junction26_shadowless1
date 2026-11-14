@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import contract from '../api/mock/contract-examples.json'
 import { describe, expect, it } from 'vitest'
 import { chipWrapping, displaySegments } from '../lib/displayParts.ts'
 import { DisplayText } from './ChipText.tsx'
@@ -29,5 +30,27 @@ describe('number chip wrapping (#493)', () => {
   it('never wraps a chip in running text; a standalone chip wraps only past its max width', () => {
     expect(chipWrapping(true)).toBe('whitespace-nowrap')
     expect(chipWrapping(false)).toBe('shrink-0 max-w-full text-center')
+  })
+
+  it('breaks only after a segment that ends with a space, for every contract display', () => {
+    const displays: string[] = []
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) value.forEach(walk)
+      else if (typeof value === 'object' && value !== null) {
+        const record = value as Record<string, unknown>
+        if (typeof record.display === 'string') displays.push(record.display)
+        Object.values(record).forEach(walk)
+      }
+    }
+    walk(contract.examples)
+    expect(displays.length).toBeGreaterThan(50)
+    for (const display of displays) {
+      const segments = displaySegments(display)
+      expect(segments.join('')).toBe(display)
+      for (const segment of segments.slice(0, -1)) expect(segment).toMatch(/\s$/)
+      expect(text(render(display))).toBe(display.replace(/&/g, '&amp;'))
+    }
+    expect(displaySegments('72nd percentile')).toEqual(['72nd percentile'])
+    expect(displaySegments('FI21 1234 5600 0007 85')).toEqual(['FI21 1234 5600 0007 85'])
   })
 })
