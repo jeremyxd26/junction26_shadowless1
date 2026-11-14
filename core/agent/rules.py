@@ -545,7 +545,16 @@ NOT_A_THING = frozenset({
     "fifth", "final", "during", "period", "periods", "daily", "weekly", "monthly", "yearly", "annually", "morning",
     "mornings", "evening", "evenings", "night", "nights", "certain", "specific", "particular", "an", "a", "any",
     "some", "several", "many", "couple",
+    # #510: frequencies and determiners, and a shop in general (no thing of its own)
+    "twice", "once", "thrice", "both", "either", "neither", "store", "stores", "shop", "shops", "shopping",
+    "kauppaan", "kauppoihin", "kaupassa", "kaupoissa",
 })
+# A word followed by a period noun is part of a period, not a thing: "on both months", "on Christmas Eve",
+# "ensimmäiseen viikkoon" (#510). Weekdays are not in the list: "Black Friday" stays a thing.
+PERIOD_NOUN_AFTER = (r"\s+(days?|weeks?|weekends?|months?|years?|eve|mornings?|evenings?|nights?|viik\w*|kuu\w*|"
+                     r"vuo\w*|päiv\w*)\b")
+# Markup around a name ("on <b>Lidl</b>") is read as the bare name (#510).
+MARKUP_TAG = r"<[^<>]{1,40}>"
 WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
 
 
@@ -728,6 +737,7 @@ FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
 def _unknown_object(q: str) -> str | None:
     """The thing a spending question names when no category, merchant group or health word maps it: the
     first object, or one listed after it ("on restaurants and at the gym")."""
+    q = re.sub(MARKUP_TAG, " ", q)
     m = re.search(OBJECT_EN, q) or re.search(OBJECT_FI, q)
     if not m:
         return None
@@ -739,6 +749,8 @@ def _unknown_object(q: str) -> str | None:
         if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
                 any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
             continue
+        if re.match(fold_pattern(PERIOD_NOUN_AFTER), q[start + len(word):]):
+            word = "period"   # "on both months", "on Christmas Eve": a period, no thing (#510)
         if i and not _is_thing(word):
             continue   # "on restaurants and the whole of August": the period is no second object
         return word
@@ -765,6 +777,7 @@ def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
 def unknown_object(question: str) -> str | None:
     """The thing a spending question names that no category maps (for the pipeline's answer, #379), in the
     user's own spelling: "Café Müller", not "cafe" (a name's capitalised words that follow it come along)."""
+    question = re.sub(MARKUP_TAG, " ", question)   # "<b>Lidl</b>" is Lidl (#510)
     q = fold(question)
     word = _unknown_object(q)
     if word is None or not _is_thing(word):
