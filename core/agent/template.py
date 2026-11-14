@@ -335,6 +335,87 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
 
 
+# Small purchases as one takeaway sentence (#256), in the voice of the brief and within the length rule (review
+# of #390): the takeaway number first, at most three numbers (the total, the count, the monthly average), the
+# period in words. The limit stays on the card. Words always stand between a count and a date, so a count
+# never reads as a day of a month. No advice, no judgement.
+SMALL_SENTENCE = {
+    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
+    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
+    "month": (", about {month}", ", noin {month}"),
+    "most": ("most of them at {where}", "suurin osa {where}"),
+    "largest": ("the largest part at {where}", "eniten {where}"),
+    "noun_one": ("small purchase", "pieni ostos"),
+    "noun_many": ("small purchases", "pientä ostosta"),
+    "label": ("in {label}", "jaksolla {label}"),
+}
+# A preset period in words, without digits (review of #390: the period named in words). The validator accepts a
+# month only when it equals a returned period exactly, so "from July to September 2026" would not pass; these do.
+PRESET_WORDS = {
+    "last_3_months": ("in the last three months", "viimeisen kolmen kuukauden aikana"),
+    "last_6_months": ("in the last six months", "viimeisen kuuden kuukauden aikana"),
+    "last_12_months": ("in the last twelve months", "viimeisen kahdentoista kuukauden aikana"),
+    "last_month": ("last month", "viime kuussa"),
+    "this_month": ("this month", "tässä kuussa"),
+    "this_week": ("this week", "tällä viikolla"),
+    "last_week": ("last week", "viime viikolla"),
+    "year_to_date": ("this year", "tänä vuonna"),
+}
+
+
+def period_words(view: dict[str, Any], language: str) -> str | None:
+    """The period of a small-purchases view: a preset in words ("in the last three months", "viime kuussa"),
+    another period by its label ("in 3–24 Aug 2026"); None when there is neither."""
+    preset = view.get("period_preset")
+    if preset in PRESET_WORDS:
+        return pick(PRESET_WORDS[preset], language)
+    label = view.get("period")
+    return pick(SMALL_SENTENCE["label"], language).format(label=label) if isinstance(label, str) else None
+
+
+def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The small-purchases takeaway as one sentence, and the ids it cites (at most three); None when a number
+    or the period is missing."""
+    if view.get("tool") != "get_small_purchases":
+        return None
+    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+
+    def has(key: str) -> bool:
+        return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
+
+    when = period_words(view, language)
+    if not (has("count") and has("total") and when):
+        return None
+    token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
+    kind = (view.get("takeaway") or {}).get("kind")
+    s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    if kind == "none":
+        text, ids = s("none").format(period=when), []
+    elif kind == "few":
+        noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
+        ids = [nums[k]["id"] for k in ("count", "total")]
+    else:
+        categories = view.get("categories") or []
+        largest = categories[0] if categories else {}
+        key, label = largest.get("key"), largest.get("label") or ""
+        where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
+                 else (label.lower() if language == "en" else label))
+        share = (largest.get("share") or {}).get("value")
+        if re.search(r"\d", where):
+            return None
+        where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
+        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
+                                   where_part=where_part)
+        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+    return text[:1].upper() + text[1:], ids
+
+
 PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
 
 
@@ -417,7 +498,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = safe_to_spend_sentence(view, language)
+        custom = (safe_to_spend_sentence(view, language)
+                  or small_purchases_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])
             cited += custom[1]

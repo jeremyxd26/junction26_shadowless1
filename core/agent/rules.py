@@ -237,6 +237,27 @@ PEERS = (r"people like me|people my age|others? (of )?my age|other people|others
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
          r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
+# Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
+# snacks?", "Mihin pienet ostokset menevät?". Plural forms only: "that small purchase" is one purchase, not
+# the tool's question. Never the baskets question ("Where did my money go?").
+SMALL_PURCHASES = (r"\bsmall (purchases|buys|expenses)\b|\blittle (purchases|buys|things)\b|"
+                   r"\bcoffees? and snacks\b|\bsnacks and coffees?\b|"
+                   r"\bpien(et|iä|ten|iin|issä|istä|illä|ille) "
+                   r"(ostoks(et|ia|ien|iin|issa|ista|illa|ille|eni|iani|iini|issani|istani)|"
+                   r"hankin(nat|toja|tojen|toihin|noissa|noista))\b|"
+                   r"\bpikkuostoks(et|ia|ien|iin|issa|ista|illa|ille|eni|iani)\b|"
+                   r"\bkahvi\w* ja (välipalo|naposte)\w*")
+# The rule claims a small-purchases question only when nothing is left after removing the trigger, the
+# default period ("the last 3 months") and these words: anything else (an amount, a period, a filter, a
+# what-if) may change the question, so the next planner reads it (a rule claims only a confident full
+# match; review of #390). Folded, like every rule pattern.
+SMALL_FILLERS = frozenset({
+    "where", "do", "does", "did", "my", "go", "goes", "went", "how", "much", "many", "show", "me", "count",
+    "add", "adds", "added", "up", "to", "spend", "spent", "on", "i", "make", "made", "the", "in", "over",
+    "during", "cost", "costs", "what", "are", "all",
+    "mihin", "minun", "menevat", "menivat", "menee", "meni", "paljonko", "kuinka", "paljon", "montako",
+    "nayta", "kaytan", "kaytin", "kulutan", "kulutin", "rahani", "rahat", "rahaa", "mita", "ovat", "aikana",
+})
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
 SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
@@ -268,6 +289,9 @@ FORECAST = (r"^(?!.*(?:" + FORECAST_PAST + r")).*?(?:"
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
 # a specific period or category falls through to get_spending.
 BRIEF = [
+    # Small everyday purchases (#256). RuleModel._calls lets a what-if or peer question about them go to its own
+    # rule, and claims only the plain question (small_purchases_whole); anything more goes to the next planner.
+    ("small_purchases", SMALL_PURCHASES, lambda q, as_of: [("get_small_purchases", {})]),
     ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
      # The metric's window (metrics.md section 1): month averages of the last 6 complete months.
      lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]),
@@ -303,8 +327,8 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 
 
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
-BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON = (
-    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON))
+BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, SMALL_PURCHASES = (
+    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, SMALL_PURCHASES))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -330,6 +354,15 @@ META = [
     ("thanks", r"(thanks|thank you|thank you so much|thanks a lot|thx|kiitos|kiitti|kiitos paljon|спасибо)"),
     ("greeting", _GREET),
 ]
+
+
+def small_purchases_whole(q: str) -> bool:
+    """A folded question is the plain small-purchases question and nothing more: after removing the trigger,
+    the default period ("the last 3 months", which the tool uses anyway) and SMALL_FILLERS, no word is left.
+    An amount, another period, a filter or a what-if in words or digits leaves a word, so it is not claimed."""
+    default = next(rx for rx, p in PRESETS if p == config.SMALL_PURCHASE_DEFAULT_PERIOD)
+    rest = re.sub(default, " ", re.sub(SMALL_PURCHASES, " ", q))
+    return all(word in SMALL_FILLERS for word in re.findall(r"[\w']+", rest))
 
 
 def meta_intent(question: str) -> str | None:
@@ -387,6 +420,13 @@ class RuleModel:
         for intent, rx, build in BRIEF:
             if not re.search(rx, q, re.I):
                 continue
+            if intent == "small_purchases":
+                if re.search(WHAT_IF, q) or peer_question:
+                    continue  # a cut or a comparison of the small purchases: the what-if or peer rule
+                if not small_purchases_whole(q):
+                    # anything more than the plain question (an amount, a period, a filter, a stop): the next
+                    # planner reads it; never answered for the defaults (#142)
+                    return self._default_clarify(lang), False
             # A what-if or bills question that names a period is still a what-if or bills question;
             # a plain spending question with a period goes to get_spending below.
             if intent == "what_if" and spending is not None and not re.search(PERCENT + "|" + HALF, q):
