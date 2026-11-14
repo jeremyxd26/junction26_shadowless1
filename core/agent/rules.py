@@ -732,6 +732,15 @@ KEEP_OUT_IDEAS = fold_pattern(r"\bnot sure\b|\bshow (me )?(some )?ideas\b|\bidea
 KEEP_OUT_TURNS = 3   # the question that set the limit and at most two replies to the questions back
 
 
+def _kept_out_ask(what_if: dict | None, lang: str) -> Claim:
+    """The question back with the limit kept (#804); a category the user ruled out is never one of its options."""
+    ruled_out = set((what_if or {}).get("ruled_out") or ())
+    en, fi = KEEP_OUT_OPTIONS
+    keep = [i for i, c in enumerate(("Restaurants", "Entertainment", None)) if c not in ruled_out]
+    options = (tuple(en[i] for i in keep), tuple(fi[i] for i in keep))
+    return Claim("what_if", tuple(RuleModel._clarify(KEEP_OUT_WHICH, options, lang)))
+
+
 def _kept_out(q: str) -> tuple[str, frozenset[str], bool]:
     """(the folded question without what the user rules out, the categories and groups ruled out, whether the
     ruled-out part names any spending). A part that names no spending ("without a budget") changes nothing."""
@@ -786,7 +795,8 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     half = re.search(HALF, q)
     if kept_out and (not selections or (categories | baskets | {g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)})
                      & ruled_out):
-        return "kept_out", None   # #804: never a cut of what the user ruled out, nor of their essentials
+        # #804: never a cut of what the user ruled out, nor of their essentials
+        return "kept_out", {"ruled_out": sorted(ruled_out)}
     if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
         return "save_more", None
     if categories == {"Groceries"} and selections == 1 and not pct and not half and re.search(template.SAVE_MORE, q) \
@@ -1769,7 +1779,7 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     if kind == "amount":
         return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
     if kind == "kept_out":   # #804: the limit the user stated is kept
-        return Claim(intent, tuple(RuleModel._clarify(KEEP_OUT_WHICH, KEEP_OUT_OPTIONS, lang)))
+        return _kept_out_ask(what_if, lang)
     if kind == "save_more":
         return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
@@ -2177,7 +2187,7 @@ def _kept_out_reply(request: PlanInput, q: str, tools: set[str], lang: str) -> C
         return _claimed("what_if", [("run_what_if", what_if)], tools, lang)
     if kind == "amount":
         return Claim("what_if", tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
-    return Claim("what_if", tuple(RuleModel._clarify(KEEP_OUT_WHICH, KEEP_OUT_OPTIONS, lang)))
+    return _kept_out_ask({"ruled_out": sorted(_kept_out(fold(chain[start]))[1])}, lang)
 
 
 def _follow_up(request: PlanInput, q: str, as_of: date, tools: set[str]) -> Claim:

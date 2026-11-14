@@ -57,10 +57,23 @@ def is_kept_out_question(found, language="en"):
 ])
 def test_a_save_more_question_with_a_limit_asks_which_flexible_spending_and_never_cuts_what_was_ruled_out(
         question, language):
-    assert plan_what_if(question) == ("kept_out", None)
+    kind, what_if = plan_what_if(question)
+    assert kind == "kept_out" and ({"Housing", "Groceries"} & set(what_if["ruled_out"]))
     found = claim(PlanInput(question=question, language=language, as_of=AS_OF.isoformat(), tools=TOOLS))
     assert found.rule == "what_if"
     is_kept_out_question(found, language)
+
+
+@pytest.mark.parametrize("question,language,left", [
+    ("Where can I cut back besides restaurants?", "en", ["Entertainment", "Not sure — show ideas"]),
+    ("Miten voisin säästää enemmän ilman että leikkaan ravintoloista?", "fi", ["Viihde", "En tiedä — näytä ideoita"]),
+])
+def test_a_flexible_category_the_user_ruled_out_is_never_an_option(question, language, left):
+    found = claim(PlanInput(question=question, language=language, as_of=AS_OF.isoformat(), tools=TOOLS))
+    assert only(found, "ask_clarifying_question")["options"] == left
+    # and tapping it anyway asks again, never a cut of it
+    again = chain([question, "Restaurants 20%" if language == "en" else "Ravintolat 20 %"], language)
+    assert only(again, "ask_clarifying_question")["options"] == left
 
 
 @pytest.mark.parametrize("language", ["en", "fi"])
