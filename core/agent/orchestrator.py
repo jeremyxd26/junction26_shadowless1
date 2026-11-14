@@ -314,7 +314,7 @@ class Pipeline:
         # review card, with no plan and no model request.
         if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
             return lang
-        if self._answer_glossary(ctx, message, lang, emit, a):   # "What is a buffer?" (#568)
+        if self._answer_glossary(ctx, review, message, lang, emit, a):   # "What is a buffer?" (#568)
             return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
@@ -919,7 +919,7 @@ class Pipeline:
                                              "answer": TOKEN.sub("[number]", text)})
         return True
 
-    def _answer_glossary(self, ctx: ToolContext, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+    def _answer_glossary(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
         """Answer "What is a buffer?" / "Mitä tarkoittaa eräpäivä?" (#568): our fixed definition of one term and,
         when an existing Number means exactly what its sentence says, the customer's own Number from the existing
         tool (its method id and evidence, through the tool cache as for any call). No plan, no composer, no model
@@ -947,6 +947,7 @@ class Pipeline:
             for record in records:
                 if record.get("status") == "ok":
                     views.append(record["view"])
+                    a.ok_calls.append({"name": call.name, "args": call.args})   # for the review card, below
                     number_id = glossary.own_number_id(term.key, record["view"])
         numbers = ctx.numbers.all()
         allowed = allowed_from(numbers.values(), views, self.as_of)
@@ -963,6 +964,8 @@ class Pipeline:
             return False
         a.calls = calls
         a.planner_turns.append({"round": 1, "source": "rules", "glossary": term.key, "calls": calls})
+        if review is not None:  # the pending review's card, as on the normal path (#581 review)
+            self._attach_review(ctx, review, emit, a)
         text = self._deliver(draft.text, numbers, emit)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)

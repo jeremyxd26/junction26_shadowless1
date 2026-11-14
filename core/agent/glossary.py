@@ -35,23 +35,23 @@ class Term:
 TERMS: tuple[Term, ...] = (
     Term("safe_to_spend", r"safe[ -]to[ -]spend(?: amount)?",
          r"turvallisesti kaytettavissa(?: oleva(?: summa| raha)?)?",
-         ("Safe to spend is what you can use before your next payday after your bills, your usual essentials and a "
-          "small cushion are set aside.",
-          "Turvallisesti käytettävissä on se, mitä voit käyttää ennen seuraavaa palkkapäivää, kun laskut, tavalliset "
-          "välttämättömät menot ja pieni puskuri on pantu sivuun.")),
+         ("Safe to spend is what you can use this week without touching the money for your bills, your usual "
+          "essentials and a small cushion before payday.",
+          "Turvallisesti käytettävissä on se, mitä voit käyttää tällä viikolla koskematta rahaan, jota tarvitset "
+          "laskuihin, tavallisiin välttämättömiin menoihin ja pieneen puskuriin ennen palkkapäivää.")),
     Term("safe_to_save", r"safe[ -]to[ -]save(?: amount)?",
          r"turvallisesti saastettavissa(?: oleva(?: summa| raha)?)?",
          ("Safe to save is what a typical month leaves after your income has covered bills, your usual essentials, a "
           "reserve for surprises and your everyday spending.",
           "Turvallisesti säästettävissä on se, mitä tavallisesta kuukaudesta jää, kun tuloilla on katettu laskut, "
           "tavalliset välttämättömät menot, varaus yllätyksiin ja arkikulutus.")),
-    Term("regular_essentials", r"regular essentials?", r"saannolli(?:set|nen) valttamatto(?:mat|n)(?: menot| meno)?",
+    Term("regular_essentials", r"regular essentials?", r"saannolli(?:set|nen) valttamat(?:on|toma[tn])(?: menot| meno)?",
          ("Regular essentials are the costs you cannot skip and that come back every month, such as rent, "
           "electricity and insurance.",
           "Säännölliset välttämättömät ovat menoja, joita et voi jättää väliin ja jotka toistuvat joka kuukausi, "
           "kuten vuokra, sähkö ja vakuutukset.")),
     Term("unexpected_necessities", r"unexpected necessit(?:y|ies)",
-         r"odottamatto(?:mat|n) valttamatto(?:mat|n)(?: menot| meno)?",
+         r"odottamat(?:on|toma[tn]) valttamat(?:on|toma[tn])(?: menot| meno)?",
          ("Unexpected necessities are costs you did not plan but could not avoid, such as a car repair or a "
           "broken phone.",
           "Odottamattomat välttämättömät ovat menoja, joita et suunnitellut mutta joita et voinut välttää, kuten "
@@ -60,7 +60,7 @@ TERMS: tuple[Term, ...] = (
          ("Everyday spending is the money you choose to spend day to day, such as eating out, hobbies and shopping.",
           "Arjen kulutus on rahaa, jonka käytät omien valintojesi mukaan päivästä toiseen, kuten ulkona syömiseen, "
           "harrastuksiin ja ostoksiin.")),
-    Term("regular_bill", r"(?:regular|recurring) bills?", r"saannolli(?:nen|set) lasku(?:t)?|toistuva(?:t)? lasku(?:t)?",
+    Term("regular_bill", r"(?:regular|recurring) bill", r"saannollinen lasku|toistuva lasku",
          ("A regular bill is a payment that comes back at about the same time and size, such as rent or a phone "
           "plan.",
           "Säännöllinen lasku on maksu, joka toistuu suunnilleen samaan aikaan ja samansuuruisena, kuten vuokra tai "
@@ -87,7 +87,7 @@ TERMS: tuple[Term, ...] = (
           "Suoramaksu on lasku, jonka pankki maksaa tililtäsi eräpäivänä ilmoitettuaan siitä sinulle etukäteen.")),
     Term("interest", r"interest(?: rate)?", r"korko",
          ("Interest is the price of money over time: a borrower pays it on a loan, and a bank may pay it on savings.",
-          "Korko on rahan hinta ajan kuluessa: lainaaja maksaa sitä lainasta, ja pankki voi maksaa sitä säästöille.")),
+          "Korko on rahan hinta ajan kuluessa: lainanottaja maksaa sitä lainasta, ja pankki voi maksaa sitä säästöille.")),
     Term("budget", r"budget", r"budjetti",
          ("A budget is a plan for how much you will spend on different things in a month.",
           "Budjetti on suunnitelma siitä, paljonko käytät rahaa eri asioihin kuukaudessa.")),
@@ -111,6 +111,10 @@ _FOLD = str.maketrans({"ä": "a", "ö": "o", "å": "a", "’": "'"})
 def _fold(message: str) -> str:
     text = message.lower().translate(_FOLD)
     text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s*[?!.]+$", "", text)
+    text = re.sub(r"[,\s]+(?:please|kiitos)$", "", text)             # "What is safe to spend, please?" (#581 review)
+    text = re.sub(r"[\"\u201c\u201d\u00ab\u00bb\u201e]", "", text)   # quotes around the term: What's "safe to spend"?
+    text = re.sub(r"(?<=\s)'([^']+)'$", r"\1", text)                 # single quotes around a final term
     return re.sub(r"\s*[?!.]+$", "", text)
 
 
@@ -155,18 +159,18 @@ def _basket(view: dict, key: str) -> Any:
 
 # term -> (how to get it, which Number of the view). Only a Number that means exactly what its sentence says.
 OWN: dict[str, Own] = {
-    "safe_to_spend": Own("get_safe_to_spend", {}, ("Yours right now is {n}.", "Sinulla se on nyt {n}.")),
+    "safe_to_spend": Own("get_safe_to_spend", {}, ("Yours this week is {n}.", "Sinulla se on tällä viikolla {n}.")),
     "safe_to_save": Own("get_safe_to_save", {}, ("Yours is {n}.", "Sinulla se on {n}.")),
     "buffer": Own("get_safe_to_spend", {}, ("Yours is {n}.", "Sinulla se on {n}.")),
     "pay_yourself_first": Own("get_safe_to_spend", {}, ("Your savings goal is {n}.", "Säästötavoitteesi on {n}.")),
     "regular_bill": Own("get_safe_to_spend", {}, ("Your regular bills due before your next payday: {n}.",
                                                   "Säännölliset laskusi ennen seuraavaa palkkapäivää: {n}.")),
     "regular_essentials": Own("get_basket_breakdown", {"period": {"preset": "last_month"}},
-                              ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla keskimäärin {n}.")),
+                              ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla se oli keskimäärin {n}.")),
     "unexpected_necessities": Own("get_basket_breakdown", {"period": {"preset": "last_month"}},
-                                  ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla keskimäärin {n}.")),
+                                  ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla se oli keskimäärin {n}.")),
     "everyday_spending": Own("get_basket_breakdown", {"period": {"preset": "last_month"}},
-                             ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla keskimäärin {n}.")),
+                             ("Over the last full month yours averaged {n}.", "Viimeisenä täytenä kuukautena sinulla se oli keskimäärin {n}.")),
     "peer_median": Own("get_peer_benchmark", {"metric": "spend_total"},
                        ("For total spending in your peer group it is {n}.",
                         "Vertaisryhmäsi kokonaiskulutuksessa se on {n}.")),

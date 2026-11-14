@@ -96,3 +96,37 @@ def test_the_evidence_of_the_cited_number_opens(client, persona):
     r = client.get(f"/api/evidence/{number['evidence_ref']}?customer_id={persona}")
     assert r.status_code == 200, r.text
     assert number["method"].startswith("safe_to_spend.safe_to_save_monthly")
+
+
+# ---- with the label step, as the service runs (#581 review, D4): reviews on, on private copies of the review
+# tables, so the live review the stand's visitors get is never touched; https, so the viewer's label sticks.
+
+@pytest.fixture
+def labelled_client(db_conn, monkeypatch, tmp_path):
+    from core.tools import reviews
+    if not hasattr(reviews, "private_tables"):
+        pytest.skip("waits for reviews.private_tables (#199)")
+    monkeypatch.setenv("SPIKE_REVIEWS", "on")
+    monkeypatch.setenv("AUDIT_LOG_DIR", str(tmp_path / "audit"))
+    with db_conn.transaction(force_rollback=True):
+        reviews.private_tables(db_conn)
+        app = create_app(Settings(_env_file=None, database_url=None))
+        with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
+            app.state.pool = StubPool(db_conn)
+            yield c
+
+
+def test_with_a_review_the_number_is_the_overviews_pending_then_after_needed(labelled_client):
+    persona = PERSONAS[0]
+    first = labelled_client.get(f"/api/overview/{persona}").json()   # the review step: pending for this viewer
+    hero = first["hero"]["primary"]
+    (number,) = ask(labelled_client, persona, "What is safe to spend?", "en")["numbers"].values()
+    assert (number["value"], number["evidence_ref"], number["method"]) == (hero["value"], hero["evidence_ref"],
+                                                                          hero["method"])
+    r = labelled_client.post("/api/baskets/label", json={"customer_id": persona, "tx_ref": first["reviews"][0]["tx_ref"],
+                                                         "basket": "unexpected_necessities", "language": "en"})
+    assert r.status_code == 200, r.text
+    after = labelled_client.get(f"/api/overview/{persona}").json()["hero"]["primary"]
+    (number,) = ask(labelled_client, persona, "What is safe to spend?", "en")["numbers"].values()
+    assert (number["value"], number["evidence_ref"]) == (after["value"], after["evidence_ref"])
+    assert after["value"] != hero["value"]
