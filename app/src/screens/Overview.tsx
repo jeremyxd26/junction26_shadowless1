@@ -219,11 +219,15 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       waiting: flies ? 'keep' : null,
     })
 
+    // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), the toast
+    // does not repeat it over the reply: one short line with Undo. Screen readers still hear the
+    // whole message (`text_rendered`) through the live region.
+    const repeated = answered && Boolean(response.effect)
     setToast({
       seq: run,
-      text: response.message.text,
+      text: repeated ? t.answerSaved : response.message.text,
       rendered: response.message.text_rendered,
-      numbers: response.message.numbers,
+      numbers: repeated ? {} : response.message.numbers,
       undo: answered,
       retry: false,
       retryUntil: null,
@@ -344,12 +348,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
             <p className="mb-2 text-base font-bold text-ink">
               {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
             </p>
+            <BasketStrip card={baskets} motion={motion ?? undefined} keys={['unclassified', reply]} title={null} flight />
+            {/* Under the strip: the text arrives with the answer, so above it would move the flight's
+                target while the amount flies. */}
             {replyNote && (
-              <p className="mb-2 text-sm leading-8 text-ink-2">
+              <p className="mt-2 text-sm leading-8 text-ink-2">
                 <TokenText text={replyNote.text} numbers={replyNote.numbers} />
               </p>
             )}
-            <BasketStrip card={baskets} motion={motion ?? undefined} keys={['unclassified', reply]} title={null} flight />
           </div>
         </div>
       )}
