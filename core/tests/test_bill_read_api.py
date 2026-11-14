@@ -60,9 +60,12 @@ def read(app, transport, sample_id="sample_1", language="fi", cache_dir=None, le
 
 
 def test_a_barcode_bill_read_correctly_checks_only_the_iban_and_the_reference(app):
+    from core.app.api.schemas import BillReadResponse
+
     r = read(app, Transport(answer(printed("sample_1"))))
     assert r.status_code == 200
     body = r.json()
+    BillReadResponse.model_validate(body)                      # the contract's shape (section 11.4)
     assert body["sample_id"] == "sample_1" and body["needs_confirmation"] is True and body["language"] == "fi"
     f = body["fields"]
     assert f["iban"]["value"] == TRUTH["sample_1"]["iban"] and f["iban"]["status"] == "checked"

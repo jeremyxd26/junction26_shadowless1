@@ -510,6 +510,32 @@ class BillExplainRequest(Model):
     fields: BillFieldsRequest | None = None
 
 
+class BillReadField(Model):
+    """One field of a bill reading (section 11.4, #250): a string proposal for the user to confirm."""
+    value: str
+    display: str
+    status: Literal["checked", "unchecked"]   # only an IBAN or a reference can be checked (decision A of #250)
+    source: Literal["barcode", "printed"]
+    note: str | None
+
+
+class BillReadFields(Model):
+    payee: BillReadField | None
+    iban: BillReadField | None
+    reference: BillReadField | None
+    amount: BillReadField | None
+    due_date: BillReadField | None
+    barcode: BillReadField | None
+
+
+class BillReadResponse(Model):
+    """POST /api/bill/read (section 11.4): a proposal, not an explanation; no Number objects."""
+    sample_id: str
+    language: Language
+    fields: BillReadFields
+    needs_confirmation: Literal[True]
+
+
 class BillRead(Model):
     source: Literal["barcode", "fields"]
     payee: str | None
