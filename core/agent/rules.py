@@ -18,6 +18,7 @@ import re
 from datetime import date
 
 from core.agent import template
+from core.agent.guard import fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -83,7 +84,7 @@ def _month_range(year: int, month: int) -> tuple[date, date]:
 def _months_mentioned(q: str, as_of: date) -> list[tuple[int, int]]:
     """(year, month) of every month named in the question, in order."""
     out = []
-    for m in re.finditer(MONTH_RX + r"\w*(?:\s+(\d{4}))?", q):
+    for m in re.finditer(MONTH_RX + r"\w*(?:\s+(\d{4}))?", fold(q)):
         month = MONTHS[m.group(1)]
         year = int(m.group(2)) if m.group(2) else (as_of.year if month <= as_of.month else as_of.year - 1)
         out.append((year, month))
@@ -92,7 +93,7 @@ def _months_mentioned(q: str, as_of: date) -> list[tuple[int, int]]:
 
 def plan_spending(question: str, as_of: date) -> dict | None:
     """get_spending arguments for a spending question, or None if no period can be found."""
-    q = question.lower()
+    q = fold(question)
     args: dict = {}
     categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
     groups = [g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)]
@@ -156,7 +157,7 @@ SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
 
 def plan_what_if(question: str) -> tuple[str, dict | None]:
     """What the rules do with a what-if question. They never fill in a value the user did not give
-    (R1, design section 7.4; issue #142):
+    (R1, design section 7.4; issue #142). The question is read folded (without diacritics):
     - ("health", None): a health selection (R9): the refusal alone, no other scenario;
     - ("save_more", None): "How could I save more?" with no category and no cut: the design's tools
       for it (section 7.5) that need no number from the user, and the answer offers a what-if;
@@ -164,7 +165,7 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
       transport group: not recognised, so the next planner, or a clarifying question, takes it;
     - ("amount", None): one category but no cut, or a cut outside 1..100 % or not whole: ask how much;
     - ("run", args): run_what_if with that category and the user's own cut ("half" is 50 %)."""
-    q = question.lower()
+    q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
     categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
@@ -193,7 +194,7 @@ BRIEF = [
     ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
      # The metric's window (metrics.md section 1): month averages of the last 6 complete months.
      lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]),
-    ("safe_to_spend", r"safe(ly)? to spend|safely spend|can i (safely )?spend this week|turvallisesti käyt\w*|"
+    ("safe_to_spend", r"safe(ly)? to spend|safely spend|spend safely|can i (safely )?spend this week|turvallisesti|"
                       r"voin käyttää tällä viikolla",
      lambda q, as_of: [("get_safe_to_spend", {})]),
     ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
@@ -205,16 +206,31 @@ BRIEF = [
 # "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
 # section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
 SAVE_MORE_CALLS = [("get_basket_breakdown", {"period": {"preset": "last_6_months"}}), ("get_recurring_bills", {})]
-WHAT_IF_AMOUNT = ("By how much would you like to cut it? Ask again with a percentage, or say half.",
-                  "Kuinka paljon haluaisit vähentää? Kysy uudelleen prosentin kanssa tai sano puolet.")
-WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For example restaurants by half.",
-                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon? Esimerkiksi ravintoloita puoleen.")
-WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants by half?", "What if I cut groceries by half?"),
-                         ("Entä jos vähentäisin ravintoloita puoleen?", "Entä jos vähentäisin ruokaostoksia puoleen?"))
+# The what-if questions back never suggest an amount (review of PR #126): the user says how much.
+WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
+                  "Kuinka paljon haluaisit vähentää? Kerro se prosentteina.")
+WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much?",
+                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon?")
+WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I cut groceries?"),
+                         ("Entä jos vähentäisin ravintoloita?", "Entä jos vähentäisin ruokaostoksia?"))
+# A money question the rules cannot map: it asks about the period only when it is about spending.
+MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
                    ("Paljonko käytin viime kuussa?", "Paljonko käytin ravintoloihin viime kuussa?"))
+
+
+# Every rule pattern is matched against a folded question, so the patterns are folded too.
+DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
+CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
+MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
+MONTHS = {fold(k): v for k, v in MONTHS.items()}
+MONTH_RX = fold_pattern(MONTH_RX)
+PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
+COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE = (
+    fold_pattern(rx) for rx in (COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE))
+BRIEF = [(intent, fold_pattern(rx), build) for intent, rx, build in BRIEF]
 
 
 class RuleModel:
@@ -241,7 +257,7 @@ class RuleModel:
     def _calls(self, request: PlanInput) -> tuple[list[FunctionCall], bool]:
         if request.responses:  # round 2: the data is in; write the answer
             return [FunctionCall("finish")], True
-        q = request.question.lower()
+        q = fold(request.question)  # "kayttaa" and "käyttää" match the same rules
         for kind, rx in DECLINE_RULES:
             if re.search(rx, q, re.I):
                 return [FunctionCall("decline", {"kind": kind})], True
@@ -275,7 +291,9 @@ class RuleModel:
             args = plan_spending(request.question, date.fromisoformat(request.as_of))
             if args is not None:
                 return [FunctionCall("get_spending", args), FunctionCall("finish")], True
-        return self._default_clarify(request.language), False
+        if re.search(MONEY_WORDS, q) or any(re.search(rx, q) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            return self._default_clarify(request.language), False      # a spending question without a period
+        return self._clarify(template.CLARIFY_GENERAL["question"], template.CLARIFY_GENERAL["options"], lang), False
 
     def compose(self, request: ComposeInput) -> ComposeResult:
         return ComposeResult(text=json.dumps(

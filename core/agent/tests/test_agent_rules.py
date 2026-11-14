@@ -147,11 +147,40 @@ def test_what_if_two_categories_are_not_merged_into_one():
     assert not result.recognised and "run_what_if" not in names(result)
 
 
-def test_what_if_clarify_options_are_answerable_by_the_rules():
+def test_what_if_clarify_options_name_no_amount_and_lead_to_how_much():
+    # Review of PR #126: the coach never suggests an amount; an option picks the category, then asks.
     for lang in ("en", "fi"):
         result = plan("What if I cut it by 20%?", language=lang)
         options = clarify_text(result)["options"]
         assert options and not result.recognised
+        assert not any(w in " ".join(options + [clarify_text(result)["question"]]) for w in ("half", "puoleen", "%"))
         for option in options:
             planned = plan(option, language=lang)
-            assert names(planned) == ["run_what_if", "finish"] and planned.calls[0].args["cut_pct"] == 50
+            assert planned.recognised and names(planned) == ["ask_clarifying_question"]
+
+
+
+def _finnish_eval_questions():
+    import yaml
+    from pathlib import Path
+    cases = yaml.safe_load((Path(__file__).resolve().parents[3] / "core/eval/cases.yaml").read_text(encoding="utf-8"))
+    return [c["question"]["fi"] for c in cases["cases"] if "fi" in c["question"]]
+
+
+@pytest.mark.parametrize("question", _finnish_eval_questions())
+def test_a_finnish_eval_question_typed_without_dots_plans_the_same(question):
+    # Dev check of PR #195: the rules read the question folded, so "kayttaa" plans like "käyttää".
+    dotless = question.translate(str.maketrans("äöåÄÖÅ", "aoaAOA"))
+    assert plan(dotless, language="fi").calls == plan(question, language="fi").calls
+
+
+def test_the_safe_to_spend_question_without_dots():
+    result = plan("Paljonko voin kayttaa turvallisesti?", language="fi")
+    assert result.recognised and names(result) == ["get_safe_to_spend", "finish"]
+
+
+def test_an_unmapped_question_is_asked_about_the_period_only_when_it_is_about_spending():
+    general = clarify_text(plan("Tell me something interesting."))
+    assert "period" not in general["question"].lower() and "money" in general["question"].lower()
+    spending = clarify_text(plan("How much did I spend on taxis?"))
+    assert "period" in spending["question"].lower()

@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from core import answer_text
+from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
     "investment_advice": {
@@ -68,6 +69,12 @@ NO_DATA = ("There are no transactions for that period in your data.",
 TOOL_FAILED = ("Some of the data could not be computed right now.",
                "Osaa tiedoista ei voitu laskea juuri nyt.")
 NOTHING = ("I could not find data for that question.", "En löytänyt tietoja tähän kysymykseen.")
+CLARIFY_GENERAL = {
+    "question": ("What would you like to know about your money?", "Mitä haluaisit tietää raha-asioistasi?"),
+    "options": (("Where did my money go?", "What can I safely spend this week?", "How could I save more?"),
+                ("Mihin rahani menivät?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?",
+                 "Miten voisin säästää enemmän?")),
+}
 CLARIFY = {
     "question": ("Which period do you mean?", "Mitä ajanjaksoa tarkoitat?"),
     "options": (("This month", "Last month", "The last three months"),
@@ -158,6 +165,9 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 BILL_WORDS = r"\bbills?\b|\blasku\w*"
 BILL_PAYDAY = r"\b(payday|pay day|salary|income|palkka\w*|palkkapäiv\w*|tulo|tulot|tuloni|tuloja)\b"
 
+# Matched against the folded question (no diacritics), so folded here too.
+SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY))
+
 
 def _num(node: Any, label: str | None = None) -> tuple[str, str] | None:
     if isinstance(node, dict) and {"id", "value", "unit"} <= node.keys() and isinstance(node.get("id"), str):
@@ -170,7 +180,7 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
     agent-core.md section 6.2; and extra sentences without numbers (a date). A tool not listed here
     gets its shallowest numbers."""
     tool = view.get("tool")
-    q = question.lower()
+    q = fold(question)
     picks: list[tuple[str, str] | None] = []
     extra: list[str] = []
     if tool == "get_spending":
@@ -211,7 +221,7 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
 def save_more_plan(views: list[dict[str, Any]], question: str) -> bool:
     """The save-more plan ran: the baskets answered "How could I save more?", and no what-if did."""
     tools = {v.get("tool") for v in views}
-    return bool(re.search(SAVE_MORE, question.lower())) and "get_basket_breakdown" in tools and "run_what_if" not in tools
+    return bool(re.search(SAVE_MORE, fold(question))) and "get_basket_breakdown" in tools and "run_what_if" not in tools
 
 
 def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
