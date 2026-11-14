@@ -6,6 +6,8 @@ import { BILL_LIVE } from '../api/bill.ts'
 import { api } from '../api/client.ts'
 import type { Language } from '../api/types.ts'
 import { billStrings } from '../lib/billStrings.ts'
+import { LessonTurn } from './lesson/LessonTurn.tsx'
+import { lessonStrings } from './lesson/lessonStrings.ts'
 
 /** What the thread gives a registered component. */
 export interface ClientTurnProps {
@@ -42,7 +44,10 @@ export const clientTurns: Record<string, ClientTurnEntry> = {
     screen: '/bill',
     Component: lazy(() => import('./bill/BillFlow.tsx').then((module) => ({ default: module.BillFlow }))),
   },
+  // "Lesson of the day" (#703): a question about the user's own number, then the reveal. Always
+  // shown; a profile without a lesson gets one sentence instead.
+  lesson: { chip: (lang) => lessonStrings(lang).chip, visible: () => true, Component: LessonTurn },
 }
 
 /** The registry keys whose chips the opening shows under its overview row, in this order. */
-export const openingChips: string[] = ['bill']
+export const openingChips: string[] = ['bill', 'lesson']
