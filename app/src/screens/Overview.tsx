@@ -11,7 +11,7 @@ import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { BillsCards } from '../components/BillsCard.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
-import { navigate, openWhatIf } from '../lib/url.ts'
+import { askInThread, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
@@ -52,7 +52,11 @@ const NOTE_MS = 4000
 /** Keys whose "was …" hint is shown: the hero, its reserve and the basket the purchase moved to. */
 const HINTED = new Set(['safe_to_spend', 'irregular_reserve', 'regular_essentials', 'unexpected_necessities', 'everyday_spending'])
 
-/** The first screen: not an empty chat but this week's picture, then questions to ask. */
+/**
+ * Sentti's opening turn in the thread on `/` (OpeningTurn): this week's picture, the review
+ * question, then questions to ask, which are sent in the same thread. OpeningTurn keeps one
+ * mounted instance per persona, because the review state, its timers and the overlay live here.
+ */
 export function Overview({ overview, onRefresh }: { overview: OverviewResponse; onRefresh: () => void }) {
   const { t, lang, customerId } = useSettings()
   // The question asked when the screen opened. It stays here after the answer (the refetched
@@ -311,7 +315,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
               <li key={question}>
                 <button
                   type="button"
-                  onClick={() => navigate('/chat', { q: question })}
+                  onClick={() => askInThread(question)}
                   className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
                 >
                   {question}

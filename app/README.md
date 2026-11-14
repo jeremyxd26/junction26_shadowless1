@@ -51,9 +51,9 @@ Open Sanna (`?persona=CUST00860`, the default in mock mode). Answer one of the t
 
 | URL | Shows |
 |---|---|
-| `/` | Overview |
-| `/chat` | Chat with Sentti on the `/api/ask` stream |
-| `/chat?q=<question>` | Chat that sends `<question>` at once (the overview's question chips), then drops `q` from the URL |
+| `/` | The thread: Sentti's opening turn (the overview), then the questions and answers on the `/api/ask` stream, with the composer at the bottom |
+| `/?q=<question>` | The thread sends `<question>` at once, then drops `q` from the URL. The question chips and the cards' ask actions set it on `/` by replacing the entry, so asking adds no history entry. |
+| `/chat` | An old link: redirects to `/` (the query kept) by replacing the entry, so Back never returns to it |
 | `?evidence=<ref>` | The evidence sheet over the current screen. Back closes it. |
 | `?whatif=<kind>:<value>&cut=<pct>` | The what-if sheet, for example `?whatif=category:Restaurants&cut=20`. `kind` is `category`, `basket`, `mcc` or `merchant`; `cut` is a whole percentage from 1 to 100 (20 if missing). Releasing the slider updates `cut`. Back closes it. |
 | `?persona=<customer_id>` | Demo persona. A long press on the header opens the persona and language switch. |
