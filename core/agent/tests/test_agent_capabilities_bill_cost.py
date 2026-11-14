@@ -37,7 +37,7 @@ def test_what_sentti_can_do_gets_the_introduction(question):
 @pytest.mark.parametrize("question", [
     "Paljonko sähkö maksaa kuukaudessa?", "Paljonko vuokra maksaa kuukaudessa?", "Paljonko vesi maksaa kuussa?",
     "What does my rent cost a month?", "How much does electricity cost per month?",
-    "Mitä asuminen maksaa kuukaudessa?",
+    "Mitä asuminen maksaa kuukaudessa?", "Paljonko maksan vuokraa kuukaudessa?",
 ])
 def test_what_a_bill_costs_a_month_plans_the_bills(question):
     assert planned(question) == [("get_recurring_bills", {})], question
@@ -45,7 +45,8 @@ def test_what_a_bill_costs_a_month_plans_the_bills(question):
 
 @pytest.mark.parametrize("question, category", [
     ("Mitä vuokra maksaa vuodessa?", "Housing"), ("Mitä sähkö maksaa vuodessa?", "Utilities"),
-    ("How much is my rent a year?", "Housing"),
+    ("How much is my rent a year?", "Housing"), ("How much do I pay for rent a year?", "Housing"),
+    ("Paljonko maksan sähköstä vuodessa?", "Utilities"),
 ])
 def test_what_a_bill_costs_a_year_plans_the_spending_of_the_last_12_months(question, category):
     assert planned(question) == [("get_spending", {"filter": {"categories": [category]},
@@ -78,6 +79,29 @@ def test_the_controls_plan_as_before(question, expected):
 def test_not_a_bill_a_month_or_a_year(question, expected):
     assert template.bill_cost(guard.fold(question)) is None, question
     assert planned(question)[0][0] == expected, question
+
+
+# A market question, not the customer's own bill (review of #544): a place, a person, an average, a comparison or a
+# purpose. The rule claims a full match only, so each keeps the plan it has on dev and never gets the customer's own
+# number as if it were a market price.
+@pytest.mark.parametrize("question", [
+    "what does a flat rent cost in Helsinki a month?", "what does rent cost in Helsinki a year?",
+    "how much does rent cost per month for a student", "what does housing cost a month in Finland",
+    "What does electricity cost a month for a family of four?",
+    "what does it cost a month to heat a house with electricity",
+    "Paljonko vuokra maksaa Helsingissä kuukaudessa?", "Paljonko vuokra maksaa opiskelijalle kuukaudessa?",
+    "Paljonko sähkö maksaa keskimäärin kuukaudessa?", "What does a typical rent cost a month?",
+    "what does normal electricity cost a year",
+])
+def test_a_market_question_is_not_the_customers_bill(question):
+    assert template.bill_cost(guard.fold(question)) is None, question
+    assert planned(question)[0][0] == "ask_clarifying_question", question
+
+
+def test_the_comparison_question_keeps_the_peer_benchmark():
+    question = "what does my rent cost a month compared to others"
+    assert template.bill_cost(guard.fold(question)) is None
+    assert planned(question)[0][0] == "get_peer_benchmark"
 
 
 def bills_view(language: str, with_utilities: bool = True) -> dict:

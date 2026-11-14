@@ -283,7 +283,7 @@ BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni
 # the last 12 months of that category from the spending tool (never a month multiplied by twelve). Word boundaries
 # throughout; a named month ("tässä kuussa", "this month") is no "per month", and "for a month" is a duration ("to
 # rent a car for a month").
-BILL_COST = (r"\b(cost|costs|maksaa|maksavat)\b|"
+BILL_COST = (r"\b(cost|costs|pay|maksaa|maksavat|maksan|maksamme)\b|"
              r"\bhow much (is|are) (my |the )?(rent|electricity|utilities|housing|water bills?)\b")
 BILL_COST_MONTH = (r"(?<!for )\b(a|per|each|every) month\b|\bmonthly\b|\bkuukaudessa\b|\bkuukausittain\b|"
                    r"(?<!tassa )(?<!ensi )(?<!viime )\bkuussa\b")
@@ -292,6 +292,13 @@ BILL_COST_YEAR = r"(?<!for )\b(a|per|each|every) year\b|\byearly\b|\bannually\b|
 # A scenario ("what if", "would", "jos", a conditional verb) is rules.HYPOTHETICAL, checked in bill_cost.
 BILL_COST_NOT = r"\d|\bto rent\b|\brent(ing|ed|al)\b"
 BILL_COST_CATEGORIES = ("Housing", "Utilities")
+# A full match only (review of #544): every word is a cost word, a period word, filler, or the category's own word
+# (BILL_COST_OWN and the rules' category words). A place, a person, an average or a comparison ("in Helsinki", "for
+# a student", "keskimäärin", "compared to others", "to heat") is a market question, never the customer's own bill.
+BILL_COST_FILLER = frozenset("""what how much does do is are my the a an per each every i we our for cost costs pay
+    month year monthly yearly annually bill bills usually paljonko mita maksaa maksavat maksan maksamme minun meidan
+    kuukaudessa kuussa kuukausittain vuodessa vuosittain lasku laskut laskuni tavallisesti""".split())
+BILL_COST_OWN = {"Utilities": frozenset({"water", "electric"}), "Housing": frozenset()}
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
@@ -313,7 +320,13 @@ def bill_cost(q: str) -> tuple[str, str] | None:
     month, year = bool(re.search(BILL_COST_MONTH, q)), bool(re.search(BILL_COST_YEAR, q))
     if len(categories) != 1 or not categories <= set(BILL_COST_CATEGORIES) or month == year:
         return None
-    return categories.pop(), "month" if month else "year"
+    category = categories.pop()
+    own = [rx for rx, c in CATEGORY_WORDS if c == category]
+    for word in re.findall(r"[^\W\d_]+", q):
+        if word not in BILL_COST_FILLER and word not in BILL_COST_OWN[category] and \
+                not any(re.fullmatch(rx, word) for rx in own):
+            return None                       # another word: a market question or something more (#544 review)
+    return category, "month" if month else "year"
 
 
 def asks_income(q: str) -> bool:
