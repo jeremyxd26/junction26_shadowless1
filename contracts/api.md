@@ -2951,9 +2951,28 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Thanks. Sentti now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-    "text_rendered": "Thanks. Sentti now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-    "numbers": {}
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Your safe to spend this week goes from €221.58 to €180.26: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n2": {
+        "id": "n2", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
   },
   "changes": [
     {
@@ -3053,6 +3072,92 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        },
+        "after": {
+          "id": "n2", "value": 180.26, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€180.26"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        },
+        "after": {
+          "id": "n4", "value": 184.61, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
+          "label": "Typically left each month", "display": "€184.61 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        },
+        "after": {
+          "id": "n6", "value": 256.3, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sb3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€256.30"
+        }
+      },
+      {
+        "key": "unexpected_necessities", "label": "Unexpected necessities, monthly average",
+        "before": {
+          "id": "n7", "value": 341.08, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sa1u3n5e7x9p",
+          "label": "Unexpected necessities, monthly average", "display": "€341.08 a month"
+        },
+        "after": {
+          "id": "n8", "value": 521.15, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sb1u3n5e7x9p",
+          "label": "Unexpected necessities, monthly average", "display": "€521.15 a month"
+        }
+      }
+    ],
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Your safe to spend this week goes from €221.58 to €180.26: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n2": {
+        "id": "n2", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
@@ -3075,11 +3180,11 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Thanks. This counts as everyday spending, so your everyday spending this month is {{n1}} higher than usual. Your safe to spend stays the same.",
-    "text_rendered": "Thanks. This counts as everyday spending, so your everyday spending this month is €1,080.42 higher than usual. Your safe to spend stays the same.",
+    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
     "numbers": {
-      "n1": {
-        "id": "n1", "value": 1080.42, "unit": "eur",
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
         "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
         "label": "Home & Tech purchase", "display": "€1,080.42"
@@ -3120,6 +3225,80 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        },
+        "after": {
+          "id": "n2", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_wc4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        },
+        "after": {
+          "id": "n4", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_wc6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        },
+        "after": {
+          "id": "n6", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_wc3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        }
+      },
+      {
+        "key": "everyday_spending", "label": "Everyday spending, monthly average",
+        "before": {
+          "id": "n7", "value": 600.41, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sb2e4v6e8r0y",
+          "label": "Everyday spending, monthly average", "display": "€600.41 a month"
+        },
+        "after": {
+          "id": "n8", "value": 780.48, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_sa2e4v6e8r0y",
+          "label": "Everyday spending, monthly average", "display": "€780.48 a month"
+        }
+      }
+    ],
+    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "numbers": {
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
@@ -3142,9 +3321,28 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
   "review_state": "pending",
   "changed": true,
   "message": {
-    "text": "Undone. This purchase is waiting for your answer again.",
-    "text_rendered": "Undone. This purchase is waiting for your answer again.",
-    "numbers": {}
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Your safe to spend this week goes from €180.26 to €221.58: €1,080.42 is waiting for your answer again.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n2": {
+        "id": "n2", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
   },
   "changes": [
     {
@@ -3244,6 +3442,92 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
       }
     }
   ],
+  "effect": {
+    "items": [
+      {
+        "key": "safe_to_spend", "label": "Safe to spend",
+        "before": {
+          "id": "n1", "value": 180.26, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€180.26"
+        },
+        "after": {
+          "id": "n2", "value": 221.58, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+          "label": "Safe to spend", "display": "€221.58"
+        }
+      },
+      {
+        "key": "safe_to_save", "label": "Typically left each month",
+        "before": {
+          "id": "n3", "value": 184.61, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
+          "label": "Typically left each month", "display": "€184.61 a month"
+        },
+        "after": {
+          "id": "n4", "value": 364.31, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
+          "label": "Typically left each month", "display": "€364.31 a month"
+        }
+      },
+      {
+        "key": "irregular_reserve", "label": "Reserve for unexpected necessities",
+        "before": {
+          "id": "n5", "value": 256.3, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sb3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€256.30"
+        },
+        "after": {
+          "id": "n6", "value": 167.74, "unit": "eur",
+          "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+          "method": "safe_to_spend.irregular_reserve_eur@1", "evidence_ref": "ev_sa3i5r7r9e1g",
+          "label": "Reserve for unexpected necessities", "display": "€167.74"
+        }
+      },
+      {
+        "key": "unclassified", "label": "Waiting for your answer, monthly average",
+        "before": {
+          "id": "n7", "value": 0.0, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_na0u2n4c6l8a",
+          "label": "Waiting for your answer, monthly average", "display": "€0.00 a month"
+        },
+        "after": {
+          "id": "n8", "value": 180.07, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+          "method": "baskets.month_avg_eur@1", "evidence_ref": "ev_pu1n3c5l7a9s",
+          "label": "Waiting for your answer, monthly average", "display": "€180.07 a month"
+        }
+      }
+    ],
+    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Your safe to spend this week goes from €180.26 to €221.58: €1,080.42 is waiting for your answer again.",
+    "numbers": {
+      "n1": {
+        "id": "n1", "value": 180.26, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sb4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€180.26"
+      },
+      "n2": {
+        "id": "n2", "value": 221.58, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€221.58"
+      },
+      "n9": {
+        "id": "n9", "value": 1080.42, "unit": "eur",
+        "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
+        "method": "spending.total@1", "evidence_ref": "ev_rv1x3z5b7d9f",
+        "label": "Home & Tech purchase", "display": "€1,080.42"
+      }
+    }
+  },
   "refetch": ["/api/overview/CUST00860"]
 }
 ```
