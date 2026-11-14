@@ -1,7 +1,7 @@
 """#417: the button into the bank's screen names the screen only, and no template joins an amount to it.
 
-- One label per host target, under one key: the dictionaries of core/tools/config.py are read as source,
-  because a duplicate key in a dict literal is silently dropped at runtime.
+- One label per host target: core/tools/config.py is read as source (a `"host_<target>"` dict key or a
+  `HOST_<TARGET>` constant), because a duplicate key in a dict literal is silently dropped at runtime.
 - No label has a digit, a currency sign or an action verb ("start saving", "put", "move", "invest" and
   their Finnish forms), in English and Finnish.
 - The template answers of the two tools that carry an `open_host_screen` action (safe to save, the Bonus
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,43 +34,64 @@ ACTION_VERBS = re.compile(
 
 
 def host_label_entries() -> list[tuple[str, int, tuple[str, str]]]:
-    """Every `"host_..."` key of a dict literal in config.py, with its line and its (en, fi) value."""
+    """Every host-screen label in config.py with its line and its (en, fi) value, as (target, line, labels):
+    a `"host_<target>"` key of a dict literal, or a module constant `HOST_<TARGET>` (en, fi)."""
     out = []
-    for node in ast.walk(ast.parse(CONFIG.read_text(encoding="utf-8"))):
+    tree = ast.parse(CONFIG.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):
                 if isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.startswith("host_"):
-                    out.append((key.value, key.lineno, ast.literal_eval(value)))
+                    out.append((key.value.removeprefix("host_"), key.lineno, ast.literal_eval(value)))
+    for node in tree.body:
+        target = node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1 else             node.target if isinstance(node, ast.AnnAssign) else None
+        if isinstance(target, ast.Name) and target.id.startswith("HOST_") and node.value is not None:
+            value = ast.literal_eval(node.value)
+            if isinstance(value, tuple) and len(value) == 2 and all(isinstance(v, str) for v in value):
+                out.append((target.id.removeprefix("HOST_").lower(), node.lineno, value))
     return out
 
 
 def test_one_label_per_host_target_under_one_key():
     entries = host_label_entries()
-    keys = [k for k, _, _ in entries]
-    duplicates = sorted({k for k in keys if keys.count(k) > 1})
-    assert not duplicates, f"a host label key appears more than once in config.py: {duplicates}"
-    assert sorted(keys) == sorted(f"host_{t}" for t in HOST_SCREEN_TARGETS)
+    targets = [t for t, _, _ in entries]
+    duplicates = sorted({t for t in targets if targets.count(t) > 1})
+    assert not duplicates, f"a host target has more than one label in config.py: {duplicates}"
+    assert sorted(targets) == sorted(HOST_SCREEN_TARGETS)
 
 
-@pytest.mark.parametrize("key, line, labels", host_label_entries())
-def test_a_host_label_names_the_screen_only(key, line, labels):
+def test_the_check_sees_a_duplicate_key_that_python_would_drop(tmp_path, monkeypatch):
+    fake = tmp_path / "config.py"
+    fake.write_text("\n".join([
+        "T = {",
+        '    "host_monthly_saving": ("See monthly saving in S-mobiili", "Katso"),',
+        '    "host_monthly_saving": ("Start saving in S-mobiili", "Aloita säästäminen S-mobiilissa"),',
+        "}", ""]), encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "CONFIG", fake)
+    entries = host_label_entries()
+    assert [t for t, _, _ in entries] == ["monthly_saving", "monthly_saving"]
+    assert ACTION_VERBS.search(entries[1][2][0]) and ACTION_VERBS.search(entries[1][2][1])
+
+
+@pytest.mark.parametrize("target, line, labels", host_label_entries())
+def test_a_host_label_names_the_screen_only(target, line, labels):
     en, fi = labels
     for text in (en, fi):
-        assert not re.search(r"[0-9]", text), (key, line, text)
-        assert not CURRENCY.search(text), (key, line, text)
-        assert not ACTION_VERBS.search(text), (key, line, text)
-    assert "S-mobiili" in en and "S-mobiili" in fi           # the screen, named where it is
+        assert not re.search(r"[0-9]", text), (target, line, text)
+        assert not CURRENCY.search(text), (target, line, text)
+        assert not ACTION_VERBS.search(text), (target, line, text)
+        assert "S-mobiili" in text or "S-Pankki" in text, (target, line, text)   # the host's own screen
 
 
 @pytest.mark.parametrize("language", ["en", "fi"])
 def test_the_cards_use_these_labels_and_nothing_else(language):
-    labels = {k: v for k, _, v in host_label_entries()}
+    labels = {t: v for t, _, v in host_label_entries()}
     save, _ = save_run(row(), language)
     bonus, _ = bonus_run(language=language)
     for result, target in ((save, "monthly_saving"), (bonus, "bonus_to_fund")):
         host = [a for a in result.card.actions if a.type == "open_host_screen"]
         assert [(a.target, a.label) for a in host] == [
-            (target, labels[f"host_{target}"][0 if language == "en" else 1])]
+            (target, labels[target][0 if language == "en" else 1])]
 
 
 SAVE_ROWS = {

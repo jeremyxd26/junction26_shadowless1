@@ -79,7 +79,7 @@ def test_no_false_rejection(text):
 
 def test_the_rendered_text_rule_of_the_eval_agrees():
     assert amount_beside_bank_product("Put €360.00 a month into monthly saving.")
-    assert amount_beside_bank_product("Laita 360,00 € / kk kuukausisäästämiseen.")
+    assert amount_beside_bank_product("Laita 360,00\u00a0€ / kk kuukausisäästämiseen.")
     assert amount_beside_bank_product("You could set aside about €360.00 a month. See monthly saving in S-mobiili.") is None
     assert amount_beside_bank_product(template.INTRO[0]) is None
 
