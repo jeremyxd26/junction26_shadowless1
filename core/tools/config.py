@@ -1135,8 +1135,12 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
         "arkikulutuksesi on tässä kuussa tavallista suurempi.",
     ),
     "why": (
-        "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
-        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+        # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to
+        # save), so the text says that the effect is real, matching the effect text of the toast.
+        "Only you know what this purchase was. Your answer decides which basket it goes into, which can change "
+        "your safe to spend.",
+        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+        "turvallisesti käytettävissä olevaa summaa.",
     ),
     "amount": ("{category} purchase", "Ostos: {category}"),
     "see_purchase": ("See the purchase", "Näytä ostos"),
@@ -1276,7 +1280,14 @@ SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the
 SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
 SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
 SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1",
-                        "cut_pct": "savings_plan.cut_pct@1"}
+                        "cut_pct": "savings_plan.cut_pct@1",
+                        # what already goes to savings (#560): the share of income, and a sum when several series do
+                        "already_share": "savings_plan.already_share_pct@1",
+                        "already_month": "savings_plan.already_month_eur@1",
+                        "income_month": "savings_plan.income_month_eur@1"}
+# The recurring outflows that are the customer's own saving (#560): the categories of the recurring series that
+# already move money to savings or investments.
+SAVINGS_CATEGORIES = ("Invest Deposit",)
 # A cut share in words, so no answer needs a digit for it; any other share is cited as its Number (#411).
 SAVINGS_PLAN_CUT_WORDS: dict[int, tuple[str, str]] = {
     10: ("a tenth", "kymmenyksen"), 20: ("a fifth", "viidenneksen"), 25: ("a quarter", "neljänneksen"),
@@ -1299,4 +1310,10 @@ SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
     "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
                       "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    # what already goes to savings (#560): the Numbers' labels, and the line when no regular transfer shows
+    "already_month": ("Already goes to savings, a month", "Säästöihin menee jo kuukaudessa"),
+    "already_share": ("Share of your income", "Osuus tuloistasi"),
+    "income_month": ("Your income, a typical month", "Tulosi tavallisena kuukautena"),
+    "already_none": ("In this account I don't see a regular transfer to savings yet.",
+                     "Tällä tilillä en vielä näe säännöllistä siirtoa säästöön."),
 }
