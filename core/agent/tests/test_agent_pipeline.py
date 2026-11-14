@@ -388,3 +388,26 @@ def test_a_draft_saying_what_a_category_contains_is_rejected(make_pipeline, text
     done = dict(run(pipe))["done"]
     assert done["text"] == good["text"]
     assert "never what it contains" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
+
+
+# ---- #288: "a month a month" is a rejected model draft, never a rejected template ----------------------------
+
+def test_a_model_draft_repeating_a_period_is_retried(make_pipeline):
+    from core.tools.models import Number, Period, Unit
+    from datetime import date as _date
+
+    def monthly(ctx, args):
+        from core.tools.models import ToolResult
+        p = Period(start=_date(2026, 4, 1), end=_date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
+        n = ctx.numbers.register(Number(value=3010.59, unit=Unit.EUR_PER_MONTH, period=p, method="baskets.month_avg_eur@1",
+                                        evidence_ref="ev_mmmmmmmmmmmm", label="Total spending", display="€3,010.59 a month"))
+        return ToolResult(tool="monthly", data={}, model_view={"total": {"id": n.id, "value": 3010.59,
+                                                                         "unit": "eur_per_month", "label": "Total spending"}})
+
+    bad = {"language": "en", "text": "For 1 Apr – 30 Sep 2026 you spent {{n1}} a month.", "cited": ["n1"], "lesson_key": None}
+    good = {"language": "en", "text": "For 1 Apr – 30 Sep 2026 you spent {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    reg = registry(ToolSpec("monthly", "Monthly.", FakeArgs, monthly, ("x", "x")))
+    pipe = make_pipeline(ScriptedModel(plans=[[FunctionCall("monthly", {}), FunctionCall("finish")]], drafts=[bad, good]), reg)
+    done = dict(run(pipe))["done"]
+    assert done["text"] == good["text"]
+    assert "already says how often" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
