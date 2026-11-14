@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
 import psycopg
@@ -73,10 +73,23 @@ FORMULAS = {
     "difference": ("current", "baseline"),     # current - baseline, cents
     "pct_change": ("current", "baseline"),     # (current - baseline) / baseline * 100, 1 decimal
     "share_pct": ("part", "whole"),            # part / whole * 100, 1 decimal
-    "scale": ("base",),                        # base * factor_num / factor_den, cents
+    "scale": ("base",),                        # base * factor_num / factor_den, cents (params rounding: down)
     "sum": None,                               # sum of all parts, cents
     "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
+    # S-Bonus estimate (#158). The rule's values and its source travel in params, so a ref names the
+    # exact table row or rate it was computed with (core/config/s_group_benefits.yaml).
+    # bonus_level, percent_of and rate_of work on the unrounded scaled base, base * share_num / share_den
+    # (params; 1/1 when absent), and round once at the end, as the document's formula does.
+    "rule_value": (),                          # a value of the rule itself, params["value"]
+    "bonus_level": ("base",),                  # the percent of the highest table row at or below the base
+    "percent_of": ("percent", "base"),         # base * percent / 100, cents
+    "rate_of": ("base",),                      # base * params["percent"] / 100, cents
 }
+
+
+def _scaled(base: Decimal, p: dict[str, Any]) -> Decimal:
+    """base * share_num / share_den, unrounded (the what-if share of #158)."""
+    return base * Decimal(str(p.get("share_num", 1))) / Decimal(str(p.get("share_den", 1)))
 
 
 def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, Any] | None = None) -> Decimal:
@@ -90,11 +103,29 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return pct(values["part"] / values["whole"] * 100)
     if formula == "scale":
         p = params or {}
-        return money(values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"])))
+        scaled = values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"]))
+        if p.get("rounding") == "down":  # #158: a shown base that never passes a threshold it did not reach
+            return scaled.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        return money(scaled)
     if formula == "sum":
         return money(sum(values.values(), Decimal("0")))
     if formula == "minimum":
         return money(min(values["a"], values["b"]))
+    if formula == "rule_value":
+        return Decimal(str((params or {})["value"]))
+    if formula == "bonus_level":
+        p = params or {}
+        base = _scaled(values["base"], p)
+        percent = Decimal(str(p["below_lowest_percent"]))
+        for minimum, row_percent in p["levels"]:  # ascending by minimum
+            if Decimal(str(minimum)) <= base:
+                percent = Decimal(str(row_percent))
+        return percent
+    if formula == "percent_of":
+        return money(_scaled(values["base"], params or {}) * values["percent"] / 100)
+    if formula == "rate_of":
+        p = params or {}
+        return money(_scaled(values["base"], p) * Decimal(str(p["percent"])) / 100)
     raise ValueError(f"unknown formula {formula!r}")
 
 
@@ -245,7 +276,9 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
                           "value": part_spec["value"], "spec": part_spec})
         try:
             reconciles = compute_formula(spec["formula"], part_values, spec.get("params")) == value
-        except (ValueError, KeyError):  # a formula this version does not know: no check, not an error
+        except (ValueError, KeyError, ArithmeticError, TypeError):
+            # a formula this version does not know, or params it cannot compute with (a crafted or
+            # damaged spec): no check, not a 500
             reconciles = None
         return Resolution(ref, "composite", spec["method"], value, parts=parts, reconciles=reconciles, spec=spec)
 
@@ -279,7 +312,7 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
     rows = select(classify(history, as_of, overrides), sel)
     try:
         reconciles = value_of(rows, sel, spec["method"], spec.get("params")) == value
-    except (ValueError, KeyError):  # a method this version does not know: rows still shown, no check
+    except (ValueError, KeyError, ArithmeticError, TypeError):  # unknown method or bad params: no check
         reconciles = None
     rows.sort(key=lambda c: (c.tx.tx_date, c.tx.tx_at, c.tx.id), reverse=True)
     page = rows[offset:offset + limit]
