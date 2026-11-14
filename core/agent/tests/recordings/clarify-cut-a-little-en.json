@@ -8,6 +8,10 @@
  "exchanges": [
   {
    "kind": "plan",
+   "error": "timeout"
+  },
+  {
+   "kind": "plan",
    "response": {
     "candidates": [
      {
@@ -15,18 +19,18 @@
        "parts": [
         {
          "function_call": {
-          "id": "call_15105263403249246466",
+          "id": "call_14537953032860642672",
           "args": {
-           "question": "What percentage would you like to cut, and for which category?",
+           "question": "By how much would you like to cut it, and in which category?",
            "options": [
-            "Ten percent",
-            "Twenty percent",
-            "Thirty percent"
+            "Restaurants",
+            "Groceries",
+            "Entertainment"
            ]
           },
           "name": "ask_clarifying_question"
          },
-         "thought_signature": "Es8TCswTAWkUfRMu6CGjy0zagaMgFLGw5Je4g8tB7T8O83bOrGVY-FOBP_6iyC7_546t28lPXfnkUmXBofqNHnyYXCin0fUhV0lf9elBoMVi504TG_MiAaSZUbUQNuV1Qh_1ejRCbMsXGQSeoQuvm2cnmZtNf5v9mdF-QssK9nbsYlGf7Y0UrObA3-fRIGtKBMvKYdOWOxPfOI_Dnv8PufbixnnqhIfbg3BAYsEP07wEE92goh0vOJ0-oGBpq0pyBXqOGQYRXEhrdZ8XF3_iEoI2yWnMZsHx033zXnk8YndDEYZ8fPVpzdxxKTcyBhMnUV4TY9LPQeZ1Pi5psxbED1sv4WbSgmn-9KhU_gaAFs6EwUMSNI9R5t4Kw9f_PKSHq_N2LIBJAZJfFNFeLfzuMMO23xe8hgsHl1rFcKrpitK6-6Cx0TWoShcctS9zw5Ru6evqO5S6I6kz7sDKGGaQ055zTIv3k_6AIKBKtolMPgz-lkh8I1Eb3IFllh_k_04kgOhIWH3NzsYOQpo0AYlwtI3p0-03UsGNsY8jSJIxFm2Tbs9iIalNv4VCsRI4jbR4diDPxhVhFRZSPTTqPO483W69NDOLPU51LFtUBuX84ym9eb0AhrMB-Xe0FIIbixnf129vdCNmZeQqmsmbUXU5tAgeLkGffoL9z5pBBCVeCNR6x6VFCE1sZ8UY4P9TqR4vhqOM-YWevmbZPOunZ4LvpYuKIqf3tQrf3RDCYSQLQDpSBEETR0hWMZ-8pe6yU324HzWo1Dd88gScZRmH6zug_WdjyytVgQxih9qkEAat2eVnGFTchjijQ7uuFqNM1-zh0k3zu8E_rLgy4xQnMqhYDwW2lRC8Qf8kmdSi5dOHMg0T27dbOr14WE7tIzwUe7TjLfShdM70_XaZO0QDBrj9NE9jKGO-gC0p9v-DuN-UBaZn60KB3zhdy4xLOGzkUj9l9nAU4E9zClLl2l_Sq4sqJqJT_hWeFyaoH8l6x88gj6Wz0RH54rJmYbX2VIAuLkGfONwkWbZ7675T5Lo3Ih-roOZkHN0xQua0tLZFz1Z3jIRiyM0_WEtnaw-qqI4wolRrlFK7bDAKBS0rh7-OVA3519qOwNb-Rn2nl6U65uvMyqvBjrJNINsqVXsIHgZuV5ypmDUC3p8ZdybM0s8DJkHkIRahBIl4AYEcDynmHLNGyiAYLof506p9xKjaCC7gdekmeFeEYNvSzFI3TeEBR6EpbcXV7cWoa9P9oiQ1dne80e50pPXXCQaXgtnmC9VbsQU757uQNwQQHEXLdnrlSDzbJmsljXnAU_7psEg0VDl3n65R2_S60IOw180nC61W4ElxIvSt0UOoLOHIXow_7qKolXOJBgR6nbuTZFRoL-XAbDrINf8BrH2kI7u4ijYpU_uW98SxcuFEiCCtruwQ-gfT_cuHCY3y2A0aapWCAy-fh4lSeHU7RxSii3EkhSWCMsBwHEGgCIoRehthKYYj85QnLG8PWyIvdxzsrHjLZ9UOpIoRk3EJm4fK9HTTiTSiXIiiWSoPISR0PSWCPf0IzJxuri5bNRbgayfX5NaNNohhXJSO_lUWhPa1BHzys9jNZzoRuJ7HxpXBOPAL-Kv6VY2_75e-mdLXBRVEio0ughlE0LTVoeBu2axHEGr_ww1uerLkGtYtUopv9gEqoH9DNH6aXLGHVrndESRJd3CQmCROw1d5NQrBQkvVLpBcN9IMv5sdhLvqnHNNWHAElX-0LvZf-BhEsNy36Ujba4SG7EyanhdPUVhV6lMtJ69TLhZ_kPjnyThCSLK1w_DpHW9RPi1WxUoDCYr8GtPd503lqSjIS55GJFBjDpAKlMRJeo5GYRb-PinQFw0t8wbX0Qu6AnVY5W1i3mCf7DR4Xkf0ReOmO7ARR27Z5han296GIWo5KsFwOtFvdAjgXOyic6fe8OABcRTIPydemECjN2pVK4JJ2mdfuXKmeuszmiscGDcaA0xSt-su3nXq_syW1-v-l6mdsMaG_fZnZlho2mfg4iZUC7e1YxS83jEXNuTeuNRL1qT2gobVmqD9z7W37UpczH5LSM1ggCwGwOgH38G2zZ31ghEliQdYV3wgK3HaIfcqoJiQ7Zbtp-Y6pSqnXXqETtHFpolQISK9qILzfxtiyRKqncpcuVbU_CMAzfIIMF-ZveN2k11y1ewlMoLQcwedjXeYwXqHiMj_MrtBiIuW_sOQz0It91hfccj_Q6XZwdbnYtgZ23cxM0K9s_n38wFxQ-lYivH6sg1b3w8AIKhRcQ6pYBMaZ6cjeZnujVy6D9_9pyyDeC0UdIjTMBFqog8M4rEu6VT4qgDfhFB4Ap6_D0HfbaPBgV-Qboup-2jze7iYZ3Srk2-gvXmnXBM4P1NktNCkCALXHTahhEeATd-jlk2ERAfcT7ckoQd1kNvoH_GEW0ckGzUMgW5Sdv6nZp1uPFL9LxIm_PBdaeSLS9jGsQA-NCcnrPK-R9H3xnMbkOXBKtSEd-jOW1fq146IvSw_sFBKmOanpB60ySjND8ip33C2pNKtJeWMeN9CZWHicVNCVF4sO8etTFXD4IABFeguBFytgTJrVXP7lx6deSe0H0PYbSP8tqPUQ2lLWYRkV9WIxcioYIE9dLic2jX2sE67gT8TCl9sWYTZkKeggAOmdVx1oI9WhJGpl9pt3FljBcoLBrILClVS84st0EONHaujqUjVkW05ZZQmoOxgjmWQYizolZv5up6oAUtsuxUVlEQ_qhar-qhpmn__JRNpWfiwCrS5JrcEPVjwCjEUlo-oE_nXz5bJudOSwjBtzYpfsx7thN1vTc7K5j1sB4pTM137j1d_Fv_Knw9tkfqTBrn8fYcfvyXOclJM09wQrNCWD6wiZ2fieuAkXyS5ol5QTwMsiKqMzwFaKlktvX9LJ-4e9AuvNrS2iY1fBQjWukDMcapwIh9m-8uBwe36j0Z6iHkug_9IiijgiOYlhoqc0OLmnP66bkLTe916GYR5rCxrjOQZfzGmLO5vHRiVNi5Lx_-__wH7M7w-pbC2NqGUHZA4ExW4UiKBhLFhCkq2JOzwUvKrI8WOSdonD0S7a9dWCMAF7DBlRbBIXZ9rsrNUG81EuT8W2Y1liNNgSsl-3IUL49uIXyOuSH1dqJGelwYH0c58Qz63Qem1Gm4dMuLEs-sq9fTJZhJb8giiEzX8aYqxEpugN6DSgxmirGrJDkFE_oOlxBpBodpcpvp-fDEOoGOI3EShjJ5LOjelCCnX5X4Td5CgjLoYHYiDZA9Lr_aFunILi2SoZt2FNOdfoYIWJlI62I4Pr9Uc4LwGesWb0b7lL9fQ6cbYk9h5Hn_wnig8JQzNf6TLoOlP"
+         "thought_signature": "Eu0OCuoOAWkUfRPeUKqinKNJkxFq7c_XkbcpflHxxrYBhcpQIOZtIKYwV_c1OscC4YiKk8bqMevR1Gyv3v29qott3_mKu0QEwmBvmdbNYa80WQ0nk_Syr506dyzbH1NaJVOUbH7y8jGelNUVhhyr1brwhScJcgXfGudYECe98ivJMRki-NtmHoA-i8iyfNvtC0HT-6DFMtPLiVxskTDEOq9jQufE3GOAHgFQsfhzQPMa7yMIRb6I3O5kOhdTVGHq6UZjdUkd_zDBqT5FQMwJTpHu9d1_zeMDUACMY4hpnRnBuYL-OUqO_trhCh4_gMzHTxlWbu1Fiji6lng0KffIXAAmxOrVlN_E4Ymg-xj6vSsfAArCMuBL_tZGkiSyGJPKDyKQ1P6EtQW0AchdC6w4QeTBv9nC-b3o6fLHCh9aD0YRQPUxrbSLfuMfQdaWic5RQyNdskxmFcTBn8ulRVV4CLrTjnYlusJQ7-F8R_MPoT1iFegi44oUXRyow5F77YZWYtTA97Z27fLLrqXB77pMtpbOHtotrjPPPN_Q3SwR3IKDrxmtHxSV2smtFydB6ht2P98QB00MglwF5hhBdfEzphqvTBQbmhdAiyGkNcXffukZDFoj5z3qMOdkZdawFvoPvoVxvmizbbpaBhRQgIYiL4QvzRnGdDxMl6FAujBFbHOR0N7oDjsC7VAkkfOl9YH-D6TeB6x_uNcyktx4FlECnmAgtYhEGkb9DC0hzOi2EFC5z6-uZCGtqUsF0ICUB2KUnKq7NzGE9W8NSQ22HwMrDGYZV5J-UL0qENyUdxbKR0Zjrg9Rg_iJfU3hnYoJteZSeqEO_ViP9rPzkhvZPZXvbsewmAAhH4r7TLQGvzsdbUUKrRNYUy-xvBAdA63NOmgImuZ3u5yO7Q_t2cZDqIanAKTGFkbf9-AOZ0FQczJJt-wKwAj9jdZBP1aMpYuu8sn8RRzsPFhBFs6B8CQbS5ncOayKVAP3SFmCIcP1vx0exQeBROHzG7_tfOKFZlRHLFfLH9MEQIE7v1Vq9IE08JJABG4klPvTbc-mdAPKVazTroQR17jeq_TunafV_ZGbceL1Em5tESnH4-iSYa_kvs0UIZu0d0-Stzguxd_RkCgAjpzvFccU_zGYYkS9T7B4xWGChZij8psSe4LlATivTyfEsCuqdZ1i1eB--TEvOhgZvZ6fikGfqkWQ05ZLmPx2ACjvWja4JLwOPJI1jGGgnZY1gkrrHwT0Nztgp8_QCk2LNoDafayLzV-2FQRg0VlgAgYfhHuNCUxOYu7uUnoYwQM9zW4Qkdf1dxcUFROQfFihK5fwc-j4YP9eoPShsXuUyxX5DSBtjle8SwGmRBQeu7Rjdy1eYTrwF9L3nim6RzPrPsPT9ZHV_DVO0BtHqbs3C6lvk_FWapL6ooGVGW7ZWOInbkoCNh4f_bpkfjbiftB3710Cc4I1u1vD4oAP7M27UozoalblleGNKiQwSmROyTIuqeACiEmBYx9MP__0fvPR77o8X0ghitOkV7YA7qZ99SluRljc6fOW8U7pd9LnJhCqiBsUvY3uu_fAh4WU3hVlYitw7DsLzMJ0sL4rhvha-Oelr1tBJtXTBjq1cT2oQZMpncrLhh4WBW73e-uXR-Bt42epBXtFTAIoLklbYNtiZiE-5tNWX_KiuZtpG2QHcO9-tNjC20oC94DRbLB7QNjSrQ5LaORninzVQKoaWj6tRwRBtO56BvvgFn01gS6pVeH6b7-XEn6Or06EEmXNuYpfaBXq0ZpLcQkvt9OqSDE8a6imy0bN2incgeg0H7uCfIe6oEPV3eeRhkUOjX4SYjRurLaDXqwwNmJdkKHs90mWu1WzeIeDqNHYl-6xTtJG9M589fxarmuDfmITuxkL8nOOUto2YyRIjOhF92hq-M3J6ZptY2bQdFaiw0vptuKKhWQiMOMU1zXehKSFdYyX53siPZnnauqrz4T6gL_AR7RmxauXN-aJG6b2PZppXDchB72hiROPqPt_3-Y8iCLMnjcHh6bmNTDC2zoGmMXkUOZjbcpySzcvhjEYgVMF3Pudr77iVhaBU1GIqchjMnVTRpy4Ypc8VybV48RRsF4FqeBZwGEwwhcb5V9JD9x3Vn7sd6yWT1QXEkHjzJzDEMMdE50WCMNZF9Izzte-AxeszKyc5x_8TrndyustjmVSkDEvw04aMW3IZwCSN1oa47BaKSxucbnw9KY5_eAg88UiKAteNWmCrLp5FspxpSXjoG1ojintWk4ZJkAvCruxtWwEYlM70ODx1XHZa95UxUzgc9KyxU-xhnBjKjd3igTFYJVdbr_3pu5JILmmhjc5m_uRd9L_mRWPKd8t-DHpgOXTcgkqbctPsO-DAxZcAbPB0qm4whW9zabD2UA35-9j7lB66m7qD5CiU0ELZLEa-uuK9pEgrJF2USDGU8yV_E4zP_T_KJVhNhvw3KAPnk4do2ArMH_ZdDHxJTZI5ceTxdzGz2xHfRVJu3bkfTgaHn5Gs6ThMikXRPY8rkiRRU_aRaIOH5iBViw="
         }
        ],
        "role": "model"
@@ -35,8 +39,8 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 2941,
-     "thoughts_token_count": 650,
+     "prompt_token_count": 3040,
+     "thoughts_token_count": 474,
      "candidates_token_count": 48
     }
    }
@@ -48,7 +52,7 @@
   "tool_calls": [
    "ask_clarifying_question"
   ],
-  "text": "What percentage would you like to cut, and for which category?",
-  "text_rendered": "What percentage would you like to cut, and for which category?"
+  "text": "By how much would you like to cut it, and in which category?",
+  "text_rendered": "By how much would you like to cut it, and in which category?"
  }
 }
