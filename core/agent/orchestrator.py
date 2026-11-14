@@ -528,8 +528,11 @@ class Pipeline:
         # may be named too, exactly as returned (#379 part B, found by r-w5)
         allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
                                self.as_of)
+        review_card = False   # whether this answer carries the pending review's card (#572: then no offer)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
+            cards_before = len(a.cards)
             self._attach_review(ctx, review, emit, a)
+            review_card = len(a.cards) > cards_before
         # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
         # total as the answer (#379, review of #443).
         unfiltered = bool(a.calls) and all(c["name"] == "get_spending" and not (c.get("args") or {}).get("filter")
@@ -564,7 +567,7 @@ class Pipeline:
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         # #572: the answer's next step, the listed offer's question, comes first among the chips
         follow_ups = offers.next_step(template.follow_ups(message, lang, views=views), views=views, language=lang,
-                                      question=message, outcome=a.outcome, review_pending=review is not None)
+                                      question=message, outcome=a.outcome, review_pending=review_card)
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
                       "cited": cited, "follow_ups": follow_ups,
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
