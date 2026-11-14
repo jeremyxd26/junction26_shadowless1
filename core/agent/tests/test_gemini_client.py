@@ -143,17 +143,18 @@ class Clock:
         return self.now
 
 
-def test_503_without_a_fallback_is_not_retried_here_and_pauses_briefly():
-    clock = Clock()
+def test_503_without_a_fallback_is_not_retried_here_and_pauses_no_one():
     transport = FakeTransport(api_error(503), call_response())
-    c = GeminiClient(FLASH, transport, cache="off", sleep=lambda s: None, clock=clock)
+    c = client(transport)
+    answer = object()
+    c.start_answer(answer)
     with pytest.raises(GeminiError) as exc:
         c.plan(*PLAN_ARGS)
     assert exc.value.code == "server" and len(transport.requests) == 1
     with pytest.raises(GeminiError):
-        c.plan(*PLAN_ARGS)                              # the pipeline's retry inside the pause: no request
-    assert len(transport.requests) == 1
-    clock.now += gc.OVERLOAD_COOLDOWN_S + 1
+        c.plan(*PLAN_ARGS)                              # the pipeline's retry in the same answer: no request
+    assert len(transport.requests) == 1 and c.unavailable_reason() is None
+    c.start_answer(object())                            # the next answer (any user) is not paused (#341)
     assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 2
 
 
@@ -172,18 +173,22 @@ def test_an_overwhelmed_model_falls_back_once_and_then_skips_the_primary_for_a_w
     assert [m for m, _ in transport.requests][-1] == FLASH
 
 
-def test_an_outage_everywhere_raises_and_pauses_further_requests():
+def test_an_outage_everywhere_fails_the_call_and_pauses_no_one():
     transport = FakeTransport(api_error(503))
     c = client(transport, fallback_model=PRO)
+    c.start_answer(object())
     with pytest.raises(GeminiError) as exc:
         c.plan(*PLAN_ARGS)
     assert exc.value.code == "server" and len(transport.requests) == 2
     with pytest.raises(GeminiError):
-        c.compose("s", "u", {"type": "object"})  # paused: the pipeline's retry adds no request
-    assert len(transport.requests) == 2
+        c.plan(*PLAN_ARGS)                       # the pipeline's retry in the same answer adds no request
+    assert len(transport.requests) == 2 and c.unavailable_reason() is None
+    with pytest.raises(GeminiError):
+        c.compose("s", "u", {"type": "object"})  # the composer is still asked: flash, then pro
+    assert len(transport.requests) == 4
 
 
-def test_a_refused_fallback_model_is_turned_off_and_the_primary_pauses_only_briefly():
+def test_a_refused_fallback_model_is_turned_off_and_the_primary_is_not_paused():
     clock = Clock()
     transport = FakeTransport(api_error(503), api_error(404), call_response())
     c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None, clock=clock)
@@ -191,7 +196,7 @@ def test_a_refused_fallback_model_is_turned_off_and_the_primary_pauses_only_brie
         c.plan(*PLAN_ARGS)
     assert exc.value.code == "server" and c.fallback_model is None
     assert [m for m, _ in transport.requests] == [FLASH, PRO]
-    clock.now += gc.OVERLOAD_COOLDOWN_S + 1               # the short overload pause, not the 5 minutes of a 404
+    assert c.unavailable_reason() is None                 # no pause at all (#341), not the 5 minutes of a 404
     assert c.plan(*PLAN_ARGS).calls
     assert [m for m, _ in transport.requests][-1] == FLASH
 
@@ -213,23 +218,19 @@ def test_three_failures_in_a_row_pause_further_requests(failure):
     assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 4
 
 
-@pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError()], ids=["timeout", "network"])
-def test_timeouts_and_network_errors_open_only_a_short_breaker(failure):
-    """Three slow questions in a row (from one user or several) must not pause the model for every user
-    for five minutes: they open a breaker of a few seconds, and the model is asked again after it."""
-    clock = Clock()
+@pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError(), api_error(503)],
+                         ids=["timeout", "network", "5xx"])
+def test_timeouts_network_errors_and_5xx_pause_no_one(failure):
+    """Three slow or failed questions in a row (from one user or several) must not pause the model for
+    every user (#341, the dev incident: three planner timeouts paused it for five minutes)."""
     transport = FakeTransport(failure, failure, failure, call_response())
-    c = GeminiClient(FLASH, transport, cache="off", sleep=lambda s: None, clock=clock)
+    c = client(transport)
     for _ in range(3):
+        c.start_answer(object())
         with pytest.raises(GeminiError):
             c.plan(*PLAN_ARGS)
-    assert c.unavailable_reason() == "pause"
-    with pytest.raises(GeminiError):
-        c.plan(*PLAN_ARGS)
-    assert len(transport.requests) == 3                 # within the breaker nothing is sent
-    assert gc.TRANSIENT_BREAKER_S <= 10 < gc.FAILURE_STREAK_COOLDOWN_S
-    clock.now += gc.TRANSIENT_BREAKER_S + 0.1
     assert c.unavailable_reason() is None
+    c.start_answer(object())
     assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 4
 
 
@@ -298,11 +299,12 @@ def test_every_call_of_an_answer_ends_within_its_deadline():
     c = GeminiClient(FLASH, hang, cache="off", sleep=lambda s: None, clock=clock)
     started = clock.now
     c.start_answer(object())
-    for _ in range(4):
+    calls = [lambda: c.compose("s", "u", {"type": "object"}), lambda: c.plan(*PLAN_ARGS)] * 2
+    for call in calls:                                  # a call of each kind times out once per answer (#341)
         with pytest.raises(GeminiError):
-            c.compose("s", "u", {"type": "object"})
+            call()
     assert sum(timeouts) <= gc.ANSWER_DEADLINE_S and clock.now - started <= gc.ANSWER_DEADLINE_S
-    assert timeouts[0] == c.compose_timeout_s and timeouts[1] == gc.ANSWER_DEADLINE_S - c.compose_timeout_s
+    assert timeouts == [c.compose_timeout_s, gc.ANSWER_DEADLINE_S - c.compose_timeout_s]
 
 
 # ---- the ledger: reservation, concurrency, rolling window, live log ------------------------------
@@ -570,8 +572,8 @@ def test_after_a_composer_timeout_the_answer_sends_no_second_composer_request():
 
 
 def test_a_planner_timeout_leaves_the_composer_the_rest_of_the_answers_fifteen_seconds():
-    """9 s planner + 8 s composer is more than 15 s: the answer's deadline cuts the composer's share, so
-    every model call of one answer ends within 15 s in total."""
+    """9 s planner + 5 s composer + the tools can pass 15 s: the answer's deadline cuts the composer's
+    share, so every model call of one answer ends within 15 s in total."""
     clock = Clock()
     timeouts: list[float] = []
 
@@ -585,9 +587,87 @@ def test_a_planner_timeout_leaves_the_composer_the_rest_of_the_answers_fifteen_s
     c.start_answer(object())
     with pytest.raises(GeminiError):
         c.plan(*PLAN_ARGS)
-    clock.now += 0.5                                        # the rules plan and the tools run
+    clock.now += 1.5                                        # the rules plan and the tools run
     with pytest.raises(GeminiError):
         c.compose("s", "u", {"type": "object"})
-    assert c.plan_timeout_s == 9.0 and c.compose_timeout_s == 8.0
-    assert timeouts[0] == 9.0 and timeouts[1] == pytest.approx(gc.ANSWER_DEADLINE_S - 9.0 - 0.5)
+    assert c.plan_timeout_s == 9.0 and c.compose_timeout_s == 5.0
+    assert timeouts[0] == 9.0 and timeouts[1] == pytest.approx(gc.ANSWER_DEADLINE_S - 9.0 - 1.5)
     assert clock.now - started <= gc.ANSWER_DEADLINE_S
+
+
+def test_a_rules_planned_answer_gives_the_composer_five_seconds_not_the_rest_of_fifteen():
+    """#341: an answer the rules planned makes no planner call; its composer still gets only its own
+    deadline, because the template writes the same answer at once."""
+    clock = Clock()
+    timeouts: list[float] = []
+
+    def slow(model, contents, config, timeout_s):
+        timeouts.append(timeout_s)
+        clock.now += timeout_s
+        raise TimeoutError()
+
+    c = GeminiClient(FLASH, slow, cache="off", sleep=lambda s: None, clock=clock)
+    c.start_answer(object())
+    with pytest.raises(GeminiError):
+        c.compose("s", "u", {"type": "object"})
+    assert timeouts == [5.0]
+
+
+# ---- #341: the planner and the composer on their own models ---------------------------------------------
+
+LITE = "gemini-3.5-flash-lite"
+
+
+def test_the_composer_runs_on_its_own_model_and_the_planner_keeps_its_own():
+    transport = FakeTransport(call_response(), text_response("{}"))
+    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, compose_model=LITE,
+                     compose_fallback_model=FLASH, sleep=lambda s: None)
+    c.plan(*PLAN_ARGS)
+    reply = c.compose("s", "u", {"type": "object"})
+    assert [m for m, _ in transport.requests] == [FLASH, LITE] and reply.model == LITE
+    assert reply.usage.cost_usd > 0                         # flash-lite has a price row
+
+
+def test_a_fallback_model_gets_a_thinking_level_it_accepts():
+    """The composer on flash-lite at "minimal"; when it fails with a 5xx, flash stands in, and flash
+    rejects "minimal" (a 400), so it gets "low"."""
+    seen = []
+
+    def transport(model, contents, config, timeout_s):
+        seen.append((model, config["thinking_config"]["thinking_level"]))
+        if model == LITE:
+            raise api_error(503)
+        return text_response("{}")
+
+    c = GeminiClient(FLASH, transport, cache="off", compose_model=LITE, compose_fallback_model=FLASH,
+                     compose_thinking="minimal", sleep=lambda s: None)
+    c.compose("s", "u", {"type": "object"})
+    assert seen == [(LITE, "minimal"), (FLASH, "low")]
+
+
+def test_thinking_default_sends_no_thinking_setting():
+    seen = {}
+
+    def transport(model, contents, config, timeout_s):
+        seen.update(config)
+        return text_response("{}")
+
+    GeminiClient(LITE, transport, cache="off", compose_thinking="default").compose("s", "u", {"type": "object"})
+    assert "thinking_config" not in seen
+
+
+def test_switching_the_composer_model_or_level_never_serves_another_cached_text(tmp_path):
+    transport = FakeTransport(text_response('{"n": 1}'), text_response('{"n": 2}'), text_response('{"n": 3}'))
+    first = client(transport, tmp_path, compose_model=FLASH).compose("s", "u", {"type": "object"})
+    other_model = client(transport, tmp_path, compose_model=LITE).compose("s", "u", {"type": "object"})
+    other_level = client(transport, tmp_path, compose_model=LITE, compose_thinking="minimal").compose(
+        "s", "u", {"type": "object"})
+    assert not (first.cached or other_model.cached or other_level.cached) and len(transport.requests) == 3
+    again = client(transport, tmp_path, compose_model=LITE).compose("s", "u", {"type": "object"})
+    assert again.cached and json.loads(again.text) == {"n": 2} and len(transport.requests) == 3
+
+
+def test_a_failure_streak_pauses_for_thirty_seconds_only():
+    """#341: three malformed, empty or blocked responses in a row pause the model briefly; the long
+    pause is kept for 429, 401, 403 and 404."""
+    assert gc.FAILURE_STREAK_COOLDOWN_S == 30.0 and gc.RATE_LIMIT_COOLDOWN_S == gc.CONFIG_ERROR_COOLDOWN_S == 300.0
