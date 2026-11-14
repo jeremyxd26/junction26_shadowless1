@@ -1,5 +1,6 @@
 import type { BreakdownCard, OverviewResponse } from '../api/types.ts'
 import { BasketsCard, HeroCard, HeroPending, InsightCard, ReviewPlaceholder } from '../components/cards.tsx'
+import { BillsCards } from '../components/BillsCard.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 import { navigate, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -25,6 +26,7 @@ export function Overview({ overview }: { overview: OverviewResponse }) {
       {overview.hero ? <HeroCard card={overview.hero} /> : <HeroPending />}
       {review && <ReviewPlaceholder card={review} />}
       {baskets && <BasketsCard card={baskets} />}
+      <BillsCards cards={overview.cards} />
       {overview.safe_to_save && <SafeToSaveCard card={overview.safe_to_save} />}
 
       {overview.insights.length > 0 && (
