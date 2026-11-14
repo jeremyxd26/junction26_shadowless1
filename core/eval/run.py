@@ -129,7 +129,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
     if case["expect"] == "no_data" and ans.follow_ups is not None and not ans.follow_ups:
         fails.append("chips: a period without data offers what Sentti can answer instead (#379)")
     if case["expect"] == "words":   # a general money answer in plain words (#572); no tool: no_data_tool_call
-        for problem in answer_text.general_problems(ans.text or ""):
+        for problem in answer_text.general_problems(ans.text or "") + \
+                answer_text.general_language_problems(ans.text or "", lang):
             fails.append(f"plain words: {problem}")
         for problem in answer_text.length_problems(ans.text or "", 0, kind="general"):
             fails.append(f"length: {problem}")

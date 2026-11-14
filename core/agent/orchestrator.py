@@ -51,7 +51,9 @@ from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
-from core.answer_text import answer_kind, find_dates, general_problems, length_problems, scan_numbers
+from core.answer_text import GENERAL_BORROWING as GENERAL_BORROWING_WORDS
+from core.answer_text import (answer_kind, find_dates, general_language_problems, general_problems, length_problems,
+                              scan_numbers)
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -62,23 +64,41 @@ from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 log = logging.getLogger("uvicorn.error")
 
 MAX_ROUNDS = 2
-# The rules' verdicts that leave a message to a plain-words answer (#572): not claimed with no reason (their general
-# question back) or with the period question of a money question they cannot map. A flagged, other-person,
-# competing, follow-up or unknown-thing message never goes there.
-GENERAL_REASONS = ("", "period")
+# The rules' verdict that leaves a message to a plain-words answer (#572): not claimed with no reason (their general
+# question back). Their period question ("How much do I spend on takeaway?") is an own-figures question, and a flagged,
+# other-person, competing, follow-up or unknown-thing message never goes there either (review of #618).
+GENERAL_REASONS = ("",)
 # Borrowing named in the message ("is it smart to take a quick loan?", "miten saan lainaa?"): never a plain-words
-# answer; the planner's credit decline, or the rules' plan (#572 B7, D8). Matched on the folded message.
-GENERAL_BORROWING = re.compile(r"\b(?:loans?|credit|overdraft\w*|borrow\w*|instal{1,2}ments?|financing|bnpl"
-                               r"|laina\w*|luotto\w*|luoton|luotolla|pikavip\w*|osamaks\w*|velka\w*|velan|velat)\b",
-                               re.I)
+# answer; the planner's credit decline, or the rules' plan (#572 B7, D8). Matched on the folded message; the same
+# list rejects borrowing in a general draft (answer_text.GENERAL_BORROWING).
+GENERAL_BORROWING = GENERAL_BORROWING_WORDS
+# A product, a bank, a card, an account or an investment named in the message ("Which savings account should I open?",
+# "Should I switch to a cheaper bank or card?"): the planner's investment decline or the rules' plan, never plain words
+# (#572 B5, B6; review of #618). An emergency or rainy-day fund is a buffer; "take into account" is plain words.
+GENERAL_PRODUCT_QUESTION = re.compile(
+    r"(?<!into )\baccounts?\b|\bbanks?\b|\bbanking\b|\bcards?\b|\bapps?\b|(?<!emergency )(?<!rainy day )"
+    r"(?<!rainy-day )\bfunds?\b|\bstocks?\b|\bshares\b|\binvest\w*|\bcrypto\w*|\bbitcoin\b|\binsurance\b"
+    r"|\bdeposits?\b|\bpension\w*|\bretirement\b|\bgold\b|\bbrokers?\b|\btili\b|\btilin\b|\btilille\b|\btilit\b"
+    r"|\btilia\b|\w*pankki\w*|\w*pankin\b|\w*kortti\w*|\w*kortin\b|\bsovellu\w*|\w*rahasto\w*|\w*osake\w*"
+    r"|\bsijoit\w*|\w*vakuutu\w*|\btalletu\w*|\belake\w*|\bkulta\w*", re.I)
+# An own-figures question ("How much did I spend…", "And how much did I spend the month before?", "How about my
+# savings?", "Paljonko kulutin ruokaan?"): the user's data, never a plain-words answer, also as a follow-up in a running
+# conversation (review of #618). Matched on the folded message.
+GENERAL_OWN_FIGURES = re.compile(
+    r"\b(?:did|do|have|had)\s+(?:i|we)\s+(?:spend|spent|pay|paid|buy|bought|earn|earned|save|saved|get)\b"
+    r"|\b(?:i|we)\s+(?:spent|paid|bought|earned|saved)\b|\bhow\s+much\s+(?:do|did|have|can|could|will)\s+(?:i|we)\b"
+    r"|\bmy\s+(?:spending|savings|balance|income|salary|paycheck|bills|account|money|expenses|budget|purchases"
+    r"|transactions|rent|subscriptions?|bonus)\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b|\bkaytinko\b"
+    r"|\bpaljonko\s+(?:kaytin|kulutin|maksoin|minulla|olen|minun)\b|\bminun\s+(?:kulu|saast|tili|tulo|palk|lasku|raha)\w*"
+    r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni)\b", re.I)
 # A general money question names its money topic (#572): a bare follow-up ("why?", "tell me more") or a message about
 # anything else never gets a plain-words answer, in the first turn or later. Matched on the folded message.
 GENERAL_MONEY_WORDS = re.compile(
     r"budget|buffer|emergency|rainy|\bsav(?:e|es|ing|ings)\b|\bbills?\b|invoice|due date|reference number|direct debit"
     r"|impulse|purchase|\bmoney\b|\bspend|afford|\bhabits?\b|\bpay(?:ing|ments?)?\b|\bincome\b|\bsalary\b|\bcosts?\b"
-    r"|\bfinances\b|\bfinancial\b"
+    r"|\bfinances\b|\bfinancial\b|\bbonus\w*|\bpaycheck\w*|\bpaychecks?\b|\brent\b|\bsubscriptions?\b"
     r"|\bprices?\b|\bexpenses?\b|budjet|puskur|hatavar|saast|lasku|erapaiva|viite|herateost|ostos|\braha|kulu|menot"
-    r"|tulot|palkka|maksa|hinta|hinnat", re.I)
+    r"|tulot|palkka|maksa|hinta|hinnat|vuokra\w*|tilau\w*|bonu\w*", re.I)
 MAX_DATA_CALLS = 6
 MAX_CARDS = 3
 MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool connection each
@@ -467,10 +487,12 @@ class Pipeline:
                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                     return self._answer_in_words(message, lang, emit, a)
                 # #572: a plain-words answer only for a general money question the rules leave open, in the first
-                # round and alone; otherwise the rules plan the message, as for an empty plan (#341)
+                # round and alone; otherwise the rules plan the message, as for an empty plan (#341), with its note
+                # and warning on the question back (review of #618)
                 a.planner_turns.append({"round": rnd, "source": source, "error": f"answer_in_words: {refused}",
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
+                model_failed = True
             calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
@@ -955,6 +977,10 @@ class Pipeline:
             return "health"
         if GENERAL_BORROWING.search(folded):
             return "borrowing"
+        if GENERAL_PRODUCT_QUESTION.search(folded):
+            return "a product, bank, card, account or investment"
+        if GENERAL_OWN_FIGURES.search(folded):
+            return "own figures"
         if not GENERAL_MONEY_WORDS.search(folded):
             return "no money topic"
         # judged as a message of its own: in a running conversation the rules send every message that is not complete
@@ -1012,6 +1038,7 @@ class Pipeline:
             draft, errors = validate(result.text, language=request.language, numbers={}, allowed=nothing)
             if not errors:
                 errors = (length_problems(draft.text, 0, kind="general") + general_problems(draft.text)
+                          + general_language_problems(draft.text, request.language)
                           + draft_problems(draft.text, {}, has_data=True))
             a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                         "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})

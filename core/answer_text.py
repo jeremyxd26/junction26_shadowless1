@@ -248,29 +248,100 @@ _GENERAL_NUMBER_WORD = re.compile(
     r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen"
     r"|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?"
     r"|billions?|dozens?|half|halves|quarters?|thirds?|fourths?|fifths?|tenths?|percent\w*|per\s+cent|percentage"
+    # ordinals and multiples (review of #618): "a sixth", "the twelfth", "twice", "double", "tenfold"; never the idioms
+    # "think twice" and "double-check"
+    r"|sixths?|sevenths?|eighths?|ninths?|elevenths?|twelfths?|(?:thir|four|fif|six|seven|eigh|nine)teenths?"
+    r"|twentieths?|thirtieths?|fortieths?|fiftieths?|hundredths?|thousandths?|(?<!think )twice|thrice"
+    r"|double(?!-?check)\w*|triple\w*|quadruple\w*|(?:two|three|four|five|six|ten|hundred|thousand)fold"
     r"|kaksi|kahde\w*|kolme\w*|kolmen|neljä\w*|neljän|viisi|viide\w*|kuusi|kuude\w*|seitsemä\w*|kahdeksa\w*"
-    r"|yhdeksä\w*|kymmen\w*|\w+toista|sata\w*|sadan|tuha\w*|miljoon\w*|miljardi\w*|puolet|puolikas\w*|puoli"
-    r"|neljännes\w*|kolmannes\w*|prosent\w*|tusina\w*)\b", re.I)
-_ROMAN_NUMERAL = re.compile(r"\b(?:I{2,3}|IV|VI{0,3}|IX|XI{0,3}|XI?V|XIX|XX)\b")   # "I" alone is the pronoun
+    r"|yhdeksä\w*|\w*kymmen\w*|\w+toista|sata\w*|sadan|tuha\w*|miljoon\w*|miljardi\w*|puolet|puolikas\w*|puoli"
+    r"|neljännes\w*|kolmannes\w*|prosent\w*|tusina\w*|pari"
+    # compounds ("kaksisataa", "viisituhatta"), shares ("kolmasosa") and multiples ("kaksinkertainen") (review of #618)
+    r"|(?:kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän)(?:sata|tuhat)\w*"
+    r"|(?:kolmas|neljäs|viides|kuudes|seitsemäs|kahdeksas|yhdeksäs|kymmenes|sadas)osa\w*"
+    r"|(?:kaksin|kolmin|nelin|viisin|kuusin|kymmenen|sata|tuhat)kertai\w*)\b", re.I)
+# Every Roman numeral (XVI, XXV, L, MM), case-sensitive, never the pronoun "I" (review of #618)
+_ROMAN_NUMERAL = re.compile(r"\b(?!I\b)(?=[MDCLXVI]+\b)M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})\b")
 # A product, a bank or an investment in a general answer: no product is advised (#572 B5, B6; R7). An emergency or
-# rainy-day fund is a buffer, not a product; "a share of your income" and "take stock" are plain words.
+# rainy-day fund is a buffer, not a product; "a share of your income" and "take stock" are plain words. "Your bank"
+# stays: an e-invoice arrives in the online bank.
 _GENERAL_PRODUCT = re.compile(
     r"\b(?:invest\w*|(?:index|mutual|investment|equity|bond|hedge|pension)\s+funds?|stock\s*markets?|stocks"
     r"|shares\s+in|equit(?:y|ies)|etfs?|bonds?|crypto\w*|bitcoin|sijoit\w*|rahasto\w*|osake\w*|krypto\w*"
     r"|joukkovelkakirj\w*|nordea|osuuspankki|danske|s-?pankki|s-?mobiili|handelsbanken|aktia|säästöpankki"
-    r"|saastopankki|revolut|n26|holvi|klarna|apple\s+pay|google\s+pay|mobilepay)\b|\bOP\b", re.I)
+    r"|saastopankki|revolut|n26|holvi|klarna|apple\s+pay|google\s+pay|mobilepay"
+    # products described, not named (review of #618)
+    r"|(?:high-interest\s+|high\s+interest\s+)?savings\s+accounts?|deposit\s+accounts?|(?:fixed|term|time)\s+deposits?"
+    r"|money\s+market\w*|pension\s+(?:savings|plans?|insurance)|retirement\s+(?:accounts?|funds?|plans?)"
+    r"|insurance\s+polic\w*|gold|real\s+estate|robo-?advis\w*|paypal|localtapiola|s-?bonus|netflix|spotify|viaplay"
+    r"|säästötil\w*|saastotil\w*|talletu\w*|määräaikai\w*|kulta|kultaa|kullan|kultaan|eläkesäästö\w*"
+    r"|eläkevakuutu\w*|sijoitusasun\w*)\b|\bOP\b", re.I)
 # Health in a general answer: health stays out (R9; #572). "A healthy buffer" and "financial health" are plain words.
 _GENERAL_HEALTH = re.compile(
     r"(?<!financial )\bhealth\b|\bhealth\s*care\b|\b(?:medicine\w*|medication\w*|doctors?|pharmac\w*|therap\w*"
-    r"|dentist\w*|hospital\w*|tervey\w*|lääk\w*|apteek\w*|hammaslääk\w*|terapi\w*|sairaala\w*)\b", re.I)
-# A link or a function name: an answer names neither (#572 C4, C5)
-_GENERAL_LINK = re.compile(r"https?://|\bwww\.|\b\w+\.(?:com|fi|org|net|io)\b|\b[a-z]+_[a-z_]+\b", re.I)
-# Judging the user or joking about their spending (#572 E1, E2): "bad with money", "irresponsible", "haha"
+    r"|dentist\w*|hospital\w*|tervey\w*|lääk\w*|apteek\w*|hammaslääk\w*|terapi\w*|sairaala\w*"
+    # mental health (review of #618); "that sounds stressful" is empathy, not advice, so stress itself stays
+    r"|anxi\w*|meditat\w*|mental\w*|well-?being|addict\w*|treatment\w*|depress\w*|ahdistu\w*"
+    r"|rentoutu\w*|mielenterve\w*|riippuvuu\w*|masennu\w*)\b", re.I)
+# Other people's money in a general answer (R5; review of #618): "your partner's account", "lend money to your sister"
+_GENERAL_OTHERS = re.compile(
+    r"\b(?:partner|spouse|husband|wife|friend|neighbou?r|sister|brother|parent|colleague|cousin)s?'?s?\s+"
+    r"(?:account|balance|spending|money|salary|income|earnings|card|bank)\w*|\blend\s+(?:some\s+)?money\b"
+    r"|\bask\s+(?:a\s+|your\s+)?(?:friend|neighbou?r|colleague)\w*\s+what\s+they\s+(?:earn|spend|make)"
+    r"|\bwhat\s+(?:your|the)\s+neighbou?r\w*\s+spend|\bnaapuri\w*|\b(?:puolisosi|ystäväsi|siskosi|veljesi|"
+    r"kumppanisi)\s+(?:tili|saldo|palk|kulu|raha)\w*", re.I)
+# A link, an address, a handle or a function name: an answer names none (#572 C4, C5; review of #618)
+_GENERAL_LINK = re.compile(
+    r"https?://|\bwww\.|\b[\w-]+\.(?:com|fi|org|net|io|xyz|ly|co|app|info|biz|eu|se|de|uk|me|ai)\b(?:/\S*)?"
+    r"|\b[\w.+-]+@[\w-]+\.\w+|(?<![\w.])@\w+|\b[a-z]+_[a-z_]+\b|\b[a-z]+[A-Z][A-Za-z]+\b"
+    r"|\bget\s+safe\s+to\s+spend\b|\banswer\s+in\s+words\b")
+# Judging the user or joking about their spending (#572 E1, E2): "bad with money", "irresponsible", "haha", an emoji.
+# "No need to feel ashamed" and "vältä tuhlaamasta ruokaa" are plain words (review of #618).
 _GENERAL_JUDGING = re.compile(
-    r"\b(?:bad|terrible|awful|hopeless|useless)\s+(?:with|at)\s+(?:money|saving|budget\w*)\b|\birresponsib\w*|\blazy\b"
-    r"|\bstupid\w*|\bfoolish\w*|\bdumb\b|\bcareless\w*|\breckless\w*|\bwasteful\w*|\bwaste\w*\s+(?:your\s+)?money\b"
-    r"|\bclowns?\b|\bhilarious\b|\bha(?:ha)+\b|\blol\b|\broast\w*|\bshame\s+on\s+you\b|\bashamed\b"
-    r"|\bhuono\w*\s+rahan|\btuhla\w*|\btyhm\w*|\btyper\w*|\bholtito\w*|\blaiska\w*|\bvastuuto\w*|\bnolo\w*", re.I)
+    r"\b(?:bad|terrible|awful|hopeless|useless)\s+(?:with|at)\s+(?:money|saving|budget\w*|managing\b[\w\s]*)\b"
+    r"|\birresponsib\w*|\blazy\b|\bstupid\w*|\bfoolish\w*|\bdumb\b|\bcareless\w*|\breckless\w*|\bwasteful\w*"
+    r"|\bwaste\w*\s+(?:your\s+)?money\b|\bspendthrift\w*|\bwallet\s+is\s+crying|\bclowns?\b|\bhilarious\b"
+    r"|\bha(?:ha)+\b|\blol\b|\broast\w*|\bshame\s+on\s+you\b"
+    r"|\bhuono\w*\s+rahan|\btuhlaat\b|\btuhlari\w*|\btuhlaavai\w*|\btuhlaajat?\b|\btyhm\w*|\btyper\w*|\bholtito\w*"
+    r"|\blaiska\w*|\bvastuuto\w*|\bnolo\w*|[\U0001F300-\U0001FAFF☀-➿]", re.I)
+# Borrowing in any form in a general answer, and in the question that may take the general route (#572 B3, B7, D8;
+# review of #618): never a suggestion and never a mention ("Take a car loan.", "A payday lender can bridge the gap",
+# "Pikavippi auttaa palkkaan asti", "Osamaksu jakaa kulun", "Käytä tilinylitysoikeutta").
+GENERAL_BORROWING = re.compile(
+    r"\b(?:loans?|credit|overdraft\w*|borrow\w*|instal{1,2}ments?|financing|bnpl|mortgages?|lend(?:er|ers|ing)\b"
+    r"|laina\w*|luotto\w*|luoton|luotolla|kulutusluot\w*|pikavip\w*|osamaks\w*|tilinylit\w*|asuntolain\w*"
+    r"|velka\w*|velan|velat)\b", re.I)
+# The language of a general answer (review of #618): only the requested one, English or Finnish; a word of another
+# language ("tre månader", "drei Monate", "tres meses", "trois mois"), Cyrillic, or a Finnish sentence in an English
+# answer (and the other way round) is rejected.
+_OTHER_LANGUAGE = re.compile(
+    r"[Ѐ-ӿ]|\b(?:och|att|är|för|inte|eller|också|månad\w*|pengar|utgifter|spara|ditt|dina|två|tre"
+    r"|und|nicht|ist|das|ein|eine|oder|auch|monat\w*|geld|sparen|ausgaben|ihr\w*|dein\w*|zwei|drei"
+    r"|los|las|que|meses|dinero|gastos|ahorr\w*|tus|una|por|pero|tres"
+    r"|les|des|est|pas|mois|argent|dépenses|gardez|épargn\w*|vous|votre|une|pour|avec|deux|trois)\b", re.I)
+_FINNISH_WORD = re.compile(r"[äöÄÖ]|\b(?:ja|ei|että|kun|jos|tai|voit|voi|joka|mutta|sinun|kannattaa|rahaa|kuin|myös"
+                           r"|ennen|sitä|siitä|tämä|niin|aina|kaikki|ovat|olla)\b", re.I)
+_ENGLISH_WORD = re.compile(r"\b(?:the|a|an|is|are|you|your|and|of|to|it|for|with|this|that|be|can|before|money)\b",
+                           re.I)
+# A Finnish word by its ending, for a Finnish sentence with no Finnish letter ("Budjetti on suunnitelma.")
+_FINNISH_ENDING = re.compile(r"\b\w{3,}(?:tti|ssa|ssä|sta|stä|lla|llä|lta|ltä|ksi|nen|aan|ään|uu|yy)\b", re.I)
+
+
+def general_language_problems(text: str, language: str) -> list[str]:
+    """A general answer in another language than the one asked, or in two (review of #618); [] when none."""
+    problems = []
+    m = _OTHER_LANGUAGE.search(text)
+    if m:
+        problems.append(f"'{m.group(0)}': answer only in {'Finnish' if language == 'fi' else 'English'}")
+    for sentence in SENTENCE_BREAK.split(text):
+        if language == "en" and (_FINNISH_WORD.search(sentence) or (_FINNISH_ENDING.search(sentence)
+                                                                    and not _ENGLISH_WORD.search(sentence))):
+            problems.append(f"'{sentence.strip()[:40]}': a sentence in Finnish; answer only in English")
+            break
+        if language == "fi" and len(_ENGLISH_WORD.findall(sentence)) >= 2 and not re.search(r"[äöÄÖ]", sentence):
+            problems.append(f"'{sentence.strip()[:40]}': a sentence in English; answer only in Finnish")
+            break
+    return problems
 
 
 def general_problems(text: str) -> list[str]:
@@ -281,7 +352,10 @@ def general_problems(text: str) -> list[str]:
                     (_ROMAN_NUMERAL, "a Roman numeral: a general answer states no number of any kind"),
                     (_GENERAL_PRODUCT, "a product, bank or investment: a general answer names none"),
                     (_GENERAL_HEALTH, "health: a general answer gives no health advice"),
-                    (_GENERAL_LINK, "a link or a function name: a general answer names neither"),
+                    (_GENERAL_OTHERS, "other people's money: a general answer is about the user only"),
+                    (_GENERAL_LINK, "a link, an address or a function name: a general answer names none"),
+                    (GENERAL_BORROWING, "borrowing: a general answer never mentions a loan, credit or any "
+                                        "borrowing"),
                     (_GENERAL_JUDGING, "judging or joking: a general answer never judges the user or jokes "
                                        "about spending")):
         m = rx.search(text)

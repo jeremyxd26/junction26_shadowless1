@@ -61,7 +61,7 @@ def test_a_general_question_is_answered_in_plain_words_with_the_nearest_offer_as
     ("A quick loan can cover a surprise until payday.", "never suggest borrowing"),
     ("Ask your doctor which costs to plan for first.", "health"),
     ("Read more at www.example.com about buffers.", "url"),
-    ("I can run get_safe_to_spend for you next.", "a link or a function name"),
+    ("I can run get_safe_to_spend for you next.", "a link, an address or a function name"),
     ("A buffer is money for surprises. Build it first. Save on payday. Keep it apart. Check it monthly.",
      "too long: 5 sentences, at most 4"),
 ])
@@ -251,6 +251,124 @@ def test_the_nearest_tool_of_a_general_question(question, topic):
 def test_the_answer_kind_of_a_question(question, kind):
     assert answer_text.answer_kind(question) == kind
     assert answer_text.answer_kind(question, general=True) == "general"
+
+
+# ---- the review of #618: each class closed ----------------------------------------------------------------
+
+def general_reasons(text, lang="en"):
+    return answer_text.general_problems(text) + answer_text.general_language_problems(text, lang)
+
+
+@pytest.mark.parametrize("text", [
+    # borrowing in any form, also a mere mention
+    "Take a car loan.", "A payday lender can bridge the gap.", "A mortgage is the usual way to buy a home.",
+    # every Roman numeral, ordinals and multiples
+    "Keep XVI months of costs aside.", "Keep XXV months aside.", "Keep XXX months aside.", "Keep L months aside.",
+    "Keep MM aside.", "Save a sixth of your pay.", "The twelfth of each month works.", "Save on the thirtieth.",
+    "Save twice as much.", "Double your savings.", "Triple the buffer.", "A tenfold return.",
+    # products described, not named
+    "Open a savings account with your bank and move money there.", "A high-interest savings account helps.",
+    "A fixed deposit is safe.", "Gold keeps its value.", "Real estate grows.", "A pension savings plan helps.",
+    "Get an insurance policy.", "Try PayPal.", "A robo-advisor helps.", "Cancel Netflix and Spotify.",
+    "Collect S-Bonus.",
+    # health, other people's money, links and names, judging
+    "Stress can lead to overspending, so try meditation.", "Mental wellbeing matters.",
+    "Shopping addiction needs treatment.", "Check your partner's account balance.",
+    "Look at what your neighbour spends and copy them.", "Ask a friend what they earn.",
+    "Lend some money to your sister.", "See example.xyz.", "Go to bit.ly/abc.", "Mail me at a@b.com.",
+    "Follow @budgetguru.", "Use getSafeToSpend.", "Use the get safe to spend tool.", "You are a spendthrift.",
+    "You are bad at managing your finances.", "Your wallet is crying for help.", "Nice work \U0001F600",
+    # another language, or two
+    "Spara tre månaders utgifter.", "Spare drei Monatsausgaben.", "Ahorra tres meses.", "Gardez trois mois.",
+    "Сохраните три месяца.", "A budget is a plan. Budjetti on suunnitelma. En budget är en plan.",
+])
+def test_every_class_the_review_found_is_rejected_in_english(text):
+    assert general_reasons(text, "en"), text
+
+
+@pytest.mark.parametrize("text", [
+    "Pikavippi auttaa palkkaan asti.", "Osamaksu jakaa kulun.", "Pieni laina auttaisi palkkapäivään asti.",
+    "Käytä tilinylitysoikeutta.", "Kaksikymmentä on hyvä tavoite.", "Viisikymmentä on hyvä tavoite.",
+    "Kuusikymmentä on hyvä tavoite.", "Säästä kolmasosa.", "Kaksinkertainen puskuri.", "Kolminkertainen summa.",
+    "Säästä pari kuukautta.", "Avaa säästötili.", "Määräaikainen talletus on turvallinen.", "Kulta säilyttää arvonsa.",
+    "Stressi voi lisätä ostamista, kokeile rentoutumista.", "Katso naapurin tilin saldo.",
+    "Budjetti on suunnitelma. A budget is a plan.",
+])
+def test_every_class_the_review_found_is_rejected_in_finnish(text):
+    assert general_reasons(text, "fi"), text
+
+
+@pytest.mark.parametrize("text,lang", [   # not false rejections (review of #618)
+    ("There is no need to feel ashamed about it.", "en"), ("Vältä tuhlaamasta ruokaa.", "fi"),
+    ("A buffer keeps a surprise from pushing you into debt.", "en"), ("That sounds stressful, and it is common.", "en"),
+    ("The dos and don'ts are simple: plan first.", "en"),
+    ("A buffer grows fastest when a fixed amount moves to savings on payday, before everyday spending. Build it up "
+     "step by step until it covers a few months of essential costs.", "en"),
+    ("Puskuri kasvaa nopeimmin, kun kiinteä summa siirtyy säästöön palkkapäivänä ennen arkikulutusta. Kasvata sitä "
+     "vähitellen, kunnes se kattaa muutaman kuukauden välttämättömät menot.", "fi"),
+    ("Budjetti on suunnitelma siitä, mihin rahasi menevät.", "fi"),
+    ("An e-invoice arrives straight in your online bank, and you approve it there.", "en"),
+])
+def test_plain_words_the_review_listed_pass(text, lang):
+    assert general_reasons(text, lang) == []
+
+
+@pytest.mark.parametrize("text", ["Wait a day or two before buying.", "Kaksi pientä askelta riittää."])
+def test_a_count_is_a_number_by_the_rule_of_this_slice(text):
+    # decided (review of #618): "a day or two" and "two small steps" name a number; "a few" and "muutama" do not
+    assert any("number word" in p for p in answer_text.general_problems(text))
+
+
+@pytest.mark.parametrize("bad,lang,reason", [
+    ("Take a car loan and pay it back monthly.", "en", "borrowing"),
+    ("Spara tre månaders utgifter till en buffert.", "en", "answer only in English"),
+    ("A budget is a plan. Budjetti on suunnitelma.", "en", "a sentence in Finnish"),
+])
+def test_a_borrowing_or_other_language_draft_is_retried_with_the_reason(make_pipeline, bad, lang, reason):
+    model = ScriptedModel(plans=[WORDS], drafts=[dict(GOOD, text=bad), GOOD])
+    pipe = make_pipeline(model)
+    assert done(run(pipe, BUFFER))["text"] == GOOD["text"]
+    assert any(reason in e for e in model.compose_inputs[1].validation_errors), model.compose_inputs[1].validation_errors
+
+
+@pytest.mark.parametrize("message,why", [
+    ("Which savings account should I open?", "a product, bank, card, account or investment"),
+    ("Should I switch to a cheaper bank or card?", "a product, bank, card, account or investment"),
+    ("Which savings account or app should I use?", "a product, bank, card, account or investment"),
+    ("How much do I spend on takeaway?", "own figures"),
+    ("Paljonko kulutin ruokaan?", "own figures"),
+    ("How about my savings?", "own figures"),
+])
+def test_product_and_own_figures_questions_never_get_plain_words(make_pipeline, message, why):
+    model = ScriptedModel(plans=[WORDS], drafts=[GOOD])
+    pipe = make_pipeline(model)
+    d = done(run(pipe, message))
+    assert not any(c.general for c in model.compose_inputs)
+    turns = audit_records(pipe)[-1]["planner_turns"]
+    assert any(t.get("error") == f"answer_in_words: {why}" for t in turns), turns
+    if d["outcome"] == "clarify":   # the rules' question back carries #341's note and warning, in its language
+        assert d["text"].startswith(template.NOT_WORKED_OUT), d["text"]
+        assert "llm_unavailable" in d["warnings"]
+
+
+def test_a_follow_up_about_own_figures_in_a_conversation_never_gets_plain_words(make_pipeline):
+    spend = [FunctionCall("fake_spending", {"category": "Restaurants"}), FunctionCall("finish")]
+    first = {"language": "en", "text": "In August 2026 you spent {{n1}} on restaurants, over {{n2}} visits.",
+             "cited": ["n1", "n2"], "lesson_key": None}
+    model = ScriptedModel(plans=[spend, WORDS, WORDS], drafts=[first, GOOD, GOOD])
+    pipe = make_pipeline(model)
+    conv = dict(run(pipe))["meta"]["conversation_id"]
+    for message in ("And how much did I spend the month before?", "How about my savings?"):
+        run(pipe, message, conversation_id=conv)
+    assert not any(c.general for c in model.compose_inputs)
+
+
+@pytest.mark.parametrize("message", ["How do I handle a bonus wisely?", "How do I stop living paycheck to paycheck?",
+                                     "How much rent is too much?", "Should I keep track of subscriptions?"])
+def test_bonus_paycheck_rent_and_subscriptions_are_money_topics(message):
+    from core.agent.guard import fold
+    from core.agent.orchestrator import GENERAL_MONEY_WORDS
+    assert GENERAL_MONEY_WORDS.search(fold(message))
 
 
 def test_the_length_rule_by_kind():

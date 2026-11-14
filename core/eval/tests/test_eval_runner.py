@@ -645,6 +645,8 @@ def test_a_plain_words_answer_passes():
     ("Keep about three months of costs aside.", "plain words: 'three'"),
     ("Keep 3 months of costs aside.", "R1"),
     ("Put it into an index fund.", "plain words: 'index fund'"),
+    ("Spara tre månaders utgifter.", "plain words: 'Spara'"),
+    ("Take a car loan.", "plain words: 'loan'"),
     ("A buffer helps. Build it first. Save on payday. Keep it apart. Check it monthly.", "length: too long: 5 sentences"),
 ])
 def test_a_number_a_product_or_a_fifth_sentence_fails_a_plain_words_answer(text, reason):
