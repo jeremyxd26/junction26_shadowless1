@@ -83,6 +83,21 @@ describe('overview sheet (#321)', () => {
     expect(target.searchParams.get('persona')).toBe('CUST00860')
   })
 
+  it('pushes one entry on the first open and none on the second (#513)', () => {
+    const { pushState } = page('/', '?persona=CUST00860')
+    // The stub's location follows every push, as a browser's does.
+    const win = globalThis.window as unknown as { location: { search: string; href: string } }
+    pushState.mockImplementation((_state: unknown, _title: string, url: string) => {
+      const next = new URL(url, 'https://sentti.test')
+      win.location.search = next.search
+      win.location.href = next.href
+    })
+    openOverview()
+    openOverview()
+    expect(pushState).toHaveBeenCalledTimes(1)
+    expect(new URL(pushState.mock.calls[0][2] as string, 'https://sentti.test').searchParams.get('overview')).toBe('1')
+  })
+
   it('does nothing when the overview is open already: no second history entry (#513)', () => {
     const { pushState, replaceState, dispatchEvent } = page('/', '?persona=CUST00860&overview=1', { sheet: true })
     openOverview()
