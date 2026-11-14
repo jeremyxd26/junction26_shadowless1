@@ -37,12 +37,12 @@ What mock mode has, and what it does not invent:
 - Personas: the contract's list, plus Sanna (CUST00860, the demo start) from `core/config/personas.yaml`.
 - Overviews: Sanna (pending review) and Aino (CUST00042). Other personas get the contract's `customer_not_found` error.
 - Evidence: the two contract examples; the safe-to-spend parts and the review purchase, built from the overview's own data. Other numbers show their method with a note that the contract has no example for them yet.
-- Review answers (`POST /api/baskets/label`): the contract's label examples. "Needed", "My choice", undo, the same answer twice (`changed: false`) and a basket that is not an option (422) all work. The mock remembers the answer until the page reloads: the next overview has the example's `after` numbers, no review card and no waiting row. Undoing "My choice" has no contract example, so it is that example run backwards. The basket shares in that overview are each basket amount over the total, as the core counts them; the contract has no example of the overview after an answer.
+- Review answers (`POST /api/baskets/label`): the contract's label examples. "It was needed", "I chose it", undo, the same answer twice (`changed: false`) and a basket that is not an option (422) all work. The mock remembers the answer until the page reloads: the next overview has the example's `after` numbers, no review card and no waiting row. Undoing "I chose it" has no contract example, so it is that example run backwards. The basket shares in that overview are each basket amount over the total, as the core counts them; the contract has no example of the overview after an answer.
 - The examples are English only. With `?lang=fi`, the app's own texts and the review question switch to Finnish; the API texts stay as served.
 
 ### The review card ("Sentti asks", #35)
 
-Open Sanna (`?persona=CUST00860`, the default in mock mode). Answer "Needed" or "My choice", then press Undo in the toast; "Not sure" only closes the card. Reload the page to start again. On the live core the answers are kept per viewer session (a cookie the core sets), so a fresh private window starts from the pending question.
+Open Sanna (`?persona=CUST00860`, the default in mock mode). Answer one of the two options, then press Undo in the toast; "Not sure" only closes the card. Reload the page to start again. The question and the answers are the API's texts (`question[lang]`, `options[].label[lang]`); `{{n1}}` and `{{date}}` in the question become chips of the card's amount and date. On the live core the answers are kept per viewer session (a cookie the core sets), so a fresh private window starts from the pending question.
 
 ## URLs
 

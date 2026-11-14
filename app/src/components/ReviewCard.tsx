@@ -3,32 +3,37 @@ import type { BasketKey, ReviewCard as ReviewCardData } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { formatDate } from '../lib/i18n.ts'
 import { openEvidence } from '../lib/url.ts'
+import { useCountdown } from '../lib/useCountdown.ts'
 import { useSettings } from '../lib/settings.ts'
 import { Check } from './cards.tsx'
 import { NumberChip } from './NumberChip.tsx'
+import { RetryButton } from './RetryButton.tsx'
 
 /** The deep-green "Sentti asks" surface: never the hero green, so a question never looks like an answer. */
 const SURFACE = 'rounded-xl bg-deep p-4 text-on-deep outline-none [&_:focus-visible]:outline-mint'
 
-const TOKEN = /\{\{(\w+)\}\}/g
+/** Tokens the question may carry: `{{n1}}` is the card's amount, `{{date}}` its date. */
+const TOKEN = /\{\{(n1|date)\}\}/g
 
-/** Fills `{{name}}` in an app template with text or chips. */
-function fill(template: string, parts: Record<string, ReactNode>): ReactNode[] {
+/** The question as the API sends it; its tokens, if any, become chips. */
+function fill(text: string, parts: Record<string, ReactNode>): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
-  for (const match of template.matchAll(TOKEN)) {
+  for (const match of text.matchAll(TOKEN)) {
     const index = match.index ?? 0
-    if (index > last) out.push(template.slice(last, index))
-    out.push(<span key={`${match[1]}-${index}`}>{parts[match[1]] ?? match[0]}</span>)
+    if (index > last) out.push(text.slice(last, index))
+    out.push(<span key={`${match[1]}-${index}`}>{parts[match[1]]}</span>)
     last = index + match[0].length
   }
-  if (last < template.length) out.push(template.slice(last))
+  if (last < text.length) out.push(text.slice(last))
   return out
 }
 
 export interface ReviewError {
   message: string
   retryable: boolean
+  /** `Date.now()` time from which a retry is allowed (`Retry-After`), or null. */
+  until: number | null
 }
 
 interface AskingProps {
@@ -42,33 +47,39 @@ interface AskingProps {
   leaving: boolean
 }
 
-/** The question about one spending spike (contract `review` card, texts from #68). */
+/** The question about one spending spike (contract `review` card). Texts are the API's, in the request language. */
 export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function ReviewAsking(
   { card, busy, error, onAnswer, onNotSure, onRetry, leaving },
   ref,
 ) {
   const { lang, t } = useSettings()
   const titleId = useId()
+  // While the server asked to wait (Retry-After), a second tap on an answer would be a retry too.
+  const waiting = useCountdown(error?.until ?? null) > 0
   const date = formatDate(card.date, lang)
   const purchaseRef = card.evidence_ref ?? card.amount.evidence_ref
   const seePurchase = card.actions.find((action) => action.type === 'open_evidence')?.label ?? t.reviewSeePurchase
+  const question = card.question[lang]
+  const tokens = new Set([...question.matchAll(TOKEN)].map((match) => match[1]))
 
-  const question = fill(t.reviewQuestion, {
-    n1: <NumberChip number={card.amount} size="lead" />,
-    category: card.category,
-    date: purchaseRef ? (
-      <button
-        type="button"
-        onClick={() => openEvidence(purchaseRef)}
-        aria-label={`${date}. ${seePurchase}`}
-        className="relative inline-flex min-h-9 items-center rounded-pill border border-on-deep-muted/60 px-3 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
-      >
-        {date}
-      </button>
-    ) : (
-      date
-    ),
-  })
+  const dateChip = purchaseRef ? (
+    <button
+      type="button"
+      onClick={() => openEvidence(purchaseRef)}
+      aria-label={`${date}. ${seePurchase}`}
+      className="relative inline-flex min-h-10 items-center rounded-pill border border-on-deep-muted/60 px-3 leading-7 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+    >
+      {date}
+    </button>
+  ) : (
+    date
+  )
+  // What the question does not say itself: category and date (unless tokens carry them), merchant.
+  const meta = [
+    tokens.size === 0 ? card.category : null,
+    tokens.has('date') ? null : date,
+    card.merchant?.label ?? null,
+  ].filter((part): part is string => Boolean(part))
 
   return (
     <section
@@ -99,28 +110,42 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
         </button>
       </div>
 
-      <p className="mt-3 text-xl font-bold leading-9 text-on-deep">{question}</p>
-      {card.merchant && <p className="mt-1 text-sm text-on-deep-muted">{card.merchant.label}</p>}
+      {tokens.has('n1') ? (
+        // Tokens in the question: the amount and the date sit in the sentence as chips. The 48px line
+        // leaves each 40px chip its full 48px touch area, with no overlap between lines.
+        <p className="mt-3 text-xl font-bold leading-12 text-on-deep">
+          {fill(question, { n1: <NumberChip number={card.amount} size="lead" />, date: dateChip })}
+        </p>
+      ) : (
+        // Plain question (DESIGN.md order): the amount, then date, category and merchant, then the question.
+        <>
+          <div className="mt-3">
+            <NumberChip number={card.amount} size="lg" />
+          </div>
+          {meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
+          <p className="mt-3 text-lg font-semibold text-on-deep">{fill(question, { date: dateChip })}</p>
+        </>
+      )}
+      {tokens.has('n1') && meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         {card.options.map((option) => {
           const look = BASKETS[option.basket]
-          const label = t.reviewAnswers[option.basket] ?? option.label[lang]
           const chosen = busy === option.basket
           return (
             <button
               key={option.basket}
               type="button"
               onClick={() => onAnswer(option.basket)}
-              disabled={busy !== null}
-              className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-lg border-t-4 bg-surface px-2 pb-3 pt-2 text-base font-bold text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
+              disabled={busy !== null || waiting}
+              className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-lg border-t-4 bg-surface px-2 pb-3 pt-2 text-center text-base font-bold text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
               <span aria-hidden="true" className={`inline-flex size-9 items-center justify-center rounded-md text-lg ${look.tint}`}>
                 {look.icon}
               </span>
-              {label}
+              {option.label[lang]}
             </button>
           )
         })}
@@ -130,9 +155,11 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
         <div role="alert" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
           <span className="flex-1">{error.message}</span>
           {error.retryable && (
-            <button type="button" onClick={onRetry} className="min-h-11 font-semibold text-danger underline underline-offset-4">
-              {t.retry}
-            </button>
+            <RetryButton
+              onRetry={onRetry}
+              until={error.until}
+              className="min-h-11 font-semibold text-danger underline underline-offset-4"
+            />
           )}
         </div>
       )}
@@ -147,7 +174,7 @@ interface AnsweredProps {
 
 /** After the tap: one line with a check, the chosen answer and what it does (`options[].effect`). */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered({ card, basket }, ref) {
-  const { lang, t } = useSettings()
+  const { lang } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
@@ -161,7 +188,7 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
           {look?.icon}
         </span>
         <h2 id={titleId} className="text-lg font-bold text-on-deep">
-          {t.reviewAnswers[basket] ?? option?.label[lang]}
+          {option?.label[lang]}
         </h2>
       </div>
       {option && <p className="mt-2 text-base text-on-deep-muted">{option.effect[lang]}</p>}

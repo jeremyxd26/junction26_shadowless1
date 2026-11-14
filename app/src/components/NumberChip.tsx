@@ -11,8 +11,8 @@ const sizes: Record<Size, string> = {
   // ::after extends the hit area to 44px. min-w-11 (on every size) keeps it 44px wide.
   inline:
     'relative min-h-8 px-2.5 text-(length:--text-sm) leading-(--text-sm--line-height) align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
-  // In the review question (20px bold text): 36px pill, hit area extended to 44px.
-  lead: 'relative min-h-9 px-3 text-[20px] leading-7 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[""]',
+  // In a review question with tokens (20px bold text): 40px pill, hit area extended to 48px.
+  lead: 'relative min-h-10 px-3 text-[20px] leading-7 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
   // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
   lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
