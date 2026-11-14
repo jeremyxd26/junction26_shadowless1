@@ -71,6 +71,13 @@ KNOWN_TOOLS = [
     KnownTool("core.tools.peer", "get_peer_benchmark", "GetPeerBenchmarkArgs",
               "Comparison with people of the same age band and area: median, quartiles and percentile.",
               ("Comparing with people like you", "Vertaan kaltaisiisi")),
+    # Issue #369: the savings plan for "How could I save more?" (core/tools/savings_plan.py).
+    KnownTool("core.tools.savings_plan", "get_savings_plan", "GetSavingsPlanArgs",
+              "A small savings plan: two cuts below the usual pace (eating out and the largest other everyday "
+              "category), each a what-if saving, with their total a month and a year; safe to save a month and "
+              "the S-Bonus extra beside it, never added in. An estimate. Returns numbers with ids; cite them as "
+              "{{id}}.",
+              ("Putting together your savings plan", "Kokoan säästösuunnitelmaasi")),
 ]
 
 

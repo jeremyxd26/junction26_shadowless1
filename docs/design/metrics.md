@@ -724,6 +724,48 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 
 **Illustration** (CUST00001, window 2026-04 … 2026-09; the target is a made-up user input). Monthly keep was 285.98, 590.08, 602.90, −111.54, −133.58 and 569.15 (2 of 6 months negative), so `capacity_month` = 300.50, of which 230.01 is the existing monthly investment deposit. For a 20,000 € target from 0 the result is 67 months. With dining out −20% (+11.37 a month, section 4) it is 65 months. For CUST00002 the capacity is −73.77 a month, so the plan is not reachable at this pace. CUST00006 has a monthly sweep, so the plan is not estimated.
 
+## 13. Savings plan (#369)
+
+"How could I save more?" The tool is `get_savings_plan` (`core/tools/savings_plan.py`). It composes existing tools and adds no formula of its own.
+
+**The levers**, in this order. Each counts only when the what-if offers the cut (status not `not_offered`) and saves at least €5.00 a month (`config.SAVINGS_PLAN_MIN_EUR`):
+1. **Eating out:** `Restaurants` cut by 20% (`config.SAVINGS_PLAN_FIRST`).
+2. **The largest other flexible everyday category:** among `Entertainment`, `Lifestyle` and `Travel` (`config.SAVINGS_PLAN_OTHER_CATEGORIES`), the one with the highest monthly baseline (ties by name), cut by 10% (`config.SAVINGS_PLAN_OTHER_CUT_PCT`).
+
+**Each lever is the what-if tool itself** (section 4, `run_what_if`): the same window and baseline, so the plan's first row and an answer to "What if I cut restaurants by 20%?" are the same number to the cent (a database test).
+
+**Nothing is counted twice:** the two cut levers are always different categories (the second list excludes Restaurants), and a category's what-if saving counts only that category. Small purchases are no lever: in the data they are restaurant visits, which the first lever covers.
+
+**The totals** (`savings_plan.<name>@1`, estimates):
+
+| Method | Formula | Evidence |
+|---|---|---|
+| `savings_plan.total_month_eur@1` | the sum of the levers' monthly savings | composite `sum` whose parts are the levers' own refs |
+| `savings_plan.total_year_eur@1` | twelve times the monthly total | composite `scale` |
+
+**These are savings from spending below the usual pace.** They add to what can be set aside, never to safe to spend. Next to the plan:
+- safe to save a month (section 3.1) is shown as it is today, never added in;
+- the S-Bonus estimate for the default share is a separate extra line, "if you shopped at S Group stores", never part of the total;
+- nothing in the plan quotes safe to spend.
+
+**The answer**, two sentences and at most three numbers:
+- "You could already set aside about €184.61 a month; these changes could add about €63.17 a month."
+- "That is about €758.04 a year, from eating out a fifth less and spending a tenth less on lifestyle."
+- The levers' own amounts and the S-Bonus line are on the card.
+- With no lever, it says so and gives safe to save.
+- The card's action is `open_host_screen` with `monthly_saving`, so the user can start saving in the bank's app.
+
+**The personas** (as of 2026-09-30, the what-if window 2026-04 to 2026-09):
+
+| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Safe to save a month |
+|---|---|---|---|---|---|
+| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 184.61 |
+| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 429.16 |
+| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 546.87 |
+| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 199.95 |
+
+**Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.
+
 ## Rule references
 
 R1 and R2: every number is a column with its period and an evidence filter (section 0). R5: the DEMO_TODAY bound in every query. R9: Health is summed only, never benchmarked or used in labels (sections 1, 5, 6). R13: safe to spend, what-if, peer benchmark and store index are estimates with a stated method and caveat (sections 3, 4, 6, 7).

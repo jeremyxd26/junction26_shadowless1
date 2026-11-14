@@ -82,6 +82,8 @@ CALLS: tuple[WarmCall, ...] = (
              {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}),
     WarmCall("Will my money last until payday?", "core.tools.forecast", "get_balance_forecast",
              "GetBalanceForecastArgs", {}),
+    WarmCall("How could I save more? (the savings plan, #369)", "core.tools.savings_plan", "get_savings_plan",
+             "GetSavingsPlanArgs", {}),
 )
 
 # The partner's four questions (the same pairs as SUGGESTED_QUESTIONS in core/app/api/texts.py).
