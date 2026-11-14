@@ -636,7 +636,8 @@ class Pipeline:
             record.update(status="error", error="period_out_of_range", reason=exc.reason,
                           **({"details": exc.details} if getattr(exc, "details", None) else {}))
         except MissingData as exc:   # a category never used, too few purchases (#379)
-            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.details)
+            # its Numbers are registered here, in call order, whether or not the tool cache ran the tool
+            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.register(ctx.numbers))
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning

@@ -107,9 +107,9 @@ MISSING_CHIPS = {
 }
 # A category never used, an object no category maps, too few purchases (#379, part B). Chips name the
 # customer's own largest categories the rules can answer, Health never among them unless asked (R9).
-ABSENT = ("I can't find any {what} spending in your data. Your largest categories are {categories}.",
+ABSENT = ("I can't find any spending on {what} in your data. Your largest categories are {categories}.",
           "Tiedoistasi ei löydy kulutusta luokassa {what}. Suurimmat luokkasi ovat {categories}.")
-ABSENT_PLAIN = ("I can't find any {what} spending in your data.", "Tiedoistasi ei löydy kulutusta luokassa {what}.")
+ABSENT_PLAIN = ("I can't find any spending on {what} in your data.", "Tiedoistasi ei löydy kulutusta luokassa {what}.")
 UNKNOWN_PLAIN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories.",
                  "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin.")
 UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories, and your "

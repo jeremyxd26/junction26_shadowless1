@@ -163,12 +163,13 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
         # A purchase or two is no monthly habit (#379): the purchases as they are, no monthly figure or saving.
         txb = NumberBuilder(ctx, classify(ctx.history(), ctx.as_of, labels.for_context(ctx)))
         exact = Selection(direction="out", start=window.start, end=window.end, tx_ids=tuple(t.id for t in bought))
-        total = ctx.numbers.register(txb.transactions(exact, config.METHODS["total"], window,
-                                                      _t("selection_total", lang, what=what[:1].upper() + what[1:]))[0])
-        count = ctx.numbers.register(txb.transactions(exact, config.METHODS["n_tx"], window, _t("purchases", lang))[0])
+        total = txb.transactions(exact, config.METHODS["total"], window,
+                                 _t("selection_total", lang, what=what[:1].upper() + what[1:]))[0]
+        count = txb.transactions(exact, config.METHODS["n_tx"], window, _t("purchases", lang))[0]
         evidence.write(ctx.conn, txb.specs)
-        raise MissingData("too_few_transactions", what=what, period=window.label, total=total.id, count=count.id,
-                          n=len(bought))
+        # the pipeline registers the two Numbers (the tool cache keeps no numbers of a call that raises)
+        raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what=what,
+                          period=window.label, n=len(bought))
     nb = NumberBuilder(ctx, [])
     reg = ctx.numbers.register
     numbers: dict[str, Number] = {}

@@ -366,7 +366,7 @@ def test_what_if_on_fewer_than_three_purchases_shows_them_and_derives_no_monthly
         run_what_if(ctx, {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
     d = raised.value.details
     assert raised.value.reason == "too_few_transactions" and 0 < d["n"] < config.TOO_FEW_TRANSACTIONS
-    total, count = ctx.numbers.get(d["total"]), ctx.numbers.get(d["count"])
+    total, count = raised.value.numbers["total"], raised.value.numbers["count"]
     row = conn.execute(
         """SELECT COALESCE(sum(-amount_eur), 0), count(*) FROM transactions
            WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s

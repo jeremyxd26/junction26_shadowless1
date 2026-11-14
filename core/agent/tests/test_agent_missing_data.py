@@ -121,7 +121,7 @@ TOP = [{"key": "Travel", "label": "Travel"}, {"key": "Groceries", "label": "Groc
 def test_a_category_never_used_names_it_and_offers_the_customers_largest_categories():
     text, chips = template.missing_data_answer([], [{"reason": "category_absent",
                                                      "details": {"what": "Entertainment", "top": TOP}}], "en", AS_OF)
-    assert text == "I can't find any entertainment spending in your data. Your largest categories are travel, " \
+    assert text == "I can't find any spending on entertainment in your data. Your largest categories are travel, " \
                    "groceries and restaurants."
     assert chips == ["How much did I spend on travel last month?", "How much did I spend on groceries last month?",
                      "How much did I spend on restaurants last month?"]
@@ -168,11 +168,12 @@ def test_every_category_chip_is_a_question_the_rules_answer(label_key, lang):
 def too_few_tool(n: int):
     def tool(ctx, args: FakeArgs):
         span = Period(start=date(2026, 4, 1), end=date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
-        total = ctx.numbers.register(Number(value=203.95, unit=Unit.EUR, period=span, method="spending.total@1",
-                                            evidence_ref="ev_aaaaaaaaaaa1", label="Travel", display="€203.95"))
-        count = ctx.numbers.register(Number(value=n, unit=Unit.COUNT, period=span, method="spending.n_tx@1",
-                                            evidence_ref="ev_aaaaaaaaaaa2", label="Purchases", display=str(n)))
-        raise MissingData("too_few_transactions", what="travel", period=span.label, total=total.id, count=count.id, n=n)
+        total = Number(value=203.95, unit=Unit.EUR, period=span, method="spending.total@1",
+                       evidence_ref="ev_aaaaaaaaaaa1", label="Travel", display="€203.95")
+        count = Number(value=n, unit=Unit.COUNT, period=span, method="spending.n_tx@1",
+                       evidence_ref="ev_aaaaaaaaaaa2", label="Purchases", display=str(n))
+        raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what="travel",
+                          period=span.label, n=n)
     return ToolSpec("fake_what_if", "A what-if on too few purchases.", FakeArgs, tool, ("Looking", "Katson"))
 
 
@@ -180,7 +181,12 @@ def too_few_tool(n: int):
     (1, "In 1 Apr – 30 Sep 2026 you made a single travel purchase of €203.95, so there is no monthly habit to cut."),
     (2, "In 1 Apr – 30 Sep 2026 you made 2 travel purchases, €203.95 in all: too few to show a monthly habit to cut."),
 ])
-def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure(make_pipeline, n, text):
+@pytest.mark.parametrize("cache", ["off", "memory"])
+def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure(make_pipeline, n, text, cache,
+                                                                                  tool_cache_off, monkeypatch):
+    # with the tool cache on, the call that raises keeps no numbers in the cache: the pipeline registers them
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
+    monkeypatch.setattr(tool_cache_off, "mode", cache)
     model = ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]])
     events = run(make_pipeline(model, registry(too_few_tool(n))), "What if I cut travel by 20%?", language="en")
     done = dict(events)["done"]
