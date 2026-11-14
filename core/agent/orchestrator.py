@@ -49,8 +49,8 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
-from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
-                                  render, repeated_period, unavailable_claim, validate)
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim,
+                                  draft_problems, plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
@@ -686,6 +686,9 @@ class Pipeline:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
                         errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                    # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
+                    # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
+                    errors += draft_problems(draft.text, numbers, has_data=bool(request.data))
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
