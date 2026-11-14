@@ -132,6 +132,26 @@ def test_without_a_key_the_service_answers_model_unavailable(app):
     assert r.status_code == 503 and r.json()["error"]["message"].startswith("The bill cannot be read")
 
 
+def test_the_read_response_schema_takes_a_note_and_holds_its_types():
+    """#511: the contract example holds only null notes and true; the schema must accept a text note and refuse
+    a note of another type and a false needs_confirmation."""
+    from pydantic import ValidationError
+
+    from core.app.api.schemas import BillReadResponse
+
+    field = {"value": "836.65", "display": "836,65 €", "status": "unchecked", "source": "barcode",
+             "note": "The amount in the barcode and the printed amount differ."}
+    body = {"sample_id": "sample_1", "language": "en", "needs_confirmation": True,
+            "fields": {"payee": None, "iban": None, "reference": None, "amount": field, "due_date": None,
+                       "barcode": None}}
+    assert BillReadResponse.model_validate(body).fields.amount.note.startswith("The amount")
+    for bad in ({**body, "needs_confirmation": False},
+                {**body, "fields": {**body["fields"], "amount": {**field, "note": 5}}},
+                {**body, "fields": {**body["fields"], "amount": {**field, "status": "verified"}}}):
+        with pytest.raises(ValidationError):
+            BillReadResponse.model_validate(bad)
+
+
 @pytest.mark.parametrize("body", [
     {"sample_id": "../samples/sample_1"}, {"sample_id": "sample_1.png"}, {"sample_id": "https://example.com/a.png"},
     {"sample_id": "SAMPLE_1"}, {"sample_id": "sample_1", "image": "aGVsbG8="},

@@ -303,7 +303,7 @@ def check_fields(fields: dict[str, str], parser: Any, language: str,
 # ---- step 1 and the whole reading ----------------------------------------------------------------------
 
 def read_bill(client: Any, image: bytes, mime_type: str, language: str, *, parser: Any | None = None,
-              prompt: Prompt | None = None, today: date | None = None) -> dict[str, Any]:
+              prompt: Prompt | None = None, today: date | None = None, cache_only: bool = False) -> dict[str, Any]:
     """Read one bill image: {fields, needs_confirmation, prompt, model}. Raises BillReadUnavailable when
     the model may not be used, fails, is blocked, answers outside the schema, or gives no usable field at all
     (503 model_unavailable). Only a usable answer is cached; a cached one this reading rejects is a miss, so
@@ -324,7 +324,8 @@ def read_bill(client: Any, image: bytes, mime_type: str, language: str, *, parse
             return False
 
     try:
-        reply = client.extract(prompt.text, READ_REQUEST, image, mime_type, READ_SCHEMA, accept=usable)
+        extra = {"cache_only": True} if cache_only else {}   # the deploy step's second reading (#511)
+        reply = client.extract(prompt.text, READ_REQUEST, image, mime_type, READ_SCHEMA, accept=usable, **extra)
     except GeminiError as exc:
         raise BillReadUnavailable(exc.code) from None
     if reply.blocked:

@@ -1022,3 +1022,69 @@ def test_real_things_keep_their_decision(question, word):
     from core.agent.rules import unknown_object
     assert unknown_object(question) == word
     assert not [args for name, args in data_calls(plan(question)) if name == "get_spending" and not args.get("filter")]
+
+
+# ---- #576: a food compound beside a second category or question; the long message with a statement after it ------
+
+LONG_TAIL = (" My family keeps talking about the winter holidays, the long drive north and the old cabin by the lake that "
+             "we visit every year, and I keep thinking about it all evening.")
+
+
+@pytest.mark.parametrize("lang,question", [
+    ("en", "How much did I spend on food delivery last month? How much did I spend on groceries last month?"),
+    ("en", "How much did I spend on groceries last month? How much did I spend on food delivery last month?"),
+    ("en", "how much did I spend on dog food and groceries last month?"),
+    ("en", "how much did I spend on groceries and dog food last month?"),
+    ("en", "How much did I spend on street food last month and on restaurants?"),
+    ("fi", "Paljonko käytin ruoan toimitukseen viime kuussa? Paljonko käytin ruokaostoksiin viime kuussa?"),
+    ("fi", "Paljonko käytin ruokaostoksiin viime kuussa? Paljonko käytin ruoan toimitukseen viime kuussa?"),
+    ("fi", "paljonko käytin lemmikin ruokaan ja ravintoloihin viime kuussa?"),
+])
+def test_a_food_compound_beside_a_second_category_or_question_is_claimed_by_no_rule(lang, question):
+    assert claimed_rule(question, lang) == NOT_CLAIMED and data_calls(plan(question, lang)) == []
+
+
+@pytest.mark.parametrize("lang,question,word", [
+    ("en", "How much did I spend on food delivery last month?", "food delivery"),
+    ("fi", "Paljonko käytin ruoan toimitukseen viime kuussa?", "ruoan toimitukseen"),
+    ("fi", "Paljonko käytin lemmikin ruokaan viime kuussa?", "lemmikin ruokaan"),
+    ("fi", "Paljonko käytin koiranruokaan viime kuussa?", "koiranruokaan"),
+])
+def test_a_food_compound_alone_keeps_the_breakdown_and_is_quoted_whole(lang, question, word):
+    from core.agent.rules import unknown_object
+    assert claimed_rule(question, lang) == "unknown_object"
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_basket_breakdown"]
+    assert unknown_object(question) == word
+
+
+@pytest.mark.parametrize("question", [
+    "How much did I spend on restaurants in September, and what can I safely spend this week?" + LONG_TAIL,
+    "My spending on restaurants in September? What can I safely spend this week?" + LONG_TAIL,
+    "How much do I spend on restaurants a month? What can I safely spend this week?" + LONG_TAIL,
+    "I spent how much on restaurants in September? What can I safely spend this week?" + LONG_TAIL,
+    "How much did I spend on restaurants in September, and what can I safely spend this week? My sister and the kids "
+    "come along to the cabin by the lake every single summer, and we always talk about it for weeks afterwards.",
+])
+def test_a_statement_after_two_questions_never_leaves_one_rule_answering_alone(question):
+    # the trigger (#576): "… and the old cabin …" in the statement was read as a second spending object, which kept
+    # the spending rule out, so the safe-to-spend rule answered alone
+    result = plan(question)
+    assert data_calls(result) == [] and result.calls[0].args["question"] == CLARIFY_WHICH[0]
+
+
+def test_the_finnish_long_form_answers_both_questions_as_its_short_form_does():
+    short = "Paljonko käytin ravintoloihin syyskuussa, ja paljonko voin turvallisesti käyttää tällä viikolla?"
+    tail = (" Perheeni puhuu koko ajan talvilomasta, pitkästä ajomatkasta pohjoiseen ja vanhasta mökistä järven "
+            "rannalla, jossa käymme joka vuosi, ja ajattelen sitä koko illan.")
+    names = lambda q: sorted(name for name, _ in data_calls(plan(q, "fi")))  # noqa: E731
+    assert names(short + tail) == names(short) == ["get_safe_to_spend", "get_spending"]
+
+
+@pytest.mark.parametrize("question,thing", [
+    ("How much did I spend on restaurants last month? And on the gym?", "gym"),     # a question: still asked
+    ("How much did I spend on restaurants and the gym last month?", "gym"),         # the same sentence
+    ("How much did I spend on restaurants last month? My sister and the kids came too.", None),   # a statement
+])
+def test_an_object_in_a_later_sentence_counts_only_when_that_sentence_asks(question, thing):
+    from core.agent.rules import _unknown_object
+    assert _unknown_object(fold(question)) == thing

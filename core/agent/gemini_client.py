@@ -445,6 +445,7 @@ class GeminiClient:
         self._extract_paused_until = 0.0
         self._extract_pause_code = "error"
         self._extract_failures = 0
+        self._flights: dict[str, threading.Lock] = {}   # cache key -> its single-flight lock (#511)
         self.sleep = sleep
         self.clock = clock
         self.calls: list[CallRecord] = []
@@ -511,14 +512,18 @@ class GeminiClient:
         return self._call("plan", contents, config, self.plan_timeout_s)
 
     def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any],
-                accept: Callable[[Reply], bool] | None = None) -> Reply:
+                accept: Callable[[Reply], bool] | None = None, cache_only: bool = False) -> Reply:
         """Read an image into JSON constrained by a schema (#250): one inline image part, no tools, no
         fallback model, one request. The cache key and any recording hold the image's SHA-256, never its
         bytes. Raises GeminiError("image") for an image that is too large or of another type.
 
         `accept` is the caller's test of a usable answer: only an accepted answer is cached, and a cached
         entry it rejects is a miss, so one bad first answer never makes a sample fail for ever (review of
-        #250). A reading is independent of the answer state of the thread it runs on."""
+        #250). A reading is independent of the answer state of the thread it runs on.
+
+        Single flight (#511): concurrent readings of the same image wait for one another, so a cold cache
+        costs one request; the others answer from the cache it wrote. `cache_only` never sends a request:
+        a miss raises GeminiError("cache_miss") (the deploy step's second reading)."""
         if mime_type not in IMAGE_MIME_TYPES or not image or len(image) > MAX_INLINE_IMAGE_BYTES:
             raise GeminiError("image")
         contents = [{"role": "user", "parts": [{"text": text}, {"inline_data": {"mime_type": mime_type, "data": image}}]}]
@@ -529,7 +534,24 @@ class GeminiClient:
             "thinking_config": {"thinking_level": self.extract_thinking},
             "max_output_tokens": self.extract_max_tokens,
         }
-        return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False, accept=accept)
+        model = self.extract_model
+        key = self.cache_key(model, "extract", contents, _for_model(model, config))
+        if cache_only:
+            entry = self._read_cache(key)
+            reply = self._cached_reply(model, entry, accept) if entry is not None else None
+            if reply is None:
+                self._record("extract", model, 0, CallUsage(), error="cache_miss")
+                raise GeminiError("cache_miss")
+            self._record("extract", model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
+            return reply
+        with self._flight(key):
+            return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False,
+                              accept=accept)
+
+    def _flight(self, key: str) -> threading.Lock:
+        """The lock of one cache key, shared by concurrent readings of the same image (#511)."""
+        with self._lock:
+            return self._flights.setdefault(key, threading.Lock())
 
     def compose(self, system: str, user_text: str, schema: dict[str, Any]) -> Reply:
         contents = [{"role": "user", "parts": [{"text": user_text}]}]

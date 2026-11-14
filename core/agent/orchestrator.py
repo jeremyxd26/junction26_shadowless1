@@ -570,8 +570,9 @@ class Pipeline:
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
         if designed and not a.template_failed:
-            # a designed template answer never warns, in any model state: the template writes it either way (one
-            # rule with #574/#610, agreed with r-w3)
+            # a designed template answer ("Why is my safe to spend lower?", #552; the peer answer with the national
+            # line, #569) never warns, in any model state: the template writes it either way (one rule, #610 and
+            # #585, agreed with r-w3); the planner turns record the template and why
             a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": designed})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"

@@ -747,7 +747,11 @@ WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
 # eating out ("food delivery", "a food court", "food trucks and stalls", "street food") or pet and baby food
 # ("pet food", "my dog's food"). Such a message is claimed by no rule (the coordinator, review of #534).
 FOOD_COMPOUND = (r"\bfood (deliver\w*|courts?|trucks?|stalls?)\b|\b(pet|pets|dog|dogs|cat|cats|baby|babies|street)"
-                 r"('s|s'|')? food\b")
+                 r"('s|s'|')? food\b"
+                 # Finnish (#576): "ruoan toimitukseen", "ruokalähetyksiin", "lemmikin ruokaan", "koiranruokaan",
+                 # "kissanruokaan", "katuruokaan": a thing no category maps, quoted whole, never Groceries
+                 r"|\bruoan (toimitu|kuljetu)\w*|\bruoka(toimitu|kuljetu|lahety)\w*|\blemmikin ruo\w*|"
+                 r"\b(lemmikki|koiran|kissan|vauvan|katu)ruo\w*")
 
 
 def _is_thing(word: str) -> bool:
@@ -803,6 +807,8 @@ BARE_WHY_LOW = (r"(why|how come)( is)?( it| that| this)?( so| that)? (low|lower|
 # the question's own verb in the past ("why was it lower in August?", "miksi se oli pienempi?"), never the past of a
 # comparison ("why is it lower than it was?")
 WHY_PAST = r"\b(why|how come) (was|were|did|had)\b|\bmiksi( se| tama| tuo| minulla)? (oli|olivat|olin)\b"
+# what the user spent, beside the why question ("…, and how much did I spend?", "…, paljonko käytin?")
+WHY_SPENT = r"\bspent\b|\b(did|do) (i|we) spend\b|\bkaytin\b|\bkaytimme\b|\bkulutin\b|\bmaksoin\b|\bolen kayttanyt\b"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
@@ -963,6 +969,21 @@ LAST_MONTH_WORDS = r"\blast month\b|\bprevious month\b|\bviime kuu\w*|\bedelli\w
 FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
 
 
+def _same_question(q: str, first_end: int, start: int) -> bool:
+    """An object listed after the first one belongs to the question: in the same sentence ("on restaurants and the
+    gym"), or in a later sentence that asks it itself, a question ("…? And on the gym?") or an elliptical follow-up
+    ("And the gym."). An object in a later statement ("My family … the long drive north and the old cabin by the
+    lake …") is no object of the question (#576)."""
+    between = q[first_end:start]
+    breaks = list(re.finditer(r"[.!?]+(?:\s+|$)", between))
+    if not breaks:
+        return True
+    sentence_start = first_end + breaks[-1].end()
+    end = re.search(r"[.!?]", q[start:])
+    sentence = q[sentence_start:start + (end.end() if end else len(q) - start)].strip()
+    return sentence.endswith("?") or bool(re.match(r"(?:and|or|plus|also|ja|tai|seka|enta)\b", sentence))
+
+
 def _unknown_object(q: str) -> str | None:
     """The thing a spending question names when no category, merchant group or health word maps it: the
     first object, or one listed after it ("on restaurants and at the gym")."""
@@ -974,6 +995,8 @@ def _unknown_object(q: str) -> str | None:
     starts = [m.start(1)] + sorted({rest + n.start(1) for rx in (OBJECT_MORE_EN, OBJECT_MORE_BARE, OBJECT_MORE_FI)
                                     for n in re.finditer(rx, q[rest:])})
     for i, start in enumerate(starts):
+        if i and not _same_question(q, rest, start):
+            continue   # "… the long drive north and the old cabin …" in a later statement: no object asked (#576)
         word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
         after = q[start + len(word):].lstrip()
         if re.fullmatch(r"[a-z]+(?:'s|s'|')", word) and (re.match(HEALTH, after) or any(
@@ -1352,9 +1375,15 @@ def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
     decided in _claim_clause after every decline and guard, as the safe-to-spend rule is; also when only the
     spending rule competes with it (a comparison with last week). Never a past horizon ("why was it lower in
     August?"), another period ("my monthly budget lower than last month") or a category."""
-    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q):
-        return False
+    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q) or \
+            re.search(HEALTH, q):
+        return False   # "…, and how much did I spend on the pharmacy?": never the why answer alone (follow-up of #574)
     if ((spending or {}).get("period") or {}).get("preset") not in (None, "this_week", "last_week"):
+        return False
+    if "spending" in found and (not spending or (not spending.get("compare_to") and re.search(WHY_SPENT, q))):
+        # the spending rule competes only as the comparison ("lower than last week") or this week's amount one
+        # can spend ("why can I only spend so little this week?"); a question about what was spent ("…, and how
+        # much did I spend?", "…, what did I spend this week?") is a second question, decided as on dev
         return False
     rest = set(found) - {"safe_to_spend", "spending"}
     # "vähemmän" (less) compares there, it is no cut: the what-if rule only when nothing else in it is a scenario
@@ -1406,6 +1435,11 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         others = [f for f in found if f != "spending"]
         if others:
             return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
+        asking = [p for p in re.split(CLAUSE_BREAK, q) if p.strip() and _spending_words(p)]
+        if _filter_of(re.sub(FOOD_COMPOUND, " ", q)) or len(asking) > 1:
+            # "dog food and groceries", "…food delivery last month? …groceries last month?": the breakdown would
+            # answer the compound only; the message asks two things, so no rule claims it (#576)
+            return Claim(None, reason="food_compound")
         if "get_basket_breakdown" in tools and _spending_words(q):
             period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
             return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
