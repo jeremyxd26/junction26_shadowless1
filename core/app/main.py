@@ -56,6 +56,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.warning("language model: off (model settings invalid: %s); the rules plan and the templates write",
                         type(exc).__name__)
         try:
+            from core.bills.nemotron import reader_state
+
+            log.info(reader_state(gemini_on=bool(settings.gemini_api_key)))   # which reader reads bills (#573)
+        except Exception as exc:  # noqa: BLE001 - a bad reader setting must not stop the service
+            log.warning("bill reader: the Gemini extract role (reader settings invalid: %s)", type(exc).__name__)
+        try:
             yield
         finally:
             if pool is not None:

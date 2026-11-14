@@ -1135,8 +1135,12 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
         "arkikulutuksesi on tässä kuussa tavallista suurempi.",
     ),
     "why": (
-        "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
-        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+        # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to
+        # save), so the text says that the effect is real, matching the effect text of the toast.
+        "Only you know what this purchase was. Your answer decides which basket it goes into, which can change "
+        "your safe to spend.",
+        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+        "turvallisesti käytettävissä olevaa summaa.",
     ),
     "amount": ("{category} purchase", "Ostos: {category}"),
     "see_purchase": ("See the purchase", "Näytä ostos"),

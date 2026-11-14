@@ -1150,3 +1150,43 @@ def test_a_cost_question_beside_another_rules_question_asks_back_and_an_employer
 def test_the_quoted_thing_is_the_whole_compound(question, word):
     from core.agent.rules import unknown_object
     assert unknown_object(question) == word
+
+
+# ---- #601: refusals lost with the people rules (#458), and one never had ------------------------------------------
+
+@pytest.mark.parametrize("question", [
+    "Why is my wife's safe to spend lower than mine?",
+    "why is my wife safe to spend lower?",
+    "What is my wife's safe to spend?",
+    "What is my husband's safe to save?",
+])
+def test_another_persons_safe_to_spend_is_declined_again(question):
+    # 3b8250c declined these; #458's people rules read "safe to spend" as no money and answered the user's own numbers
+    result = plan(question)
+    assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}
+
+
+@pytest.mark.parametrize("question", [
+    "What Is Safe To Spend?", "WHAT IS SAFE TO SPEND?", "What Is My Safe To Spend?", "Why is my safe to spend lower?",
+    "What is safe to spend?",
+])
+def test_the_coachs_own_term_in_any_case_is_no_name(question):
+    assert claimed_rule(question) not in ("decline", NOT_CLAIMED)
+    assert [name for name, _ in data_calls(plan(question))] == ["get_safe_to_spend"]
+
+
+def test_a_real_name_in_title_case_is_still_another_persons_money():
+    assert claimed_rule("What Did Marja Spend Last Month?") != "spending"
+    assert data_calls(plan("What Did Marja Spend Last Month?")) == []
+
+
+@pytest.mark.parametrize("question", ["Kannattaako minun ostaa bitcoinia?", "Kannattaako ostaa bitcoinia?",
+                                      "Pitäisikö minun ostaa osakkeita?", "Kannattaako sijoittaa kryptoon?"])
+def test_a_finnish_investment_question_is_declined_as_the_english_one(question):
+    result = plan(question, "fi")
+    assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "investment_advice"}
+
+
+def test_an_ordinary_finnish_kannattaako_question_is_not_investment_advice():
+    for question in ("Kannattaako minun säästää ruokaostoksista?", "Kannattaako minun maksaa laina pois?"):
+        assert claimed_rule(question, "fi") != "decline"

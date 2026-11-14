@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.6",
+  "contract_version": "0.3.9",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -3704,6 +3704,43 @@
       ],
       "ai_disclosure": null
     },
+    "ask.json.request_refusal_first": {
+      "customer_id": "CUST00042",
+      "conversation_id": null,
+      "message": "Should I put my savings into tech stocks?",
+      "language": "auto"
+    },
+    "ask.json.response_refusal_first": {
+      "answer_id": "ans_8d2f4h6k",
+      "conversation_id": "conv_7m3p9r2t",
+      "language": "en",
+      "as_of": "2026-09-30",
+      "outcome": "refused",
+      "text": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+      "text_rendered": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+      "cited": [],
+      "numbers": {},
+      "cards": [],
+      "follow_ups": [
+        "How much could I set aside each month?",
+        "What are my fixed bills?"
+      ],
+      "lesson": null,
+      "refusal": {
+        "kind": "investment_advice",
+        "label": "Investment advice is outside what I can help with"
+      },
+      "clarify": null,
+      "warnings": [],
+      "actions": [
+        {
+          "type": "open_host_screen",
+          "label": "Contact S-Pankki",
+          "target": "contact_bank"
+        }
+      ],
+      "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
+    },
     "ask.json.request_clarify": {
       "customer_id": "CUST00042",
       "conversation_id": null,
@@ -5920,21 +5957,21 @@
         "amount": {
           "value": "812.40",
           "display": "812,40 €",
-          "status": "checked",
+          "status": "unchecked",
           "source": "barcode",
           "note": null
         },
         "due_date": {
           "value": "2026-10-01",
           "display": "1.10.2026",
-          "status": "checked",
+          "status": "unchecked",
           "source": "barcode",
           "note": null
         },
         "barcode": {
           "value": "421123456000007850008124000000000000000000001232261001",
           "display": "421123456000007850008124000000000000000000001232261001",
-          "status": "checked",
+          "status": "unchecked",
           "source": "barcode",
           "note": null
         }

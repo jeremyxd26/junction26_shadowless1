@@ -9,7 +9,7 @@ import { moduleHref, safePath } from './path.ts'
 type Lang = 'en' | 'fi'
 
 /** The host screens a module may ask for (`sentti.openHostScreen`, docs/integration.md section 3). */
-const HOST_TARGETS = ['monthly_saving', 'bonus_to_fund'] as const
+const HOST_TARGETS = ['monthly_saving', 'bonus_to_fund', 'contact_bank'] as const
 type HostTarget = (typeof HOST_TARGETS)[number]
 
 interface Strings {
@@ -62,7 +62,7 @@ const TEXT: Record<Lang, Strings> = {
     nothingPaid: 'Demo: nothing is paid',
     opensIn: (target) => `Opens in the bank app: ${target}`,
     nothingOpens: 'Demo: nothing opens',
-    targets: { monthly_saving: 'Monthly saving', bonus_to_fund: 'Bonus to fund' },
+    targets: { monthly_saving: 'Monthly saving', bonus_to_fund: 'Bonus to fund', contact_bank: 'Contact S-Pankki' },
     invalidJson: '(not JSON)',
     startOver: 'Start over',
     notEnvelope: '(not a message object)',
@@ -89,7 +89,7 @@ const TEXT: Record<Lang, Strings> = {
     nothingPaid: 'Demo: mitään ei makseta',
     opensIn: (target) => `Avautuu pankkisovelluksessa: ${target}`,
     nothingOpens: 'Demo: mitään ei avata',
-    targets: { monthly_saving: 'Kuukausisäästö', bonus_to_fund: 'Bonus rahastoon' },
+    targets: { monthly_saving: 'Kuukausisäästö', bonus_to_fund: 'Bonus rahastoon', contact_bank: 'Yhteydenotto S-Pankkiin' },
     invalidJson: '(ei JSONia)',
     startOver: 'Aloita alusta',
     notEnvelope: '(ei viestiobjekti)',

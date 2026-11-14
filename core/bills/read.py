@@ -64,6 +64,14 @@ _DATE_EN = re.compile(r"([0-9]{1,2}) ([A-Za-z]{3,9}) ([0-9]{4})")
 _MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
                 "november", "december")
 _PAYEE = re.compile(r"[^\W_][\w .,&'’()/+\-]*", re.UNICODE)
+# A payee is a name (review of #594, D2): a phone number (seven or more digits in all), a domain ("site.example/pay")
+# or a key-shaped token (24 or more characters without a space) is no payee, so it is shown as unread.
+_PAYEE_DOMAIN = re.compile(r"\b[\w-]+\.[a-z]{2,}\b", re.I)
+_PAYEE_LONG_TOKEN = re.compile(r"\S{24,}")
+
+
+def _not_a_name(payee: str) -> bool:
+    return sum(ch.isdigit() for ch in payee) >= 7 or bool(_PAYEE_DOMAIN.search(payee) or _PAYEE_LONG_TOKEN.search(payee))
 MONTHS_EN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 NOTES = {
     "differs": {
@@ -235,7 +243,7 @@ def check_fields(fields: dict[str, str], parser: Any, language: str,
     out: dict[str, Field | None] = {name: None for name in READ_FIELDS}
 
     payee = fields.get("payee")
-    if payee and _PAYEE.fullmatch(payee) and not re.search(r"https?:|www\.|@", payee, re.I):
+    if payee and _PAYEE.fullmatch(payee) and not re.search(r"https?:|www\.|@", payee, re.I) and not _not_a_name(payee):
         out["payee"] = Field(payee, payee, "unchecked", "printed")
 
     printed_iban = _iban(fields["iban"], parser) if "iban" in fields else None
