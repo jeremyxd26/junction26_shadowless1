@@ -1,5 +1,6 @@
 # Exact versions of everything the service installs, direct and transitive (#121), so that every
-# install (the image on the dev host, CI, a laptop) gets the set that was tested.
+# install (the image on the dev host, CI, a laptop) gets the set that was tested: 9 direct pins and
+# 20 transitive ones for Linux and CPython 3.11, plus 1 package that only Windows needs.
 # To change a version, resolve from the direct block only (installing this whole file keeps the old
 # transitive pins in force, so a bumped direct pin either conflicts or changes nothing):
 #   1. Change the pin in the "direct" block.
@@ -18,6 +19,7 @@ uvicorn==0.54.0
 pydantic-settings==2.16.3
 pydantic==2.14.3
 PyYAML==6.0.3
+tzdata==2026.6  # Europe/Helsinki for the spike-review calendar week, also where the OS has no zoneinfo
 # tests (Starlette's TestClient is built on httpx2)
 pytest==9.2.0
 httpx2==2.16.0
@@ -46,4 +48,3 @@ typing-inspection==0.4.5
 
 # transitive, Windows only (local development)
 colorama==0.4.6; sys_platform == "win32"
-tzdata==2026.6; sys_platform == "win32"
