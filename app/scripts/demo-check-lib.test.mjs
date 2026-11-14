@@ -1,6 +1,21 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+import { TEXT, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+
+describe('TEXT', () => {
+  it('finds the hand-over action by the labels the app and the core use, in EN and FI', () => {
+    expect(TEXT.en.saveAction.test('See monthly saving in S-mobiili')).toBe(true)
+    expect(TEXT.fi.saveAction.test('Katso kuukausisäästäminen S-mobiilissa')).toBe(true)
+    expect(TEXT.fi.saveAction.test('Avaa kuukausisäästö')).toBe(true)
+    expect(TEXT.fi.saveAction.test('See monthly saving in S-mobiili')).toBe(true)
+    expect(TEXT.en.saveAction.test('See September transactions')).toBe(false)
+  })
+  it('knows the Undo button in both languages', () => {
+    expect(TEXT.en.undo.test('Undo')).toBe(true)
+    expect(TEXT.fi.undo.test('Peru')).toBe(true)
+    expect(TEXT.fi.undo.test('Kumoa')).toBe(true)
+  })
+})
 
 describe('parseArgs', () => {
   it('takes the base URL and the defaults', () => {
