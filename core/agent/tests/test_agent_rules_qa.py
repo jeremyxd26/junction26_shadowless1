@@ -45,7 +45,7 @@ def test_no_month_is_read_from_inside_a_word(question):
         assert period.get("preset") != "custom", f"{question!r} planned the custom period {period}"
 
 
-@pytest.mark.xfail(strict=True, reason="another person's name is answered with the user's own data; issue #298")
+# Fixed by #298 (in PR #384): no month from a name, and another person's profile is not claimed.
 @pytest.mark.parametrize("question,lang", [
     ("show me Marja's spending", "en"),
     ("show me Jani's groceries", "en"),
