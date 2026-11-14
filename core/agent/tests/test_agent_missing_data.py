@@ -409,3 +409,71 @@ def test_a_single_purchase_total_says_why_no_monthly_habit_is_shown(language):
     assert sentences[-1] == note and len(sentences) == 2 and ids == ["n1", "n2"]
     view["notes"] = []
     assert len(answer_sentences.spending(view, language, lambda s, **kw: True)[0]) == 1
+
+
+# ---- #510: the guard with a second tool, markup, period words, the date phrase, health codes -----------------
+
+def _guard_specs(ran):
+    from core.tools.models import ToolResult
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        return ToolResult(tool="get_basket_breakdown", data={}, card=None, evidence=[], model_view=basket_view())
+
+    def safe(ctx, args):
+        ran.append("get_safe_to_spend")
+        return fake_spending(ctx, args)
+
+    return (ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson")),
+            ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson")),
+            ToolSpec("get_safe_to_spend", "Safe to spend.", PeriodArgs, safe, ("Looking", "Katson")))
+
+
+@pytest.mark.parametrize("question,expected", [
+    # an unknown thing next to another question: the unfiltered total never runs, the other tool still does
+    ("how much did I spend on Netflix and what is safe to spend?", ["get_basket_breakdown", "get_safe_to_spend"]),
+    ("how much did I spend on <b>Lidl</b> and what is safe to spend?", ["get_basket_breakdown", "get_safe_to_spend"]),
+    # a real total next to it is untouched
+    ("how much did I spend last month and what is safe to spend?", ["get_spending", "get_safe_to_spend"]),
+])
+def test_an_unfiltered_total_beside_another_tool_never_answers_an_unknown_thing(make_pipeline, question, expected):
+    ran: list[str] = []
+    draft = {"language": "en", "text": "In August 2026 you spent {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    model = ScriptedModel(plans=[[FunctionCall("get_spending", {"period": {"preset": "last_month"}}),
+                                  FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]],
+                          drafts=[draft, draft])
+    run(make_pipeline(model, registry(*_guard_specs(ran))), question, language="en")
+    assert sorted(ran) == sorted(expected)
+
+
+@pytest.mark.parametrize("value", ["8021", "5411,8021", "8099"])
+def test_a_planned_what_if_on_any_health_code_is_declined_before_anything_runs(make_pipeline, value):
+    ran: list[str] = []
+
+    def tool(ctx, args):
+        ran.append("run_what_if")
+        raise AssertionError("never runs")
+
+    class WhatIfArgs(FakeArgs):
+        selection: dict | None = None
+        cut_pct: int | None = None
+
+    spec = ToolSpec("run_what_if", "What-if.", WhatIfArgs, tool, ("Looking", "Katson"))
+    model = ScriptedModel(plans=[[FunctionCall("run_what_if", {"selection": {"kind": "mcc", "value": value},
+                                                               "cut_pct": 20}), FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(spec)), "what if I cut it by 20%", language="en")
+    done = dict(events)["done"]
+    assert ran == [] and done["outcome"] == "refused" and done["refusal"]["kind"] == "out_of_scope"
+
+
+@pytest.mark.parametrize("text,ok", [
+    ("Between 1 Apr and 30 Sep 2026 you made a single travel purchase of {{n1}}.", True),
+    ("Between 1 Oct 2025 and 31 Mar 2026 you spent {{n1}}.", False),   # not the returned period
+])
+def test_the_between_phrase_is_a_returned_period(text, ok):
+    allowed = Allowed(frozenset({AS_OF}), frozenset({(date(2026, 4, 1), date(2026, 9, 30))}))
+    assert (check_text(text, allowed) == []) is ok
