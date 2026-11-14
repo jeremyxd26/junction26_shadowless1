@@ -125,6 +125,18 @@ describe('goBack', () => {
     expect(postMessage).not.toHaveBeenCalled()
   })
 
+  it('closes a what-if sheet on the overview, also a deep-linked one, instead of leaving the module', () => {
+    const { scope, postMessage } = iosHost()
+    const opened = page('/', { sheet: true }, scope as Record<string, unknown>, '?whatif=category:Restaurants&cut=20')
+    goBack()
+    expect(opened.back).toHaveBeenCalledTimes(1)
+    const replaceState = vi.fn()
+    page('/', null, { ...scope, history: { state: null, back: vi.fn(), pushState: vi.fn(), replaceState } }, '?whatif=category:Restaurants&cut=20')
+    goBack()
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/')
+    expect(postMessage).not.toHaveBeenCalled()
+  })
+
   it('leaves an inner screen through the history, or to the overview when deep-linked', () => {
     const inner = page('/chat', { screen: true })
     goBack()

@@ -1,7 +1,8 @@
-// Copies the JSON examples the app's mock mode needs from contracts/api.md into
+// Copies the examples the app's mock mode and tests need from contracts/api.md into
 // src/api/mock/contract-examples.json, unchanged. Re-run after the contract changes:
 //   npm run mocks:sync
 // The build never reads ../contracts; it only uses the committed JSON.
+// JSON examples are stored parsed; text examples (the /api/ask wire streams) as strings.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,20 +19,40 @@ const NEEDED = [
   'evidence.response_composite',
   'evidence.error',
   'error.response',
+  // POST /api/ask (section 7)
+  'ask.sse.meta',
+  'ask.sse.status',
+  'ask.sse.card',
+  'ask.sse.numbers_1',
+  'ask.sse.delta_1',
+  'ask.sse.numbers_2',
+  'ask.sse.delta_2',
+  'ask.sse.delta_3',
+  'ask.sse.done',
+  'ask.sse.error',
+  'ask.sse.stream',
+  'ask.sse.stream_error',
+  'ask.json.request_fi',
+  'ask.json.response_fi',
+  'ask.json.request_refusal',
+  'ask.json.response_refusal',
+  'ask.json.request_clarify',
+  'ask.json.response_clarify',
   'card.safe_to_save',
   'card.safe_to_save_aleksi',
   'card.safe_to_save_zero',
   'card.safe_to_save_everyday',
+  'whatif.response',
 ]
 
 const text = readFileSync(contractPath, 'utf8')
 const version = /\*\*Version:\*\*\s*([0-9.]+)/.exec(text)?.[1] ?? 'unknown'
-const pattern = /<!-- example: ([\w.]+) -->\s*```json\n([\s\S]*?)\n```/g
+const pattern = /<!-- example: ([\w.]+) -->\s*```(json|text)\n([\s\S]*?)\n```/g
 
 const examples = {}
 for (const match of text.matchAll(pattern)) {
-  const [, name, body] = match
-  if (NEEDED.includes(name)) examples[name] = JSON.parse(body)
+  const [, name, kind, body] = match
+  if (NEEDED.includes(name)) examples[name] = kind === 'json' ? JSON.parse(body) : `${body}\n`
 }
 
 const missing = NEEDED.filter((name) => !(name in examples))

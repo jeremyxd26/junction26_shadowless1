@@ -25,10 +25,37 @@ Settings:
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+- `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `dev` and `main`: the tests without a database, the eval set and red-team regressions (no model calls), `ruff check .` (`pip install -r requirements-dev.txt`) and a gitleaks scan of the whole history (`.gitleaks.toml`). It uses no secrets.
+
+### Ask the coach: `POST /api/ask`
+
+The answer pipeline is in `core/agent`: plan, run the tools, compose, validate, stream and audit (contract: `contracts/api.md` section 7; design: `docs/design/agent-core.md` sections 7 to 9). Until the Gemini adapter is plugged in, the service runs a deterministic keyword model (`core/agent/rules.py`). It maps the partner's questions and spending questions to the registered tools and writes a template answer. Questions it cannot map get a clarifying question.
+
+```
+curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+  -d '{"customer_id":"CUST00860","conversation_id":null,"message":"How much did I spend on taxis last month?","language":"auto"}'
+```
+
+`Accept: application/json` returns one JSON object instead of the event stream. Every answer appends an audit record (question, tool calls, model views, validated text, outcome, tokens, timings; never transaction rows) to `var/audit/<date>.jsonl`.
+
+Answer pipeline settings:
+- `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
+- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
+- Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
+  - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
+  - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
+  - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per client address and customer, default 10. One address that uses up its window for a persona never blocks that persona for other visitors.
+- `TRUSTED_PROXIES`: comma-separated peers whose `X-Forwarded-For` is believed, default loopback only. From any other peer the header is ignored. In the image, uvicorn runs with `--proxy-headers` behind Caddy, which replaces `X-Forwarded-For`, so uvicorn already reports the client's address.
+
+To run the eval set against a local service with the keyword model:
+```
+AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 ASK_RATE_LIMIT_GLOBAL_PER_MIN=0 ASK_RATE_LIMIT_CUSTOMER_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
+python core/eval/run.py --source api --base-url http://localhost:8000 --tag spending
+```
 
 ## Dev environment
 
@@ -41,6 +68,24 @@ bash deploy/dev.sh
 ```
 
 The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+
+## Spike reviews and the demo reset
+
+The first `GET /api/overview/{customer_id}` of a customer with a qualifying spike creates a pending review in the `spike_reviews` table. The service creates that table if it is missing. While the review is pending, the purchase is "Waiting for your answer" (`unclassified`). `POST /api/baskets/label` stores the answer. Design: `docs/design/agent-core.md` section 7.8; contract: `contracts/api.md` sections 6 and 10.
+
+The answers live only in `spike_reviews`, on the shared database that the dev environment also uses. To start the demo again, delete the personas' reviews from any checkout whose `.env` points at that database. The script refuses to run without explicit customer ids:
+
+```
+python core/scripts/reset_reviews.py CUST00860                                  # Sanna
+python core/scripts/reset_reviews.py CUST00860 CUST00493 CUST00349 CUST00849    # the four personas
+python core/scripts/reset_reviews.py --dry-run CUST00860                        # show, delete nothing
+```
+
+Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
+
+**Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
+
+The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 
 ## Data
 
@@ -76,6 +121,15 @@ This is for Git Bash or another POSIX shell. In PowerShell, set `$env:DATABASE_U
 
 It runs 52 batches of 100 customers, printing one line per batch, and takes about 4 minutes. `--dry-run` lists the batches without touching the database, and `--from CUST01200` resumes after an interruption. Design: `docs/design/metrics.md`, section 8.
 
+## Tests
+
+From the repository root:
+```
+pip install -r core/requirements.txt
+pytest core/tools -q
+```
+The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
+
 ## Eval
 
 The eval set checks that the coach states only correct numbers and refuses what it must refuse (rules R1 to R15 in `docs/design/research-bank-assistants.md`). The cases are in `core/eval/cases.yaml`: 49 cases for the four personas of `core/config/personas.yaml`, 64 questions in English and Finnish, every expected value with the SQL that produced it. The scripts read `DATABASE_URL` from the environment or from `.env`, and the peer cases need the metric marts above.
@@ -88,6 +142,7 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
+- The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.
 
@@ -102,15 +157,6 @@ Each declared Number object must also match an expected value: same unit, value 
 - **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
 - **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
-
-## Tests
-
-From the repository root:
-```
-pip install -r core/requirements.txt
-pytest core/tools -q
-```
-The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
 
 ## License
 

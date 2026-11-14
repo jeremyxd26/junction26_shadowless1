@@ -78,15 +78,18 @@ DATE_PATTERNS = [
     ("month", rf"{_fi('mn')}{_S}+(?P<y>\d{{4}})"),
 ]
 # Not part of a longer number or word, not after a dash or minus, and not money or a percentage:
-# - before: no letter, digit, mark or dash glued to it, and no LEADING currency mark with one space
-#   ("€ 30"). A closing mark that follows an amount ("180,26 € 15.10.2026") is not leading: the
+# - before: no letter, digit, mark or dash glued to it, and no LEADING mark with one space ("€ 30",
+#   "× 3"). A closing mark that follows an amount ("180,26 € 15.10.2026") is not leading: the
 #   currency sign is then itself preceded by a digit and an optional space.
 # - after: no letter, digit or mark glued to it, and no mark or unit word after one space
-#   ("1 €", "1 %", "1 euro", "1 EUR", "1 e", "1 USD", "1 cent", "1 senttiä", "1 percent", "1 pct", "1 prosenttia").
-_LEADING_MARK = r"(?<!(?<!\d)(?<!\d )[€$] )"
-_BEFORE = rf"(?<![\w€$%.,{DASH_CLASS}]){_LEADING_MARK}"
-_UNIT_WORD = r"(?i:eur\b|euro\w*|usd\b|e\b|cents?\b|sentti\w*|percent\w*|per cent|pct\b|prosent\w*)"
-_AFTER = rf"(?![\w€$%]|[.,]\d| ?[€$%]| {_UNIT_WORD})"
+#   ("1 €", "1 %", "1 ‰", "1 ×", "1 euro", "1 EUR", "1 e", "1 USD", "1 cent", "1 senttiä", "1 percent",
+#   "1 pct", "1 prosenttia", "1 x").
+# Marks: currency, percent, per mille, the multiplication sign, "#" and "+" (PR #104 review).
+MARKS = "€$%‰×#+"
+_LEADING_MARK = rf"(?<!(?<!\d)(?<!\d )[{re.escape(MARKS)}] )"
+_BEFORE = rf"(?<![\w{re.escape(MARKS)}.,{DASH_CLASS}]){_LEADING_MARK}"
+_UNIT_WORD = r"(?i:eur\b|euro\w*|usd\b|e\b|x\b|cents?\b|sentti\w*|percent\w*|per cent|pct\b|prosent\w*)"
+_AFTER = rf"(?![\w{re.escape(MARKS)}]|[.,]\d| ?[{re.escape(MARKS)}]| {_UNIT_WORD})"
 DATE_RX = [(kind, re.compile(_BEFORE + p + _AFTER, re.I)) for kind, p in DATE_PATTERNS]
 
 

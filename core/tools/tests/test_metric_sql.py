@@ -86,8 +86,9 @@ def test_malformed_names_are_refused_before_the_database(name):
 def test_a_normal_call_sets_the_one_customer_range_and_as_of():
     conn = FakeConnection()
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF, {"whatif": "category:Restaurants", "whatif_pct": "20"})
-    # the real sequence: the caller's settings, then the server's date and customer range
+    # the real sequence: no labels (#68), the caller's settings, then the server's date and customer range
     assert conn.set_configs() == [
+        ("app.tx_labels", ""),
         ("app.whatif", "category:Restaurants"), ("app.whatif_pct", "20"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]
@@ -103,6 +104,7 @@ def test_the_range_is_set_last_even_if_a_name_slipped_past_the_check(monkeypatch
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF,
                    {"customer_from": "CUST00000", "customer_to": "CUST99999", "demo_today": "2099-01-01"})
     assert conn.set_configs() == [
+        ("app.tx_labels", ""),                                                  # no labels (#68)
         ("app.customer_from", "CUST00000"), ("app.customer_to", "CUST99999"), ("app.demo_today", "2099-01-01"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]
@@ -124,7 +126,9 @@ class FakeEvidenceConnection:
 
         class Result:
             def fetchone(self):
-                return (conn.owner, conn.spec) if sql == evidence.LOAD_SQL else None
+                if sql == evidence.LOAD_SQL:
+                    return conn.owner, conn.spec
+                return (1,) if "FROM customers" in sql else None   # the API's existence check finds the persona
 
         return Result()
 
@@ -147,8 +151,10 @@ def test_resolve_refuses_a_stored_spec_with_a_reserved_or_malformed_setting(sett
     assert conn.calls == [evidence.LOAD_SQL]   # nothing ran after the spec was loaded
 
 
-def test_the_evidence_endpoint_answers_403_for_such_a_spec(monkeypatch):
-    """EvidenceForbidden is the API's 403 evidence_forbidden, not a 500."""
+def test_the_evidence_endpoint_answers_403_for_such_a_spec():
+    """EvidenceForbidden is the API's 403 evidence_forbidden, not a 500. Only the pool is faked, so the
+    endpoint's own customer checks (the persona allowlist of #101, where present, and the existence
+    check) run as in production, for the persona CUST00860."""
     from fastapi.testclient import TestClient
 
     from core.app.main import create_app
@@ -156,12 +162,14 @@ def test_the_evidence_endpoint_answers_403_for_such_a_spec(monkeypatch):
 
     stored = FakeEvidenceConnection("CUST00860", metric_spec({"what-if": "x"}))
 
-    @contextmanager
-    def connection(request):
-        yield stored
+    class Pool:
+        @contextmanager
+        def connection(self, timeout=None):
+            yield stored
 
-    monkeypatch.setattr("core.app.api.evidence.connection", connection)
-    monkeypatch.setattr("core.app.api.evidence.require_customer", lambda conn, customer_id: None)
-    with TestClient(create_app(Settings(_env_file=None)), raise_server_exceptions=False) as client:
+    with TestClient(create_app(Settings(_env_file=None, database_url=None)), raise_server_exceptions=False) as client:
+        client.app.state.pool = Pool()
         response = client.get("/api/evidence/ev_0123456789ab", params={"customer_id": "CUST00860"})
+        client.app.state.pool = None
     assert response.status_code == 403 and response.json()["error"]["code"] == "evidence_forbidden"
+    assert evidence.LOAD_SQL in stored.calls   # the spec was loaded, and then refused

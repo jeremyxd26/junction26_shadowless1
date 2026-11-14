@@ -108,7 +108,7 @@ def get_recurring_bills(ctx: ToolContext, args: GetRecurringBillsArgs | dict | N
     notes: list[str] = []
 
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
     alias_map = aliases.build(history, ctx.as_of)
     series = recurring.detect(history, ctx.as_of)
     pay = recurring.payday(series, ctx.as_of)

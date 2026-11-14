@@ -30,6 +30,8 @@ STATUS = {
     "evidence_not_found": 404,
     "evidence_forbidden": 403,
     "invalid_scenario": 422,
+    "tx_ref_not_found": 404,    # unknown, expired or another customer's ref: one answer for all (R4)
+    "basket_not_allowed": 422,  # a basket key that is not one of the review's two options
     "rate_limited": 429,
     "data_unavailable": 503,
     "llm_unavailable": 503,
