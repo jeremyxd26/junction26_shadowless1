@@ -95,6 +95,7 @@ export function OpeningProvider({ overview, pushClientTurn, children }: Provider
   const value = useMemo<Opening>(
     () => ({
       reviewTxRef,
+      overview: data,
       shownReview,
       reportReview,
       answered,
@@ -105,7 +106,7 @@ export function OpeningProvider({ overview, pushClientTurn, children }: Provider
       scrollToReview,
       pushClientTurn: pushTurn,
     }),
-    [reviewTxRef, shownReview, reportReview, answered, threadReviews, claimThreadReview, releaseThreadReview, refresh, pushTurn],
+    [reviewTxRef, data, shownReview, reportReview, answered, threadReviews, claimThreadReview, releaseThreadReview, refresh, pushTurn],
   )
   return <OpeningContext.Provider value={value}>{children}</OpeningContext.Provider>
 }

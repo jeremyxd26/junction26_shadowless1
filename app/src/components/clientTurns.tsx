@@ -3,6 +3,8 @@
 // registered component draws Sentti's part. The bill flow (#332) is the first one.
 import type { ComponentType } from 'react'
 import type { Language } from '../api/types.ts'
+import { LessonTurn } from './lesson/LessonTurn.tsx'
+import { lessonStrings } from './lesson/lessonStrings.ts'
 
 /** What the thread gives a registered component. */
 export interface ClientTurnProps {
@@ -25,7 +27,11 @@ export interface ClientTurnEntry {
 }
 
 /** The registry: `render` key → the component that draws the turn. */
-export const clientTurns: Record<string, ClientTurnEntry> = {}
+export const clientTurns: Record<string, ClientTurnEntry> = {
+  // "Lesson of the day" (#703): a question about the user's own number, then the reveal. Always
+  // shown; a profile without a lesson gets one sentence instead.
+  lesson: { chip: (lang) => lessonStrings(lang).chip, visible: () => true, Component: LessonTurn },
+}
 
 /** The registry keys whose chips the opening shows after its suggested questions, in this order. */
-export const openingChips: string[] = []
+export const openingChips: string[] = ['lesson']
