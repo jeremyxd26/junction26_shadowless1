@@ -1,16 +1,20 @@
-"""A long message, or several questions in one, is never claimed by the spending rule (#399). No database.
+"""A long message is claimed by the spending rule only when one of its clauses asks about spending (#399). No
+database.
 
 A 429-character question that mentioned rent, eating out and a laptop, and asked where most of the money goes
-and what one change would help most, was answered with the sum of Housing and Restaurants. The spending rule now
-never claims a message longer than LONG_MESSAGE_CHARS or with more than one question mark: the other rules, or
-the model, take it."""
+and what one change would help most, was answered with the sum of Housing and Restaurants. In a long message
+(over LONG_MESSAGE_CHARS, or several questions about different things) the spending rule now takes part only when
+a clause asks about spending by its form (review of #496): a question or a request that names spending, which no
+other rule of that clause takes. Categories named in statements are not asked; the other rules, or the model,
+take the message. When a clause does ask, the message is decided as a short one, with the asking clauses' filter."""
 
 from __future__ import annotations
 
 import pytest
 
+from core.agent import rules
 from core.agent.model import PlanInput
-from core.agent.rules import LONG_MESSAGE_CHARS, claim, long_message
+from core.agent.rules import LONG_MESSAGE_CHARS, asking_clauses, claim, long_message
 from core.agent.toolset import KNOWN_TOOLS
 
 TOOLS = [{"name": t.function, "description": "", "parameters_json_schema": {}} for t in KNOWN_TOOLS]
@@ -115,3 +119,145 @@ def test_a_short_question_about_two_categories_is_still_the_spending_question(qu
 def test_the_brief_questions_stay_claimed():
     assert ask("Where did my money go?").rule == "where_money_went"
     assert ask("How much did I spend on restaurants last month?").rule == "spending"
+
+
+# ---- review of #496, pass 2: a clause asks by its form, not by a list of spending phrasings -------------------
+
+def short_decision(question, lang="en"):
+    """claim() with the long-message logic off: how the message is decided as a short one (as on dev)."""
+    saved = rules.long_message
+    rules.long_message = lambda *args, **kwargs: False
+    try:
+        return ask(question, lang)
+    finally:
+        rules.long_message = saved
+
+
+def assert_decided_as_short(question, lang):
+    """The invariant: when a clause asks about spending, the long-message logic changes nothing but the spending
+    filter, which may only narrow to the asking clauses' own."""
+    found, short = ask(question, lang), short_decision(question, lang)
+    assert (found.rule, found.reason, found.candidates) == (short.rule, short.reason, short.candidates), \
+        (question, found, short)
+    assert [c.name for c in found.calls] == [c.name for c in short.calls], (question, found, short)
+    for mine, theirs in zip(found.calls, short.calls):
+        if mine.name != "get_spending":
+            assert mine.args == theirs.args, (question, found, short)
+            continue
+        rest = {k: v for k, v in mine.args.items() if k not in ("filter", "direction")}
+        assert rest == {k: v for k, v in theirs.args.items() if k not in ("filter", "direction")}
+        narrowed = {v for values in (mine.args.get("filter") or {}).values() for v in values}
+        assert narrowed <= {v for values in (theirs.args.get("filter") or {}).values() for v in values}
+
+
+ASKERS = ["How much did I spend on restaurants in September?", "What was my restaurant spending in September?",
+          "My spending on restaurants in September?", "Restaurant spending in September?",
+          "How much do I spend on restaurants a month?", "Tell me what I spent on restaurants in September.",
+          "Show me my restaurant spending for September.", "Give me my grocery spending for last month.",
+          "Break down my restaurant spending in September.", "I wonder how much I spent on restaurants in September.",
+          "How much is my restaurant spending for September?", "Restaurants in September?"]
+OTHERS = ["What kind of spender am I?", "What can I safely spend this week?", "Which bills are coming up?",
+          "How could I save more?", "Where did my money go?", "Will my money last until payday?"]
+ASKERS_FI = ["Paljonko rahaa meni ravintoloihin syyskuussa?", "Kerro paljonko käytin ravintoloihin syyskuussa.",
+             "Näytä ravintolakuluni syyskuulta."]
+OTHERS_FI = ["Millainen kuluttaja olen?", "Paljonko voin turvallisesti käyttää tällä viikolla?"]
+COMPOSED = [((f"{a} {o}" if first else f"{o} {a}") + pad, lang, a)
+            for askers, others, lang, filler in ((ASKERS, OTHERS, "en", FILL), (ASKERS_FI, OTHERS_FI, "fi", FILL_FI))
+            for a in askers for o in others for first in (True, False) for pad in ("", filler)]
+
+
+@pytest.mark.parametrize("question,lang,asker", COMPOSED)
+def test_a_clause_that_asks_about_spending_is_found_by_its_form(question, lang, asker):
+    """A spending question in any of these forms, with another rule's question, short or padded: the asking clause
+    is found, and the message is decided as a short one (never the other rule alone where dev asked back)."""
+    assert asking_clauses(question, rules.date(2026, 9, 30)), question
+    assert_decided_as_short(question, lang)
+
+
+R2_ROWS = [   # the rows of the reviewer's section 1b: dev asked back, a85d3be answered only the other rule
+    ("What was my restaurant spending in September? What kind of spender am I?", "en"),
+    ("How much do I spend on restaurants a month? What can I safely spend this week?", "en"),
+    ("Tell me what I spent on restaurants in September. What can I safely spend this week?" + FILL, "en"),
+    ("My spending on restaurants in September? What can I safely spend this week?" + FILL, "en"),
+    ("Restaurant spending in September? What kind of spender am I?" + FILL, "en"),
+    ("How much is my restaurant spending for September? What can I safely spend this week?" + FILL, "en"),
+    ("Näytä ravintolakuluni syyskuulta. Paljonko voin turvallisesti käyttää tällä viikolla?" + FILL_FI, "fi"),
+]
+
+
+@pytest.mark.parametrize("question,lang", R2_ROWS)
+def test_the_other_rule_never_answers_alone_when_spending_is_asked(question, lang):
+    found = ask(question, lang)
+    assert (found.rule, found.reason) == (None, "competing"), (question, found)
+
+
+@pytest.mark.parametrize("question,lang,filt,preset", [   # D3: requests are asking (worse than dev at a85d3be)
+    ("Tell me what I spent on restaurants in September." + FILL + FILL, "en", {"categories": ["Restaurants"]},
+     "this_month"),
+    ("Show me my restaurant spending for September." + FILL + FILL, "en", {"categories": ["Restaurants"]},
+     "this_month"),
+    ("Give me my grocery spending for last month." + FILL, "en", {"categories": ["Groceries"]}, "last_month"),
+    ("Break down my restaurant spending in September." + FILL, "en", {"categories": ["Restaurants"]}, "this_month"),
+    ("Näytä ravintolakuluni syyskuulta." + FILL_FI + FILL_FI, "fi", {"categories": ["Restaurants"]}, "this_month"),
+    ("Kerro paljonko käytin ravintoloihin syyskuussa." + FILL_FI + FILL_FI, "fi", {"categories": ["Restaurants"]},
+     "this_month"),
+    # D2: the filter is the asking clause's own, not the rent of the statement
+    ("I pay rent and bought a laptop. How much did I spend on eating out in September?" + FILL, "en",
+     {"categories": ["Restaurants"]}, "this_month"),
+    ("I bought a laptop and pay rent. How much on groceries last month?" + FILL + FILL, "en",
+     {"categories": ["Groceries"]}, "last_month"),
+    ("I pay rent and bought a laptop in September. How much did I spend on eating out?" + FILL, "en",
+     {"categories": ["Restaurants"]}, "this_month"),
+    ("Maksan vuokraa ja ostin kannettavan. Paljonko käytin ravintoloihin syyskuussa?" + FILL_FI, "fi",
+     {"categories": ["Restaurants"]}, "this_month"),
+])
+def test_a_long_message_that_asks_about_spending_plans_what_was_asked(question, lang, filt, preset):
+    found = ask(question, lang)
+    assert found.rule == "spending", (question, found)
+    assert found.calls[0].args["filter"] == filt and found.calls[0].args["period"] == {"preset": preset}
+
+
+def test_a_request_and_another_question_get_both_tools_as_on_dev():
+    found = ask("Which bills are coming up? Tell me what I spent on groceries last month." + FILL)
+    assert [c.name for c in found.calls] == ["get_recurring_bills", "get_spending", "finish"], found
+
+
+D1_ROWS = [   # a bare category with a "?" in a long message names no spending (F2)
+    ("Rent is high? I also eat out a lot and bought a laptop in September, and I want to understand where most of "
+     "my money goes and what one change would help me save the most." + FILL, "en"),
+    ("My rent? I eat out a lot and bought a laptop in September, and I want to understand where most of my money "
+     "goes and what one change would help me save the most." + FILL, "en"),
+    ("Vuokra? Syön usein ulkona ja ostin kannettavan syyskuussa, ja haluan ymmärtää, mihin suurin osa rahoistani "
+     "menee ja mikä yksi muutos auttaisi säästämään eniten?" + FILL_FI, "fi"),
+]
+
+
+@pytest.mark.parametrize("question,lang", D1_ROWS)
+def test_a_bare_category_in_a_long_message_is_no_spending_question(question, lang):
+    assert asking_clauses(question, rules.date(2026, 9, 30)) == []
+    found = ask(question, lang)
+    assert not [c for c in found.calls if c.name == "get_spending"], (question, found)
+
+
+@pytest.mark.parametrize("question", ["Restaurants?", "Spend?"])
+def test_a_bare_word_alone_is_decided_as_on_dev(question):
+    """Alone, these are short messages, untouched by the long-message rule: the period question, as on dev."""
+    found = ask(question)
+    assert (found.rule, found.reason) == (None, "period") and found == short_decision(question)
+
+
+@pytest.mark.parametrize("clause,asks", [
+    ("What can I safely spend this week?", False),            # the safe-to-spend question, though it says "spend"
+    ("Paljonko voin turvallisesti käyttää tällä viikolla?", False),
+    ("What kind of spender am I?", False),
+    ("Where did I spend the most?", False),                   # the breakdown
+    ("Where does most of my money go?", False),
+    ("I spent a lot on restaurants in September.", False),    # a statement
+    ("Rent is high?", False),                                 # a bare category, no period
+    ("So yeah, I'm curious how much I spent on restaurants in September.", True),   # a question about money spent
+    ("Restaurants in September?", True),
+    ("Please show me my taxi spending in August.", True),
+    ("Kerro paljonko käytin ravintoloihin syyskuussa.", True),
+])
+def test_which_clauses_ask_about_spending(clause, asks):
+    assert bool(asking_clauses(clause, rules.date(2026, 9, 30))) == asks, clause

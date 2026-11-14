@@ -676,15 +676,26 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
 
 
 LONG_MESSAGE_CHARS = 200   # a message longer than this is long (#399)
-# A clause that itself asks about spending (review of #496): "how much did I spend on restaurants in September",
-# "paljonko käytin ...", "did I spend ...". Mentioning categories in a statement ("I pay rent and eat out a lot") is
-# not asking.
-# Only a question about money already spent counts: "how much can I safely spend" / "paljonko voin käyttää" is the
-# safe-to-spend question, not this one.
+# In a long message the spending rule takes part only when a clause asks about spending (review of #496). Categories
+# named in a statement ("I pay rent and eat out a lot") are what the user tells, not what they ask. A clause asks
+# when it is a question by itself or a request, whatever its wording:
+# - it ends with "?" (the last clause of its sentence), or it starts with a question word or a request ("tell me",
+#   "give me", "break down", "kerro", "näytä"), after an opening such as "so" or "please";
+# - or it holds a question about money spent ("I wonder how much I spent ...", ASKED_SPENDING): this only widens it.
+# It asks about spending when the spending rule survives in that clause alone: the clause names spending (a money
+# word, "how much", or a category or group with a period), and no other rule of the clause beats it ("what can I
+# safely spend this week?" is the safe-to-spend question). A bare category ("Rent is high?") names no spending.
+REQUEST = (r"(?:give me|list|break(?: it)? down|explain|compare|calculate|sum up|let me know|i wonder|"
+           r"i\W?d like to know|i would like to know|i (?:want|need) to know|kerro|nayta|anna|listaa|erittele|vertaa|"
+           r"laske|haluan tietaa|haluaisin tietaa|mietin)\b")
+ASKING = (r"^(?:(?:hi|hey|so|ok|okay|well|and|but|also|then|please|hei|no|niin|ja|mutta|seka|enta)\b[\s,]*)*"
+          rf"(?:{_QUESTION_WORD}|{REQUEST})")
 ASKED_SPENDING = (r"\bhow much (did|have|had|was|were) (i|we|it)?\b|\bhow much (i|we) (spent|paid)\b|\bhow much on\b|"
-                  r"\bwhat did (i|we) spend\b|\bdid (i|we) (spend|pay|buy)\b|"
+                  r"\bwhat did (i|we) spend\b|\bwhat (i|we) (spent|paid)\b|\bdid (i|we) (spend|pay|buy)\b|"
                   r"\b(paljonko|kuinka paljon) (kaytin|kulutin|maksoin|kaytimme|kulutimme|meni|kului|on mennyt|"
                   r"olen kayttanyt|olen kuluttanut)\b|\bkaytinko\b|\bkulutinko\b|\bmita kaytin\b")
+# Clauses: sentences with their own "." / "?" / "!", each split again where CLAUSE_BREAK splits.
+SENTENCE_BREAK = rf"(?<=[.!?])\s+|[,;]\s*(?={_QUESTION_WORD})|\s+(?:and|also|plus|ja|seka)\s+(?={_QUESTION_WORD})"
 
 
 def long_message(question: str, clause_topics: list | None = None) -> bool:
@@ -695,23 +706,51 @@ def long_message(question: str, clause_topics: list | None = None) -> bool:
     return len(re.findall(r"\?+", question)) > 1 and len({frozenset(t) for t in clause_topics or []}) > 1
 
 
-def asks_spending(part: str, as_of: date) -> bool:
-    """The clause is itself a spending question (review of #496): an ASKED_SPENDING form with a filter, a period or a
-    money word, or a bare filter or money word ("Restaurants?", "Spend?")."""
-    p = fold(part).strip()
-    if re.search(ASKED_SPENDING, p) and (_filter_of(p) or plan_spending(part, as_of) or re.search(MONEY_WORDS, p)):
+def _names_spending(p: str, as_of: date) -> bool:
+    if re.search(MONEY_WORDS, p) or re.search(SPEND_SIGNAL, p):
         return True
-    words = re.findall(r"\w+", p)
-    return 0 < len(words) <= 3 and bool(_filter_of(p) or re.search(MONEY_WORDS, p))
+    return bool(_filter_of(p)) and bool(plan_spending(p, as_of) or re.search(COMPARE, p))
+
+
+def asks_spending(clause: str, as_of: date, peer_question: bool = False) -> bool:
+    """A clause that asks about spending (review of #496, see above): it asks, it names spending, and the spending
+    rule survives in it alone."""
+    p = fold(clause).strip()
+    asking = p.endswith("?") or re.match(ASKING, p) or re.search(ASKED_SPENDING, p)
+    if not asking or not _names_spending(p, as_of):
+        return False
+    spending = plan_spending(p, as_of)
+    found = [f for f in _matched(p, peer_question, spending) if f != "spending"] + ["spending"]
+    winner, competing = _resolve(found, p, spending)
+    return winner == "spending" or "spending" in competing
+
+
+def asking_clauses(question: str, as_of: date, peer_question: bool = False) -> list[str]:
+    """The clauses of a message, folded, that ask about spending."""
+    return [c for c in re.split(SENTENCE_BREAK, fold(question)) if c.strip() and asks_spending(c, as_of, peer_question)]
+
+
+def _asked_filter(args: dict, asked: str) -> dict:
+    """The spending arguments with the filter of the clauses that ask (review of #496): "I pay rent and bought a
+    laptop. How much did I spend on eating out in September?" is Restaurants, not Housing and Restaurants."""
+    flt = _filter_of(fold(asked))
+    new = {"filter": flt} if flt else {}
+    new.update((k, v) for k, v in args.items() if k not in ("filter", "direction"))
+    if set(flt.get("categories", ())) == {"Invest Deposit"}:
+        new["direction"] = "out"
+    return new
 
 
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
-                  drop_spending: bool = False) -> Claim:
+                  drop_spending: bool = False, asked: str | None = None) -> Claim:
     q = fold(question)
-    # A long message that asks no spending question never gets the spending rule (#399): a sum of the categories it
-    # happens to mention is not its answer; the other rules, or the model, take it. When a clause does ask about
-    # spending, the spending rule takes part, so the message is competing or unclaimed, never half answered.
+    # A long message whose clauses ask no spending question never gets the spending rule (#399): a sum of the
+    # categories its statements mention is not its answer; the other rules, or the model, take it. When a clause
+    # does ask about spending (asking_clauses, passed as `asked`), the spending rule takes part as in a short
+    # message, so the message is never answered by the other rule alone, and its filter is the asking clauses' own.
     spending = plan_spending(question, as_of) if "get_spending" in tools and not drop_spending else None
+    if spending is not None and asked is not None:
+        spending = _asked_filter(spending, asked)
     found = [f for f in _matched(q, peer_question, spending) if not (drop_spending and f == "spending")]
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
@@ -871,10 +910,15 @@ def claim(request: PlanInput) -> Claim:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
-    drop = long_message(question, [topics for _, topics in clauses]) and \
-        not any(asks_spending(part, as_of) for part in re.split(CLAUSE_BREAK, question) if part.strip())
+    long = long_message(question, [topics for _, topics in clauses])
+    asked = asking_clauses(question, as_of, peer_question) if long else []
+    drop = long and not asked
+
+    def asked_in(part: str) -> str | None:
+        return " ".join(c for c in asked if c.rstrip("?").strip() in part) or None
+
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-        parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop) for part, _ in clauses]
+        parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part)) for part, _ in clauses]
         declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
         if declined is not None:
             return declined          # a refusal of one part is the answer to the whole message
@@ -886,7 +930,7 @@ def claim(request: PlanInput) -> Claim:
             return Claim(rules[0] if len(rules) == 1 else "+".join(rules), tuple(calls) + (FunctionCall("finish"),))
         competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
         return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-    return _claim_clause(question, as_of, tools, lang, peer_question, drop)
+    return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None)
 
 
 class RuleModel:
