@@ -47,8 +47,9 @@ DECLINE_RULES = [
 ]
 
 CATEGORY_WORDS = [
-    (r"groceries|grocery|food shopping|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
-    (r"restaurants?|dining out|eating out|eat out|ravintol\w*|ulkona syö\w*", "Restaurants"),
+    # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
+    (r"groceries|grocery|food shopping|(?<!fast )\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"restaurants?|dining out|eating out|eat out|fast food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
@@ -736,6 +737,10 @@ def _unknown_object(q: str) -> str | None:
                                     for n in re.finditer(rx, q[rest:])})
     for i, start in enumerate(starts):
         word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
+        after = q[start + len(word):].lstrip()
+        if re.fullmatch(r"[a-z]+(?:'s|s'|')", word) and (re.match(HEALTH, after) or any(
+                re.match(rx, after) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS)):
+            continue   # "my kids' clothes": the category is the thing, the possessive its owner (#527)
         if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
                 any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
             continue
