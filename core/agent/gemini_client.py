@@ -14,14 +14,28 @@ Request policy. The model account is shared and policed, and the dev service is 
 request is reserved, bounded and counted:
 - One attempt per call on the active model. The pipeline already retries a failed call once, so
   this layer does not retry the same model again: retries are never multiplied at two levels. After a
-  planner timeout, the pipeline's retry of that answer sends no second planner request (the rules answer).
+  timeout, a network error or a 5xx (on the fallback too), the pipeline's retry in that answer sends no
+  second request of the same kind: the rules plan, or the template writes at once (#341).
+- One answer's time adds up: the planner gets 9 s and the composer 5 s, and every call of the answer
+  also ends by its deadline of ANSWER_DEADLINE_S (15 s), so the composer gets whatever is left when
+  that is less. A rules-planned answer gives the composer its own 5 s, never the whole rest of the
+  15 s: the template writes the same answer in milliseconds, so a slow draft is not worth the wait.
 - 5xx ("model overwhelmed"): one attempt on the fallback model (flash <-> pro), if one is set. When
   the fallback answers, the primary model is skipped for PRIMARY_SKIP_S, so an outage of the
-  primary costs one request per call, not two. When both fail: a pause of OVERLOAD_COOLDOWN_S.
+  primary costs one request per call, not two. When both fail, that call fails; nothing is paused.
 - 429 (a spending or rate limit): no further request for RATE_LIMIT_COOLDOWN_S. 401, 403 and 404
   (a key or model id the API refuses): the same pause; a refused fallback model only turns itself off.
-- Any other failure (400, a timeout, an empty or cut response, a malformed call, a composer safety
-  block): after FAILURE_STREAK_LIMIT failures in a row, the same pause as for 401/403/404.
+- A timeout, a network error or a 5xx fails that one call and never pauses the model for other users
+  (#341): it is usually one slow or unlucky question, not a broken model. The answer it belongs to
+  sends no second request of the same kind. Only 429, 401, 403 and 404 (and the failure streak below)
+  pause the model for everyone.
+- Any other failure (400, an empty or cut response, a malformed call, a composer safety block): after
+  FAILURE_STREAK_LIMIT failures in a row, a short pause of FAILURE_STREAK_COOLDOWN_S (a blocked
+  response is usually about one user's question, so it must not stop the model for long).
+- The planner and the composer may run on different models with their own thinking level and
+  timeout (GEMINI_PLANNER_* and GEMINI_COMPOSER_* in gemini.py), for example a fast composer. Each
+  role has its own fallback; a fallback model gets the role's thinking level when it supports it,
+  else "low". The model and the thinking level are part of the cache key.
 - Per answer: at most MAX_REQUESTS_PER_ANSWER requests and one deadline of ANSWER_DEADLINE_S for
   every model call of the answer (the model starts an answer with start_answer). Past either, the
   call raises at once and the pipeline answers from the rule planner and the template.
@@ -68,15 +82,25 @@ ops_log = logging.getLogger("uvicorn.error")
 PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.8-flash": (0.75, 3.75),
     "gemini-3.1-pro-preview": (2.00, 12.00),
+    "gemini-3.5-flash-lite": (0.30, 2.50),     # stable since 2026-07-21; the composer candidate (#341, #169)
 }
+# The thinking levels each model accepts (the vendor's thinking page, checked 2026-11-14). A level a model
+# rejects is a 400, so a fallback model gets "low" instead. "default" sends no thinking setting at all.
+THINKING_LEVELS = {
+    "gemini-3.8-flash": {"low", "medium", "high"},
+    "gemini-3.1-pro-preview": {"low", "medium", "high"},
+    "gemini-3.5-flash-lite": {"minimal", "low", "medium", "high"},
+}
+THINKING_CHOICES = ("default", "minimal", "low", "medium", "high")
 SERVER_ERROR_CODES = {500, 502, 503, 504}
 RATE_LIMIT_COOLDOWN_S = 300.0           # after a 429, no request for this long
-OVERLOAD_COOLDOWN_S = 30.0              # after 5xx on the primary and on the fallback model
 PRIMARY_SKIP_S = 180.0                  # after the fallback answered, call it directly for this long
 CONFIG_ERROR_CODES = {401, 403, 404}    # a key or model the API refuses: no retry will help
 CONFIG_ERROR_COOLDOWN_S = 300.0
 FAILURE_STREAK_LIMIT = 3                # other failures in a row before a pause
-FAILURE_STREAK_COOLDOWN_S = 300.0
+FAILURE_STREAK_COOLDOWN_S = 30.0        # short: the same harm to other users as a timeout (#341)
+TRANSIENT_CODES = {"timeout", "network"}   # slow or unreachable: fails one call, pauses no one (#341)
+NO_RETRY_CODES = TRANSIENT_CODES | {"server"}   # after these, no second request of the kind in the answer
 MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner and composer together
 ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
 MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
@@ -287,6 +311,27 @@ def _error_code(exc: BaseException) -> tuple[str, int | None]:
     return "error", None
 
 
+def _thinking(level: str) -> dict[str, Any]:
+    """The thinking setting of a request: none for "default" (the model's own), else the level."""
+    return {} if level == "default" else {"thinking_config": {"thinking_level": level}}
+
+
+def effective_thinking(model: str, level: str) -> str:
+    """The level sent to this model: one it rejects (for example "minimal" on 3.8-flash) becomes "low".
+    "default" and the levels of unknown models are sent as set."""
+    allowed = THINKING_LEVELS.get(model)
+    return level if level == "default" or allowed is None or level in allowed else "low"
+
+
+def _for_model(model: str, config: dict[str, Any]) -> dict[str, Any]:
+    """The config with a thinking level this model accepts, for a fallback model standing in for a
+    role whose level it rejects."""
+    level = (config.get("thinking_config") or {}).get("thinking_level")
+    if level is None or effective_thinking(model, level) == level:
+        return config
+    return {**config, "thinking_config": {**config["thinking_config"], "thinking_level": effective_thinking(model, level)}}
+
+
 def scrub(raw: dict[str, Any]) -> dict[str, Any]:
     """The parts of a response worth keeping: no HTTP headers, ids or SDK bookkeeping."""
     return {k: raw[k] for k in STORED_FIELDS if k in raw}
@@ -326,8 +371,9 @@ class GeminiClient:
     """
 
     def __init__(self, model: str, transport: Transport | None, *, fallback_model: str | None = None,
+                 compose_model: str | None = None, compose_fallback_model: str | None = None,
                  cache: str = "on", cache_dir: Path | None = None, ledger: Ledger | None = None,
-                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 8.0,
+                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
@@ -339,6 +385,11 @@ class GeminiClient:
             raise ValueError("a transport is needed unless the cache is in replay mode")
         self.model = model
         self.fallback_model = fallback_model if fallback_model != model else None
+        # The composer's own model and fallback (#341); by default the planner's.
+        self.compose_model = compose_model or model
+        if compose_model is None or compose_model == model:
+            compose_fallback_model = self.fallback_model if compose_fallback_model is None else compose_fallback_model
+        self.compose_fallback_model = compose_fallback_model if compose_fallback_model != self.compose_model else None
         self.transport = transport
         self.cache = cache
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
@@ -355,7 +406,7 @@ class GeminiClient:
         self._lock = threading.Lock()
         self._paused_until = 0.0         # set by a 429, a refused key or model, an outage or a failure streak
         self._pause_code = "rate_limited"
-        self._skip_primary_until = 0.0   # set when the fallback model answered during an outage
+        self._skip_primary_until: dict[str, float] = {}   # per primary model: its fallback answered an outage
         self._failures = 0               # failures in a row
         self._answer = threading.local() # per answer (one answer runs in one thread): requests, deadline
 
@@ -369,7 +420,7 @@ class GeminiClient:
         self._answer.key = key
         self._answer.requests = 0
         self._answer.deadline = self.clock() + ANSWER_DEADLINE_S
-        self._answer.plan_timed_out = False
+        self._answer.given_up = {}       # call kind -> the code it failed with in this answer (#341)
 
     def _answer_left(self) -> tuple[int | None, float | None]:
         """Requests and seconds left for the current answer, or (None, None) outside an answer."""
@@ -399,8 +450,8 @@ class GeminiClient:
             "tools": [{"function_declarations": declarations}],
             "tool_config": {"function_calling_config": {"mode": "ANY"}},
             "automatic_function_calling": {"disable": True},
-            "thinking_config": {"thinking_level": self.plan_thinking},
             "max_output_tokens": self.plan_max_tokens,
+            **_thinking(self.plan_thinking),
         }
         return self._call("plan", contents, config, self.plan_timeout_s)
 
@@ -410,8 +461,8 @@ class GeminiClient:
             "system_instruction": system,
             "response_mime_type": "application/json",
             "response_json_schema": schema,
-            "thinking_config": {"thinking_level": self.compose_thinking},
             "max_output_tokens": self.compose_max_tokens,
+            **_thinking(self.compose_thinking),
         }
         reply = self._call("compose", contents, config, self.compose_timeout_s)
         if reply.blocked and not reply.cached:
@@ -483,15 +534,28 @@ class GeminiClient:
             with self._lock:
                 self._failures = 0
 
+    def _give_up(self, kind: str, code: str) -> None:
+        """After a timeout, a network error or a 5xx, this answer sends no second request of the kind."""
+        if code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
+            self._answer.given_up[kind] = code
+
     def _succeeded(self) -> None:
         with self._lock:
             self._failures = 0
 
     # ---- one call --------------------------------------------------------------------------------
 
+    def models_for(self, kind: str) -> tuple[str, str | None]:
+        """(model, fallback model) of a call kind: the composer's own pair, else the planner's."""
+        if kind == "compose":
+            return self.compose_model, self.compose_fallback_model
+        return self.model, self.fallback_model
+
     def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float) -> Reply:
-        skip_primary = self.fallback_model is not None and self.clock() < self._skip_primary_until
-        model = self.fallback_model if skip_primary else self.model
+        primary, fallback = self.models_for(kind)
+        skip_primary = fallback is not None and self.clock() < self._skip_primary_until.get(primary, 0.0)
+        model = fallback if skip_primary else primary
+        config = _for_model(model, config)
         key = self.cache_key(model, kind, contents, config)
         entry = self._read_cache(key)
         if entry is not None:
@@ -503,35 +567,43 @@ class GeminiClient:
             raise GeminiError("cache_miss")
 
         deadline = self.clock() + timeout_s
-        if kind == "plan" and getattr(self._answer, "plan_timed_out", False):
-            # A planner call of this answer already timed out (it thinks long on this question): a second
-            # one would most likely time out too and spend the answer's deadline. The rules answer instead.
-            self._record(kind, model, 0, CallUsage(), error="timeout (not retried)")
-            raise GeminiError("timeout")
+        given_up = getattr(self._answer, "given_up", {}).get(kind)
+        if given_up is not None:
+            # A call of this kind already timed out or failed in this answer (the model thinks long on
+            # this question, or it is unreachable): a second one would most likely fail too and spend
+            # the answer's deadline. The rules plan instead, or the template writes.
+            self._record(kind, model, 0, CallUsage(), error=f"{given_up} (not retried)")
+            raise GeminiError(given_up)
         try:
             return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary)
         except GeminiError as exc:
-            if exc.code != "server" or skip_primary or self.fallback_model is None:
-                if exc.code == "server":
-                    self._pause(OVERLOAD_COOLDOWN_S, "server")
+            if exc.code != "server" or skip_primary or fallback is None:
+                self._give_up(kind, exc.code)   # a 5xx with no fallback left fails this call only (#341)
                 raise
         # The primary model is overwhelmed: one attempt on the fallback model, within the same deadline.
-        fallback = self.fallback_model
+        config = _for_model(fallback, config)
         try:
             reply = self._attempt(fallback, self.cache_key(fallback, kind, contents, config), kind, contents,
                                   config, deadline, fallback=True)
         except GeminiError as exc:
             if exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
                 # The fallback model is refused (for example an id this key cannot use): stop using it,
-                # but do not pause the primary model for longer than an overload.
+                # and do not pause the primary model.
                 ops_log.error("gemini fallback model refused (%s); fallback turned off", exc.code)
-                self.fallback_model = None
-            self._pause(OVERLOAD_COOLDOWN_S, "server")
-            raise GeminiError("server") from None
+                self._drop_fallback(fallback)
+            self._give_up(kind, "server")
+            raise GeminiError("server") from None   # both failed: this call fails, nothing is paused (#341)
         with self._lock:
-            self._skip_primary_until = self.clock() + PRIMARY_SKIP_S
-        ops_log.warning("gemini %s overloaded; calling %s directly for %d s", self.model, fallback, PRIMARY_SKIP_S)
+            self._skip_primary_until[primary] = self.clock() + PRIMARY_SKIP_S
+        ops_log.warning("gemini %s overloaded; calling %s directly for %d s", primary, fallback, PRIMARY_SKIP_S)
         return reply
+
+    def _drop_fallback(self, model: str) -> None:
+        """A refused fallback model is turned off for every role that uses it."""
+        if self.fallback_model == model:
+            self.fallback_model = None
+        if self.compose_fallback_model == model:
+            self.compose_fallback_model = None
 
     def _attempt(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
                  deadline: float, fallback: bool = False) -> Reply:
@@ -573,10 +645,10 @@ class GeminiClient:
                 self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
             elif status in CONFIG_ERROR_CODES and not fallback:
                 self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+            elif code in TRANSIENT_CODES:
+                pass   # a timeout or network error fails this call only (#341)
             elif status not in SERVER_ERROR_CODES:
                 self._failed(code)
-            if code == "timeout" and kind == "plan" and getattr(self._answer, "key", None) is not None:
-                self._answer.plan_timed_out = True
             raise GeminiError(code) from None
         latency_ms = int((self.clock() - t) * 1000)
         try:
