@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from core.agent.model import PlanInput
+from core.agent import people
 from core.agent.rules import RuleModel
 from core.agent.toolset import default_registry
 
@@ -139,3 +140,12 @@ def test_another_persons_money_is_declined_in_every_form(question, language):
 def test_someone_elses_question_never_gets_the_users_numbers(question, language):
     got = decision(question, language)
     assert got.startswith("decline:") or got == "unclaimed", (question, got)
+
+
+@pytest.mark.parametrize("question", [
+    "how much is safe to spend before payday?", "How much can I safely spend this week?",
+    "You can safely spend twice that amount, about three hundred euros.",
+    "Someone in your household often pays the bills alone.", "how do they compare to Prisma's prices?",
+])
+def test_no_person_in_these(question):
+    assert people.classify(question) is None, question
