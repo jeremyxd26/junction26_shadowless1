@@ -53,8 +53,8 @@ CATEGORY_WORDS = [
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
     (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
     (r"\btravel\w*|matkailu\w*|matkoihin", "Travel"),
-    (r"lifestyle|clothes|vaatte\w*", "Lifestyle"),
-    (r"home (and|&) tech|electronics|kodin ja tekniikan", "Home & Tech"),
+    (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|vapaa-aja\w*", "Lifestyle"),
+    (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
 ]
 MCC_GROUP_WORDS = [
     (r"tax(i|is)\b|taksi\w*", "taxi"),
@@ -78,6 +78,8 @@ MAY_MONTH = (r"\b(in|of|for|during|since|from|until|till|to|through|and|or|vs|ve
 
 PRESETS = [
     (r"last (3|three) months|past (3|three) months|viimeisen (3|kolmen) kuukauden|viimeiset (3|kolme) kuukautta", "last_3_months"),
+    (r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|\bkeskimäärin kuukaudessa\b",
+     "last_6_months"),   # the metric's window (#395 row 14)
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
     (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
@@ -375,7 +377,12 @@ SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
              r"\b(unohda|ohita)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
              r"\b(esitä|kuvittele|oleta)\b.*\b(ei|ettei)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
-             r"\bälä (noudata|seuraa|välitä)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)")
+             r"\bälä (noudata|seuraa|välitä)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
+             # more ways to set the rules aside (#447 row 3, #205)
+             r"\bdisregard\b.*\b(above|previous|prior|earlier|instructions?|rules)\b|\bpay no attention to\b|"
+             r"\bfrom now on,? you (are|will|must)\b|(^|[.!?]\s*)system\s*:|"
+             r"\bälä välitä\b.*\b(edellä|yllä|aiemm)\w*|\btästä (lähtien|eteenpäin) (sinä )?olet\b|"
+             r"(^|[.!?]\s*)järjestelmä\s*:")
 # 4. What other people spend most on is no question about the user's own money.
 WHERE_OTHERS = r"\bwho\b|\bpeople\b|\bothers?\b|\beveryone\b|\bmuut\b|\bmuiden\b|\bihmiset\b|\bkuka\b"
 # Another person's profile ("what kind of spender is Marjatta?") is not the user's own (#298).
@@ -428,6 +435,8 @@ OBJECT_STOP = frozenset({
     "viime", "kaikkeen", "siihen", "tähän", "mihin", "johon", "yhteensä",
     "last", "past", "next", "previous", "end", "start", "beginning", "categories", "category", "kaikkiin",
     "kategorioihin", "kategoriaan", "ostoksiin", "kulutukseen",
+    "luokkaan", "luokkiin", "luokassa", "luokissa",
+    "loppuun", "saakka", "asti", "mennessä",
 })
 INTENTS = [
     ("where_money_went", WHERE),
@@ -594,6 +603,11 @@ def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
     return len(plain) > (0 if period_cue and not re.search(r"\bnext year\b|\bensi vuonna\b", q) else 1)
 
 
+def unknown_object(question: str) -> str | None:
+    """The thing a spending question names that no category maps (for the pipeline's answer, #379)."""
+    return _unknown_object(fold(question))
+
+
 def _future_period(question: str, q: str, as_of: date) -> dict:
     """The future period a question names: a month's next occurrence, next year, until Christmas, or next month."""
     named = [m for _, m in _months_mentioned(question, as_of)]
@@ -651,6 +665,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue
         if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
             continue  # saving time is no money question
+        if intent == "recurring_bills" and re.search(r"\binterest\b|\bkorko\w*|\bkoro\w*", q):
+            continue  # interest earned is no income the bills tool knows (#395 row 16)
         if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
             continue  # "save more of my income" is the save-more question, not the income (#296)
         if intent == "peers" and not peer_question:
@@ -671,6 +687,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
         found.append("future")  # "can I afford a holiday in March?": that March is ahead, not behind
     if _unknown_object(q):
         pass                    # "how much did I spend on Netflix last month?": never the unfiltered total
+    elif re.search(r"\binterest\b|\bkorko\w*|\bkoro\w*", q):
+        pass                    # interest earned is not in the spending tool (#395 row 16)
     elif re.search(r"\b(kuun|kuukauden) loppuun\b|\bend of (the|this) month\b|\buntil the end\b", q):
         pass                    # "paljonko voin käyttää tämän kuun loppuun": ahead, not past spending
     elif spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
@@ -783,7 +801,13 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if not found:
         if _unknown_object(q):
-            return Claim(None, reason="unknown_object")   # the model's planner, or the general question back
+            # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health
+            # is never singled out, R9), and the answer says the thing is not one of them (#379)
+            period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+            if "get_basket_breakdown" in tools and not _filter_of(q):   # "gym and restaurants": not claimed
+                return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
+                                                FunctionCall("finish")))
+            return Claim(None, reason="unknown_object")
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
     winner, competing = _resolve(found, q, spending)
     if winner is None:

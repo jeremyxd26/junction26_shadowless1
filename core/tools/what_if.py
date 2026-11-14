@@ -21,7 +21,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from core.tools import aliases, config, evidence, labels, metric_sql, periods
+from core.tools.classify import classify
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
+from core.tools.selection import Selection
 from core.tools.formatting import display
 from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
@@ -153,6 +156,19 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     window = Period(start=row["period_start"], end=row["period_end"],
                     label=periods.period_label(row["period_start"], row["period_end"], lang))
     what = _what(sel, alias_label, lang)
+    bought = [t for t in ctx.history() if window.start <= t.tx_date <= window.end and t.amount_eur < 0
+              and (t.category == sql_value if sel.kind == "category" else t.mcc in set(sql_value.split(","))
+                   if sel.kind == "mcc" else t.merchant_id == sql_value)]
+    if 0 < len(bought) < config.TOO_FEW_TRANSACTIONS:
+        # A purchase or two is no monthly habit (#379): the purchases as they are, no monthly figure or saving.
+        txb = NumberBuilder(ctx, classify(ctx.history(), ctx.as_of, labels.for_context(ctx)))
+        exact = Selection(direction="out", start=window.start, end=window.end, tx_ids=tuple(t.id for t in bought))
+        total = ctx.numbers.register(txb.transactions(exact, config.METHODS["total"], window,
+                                                      _t("selection_total", lang, what=what[:1].upper() + what[1:]))[0])
+        count = ctx.numbers.register(txb.transactions(exact, config.METHODS["n_tx"], window, _t("purchases", lang))[0])
+        evidence.write(ctx.conn, txb.specs)
+        raise MissingData("too_few_transactions", what=what, period=window.label, total=total.id, count=count.id,
+                          n=len(bought))
     nb = NumberBuilder(ctx, [])
     reg = ctx.numbers.register
     numbers: dict[str, Number] = {}

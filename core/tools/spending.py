@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from core.tools import aliases, config, evidence, labels, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
 from core.tools.models import (
     Action, Args, Card, CompareTo, Comparison, Direction, Filter, GroupBy, Number, Period, PeriodArg,
     Tone, ToolResult, Unit,
@@ -81,6 +82,17 @@ def _base_selection(args: GetSpendingArgs, period: Period, alias_map: aliases.Al
     return Selection(direction=direction, start=period.start, end=period.end, categories=categories,
                      baskets=baskets, mcc_groups=tuple(sorted({g.value for g in f.mcc_groups or []})),
                      merchant_id=merchant_id)
+
+
+def top_categories(rows: list, language: str, n: int = 5) -> list[dict[str, str]]:
+    """The customer's largest spending categories in the whole data, Health never among them (R9): chips."""
+    sums: dict[str, Decimal] = defaultdict(Decimal)
+    for c in rows:
+        if c.tx.category != "Health" and c.out_eur > 0:
+            sums[c.tx.category] += c.out_eur
+    ranked = sorted(sums, key=lambda k: (-sums[k], k))[:n]
+    return [{"key": k, "label": config.label(config.CATEGORY_LABELS[k], language) if k in config.CATEGORY_LABELS else k}
+            for k in ranked]
 
 
 def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
@@ -160,9 +172,15 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
     total_label = _total_label(args, alias_map, lang)
     total, total_value = nb.transactions(base, config.METHODS["total"], period, total_label)
     tx_count, n_value = nb.transactions(base, config.METHODS["n_tx"], period, _text("transactions", lang))
+    if args.filter is not None and n_value == 0 and not select(rows, base.with_period(config.DATA_START, ctx.as_of)):
+        # Never in the whole data (#379): what is missing, and the customer's own largest categories.
+        raise MissingData("category_absent", what=total_label, top=top_categories(rows, lang))
     total, tx_count = reg(total), reg(tx_count)
+    too_few = args.filter is not None and 0 < n_value < config.TOO_FEW_TRANSACTIONS
     if n_value == 0:
         notes.append(_text("note_empty", lang))
+    elif too_few:
+        notes.append(_text("note_too_few", lang))   # the numbers are shown, marked (#379)
 
     # ---- comparison ----
     comparison = None

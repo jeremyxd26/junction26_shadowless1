@@ -105,6 +105,28 @@ MISSING_CHIPS = {
     "period_before_data": (("How much did I spend in {month_en}?", "How much did I spend over the past year?"),
                            ("Paljonko käytin {month_fi}?", "Paljonko käytin viimeisen vuoden aikana?")),
 }
+# A category never used, an object no category maps, too few purchases (#379, part B). Chips name the
+# customer's own largest categories the rules can answer, Health never among them unless asked (R9).
+ABSENT = ("I can't find any {what} spending in your data. Your largest categories are {categories}.",
+          "Tiedoistasi ei löydy kulutusta luokassa {what}. Suurimmat luokkasi ovat {categories}.")
+ABSENT_PLAIN = ("I can't find any {what} spending in your data.", "Tiedoistasi ei löydy kulutusta luokassa {what}.")
+UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories, and your "
+           "largest are {categories}.",
+           "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat ovat "
+           "{categories}.")
+TOO_FEW = {
+    "one": ("In {period} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
+            "Jaksolla {period} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "few": ("In {period} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to cut.",
+            "Jaksolla {period} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
+            "ei ole."),
+}
+CATEGORY_CHIP = ("How much did I spend on {category} last month?", "Paljonko käytin luokkaan {category} viime kuussa?")
+# The categories the rules map from words (rules.CATEGORY_WORDS): a chip must be a question they answer.
+CHIP_CATEGORIES = ("Groceries", "Restaurants", "Entertainment", "Housing", "Utilities", "Travel", "Lifestyle",
+                   "Home & Tech")
+# "Kodin laskut" would read as the bills question in Finnish: no chip for it.
+FI_NO_CHIP = frozenset({"Utilities"})
 FI_MONTH_STEMS = ("tammi", "helmi", "maalis", "huhti", "touko", "kesä", "heinä", "elo", "syys", "loka", "marras",
                   "joulu")
 CLARIFY_GENERAL = {
@@ -196,13 +218,64 @@ def follow_ups(question: str, language: str, refused: bool = False) -> list[str]
     return out[:2] if refused else out[:3]
 
 
+def _listed(labels: list[str], language: str) -> str:
+    joiner = " ja " if language == "fi" else " and "
+    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + joiner + labels[-1]
+
+
+def _chip_categories(categories: list[dict[str, Any]], language: str) -> list[str]:
+    """The labels of up to three of the customer's categories, largest first, that a chip can ask about."""
+    keys = CHIP_CATEGORIES if language == "en" else tuple(k for k in CHIP_CATEGORIES if k not in FI_NO_CHIP)
+    return [c["label"].lower() if language == "en" else c["label"] for c in categories
+            if c.get("key") in keys and isinstance(c.get("label"), str)
+            and not re.search(r"\d", c["label"])][:3]
+
+
+def _category_chips(labels: list[str], language: str) -> list[str]:
+    return [pick(CATEGORY_CHIP, language).format(category=label) for label in labels] or list(brief_questions(language)[:2])
+
+
 def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
-                        as_of: date) -> tuple[str, list[str]] | None:
+                        as_of: date, unknown: str | None = None) -> tuple[str, list[str]] | None:
     """The answer and its chips when the tools found nothing but a missing-data reason (#379): no view, and
-    every error carries a reason this module writes. None for anything else (the composer writes)."""
-    if views or not errors or not all(e.get("reason") in MISSING for e in errors):
+    every error carries a reason this module writes; or an object no category maps, answered with the
+    breakdown of the customer's categories only. None for anything else (the composer writes)."""
+    if unknown and views and not errors and all(v.get("tool") == "get_basket_breakdown" for v in views):
+        found = sorted((c for v in views for b in v.get("baskets") or [] for c in b.get("categories") or []
+                        if c.get("key") != "Health"),
+                       key=lambda c: -float(((c.get("amount") or {}).get("value")) or 0))
+        labels = _chip_categories(found, language)
+        word = unknown if re.fullmatch(r"[^\W\d_][\w'-]{1,23}", unknown) else None
+        if labels and word:
+            return pick(UNKNOWN, language).format(word=word, categories=_listed(labels, language)), \
+                _category_chips(labels, language)
         return None
-    reasons = {e["reason"] for e in errors}
+    if views or not errors or not all(e.get("reason") in (*MISSING, "category_absent", "too_few_transactions")
+                                      for e in errors):
+        return None
+    by_reason = {e["reason"]: e.get("details") or {} for e in errors}
+    if "too_few_transactions" in by_reason:
+        d = by_reason["too_few_transactions"]
+        kind = "one" if d.get("n") == 1 else "few"
+        what = str(d.get("what") or "")
+        if re.search(r"\d", what + str(d.get("period") or "x")) and not d.get("period"):
+            return None
+        text = pick(TOO_FEW[kind], language).format(period=d.get("period"), what=what,
+                                                   total="{{" + str(d.get("total")) + "}}",
+                                                   count="{{" + str(d.get("count")) + "}}")
+        return text, list(brief_questions(language)[:2])
+    if "category_absent" in by_reason:
+        d = by_reason["category_absent"]
+        what = str(d.get("what") or "")
+        if re.search(r"\d", what):
+            return None
+        labels = _chip_categories(d.get("top") or [], language)
+        what = what.lower() if language == "en" else what
+        if labels:
+            return pick(ABSENT, language).format(what=what, categories=_listed(labels, language)), \
+                _category_chips(labels, language)
+        return pick(ABSENT_PLAIN, language).format(what=what), list(brief_questions(language)[:2])
+    reasons = set(by_reason)
     reason = "period_in_future" if "period_in_future" in reasons else "period_before_data"
     end = f"{as_of.day}.{as_of.month}.{as_of.year}" if language == "fi" else \
         f"{as_of.day} {calendar.month_name[as_of.month]} {as_of.year}"

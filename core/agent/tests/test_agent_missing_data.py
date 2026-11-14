@@ -19,6 +19,8 @@ from core.agent.registry import ToolSpec
 from core.agent.rules import RuleModel
 from core.agent.validator import Allowed, check_text
 from core.tools import config
+from core.tools.missing import MissingData
+from core.tools.models import Number, Period, Unit
 from core.tools.periods import PeriodOutOfRange, clamp
 
 ALL = ["get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "get_safe_to_save",
@@ -96,3 +98,102 @@ def test_a_period_outside_the_data_next_to_real_data_is_written_by_the_composer(
     tools = [{"name": n, "description": "", "parameters_json_schema": {}} for n in ALL]
     assert not RuleModel().plan(PlanInput(question="How much did I spend in August and next month?", language="en",
                                           as_of=AS_OF.isoformat(), tools=tools)).recognised
+
+
+
+# ---- part B: a category never used, an object no category maps, too few purchases ----------------------
+
+TOP = [{"key": "Travel", "label": "Travel"}, {"key": "Groceries", "label": "Groceries"},
+       {"key": "Restaurants", "label": "Restaurants"}, {"key": "Lifestyle", "label": "Lifestyle"}]
+
+
+def test_a_category_never_used_names_it_and_offers_the_customers_largest_categories():
+    text, chips = template.missing_data_answer([], [{"reason": "category_absent",
+                                                     "details": {"what": "Entertainment", "top": TOP}}], "en", AS_OF)
+    assert text == "I can't find any entertainment spending in your data. Your largest categories are travel, " \
+                   "groceries and restaurants."
+    assert chips == ["How much did I spend on travel last month?", "How much did I spend on groceries last month?",
+                     "How much did I spend on restaurants last month?"]
+
+
+def test_health_is_never_a_chip():
+    top = [{"key": "Health", "label": "Health"}, *TOP]
+    text, chips = template.missing_data_answer([], [{"reason": "category_absent",
+                                                     "details": {"what": "Entertainment", "top": top}}], "en", AS_OF)
+    assert "health" not in text.lower() and not any("health" in c.lower() for c in chips)
+
+
+def basket_view(lang="en"):
+    names = {"Restaurants": ("Restaurants", "Ravintolat"), "Health": ("Health", "Terveys"),
+             "Lifestyle": ("Lifestyle", "Lifestyle"), "Travel": ("Travel", "Matkailu")}
+    cats = [{"key": k, "label": names[k][lang == "fi"], "amount": {"id": f"n{i}", "value": v, "unit": "eur_per_month"}}
+            for i, (k, v) in enumerate([("Health", 400.0), ("Restaurants", 224.2), ("Lifestyle", 73.6),
+                                         ("Travel", 58.4)], start=1)]
+    return {"tool": "get_basket_breakdown", "baskets": [{"key": "everyday_spending", "categories": cats}]}
+
+
+@pytest.mark.parametrize("lang,text", [
+    ("en", "I can't see \u201cgym\u201d on its own in your transactions: they are grouped into categories, and your largest "
+           "are restaurants, lifestyle and travel."),
+    ("fi", "En löydä tapahtumistasi erikseen sanaa \u201dkuntosaliin\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat "
+           "ovat Ravintolat, Lifestyle ja Matkailu."),
+])
+def test_an_object_no_category_maps_is_answered_with_the_customers_categories(lang, text):
+    word = "gym" if lang == "en" else "kuntosaliin"
+    got, chips = template.missing_data_answer([basket_view(lang)], [], lang, AS_OF, unknown=word)
+    assert got == text and len(chips) == 3 and not any("health" in c.lower() or "terveys" in c.lower() for c in chips)
+
+
+@pytest.mark.parametrize("label_key,lang", [(k, lang) for k in sorted(template.CHIP_CATEGORIES)
+                                            for lang in ("en", "fi") if not (lang == "fi" and k in template.FI_NO_CHIP)])
+def test_every_category_chip_is_a_question_the_rules_answer(label_key, lang):
+    label = config.label(config.CATEGORY_LABELS[label_key], lang)
+    chip = template.pick(template.CATEGORY_CHIP, lang).format(category=label.lower() if lang == "en" else label)
+    tools = [{"name": t, "description": "", "parameters_json_schema": {}} for t in ALL]
+    result = RuleModel().plan(PlanInput(question=chip, language=lang, as_of=AS_OF.isoformat(), tools=tools))
+    assert result.recognised and result.calls[0].name == "get_spending", chip
+
+
+def too_few_tool(n: int):
+    def tool(ctx, args: FakeArgs):
+        span = Period(start=date(2026, 4, 1), end=date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
+        total = ctx.numbers.register(Number(value=203.95, unit=Unit.EUR, period=span, method="spending.total@1",
+                                            evidence_ref="ev_aaaaaaaaaaa1", label="Travel", display="€203.95"))
+        count = ctx.numbers.register(Number(value=n, unit=Unit.COUNT, period=span, method="spending.n_tx@1",
+                                            evidence_ref="ev_aaaaaaaaaaa2", label="Purchases", display=str(n)))
+        raise MissingData("too_few_transactions", what="travel", period=span.label, total=total.id, count=count.id, n=n)
+    return ToolSpec("fake_what_if", "A what-if on too few purchases.", FakeArgs, tool, ("Looking", "Katson"))
+
+
+@pytest.mark.parametrize("n,text", [
+    (1, "In 1 Apr – 30 Sep 2026 you made a single travel purchase of €203.95, so there is no monthly habit to cut."),
+    (2, "In 1 Apr – 30 Sep 2026 you made 2 travel purchases, €203.95 in all: too few to show a monthly habit to cut."),
+])
+def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure(make_pipeline, n, text):
+    model = ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(too_few_tool(n))), "What if I cut travel by 20%?", language="en")
+    done = dict(events)["done"]
+    assert done["outcome"] == "answered" and done["text_rendered"] == text and model.compose_inputs == []
+    assert len(done["cited"]) == (1 if n == 1 else 2)
+
+
+def basket_tool():
+    def tool(ctx, args: FakeArgs):
+        from core.tools.models import ToolResult
+        return ToolResult(tool="fake_baskets", data={}, card=None, evidence=[], model_view=basket_view())
+    return ToolSpec("fake_baskets", "Baskets.", FakeArgs, tool, ("Looking", "Katson"))
+
+
+def test_the_pipeline_answers_an_unknown_object_with_the_template_and_no_compose_request(make_pipeline):
+    view = basket_view()
+    view["tool"] = "get_basket_breakdown"
+
+    def tool(ctx, args: FakeArgs):
+        from core.tools.models import ToolResult
+        return ToolResult(tool="get_basket_breakdown", data={}, card=None, evidence=[], model_view=view)
+    spec = ToolSpec("fake_baskets", "Baskets.", FakeArgs, tool, ("Looking", "Katson"))
+    model = ScriptedModel(plans=[[FunctionCall("fake_baskets", {}), FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(spec)), "how much do I spend on the gym?", language="en")
+    done = dict(events)["done"]
+    assert done["outcome"] == "answered" and "\u201cgym\u201d" in done["text"] and model.compose_inputs == []
+    assert done["follow_ups"][0] == "How much did I spend on restaurants last month?"
