@@ -353,7 +353,7 @@ def test_every_class_the_review_found_is_rejected_in_finnish(text):
 
 @pytest.mark.parametrize("text,lang", [   # not false rejections (review of #618)
     ("There is no need to feel ashamed about it.", "en"), ("Vältä tuhlaamasta ruokaa.", "fi"),
-    ("A buffer keeps a surprise from pushing you into debt.", "en"), ("That sounds stressful, and it is common.", "en"),
+    ("A buffer keeps a surprise from emptying your account.", "en"), ("That sounds stressful, and it is common.", "en"),
     ("The dos and don'ts are simple: plan first.", "en"),
     ("A buffer grows fastest when a fixed amount moves to savings on payday, before everyday spending. Build it up "
      "step by step until it covers a few months of essential costs.", "en"),
@@ -366,6 +366,64 @@ def test_plain_words_the_review_listed_pass(text, lang):
     assert general_reasons(text, lang) == []
 
 
+FULLWIDTH_TWENTY = "".join(chr(0xFF00 + ord(c) - 0x20) for c in "twenty")
+BOLD_TWENTY = "".join(chr(0x1D41A + ord(c) - ord("a")) for c in "twenty")
+
+
+@pytest.mark.parametrize("text,lang", [   # the closing review of #618: the classes, not only the examples
+    # borrowing: stems anywhere in a word, advances, a negated mention, debt
+    ("Pikalaina auttaa palkkaan asti.", "fi"), ("Opintolaina on pitkä sitoumus.", "fi"), ("Autolaina on yleinen.", "fi"),
+    ("Tililuotto auttaa.", "fi"), ("Korttiluotto on kallis.", "fi"), ("Vippi auttaa.", "fi"),
+    ("Asuntovelka on iso.", "fi"), ("Korttivelka kasvaa.", "fi"), ("Rahoitus auttaa.", "fi"),
+    ("A payday advance helps.", "en"), ("Cash advance on your card helps.", "en"), ("Ask for a salary advance.", "en"),
+    ("Avoid debt where you can.", "en"), ("Avoid relying on borrowing.", "en"),
+    # number forms, also folded, split or joined
+    ("A couple of months is enough.", "en"), ("A couple is enough.", "en"), ("A pair of months.", "en"),
+    ("Puolen vuoden puskuri.", "fi"), ("Puoleen tuloista.", "fi"), ("Kolmas osa tuloista.", "fi"),
+    ("Save twentyfive a week.", "en"), ("A threemonth buffer.", "en"), ("Fiftyfifty split.", "en"),
+    ("Keep xii months aside.", "en"), (f"Save {FULLWIDTH_TWENTY} a week.", "en"), (f"Save {BOLD_TWENTY} a week.", "en"),
+    ("Save fïve a week.", "en"), ("Save f.i.v.e a week.", "en"), ("Save tw enty a week.", "en"),
+    ("Save tw-enty a week.", "en"), ("Save ni-ne a week.", "en"), ("Save T-W-E-N-T-Y a week.", "en"),
+    ("Save ten p e r c e n t.", "en"),
+    # any other language, any other script, a mixed sentence
+    ("Houd drie maanden aan kosten apart.", "en"), ("Pane kolm kuud kulusid kõrvale.", "fi"),
+    ("Metti da parte due mesi di spese per sicurezza.", "en"), ("Guarde tres meses de despesas.", "en"),
+    ("把钱存起来。", "en"), ("Αποταμίευσε.", "en"),
+    ("Kannattaa pitää budjetti, to be safe.", "fi"),
+    # a bank, a brand or a product in the draft
+    ("Indeksirahasto on helppo tapa kasvattaa puskuria.", "fi"),
+    ("Open your bank app and set up a savings goal there.", "en"), ("Nordea on parempi kuin OP.", "fi"),
+    ("PayPal is good for saving money.", "en"), ("Try Handelsbanken.", "en"), ("Mobile Pay helps.", "en"),
+    ("Osakesäästötili kannattaa.", "fi"), ("Matkavakuutus on hyvä.", "fi"),
+])
+def test_the_closing_review_classes_are_rejected(text, lang):
+    assert general_reasons(text, lang), text
+
+
+@pytest.mark.parametrize("text,lang", [
+    ("Budjetti ja tili ovat hyvä alku.", "fi"), ("Puskuri on raha yllatyksia varten.", "fi"),
+    ("Tee budjetti ja tarkista se kerran kuussa.", "fi"), ("In Finnish, a budget is called budjetti.", "en"),
+    ("Start small.", "en"), ("Mix and match what works for you.", "en"), ("Often the hardest part is starting.", "en"),
+    ("Take into account bills that come only a few times a year.", "en"),
+    ("Weekly or monthly does not matter much; what matters is that it happens automatically.", "en"),
+    ("Pidä puskuri eri paikassa kuin käyttörahat, niin siihen ei tee mieli koskea.", "fi"),
+    ("Älä soimaa itseäsi lipsahduksista; suunnitelma on apuväline.", "fi"),
+])
+def test_plain_words_after_the_closing_review_pass(text, lang):
+    assert general_reasons(text, lang) == []
+
+
+@pytest.mark.parametrize("message", ["Am I saving enough?", "Is my buffer big enough?", "Do I have too many subscriptions?",
+                                     "How am I doing with money this month?", "Onko puskurini riittävä?"])
+def test_a_first_person_question_about_own_state_never_gets_plain_words(make_pipeline, message):
+    model = ScriptedModel(plans=[WORDS], drafts=[GOOD])
+    pipe = make_pipeline(model)
+    run(pipe, message)
+    assert not any(c.general for c in model.compose_inputs)
+    turns = audit_records(pipe)[-1]["planner_turns"]
+    assert any(str(t.get("error", "")).startswith("answer_in_words:") for t in turns), turns
+
+
 @pytest.mark.parametrize("text", ["Wait a day or two before buying.", "Kaksi pientä askelta riittää."])
 def test_a_count_is_a_number_by_the_rule_of_this_slice(text):
     # decided (review of #618): "a day or two" and "two small steps" name a number; "a few" and "muutama" do not
@@ -375,7 +433,7 @@ def test_a_count_is_a_number_by_the_rule_of_this_slice(text):
 @pytest.mark.parametrize("bad,lang,reason", [
     ("Take a car loan and pay it back monthly.", "en", "borrowing"),
     ("Spara tre månaders utgifter till en buffert.", "en", "answer only in English"),
-    ("A budget is a plan. Budjetti on suunnitelma.", "en", "a sentence in Finnish"),
+    ("A budget is a plan. Budjetti on suunnitelma.", "en", "answer only in English"),
 ])
 def test_a_borrowing_or_other_language_draft_is_retried_with_the_reason(make_pipeline, bad, lang, reason):
     model = ScriptedModel(plans=[WORDS], drafts=[dict(GOOD, text=bad), GOOD])

@@ -96,7 +96,11 @@ GENERAL_OWN_FIGURES = re.compile(
     r"|\bmy\s+(?:spending|savings|balance|income|salary|paycheck|bills|account|money|expenses|budget|purchases"
     r"|transactions|rent|subscriptions?|bonus)\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b|\bkaytinko\b"
     r"|\bpaljonko\s+(?:kaytin|kulutin|maksoin|minulla|olen|minun)\b|\bminun\s+(?:kulu|saast|tili|tulo|palk|lasku|raha)\w*"
-    r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni)\b", re.I)
+    r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni)\b"
+    # the first person asking about their own state (closing review of #618): "Am I saving enough?", "Is my buffer big
+    # enough?", "Do I have too many subscriptions?", "How am I doing?", "Onko puskurini riittävä?", "Olenko …?"
+    r"|\b(?:am|was)\s+i\b|\b(?:is|are|was|were)\s+my\b|\bdo\s+i\s+have\b|\bhow\s+am\s+i\b|\bonko\s+minulla\b"
+    r"|\bolenko\b|\b\w{3,}ni\b", re.I)
 # A general money question names its money topic (#572): a bare follow-up ("why?", "tell me more") or a message about
 # anything else never gets a plain-words answer, in the first turn or later. Matched on the folded message.
 GENERAL_MONEY_WORDS = re.compile(
