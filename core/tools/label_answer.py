@@ -90,7 +90,7 @@ def _message(ctx: ToolContext, outcome: reviews.Outcome) -> dict[str, Any]:
     elif outcome.review.basket == "everyday_spending":
         found = purchase(ctx, outcome.review)
         n1 = amount_number(ToolContext(ctx.customer_id, ctx.as_of, ctx.conn, lang, NumberRegistry(),
-                                       _history=ctx.history(), _labels=ctx._labels), *found)
+                                       _history=ctx.history(), _labels=ctx._labels, viewer=ctx.viewer), *found)
         text = _t("done_everyday_spending", lang, amount="{{" + n1.id + "}}")
         rendered = _t("done_everyday_spending", lang, amount=n1.display)
         numbers[n1.id] = n1.model_dump(mode="json")
@@ -102,25 +102,37 @@ def _message(ctx: ToolContext, outcome: reviews.Outcome) -> dict[str, Any]:
 
 
 def answer(conn: psycopg.Connection, customer_id: str, as_of: date, tx_ref: str, basket: str | None,
-           language: str = "en", now: datetime | None = None) -> dict[str, Any]:
+           language: str = "en", now: datetime | None = None, viewer: str | None = None) -> dict[str, Any]:
     """Store the answer to a review and return the response body of contract section 10.
 
-    Raises reviews.ReviewNotFound (unknown, foreign or closed ref; also when SPIKE_REVIEWS is off) and
-    reviews.BasketNotAllowed (a basket key that is not one of the two options).
+    With a `viewer` (the API, #144) the answer is that viewer's own and every number before and after
+    is the viewer's; without one (tools, scripts) it is the shared answer.
+
+    Raises reviews.ReviewNotFound (unknown, foreign or closed ref; also when SPIKE_REVIEWS is off),
+    reviews.BasketNotAllowed (a basket key that is not one of the two options) and
+    reviews.TooManyAnswers (the viewer's session is full).
     """
     if not reviews.enabled():
         raise reviews.ReviewNotFound(tx_ref)
     now = now or reviews.utcnow()
     with conn.transaction():
-        reviews.lock_customer(conn, customer_id)  # the lock review creation takes (one open review)
-        review = reviews.find(conn, customer_id, tx_ref, lock=True)
+        if viewer is not None:
+            # A viewer's answer never changes the shared rows that review creation looks at (one open
+            # review per 7 days follows created_at only), so it serialises with this viewer alone.
+            reviews.lock_viewer(conn, viewer, customer_id)
+        else:
+            reviews.lock_customer(conn, customer_id)  # the lock review creation takes (one open review)
+        review = reviews.find(conn, customer_id, tx_ref, lock=viewer is None, viewer=viewer, now=now)
         outcome = reviews.decide(review, basket, now)
-        ctx = ToolContext(customer_id, as_of, conn, language)
+        ctx = ToolContext(customer_id, as_of, conn, language, viewer=viewer)
         moved: list[dict[str, Any]] = []
         if outcome.changed:
             before = overview_numbers(ctx)
-            reviews.save(conn, outcome.review)
-            ctx = ToolContext(customer_id, as_of, conn, language, _history=ctx.history())  # after the answer
+            if viewer is not None:
+                reviews.save_answer(conn, viewer, outcome.review, now)
+            else:
+                reviews.save(conn, outcome.review)
+            ctx = ToolContext(customer_id, as_of, conn, language, _history=ctx.history(), viewer=viewer)
             moved = changes(before, overview_numbers(ctx))
         message = _message(ctx, outcome)
     label = None

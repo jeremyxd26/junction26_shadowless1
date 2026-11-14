@@ -150,6 +150,13 @@ The only writes are the label answer and its undo. The undo always runs and is a
 
 Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
 
+### Limits of `/api/ask` at the venue
+
+At the venue, every visitor on the shared Wi-Fi arrives from one client address.
+- **Model windows:** 10 a minute per address, 60 globally, 10 per address and persona. They protect the language-model budget. When one is used up, questions are still answered, by the rules and the template, with the "model unavailable" warning.
+- **Hard ceiling:** 120 a minute per address, 600 globally. It protects the service. Only it answers 429.
+- **Presenter:** use a network of your own (a phone hotspot), so the room's questions never share your address or your model window.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
@@ -212,6 +219,8 @@ previous version 1e395dc61dd5447d85e1d6de5b39a0de06b0c681 is running again
 ## Logs
 
 The logs stay on the instance and are not shipped anywhere. The journal is readable only by root and the `adm`/`systemd-journal` groups.
+
+The service masks the values of its secret settings as `***` in every log line, whichever logger writes it (`core/app/secret_mask.py`, #198). Secret settings are the names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`, together with its password and every host (in any connection-string form libpq accepts; loopback names excepted) and the URL-encoded forms of each. The mask covers the message and its arguments (the access log's request line included), extra fields and exception text with chained causes. A settings error at start-up names the setting but never echoes its value.
 
 ```bash
 ssh -i ~/.ssh/shadowless1_dev_ed25519 root@135.181.63.178 journalctl -u shadowless1-core -n 100 --no-pager   # service
