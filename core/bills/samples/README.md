@@ -6,7 +6,7 @@ Four invoices for the demo gallery (#249). In the demo a visitor picks one of th
 - **Companies:** fictional ("Esimerkki ... Oy", from the table of known payee names of the bill explanation, #242).
 - **People and places:** a fictional payer, and addresses with the postal code 00000, which does not exist.
 - **Left out:** no brand, logo, phone number or business id.
-- **IBANs are test values.** Their bank part is `0000`, and no Finnish monetary institution code begins with 0 (Finance Finland, *Finnish Monetary Institution Codes and BICs*, 16.3.2026), so they belong to no account. Their check digits are correct.
+- **IBANs are test values.** They use the obviously artificial bank part `1234 56` of Finance Finland's own documentation example (`FI21 1234 5600 0007 85`), the same style as the examples in `contracts/api.md`. Their check digits are correct.
 
 | Sample | Language | Payee | Amount | Due date | Payment data | Warning signs for CUST00860 on 2026-09-30 |
 |---|---|---|---|---|---|---|

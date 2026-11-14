@@ -87,7 +87,7 @@ def test_synthetic_values_only():
     for s in SAMPLES.values():
         t = s["truth"]
         assert t["payee"].startswith("Esimerkki ")
-        assert t["iban"].startswith("FI") and t["iban"][4:8] == "0000"   # no Finnish bank code begins with 0
+        assert t["iban"].startswith("FI") and t["iban"][4:10] == "123456"   # the documentation example's bank part
     assert len({s["truth"]["iban"] for s in SAMPLES.values()}) == 4
 
 

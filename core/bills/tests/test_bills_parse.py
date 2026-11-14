@@ -64,6 +64,7 @@ def code128_check(digits: str) -> int:
 
 
 # ---- the guide's test invoices (Bank Bar Code Guide 5.3, sections 13.1 and 13.2) -----------------------
+# Section 13.1 (version 4) is on printed pages 8-9, section 13.2 (version 5) on printed pages 10-11.
 # digits as listed, then the plain-text fields above each one, then the printed Code 128 check digit.
 
 GUIDE = [
@@ -131,6 +132,7 @@ def test_the_guide_digits_are_transcribed_exactly():
 
 
 def test_the_section_12_example_with_its_spaces():
+    # Bank Bar Code Guide 5.3, section 12, printed page 7.
     got = parse_virtual_barcode("5 5810171000000122 00048299 06000000559582243294671 100131")
     assert (got.version, got.iban, got.amount, got.reference, got.due_date) == (
         5, "FI5810171000000122", Decimal("482.99"), "RF06559582243294671", date(2010, 1, 31))
@@ -139,30 +141,39 @@ def test_the_section_12_example_with_its_spaces():
 # ---- examples from the reference, RF and IBAN documents ---------------------------------------------------
 
 def test_reference_examples_from_the_documents():
-    # Forming a Finnish Reference Number: stem 123456 -> 1234561; Credit Transfer Guidelines 2.9.
+    # Forming a Finnish Reference Number (1 November 2009), printed page 2: stem 123456 -> 1234561.
+    # Credit Transfer Guidelines, section 2.9, page 6 of 10: "12 34561" and "00000000000001234561".
     assert national_of("123456") == "1234561"
     for text in ("1234561", "12 34561", "00000000000001234561"):
         assert valid_reference(text) and normalise_reference(text) == "1234561"
     assert format_reference("00000000000001234561") == "12 34561"
-    # RF calculation guide, page 3: 2348236 -> RF33 2348 236, and the check of RF712348231.
+    # Kansainvälisen viitenumeron (ISO 11649) rakenne ja tarkisteen laskenta (1 November 2009), page 3 of 3:
+    # 2348236 -> RF33 2348 236, and the check of RF712348231.
     assert rf_of("2348236") == "RF332348236"
     for text in ("RF332348236", "RF33 2348 236", "RF712348231"):
         assert valid_reference(text)
     assert format_reference("RF332348236") == "RF33 2348 236"
     assert valid_reference("2348236") and not valid_reference("2348231")   # RF does not need the national check
-    # Structure of the RF Creditor Reference: letters allowed; Bank Bar Code Guide 10: RF04 9991.
+    # Structure of the RF Creditor Reference (ISO 11649) (October 2023), printed page 1: "RF54 1234" and
+    # "RF98 REF1 234" (letters allowed). Bank Bar Code Guide 5.3, section 10, printed page 6: "RF04 9991".
     for text in ("RF54 1234", "RF98 REF1 234", "RF04 9991"):
         assert valid_reference(text)
     assert normalise_reference("RF98 REF1 234") == "RF98REF1234"
 
 
 def test_iban_examples_from_the_documents():
-    # IBAN and BIC in payment 1.2 and 1.3; Credit Transfer Guidelines 2.3.
+    # International Bank Account Number (IBAN) and Bank Identifier Code (BIC) in payment (5 July 2015):
+    # - page 4 of 7, section 1.2: the check, shown on FI21 and NL39 rearranged; section 1.3.1: "FI21 1234 5600 0007 85";
+    # - page 5 of 7, "Examples of Finnish IBAN": FI2112345600000785 and FI7536363001154921 (FI75 3636 3001 1549 21),
+    #   then SE3550000000054910000003, DK5000400440116243 and DE89370400440532013000;
+    # - page 6 of 7: NL39RABO0300065264.
+    # Credit Transfer Guidelines, section 2.3, page 4 of 10: "FI21 1234 5600 0007 85" and "FI55 4234 5670 0000 81".
     for text in ("FI2112345600000785", "FI21 1234 5600 0007 85", "FI5542345670000081", "FI7536363001154921",
                  "SE3550000000054910000003", "DK5000400440116243", "DE89370400440532013000", "NL39RABO0300065264"):
         assert valid_iban(text), text
     assert format_iban("FI5542345670000081") == "FI55 4234 5670 0000 81"
-    # IBAN and BIC 1.3.1 prints the electronic format with one zero missing (17 characters): not a Finnish IBAN.
+    # IBAN and BIC, section 1.3.1, page 4 of 7, prints the electronic format with one zero missing
+    # ("FI211234560000785", 17 characters): not a Finnish IBAN.
     assert not valid_iban("FI211234560000785")
 
 

@@ -15,10 +15,11 @@ randomness); another font changes only the pixels, never a value.
 
 Everything on the bills is synthetic: fictional companies (the names agreed with #242's table of
 known payees), a fictional payer and addresses with the postal code 00000, which does not exist. No
-brand, logo, phone number or business id. The IBANs are test values: their bank part is 0000, and no
-Finnish monetary institution code begins with 0 (Finance Finland, Finnish Monetary Institution Codes
-and BICs, 16.3.2026), so they belong to no account. Check digits are found with the validators of
-core/bills/parse.py (#241), and every barcode is parsed back before anything is written.
+brand, logo, phone number or business id. The IBANs are test values with the obviously artificial
+bank part 1234 56 of Finance Finland's own documentation example (FI21 1234 5600 0007 85), the same
+style as the contract's examples (decision of the coordinator on #249). Check digits are found with
+the validators of core/bills/parse.py (#241), and every barcode is parsed back before anything is
+written.
 
 The four bills tell the demo story for CUST00860 (Sanna) on the demo date 2026-09-30, with her
 recurring bills as the bills card shows them: Housing, usually EUR 836.65 a month around the 3rd, and
@@ -99,7 +100,7 @@ SAMPLES = [
         "story": "A regular bill at its usual amount.",
         "signals": [],
         "payee": "Esimerkki Asunnot Oy", "payee_address": ("Esimerkkikatu 10", "00000 ESIMERKKILÄ"),
-        "heading": "LASKU", "iban": iban_for("00000000001001"), "reference": national_for("10452110"),
+        "heading": "LASKU", "iban": iban_for("12345600001001"), "reference": national_for("10452110"),
         "invoice_date": date(2026, 9, 24), "due_date": date(2026, 10, 8), "invoice_no": "2026-1048",
         "customer_no": "104521", "terms": "14 päivää netto",
         "rows": [("Vuokra 10/2026, asunto A 2", "796.65"), ("Vesimaksu, ennakko 10/2026 (2 henkilöä)", "40.00")],
@@ -112,7 +113,7 @@ SAMPLES = [
         "story": "The same kind of bill, a regular home bill, clearly higher than usual.",
         "signals": ["amount_above_usual"],
         "payee": "Esimerkki Energia Oy", "payee_address": ("Esimerkkiväylä 3", "00000 ESIMERKKILÄ"),
-        "heading": "SÄHKÖLASKU", "iban": iban_for("00000000001002"), "reference": national_for("33004170926"),
+        "heading": "SÄHKÖLASKU", "iban": iban_for("12345600001002"), "reference": national_for("33004170926"),
         "invoice_date": date(2026, 9, 29), "due_date": date(2026, 10, 13), "invoice_no": "7731-0926",
         "customer_no": "3300417", "terms": "14 päivää netto",
         "rows": [("Sähköenergia 1.7.–31.8.2026, 1 512 kWh × 13,90 snt", "210.17"),
@@ -127,7 +128,7 @@ SAMPLES = [
         "story": "A payee that is not among the regular bills, with a short payment term.",
         "signals": ["new_payee", "short_term"],
         "payee": "Esimerkki Remontti Oy", "payee_address": ("Esimerkkipolku 7", "00000 ESIMERKKILÄ"),
-        "heading": "LASKU", "iban": iban_for("00000000001003"), "reference": rf_for("4720260929"),
+        "heading": "LASKU", "iban": iban_for("12345600001003"), "reference": rf_for("4720260929"),
         "invoice_date": date(2026, 9, 29), "due_date": date(2026, 10, 2), "invoice_no": "R-0929-17",
         "customer_no": "88213", "terms": "3 päivää netto",
         "rows": [("Kylpyhuoneen kosteusmittaus 29.9.2026", "189.00"),
@@ -141,7 +142,7 @@ SAMPLES = [
         "story": "A reference number with a wrong check digit and no barcode.",
         "signals": ["reference_check_failed"],
         "payee": "Esimerkki Vesi Oy", "payee_address": ("Esimerkkiranta 2", "00000 ESIMERKKILÄ"),
-        "heading": "INVOICE", "iban": iban_for("00000000001004"),
+        "heading": "INVOICE", "iban": iban_for("12345600001004"),
         "reference": wrong_check_digit(national_for("5519032")),
         "invoice_date": date(2026, 9, 22), "due_date": date(2026, 10, 20), "invoice_no": "W-2026-3391",
         "customer_no": "551903", "terms": "28 days net",
