@@ -42,8 +42,12 @@ DECLINE_RULES = [
                           r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
     ("out_of_scope", r"just (estimate|guess)|any number|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
-                     r"medicine|headache|lääke|päänsärky|weather|sää\b|recipe"),
+                     r"medicine|headache|lääke|päänsärky|weather|recipe"),
 ]
+# The Finnish weather ("sää") as a whole word and its weather forms, read on the question as typed (#370): folded
+# it is "saa", which ends many words ("bensaa", "kassaa") and is also the verb "gets". "säästä" (save) never
+# matches, because the forms after "sää" are listed.
+WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
     (r"groceries|grocery|food shopping|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
@@ -52,12 +56,13 @@ CATEGORY_WORDS = [
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
     (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
-    (r"\btravel\w*|matkailu\w*|matkoihin", "Travel"),
-    (r"lifestyle|clothes|vaatte\w*", "Lifestyle"),
-    (r"home (and|&) tech|electronics|kodin ja tekniikan", "Home & Tech"),
+    (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
+    (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan", "Lifestyle"),
+    (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
+    (r"\btransportation\b|liikkumi\w*", "Transportation"),   # the peer card's label (#403)
 ]
 MCC_GROUP_WORDS = [
-    (r"tax(i|is)\b|taksi\w*", "taxi"),
+    (r"tax(i|is)\b|taksi\w*|takse\w*", "taxi"),   # "takseihin", "takseja" (#346)
     (r"public transport|joukkoliiken\w*|bus(es)?\b|tram", "public_transport"),
     (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*", "fuel"),
     (r"parking|pysäköin\w*", "parking"),
@@ -176,8 +181,39 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     return args
 
 
+# "fewer" and "N % less" (#346, from PR #376): "what if I took 10% fewer taxis?", "what if I used taxis 10% less?".
 WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent half|half as much|less on|"
-           r"säästä\w*|säästöön|vähentä\w*|vähemmän|puolet")
+           r"\bfewer\b|(?:%|\bpercent|\bper cent)\s+less\b|"
+           r"säästä\w*|säästöön|vähentä\w*|\bvähenn\w*|vähemmän|puolet")   # "vähennän", not "verovähennys" (#483)
+# A what-if is a scenario. A question about what one did ("did I spend 10% less on taxis last month?", PAST)
+# is not one unless it is said as a scenario: "what if", "if I", "would", "could", "jos", a Finnish
+# conditional verb ("vähentäisin") (review of PR #376).
+HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we)\b|\bwould\b|\bcould\b|\bsuppose\b|\bimagine\b|"
+                r"\bhow (can|could|do|should) (i|we)\b|\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
+# Everyday words for a what-if on merchant category codes (#346, from PR #376), resolved without the model. Each
+# code is one that the four personas spend on in the what-if window (checked on the dataset in PR #376): taxi
+# 4121, public transport 4111, fuel 5541/5542 and parking 7523 (the MCC groups of core/tools/config.py), fast food
+# and takeaway 5814, bars 5813, cinemas 7832. Cafés, streaming and gyms have no code of their own in the data, so
+# those words stay unmapped and the user is asked back. Every code set is named in words by the what-if tool
+# (config.WHAT_IF_MCC_NAMES, #377).
+WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
+    (r"tax(i|is)\b|taksi\w*|takse\w*", config.MCC_GROUPS["taxi"]),
+    (r"public transport|joukkoliiken\w*|\bbus(es)?\b|bussi\w*|busse\w*|\btrams?\b|ratikka\w*|raitiovaun\w*",
+     config.MCC_GROUPS["public_transport"]),
+    (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*|bensii\w*|tankkau\w*", config.MCC_GROUPS["fuel"]),
+    (r"parking|pysäköin\w*|parkki\w*", config.MCC_GROUPS["parking"]),
+    (r"take-?aways?|fast food|noutoruo\w*|pikaruo\w*", ("5814",)),
+    (r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*", ("5813",)),
+    (r"cinemas?|\bmovies\b|elokuv\w*|leffa\w*|leffoi\w*", ("7832",)),
+]]
+# The baskets a what-if can cut (#403: the peer card's buttons for them); regular essentials are never cut.
+WHAT_IF_BASKET_WORDS = [(fold_pattern(rx), basket) for rx, basket in [
+    (r"everyday spending|arjen kulutu\w*", "everyday_spending"),
+    (r"unexpected necessit\w*|odottamatt\w* välttämättöm\w*", "unexpected_necessities"),
+]]
+# A cut of all one's spending with no selection ("What if I cut my spending?", the forecast card's button, #403):
+# the what-if rule asks which spending, it does not hand the question on.
+WHOLE_SPENDING = r"\b(my|our) (spending|expenses)\b|\bkulutusta(ni|mme)\b|\bmenoja(ni|mme)\b"
 PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
 # A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
@@ -193,20 +229,28 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     - ("health", None): a health selection (R9): the refusal alone, no other scenario;
     - ("save_more", None): "How could I save more?" with no category and no cut: the design's tools
       for it (section 7.5) that need no number from the user, and the answer offers a what-if;
-    - ("unmapped", None): not exactly one what-if category the rules know, or an MCC, merchant or
-      transport group: not recognised, so the next planner, or a clarifying question, takes it;
-    - ("amount", None): one category but no cut, or a cut outside 1..100 % or not whole: ask how much;
-    - ("run", args): run_what_if with that category and the user's own cut ("half" is 50 %)."""
+    - ("which", None): a cut of all one's spending with no selection ("What if I cut my spending?"): ask which
+      spending, as the what-if rule (#403);
+    - ("unmapped", None): not exactly one selection the rules know (a what-if category or basket, or an
+      everyday word of WHAT_IF_MCC_WORDS), or a code or merchant the user typed: not recognised, so the next
+      planner, or a clarifying question, takes it;
+    - ("amount", None): one selection but no cut, or a cut outside 1..100 % or not whole: ask how much;
+    - ("run", args): run_what_if with that selection and the user's own cut ("half" is 50 %)."""
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
     categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
+    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q)}
+    baskets = {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, q)}
+    selections = len(categories) + len(codes) + len(baskets)
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
-    if not categories and not pct and not half and re.search(template.SAVE_MORE, q):
+    if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
         return "save_more", None
-    if (len(categories) != 1 or re.search(SELECTION_CODE, q)
-            or any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS)):
+    if not selections and re.search(WHOLE_SPENDING, q) and not re.search(SELECTION_CODE, q):
+        return "which", None
+    if (selections != 1 or re.search(SELECTION_CODE, q)
+            or (not codes and any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS))):
         return "unmapped", None
     if pct:
         value = float(pct.group(1).replace(",", "."))
@@ -217,7 +261,13 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
         cut = 50
     else:
         return "amount", None
-    return "run", {"selection": {"kind": "category", "value": categories.pop()}, "cut_pct": cut}
+    if codes:
+        selection = {"kind": "mcc", "value": ",".join(sorted(codes.pop()))}
+    elif baskets:
+        selection = {"kind": "basket", "value": baskets.pop()}
+    else:
+        selection = {"kind": "category", "value": categories.pop()}
+    return "run", {"selection": selection, "cut_pct": cut}
 
 
 # The S-Bonus question (#216): "S-Bonus", "S-Group"/"S-ryhmä", or a bonus in a grocery context; an
@@ -380,7 +430,18 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
               r"\bmy (spending|money|expenses|budget|income|salary|bills)\b|"
               r"\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bkulutukse\w*|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
               r"\bmaksoin\b|\bostin\b|\bvoinko\b|\btienaan\b|\bmenoni\b|\brahani\b")
+# "What is in my everyday spending?", the baskets card's button (#403): the basket's spending by category over
+# the card's window (the last 6 months) or a period the user named.
+BASKET_CONTENTS_BASKETS = [
+    (r"everyday spending|arjen kulutuk\w*", "everyday_spending"),
+    (r"unexpected necessities|odottamattom\w* välttämättöm\w*", "unexpected_necessities"),
+    (r"regular essentials|säännöllis\w* välttämättöm\w*", "regular_essentials"),
+]
+BASKET_CONTENTS = (r"\bwhat('s| is) in my (everyday spending|unexpected necessities|regular essentials)\b|"
+                   r"\bmitä (arjen kulutukseeni|odottamattomiin välttämättömiin( menoihini)?|"
+                   r"säännöllisiin välttämättömiin( menoihini)?) kuuluu\b")
 INTENTS = [
+    ("basket_contents", BASKET_CONTENTS),
     # Small everyday purchases (#256): only the plain question is claimed (small_purchases_whole); a cut or a
     # comparison of them goes to the what-if or peer rule (in _matched).
     ("small_purchases", SMALL_PURCHASES),
@@ -402,10 +463,17 @@ SAVE_MORE_CALLS = [("get_safe_to_save", {}), ("get_basket_breakdown", {"period":
 # The what-if questions back never suggest an amount (review of PR #126): the user says how much.
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
                   "Kuinka paljon haluaisit vähentää? Kerro se prosentteina.")
-WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much?",
-                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon?")
-WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I cut groceries?"),
-                         ("Entä jos vähentäisin ravintoloita?", "Entä jos vähentäisin ruokaostoksia?"))
+# The selection asked back names only spending that all four personas can cut (#346): restaurants,
+# entertainment, taxis and takeaway give an estimate for each of them on the dataset. Groceries, fuel, parking
+# and public transport are regular essentials there, which a what-if never cuts (status not_offered), so they
+# are no examples (a persona database test checks the options).
+WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For example restaurants, "
+                 "entertainment, taxis or takeaway.",
+                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon? Esimerkiksi ravintolat, viihde, taksit "
+                 "tai noutoruoka.")
+WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer taxis?", "What if I cut takeaway?"),
+                         ("Entä jos vähentäisin ravintoloita?", "Entä jos käyttäisin taksia vähemmän?",
+                          "Entä jos vähentäisin noutoruokaa?"))
 # A money question the rules cannot map: it asks about the period only when it is about spending.
 MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
@@ -438,9 +506,11 @@ MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
 MONTHS = {fold(k): v for k, v in MONTHS.items()}
 MONTH_RX = fold_pattern(MONTH_RX)
 PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
-COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY = (
-    fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY))
+COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
+    fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
+                                HYPOTHETICAL, WHOLE_SPENDING))
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
+BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_CONTENTS_BASKETS]
 
 
 # Questions about Sentti itself (#287). They match only when the whole message is the greeting or the
@@ -471,7 +541,7 @@ def small_purchases_whole(q: str) -> bool:
 def meta_intent(question: str) -> str | None:
     """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
     q = fold(question)
-    if any(re.search(rx, q, re.I) for _, rx in DECLINE_RULES):
+    if any(re.search(rx, q, re.I) for _, rx in DECLINE_RULES) or re.search(WEATHER_FI, question, re.I):
         return None
     core = re.sub(r"[^\w\s']", " ", q)          # punctuation and emoji
     core = re.sub(r"\bsentti\b", " ", core)       # Sentti as an address
@@ -566,6 +636,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue
         if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
             continue  # saving time is no money question
+        if intent == "what_if" and re.search(PAST, q) and not re.search(HYPOTHETICAL, q):
+            continue  # what one did ("did I spend 10% less on taxis last month?"), not a scenario (#376 review)
         if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
             continue  # "save more of my income" is the save-more question, not the income (#296)
         if intent == "peers" and re.search(PEER_NOT_COMPARED, q) and not re.search(PEER_SPEND_COMPARED, q):
@@ -649,6 +721,11 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return _claimed(intent, [("get_safe_to_spend", {})], tools, lang)
     if intent == "small_purchases":
         return _claimed(intent, [("get_small_purchases", {})], tools, lang)
+    if intent == "basket_contents":   # the baskets card's button (#403)
+        basket = next(b for rx, b in BASKET_CONTENTS_BASKETS if re.search(rx, q))
+        period = (plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+        return _claimed(intent, [("get_spending", {"period": period, "filter": {"baskets": [basket]},
+                                                   "group_by": "category"})], tools, lang)
     if intent == "spender_type":
         return _claimed(intent, [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})],
                         tools, lang)
@@ -668,6 +745,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if kind == "unmapped":
         return Claim(None, reason="what_if_which")
+    if kind == "which":   # all one's spending, no selection: the what-if rule asks which (#403)
+        return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang)))
     if kind == "amount":
         return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
     if kind == "save_more":
@@ -826,6 +905,8 @@ def claim(request: PlanInput) -> Claim:
             continue
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
+    if re.search(WEATHER_FI, question, re.I):   # the weather, read unfolded (#370)
+        return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
