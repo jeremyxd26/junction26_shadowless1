@@ -89,7 +89,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
     declared = [x for x in ans.numbers if x.get("unit") != "date"]
     # Each declared Number object states its own value: its display has its value, unit mark and sign.
     for x in declared:
-        if not answer_text.display_matches(str(x.get("display") or ""), x["value"], x["unit"], lang):
+        if not answer_text.display_matches(str(x.get("display") or ""), x["value"], x["unit"], lang, x.get("method")):
             fails.append(f"Number object {x.get('value')} {x.get('unit')}: its display {x.get('display')!r} does not state it")
 
     # R1 by subtraction: remove the declared displays and the returned dates; no digit may remain.
@@ -114,7 +114,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         for n in wanted:
             if n.get("required", True) is False:
                 continue
-            match = [x for x in declared if x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"])]
+            match = [x for x in declared if x["unit"] == n["unit"]
+                     and answer_text.same_value(x["value"], n["value"], n["unit"], x.get("method"))]
             if not match:
                 fails.append(f"missing {n['name']} = {n['value']} {n['unit']} (objects)")
             elif not any(answer_text.shows(ans.text, str(x.get("display") or ""), dates, periods) for x in match):
@@ -123,7 +124,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "") -> list[str]:
         # question's own mark ("20%" is a percent, never money).
         typed = answer_text.scan_numbers(question, lang)
         for x in declared:
-            if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"]) for n in wanted):
+            if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"], x.get("method"))
+                   for n in wanted):
                 continue
             from_question = any(abs(abs(float(x["value"])) - v) < 1e-9 and mark in answer_text.UNIT_MARKS.get(x["unit"], set())
                                 for v, mark in typed)

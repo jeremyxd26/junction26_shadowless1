@@ -48,6 +48,9 @@ class ToolContext:
     language: str = "en"
     numbers: NumberRegistry = field(default_factory=NumberRegistry)
     _history: list[Tx] | None = field(default=None, repr=False)
+    # The tool cache's key for the customer's label state (core/tools/cache.py): read once per request
+    # and shared by every tool call of that request; None until read.
+    labels_key: str | None = field(default=None, repr=False)
 
     def history(self) -> list[Tx]:
         """The customer's transactions up to as_of, read once per context."""
