@@ -15,7 +15,7 @@ from core.agent.toolset import KNOWN_TOOLS, default_registry
 from core.agent.validator import Allowed, plain_text, validate
 from core.agent.validator import render as validator_render
 from core.tools.formatting import display
-from core.tools.models import Number, Unit
+from core.tools.models import Number, Period, Unit
 
 N1 = Number(id="n1", value=147.64, unit=Unit.EUR, period=AUG, method="spending.total@1", evidence_ref="ev_x",
             label="Restaurants", display=display(Decimal("147.64"), Unit.EUR, "en"))
@@ -283,6 +283,76 @@ def test_abbreviations_end_no_sentence():
 
     assert length_problems("You spent approx. {{n1}} on groceries, e.g. {{n2}} on dairy.", 2) == []
     assert length_problems("Käytit esim. ruokaan {{n1}}, mm. maitoon {{n2}}.", 2) == []
+
+
+# ---- #717: the length rule by kind (Renat's decision of 14 Nov 12:10, cut out of #618) -------------------------
+
+# Sanna's cached English spender draft: 37 words (the period counts as one), rejected on the stand against 35
+SANNA_SPENDER = ("During 1 Apr – 30 Sep 2026, your spending profile is Big ticket, with a large one-off purchase standing "
+                 "out. You spend {{n19}} more than the median of people like you, and a what-if can show what a cut "
+                 "would save.")
+H1 = Period(start=date(2026, 4, 1), end=date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
+N19 = Number(id="n19", value=412.0, unit=Unit.EUR, period=H1, method="peer_benchmark.gap_month_eur@1",
+             evidence_ref="ev_p", label="Above the median", display=display(Decimal("412.0"), Unit.EUR, "en"))
+
+
+def _words(n: int) -> str:
+    return " ".join(["word"] * n) + "."
+
+
+def test_sannas_37_word_spender_draft_passes_the_validator_and_the_length_rule():
+    from core.answer_text import answer_kind, length_problems
+
+    draft, errors = validate({"language": "en", "text": SANNA_SPENDER, "cited": ["n19"], "lesson_key": None},
+                             language="en", numbers={"n19": N19},
+                             allowed=Allowed(frozenset(), frozenset({(H1.start, H1.end)})))
+    assert errors == [] and draft is not None
+    assert answer_kind("What kind of spender am I?") == "ordinary"
+    assert length_problems(draft.text, 1) == []
+    # the old budget (#288's 35 words, kept for the templates) is what rejected it
+    assert length_problems(draft.text, 1, kind="template") == ["too long: 37 words, at most 35"]
+
+
+def test_an_ordinary_answer_has_at_most_three_sentences_and_55_words():
+    from core.answer_text import length_problems
+
+    assert length_problems(_words(55), 0) == []
+    assert length_problems(_words(56), 0) == ["too long: 56 words, at most 55"]
+    assert length_problems("One. Two words here. Three words here.", 0) == []
+    assert length_problems("One. Two words here. Three words here. Four words here.", 0) == [
+        "too long: 4 sentences, at most 3"]
+
+
+def test_a_why_answer_has_at_most_four_sentences_and_75_words():
+    from core.answer_text import length_problems
+
+    four_75 = " ".join(_words(n) for n in (19, 19, 19, 18))
+    four_76 = " ".join(_words(n) for n in (19, 19, 19, 19))
+    assert length_problems(four_75, 0, kind="why") == []
+    assert length_problems(four_75, 0) == ["too long: 4 sentences, at most 3", "too long: 75 words, at most 55"]
+    assert length_problems(four_76, 0, kind="why") == ["too long: 76 words, at most 75"]
+    assert length_problems("One. Two. Three. Four. Five.", 0, kind="why") == ["too long: 5 sentences, at most 4"]
+
+
+def test_the_templates_keep_two_sentences_and_35_words():
+    # no template answer changes with the rule (the peer answer's national line, #569)
+    from core.answer_text import length_problems
+
+    three = "One. Two words here. Three words here."
+    assert length_problems(three, 0, kind="template") == ["too long: 3 sentences, at most 2"]
+    assert length_problems(_words(35), 0, kind="template") == []
+    assert length_problems(_words(36), 0, kind="template") == ["too long: 36 words, at most 35"]
+
+
+@pytest.mark.parametrize("question,kind", [
+    ("Why is my safe to spend lower?", "why"), ("How does an e-invoice work?", "why"), ("Miksi niin vähän?", "why"),
+    ("Miten säästän?", "why"), ("How much did I spend in August?", "ordinary"), ("How many purchases?", "ordinary"),
+    ("What can I safely spend this week?", "ordinary"), ("What kind of spender am I?", "ordinary"),
+])
+def test_the_answer_kind_of_a_question(question, kind):
+    from core.answer_text import answer_kind
+
+    assert answer_kind(question) == kind
 
 
 def test_a_finnish_date_that_starts_a_line_is_no_list_number():

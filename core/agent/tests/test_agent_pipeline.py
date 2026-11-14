@@ -328,10 +328,10 @@ def test_no_later_card_before_the_error_when_a_call_finds_the_database_down(make
     assert order == ["card_tool0", "error"]
 
 
-# ---- #288: the answer-length rule ---------------------------------------------------------------------------
+# ---- #288, #572: the answer-length rule ---------------------------------------------------------------------------
 
 def test_a_draft_over_the_length_rule_is_retried_with_the_reason(make_pipeline):
-    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits. It was busy.",
             "cited": ["n1", "n2"], "lesson_key": None}
     short = {"language": "en", "text": "August 2026 cost {{n1}}, over {{n2}} visits.", "cited": ["n1", "n2"],
              "lesson_key": None}
@@ -340,11 +340,28 @@ def test_a_draft_over_the_length_rule_is_retried_with_the_reason(make_pipeline):
     done = dict(run(pipe))["done"]
     assert done["outcome"] == "answered" and done["text"] == short["text"] and "llm_unavailable" not in done["warnings"]
     attempts = audit_records(pipe)[-1]["composer_attempts"]
-    assert attempts[0]["validation"] == ["too long: 3 sentences, at most 2"] and attempts[1]["validation"] == "ok"
+    assert attempts[0]["validation"] == ["too long: 4 sentences, at most 3"] and attempts[1]["validation"] == "ok"
+
+
+def test_three_sentences_pass_and_four_pass_only_for_a_why_question(make_pipeline):
+    # #717 (Renat's rule of 14 Nov 12:10, cut out of #618): an ordinary answer may have three sentences and 55 words,
+    # an answer to a why or how question four sentences and 75 words; the first draft goes out, no retry
+    three = {"language": "en", "text": "In August 2026 you spent {{n1}} on restaurants, over {{n2}} visits. That is "
+             "more than in most months this year. Most of it went on evenings out at the weekend.",
+             "cited": ["n1", "n2"], "lesson_key": None}
+    four = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits. It was busy.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    for draft, message in ((three, "How much did I spend on restaurants in August 2026?"),
+                           (four, "Why did I spend so much on restaurants in August 2026?")):
+        pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[draft]))
+        done = dict(run(pipe, message))["done"]
+        assert done["outcome"] == "answered" and done["text"] == draft["text"], message
+        assert "llm_unavailable" not in done["warnings"], message
+        assert [a["validation"] for a in audit_records(pipe)[-1]["composer_attempts"]] == ["ok"], message
 
 
 def test_two_drafts_over_the_length_rule_end_in_the_template(make_pipeline):
-    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits. It was busy.",
             "cited": ["n1", "n2"], "lesson_key": None}
     pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[long, long]))
     done = dict(run(pipe))["done"]
