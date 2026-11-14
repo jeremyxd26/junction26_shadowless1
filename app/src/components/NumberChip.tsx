@@ -62,8 +62,8 @@ interface Props {
   /** Count up or down from an earlier value to `number` (a review answer); ends on `display`. */
   count?: Count
   /**
-   * An inline-size chip that stands on its own (a row's amount, not part of a sentence) may wrap
-   * like the larger sizes. Chips in running text never wrap.
+   * An inline-size chip that stands on its own (a row's amount, not part of a sentence): it may
+   * shrink-wrap and centre like the larger sizes. A chip in running text wraps only past the line.
    */
   wrap?: boolean
 }
@@ -75,15 +75,16 @@ interface Props {
 export function NumberChip({ number, size = 'md', tone = 'mint', count, wrap = false }: Props) {
   const { t } = useSettings()
   const text = useCountedText(number, count, tokenMs('--duration-money', 900))
-  // Chips in running text never wrap. A standalone chip may wrap its display at a space outside the
-  // amount ("€1,080.55" / "a month") when its container is too narrow, e.g. at 200 % text (#493).
+  // A chip never breaks inside its amount. When its container (or, in running text, the whole line)
+  // is too narrow, e.g. at 200 % text, its display wraps at the space after the amount:
+  // "€1,080.55" / "a month" (#493 standalone, #726 in running text).
   const inText = (size === 'inline' || size === 'lead') && !wrap
   const wrapping = chipWrapping(inText)
   const className =
     tone === 'plain'
       ? `inline-flex items-center ${wrapping} font-semibold tabular-nums ${plainSizes[size]}`
       : `inline-flex min-w-11 items-center justify-center ${wrapping} rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
-  const body = inText ? text : <DisplayText text={text} />
+  const body = <DisplayText text={text} />
   // A new count cross-fades the figure in (the only motion left under reduced motion).
   const shown = count ? (
     <span key={count.seq} className="motion-fade">
