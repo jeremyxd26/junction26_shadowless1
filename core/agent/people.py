@@ -141,6 +141,7 @@ VERB_ANY = (VERB_PERSON + r"|pay|paid|pays|make|made|makes|owe|owes|get|got|gets
             r"transfers|return|returned|returns|gift|gifted|gifts|receive|received|receives")
 VERB_PAST = r"spent|spends|earned|earns|paid|pays|bought|buys|saved|saves|owes|makes|made|cut|cuts"
 FI_VERB = (r"kaytti|kayttaa|kayttavat|kayttivat|kulutti|kuluttaa|kuluttavat|kuluttivat|maksoi|maksaa|maksavat|"
+           r"maksoivat|ostivat|tienasivat|ansaitsivat|saastivat|"   # the 3rd person plural past (#517)
            r"sai|saa|saavat|saivat|antoi|antaa|antoivat|lahetti|lahettivat|lainasi|lainasivat|siirsi|siirsivat|"
            r"palautti|palauttivat|lahjoitti|lahjoittivat|"
            r"osti|ostaa|ostavat|tienaa|tienasi|tienaavat|ansaitsi|ansaitsee|saasti|saastaa|"
@@ -151,7 +152,7 @@ FI_MONEY = r"kulutu\w*|palk(?!kapaiv)\w*|tulo\w*|tili\b|tilin\b|tilil\w*|saldo\w
 FI_COMPANY = r"\w*(?:lasku|maksu|hinta|hinna)\w*"
 
 FI_VERB_PERSON = re.compile(r"kaytti|kayttaa|kayttavat|kayttivat|kulutti|kuluttaa|kuluttavat|kuluttivat|osti|ostaa|"
-                            r"sai|saa|saavat|saivat|"
+                            r"sai|saa|saavat|saivat|ostivat|tienasivat|ansaitsivat|saastivat|"
                             r"ostavat|tienaa|tienasi|tienaavat|ansaitsi|ansaitsee|saasti|saastaa|"
                             r"on (?:tienannut|kayttanyt|kuluttanut|saastanyt|ostanut|ansainnut)", re.I)
 _CALENDAR_RX = "|".join(sorted(CALENDAR_EN))
@@ -275,7 +276,7 @@ def _shop(token: str) -> bool:
 COMPANY_MONEY_EN = re.compile(r"spending|income|salary|salaries|earnings|wages?|revenue|profits?|money|budget|"
                               r"finances|net worth", re.I)
 COMPANY_MONEY_FI = re.compile(r"palk\w*|tulo\w*|liikevaihto\w*|voito\w*|voitto\w*", re.I)
-GET_VERBS = re.compile(r"get|got|gets|receive|received|receives", re.I)
+GET_VERBS = re.compile(r"get|got|gets|receive|received|receives|pay|paid|pays|maksoi|maksoivat|maksaa|maksavat", re.I)   # a pronoun that gets or pays is a person
 # "I, my wife and our kids spent": a comma list that starts with the user is the user's household (#486)
 JOINT_LIST = re.compile(r"\b(?:i|me|we)(?:, (?:my|our|the) \w+)+,? (?:and|&) (?:my|our|the) \w+(?: \w+)? "
                         r"(?:spend|spent|paid|bought|earned|saved|pay|buy)\b", re.I)
