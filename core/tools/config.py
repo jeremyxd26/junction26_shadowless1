@@ -882,6 +882,46 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
                       "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
 }
+# The effect of an answer (#382), built from the real difference of the overview's numbers before and
+# after, within the answer length rule (two sentences, three numbers). {amount} is the purchase, {before}
+# and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
+# when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
+LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
+    "moved": ("Your safe to spend this week goes from {before} to {after}: {amount} {why}.",
+              "Tämän viikon turvallisesti käytettävissä oleva summa on nyt {after}, kun se oli {before}: "
+              "{amount} {why}."),
+    "basket": ("{amount} {why}.", "{amount} {why}."),
+    "why_unexpected_reserve": ("now counts as an unexpected necessity, so the reserve grows",
+                               "lasketaan nyt odottamattomaksi välttämättömäksi menoksi, joten varaus kasvaa"),
+    "why_unexpected": ("now counts as an unexpected necessity",
+                       "lasketaan nyt odottamattomaksi välttämättömäksi menoksi"),
+    "why_everyday": ("now counts as everyday spending", "lasketaan nyt arjen kulutukseksi"),
+    "why_pending": ("is waiting for your answer again", "odottaa taas vastaustasi"),
+    "why_closed": ("is back in the group the rules give it", "on taas siinä ryhmässä, johon säännöt sen sijoittavat"),
+    "save_moved": ("This week's safe to spend stays the same, but what you can typically put aside goes from "
+                   "{before} to {after}.",
+                   "Tämän viikon turvallisesti käytettävissä oleva summa pysyy samana, mutta tavallisesti "
+                   "säästöön jäävä summa on nyt {after}, kun se oli {before}."),
+    "same_budget": ("This does not change this week's safe to spend: your monthly budget, not this purchase, sets "
+                    "the limit.",
+                    "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: kuukausibudjettisi, ei "
+                    "tämä ostos, asettaa rajan."),
+    "same_balance": ("This does not change this week's safe to spend: your balance sets the limit, and this "
+                     "purchase is already in it.",
+                     "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
+                     "ja tämä ostos näkyy siinä jo."),
+}
+# ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------
+# The label of the `open_host_screen` action with target `contact_bank`: the bank's own contact screen,
+# carried by every refusal and by a bill explanation with warning signs. It names the destination only.
+HOST_CONTACT_BANK: tuple[str, str] = ("Contact S-Pankki", "Ota yhteyttä S-Pankkiin")
+
+
+def contact_bank_action(language: str) -> dict[str, str]:
+    """The action as the API sends it: type, label and target, nothing else (contracts/api.md section 3)."""
+    return {"type": "open_host_screen", "label": label(HOST_CONTACT_BANK, language), "target": "contact_bank"}
+
+
 # ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.

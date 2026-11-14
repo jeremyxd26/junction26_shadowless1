@@ -87,11 +87,11 @@ class OpenWhatifAction(Model):
 
 
 class OpenHostScreenAction(Model):
-    """Open a screen of the host app (contract 0.3.1, #267). The app sends the host message
-    `sentti.openHostScreen` with `{target}` only; the target list is closed."""
+    """Open a screen of the host app (contract 0.3.1, #267; `contact_bank` since 0.3.3, #420). The app sends
+    the host message `sentti.openHostScreen` with `{target}` only; the target list is closed."""
     type: Literal["open_host_screen"]
     label: str
-    target: Literal["monthly_saving", "bonus_to_fund"]
+    target: Literal["monthly_saving", "bonus_to_fund", "contact_bank"]
 
 
 Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction, OpenHostScreenAction],
@@ -447,6 +447,21 @@ class Change(Model):
     after: Number
 
 
+class EffectItem(Model):
+    key: str  # safe_to_spend, safe_to_save, irregular_reserve, or the basket the purchase moved into
+    label: str
+    before: NumberWithId
+    after: NumberWithId
+
+
+class LabelEffect(Model):
+    """#382: the headline numbers before and after the answer, and the text built from their difference."""
+    items: list[EffectItem]
+    text: str
+    text_rendered: str
+    numbers: dict[str, NumberWithId]
+
+
 class LabelResponse(Model):
     customer_id: str
     as_of: date
@@ -457,6 +472,7 @@ class LabelResponse(Model):
     changed: bool
     message: LabelMessage
     changes: list[Change]
+    effect: LabelEffect | None = None  # null when nothing changed (#382)
     refetch: list[str]
 
 
@@ -589,6 +605,8 @@ class BillExplainResponse(Model):
     basket: BillBasket
     safe_to_spend: BillSafeToSpend | None  # null when safe to spend cannot be computed (as the hero)
     glossary: list[GlossaryEntry]
-    actions: list[AddToPaymentsAction] = Field(max_length=1)
+    # The payment draft when the checks pass; the way to the bank (contact_bank) when there are warning signs.
+    actions: list[Annotated[Union[AddToPaymentsAction, OpenHostScreenAction], Field(discriminator="type")]] = (
+        Field(max_length=2))
     warnings: list[str]
     signals: list[BillSignal]   # warning signs, never a verdict (#242, decision 10)

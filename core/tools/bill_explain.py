@@ -223,6 +223,13 @@ def signal_codes(bill: BillInput, match_status: str, typical: Decimal | None, la
     return codes
 
 
+def contact_bank_wanted(codes: list[str]) -> bool:
+    """The way to the bank (#420, decided in the review of #435): a failed IBAN or reference check, or an
+    unknown payee together with another sign. An unknown payee, a short term or a high amount alone do not
+    bring it."""
+    return bool({"iban_check_failed", "reference_check_failed"} & set(codes)) or ("new_payee" in codes and len(codes) > 1)
+
+
 def draft_allowed(bill: BillInput) -> bool:
     """The payment draft is offered when the IBAN and the reference pass their checks; a past due date or
     another warning sign does not remove it."""
@@ -307,6 +314,8 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         actions.append({"type": "add_to_payments", "label": _t("action", lang),
                         "draft": {"payee": bill.payee, "iban": bill.iban, "reference": bill.reference,
                                   "amount": _dump(amount_n), "due_date": due.isoformat()}})
+    if contact_bank_wanted(codes):   # #420: the way to a human at the bank
+        actions.append(config.contact_bank_action(lang))
 
     evidence.write(ctx.conn, nb.specs)
     return {
