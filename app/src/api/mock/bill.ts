@@ -4,9 +4,10 @@
 // - `bill.read_response`, `bill.response`, `bill.response_unknown` and `bill.error`.
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
-// - the readings of the other two samples.
-// The housing sample returns the contract's `bill.read_response` unchanged, in both languages (its
-// displays are Finnish, as in the contract).
+// - the readings of the other samples (sample_4 has a misread amount over the explain limit).
+// The housing sample returns the contract's `bill.read_response` in the request's language: for
+// Finnish exactly the example; for English the same values with English displays of the amount and
+// the due date (provisional, like sample_1's).
 // Every company is fictional (the contract's own "Esimerkki" names); the IBANs are test numbers.
 //
 // Explain rules of the mock:
@@ -15,6 +16,9 @@
 // - any `fields` → `bill.response_unknown` as an ECHO: the typed payee, IBAN, reference and due
 //   date are copied into `bill` as sent, unformatted and unchecked. Its amount, checks,
 //   sentences and numbers stay the example's, so they do not describe what was typed.
+// - `forecast` (contract 0.3.4): the examples' own when they carry it, else the PROVISIONAL fixture
+//   of billForecast.ts (barcode → covered; fields → outside_forecast; typed bills from
+//   Esimerkki Vesi Oy → not_covered and Esimerkki Energia Oy → tight).
 // Texts of the responses stay English in Finnish, as in the what-if mock.
 import type { BillApi } from '../bill.ts'
 import { BillApiError } from '../bill.ts'
@@ -28,6 +32,7 @@ import type {
   BillSamplesResponse,
 } from '../billTypes.ts'
 import type { Language } from '../types.ts'
+import { FORECASTS } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -92,6 +97,14 @@ const SAMPLES: SampleSpec[] = [
     printed: { amount: '38,90 €', due: '12.10.2026' },
     accent: '#2B5C8A',
   },
+  {
+    sample_id: 'sample_4',
+    title: { en: 'Electricity bill', fi: 'Sähkölasku' },
+    language: 'fi',
+    payee: 'Esimerkki Energia Oy',
+    printed: { amount: '150,00 €', due: '12.10.2026' },
+    accent: '#6B4FA0',
+  },
 ]
 
 function escapeXml(text: string): string {
@@ -145,7 +158,15 @@ const REFERENCE_NOTE: Record<Language, string> = {
 }
 
 function readSample(sampleId: string, lang: Language): BillReadResponse {
-  if (sampleId === 'sample_2') return clone(examples['bill.read_response'])
+  // The contract example, answered in the request's language (contract 11.4).
+  if (sampleId === 'sample_2') {
+    const reading = { ...clone(examples['bill.read_response']), language: lang }
+    if (lang === 'en') {
+      if (reading.fields.amount) reading.fields.amount.display = '€812.40'
+      if (reading.fields.due_date) reading.fields.due_date.display = '1 Oct 2026'
+    }
+    return reading
+  }
   if (sampleId === 'sample_1') {
     // The typed bill of the contract (bill.request_fields), as a reader would see it on paper.
     return {
@@ -157,6 +178,23 @@ function readSample(sampleId: string, lang: Language): BillReadResponse {
         reference: field('12345', '12345', 'unchecked', 'printed', REFERENCE_NOTE[lang]),
         amount: field('145.00', lang === 'fi' ? '145,00 €' : '€145.00', 'unchecked', 'printed'),
         due_date: field('2026-10-20', lang === 'fi' ? '20.10.2026' : '20 Oct 2026', 'unchecked', 'printed'),
+        barcode: null,
+      },
+      needs_confirmation: true,
+    }
+  }
+  if (sampleId === 'sample_4') {
+    // A misread amount: the bill prints 150,00 €, the reader proposes 150000.00, which is over the
+    // explain limit. Without a barcode, "Looks right" must open the fields and show the problem.
+    return {
+      sample_id: sampleId,
+      language: lang,
+      fields: {
+        payee: field('Esimerkki Energia Oy', 'Esimerkki Energia Oy', 'unchecked', 'printed'),
+        iban: field('FI7112345600009876', 'FI71 1234 5600 0098 76', 'checked', 'printed'),
+        reference: field('45609', '45609', 'checked', 'printed'),
+        amount: field('150000.00', lang === 'fi' ? '150 000,00 €' : '€150,000.00', 'unchecked', 'printed'),
+        due_date: field('2026-10-12', lang === 'fi' ? '12.10.2026' : '12 Oct 2026', 'unchecked', 'printed'),
         barcode: null,
       },
       needs_confirmation: true,
@@ -226,14 +264,27 @@ function explain(request: BillExplainRequest): BillExplainResponse {
     if (/\D/.test(digits)) throw invalidBill('barcode_chars', lang)
     if (digits.length !== 54) throw invalidBill('barcode_length', lang)
     if (digits !== examples['bill.request'].barcode) throw invalidBill('barcode_check', lang)
-    return { ...clone(examples['bill.response']), language: lang }
+    const response = { ...clone(examples['bill.response']), language: lang }
+    response.forecast = response.forecast ?? clone(FORECASTS.covered)
+    return response
   }
 
   const fields = request.fields!
   const response = clone(examples['bill.response_unknown'])
   response.language = lang
   response.bill = { ...response.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
+  const provisional = PROVISIONAL_FORECAST_BY_PAYEE[fields.payee.trim()]
+  response.forecast = provisional ? clone(provisional) : (response.forecast ?? clone(FORECASTS.outside_forecast))
   return response
+}
+
+/**
+ * PROVISIONAL: typed bills from these fictional payees get a hand-written forecast, so every status
+ * can be seen in the demo (the water bill is the typed fallback sample).
+ */
+const PROVISIONAL_FORECAST_BY_PAYEE: Record<string, BillExplainResponse['forecast']> = {
+  'Esimerkki Vesi Oy': FORECASTS.not_covered,
+  'Esimerkki Energia Oy': FORECASTS.tight,
 }
 
 export function createMockBillApi(): BillApi {

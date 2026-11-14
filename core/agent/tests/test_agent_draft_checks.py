@@ -160,6 +160,9 @@ def test_a_peer_comparison_without_ranking_words_passes(text):
     "Instead of waiting, take out a loan.",
     "Älä odota, ota lainaa.",
     "Sinun ei tarvitse säästää, ota lainaa.",
+    "You asked about it. Take out a small loan.",
+    "There is no reason not to take a loan.",
+    "There is no reason to hesitate to take a loan.",
 ])
 def test_a_borrowing_suggestion_is_found(text):
     assert borrowing_suggestion(text) is not None, text
@@ -184,6 +187,11 @@ def test_a_borrowing_suggestion_is_found(text):
     "Kysyit, kannattaako ottaa lainaa; en voi neuvoa siinä.",
     "En voi neuvoa, kannattaako ottaa lainaa.",
     "I wouldn't take a loan for this.",
+    "You asked whether to take a loan. I can't recommend that; safe to spend is {{n1}}.",
+    "Kysyit, kannattaako ottaa lainaa. En voi neuvoa siinä.",
+    "There is no reason to take a loan; saving {{n3}} is enough.",
+    "There is no reason to take out a loan for this.",
+    "Ei ole syytä ottaa lainaa; turvallisesti käytettävissä on {{n1}}.",
 ])
 def test_a_negation_or_a_data_statement_is_not_a_borrowing_suggestion(text):
     assert borrowing_suggestion(text) is None, (text, borrowing_suggestion(text))
@@ -196,6 +204,7 @@ def test_a_negation_or_a_data_statement_is_not_a_borrowing_suggestion(text):
     "Together they make {{n1}}.",
     "Together these come to {{n1}}.",
     "Your bills and groceries add up to {{n1}}.",
+    "Cutting both adds up to {{n1}}.",                                           # the stand, 14.11 (savings plan)
 ])
 def test_a_number_explained_as_a_sum_is_rejected(text):
     assert has(text, "sum or combination"), problems(text)

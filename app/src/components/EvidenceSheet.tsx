@@ -147,11 +147,24 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
       )}
 
       <div className="flex flex-col gap-1 border-t border-line pt-3 text-sm text-muted">
-        <p>
-          {t.method}: <span className="font-mono text-xs break-all">{evidence.method.id}</span>
-        </p>
+        <MethodLine method={evidence.method} />
         <p>{evidence.privacy_note}</p>
       </div>
     </div>
+  )
+}
+
+/**
+ * The method by its name, as the API sends it (#557). The internal id (for example
+ * `safe_to_spend.safe_to_spend_7d_eur@1`) is never shown, not even hidden; without a name, nothing.
+ */
+export function MethodLine({ method }: { method: Pick<EvidenceResponse['method'], 'name'> }) {
+  const { t } = useSettings()
+  const name = method.name?.trim()
+  if (!name) return null
+  return (
+    <p>
+      {t.method}: {name}
+    </p>
   )
 }

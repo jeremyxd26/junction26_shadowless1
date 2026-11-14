@@ -62,6 +62,19 @@ The flow column of the shared classification block (`02_baskets.sql` to `06_peer
 - Utilities come about 3 times a month at varying amounts (median CV of the monthly total 31%).
 - No card merchant charges a customer once a month at a stable amount, so "subscriptions" are empty in this data; recurrence comes from bill and income types.
 
+**Estimates: what is observed and what is assumed (#380).** Every card that shows an estimate lists, in `estimate.observed`, the Numbers it is built from (the tool's own Numbers, same refs) and, in `estimate.assumptions`, what it assumes, with a code from the closed list of `contracts/api.md` section 3 (Estimates). Nothing is computed differently; each assumption below is what the formula of its section already uses.
+
+| Estimate | Observed | Assumptions (`code`: value) | Where the formula is |
+|---|---|---|---|
+| Safe to spend | the balance; the bills due before payday; the budget limit | `spending_as_usual`: the essentials reserve; `reserve_for_unexpected`: the irregular reserve; `cushion`: the cushion; `bills_on_usual_days`; `budget_from_usual_month` (the budget limit, which binds for every persona); `savings_goal_first`: the goal | section 3 |
+| Safe to save | the month's components (free month and everyday month, or the shortfall) | `next_months_like_last` | section 3.1 |
+| What-if | the baseline a month | `next_months_like_last`; `cut_share`: the customer's own cut (`user_input@1`, no ref) | section 4 |
+| S-Bonus | the grocery spending a month | `bonus_all_at_s_group` (share 100%) or `bonus_share`: the share; `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods` (the fixed assumptions, `config.BONUS_ASSUMPTIONS`); `bonus_level`: the Bonus percentage | `docs/domain/s-group-benefits.md` section 4 |
+| Bills (pro rata) | the total until payday | `bills_pro_rata` | section 3.2 |
+| Peer benchmark | the customer's own figure | `peer_group`: the group size | section 6 |
+| Balance forecast | the balance today; the bills until payday | `spending_as_usual`: the daily pace (everyday spending and essentials; unexpected costs are not counted); `bills_on_usual_days`; `no_income_before_payday` | section 3.3 |
+| Savings plan (#369) | the levers' baselines a month (`what_if.baseline_month_eur@1`) | `next_months_like_last`; `cuts_as_shown`, one per lever: its cut share | `core/tools/savings_plan.py` |
+
 ## 1. Three baskets — "Where did my money go?"
 
 Keys (shared with #5) and labels from the partner brief:
@@ -781,16 +794,17 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 |---|---|---|
 | `count`, `total_eur` | The small purchases in the period | `transactions`, listing exactly these purchases |
 | `avg_eur` | `total / count`, when there is at least one | composite `mean` |
-| `month_avg_eur` | `total / months`, when the period is whole calendar months (the default is) | composite `scale` |
+| `month_avg_eur` | `total / months`, when the period is two or more whole calendar months (the default is); for one month it would only repeat the total, so there is none (#465) | composite `scale` |
 | `flexible_total_eur` | Everyday spending in the period, refunds netted | `transactions` |
 | `share_pct` | The total's share of everyday spending; per category, its share of the small total | composite `share_pct` |
 | `max_amount_eur` | The limit used | composite `rule_value` |
 
 **The answer.** One sentence, at most three numbers, the period in words:
-- **Five or more:** the total first, the count and the monthly average, and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part at …" when no category holds more than half of the small total.
+- **Five or more:** the total first, the count and the monthly average (none for one month), and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part …" when no category holds more than half of the small total.
+- **Where:** each category takes its own preposition (`config.SMALL_PURCHASE_WHERE`, #465): "at restaurants and cafés", "on entertainment", "on lifestyle shopping", and "on <label>" for any other category. Finnish uses the case of each phrase ("ravintoloissa ja kahviloissa", "viihteessä"), and "luokassa <label>" otherwise.
 - **Fewer than 5** (`config.SMALL_PURCHASE_MIN_COUNT`): "Only 4 small purchases in the last three months, €28.73 in all: not much to see here."
 - **None:** it says so.
-- **The limit** (€10.00) stays on the card.
+- **The limit:** the default (€10.00) stays on the card. A limit the user asked for is named with its own Number, in the place of the monthly average, so there are still at most three numbers (#465): "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at restaurants and cafés." In Finnish: "… 31 ostosta, enintään 25,00 €, …" (review of #476: "rajalla" read as "right at the limit").
 
 **The rule** (`core/agent/rules.py`) claims only the plain question. After the trigger (plural forms only), the default period and a fixed list of filler words are removed, nothing may be left. An amount, another period, a filter or a "stop", in words or digits, hands the message on to the next planner (review of #390).
 

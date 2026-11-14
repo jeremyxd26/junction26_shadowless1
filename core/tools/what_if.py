@@ -26,8 +26,8 @@ from core.tools.context import ToolContext
 from core.tools.missing import MissingData
 from core.tools.selection import Selection
 from core.tools.formatting import display
-from core.tools.models import (MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, PeriodArg, ToolResult,
-                               Unit)
+from core.tools.models import (MERCHANT_ALIAS_PATTERN, Action, Args, Card, Estimate, Number, Period, PeriodArg, ToolResult,
+                               Unit, assumption)
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "run_what_if"
@@ -258,17 +258,33 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "ra
     # the card's evidence: the purchases themselves when there are too few (the trip, not an empty list)
     ref = few[1].evidence_ref if few is not None else None
     return ToolResult(
-        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang, ref), notes=[], evidence=specs,
+        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang, ref, few[1] if few is not None else None),
+        notes=[], evidence=specs,
         model_view=_model_view(result, sel),
     )
 
 
-def _card(result: WhatIfResult, cut_pct: int, language: str, ref: str | None = None) -> Card:
+def _observed(result: WhatIfResult, selection_total: Number | None = None) -> list[Number]:
+    """#380: the baseline the cut applies to. When the what-if is not offered there is nothing to cut and the
+    baseline is 0, so the estimate never claims it observed zero: it lists what the card shows as left out (the
+    one-off purchases, the regular essentials), only those above 0 (review of #520). With too few purchases
+    (#379) both can be 0: then the purchases themselves, the selection total of the card's caveat (#503)."""
+    if result.status == "not_offered":
+        left_out = [n for n in (result.one_off_excluded, result.regular_excluded) if n.value]
+        return left_out or ([selection_total] if selection_total is not None else [])
+    return [result.baseline_per_month]
+
+
+def _card(result: WhatIfResult, cut_pct: int, language: str, ref: str | None = None,
+          selection_total: Number | None = None) -> Card:
     ref = ref or result.saving_per_month.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language, pct=cut_pct)},
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language, pct=cut_pct),
+                          observed=_observed(result, selection_total),   # #380, #503
+                          assumptions=[assumption("what_if.next_months_like_last", language),   # #503 review
+                                       assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         result=result.model_dump(mode="json"),
     )

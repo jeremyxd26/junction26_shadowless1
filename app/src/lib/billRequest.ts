@@ -36,11 +36,14 @@ export function normaliseAmount(typed: string): { amount: string } | { problem: 
   const text = typed.trim()
   if (text === '') return { problem: 'required' }
   if (!AMOUNT.test(text)) return { problem: 'amount_format' }
-  const amount = text.replace(',', '.')
+  // Leading zeros are dropped from the whole part ("007" → "7", "000000.50" → "0.50"), so the
+  // range is decided on the real digits. Nothing else changes: no rounding, no padding.
+  const [rawWhole, fraction] = text.replace(',', '.').split('.')
+  const whole = rawWhole.replace(/^0+(?=\d)/, '')
+  const amount = fraction === undefined ? whole : `${whole}.${fraction}`
   // More than 0 and at most 100000.00, decided on the digits, not on a parsed float.
-  const [whole, fraction = ''] = amount.split('.')
   if (!/[1-9]/.test(amount)) return { problem: 'amount_range' }
-  if (whole.length === 6 && (whole !== '100000' || /[1-9]/.test(fraction))) return { problem: 'amount_range' }
+  if (whole.length === 6 && (whole !== '100000' || /[1-9]/.test(fraction ?? ''))) return { problem: 'amount_range' }
   return { amount }
 }
 
@@ -108,4 +111,20 @@ export function buildExplainRequest({ customerId, language, reading, inputs }: B
       fields: { payee, iban, reference, amount: amount.amount, due_date: dueDate },
     },
   }
+}
+
+/** The first field with a problem, in the order the card shows them; null when there is none. */
+export function firstProblemField(problems: Partial<Record<FieldKey, FieldProblem>>): FieldKey | null {
+  return FIELD_KEYS.find((key) => problems[key] !== undefined) ?? null
+}
+
+/**
+ * Whether a problem sits on a field the card shows read-only (a read value): then the card must
+ * switch to editing, or "Looks right, explain it" would do nothing visible.
+ */
+export function problemOnReadField(
+  problems: Partial<Record<FieldKey, FieldProblem>>,
+  reading: BillReadResponse | null,
+): boolean {
+  return FIELD_KEYS.some((key) => problems[key] !== undefined && reading?.fields[key] != null)
 }

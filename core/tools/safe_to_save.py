@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from core.tools import config, evidence, metric_sql, periods, recurring
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.safe_to_spend import metric_row, weekly_numbers
 
@@ -209,8 +209,11 @@ def _card(data: SafeToSaveData, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="safe_to_save", title=_t("title", language), subtitle=data.subtitle, evidence_ref=ref,
-        estimate={"label": config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
-                  "text": _t("estimate_text", language)},
+        # #380: observed are the month's components (free month and everyday month, or the shortfall)
+        estimate=Estimate(label=config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
+                          text=_t("estimate_text", language),
+                          observed=[c.amount for c in data.monthly_components],
+                          assumptions=[assumption("safe_to_save.next_months_like_last", language)]),
         actions=[Action(type="open_evidence", label=config.label(config.SAFE_TO_SPEND_TEXT["how"], language),
                         evidence_ref=ref),
                  # #267: one step into the bank's monthly saving, only when a typical month leaves money

@@ -13,6 +13,7 @@ from __future__ import annotations
 import calendar
 import re
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from core import answer_text
@@ -548,9 +549,10 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return f"{{{{{node['id']}}}}}"
     if tool == "get_safe_to_spend":
         safe, usual = view.get("safe_to_spend"), view.get("usual_week")
-        if view.get("binding_limit") != "budget" or not (_id(safe) and _id(usual)):
+        if view.get("binding_limit") != "budget" or not _id(safe):
             return None
-        if _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
+        # without the usual pace the goal is still said (#552): the plain goal sentence
+        if _id(usual) and _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
             text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["below_usual_with_goal"], language)
             return text.format(goal=tok(goal), safe=tok(safe), usual=tok(usual)), [goal["id"], safe["id"], usual["id"]]
         text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["with_goal"], language)
@@ -563,6 +565,40 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return text.format(goal=tok(goal), weekly=tok(weekly)), [goal["id"], weekly["id"]]
     text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language)
     return text.format(goal=tok(goal), monthly=tok(monthly)), [goal["id"], monthly["id"]]
+
+
+# "Why is my safe to spend lower / so low / so little", "miksi vähemmän / niin vähän" (#552): a rule answer from the
+# safe-to-spend view (why_lower_sentence), never a model guess. Matched on the folded question; the rule planner
+# also wants the safe-to-spend words, or a short bare question, and no category.
+WHY_LOWER = (r"\b(why|how come)\b.*\b(lower|low|so little|less|smaller|so small|only)\b"
+             r"|\bmiksi\b.*\b(vahemman|vahan|pieni\w*|pienempi|pienemp\w*|alhai\w*|matala\w*)\b")
+
+
+def why_lower(q: str) -> bool:
+    return bool(re.search(WHY_LOWER, q))
+
+
+def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The answer to "why is my safe to spend lower?" (#552): the limit that binds by name (the view's
+    binding_limit), with the budget side the savings goal set aside first, and the other side's figure. None when
+    a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    safe, goal, balance, budget = (view.get(k) for k in ("safe_to_spend", "savings_goal", "balance_limit",
+                                                         "budget_limit"))
+    if not (_id(safe) and _id(balance) and _id(budget)):
+        return None
+    if _value(balance) == _value(budget):
+        key, cited = "why_equal", [safe]
+    elif view.get("binding_limit") == "budget":
+        key, cited = ("why_budget_goal", [safe, goal, balance]) if _value(goal) > 0 and _id(goal) else \
+            ("why_budget", [safe, balance])
+    else:
+        key, cited = "why_balance", [safe, budget]
+    tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
+              (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
+    text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
+    return text.format(**{**{"goal": ""}, **tokens}), [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
@@ -590,15 +626,19 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
 # period in words. The limit stays on the card. Words always stand between a count and a date, so a count
 # never reads as a day of a month. No advice, no judgement.
 SMALL_SENTENCE = {
-    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
-                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
-    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
-            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
-    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    "summary": ("You spent {total} on {count} small purchases{limit} {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{limit}{month}, {where_part}."),
+    "few": ("Only {count} {noun}{limit} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}{limit}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases{limit} {period}.", "Ei yhtään pientä ostosta {period}{limit}."),
     # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
     "month": (", about {month}", ", noin {month}"),
-    "most": ("most of them at {where}", "suurin osa {where}"),
-    "largest": ("the largest part at {where}", "eniten {where}"),
+    # a limit other than the default (#465): its Number, in the place of the monthly average. Finnish says
+    # "enintään" ("at most"); "rajalla" read as "right at the limit" (review of #476)
+    "limit": (" of {limit} or less", ", enintään {limit}"),
+    # SMALL_PURCHASE_WHERE carries each category's preposition ("at restaurants and cafés", "on entertainment")
+    "most": ("most of them {where}", "suurin osa {where}"),
+    "largest": ("the largest part {where}", "eniten {where}"),
     "noun_one": ("small purchase", "pieni ostos"),
     "noun_many": ("small purchases", "pientä ostosta"),
     "label": ("in {label}", "jaksolla {label}"),
@@ -632,7 +672,7 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     or the period is missing."""
     if view.get("tool") != "get_small_purchases":
         return None
-    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+    nums = {k: view.get(k) for k in ("count", "total", "per_month", "max_amount")}
 
     def has(key: str) -> bool:
         return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
@@ -643,26 +683,33 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
     kind = (view.get("takeaway") or {}).get("kind")
     s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    # The limit is named only when it is not the default (#465); then it takes the monthly average's place.
+    other_limit = has("max_amount") and \
+        Decimal(str(nums["max_amount"].get("value"))) != Decimal(tools_config.SMALL_PURCHASE_MAX_EUR)
+    limit = s("limit").format(limit=token["max_amount"]) if other_limit else ""
+    limit_ids = [nums["max_amount"]["id"]] if other_limit else []
     if kind == "none":
-        text, ids = s("none").format(period=when), []
+        text, ids = s("none").format(period=when, limit=limit), limit_ids
     elif kind == "few":
         noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
-        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
-        ids = [nums[k]["id"] for k in ("count", "total")]
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"], limit=limit)
+        ids = [nums["count"]["id"]] + limit_ids + [nums["total"]["id"]]
     else:
         categories = view.get("categories") or []
         largest = categories[0] if categories else {}
         key, label = largest.get("key"), largest.get("label") or ""
         where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
-                 else (label.lower() if language == "en" else label))
+                 else pick(tools_config.SMALL_PURCHASE_WHERE_OTHER, language).format(
+                     label=label.lower() if language == "en" else label))
         share = (largest.get("share") or {}).get("value")
-        if re.search(r"\d", where):
+        if not label and key not in tools_config.SMALL_PURCHASE_WHERE or re.search(r"\d", where):
             return None
         where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
-        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        month = s("month").format(month=token["per_month"]) if has("per_month") and not other_limit else ""
         text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
-                                   where_part=where_part)
-        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+                                   where_part=where_part, limit=limit)
+        ids = ([nums[k]["id"] for k in ("total", "count")] + limit_ids
+               + ([nums["per_month"]["id"]] if month else []))
     return text[:1].upper() + text[1:], ids
 
 
@@ -828,7 +875,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = (safe_to_spend_sentence(view, language)
+        custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
+                  or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
