@@ -497,13 +497,24 @@ class BillBasket(Model):
 
 
 class BillSafeToSpend(Model):
+    """The bill applied to the balance side like a bill due before payday, and the hero's own computation
+    run again: free until payday and safe to spend, each before and after (null after payday)."""
+
     effect: Literal["after_payday", "excess_only", "full"]
     next_payday: date
-    before: Number
-    reserved: Number | None
-    after: Number | None
-    change: Number | None
+    reserved: Number | None                # excess_only: the matched bill's due_until_payday
+    counted: Number | None                 # what the bill adds to the bills due before payday
+    free_until_payday_before: Number       # the hero's "Free until payday"
+    free_until_payday_after: Number | None
+    before: Number                         # the hero's primary
+    after: Number | None                   # recomputed by the hero's function, never by subtraction
     text: str
+
+
+class BillSignal(Model):
+    code: Literal["iban_check_failed", "reference_check_failed", "new_payee", "amount_above_usual", "short_term"]
+    text: str
+    numbers: list[Number]   # the Numbers whose display the text cites, in order
 
 
 class GlossaryEntry(Model):
@@ -539,3 +550,4 @@ class BillExplainResponse(Model):
     glossary: list[GlossaryEntry]
     actions: list[AddToPaymentsAction] = Field(max_length=1)
     warnings: list[str]
+    signals: list[BillSignal]   # warning signs, never a verdict (#242, decision 10)

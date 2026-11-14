@@ -54,7 +54,8 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.request_fields": schemas.BillExplainRequest,
     "bill.response": schemas.BillExplainResponse,
     "bill.response_unknown": schemas.BillExplainResponse,
-    # bill.error joins with #242, which adds invalid_bill to ErrorBody (PENDING_ERROR_CODES)
+    # bill.error joins with #242, which adds invalid_bill and its `reason` (PENDING_ERROR_CODES);
+    # bill.read_response with #250 (section 11.4, not implemented yet)
 }
 
 # Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
@@ -67,8 +68,9 @@ ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {}
 # Whoever implements one removes it here: test_pending_entries_are_still_missing fails while a field
 # is both implemented and listed. Empty since #165 implemented `safe_to_save` (both overview examples).
 PENDING: dict[str, set[str]] = {}
-# Error codes the models do not have yet: invalid_bill comes with the bill endpoint (#242).
-PENDING_ERROR_CODES: set[str] = {"invalid_bill"}
+# Error codes the models do not have yet: invalid_bill comes with the bill endpoint (#242),
+# model_unavailable with the bill reading (#250).
+PENDING_ERROR_CODES: set[str] = {"invalid_bill", "model_unavailable"}
 # Error codes the service has ahead of the contract. Empty since contract 0.2.2 (not_found is in it).
 ERROR_CODE_ADDITIONS: set[str] = set()
 

@@ -851,7 +851,7 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
 
 ## 4. Errors
 
-Every error response has the same envelope, and the `error` event inside the `/api/ask` stream uses it too. The app shows `message` (already localised: `?lang` for a GET, the body's `language` for a POST, the detected language for `/api/ask` with `auto`; for a POST body that cannot be read or does not validate, see section 1) and offers a retry when `retryable` is true.
+Every error response has the same envelope, and the `error` event inside the `/api/ask` stream uses it too. The app shows `message` (already localised: `?lang` for a GET, the body's `language` for a POST, the detected language for `/api/ask` with `auto`; for a POST body that cannot be read or does not validate, see section 1) and offers a retry when `retryable` is true. A 422 `invalid_bill` adds one field, `reason` (section 11.1).
 
 | HTTP | `code` | When |
 |---|---|---|
@@ -862,12 +862,13 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 404 | `evidence_not_found` | Unknown or expired `ref`. |
 | 403 | `evidence_forbidden` | The evidence belongs to a different customer. |
 | 422 | `invalid_scenario` | The what-if scenario cannot be computed or is refused: a selection with no spending in the window, or a selection the core refuses (section 8.1). Every reason gets the same body. |
-| 422 | `invalid_bill` | The bill explanation cannot use the request: both or neither of `barcode` and `fields`, `payee` beside `fields`, or a barcode that cannot be used (section 11.1). Every reason gets the same body. |
+| 422 | `invalid_bill` | The bill explanation cannot use the request: both or neither of `barcode` and `fields`, `payee` beside `fields`, or a barcode that cannot be used. The body carries `reason`, and `message` is the sentence for that reason (section 11.1). |
 | 404 | `tx_ref_not_found` | Unknown `tx_ref`, the ref of an expired review, or one that belongs to another customer. All three get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
 | 422 | `basket_not_allowed` | The basket is not one of the review's two options (section 10). |
 | 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
+| 503 | `model_unavailable` | A bill reading cannot use the model; the app offers typing the fields (section 11.4, not implemented yet). |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -3223,14 +3224,14 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
 
 ## 11. `POST /api/bill/explain`
 
-The customer shows Sentti a bill (lasku) and gets it explained with their own data: who it is from, how much, when it is due, how it compares with what they usually pay this payee, and what paying it does to safe to spend. No AI model is called, and nothing is stored: like the what-if calculator, it is a read-only computation (#242).
+The customer shows Sentti a bill (lasku) and gets it explained with their own data: who it is from, how much, when it is due, how it compares with what they usually pay this payee, and what paying it does to the hero's numbers. No AI model is called, and nothing is stored: like the what-if calculator, it is a read-only computation (#242).
 
 Every number is one of these:
 - read from the bill's virtual barcode and checked by code (`bill_barcode@1`);
 - typed or confirmed by the user (`user_input@1`);
 - computed from the customer's data by the existing metrics.
 
-A language model never supplies a number of a bill. **Sentti does not pay:** when the bill passes its checks, the response offers a payment draft that the app hands to the host app (section 11.3).
+A language model never supplies a number of the explanation: a reading of a bill image (section 11.4) is only a proposal that the user confirms. **Sentti does not pay:** when the bill passes its checks, the response offers a payment draft that the app hands to the host app (section 11.3).
 
 ### 11.1 Request
 
@@ -3242,7 +3243,7 @@ A language model never supplies a number of a bill. **Sentti does not pay:** whe
 | `payee` | string or `null` | Only beside `barcode`: the payee's name as printed on the bill, because the barcode carries no name. 1 to 70 characters. |
 | `fields` | object or `null` | The bill's details as the user typed or confirmed them: `{payee, iban, reference, amount, due_date}`, all required (below). |
 
-**Exactly one of `barcode` and `fields`** is set; the other is `null` or left out. Both or neither, or `payee` beside `fields`, is 422 `invalid_bill`.
+**Exactly one of `barcode` and `fields`** is set; the other is `null` or left out.
 
 | `fields.` | Type | Meaning |
 |---|---|---|
@@ -3252,11 +3253,24 @@ A language model never supplies a number of a bill. **Sentti does not pay:** whe
 | `amount` | string | A decimal string in euros with at most two decimals, more than 0 and at most `100000.00`, for example `"145.00"`. Anything else is 400 `invalid_request`. |
 | `due_date` | date | The due date (eräpäivä), `YYYY-MM-DD`. |
 
-**Texts are data.** `payee`, `iban` and `reference` are returned as data only: they are never interpreted, never used to build a query, and the payee's name never appears inside a sentence of the response.
+**Texts are data.** `payee`, `iban` and `reference` are returned as data only: they are never interpreted, never used to build a query, and the payee's name as sent never appears inside a sentence of the response.
 
-**A barcode that cannot be used is 422 `invalid_bill`:** a wrong length, an unknown version, a character that is not a digit, an IBAN or a reference inside it that fails its check, a due date that is not a real date, no amount or no due date in the barcode (send `fields` instead), or an amount over 100,000.00. Every reason gets the same body.
+**A request the explanation cannot use is 422 `invalid_bill`.** Its error body has one more field than the envelope of section 4: `reason`, a stable code. `message` is a plain sentence for that reason in the request language, so the app can show it and fall back to the fields form. No field of a barcode that failed is returned.
 
-**A failed check of a typed `iban` or `reference`, or a due date in the past, is not an error:** the response is a 200 that says so in `checks` and `warnings` (section 11.2).
+| `reason` | When |
+|---|---|
+| `one_of_barcode_or_fields` | Both or neither of `barcode` and `fields`. |
+| `payee_with_fields` | `payee` beside `fields` (the name goes inside `fields`). |
+| `barcode_length` | The barcode does not have 54 digits. |
+| `barcode_version` | The barcode is not version 4 or 5. |
+| `barcode_chars` | The barcode has a character that is not a digit. |
+| `barcode_check` | The IBAN or the reference inside the barcode fails its check. |
+| `due_date` | The barcode's due date is not a real date. |
+| `amount_missing` | The barcode carries no amount. |
+| `due_date_missing` | The barcode carries no due date. |
+| `amount_too_large` | The barcode's amount is over 100,000.00. |
+
+**A failed check of a typed `iban` or `reference`, or a due date in the past, is not an error:** the response is a 200 that says so in `checks`, `warnings` and `signals` (section 11.2).
 
 A barcode, with the payee's name typed beside it:
 
@@ -3266,7 +3280,7 @@ A barcode, with the payee's name typed beside it:
   "customer_id": "CUST00042",
   "language": "en",
   "barcode": "421123456000007850008124000000000000000000001232261001",
-  "payee": "Housing",
+  "payee": "Esimerkki Asunnot Oy",
   "fields": null
 }
 ```
@@ -3281,7 +3295,7 @@ The details typed by the user, here with a reference number that fails its check
   "barcode": null,
   "payee": null,
   "fields": {
-    "payee": "Esimerkki Huolto Oy",
+    "payee": "Esimerkki Remontti Oy",
     "iban": "FI49 5000 9420 0287 30",
     "reference": "12345",
     "amount": "145.00",
@@ -3290,15 +3304,16 @@ The details typed by the user, here with a reference number that fails its check
 }
 ```
 
-The error for a body or barcode that cannot be used:
+A barcode whose reference fails its check:
 
 <!-- example: bill.error -->
 ```json
 {
   "error": {
     "code": "invalid_bill",
-    "message": "This bill cannot be read. Check the barcode, or type the details from the bill.",
-    "retryable": false
+    "message": "This barcode does not pass its check. Compare it with the paper bill, or type the fields.",
+    "retryable": false,
+    "reason": "barcode_check"
   }
 }
 ```
@@ -3309,17 +3324,18 @@ The error for a body or barcode that cannot be used:
 |---|---|
 | `bill` | The bill as the service read it:<br>- `source`: `barcode` or `fields`.<br>- `payee`: the name as sent, or `null` for a barcode without one.<br>- `iban` and `reference`: formatted for display (the IBAN in groups of four; a national reference in groups of five from the right, an `RF` reference in groups of four).<br>- `amount` (Number): `method` is `bill_barcode@1` for a barcode and `user_input@1` for `fields`; `evidence_ref` is `null`, because the number does not come from the customer's data; the period is the due date.<br>- `due_date`. |
 | `checks` | `{iban, reference, due_date}`: `iban` and `reference` are `pass` or `fail` (the IBAN's mod-97 check; the reference's check digit, national or `RF`); `due_date` is `pass`, or `past` when it is before `as_of`. A barcode always gives `pass` for both, because a barcode that fails a check is 422. |
-| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence.<br>The match is exact after normalisation (case, spaces and punctuation), against the labels of the customer's recurring bills in both languages. There is no fuzzy matching. No match is a normal outcome. |
+| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only. There is no fuzzy matching. No match is a normal outcome. |
 | `comparison` | A [Comparison](#23-comparison), only when `matched`, else `null`:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`), `null` when the typical amount is 0.<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
-| `safe_to_spend` | What paying the bill on time does to safe to spend, or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`, section 6). Fields:<br>- `effect`, `next_payday` (a date), `before`, `reserved`, `after`, `change`, `text`.<br>- `before`: the overview hero's `primary` Number, with the same `evidence_ref`.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after the next payday. Nothing changes before payday; `reserved`, `after` and `change` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before the next payday, the bill is `matched`, and the matched bill is already counted in the bills due before payday. `reserved` is that bill's `due_until_payday` (the same Number as in the bills card), and only the excess changes safe to spend: `after = before - max(A - reserved, 0)`.<br>- `full`: `D` is on or before the next payday, any other case. `after = before - A`, and `reserved` is `null`.<br><br>`change` is `after - before`: zero or negative. `after` (`bill.safe_to_spend_after_eur@1`) and `change` (`bill.safe_to_spend_change_eur@1`) have the period of `before`. `after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is safe to spend. |
+| `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €221.58: your monthly budget limits it, not your balance." `free_until_payday_after` and `after` can be negative: they are shown as they are, and `text` then says that the bill takes more than is free. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
-| `actions` | At most one: `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`, when `checks.iban` and `checks.reference` are `pass`. A due date in the past keeps the draft, because paying late is still better than not paying. Otherwise `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
-| `warnings` | Sentences for the app to show prominently, empty when there is nothing to warn about:<br>- a failed reference check: "This reference number does not pass its check. Compare it with the paper bill before paying.";<br>- a failed IBAN check, in the same form;<br>- a due date in the past: that the payee may charge late-payment interest, without an amount. |
+| `actions` | At most one: `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Otherwise `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
+| `warnings` | Sentences for the app to show next to the action, empty when there is nothing to warn about:<br>- a failed reference check: "This reference number does not pass its check. Compare it with the paper bill before paying.";<br>- a failed IBAN check, in the same form;<br>- a due date in the past: that the payee may charge late-payment interest, without an amount. |
+| `signals` | Warning signs, `{code, text, numbers}`[], empty when there are none. The app shows them as "warning signs", never as a verdict: no text says that a bill is a fraud. `text` is one plain sentence in the request language; `numbers` are the Number objects whose `display` it cites, in order (empty when it cites none). The codes:<br>- `iban_check_failed`, `reference_check_failed`: the check digit does not pass (`checks`).<br>- `new_payee`: the payee matches no regular bill, by label or by known payee name (`match.status` `not_matched` or `no_payee`).<br>- `amount_above_usual`: for a matched bill, the amount is at least 150% of its typical monthly amount; for any other bill, it is above the largest typical monthly amount of the customer's regular bills. Both thresholds are server settings with these defaults.<br>- `short_term`: the due date is fewer than 7 days after `as_of` and not before it (a past due date is in `checks` and `warnings`).<br>Only the two failed checks remove the payment draft; the other signs do not. |
 
-The numbers of `comparison.change`, `comparison.change_pct`, `safe_to_spend.after` and `safe_to_spend.change` open as `composite` (section 9). Their parts are the bill's amount, which has no `evidence_ref`, and the numbers they are computed from: the typical amount for the comparison; for safe to spend, `before`, and `reserved` when it is set. The `bill.*` methods are defined in the design documents (#242).
+**Evidence of the computed numbers.** `comparison.change`, `comparison.change_pct`, `safe_to_spend.counted` and `safe_to_spend.free_until_payday_after` open as `composite` (section 9). Their parts are the numbers they are computed from; the bill's amount is a part without an `evidence_ref`. `safe_to_spend.after` opens as a `composite` like the hero's `primary`: the smaller of the two limits, each a part, with the balance limit recomputed from `free_until_payday_after`. The `bill.*` methods are defined in the design documents (#242).
 
-A matched bill, read from the barcode of section 11.1. The amount is higher than usual and due before payday; €780.00 of it is already counted in the bills due before payday:
+A matched bill, read from the barcode of section 11.1: the payee is a known payee name of the housing bill. The amount is higher than usual and due before payday, and €780.00 of it is already counted in the bills due before payday, so only the excess of €32.40 is added. It is due tomorrow, so it carries the warning sign `short_term`:
 
 <!-- example: bill.response -->
 ```json
@@ -3329,7 +3345,7 @@ A matched bill, read from the barcode of section 11.1. The amount is higher than
   "language": "en",
   "bill": {
     "source": "barcode",
-    "payee": "Housing",
+    "payee": "Esimerkki Asunnot Oy",
     "iban": "FI21 1234 5600 0007 85",
     "reference": "1232",
     "amount": {
@@ -3377,31 +3393,43 @@ A matched bill, read from the barcode of section 11.1. The amount is higher than
   "safe_to_spend": {
     "effect": "excess_only",
     "next_payday": "2026-10-15",
-    "before": {
-      "value": 184.68, "unit": "eur",
-      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
-      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_s2t4w6y8a0c2",
-      "label": "Safe to spend", "display": "€184.68"
-    },
     "reserved": {
       "value": 780.0, "unit": "eur",
       "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
       "method": "safe_to_spend.bill_due_eur@1", "evidence_ref": "ev_h5o7u9s1e3a5",
       "label": "Due before payday", "display": "€780.00"
     },
+    "counted": {
+      "value": 32.4, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.counted_eur@1", "evidence_ref": "ev_k5m7p9r1t3v5",
+      "label": "Added to the bills before payday", "display": "€32.40"
+    },
+    "free_until_payday_before": {
+      "value": 395.74, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_s4t6w8y0a2c4",
+      "label": "Free until payday", "display": "€395.74"
+    },
+    "free_until_payday_after": {
+      "value": 363.34, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.free_until_payday_after_eur@1", "evidence_ref": "ev_k6m8p0r2t4v6",
+      "label": "Free until payday after this bill", "display": "€363.34"
+    },
+    "before": {
+      "value": 184.68, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_s2t4w6y8a0c2",
+      "label": "Safe to spend", "display": "€184.68"
+    },
     "after": {
-      "value": 152.28, "unit": "eur",
+      "value": 169.56, "unit": "eur",
       "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
-      "method": "bill.safe_to_spend_after_eur@1", "evidence_ref": "ev_k5m7p9r1t3v5",
-      "label": "Safe to spend after this bill", "display": "€152.28"
+      "method": "bill.safe_to_spend_after_eur@1", "evidence_ref": "ev_k7m9p1r3t5v7",
+      "label": "Safe to spend after this bill", "display": "€169.56"
     },
-    "change": {
-      "value": -32.4, "unit": "eur",
-      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
-      "method": "bill.safe_to_spend_change_eur@1", "evidence_ref": "ev_k6m8p0r2t4v6",
-      "label": "Change in safe to spend", "display": "-€32.40"
-    },
-    "text": "Due before your payday on 15 Oct. €780.00 is already set aside for your Housing bill, so only the extra €32.40 lowers safe to spend."
+    "text": "Due before your payday on 15 Oct. €780.00 is already counted for your Housing bill, so only the extra €32.40 is added: free until payday goes from €395.74 to €363.34, and your weekly safe to spend from €184.68 to €169.56."
   },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
@@ -3414,7 +3442,7 @@ A matched bill, read from the barcode of section 11.1. The amount is higher than
       "type": "add_to_payments",
       "label": "Add to payments",
       "draft": {
-        "payee": "Housing",
+        "payee": "Esimerkki Asunnot Oy",
         "iban": "FI2112345600000785",
         "reference": "1232",
         "amount": {
@@ -3427,11 +3455,14 @@ A matched bill, read from the barcode of section 11.1. The amount is higher than
       }
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "signals": [
+    { "code": "short_term", "text": "The due date is less than a week away.", "numbers": [] }
+  ]
 }
 ```
 
-The typed bill of section 11.1: the payee is not one of the customer's regular bills, the reference number fails its check, and the bill is due after payday. There is no payment draft:
+The typed bill of section 11.1: the payee matches no regular bill, the reference number fails its check, and the bill is due after payday. There is no payment draft, and there are two warning signs:
 
 <!-- example: bill.response_unknown -->
 ```json
@@ -3441,7 +3472,7 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
   "language": "en",
   "bill": {
     "source": "fields",
-    "payee": "Esimerkki Huolto Oy",
+    "payee": "Esimerkki Remontti Oy",
     "iban": "FI49 5000 9420 0287 30",
     "reference": "12345",
     "amount": {
@@ -3468,16 +3499,23 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
   "safe_to_spend": {
     "effect": "after_payday",
     "next_payday": "2026-10-15",
+    "reserved": null,
+    "counted": null,
+    "free_until_payday_before": {
+      "value": 395.74, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_s4t6w8y0a2c4",
+      "label": "Free until payday", "display": "€395.74"
+    },
+    "free_until_payday_after": null,
     "before": {
       "value": 184.68, "unit": "eur",
       "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
       "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_s2t4w6y8a0c2",
       "label": "Safe to spend", "display": "€184.68"
     },
-    "reserved": null,
     "after": null,
-    "change": null,
-    "text": "Due on 20 Oct, after your payday on 15 Oct, so it does not change safe to spend before then."
+    "text": "Due on 20 Oct, after your payday on 15 Oct, so it changes nothing before then."
   },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
@@ -3486,7 +3524,11 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
     { "term": "late_payment_interest", "label": "Late-payment interest (viivästyskorko)", "text": "Interest the payee may charge for each day a bill is paid after its due date." }
   ],
   "actions": [],
-  "warnings": ["This reference number does not pass its check. Compare it with the paper bill before paying."]
+  "warnings": ["This reference number does not pass its check. Compare it with the paper bill before paying."],
+  "signals": [
+    { "code": "reference_check_failed", "text": "The reference number does not pass its check.", "numbers": [] },
+    { "code": "new_payee", "text": "This payee is not one of your regular bills.", "numbers": [] }
+  ]
 }
 ```
 
@@ -3504,7 +3546,7 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
   "type": "sentti.payment_draft",
   "v": 1,
   "payload": {
-    "payee": "Housing",
+    "payee": "Esimerkki Asunnot Oy",
     "iban": "FI2112345600000785",
     "reference": "1232",
     "amount": {
@@ -3518,15 +3560,42 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
 }
 ```
 
-### 11.4 Reading a photo or PDF (reserved, not implemented yet)
+### 11.4 Reading a sample bill (not implemented yet)
 
-**Not implemented yet. No endpoint is defined.** This subsection reserves the place of a later step, which waits for its own decision. Nothing here can be built against yet. The step will work like this:
-1. The app sends a photo or PDF of the bill.
-2. The service answers with candidate fields (`payee`, `iban`, `reference`, `amount`, `due_date`). Each field is marked `checked` (checked by code, for example an IBAN that passes its check) or `unchecked`.
-3. The user confirms or corrects every field.
-4. The app sends the confirmed fields to `POST /api/bill/explain` as `fields` (section 11.1).
+**Not implemented yet** (#249, #250). The two endpoints below are decided but not built, and this subsection stays marked until they are on the dev environment. The demo reads only the sample bills of a gallery; a visitor's own file is not sent anywhere.
 
-**Unconfirmed fields never reach an answer.**
+**`GET /api/bill/samples?lang=en`** lists the sample bills: `{samples: [{sample_id, title, language, image_url}]}`. `language` is the bill's own language, and `image_url` is a static image. The true fields of a sample are never in this response.
+
+**`POST /api/bill/read`** with `{customer_id, language, sample_id}` reads one sample bill: a language model reads the image, and code checks what it read. The response is a proposal, not an explanation: `{sample_id, language, fields, needs_confirmation}`.
+- `fields` has the keys `payee`, `iban`, `reference`, `amount`, `due_date` and `barcode`. Each is `{value, display, status, source, note}`, or `null` when it was not found or failed its format check (it is dropped, never repaired):
+  - `value`: the normalised string, for example `"FI2112345600000785"` or `"812.40"`; `display`: the same, formatted for display.
+  - `status`: `checked` or `unchecked`. `checked` means code checked it: a barcode that parses, the fields taken from that barcode, or an IBAN or reference that passes its check digit. Without a barcode, `amount`, `due_date` and `payee` are always `unchecked`.
+  - `source`: `barcode` or `printed`.
+  - `note`: a sentence or `null`, for example when the amount in the barcode and the printed amount differ.
+- `needs_confirmation` is always `true`. A reading contains no Number objects.
+
+The user then confirms or corrects every field. The app sends the confirmed `barcode`, or the confirmed fields as `fields`, to `POST /api/bill/explain` (section 11.1), where the methods are `bill_barcode@1` and `user_input@1`. **Unconfirmed fields never reach an answer.**
+
+When the model may not be used (switched off, out of budget, paused, an error, or an answer that does not fit the schema), the reading is 503 `model_unavailable`, with no retry; the app then offers typing the fields.
+
+A reading of a sample with a barcode (not implemented yet):
+
+<!-- example: bill.read_response -->
+```json
+{
+  "sample_id": "sample_2",
+  "language": "fi",
+  "fields": {
+    "payee": { "value": "Esimerkki Asunnot Oy", "display": "Esimerkki Asunnot Oy", "status": "unchecked", "source": "printed", "note": null },
+    "iban": { "value": "FI2112345600000785", "display": "FI21 1234 5600 0007 85", "status": "checked", "source": "barcode", "note": null },
+    "reference": { "value": "1232", "display": "1232", "status": "checked", "source": "barcode", "note": null },
+    "amount": { "value": "812.40", "display": "812,40 €", "status": "checked", "source": "barcode", "note": null },
+    "due_date": { "value": "2026-10-01", "display": "1.10.2026", "status": "checked", "source": "barcode", "note": null },
+    "barcode": { "value": "421123456000007850008124000000000000000000001232261001", "display": "421123456000007850008124000000000000000000001232261001", "status": "checked", "source": "barcode", "note": null }
+  },
+  "needs_confirmation": true
+}
+```
 
 ---
 
@@ -3540,4 +3609,4 @@ The typed bill of section 11.1: the payee is not one of the customer's regular b
 | 0.2.0 | The coach asks about a spending spike (#33).<br><br>New:<br>- Card type `review`: one spike, an opaque `tx_ref`, a merchant alias with no id, the question in English and Finnish, and exactly two options, `unexpected_necessities` ("needed") and `everyday_spending` ("I chose it").<br>- Basket state `unclassified` ("Waiting for your answer"): while a review is pending, the purchase is in no basket and not in the reserve. "Needed" lowers safe to spend, "I chose it" leaves it unchanged, and no answer raises it.<br>- Endpoint `POST /api/baskets/label` (section 10):<br>&nbsp;&nbsp;- idempotent; `changes` is empty when nothing changed;<br>&nbsp;&nbsp;- undo with `basket: null`, which returns the purchase to `unclassified` while the review is open;<br>&nbsp;&nbsp;- `review_state`, and `message` with number tokens;<br>&nbsp;&nbsp;- errors `tx_ref_not_found` (also for another customer's ref, R4) and `basket_not_allowed`, and 400 for a value that is not a basket key.<br>- Overview fields:<br>&nbsp;&nbsp;- `reviews`: at most one pending review; at most 3 created per calendar week; never the same transaction twice; never Health.<br>&nbsp;&nbsp;- `safe_to_save`: a new card type. The headline is `monthly`; the second line is `stock` with `stock_explanation` and no call to action. When `monthly` is 0, a `reason` follows the sign of free month: `essentials_exceed_income` or `largest_everyday_category`. No component amount is negative. Its method ids are pending as SQL outputs (#53).<br>- `/api/ask` may carry the pending `review` card, added by the server.<br>- A timestamp convention (section 1).<br><br>Changed:<br>- `GET /api/overview` now has one idempotent side effect: its first serve creates the pending review. It stays safe to call on every app open.<br>- The changelog moved from section 10 to section 11, so its anchor is `#11-changelog`.<br>- The `invalid_scenario` row of the errors table is reworded: the cancel scenario it mentioned no longer exists.<br><br>New examples, all with dataset values except CUST00042:<br>- `overview.response_pending` and `card.review` (Sanna, review pending);<br>- `card.safe_to_save` (Sanna after "needed"), `card.safe_to_save_aleksi`, `card.safe_to_save_zero` (CUST00002) and `card.safe_to_save_everyday` (CUST00019);<br>- the label examples: "needed", "I chose it", undo and error;<br>- `overview.response` (CUST00042, illustrative) gains `safe_to_save` and an empty `reviews`. |
 | 0.2.1 | No change of shape. The method ids `safe_to_spend.bill_due_eur@1` (#44) and `safe_to_spend.safe_to_save_monthly_eur@1`, `.everyday_month_eur@1`, `.safe_to_save_eur@1`, `.everyday_until_payday_eur@1`, `.essentials_shortfall_month_eur@1`, `.save_reason_month_eur@1` (#53) are real SQL outputs now; the pending notes are removed. The bills card states that its items, each rounded on its own, may differ from `total` by up to 0.01 per item. |
 | 0.2.2 | Documents what the service already returns or what was decided (#134); nothing new is built.<br><br>1. Evidence rows carry `display`, the amount formatted like a Number's display; `amount` stays the exact decimal string (section 9; #106).<br>2. Evidence kinds: `metric` (a re-run of the metric definition, `reconciles`, `rows` always a list) and the shape of `peer_aggregate` (group statistics as parts with `evidence_ref: null`, the level in the group size's label); new examples `evidence.response_metric` and `evidence.response_peer` (sections 2.1 and 9; #73, #106, #95).<br>3. Errors: `not_found` (404) for an unknown route; a wrong method is 405 `invalid_request` with `Allow` (section 4; #106).<br>4. `POST /api/whatif`: every refused selection answers 422 `invalid_scenario` with the same body; `language` defaults to `en`; `cut_pct` is a JSON integer; a merchant alias is accepted and the merchant id echoed; `unexpected_necessities` is allowed; new example `whatif.error` (section 8.1; #106).<br>5. Only the persona customers are served; any other id answers 404 `customer_not_found` (sections 1, 4, 5 and 9; #125).<br>6. `hero` is `null` when safe to spend cannot be computed for a known reason; the app hides the card (section 6; #106).<br>7. The hero subtitle shows the period's dates, "1–7 Oct 2026" / "1.–7.10.2026" (section 6; #113, #133).<br>8. The display rules of the one formatter (section 2.1; #111).<br>9. The review card texts as decided on #68: the question with the amount, category and date filled in, the buttons "Needed" / "My choice" ("Välttämätön" / "Oma valinta"), and the Finnish effect texts with "turvallisesti käytettävissä" (sections 3 and 6).<br><br>Also: error messages follow `?lang` for a GET, the body's `language` for a POST, and the detected language for `/api/ask` with `auto`. A POST body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` in English (sections 1, 4, 7.1, 8.1 and 10.1).<br><br>Facts added after the first draft:<br>10. The first overview creates the review (with #196, also the first `/api/ask` answer); an undo after the 7 days closes it (section 6, as in 10.1).<br>11. With #144 (PR #199, not yet merged): the per-viewer cookie `sentti_viewer` set by the overview, and a rate limit on the label write, answered with 429 `rate_limited` and `Retry-After` (sections 6 and 10).<br>12. `safe_to_save`: when free until payday is negative, `stock` is 0 and `stock_components` is empty (section 3; #165).<br>13. The reason text of `card.safe_to_save_everyday` names the category in a form that works for every everyday category (#165).<br>14. The "My choice" button's text in sections 10.1 and 10.2; the `metric` rows are always a list; the `peer_aggregate` shape as #69 builds it; which hero number opens as which evidence kind (section 9).<br>15. New example `overview.response_no_hero`: the overview when safe to spend cannot be computed (section 6). |
-| 0.3.0 | The bill explanation (#243; built in #242).<br><br>New:<br>- Section 11, `POST /api/bill/explain`: a bill as a virtual barcode or as typed fields. The response carries `bill`, `checks`, `match`, `comparison`, `basket`, `safe_to_spend`, `glossary`, `actions` and `warnings`. Examples `bill.request`, `bill.request_fields`, `bill.response`, `bill.response_unknown` and `bill.error`.<br>- The action `add_to_payments` and the host message `sentti.payment_draft` (section 11.3, example `host.payment_draft`): the host shows, confirms and executes the payment; Sentti does not pay.<br>- Section 11.4, reserved and not implemented yet: reading a photo or PDF of a bill.<br>- Error code 422 `invalid_bill` (section 4).<br>- Method `bill_barcode@1`, a value read from a bill's virtual barcode, with no evidence ref (sections 2.1 and 9), and the `bill.*` methods of the numbers the bill explanation computes, whose composite evidence has a bill part without a ref.<br><br>The changelog is now section 12. |
+| 0.3.0 | The bill explanation (#243; built in #242).<br><br>New:<br>- Section 11, `POST /api/bill/explain`: a bill as a virtual barcode or as typed fields. The response carries `bill`, `checks`, `match`, `comparison`, `basket`, `safe_to_spend`, `glossary`, `actions`, `warnings` and `signals`. Examples `bill.request`, `bill.request_fields`, `bill.response`, `bill.response_unknown` and `bill.error`.<br>- The payee is matched exactly against the recurring bills' labels and a fixed table of fictional payee names, which stands in for the counterparty history a real bank has.<br>- `safe_to_spend`: the bill is applied to the balance side like a bill due before payday, and the hero's own computation runs again: `free_until_payday` and safe to spend, each before and after.<br>- `signals`: warning signs with the codes `iban_check_failed`, `reference_check_failed`, `new_payee`, `amount_above_usual` and `short_term`, never a verdict (#242, decision 10).<br>- The action `add_to_payments` and the host message `sentti.payment_draft` (section 11.3, example `host.payment_draft`): the host shows, confirms and executes the payment; Sentti does not pay.<br>- Section 11.4, decided and not implemented yet: `GET /api/bill/samples` and `POST /api/bill/read` with `sample_id`; a reading is a proposal of fields marked `checked` or `unchecked` that the user confirms (#249, #250; example `bill.read_response`).<br>- Error codes 422 `invalid_bill`, whose body adds `reason`, and, with the reading, 503 `model_unavailable` (section 4).<br>- Method `bill_barcode@1`, a value read from a bill's virtual barcode, with no evidence ref (sections 2.1 and 9), and the `bill.*` methods of the numbers the bill explanation computes, whose composite evidence has a bill part without a ref.<br><br>The changelog is now section 12. |
