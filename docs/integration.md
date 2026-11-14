@@ -83,11 +83,10 @@ The amount in a handoff is a Number object of the API contract (`contracts/api.m
 
 ## 5. Security
 
-- **Headers** (dev, issue #102, PR #119):
+- **Headers** (main, issue #102, `deploy/Caddyfile`):
   - HSTS, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on every response.
   - The API sends `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
   - The app sends a CSP that allows only its own origin for scripts, styles, fonts, images (plus `data:`) and API calls, with `frame-ancestors 'self'`. That stops other sites from framing the module; the host's WebView loads it top-level, which `frame-ancestors` does not restrict.
-  - `main`'s Caddyfile has no security headers yet.
 - **Cookies** (**planned**, issue #144): the module will use one first-party, functional cookie. It is on neither `main` nor `dev` yet, only on the branch `r/144-viewer-sessions` (`core/app/api/viewer.py`).
   - **Name and value:** `sentti_viewer`, 32 random characters (192 bits) with no personal data. The server keeps only a hash and never logs the value.
   - **Attributes:** `HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=7200`.
@@ -198,9 +197,7 @@ class SenttiActivity : AppCompatActivity() {
 - **The bridge:** only today's iOS `{ type: 'close' }` is built. The versioned messages of section 3, Android, and handling messages from the host are planned; the app aligns in issue #170.
 - **Swedish:** `sv` in the API, the texts and the app.
 - **Theme tokens from the host:** the module uses its own S-mobiili-style tokens.
-- **On `dev`, not yet on `main`:**
-  - the security headers (issue #102, PR #119);
-  - only the persona customers served (issue #101, PR #125).
+- **On `dev`, not yet on `main`:** only the persona customers served (issue #101, PR #125).
 - **Planned:**
   - the viewer-session cookie and the rate limit on the review answer (issue #144, on a branch only);
   - the review-card answer, the module's one write (#68, PR #141).
