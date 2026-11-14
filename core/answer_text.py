@@ -228,25 +228,50 @@ _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|et
 # Sentti never suggests borrowing (#419): a loan, credit, a credit card as a way to pay, instalments,
 # financing, "buy now, pay later" or an overdraft, in a suggesting sense. Naming them is fine (the credit
 # decision decline says "loan"; a repayment bill keeps its label); proposing them is not.
+# A negation in the same clause turns a borrowing word into a statement: "I can't recommend taking a loan",
+# "I would not use a credit card", "Älä ota lainaa" (review of #437). Also used by the cut-suggestion check.
+NEGATION = re.compile(
+    r"\b(?:not|never|cannot|no\s+need|avoid\w*|instead\s+of|rather\s+than|ei|älä|älkää|en|et|eivät|emme|ette"
+    r"|ilman)\b|n['’]t\b|\bnothing\s+to\b", re.I)
+_CLAUSE_START = re.compile(r"[.!?;:,]|\b(?:but|so|mutta|joten|vaan)\b", re.I)
+_CREDIT_DATA = r"(?!\s+(?:cards?|statements?|bills?|numbers?|purchases?|spending|transactions?|repayments?|payments?|fees?|interest|debt|balance|limits?))"
+_BORROW_NOUN = (r"(?:(?:small|personal|short-term|quick|payday|consumer|cheap)\s+)?"
+                r"(?:loans?|credit(?:\s+cards?|\s+line)?|overdraft\w*|instal{1,2}ment\s+plans?|instal{1,2}ments|financing)")
 BORROWING_SUGGESTION = re.compile(
-    r"\b(?:take|taking|get|getting|use|using|apply\s+for|consider|try|open)\s+(?:out\s+)?(?:a\s+|an\s+|your\s+|some\s+)?"
-    r"(?:small\s+|personal\s+|short-term\s+|quick\s+)?(?:loans?|credit(?:\s+cards?|\s+line)?|overdraft\w*|instal{1,2}ment\s+plans?"
-    r"|payday\s+loans?|financing)\b"
-    r"|\bborrow(?:ing)?\b(?!\s+(?:decisions?|costs?))|\bpay\s+(?:for\s+it\s+|it\s+)?(?:later|in\s+instal{1,2}ments)\b"
+    r"\b(?:take|taking|get|getting|use|apply\s+for|applying\s+for|consider|try|open|opening"
+    r"|(?:consider|try|start|recommend|suggest|by|keep|think\s+about)\s+using)\s+(?:out\s+)?"
+    r"(?:a\s+|an\s+|your\s+|some\s+|the\s+)?" + _BORROW_NOUN + r"\b" + _CREDIT_DATA +
+    r"|\b(?:an?\s+|your\s+|the\s+)?" + _BORROW_NOUN + r"\s+(?:could|can|would|might|may|will)\s+(?:\w+\s+)?"
+    r"(?:cover|help|bridge|fill|tide|fund|pay\s+for|get\s+you|solve|ease|spread)\b"
+    r"|\b" + _BORROW_NOUN + r"\s+(?:is|are|would\s+be|could\s+be|might\s+be|may\s+be)\s+(?:an?\s+|one\s+|another\s+"
+    r"|your\s+|the\s+)?(?:\w+\s+)?(?:option|choice|way|solution|idea|route|answer|alternative)\b"
+    r"|\b(?:loans?|credit|overdraft\w*|financing)\s+(?:is|are)\s+available\b"
+    r"|\boffers?\s+(?:you\s+)?(?:an?\s+|some\s+)?(?:\w+\s+)?(?:loans?|credit|overdraft\w*|financing|instal{1,2}ments?)\b"
+    + _CREDIT_DATA +
+    r"|\bborrow(?:ing)?\b(?!\s+(?:decisions?|costs?))"
+    r"|\bpay\s+(?:for\s+it\s+|it\s+|this\s+)?later\b(?!\s+(?:purchases?|services?|payments?|transactions?|bills?"
+    r"|charges?|costs?))|\bpay\s+(?:for\s+it\s+|it\s+|this\s+)?in\s+instal{1,2}ments\b"
     r"|\bbuy\s+now,?\s+pay\s+later\b|\bbnpl\b|\bput\s+it\s+on\s+(?:a|your)\s+credit\s+card\b"
-    r"|\bfinance\s+(?:it|the\s+\w+)\b"
+    r"|\bfinanc(?:e|ing)\s+(?:it|this|that|the\s+\w+)\b"
     r"|\b(?:ota|ottaa|otat|ottamalla|hae|hakea|haet|käytä|käyttää|käytät|harkitse|harkita)\s+(?:\w+\s+)?"
-    r"(?:lainaa|lainan|luottoa|luoton|luottokorttia|tililuottoa|osamaksu\w*|pikavippi\w*|rahoitusta|kulutusluottoa)\b"
-    r"|\bosamaksulla\b|\bluottokortilla\b|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
+    r"(?:laina|lainaa|lainan|luottoa|luoton|luottokorttia|tililuottoa|osamaksu\w*|pikavippi\w*|rahoitusta"
+    r"|kulutusluottoa)\b"
+    r"|\blainaa\s+(?:rahaa|\w+(?:lta|ltä))\b"
+    r"|\bosamaksulla\b|\bluottokortilla\b|\b(?:tili)?luotolla\b|\blainalla\b|\blainarahalla\b"
+    r"|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
 
 
 def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
     """The words in which a text suggests borrowing, or None. Labels from the user's own data (a
-    category or bill such as "Loan repayment") are taken out first."""
+    category or bill such as "Loan repayment") are taken out first; a negation in the same clause
+    ("I can't recommend taking a loan") makes it a statement (review of #437)."""
     for label in sorted((x for x in labels if x), key=len, reverse=True):
         text = re.sub(re.escape(label), " ", text, flags=re.I)
-    m = BORROWING_SUGGESTION.search(text)
-    return m.group(0) if m else None
+    for m in BORROWING_SUGGESTION.finditer(text):
+        starts = [c.end() for c in _CLAUSE_START.finditer(text, 0, m.start())]
+        if not NEGATION.search(text[starts[-1] if starts else 0:m.end()]):
+            return m.group(0).strip()
+    return None
 
 
 def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:

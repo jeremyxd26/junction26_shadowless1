@@ -138,7 +138,7 @@ _UNIT = rf"(?:€|\$|£|‰|%|eur\b|(?:{_UNIT_WORDS})\b)"
 # A unit word right after a token repeats the unit its display already carries ("{{n1}} euros").
 UNIT_WORD_AFTER_TOKEN = re.compile(rf"\{{\{{n[0-9]+\}}\}}\s*(?:{_UNIT_WORDS})\b", re.I)
 NUMBER_WORDS = re.compile(
-    r"\b(?:hundreds?|thousands?|millions?|billions?|trillions?)\b|"
+    r"\b(?:hundreds?|thousands?|millions?|billions?|trillions?|dozens?)\b|\btusin\w*|"
     rf"\b(?:{_SATA}|{_TUHAT})\b|"
     rf"\b(?:{_FI_DIGIT_WORDS})(?:sat|sad|tuhat|tuhan|tuhans)\w*|"     # compounds: kaksisataa, kolmentuhannen
     r"\bmiljoon\w*|\bmiljard\w*|"
@@ -149,6 +149,27 @@ NUMBER_WORDS = re.compile(
     rf"\b{_CARDINAL}\s*{_UNIT}|"                                      # fifty euros, twenty percent
     rf"(?:€|\$|£|\beur\b|\beuros?\b|\busd\b)\s*{_CARDINAL}\b",         # €twenty, EUR twenty
     re.I)
+
+# Roman numerals next to a currency ("MM euros", "€XL"), matched case-sensitively with two or more letters so
+# that words such as "did" or "mix" never count (#447).
+ROMAN_MONEY = re.compile(
+    rf"\b[MDCLXVI]{{2,}}\b\.?\s*(?i:€|\$|£|eur\b|(?:{_UNIT_WORDS})\b)"
+    r"|(?i:€|\$|£|\beur\b|\beuros?\b|\busd\b)\s*[MDCLXVI]{2,}\b")
+# A number word spelled with its letters apart ("o n e  m i l l i o n", #447): the letters are joined and
+# searched for a number word without word edges.
+_SPACED_RUN = re.compile(r"(?<!\S)(?:[^\W\d_]\s+){2,}[^\W\d_](?!\S)")
+_NUMBER_ROOT = re.compile(r"hundred|thousand|million|billion|trillion|dozen|miljoon|miljard|tuhat|tuhan|sata|sadan"
+                          r"|tusin", re.I)
+
+
+def spaced_number_word(text: str) -> str | None:
+    """Letters spaced apart that spell a number word, or None."""
+    for m in _SPACED_RUN.finditer(text):
+        joined = re.sub(r"\s+", "", m.group(0))
+        if _NUMBER_ROOT.search(joined) or re.fullmatch(_CARDINAL, joined, re.I):
+            return m.group(0)
+    return None
+
 
 # Obfuscation (review of #129): model text may hold no Unicode format character (category Cf: zero-
 # width space, soft hyphen, word joiner, BOM, bidi marks) and no combining mark left after NFC (our
@@ -321,6 +342,8 @@ def contents_claim(text: str) -> str | None:
         after = re.sub(r"^\s*(?:your|the|sinun)?\s*", "", raw_after)
         if after.startswith("{{") or any(after.startswith(label) for label in labels):
             continue
+        if re.match(r"(?:[^\s{}]+\s+){1,3}\{\{n\d+\}\}", after):
+            continue                 # each item carries its number: "sisältävät vuokran {{n2}}" is data (#437)
         if "cover" in verb:
             # "covers" is about coverage ("still covers your bills until payday") unless a category label
             # stands right before it ("Restaurants, which covers your lunches").
@@ -359,9 +382,10 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
         errors.append("no unit word after a number token: the token's display carries its own")
     words = TOKEN.sub(" ", text)
     found = (NUMBER_WORDS.search(words) or NUMBER_WORDS.search(TOKEN.sub(" ", folded))
-             or NUMBER_WORDS.search(TOKEN.sub(" ", strip_marks(text))))
-    if found:
-        errors.append(f"a number written in words: '{found.group(0).strip()}'; cite every number as a {{{{id}}}} token")
+             or NUMBER_WORDS.search(TOKEN.sub(" ", strip_marks(text))) or ROMAN_MONEY.search(words))
+    spelled = found.group(0).strip() if found else spaced_number_word(words)
+    if spelled:
+        errors.append(f"a number written in words: '{spelled}'; cite every number as a {{{{id}}}} token")
     if number_characters(words):
         errors.append("a number character that is not a digit; cite every number as a {{id}} token")
     bold = text.count("**")
@@ -457,17 +481,83 @@ def render(text: str, numbers: dict[str, Number]) -> str:
 # template writes. A template is never rejected by them.
 
 SELF_INTRO = re.compile(r"^\W*(?:(?:hi|hello|hei|moi)\W+)?(?:i am|i'm|olen)\s+sentti\b", re.I)
+# A number explained as a sum or a combination of others (row 1): "{{n1}} combined with your bills", "together
+# they make {{n1}}". "Your income, combined with lower bills, leaves {{n1}}" and "the sum of money safe to
+# spend" are plain sentences, not sums (review of #437).
 COMPOSITE_CLAIM = re.compile(
-    r"\bcombined\s+with\b|\badds?\s+up\s+to\b|\bthe\s+sum\s+of\b|\btogether\s+(?:make|makes|come\s+to|comes\s+to|total|totals)\b"
+    r"\{\{n\d+\}\}\s*,?\s*(?:combined|together)\s+with\b|\bcombined\s+with\s+(?:your\s+|the\s+)?\{\{n\d+\}\}"
+    r"|\badds?\s+up\s+to\b|\bthe\s+sum\s+of\s+(?!money\b)"
+    r"|\btogether\s+(?:they\s+|these\s+|those\s+|both\s+|the\s+two\s+|this\s+)?"
+    r"(?:make|makes|come\s+to|comes\s+to|total|totals|add\s+up\s+to|amount\s+to)\b"
+    r"|\b(?:make|makes|come\s+to|comes\s+to|total|totals|amount\s+to)\s+\{\{n\d+\}\}\s+together\b"
     r"|\byhteenlaskettuna\b|\byhdessä\s+(?:ne\s+)?(?:muodostavat|tekevät|ovat)\b", re.I)
 JOINED_COMPARISON = re.compile(r"\{\{n\d+\}\}\s+(?:and|ja)\s+\{\{n\d+\}\}\s+(?:compared|verrattuna)", re.I)
+# A suggestion to cut a regular essential (row 9). Only a suggesting form counts ("could / try / consider /
+# want to see ... cut housing", an imperative "Cut your rent"), with the essential as the cut's object in the
+# same clause; a negation in that clause ("not cut", "nothing to cut", "can't cut", "ei voi vähentää") is a
+# statement, not a suggestion. "Lower" is left out: "lower than usual" is a comparison (review of #437).
+_FIXED_EN = r"(?:housing|rent|utilities|utility\s+bills?|insurance|loans?|mortgage)"
+_FIXED_FI = r"(?:asumi\w*|vuokra\w*|vakuutu\w*|laina\w*|asunto\w*|sähkö\w*)"
+_CUT_EN = r"(?:cut|cuts|cutting|reduce|reducing|trim|trimming)"
+_CUT_FI = r"(?:vähen\w*|leikka\w*|leikat\w*|karsi\w*|pienen\w*|tinki\w*)"
+_OBJECT_EN = rf"(?:\s+(?:back|down))?(?:\s+on)?(?:\s+(?:your|the|some|of|a))*(?:\s+\w+){{0,2}}?\s+{_FIXED_EN}\b"
+_SUGGEST_EN = (r"\b(?:could|can|try|trying|consider|considering|want\s+to\s+see|would\s+you\s+like\s+to|how\s+about"
+               r"|what\s+if\s+you|should|might|may\s+want\s+to|recommend|suggest)\b")
+_SUGGEST_FI = (r"\b(?:voisit|voit|voisitte|kokeile|kokeilla|kokeilisit|harkitse|harkita|harkitsisit|kannattaa"
+               r"|kannattaisi|haluatko\s+nähdä|mitä\s+jos|entä\s+jos|suosittelen|ehdotan)\b")
 FIXED_CUT = re.compile(
-    r"\b(?:cut|cutting|reduce|reducing|lower|lowering)\b[^.!?]{0,40}\b(?:housing|rent|utilities|insurance|loans?|mortgage)\b"
-    r"|\b(?:housing|rent|utilities|insurance|loans?|mortgage)\b[^.!?]{0,20}\bcut\b"
-    r"|\b(?:vähent\w*|leikka\w*|pienentä\w*)\b[^.!?]{0,40}\b(?:asumi\w*|vuokra\w*|vakuutu\w*|laina\w*|asunto\w*)", re.I)
-# Words the composer got wrong on the stand: a misspelling and a label it made up instead of the data's own.
-KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemat\w*", re.I)
+    rf"{_SUGGEST_EN}[^.!?;:,]{{0,30}}?\b{_CUT_EN}{_OBJECT_EN}"
+    rf"|{_SUGGEST_EN}[^.!?;:,]{{0,30}}?\b{_FIXED_EN}\s+cuts?\b"
+    rf"|(?:^|[.!?]\s+)(?:cut|reduce|trim){_OBJECT_EN}"
+    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_CUT_FI}(?:\s+\w+){{0,2}}?\s+{_FIXED_FI}"
+    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_FIXED_FI}(?:\s+\w+){{0,2}}?\s+{_CUT_FI}"
+    rf"|(?:^|[.!?]\s+)(?:vähennä|leikkaa|karsi|pienennä)(?:\s+\w+){{0,2}}?\s+{_FIXED_FI}", re.I)
+# Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
+# "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
+KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
+# The stand's count without its noun (row 2): "cost {{n1}} across {{n2}}." The count follows across / over / in
+# / yhteensä and no noun follows it. A count whose noun comes first ("the number of transactions was {{n2}}",
+# "tapahtumien määrä oli {{n2}}") is fine (review of #437).
+_COUNT_BEFORE = re.compile(r"\b(?:across|over|in|yhteensä)\s+$", re.I)
 _COUNT_END = re.compile(r"\s*(?:[.,;:!?)]|$|(?:and|but|ja|mutta)\b)", re.I)
+_COUNT_NOUN_BEFORE = re.compile(
+    r"\b(?:number\s+of|count\s+of|transactions?|purchases?|payments?|visits?|times|määrä\w*|lukumäärä\w*|oli"
+    r"|tapahtum\w*|osto\w*|maksu\w*|käyn\w*|kertaa)\b", re.I)
+# Ranking and judgement words in a comparison with similar people (#418): "near the top", "better than most
+# people", "you beat most people", "parempi kuin useimmat", "olet kärjessä". "The top category is restaurants"
+# names a category, not a rank.
+RANKING = re.compile(
+    r"\b(?:near|at|in|among|to)\s+the\s+(?:very\s+)?(?:top|bottom)\b"
+    r"|\b(?:top|bottom)\s+(?:\{\{n\d+\}\}|\d|percent|tier|spenders?|savers?|half|third|quarter|group|of\s+the)\b"
+    r"|\b(?:best|worst|better\s+than|worse\s+than|beat|beats|beating|outperform\w*|outrank\w*|outspend\w*|outsave\w*"
+    r"|ahead\s+of|rank\w*)\b"
+    r"|\b(?:paras|parhai\w*|parhaim\w*|huonoin\w*|huonoim\w*|paremp\w*|huonomp\w*|kärj\w*|kärki\w*|häntäpää\w*"
+    r"|sijoitu\w*|sijalla|voitat|peittoat)\b", re.I)
+
+
+def fixed_cut(text: str) -> str | None:
+    """The words in which a draft suggests cutting a regular essential, or None (review of #437)."""
+    for m in FIXED_CUT.finditer(text):
+        start = max((text.rfind(c, 0, m.start() + 1) for c in ".!?;:,"), default=-1) + 1
+        if not answer_text.NEGATION.search(text[start:m.end()]):
+            return m.group(0).strip(" .!?")
+    return None
+
+
+def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
+    """The token of a count that stands alone the way the stand's row 2 did, or None."""
+    for token in TOKEN.finditer(text):
+        number = numbers.get(token.group(1))
+        if number is None or number.unit.value != "count":
+            continue
+        before = text[:token.start()]
+        if not _COUNT_BEFORE.search(before) or not _COUNT_END.match(text, token.end()):
+            continue
+        clause = re.split(r"[.!?;:]", before)[-1]
+        if _COUNT_NOUN_BEFORE.search(clause):
+            continue
+        return token.group(1)
+    return None
 
 
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
@@ -477,7 +567,7 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     problems = []
     cited_methods = [numbers[i].method for i in TOKEN.findall(text) if i in numbers]
     if any(m.startswith("peer_benchmark.") for m in cited_methods):
-        ranked = re.search(r"\b(?:top|bottom|best|worst|rank\w*|paras|huonoin|kärki\w*|sijoitu\w*)\b", text, re.I)
+        ranked = RANKING.search(text)
         if ranked:
             problems.append(f"'{ranked.group(0)}': no ranking words in a comparison with similar people")
     borrowing = answer_text.borrowing_suggestion(text, labels)
@@ -491,29 +581,16 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
         problems.append(f"'{m.group(0)}': never explain a number as a sum or combination of other numbers")
     if JOINED_COMPARISON.search(text):
         problems.append("write a comparison with its direction in words, not two figures joined by 'and'")
-    m = FIXED_CUT.search(text)
-    if m:
-        problems.append(f"'{m.group(0)}': never suggest cutting housing, utilities, insurance or loans")
+    cut = fixed_cut(text)
+    if cut:
+        problems.append(f"'{cut}': never suggest cutting housing, utilities, insurance or loans")
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    alone = count_without_noun(text, numbers)
+    if alone:
+        problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
     used = TOKEN.findall(text)
-    for token in TOKEN.finditer(text):
-        number = numbers.get(token.group(1))
-        if number is not None and number.unit.value == "count" and _COUNT_END.match(text, token.end()):
-            problems.append(f"a count keeps its noun: write '{{{{{token.group(1)}}}}} transactions', not the number alone")
-            break
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")
-    else:
-        seen = {}
-        for i in used:
-            n = numbers.get(i)
-            if n is None:
-                continue
-            key = (n.unit.value, float(n.value))
-            if key in seen and seen[key] != i:
-                problems.append("two numbers with the same value repeat each other; cite it once")
-                break
-            seen[key] = i
     return problems
