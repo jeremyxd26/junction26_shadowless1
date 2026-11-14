@@ -1,11 +1,12 @@
 """A health spending question is declined in any language (decision on the next prompt PR after #437).
 
 The rules decline English and Finnish health spending questions themselves (#443). A question in another
-script ("сколько я трачу на лекарства?") is not theirs, so the rules-first model hands it to the model
+language ("Wie viel gebe ich für Medikamente aus?") is not theirs, so the rules-first model hands it to the model
 planner, whose prompt ends it as the out_of_scope decline. Here the model planner is a scripted stand-in
 that declines as the prompt says; the test shows the question reaches it, and that its decline ends the
 answer with no data call. The composer's text never names a Health amount (the backstop for a model-planned
-answer). No database, no key.
+answer). A message in Cyrillic with no Latin letter never reaches a planner: the pipeline answers it with "I answer
+in English or Finnish." (#484). No database, no key.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from core.agent.gemini import RulesFirstModel
 from core.agent.model import FunctionCall, ScriptedModel
 from core.agent.rules import RuleModel
 
-RUSSIAN = "сколько я трачу на лекарства?"
+GERMAN = "Wie viel gebe ich für Medikamente aus?"
 PLANNER = Path(__file__).resolve().parents[1] / "prompts" / "planner.md"
 
 
@@ -47,10 +48,10 @@ class ScriptedPlanner(ScriptedModel):
         return super().plan(request)
 
 
-def test_a_health_question_in_another_script_reaches_the_planner_and_is_declined(make_pipeline):
+def test_a_health_question_in_another_language_reaches_the_planner_and_is_declined(make_pipeline):
     planner = ScriptedPlanner()
-    done = dict(run(make_pipeline(RulesFirstModel(RuleModel(), planner)), RUSSIAN, language="en"))["done"]
-    assert planner.questions == [RUSSIAN]                      # the rules left it to the model planner
+    done = dict(run(make_pipeline(RulesFirstModel(RuleModel(), planner)), GERMAN, language="en"))["done"]
+    assert planner.questions == [GERMAN]                       # the rules left it to the model planner
     assert done["outcome"] == "refused" and done["refusal"]["kind"] == "out_of_scope"
     assert done["cited"] == []
 
@@ -77,4 +78,4 @@ def test_the_planner_prompt_declines_health_spending_in_any_language():
     out_of_scope = next(line for line in PLANNER.read_text(encoding="utf-8").splitlines()
                         if line.strip().startswith("- out_of_scope:"))
     assert "health spending" in out_of_scope and "any language or script" in out_of_scope
-    assert RUSSIAN in out_of_scope and "never with a data function" in out_of_scope
+    assert GERMAN in out_of_scope and "never with a data function" in out_of_scope

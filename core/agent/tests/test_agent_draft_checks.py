@@ -204,6 +204,7 @@ def test_a_negation_or_a_data_statement_is_not_a_borrowing_suggestion(text):
     "Together they make {{n1}}.",
     "Together these come to {{n1}}.",
     "Your bills and groceries add up to {{n1}}.",
+    "Cutting both adds up to {{n1}}.",                                           # the stand, 14.11 (savings plan)
 ])
 def test_a_number_explained_as_a_sum_is_rejected(text):
     assert has(text, "sum or combination"), problems(text)
