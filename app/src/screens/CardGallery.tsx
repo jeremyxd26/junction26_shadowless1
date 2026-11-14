@@ -7,7 +7,6 @@ import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BasketStrip } from '../components/BasketStrip.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
 import { BillFlow } from '../components/bill/BillFlow.tsx'
-import { HostNotice } from '../components/HostNotice.tsx'
 import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
@@ -107,8 +106,6 @@ export default function CardGallery() {
       <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">bill flow (section 11, mock)</p>
         <BillFlow />
-        {/* Add to payments in a plain browser: "This continues in the bank app." */}
-        <HostNotice />
       </section>
     </div>
   )
