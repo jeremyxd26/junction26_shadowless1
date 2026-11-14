@@ -172,6 +172,8 @@ TEXT: dict[str, tuple[str, str]] = {
         "Jakso rajattiin saatavilla olevaan dataan: {label}.",
     ),
     "note_empty": ("No transactions in this period.", "Ei tapahtumia tällä jaksolla."),
+    "note_too_few": ("Only a few purchases in this period, so this is no monthly habit.",
+                     "Tällä jaksolla on vain muutama ostos, joten tämä ei ole kuukausittainen tapa."),
     "note_typical": (
         "A comparison with a typical period is not defined yet, so none is shown.",
         "Vertailua tyypilliseen jaksoon ei ole vielä määritelty, joten sitä ei näytetä.",
@@ -422,6 +424,10 @@ def peer_offers_cut(metric: str, value) -> bool:
     """The peer answer offers a cut (the text and the card's action together, #418): above the median by more
     than the margin, for spending that can be cut."""
     return value is not None and metric not in PEER_NO_CUT_ACTION and peer_gap_shown(value) > PEER_ACTION_MARGIN_PCT
+
+
+# Fewer purchases than this behind a figure: the figure is marked, and a what-if derives no monthly habit (#379).
+TOO_FEW_TRANSACTIONS = 3
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
@@ -859,6 +865,15 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
     "cut": ("Cut you chose", "Valitsemasi leikkaus"),
+    "selection_total": ("{what} in the period", "{what} jaksolla"),   # too few purchases (#379)
+    # Too few purchases for a monthly habit (#379): the chat's answer and the what-if screen's caveat.
+    "too_few_one": ("{span} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
+                    "{span} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "too_few_few": ("{span} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to "
+                    "cut.",
+                    "{span} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
+                    "ei ole."),
+    "purchases": ("Purchases", "Ostoksia"),
     "baseline_per_month": ("{what} in a typical month", "{what} tavallisena kuukautena"),
     "saving_per_month": ("You would save", "Säästäisit"),
     "saving_per_week": ("Per week", "Viikossa"),

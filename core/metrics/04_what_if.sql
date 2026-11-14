@@ -8,6 +8,8 @@
 --   app.whatif         what to cut: category:<name> | mcc:<code>[,<code>...] | basket:<key> | merchant:<id>
 --                                                                      (default category:Restaurants)
 --   app.whatif_pct     how much to cut, in percent                      (default 20)
+--   app.whatif_min_tx  fewer cuttable purchases than this in the window is no monthly habit: not_offered,
+--                      every saving and the baseline 0 (#379)            (default 3)
 -- One row per customer with spending in the selection. The result is an estimate: it assumes the
 -- coming months look like the average of the last 6 complete months, one-off spikes excluded.
 -- Team-lead rule: a what-if never proposes cutting regular_essentials. Those rows of the selection
@@ -110,9 +112,11 @@ cls AS (
 whatif AS (
     SELECT split_part(sel, ':', 1) AS sel_kind,
            split_part(sel, ':', 2) AS sel_value,
-           pct
+           pct,
+           min_tx
     FROM (SELECT COALESCE(NULLIF(current_setting('app.whatif', true), ''), 'category:Restaurants') AS sel,
-                 COALESCE(NULLIF(current_setting('app.whatif_pct', true), ''), '20')::numeric   AS pct) s
+                 COALESCE(NULLIF(current_setting('app.whatif_pct', true), ''), '20')::numeric   AS pct,
+                 COALESCE(NULLIF(current_setting('app.whatif_min_tx', true), ''), '3')::int     AS min_tx) s
 ),
 months AS (   -- months covered by the customer's history inside the window (1..6), as in 02_baskets.sql
     SELECT c.customer_id,
@@ -149,12 +153,13 @@ SELECT b.customer_id,
        w.sel_kind || ':' || w.sel_value                                         AS selection,
        w.pct                                                                    AS cut_pct,
        CASE WHEN COALESCE(b.cuttable_eur, 0) = 0 THEN 'not_offered'             -- only regular essentials or one-offs
+            WHEN b.n_tx < w.min_tx THEN 'not_offered'                           -- a purchase or two: no habit (#379)
             WHEN b.has_unexpected THEN 'estimate_with_caveat'                   -- includes needed but lumpy spending
             ELSE 'estimate' END                                                 AS status,
-       round(COALESCE(b.cuttable_eur, 0) / m.n_months, 2)                       AS baseline_month_eur,
-       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100, 2)         AS saving_month_eur,
-       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100 * 7 / 30.4375, 2) AS saving_week_eur,
-       round(COALESCE(b.cuttable_eur, 0) / m.n_months * w.pct / 100 * 12, 2)    AS saving_year_eur,
+       round(k.cut_base / m.n_months, 2)                                        AS baseline_month_eur,
+       round(k.cut_base / m.n_months * w.pct / 100, 2)                          AS saving_month_eur,
+       round(k.cut_base / m.n_months * w.pct / 100 * 7 / 30.4375, 2)            AS saving_week_eur,
+       round(k.cut_base / m.n_months * w.pct / 100 * 12, 2)                     AS saving_year_eur,
        b.n_tx,
        round(COALESCE(b.one_off_eur, 0), 2)                                     AS one_off_excluded_eur,
        b.n_one_off,
@@ -166,4 +171,5 @@ FROM base b
 JOIN months m USING (customer_id)
 CROSS JOIN whatif w
 CROSS JOIN params p
+CROSS JOIN LATERAL (SELECT CASE WHEN b.n_tx >= w.min_tx THEN COALESCE(b.cuttable_eur, 0) ELSE 0 END AS cut_base) k
 ORDER BY b.customer_id;

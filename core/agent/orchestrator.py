@@ -47,8 +47,8 @@ from core.agent import guard, template
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel, meta_intent
+from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import RuleModel, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
                                   render, repeated_period, unavailable_claim, validate)
 from core.answer_text import find_dates, length_problems, scan_numbers
@@ -56,6 +56,7 @@ from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
+from core.tools.missing import MissingData
 from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
@@ -341,7 +342,7 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            calls = plan.calls
+            calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
             model_failed = model_failed or source == "fallback"
@@ -349,6 +350,8 @@ class Pipeline:
                 a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
+            if calls is not plan.calls:
+                turn["guard"] = "unknown_object"   # the planned unfiltered total became the breakdown (B3)
             a.planner_turns.append(turn)
 
             parsed, rejected = [], []
@@ -413,19 +416,28 @@ class Pipeline:
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
                     errors.append({"tool": call.name, "error": record["error"],
-                                   **({"reason": record["reason"]} if record.get("reason") else {})})
+                                   **({"reason": record["reason"]} if record.get("reason") else {}),
+                                   **({"details": record["details"]} if record.get("details") else {})})
                     responses.append(FunctionResponse(call.name, {"error": record["error"]}, call.id))
             ran_data = any(k == "data" for _, k, _ in parsed)
             if "finish" in controls or data_calls >= MAX_DATA_CALLS or not (ran_data or rejected):
                 break
 
         numbers = ctx.numbers.all()
-        allowed = allowed_from(numbers.values(), views, self.as_of)
+        # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
+        # may be named too, exactly as returned (#379 part B, found by r-w5)
+        allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
+                               self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
             self._attach_review(ctx, review, emit, a)
-        missing = template.missing_data_answer(views, errors, lang, self.as_of)
+        # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
+        # total as the answer (#379, review of #443).
+        unfiltered = bool(a.calls) and all(c["name"] == "get_spending" and not (c.get("args") or {}).get("filter")
+                                           for c in a.calls)
+        missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message),
+                                               unfiltered_spending=unfiltered)
         if missing is not None:
-            return self._missing(missing, lang, emit, a)
+            return self._missing(missing, numbers, lang, emit, a)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
@@ -678,7 +690,11 @@ class Pipeline:
         except (psycopg.OperationalError, PoolTimeout):
             raise DataUnavailable() from None
         except PeriodOutOfRange as exc:
-            record.update(status="error", error="period_out_of_range", reason=exc.reason)
+            record.update(status="error", error="period_out_of_range", reason=exc.reason,
+                          **({"details": exc.details} if getattr(exc, "details", None) else {}))
+        except MissingData as exc:   # a category never used, too few purchases (#379)
+            # its Numbers are registered here, in call order, whether or not the tool cache ran the tool
+            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.register(ctx.numbers))
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning
@@ -781,15 +797,31 @@ class Pipeline:
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 
-    def _missing(self, missing: tuple[str, list[str]], lang: str, emit: Emit, a: _Answer) -> str:
+    def _unknown_object_guard(self, message: str, calls: list[FunctionCall]) -> list[FunctionCall]:
+        """A planner may plan the unfiltered total for a thing no category maps ("how much do I spend on the
+        gym?"). Before anything runs, those calls become the customer's category breakdown for the same
+        period, and the turn finishes: no unfiltered card goes out, and the answer is the rule path's (the
+        thing named, the customer's largest categories, their chips; #379 part B, review B3)."""
+        data = [c for c in calls if c.name not in CONTROL]
+        if not data or "get_basket_breakdown" not in self.registry.tools or                 not all(c.name == "get_spending" and not (c.args or {}).get("filter") for c in data) or                 unknown_object(message) is None:
+            return calls
+        period = (data[0].args or {}).get("period") or {"preset": "last_6_months"}
+        return [FunctionCall("get_basket_breakdown", {"period": period}, data[0].id), FunctionCall("finish")]
+
+    def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
+                 a: _Answer) -> str:
         """An answer that is only a missing-data reason (#379, the coordinator's decision A): the template
         writes it, whoever planned the tool, with the model on or off; no compose request. Outcome
-        "answered", nothing cited, the chips are questions the rules answer for this customer."""
-        text = self._deliver(missing[0], {}, emit)
-        a.outcome, a.text, a.text_rendered = "answered", text, text
+        "answered"; it cites only numbers the tool registered (too few purchases: the purchases themselves);
+        the chips are questions the rules answer for this customer."""
+        text = self._deliver(missing[0], numbers, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
         a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "missing_data": True})
-        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
-                      "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": a.calls, "views": [], "answer": text})
         return lang
