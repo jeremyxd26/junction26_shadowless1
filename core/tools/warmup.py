@@ -67,6 +67,8 @@ CALLS: tuple[WarmCall, ...] = (
     WarmCall("bills question", "core.tools.bills", "get_recurring_bills", "GetRecurringBillsArgs", {}),
     WarmCall("overview hero; What can I safely spend this week?", "core.tools.safe_to_spend",
              "get_safe_to_spend", "GetSafeToSpendArgs", {}),
+    WarmCall("overview safe-to-save card (#165)", "core.tools.safe_to_save",
+             "get_safe_to_save", "GetSafeToSaveArgs", {}),
     WarmCall("What kind of spender am I? (profile)", "core.tools.profile", "get_spender_profile",
              "GetSpenderProfileArgs", {}),
     WarmCall("What kind of spender am I? (peers)", "core.tools.peer", "get_peer_benchmark",
@@ -152,11 +154,13 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
         return prepared
 
     for customer_id in customers:
-        history, labels_key = None, None   # one transactions read and one label read per customer
+        # One transactions read and one label read per customer: the label set and the key made from it
+        # travel together into every language, so no language reads the labels again.
+        history, labels_by_tx, labels_key = None, None, None
         hits = []                          # cached results of this persona, checked against coach_evidence
         for lang in languages:
             ctx = ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=lang)
-            ctx._history, ctx.labels_key = history, labels_key
+            ctx._history, ctx._labels, ctx.labels_key = history, labels_by_tx, labels_key
             cache.ensure_labels_key(ctx)
             for call, fn, args_model in tools:
                 if fn is None:
@@ -165,9 +169,13 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
                 prepared = prepare(ctx, call, fn, args_model)
                 if prepared is not None and prepared.hit:
                     hits.append((ctx, call, fn, args_model, prepared))
-            history, labels_key = ctx._history, ctx.labels_key
+            history, labels_by_tx, labels_key = ctx._history, ctx._labels, ctx.labels_key
         refs = {ref for *_, p in hits for ref in p.entry.result.evidence}
-        gone = missing_evidence(conn, customer_id, refs)
+        try:
+            gone = missing_evidence(conn, customer_id, refs)
+        except Exception as exc:  # noqa: BLE001 - one persona's failed check never stops the others
+            out(f"{customer_id}  evidence check failed ({type(exc).__name__}); cached results kept")
+            gone = set()
         for ctx, call, fn, args_model, p in hits:
             if gone & set(p.entry.result.evidence):   # evidence row gone: a miss, computed again
                 cache.drop(p.key)

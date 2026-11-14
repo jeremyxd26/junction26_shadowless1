@@ -43,6 +43,7 @@ from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.app.api import texts as api_texts
+from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
@@ -333,7 +334,14 @@ class Pipeline:
         MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S
         (DataAccess.connection_if_free), so the calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
         a call that waits for the one before it (ids, cards and audit keys follow the call order) then
-        always waits on a call that holds a connection and can finish."""
+        always waits on a call that holds a connection and can finish.
+        Tool results go through the tool cache (#86): the customer's label state is read once per answer
+        before the lanes start, and a cached result runs no SQL."""
+        if pending and TOOL_CACHE.enabled:
+            try:
+                TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)   # copied into every call's context
+            except (psycopg.OperationalError, PoolTimeout):
+                raise DataUnavailable() from None
         records: list[dict[str, Any] | None] = [None] * len(pending)
         done = [threading.Event() for _ in pending]
         queue = deque(range(len(pending)))
@@ -409,7 +417,9 @@ class Pipeline:
         t = self.clock()
         record: dict[str, Any] = {"name": call.name, "args": call.args}
         try:
-            result = spec.fn(ctx, args)
+            # Through the tool cache (#86), on the lane's connection: a cached result runs no SQL, and its
+            # numbers are registered in call order like a fresh call's.
+            result = TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, ctx, args)
         except DataUnavailable:
             raise
         except (psycopg.OperationalError, PoolTimeout):

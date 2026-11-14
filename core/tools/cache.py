@@ -121,16 +121,13 @@ def database_identity() -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def label_set(basket_labels: dict[int, str]) -> list[list[Any]]:
-    """Sorted [tx_id, basket] pairs: labels.label_set when it exists (#68), else the same form here."""
-    own = getattr(labels, "label_set", None)
-    if own is not None:
-        return own(basket_labels)
-    return sorted([int(tx_id), basket] for tx_id, basket in basket_labels.items())
+def label_set(labels_by_tx: dict[int, str]) -> list[list[Any]]:
+    """Sorted [tx_id, basket] pairs, the canonical form the evidence specs store (labels.label_set)."""
+    return labels.label_set(labels_by_tx)
 
 
-def labels_key_of(basket_labels: dict[int, str]) -> str:
-    text = json.dumps(label_set(basket_labels), separators=(",", ":"), ensure_ascii=False)
+def labels_key_of(labels_by_tx: dict[int, str]) -> str:
+    text = json.dumps(label_set(labels_by_tx), separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
@@ -174,7 +171,9 @@ def _remap(obj: Any, ids: dict[str, str], seen: set[int] | None = None) -> None:
         seen.add(id(obj))
     if isinstance(obj, Number):
         if obj.id is not None:
-            obj.id = ids[obj.id]   # every id of the result came from the private registry
+            # An id the tool registered is remapped; one it set by hand (never registered) stays as a
+            # fresh call would return it.
+            obj.id = ids.get(obj.id, obj.id)
         return
     if isinstance(obj, BaseModel):
         for name in type(obj).model_fields:
@@ -281,15 +280,26 @@ class ToolCache:
     # ---- keys ----
 
     @staticmethod
-    def labels_key(conn: Any, customer_id: str, as_of) -> str:
-        """Read the customer's label state (one small query once #68 lands) and hash it."""
-        return labels_key_of(labels.basket_labels(conn, customer_id, as_of))
+    def labels_key(ctx: ToolContext) -> str:
+        """The hash of the customer's label set for this request: `labels.for_context(ctx)`, the very
+        set the tools use (read once per context; the overview fills it from its one reviews read).
+        There is no other path: with per-viewer answers (#144) the set is the viewer's, so two viewers
+        with different answers get different keys and viewers in the same state share entries. The
+        viewer itself is never part of a key or a log."""
+        return labels_key_of(labels.for_context(ctx))
 
     def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
-        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`)."""
-        if ctx.labels_key is None:
+        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`).
+
+        A preset key is trusted only together with the label set it was made from (ctx._labels): without
+        that set the tools would read the labels again, and a label write in between would store a value
+        under the key of other labels. So the key is made here whenever the set is not on the context.
+        """
+        if ctx._labels is None:
             with _connected(ctx, connection):
-                ctx.labels_key = self.labels_key(ctx.conn, ctx.customer_id, ctx.as_of)
+                ctx.labels_key = self.labels_key(ctx)        # reads the set once and keeps it on ctx
+        elif ctx.labels_key is None:
+            ctx.labels_key = self.labels_key(ctx)            # the set is there: no read
         return ctx.labels_key
 
     @staticmethod
@@ -315,21 +325,26 @@ class ToolCache:
         then applied in a fixed order. A hit needs no connection once ctx.labels_key is known."""
         t0 = time.perf_counter()
         parsed, canonical = args_json(args_model, args)
-        private = replace(ctx, numbers=NumberRegistry())
         if not self.enabled:
+            private = replace(ctx, numbers=NumberRegistry())
             with _connected(private, connection):
                 result = fn(private, parsed)
             entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
             return Prepared(entry, False, "off", time.perf_counter() - t0)
 
+        # The labels first: the private context below is a copy of ctx (its _labels included), so the
+        # tool sees the very label set the key was made from.
         self.ensure_labels_key(ctx, connection)
-        private.labels_key = ctx.labels_key
+        private = replace(ctx, numbers=NumberRegistry())
         key = self.key(ctx, tool, canonical)
         found = self.get(key, ctx.customer_id)
         if found is not None:
             entry, source = found
             return Prepared(entry, True, source, time.perf_counter() - t0, key)
 
+        # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
+        # which the key was made. A label write during the call cannot slip a result of other labels
+        # under this key; the next request reads the new labels and gets a new key.
         with _connected(private, connection):
             result = fn(private, parsed)
         if ctx._history is None and private._history is not None:
@@ -341,15 +356,17 @@ class ToolCache:
         return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
-                     extra_connection: Connector | None = None) -> list[Prepared]:
+                     extra_connection: Connector | None = None) -> list[Prepared | Exception]:
         """Prepare several independent calls of one request; apply the results in list order.
 
         Hits are served at once. Misses run on ctx.conn, and when there are two or more and
         `extra_connection` gives a second connection, half of them run on that one in parallel
         (the pool's limit is two connections). If the second connection is not available at once,
         everything runs on ctx.conn. The customer's transactions are read once and shared.
+        A call that fails gives its exception in its place, so one card can fail alone; the caller
+        decides what to show.
         """
-        out: list[Prepared | None] = [None] * len(calls)
+        out: list[Prepared | Exception | None] = [None] * len(calls)
         if self.enabled:
             self.ensure_labels_key(ctx)
             for i, (name, args_model, _, args) in enumerate(calls):
@@ -359,7 +376,10 @@ class ToolCache:
         def run(lane: list[int], connection: Connector | None) -> None:
             for i in lane:
                 name, args_model, fn, args = calls[i]
-                out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                try:
+                    out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                except Exception as exc:  # noqa: BLE001 - this call fails alone
+                    out[i] = exc
 
         if len(misses) < 2 or extra_connection is None:
             run(misses, None)
@@ -372,6 +392,10 @@ class ToolCache:
                 conn = stack.enter_context(extra_connection())
             except Exception as exc:  # noqa: BLE001 - no second connection now: stay on the first one
                 log.info("tool cache: no second connection (%s); calls run one after another", type(exc).__name__)
+                run(misses, None)
+                return out  # type: ignore[return-value]
+            if conn is ctx.conn:   # the same connection twice (a one-connection pool): never use it from two threads
+                stack.close()
                 run(misses, None)
                 return out  # type: ignore[return-value]
             with ThreadPoolExecutor(max_workers=2) as pool:

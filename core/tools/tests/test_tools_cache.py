@@ -64,6 +64,12 @@ def dump(result: ToolResult) -> str:
     return result.model_dump_json()
 
 
+@pytest.fixture(autouse=True)
+def no_review_reads(monkeypatch):
+    """These tests have no database: labels.for_context gives no labels unless a test sets them."""
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
+
+
 @pytest.fixture
 def tool():
     return FakeTool()
@@ -123,7 +129,7 @@ def test_every_part_of_the_key_counts(mem, tool, change):
     if change == "as_of":
         ctx.as_of = date(2026, 9, 14)
     if change == "labels":
-        ctx.labels_key = labels_key_of({4711: "everyday_spending"})
+        ctx._labels, ctx.labels_key = {4711: "everyday_spending"}, None   # another label set
     result = mem.run("other" if change == "tool" else "fake", FakeArgs, tool, ctx, {})
     assert tool.calls == 2
     assert result.model_view["language"] == ctx.language
@@ -244,7 +250,12 @@ def test_labels_key_is_read_once_per_request(mem, tool, monkeypatch):
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
     for amount in (1, 2, 3):
         mem.run("fake", FakeArgs, tool, ctx, {"amount": amount})
-    assert reads == ["CUST00860"] and ctx.labels_key == labels_key_of({})
+    assert reads == ["CUST00860"] and ctx.labels_key == labels_key_of({})   # one label read per request
+    reads.clear()
+    warm = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)     # the next request: all hits
+    for amount in (1, 2, 3):
+        mem.run("fake", FakeArgs, tool, warm, {"amount": amount})
+    assert reads == ["CUST00860"]                                          # exactly one label read
 
 
 def test_parallel_prepare_then_apply_in_order_gives_fresh_ids(mem, tool):
@@ -451,3 +462,83 @@ def test_the_database_identity_is_in_the_key_and_never_the_url(mem, tool, monkey
 @pytest.mark.parametrize("raw, expected", [("7", 7), ("0", 1), ("-3", 1), ("lots", 512), ("", 512)])
 def test_max_entries_is_parsed_defensively(raw, expected):
     assert ToolCache.from_env({"TOOL_CACHE_MAX_ENTRIES": raw}).max_entries == expected
+
+
+# ---- PR B: label race and per-call errors ----------------------------------------------------------------
+
+def test_two_label_sets_get_separate_entries_and_the_same_set_shares_one(mem, tool):
+    """Per-viewer answers (#144): the key hashes the context's label set (labels.for_context), so a
+    viewer who answered the spike review and one who did not never share an entry, and two viewers in
+    the same state do. The viewer itself is not in the key."""
+    def viewer(labels_by_tx):
+        ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
+        ctx._labels = labels_by_tx       # what labels.for_context(ctx) returns for that viewer
+        return ctx
+
+    answered, also_answered, not_yet = (viewer({606016: "unexpected_necessities"}),
+                                        viewer({606016: "unexpected_necessities"}), viewer({}))
+    for ctx in (answered, not_yet, also_answered):
+        mem.run("fake", FakeArgs, tool, ctx, {})
+    assert answered.labels_key == also_answered.labels_key != not_yet.labels_key
+    assert tool.calls == 2 and mem.stats.hits == 1                  # the same state shares one entry
+
+
+def test_one_failing_call_of_many_fails_alone(mem):
+    tool = SlowTool(0.0)
+
+    def broken(ctx, args):
+        raise RuntimeError("this card's data is not there")
+
+    calls = [("slow", FakeArgs, tool, {"amount": 1}), ("broken", FakeArgs, broken, {}),
+             ("slow", FakeArgs, tool, {"amount": 2})]
+    prepared = mem.prepare_many(calls, request_ctx())
+    assert isinstance(prepared[1], RuntimeError)
+    assert [p.source for i, p in enumerate(prepared) if i != 1] == ["tool", "tool"]
+
+
+def test_an_id_set_by_hand_stays_as_a_fresh_call_returns_it(mem):
+    def stub(ctx, args):
+        n = Number(value=1.0, unit=Unit.EUR, period=PERIOD, method="spending.total@1", evidence_ref="ev_000000000009",
+                   label="Stub", display=display(Decimal("1"), Unit.EUR), id="n1")   # never registered
+        return ToolResult(tool="stub", data=None, model_view={"n": model_number(n)})
+
+    fresh = stub(ctx_for(preload=2), FakeArgs())
+    mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
+    hit = mem.run("stub", FakeArgs, stub, ctx_for(preload=2), {})
+    assert dump(hit) == dump(fresh) and hit.model_view["n"]["id"] == "n1"
+
+
+def test_with_labels_for_context_the_key_and_the_tools_share_one_label_read(mem, tool, monkeypatch):
+    """#68: labels.for_context(ctx) is the set the tools use, so the key reads it and a miss stores its
+    result without a second label read."""
+    from core.tools import cache as cache_mod
+
+    reads = []
+
+    def for_context(ctx):
+        reads.append(ctx.customer_id)
+        return {4711: "everyday_spending"}
+
+    monkeypatch.setattr(cache_mod.labels, "for_context", for_context, raising=False)
+    monkeypatch.setattr(cache_mod.labels, "basket_labels", lambda *a, **k: pytest.fail("no direct label read"))
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
+    mem.run("fake", FakeArgs, tool, ctx, {})
+    assert ctx.labels_key == labels_key_of({4711: "everyday_spending"}) and reads == ["CUST00860"]
+    assert len(mem) == 1                                     # stored: the tool used the key's labels
+    mem.run("fake", FakeArgs, tool, ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None), {})
+    assert tool.calls == 1 and reads == ["CUST00860", "CUST00860"]   # next request: one read, a hit
+
+
+
+def test_prepare_many_never_uses_one_connection_from_two_threads(mem):
+    from contextlib import contextmanager
+
+    ctx = request_ctx()
+
+    @contextmanager
+    def same_connection():          # a pool that hands out the request's own connection again
+        yield ctx.conn
+
+    tool = SlowTool(0.0)
+    prepared = mem.prepare_many(many(tool), ctx, extra_connection=same_connection)
+    assert [p.source for p in prepared] == ["tool"] * 3 and set(tool.conns) == {"request-connection"}
