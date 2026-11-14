@@ -89,12 +89,13 @@ cases:
   numbers:
   - {name: plan_total_month, value: 63.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 758.04, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 360.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 17.26, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
   forbid:
   - {name: plan_plus_safe_to_save, value: 247.78, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: safe_to_save_monthly_eur}]}}
   - {name: plan_plus_s_bonus, value: 88.32, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}]}}
+  - {name: plan_plus_goal, value: 423.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: sanna-bonus
   persona: CUST00860
@@ -922,9 +923,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 30.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 364.56, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 429.16, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 420.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 20.53, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 9.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 450.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: eetu-save-more-plan
   persona: CUST00349
@@ -936,9 +939,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 923.88, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 546.87, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 58.95, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 18.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 676.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: aleksi-save-more-plan
   persona: CUST00849
@@ -950,6 +955,8 @@ cases:
   numbers:
   - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 199.95, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 257.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}

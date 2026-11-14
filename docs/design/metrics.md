@@ -824,28 +824,28 @@ The card's second action asks the what-if question for the largest category with
 | `savings_plan.cut_pct@1` | a lever's cut share, a setting (20, 10) | composite `rule_value`, so an answer cites it as a number, never as bare digits |
 
 **These are savings from spending below the usual pace.** They add to what can be set aside, never to safe to spend. Next to the plan:
-- safe to save a month (section 3.1) is shown as it is today, never added in. It is the safe-to-save tool's own headline (its `monthly`), the same Number and ref;
+- the savings goal set aside first (#391, `safe_to_spend.savings_goal_eur@1`) is named next to the plan, never added in, and left out when it is 0 (#468). It is the Number the safe-to-spend answer cites (the same ref), and the same in every review state, so the two answers of one conversation name one monthly figure. Safe to save's own `monthly` (€364.31 while the review is pending, €184.61 after "Needed") is no longer quoted by the plan; the safe-to-save card and its answer keep their texts;
 - the S-Bonus is never shown with the plan: no amount on the card, in the model view or in the answer, so nothing can put it next to the total (coordinator, #411). When the estimate is offered, the answer's first follow-up is its own question, "How much S-Bonus could I get?" ("Paljonko S-Bonusta voisin saada?"), which the bonus rule answers with its own Number and evidence. The view's `follow_up` carries it, and `template.follow_ups` puts it first;
 - nothing in the plan quotes safe to spend;
-- a failure of safe to save or the S-Bonus leaves that extra out; the plan still stands.
+- a failure of the goal or the S-Bonus leaves that extra out; the plan still stands.
 
 **The answer**, at most two sentences and three numbers, the plan's total a month first (review of #411):
 - "These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and spending a tenth less on lifestyle."
-- "You could already set aside about €184.61 a month."
-- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then safe to save's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
+- "That is on top of the about €360.00 a month you set aside first." (#468; left out when the goal is 0)
+- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then the goal's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
 - **The card:** the levers' own amounts are its rows, each keyed by its category and labelled in words ("Restaurants, a fifth less"; "Lifestyle, less than usual" for a share without words). The estimate text is the assumption in words. The card has no digit outside a Number or the period.
-- **No lever:** "None of the usual cuts would add much here; you could already set aside about €184.61 a month." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
+- **No lever:** "None of the usual cuts would add much here; you already set aside about €360.00 a month first." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
 - **The bank button:** the card's action is `open_host_screen` with `monthly_saving`, labelled "See monthly saving in S-mobiili", the one label of #267. No amount is joined to the bank screen.
 - **The model view** gives every number as a Number: each lever's cut share as a Number and, for the shares above, in words. No label carries digits.
 
 **The personas** (as of 2026-09-30, the what-if window 2026-04 to 2026-09):
 
-| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Safe to save a month |
+| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Savings goal a month (#468) |
 |---|---|---|---|---|---|
-| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 184.61 |
-| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 429.16 |
-| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 546.87 |
-| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 199.95 |
+| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 360.00 |
+| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 420.00 |
+| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 600.00 |
+| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 190.00 |
 
 **Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.
 

@@ -667,9 +667,10 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
 
 
 # The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
-# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
-# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
-# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# (coordinator, #411): the total and the total a year with the cuts, then the savings goal set aside first, the
+# same Number the safe-to-spend answer cites (#468; never added in, left out at 0). A cut share is said in words
+# when the setting has them (the view's `cut_words`), else cited as its Number; a cited cut share takes the
+# place of the year, then of the goal, so the answer never cites more than three
 # numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
 # amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
 # to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
@@ -678,15 +679,16 @@ PLAN_SENTENCE = {
              "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
     "plan_no_year": ("These changes could add about {total}: {cuts}.",
                      "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
-    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "goal": ("That is on top of the about {goal} you set aside first.",
+             "Tämä on sen lisäksi, että laitat ensin sivuun noin {goal}."),
     "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
     "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
     "each": ("eating out and spending on {other}, each {cut} less",
              "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
     "and": (" and ", " ja "),
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
-    "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
-                  "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
+    "none_goal": ("None of the usual cuts would add much here; you already set aside about {goal} first.",
+                  "Tavalliset vähennykset eivät lisäisi tässä paljon; laitat jo ensin sivuun noin {goal}."),
 }
 PLAN_MAX_NUMBERS = 3
 
@@ -700,12 +702,12 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     def num(node: Any) -> dict[str, Any] | None:
         return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
 
-    save = num(view.get("safe_to_save"))
-    save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
+    goal = num(view.get("savings_goal"))
+    goal = goal if goal and isinstance(goal.get("value"), (int, float)) and goal["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
     if view.get("kind") != "plan":
-        return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
+        return (s("none_goal").format(goal=tok(goal)), [goal["id"]]) if goal else (s("none"), [])
     total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
     if not (total and year and levers):
@@ -735,9 +737,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     else:
         cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
                ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
-    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
-    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
-    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    # The total and any cited cut share first, then the goal, then the year, within three numbers.
+    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
     cuts_text = s("and").join(cuts)
@@ -745,9 +747,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
         sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
     else:
         sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
-    if with_save:
-        sentences.append(s("save").format(save=tok(save)))
-    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    if with_goal:
+        sentences.append(s("goal").format(goal=tok(goal)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([goal["id"]] if with_goal else [])
     return " ".join(sentences), ids
 
 
