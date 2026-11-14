@@ -58,7 +58,7 @@ def test_lead_overview_matches_the_reference_answers(lead_overview):
     """docs/design/personas.md section 4 (Q1 baskets, profile spend per month) and the housing series."""
     o = lead_overview
     assert (o["customer_id"], o["as_of"], o["greeting"]) == (LEAD, "2026-09-30", "Hi Sanna")
-    assert o["reviews"] == [] and "safe_to_save" not in o
+    assert o["reviews"] == []
     # Q3: safe to spend in the next 7 days, 2026-10-01 .. 2026-10-07, budget limit binding, status ok
     hero = o["hero"]
     assert (hero["type"], hero["status"], hero["primary"]["value"], hero["primary"]["unit"]) == (
@@ -118,7 +118,7 @@ def test_every_number_of_the_overview_opens_as_evidence(client, lead_overview):
         assert (n["period"]["start"], n["period"]["end"]) == (number["period"]["start"], number["period"]["end"]), path
         assert_opens_like(e, path)
         seen += 1
-    assert seen >= 20  # baskets, bills and the hero with its components
+    assert seen >= 27  # baskets, bills, the hero with its components, and the safe_to_save card
 
 
 def assert_opens_like(e, path):
@@ -209,6 +209,72 @@ def test_finnish_overview_has_the_same_numbers(client, lead_overview):
     refs = lambda o: [(p, n["evidence_ref"], n["value"]) for p, n in numbers_in(o)]  # noqa: E731
     assert refs(fi) == refs(lead_overview)
     assert fi["cards"][0]["items"][0]["amount"]["display"] == "1 889,04 € / kk"
+
+
+# ---- the safe_to_save card (#165) -----------------------------------------------------------------
+
+def save_values(card: dict) -> dict:
+    return {
+        "monthly": card["monthly"]["value"],
+        "monthly_components": [(c["key"], c["operation"], c["amount"]["value"]) for c in card["monthly_components"]],
+        "stock": card["stock"]["value"],
+        "stock_components": [(c["key"], c["operation"], c["amount"]["value"]) for c in card["stock_components"]],
+        "reason": card["reason"],
+    }
+
+
+def test_sannas_safe_to_save_equals_the_contract_example(lead_overview):
+    """contracts/api.md `card.safe_to_save` (no review answered): 184.61 a month, 12,272.28 in stock."""
+    card = lead_overview["safe_to_save"]
+    assert card["type"] == "safe_to_save"
+    assert save_values(card) == {
+        "monthly": 184.61,
+        "monthly_components": [("free_month", "add", 783.79), ("everyday_month", "subtract", 599.18)],
+        "stock": 12272.28,
+        "stock_components": [("free_until_payday", "add", 12567.56), ("everyday_until_payday", "subtract", 295.28)],
+        "reason": None,
+    }
+    # the hero's "free until payday" and the card's are one number with one ref
+    hero_free = lead_overview["hero"]["secondary"][0]
+    card_free = card["stock_components"][0]["amount"]
+    assert (hero_free["method"], hero_free["evidence_ref"], hero_free["value"]) == (
+        card_free["method"], card_free["evidence_ref"], card_free["value"])
+
+
+def test_aleksis_safe_to_save_equals_the_contract_example():
+    """contracts/api.md `card.safe_to_save_aleksi` (persona CUST00849)."""
+    from core.tools.safe_to_save import get_safe_to_save
+
+    conn = tools_db.connect()
+    try:
+        card = get_safe_to_save(ToolContext(customer_id="CUST00849", as_of=date(2026, 9, 30), conn=conn), {})
+    finally:
+        conn.close()
+    assert save_values(card.card.model_dump(mode="json")) == {
+        "monthly": 199.95,
+        "monthly_components": [("free_month", "add", 725.47), ("everyday_month", "subtract", 525.52)],
+        "stock": 560.64,
+        "stock_components": [("free_until_payday", "add", 819.62), ("everyday_until_payday", "subtract", 258.98)],
+        "reason": None,
+    }
+
+
+def test_the_overview_runs_the_metric_file_once(client, monkeypatch):
+    """The hero and the safe_to_save card read the same row of 03_safe_to_spend.sql."""
+    from core.tools import metric_sql
+
+    runs = []
+    real = metric_sql.run_one
+
+    def counting(conn, file, *args, **kwargs):
+        runs.append(file)
+        return real(conn, file, *args, **kwargs)
+
+    monkeypatch.setattr(metric_sql, "run_one", counting)
+    response = client.get(f"/api/overview/{LEAD}")
+    assert response.status_code == 200 and response.json()["safe_to_save"] is not None
+    assert response.json()["hero"] is not None
+    assert runs == [config.SAFE_TO_SPEND_FILE]
 
 
 # ---- POST /api/whatif ----------------------------------------------------------------------------
