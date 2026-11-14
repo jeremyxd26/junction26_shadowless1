@@ -28,14 +28,20 @@ export function Header({
   onLongPress,
   disclosure,
   overviewReady,
+  onNewChat,
+  threadEmpty = true,
 }: {
   onLongPress: () => void
   disclosure: string
   /** The overview has loaded; while it loads or after it failed, the overview button is disabled. */
   overviewReady: boolean
+  /** "New chat": empties the thread; asked first when the thread has something in it. */
+  onNewChat?: () => void
+  threadEmpty?: boolean
 }) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
+  const [confirmNew, setConfirmNew] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
   useUrl()
   const showBack = canGoBack()
@@ -75,10 +81,11 @@ export function Header({
     >
       {/* The side columns are as wide as their 2.75rem buttons in rem, not px, so with large text the
           buttons and their columns grow together and the header never runs past the screen (#590).
-          At normal size 2.75rem is 44px, as before. One row needs about 12.3rem; below 13rem (200 %
-          text on a phone) the title moves to a second row under the two buttons instead of
-          overlapping them. At normal size the header is 20rem or wider, so it stays one row. */}
-      <div className="grid min-h-13 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center px-2">
+          At normal size 2.75rem is 44px, as before. Each side column holds up to two buttons (5.5rem,
+          kept equal so the title stays centred), so one row needs about 18.3rem; below 19rem (200 %
+          text on a phone) the title moves to a second row under the buttons instead of overlapping
+          them. At normal size the header is 20rem or wider (320 px), so it stays one row. */}
+      <div className="grid min-h-13 grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center px-2">
         {showBack ? (
           <button
             type="button"
@@ -110,16 +117,30 @@ export function Header({
         {/* The title with its AI tag and an ⓘ opens the AI disclosure, the only place it is shown
             (answers carry no AI line, #685); the right cell is kept for the overview button (#322).
             The ⓘ sits inside the one button, so the grid keeps its three cells at 200 % text (#590). */}
-        <h1 className="flex justify-center @max-[13rem]:col-span-3 @max-[13rem]:row-start-2">
+        <h1 className="flex justify-center @max-[19rem]:col-span-3 @max-[19rem]:row-start-2">
           <AboutButton onOpen={() => setAbout(true)} />
         </h1>
-        {/* The overview sheet from anywhere in the thread (#322), the same sheet as the overview row. */}
+        <div className="flex justify-end @max-[19rem]:col-start-3 @max-[19rem]:row-start-1">
+        {onNewChat && (
+          <button
+            type="button"
+            onClick={() => (threadEmpty ? onNewChat() : setConfirmNew(true))}
+            aria-label={t.newChat}
+            className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+        {/* The overview sheet from anywhere in the thread (#322). */}
         <button
           type="button"
           onClick={openOverview}
           disabled={!overviewReady}
           aria-label={t.overview}
-          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent @max-[13rem]:col-start-3 @max-[13rem]:row-start-1"
+          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
@@ -128,9 +149,37 @@ export function Header({
             <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
           </svg>
         </button>
+        </div>
       </div>
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
       {about && createPortal(<AboutSheet disclosure={disclosure} onClose={() => setAbout(false)} />, document.body)}
+      {confirmNew &&
+        onNewChat &&
+        createPortal(
+          <BottomSheet title={t.newChat} onClose={() => setConfirmNew(false)}>
+            <p className="text-base text-ink-2">{t.newChatConfirm}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmNew(false)
+                  onNewChat()
+                }}
+                className="inline-flex min-h-11 items-center justify-center rounded-pill bg-deep px-5 font-semibold text-on-deep"
+              >
+                {t.newChat}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmNew(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-pill border border-line-strong bg-surface px-5 font-semibold text-ink"
+              >
+                {t.cancel}
+              </button>
+            </div>
+          </BottomSheet>,
+          document.body,
+        )}
     </header>
   )
 }

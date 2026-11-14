@@ -25,6 +25,8 @@ export interface ChatSession {
   stop(): void
   /** Adds a client turn, or finds the one with the same `id`; null without a persona. */
   pushClientTurn(request: ClientTurnRequest): PushedClientTurn | null
+  /** "New chat": stops a running answer, empties the thread (client turns and their progress too) and starts a new conversation. */
+  clear(): void
 }
 
 /** The contract caps a question at 500 characters (section 7.1). */
@@ -155,5 +157,13 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     [customerId],
   )
 
-  return { turns, busy, send, retry, stop, pushClientTurn: pushClient }
+  const clear = useCallback(() => {
+    const current = running.current
+    running.current = null
+    current?.controller.abort()
+    conversation.current = { owner: customerId, id: null }
+    setSession({ owner: customerId, turns: [] })
+  }, [customerId])
+
+  return { turns, busy, send, retry, stop, pushClientTurn: pushClient, clear }
 }
