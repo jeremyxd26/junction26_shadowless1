@@ -997,6 +997,16 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
 
 
+def _asks_unknown_spending(q: str, peer_question: bool) -> bool:
+    """A part of the message asks about spending on a thing no category maps and asks no other rule's question:
+    "how much did I spend at Barsa last month" beside "what can I safely spend this week?" (#545). The parts are
+    finer than the clauses (any "and", "ja", "sekä", comma or semicolon: "… ja mitkä laskut ovat tulossa?"), so a
+    thing inside the other rule's own question ("Is it ok to spend money on therapy?") is no such part."""
+    return any(part.strip() and _unknown_object(part) and _spending_words(part)
+               and not _topics(part, peer_question) - {"spending"}
+               for part in re.split(CLAUSE_BREAK + r"|\s+(?:and|ja|seka)\s+|[,;]\s*", q))
+
+
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool) -> Claim:
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
@@ -1016,6 +1026,13 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     if re.search(FOOD_COMPOUND, q):
         # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534)
         return Claim(None, reason="food_compound")
+    if found and not {"what_if", "small_purchases"} & set(found) and _asks_unknown_spending(q, peer_question):
+        # "How much did I spend at Barsa last month? What can I safely spend this week?": the spending question
+        # about a thing no category maps adds no spending rule, so the other rule would answer alone; the user
+        # is asked which one they mean, as on dev (#545). A what-if or small-purchases question naming such a
+        # thing keeps its own rule, and so does a question whose thing is the other rule's own ("Is it ok to
+        # spend money on therapy?" is the safe-to-spend question).
+        return Claim(None, candidates=tuple(dict.fromkeys(found + ["spending"])), reason="competing")
     if not found:
         if _unknown_object(q):
             # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health
@@ -1200,6 +1217,13 @@ def claim(request: PlanInput) -> Claim:
         declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
         if declined is not None:
             return declined          # a refusal of one part is the answer to the whole message
+        if any("unknown_object" in (part.rule, part.reason) for part in parts):
+            # one part asks about spending on a thing no category maps ("Paljonko käytin Barsaan viime kuussa?
+            # Paljonko voin turvallisesti käyttää tällä viikolla?"): its answer is the breakdown on its own, never
+            # beside another rule's answer, so the user is asked which one they mean (#545)
+            others = [r for part in parts if "unknown_object" not in (part.rule, part.reason)
+                      for r in (part.candidates or ((part.rule,) if part.rule else ()))]
+            return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
         unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
         calls = list(unique.values())
         if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1 for part in parts) \
