@@ -264,6 +264,9 @@ EN_WORDS = re.compile(
 # no-break spaces (U+00A0, U+2007, U+202F) are spaces too: a chip or a question text the app shows holds them
 # inside a date (#662), and the rules match words with plain spaces
 _SPACES = frozenset(chr(c) for c in (0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029, 0x00A0, 0x2007, 0x202F))
+# the line breaks of a raw message: the characters above without the tab and the no-break spaces, so a no-break
+# space inside a line never starts a new line for the role-header check (review of #676)
+_LINE_BREAKS = frozenset(chr(c) for c in (0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029))
 
 
 def _invisible(o: int) -> bool:
@@ -293,7 +296,7 @@ def _spaced(message: str) -> str:
 def _raw_injection(raw: str) -> bool:
     """What only the message as typed shows: a role header at the start of a later line ("Note:" + a new line +
     "system: ..."), and a set-aside whose words a format character separates. Flagged only (#537)."""
-    lines = re.split("[" + "".join(sorted(_SPACES - {chr(0x09)})) + "]", raw)
+    lines = re.split("[" + "".join(sorted(_LINE_BREAKS)) + "]", raw)
     if any(re.match(ROLE_LINE, line, re.I) for line in lines[1:]):
         return True
     spaced = _spaced(raw)
