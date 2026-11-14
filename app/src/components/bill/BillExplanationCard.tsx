@@ -25,10 +25,6 @@ const TONE: Record<Comparison['tone'], { text: string; arrow: string }> = {
   neutral: { text: 'text-muted', arrow: '•' },
 }
 
-/** A label over a large chip; the chip may wrap inside the column rather than run past the card. */
-const AMOUNT_COLUMN =
-  'flex min-w-0 max-w-full flex-col items-start gap-1 [&>*]:max-w-full [&>button]:whitespace-normal [&>span]:whitespace-normal'
-
 interface Props {
   response: BillExplainResponse
   /** Rendered between safe to spend and the terms: the warning signs and Add to payments (#331). */
@@ -56,23 +52,22 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
   const look = BASKETS[basket.key] ?? BASKETS.unexpected_necessities
   return (
     <CardShell>
-      {/* With large text the fact label wraps to its own line instead of squeezing the title. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-[1_1_auto]">
+      {/* With large text the fact label wraps inside its own column instead of running past the card. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-0">
           <h3 className={CARD_TITLE}>{comparison ? s.vsUsualTitle : s.thisBillTitle}</h3>
           {comparison && <p className="text-sm text-muted">{comparison.label}</p>}
         </div>
-        {comparison && <span className="max-w-full pt-0.5 text-right text-xs break-words text-muted">{chatStrings(lang).fact}</span>}
+        {comparison && <span className="max-w-[45%] min-w-0 pt-0.5 text-right text-xs break-words text-muted">{chatStrings(lang).fact}</span>}
       </div>
 
-      {/* A chip that does not fit wraps its display at a space ("€780.00 / a month"); never cut. */}
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
-        <div className={AMOUNT_COLUMN}>
+        <div className="flex flex-col items-start gap-1">
           <span className="text-sm text-muted">{bill.amount.label}</span>
           <NumberChip number={bill.amount} size="lg" />
         </div>
         {comparison && (
-          <div className={AMOUNT_COLUMN}>
+          <div className="flex flex-col items-start gap-1">
             <span className="text-sm text-muted">{comparison.baseline.label}</span>
             <NumberChip number={comparison.baseline} size="lg" tone="neutral" />
           </div>
@@ -161,8 +156,9 @@ function TermsCard({ response, onTerm }: { response: BillExplainResponse; onTerm
       <ul className="mt-1 flex flex-col divide-y divide-line">
         {rows.map((row) => (
           <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5">
-            {/* The label column grows for a long word; the value then moves to the next line. */}
-            <span className="max-w-full min-w-36 shrink-0 text-sm [overflow-wrap:anywhere]">
+            {/* At least 9rem, or the whole row when that is narrower; a longer label wraps inside it, and
+                the value then moves to the next line. */}
+            <span className="max-w-full min-w-[min(9rem,100%)] shrink-0 text-sm [overflow-wrap:anywhere]">
               {row.term ? (
                 <button
                   type="button"
