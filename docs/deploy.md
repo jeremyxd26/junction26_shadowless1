@@ -244,6 +244,8 @@ The service reads `/etc/shadowless1/core.env` every time it starts. The file is 
 | `GEMINI_API_KEY` | |
 | `GEMINI_MODEL` | unset for now |
 | `CORS_ORIGINS` | comma-separated; empty means the local dev servers. Add the app's origin here when it has a URL. |
+| `DB_POOL_MAX` | the pool's most connections, 1 to 20; unset means 10 (the shared database allows 100) |
+| `API_DOCS` | leave unset: the interactive API docs stay off on the dev host (`1` is for local development) |
 
 Set now: `DATABASE_URL`, `DEMO_TODAY` and `GEMINI_API_KEY`. `GEMINI_MODEL` and `CORS_ORIGINS` are unset, so they take their defaults. They were written over SSH stdin, never on a command line, with quotes stripped; on the instance only the URL's shape was checked.
 

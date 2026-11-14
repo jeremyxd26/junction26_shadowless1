@@ -45,8 +45,9 @@ class Settings(BaseSettings):
 
     database_url: SecretStr | None = None
     # Most connections the service's pool opens. The shared database allows 100 (about 94 for normal
-    # users); 10 leaves room for the worker sessions, reviewers, tests and a few local runs.
-    db_pool_max: int = Field(default=10, ge=1, le=50)
+    # users); 10 leaves room for the worker sessions, reviewers, tests and a few local runs. At most 20,
+    # so one setting can never take most of the plan's connections.
+    db_pool_max: int = Field(default=10, ge=1, le=20)
     # Interactive API docs (/docs, /redoc, /openapi.json): off unless API_DOCS=1, for local development.
     api_docs: bool = False
     demo_today: date = date(2026, 9, 30)

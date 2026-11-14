@@ -150,9 +150,11 @@ class RedactingHandler(logging.Handler):
 
 _REDACTOR = DriverLogRedactor()
 _HANDLER = RedactingHandler(_REDACTOR)
-# The loggers the driver is known to use: filtered at the logger, so a record the redactor drops never
-# reaches any handler.
-DRIVER_LOGGERS = ("psycopg", "psycopg.pool", "psycopg_pool", "psycopg_pool.sched")
+# Every logger the driver creates (psycopg 3.3, psycopg_pool 3.3: getLogger calls in their sources):
+# filtered at the logger itself, so even a handler attached directly to one of them sees only redacted
+# records, and a record the redactor drops reaches no handler at all.
+DRIVER_LOGGERS = ("psycopg", "psycopg.debug", "psycopg.pool", "psycopg.pq", "psycopg.transaction", "psycopg.waiting",
+                  "psycopg_pool", "psycopg_pool.sched", "psycopg_pool.sched_async")
 # The parents of every logger psycopg and psycopg_pool create (psycopg.pq, psycopg.pool.…, ...): their
 # records propagate up to these loggers and stop there, after the redacting handler.
 DRIVER_PARENT_LOGGERS = ("psycopg", "psycopg_pool")

@@ -21,7 +21,9 @@ def test_pool_size_is_a_setting(clean_env):
     assert Settings(_env_file=None).db_pool_max == DEFAULT_POOL_MAX
     clean_env.setenv("DB_POOL_MAX", "4")
     assert Settings(_env_file=None).db_pool_max == 4
-    for bad in ("0", "51", "many"):
+    clean_env.setenv("DB_POOL_MAX", "20")
+    assert Settings(_env_file=None).db_pool_max == 20
+    for bad in ("0", "21", "50", "many"):
         clean_env.setenv("DB_POOL_MAX", bad)
         with pytest.raises(ValidationError):
             Settings(_env_file=None)

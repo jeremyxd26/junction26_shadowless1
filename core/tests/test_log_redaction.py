@@ -122,3 +122,30 @@ def test_a_child_loggers_connection_failure_is_reported_once(all_logs):
                                               psycopg.OperationalError("host 'child-SECRET' failed"))
     assert "database connection attempt failed (OperationalError)" in all_logs.text
     assert "child-SECRET" not in all_logs.text
+
+
+@pytest.mark.parametrize("name", ["psycopg.pq", "psycopg.transaction", "psycopg.waiting", "psycopg_pool.sched_async"])
+def test_a_handler_attached_directly_to_a_driver_logger_sees_only_redacted_records(name):
+    """Review of #62: a handler someone attaches to a driver child logger itself gets the record before any
+    parent handler; the logger-level filter has redacted it already."""
+    install_log_redaction()
+    seen: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    logger = logging.getLogger(name)
+    capture = Capture()
+    logger.addHandler(capture)
+    level = logger.level
+    logger.setLevel(logging.DEBUG)
+    try:
+        logger.warning("connecting to %s", "host=direct-secret-host user=coach password=direct-pw")
+        logger.warning("connection string host=direct-secret-host2 password=direct-pw2")
+    finally:
+        logger.removeHandler(capture)
+        logger.setLevel(level)
+    assert seen
+    for marker in ("direct-secret-host", "direct-pw", "user=coach"):
+        assert all(marker not in line for line in seen), seen

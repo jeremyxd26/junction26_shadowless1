@@ -27,6 +27,8 @@ Settings:
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+- `DB_POOL_MAX` (default `10`, 1 to 20): the most database connections the service's pool opens. Every local run and every database-backed test that starts the service opens up to this many.
+- `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
