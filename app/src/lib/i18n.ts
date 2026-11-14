@@ -30,6 +30,10 @@ const en = {
   // Review card frame; the question and the answers come from the API (`question`, `options[].label`).
   reviewAsks: 'Sentti asks',
   reviewNotSure: 'Not sure',
+  /** After "Not sure" (Renat's review): the toast, the line left behind and its way back. */
+  reviewHidden: 'Question hidden for now.',
+  reviewSkipped: 'You skipped Sentti’s question.',
+  reviewChange: 'Change answer',
   reviewSeePurchase: 'See the purchase',
   reviewSaveFailed: 'Your answer was not saved. Try again.',
   undo: 'Undo',
@@ -47,13 +51,18 @@ const en = {
   heroAfter: 'After bills, essentials, a surprise reserve and savings',
   movedTo: 'Moved to',
   heroHowMade: 'Show how it is made',
-  aboutSentti: 'About Sentti',
+  aboutSentti: 'How Sentti works',
   /** The accessible name of the header title ("Sentti" with its AI tag). */
   titleLabel: 'Sentti, AI',
   reviewWhy: 'Why Sentti asks',
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
+  /** A short hint, once per visit, for the header icons and the paperclip (Renat's review). */
+  firstHint: 'Tip: the pencil starts a new chat, the grid opens the overview, and the paperclip shows Sentti a bill.',
+  gotIt: 'Got it',
+  /** Under a comparison with people like you (Renat's review). */
+  peerContext: 'Context, not a target.',
   /** The overview sheet's collapsible sections under the main answer (Renat's review). */
   overviewSections: { money: 'Where the money goes', bills: 'Bills until payday', save: 'What you can set aside' } as Record<string, string>,
   /** The header's pencil button: empties the thread (asks first when there is something in it). */
@@ -111,6 +120,9 @@ const fi: Strings = {
   method: 'Menetelmä',
   reviewAsks: 'Sentti kysyy',
   reviewNotSure: 'En ole varma',
+  reviewHidden: 'Kysymys piilotettu toistaiseksi.',
+  reviewSkipped: 'Ohitit Sentin kysymyksen.',
+  reviewChange: 'Muuta vastausta',
   reviewSeePurchase: 'Näytä ostos',
   reviewSaveFailed: 'Vastausta ei tallennettu. Yritä uudelleen.',
   undo: 'Peru',
@@ -125,11 +137,14 @@ const fi: Strings = {
   heroAfter: 'Laskujen, perusmenojen, yllätysvarauksen ja säästön jälkeen',
   movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
-  aboutSentti: 'Tietoa Senttistä',
+  aboutSentti: 'Näin Sentti toimii',
   titleLabel: 'Sentti, tekoäly',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
+  firstHint: 'Vinkki: kynä aloittaa uuden keskustelun, ruudukko avaa yleiskatsauksen ja paperiliitin näyttää Sentille laskun.',
+  gotIt: 'Selvä',
+  peerContext: 'Taustatietoa, ei tavoite.',
   overviewSections: { money: 'Mihin raha menee', bills: 'Laskut palkkapäivään', save: 'Mitä voit säästää' },
   newChat: 'Uusi keskustelu',
   foldLeft: (display: string) => `Käyttövara ${display}`,

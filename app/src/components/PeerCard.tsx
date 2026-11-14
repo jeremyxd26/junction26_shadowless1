@@ -1,5 +1,6 @@
 // The `peer` answer card (contract section 3): the customer against people like them.
 import type { ReactNode } from 'react'
+import { useSettings } from '../lib/settings.ts'
 import type { Card, Num } from '../api/types.ts'
 import { CardShell } from './cards.tsx'
 import { NumberChip } from './NumberChip.tsx'
@@ -37,6 +38,7 @@ function Row({ number, strong = false }: { number: Num; strong?: boolean }) {
  * card, and the reason is in the answer text.
  */
 export function PeerCard({ card, header }: { card: PeerData; header: ReactNode }) {
+  const { t } = useSettings()
   const group = card.peer_group
   return (
     <CardShell>
@@ -59,18 +61,20 @@ export function PeerCard({ card, header }: { card: PeerData; header: ReactNode }
               <NumberChip number={card.vs_median} size="inline" tone="neutral" />
             </span>
           </div>
+          {/* Who "others" are and how many, next to the result (Renat's review), and that it is context. */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+            <span>{group.label}</span>
+            <span aria-hidden="true">·</span>
+            <span>{group.size.label}</span>
+            <NumberChip number={group.size} size="inline" tone="neutral" />
+          </p>
+          <p className="mt-1 text-sm font-semibold text-ink-2">{t.peerContext}</p>
           <ul className="mt-3 flex flex-col">
             <Row number={card.peer_median} strong />
             <Row number={card.percentile} />
             <Row number={card.peer_p25} />
             <Row number={card.peer_p75} />
           </ul>
-          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-            <span>{group.label}</span>
-            <span aria-hidden="true">·</span>
-            <span>{group.size.label}</span>
-            <NumberChip number={group.size} size="inline" tone="neutral" />
-          </p>
         </>
       )}
       <p className="mt-2 text-xs text-muted">{card.note}</p>
