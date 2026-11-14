@@ -212,6 +212,25 @@ PASSED += [
 ]
 
 
+# #499, verbatim ({{n3}} there is the plain euro amount {{n2}} here): the bill passes, the inessive and
+# verb-less monthly-saving advice are rejected.
+REJECTED += [
+    "Maksa {{n1}} kuukausisäästöön S-mobiilissa.",
+    "Maksa {{n1}} rahastoon kuukausittain.",
+    "Pidä {{n1}} kuukausisäästössä.",
+    "Kuukausisäästössä {{n1}} kuukaudessa riittäisi.",
+    "Kuukausisäästäminen S-mobiilissa: {{n1}} kuukaudessa riittää.",
+    "Monthly saving in S-mobiili: {{n1}} a month would do.",
+    "In monthly saving, {{n1}} a month is enough.",
+]
+PASSED += [
+    "Maksa {{n2}} S-mobiilissa ennen eräpäivää.",
+    "Maksa lasku S-mobiilissa; summa on {{n2}}.",
+    "Monthly saving of {{n1}} is typical for you.",
+    "Your monthly saving is {{n1}}.",
+]
+
+
 @pytest.mark.parametrize("text", REJECTED)
 def test_an_amount_put_into_the_bank_screen_or_product_is_rejected(text):
     assert amount_with_bank_product(text, NUMBERS)
