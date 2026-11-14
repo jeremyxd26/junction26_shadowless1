@@ -43,28 +43,71 @@ AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsem
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?\b|merchant ids?\b|raakatiedot|"
                + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     # The entries below are whole words or listed word forms (#539): "selection", "promo code", "vaalia" (to cherish),
     # "laakeri" (a bearing), "weatherproof" or "toisen kuukauden" (the second month) are ordinary words.
     ("other_person_data", r"\bCUST\d+|\bcustomer\b(?!\s+(service|support|care|portal|experience|satisfaction|loyalty|"
-                          r"club|desk|hotline|feedback|centre|center)\b(?!\s+(agent|representative|rep|worker|"
+                          # a customer number with digits is another customer's (review of #657); "customer gifts of …"
+                          r"club|desk|hotline|feedback|centre|center|parking|gifts?(?!\s+(of|from|to)\b)|"
+                          r"number(?!\s*\d)|area|magazine)\b(?!\s+(agent|representative|rep|worker|"
                           r"employee|person)))|\bneighbou?r(s|'s|s')?\b|"
                           r"\bnaapur(i|in|ia|ille|illa|ilta|ista|issa|iin|it|eiden|eitten|eita|eille|eilla|eilta|eista|"
-                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers)\b|"
+                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers|clients)\b|"
                           r"\bmuiden (ihmisten|asiakkaiden|käyttäjien|henkilöiden|tapahtum\w*|tilit\w*|"
                           r"tili(llä|lle|ltä|ä|n|en)|tiedot|tietoja|"
                           r"saldo\w*|kulutus|kulutusta|kulut|kuluja|menot|menoja|rahat|rahoja|tulot|tuloja|palkat|palkkoja)\b|"
                           r"\bjonkun toisen\b|\btoisen (ihmisen|henkilön|asiakkaan|käyttäjän|tili\w*|"
                           r"tapahtum\w*)\b"),
-    ("credit_decision", r"\bmortgag(e|es|ed)\b|\bcredit ?scores?\b|\bcreditworth(y|iness)\b|\bapprove (my |a )?loan\b|"
-                        r"\bloan (be )?approved\b|\basuntolain\w*|\bluottokelpo\w*|\bmyöntääkö\b|\blainapäätös\w*"),
-    ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
-                          r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
+    # a decision about credit, never the user's own mortgage payment, its interest or a credit score report (#627)
+    # (a loan or credit question without these words keeps its outcome: "Should I take a loan to afford a car?" is the
+    # planner's, whose prompt never suggests borrowing)
+    ("credit_decision", r"\bapprove (my |a |the )?(loan|mortgage)\b|"
+                        r"\b(loan|mortgage) (application )?(be |get |gets |been )?(approved|granted|accepted|rejected)\b|"
+                        r"\b(will|would|can|could|do|does|might) (i|we) (get|qualify for|be approved for|be granted|afford) "
+                        r"(a |an |the )?(new |bigger )?mortgage\b|"
+                        r"\bshould (i|we) (take|get|apply for|take out) (a |an |the )?(new )?mortgage\b|"
+                        r"\b(good|best|right|cheapest|which|what kind of) mortgages?\b|"
+                        r"\b(my|our|what is my|whats my) credit ?scores?\b(?![\s-]+(reports?|checks?|services?|fees?)\b)|"
+                        r"\bcredit ?scores?\b(?=\s*\?)|\b(am|are) (i|we) creditworthy\b|\bcreditworthiness\b|"
+                        r"\bmyöntääkö\b|\bsaa(nko|mmeko|isinko) (asunto)?lain\w*|\bluottokelpoisuute(ni|si|mme)\b|"
+                        r"\bonko (minulla |meillä )?luottokelpoisuu\w*|\blainapäätös\w*|"
+                        # eligibility as a class (review of #657): eligible / likely / qualify, can I get or borrow,
+                        # how much can I borrow, is my income enough, in English and Finnish
+                        r"\b(eligible|likely|qualif\w*|pre-?approved)\b.*\b(mortgage|loan)s?\b|"
+                        r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|borrow|"
+                        r"afford) (a |an |the )?(new |bigger |car |home )?(mortgage|loan)\b|"
+                        r"\b(can|could) (i|we) borrow\b|\bhow much (can|could|would) (i|we) borrow\b|"
+                        r"\b(income|salary|earnings|pay) (is |are )?(enough|sufficient|high enough) for\b.*\b(mortgage|loan)\b|"
+                        r"\bwould (the |a |my )?(bank|lender) (give|lend|approve|accept)\b|"
+                        r"\b(voinko|voimmeko|saisinko|pääsenkö|pääsisinkö) (saada |ottaa )?(asunto|auto|kulutus)?lain\w*|"
+                        r"\bpaljonko (minä )?(asunto|auto)?lainaa (saan|saisin|voin saada)\b|\bpaljonko voin lainata\b|"
+                        r"\briittää(kö)?\b.*\b(asunto|auto)?lain\w*|\bonko (minulla|meillä) varaa (asunto|auto)?lain\w*|"
+                        r"\bluottokelpoi(?!suusselvity|suusraport|suustarkist)\w*"),
+    ("investment_advice", r"\b(should|which|what|best)\b.*\b(buy|buying|sell|selling|invest|investing|hold|own|pick)\b"
+                          r".*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(should|which|what|best)\b.*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b.*"
+                          r"\b(buy|sell|invest|hold|own|pick)\b|"
+                          r"\b(best|good|top|safest) (stocks?|shares|funds?|etfs?|crypto\w*)\b|"
+                          r"\b(which|what) (stocks?|shares|etfs?|crypto\w*|bitcoin)\b|"
+                          # R7 as a class (review of #657): which or what fund is best, savings into a security, a
+                          # security or saving, an opinion on one, is it worth it
+                          r"\b(which|what) funds? (is|are) (the )?(best|good|right|safest)\b|\bbest funds?\b|"
+                          r"\bput (my|our|the) (money|savings) into (funds?|stocks?|shares|etfs?|crypto\w*|bitcoin|gold)\b|"
+                          r"\bshould (i|we) (get|buy)\b.*\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b.*\bor (save|saving|keep)\b|"
+                          r"\b(think|opinion) (about|of|on) (bitcoin|crypto\w*|stocks?|shares|funds?|etfs?)\b|"
+                          r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
+                          r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
+                          r"\b(should|could|would|can|shall) (i|we) (invest|start investing)\b|\bwhere (should|could|can) (i|we) "
+                          r"invest\b|"
+                          # "invest in" stays refused as before: the spending rule would read "invest" as the Invest
+                          # Deposit category, a wrong total for "invest in my garden" (#627, written down)
+                          r"\binvest(ing)? (in|into)\b|\bshould (i|we) put (my|our|the) (money|savings) into\b|"
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto|bitcoin|krypto)\w*|"
                           r"\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b|"
                           r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*"),
-    ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
+    ("unsafe", r"\bam i (ill|sick(?! of\b)|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
     # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my
     # savings account now.", "Make a payment of 30 euros to my landlord.", "Lähetä 20 euroa ystävälleni". Only as a
@@ -82,7 +125,7 @@ DECLINE_RULES = [
                      r"\barvaa (jokin |joku )?(luku|summa)\b|\bmikä tahansa (luku|summa)\b|"
                      # Python and JavaScript ("Teach me Python", "Kirjoita JavaScript-funktio", "pythonilla"), never
                      # "Monty Python", the snakes ("pythons"), or a ticket, show, conference, course or book
-                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+(tickets?|shows?|conferences?|"
+                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+([\w-]+\s+)?(tickets?|shows?|conferences?|"
                      r"workshops?|courses?|books?|snakes?|kurssi\w*|kirja\w*|konferenssi\w*|lipu\w*|liput)\b)|"
                      # "code" only as program code ("write code", "python code"), never a promo, QR, zip or area code
                      r"\b(write|writing|wrote|written|generate|generating)\s+(me\s+|us\s+)?(some\s+|the\s+)?code\b|"
@@ -96,7 +139,7 @@ DECLINE_RULES = [
                      r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)vaaleista\b|"
                      r"\bvaaleista\b(?=\s*([?.!,;]|$))|\bvaali(kone|tulo|ehdokas|kampanja|lupaus)\w*|"
                      r"\bmedicines?\b|\bheadaches?\b|\blääke(?!r)\w*|\bpäänsärky\w*|"
-                     r"\bweather\b(?![-\s]?(proof|strip|resist|seal))|"
+                     r"\bweather\b(?![-\s]?(proof|strip|resist|seal|apps?\b|stations?\b|radios?\b))|"
                      # a recipe asked for in any words ("Pancake recipe please"), never the spending on recipes or a
                      # recipe box, kit, app, subscription, book, magazine, delivery or service
                      r"(?<!\bon )(?<!\bfor )\brecipes?\b(?![\s-]+(box|boxes|kits?|apps?|subscriptions?|books?|"
