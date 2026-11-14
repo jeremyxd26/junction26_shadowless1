@@ -178,3 +178,106 @@ def test_a_start_up_error_does_not_echo_the_value(monkeypatch: pytest.MonkeyPatc
     text = str(caught.value)
     assert "db_pool_max" in text
     assert PW not in text and URL not in text
+
+
+# ---- review of PR #230 -----------------------------------------------------------------------------
+
+def secret_values_for(environ: dict[str, str], env_file: Path | None) -> list[str]:
+    return secret_mask.secret_values(environ, env_file if env_file is not None else Path("does-not-exist.env"))
+
+
+def test_a_cyclic_argument_does_not_break_masking_and_extra_stays_masked(masked):
+    buf, attach, _ = masked
+    logger = logging.getLogger("thirdparty.cyclic")
+    attach(logger, "%(message)s extra=%(dsn)s")
+    cyclic: list = []
+    cyclic.append(cyclic)
+    logger.warning("cyclic %s and %s", cyclic, URL, extra={"dsn": URL})
+    assert_clean(buf.getvalue())
+
+
+def test_when_masking_fails_extra_fields_are_hidden_too(masked, monkeypatch: pytest.MonkeyPatch):
+    buf, attach, _ = masked
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(secret_mask, "_mask_value", broken)
+    logger = logging.getLogger("thirdparty.failing")
+    attach(logger, "%(message)s extra=%(dsn)s")
+    logger.warning("arg %s", ["a list goes through _mask_value"], extra={"dsn": URL})
+    text = buf.getvalue()
+    assert_clean(text)
+    assert "masking failed" in text and "extra=<hidden>" in text
+
+
+def test_an_empty_variable_does_not_hide_a_value_from_the_env_file(tmp_path: Path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=" + KEY + "\n", encoding="utf-8")
+    assert KEY in secret_values_for({"GEMINI_API_KEY": ""}, env_file)
+
+
+def test_a_password_with_a_slash_is_masked_as_uvicorn_logs_a_path(masked, tmp_path: Path):
+    from uvicorn.logging import AccessFormatter
+
+    buf, _, _ = masked
+    slash_pw = "Pw/" + "slash" + "Canary7"
+    url = "".join(["postgresql", "://", "user", ":", urllib.parse.quote(slash_pw, safe=""), "@", HOST, "/x"])
+    secret_mask.install(environ={"DATABASE_URL": url}, env_file=tmp_path / "missing.env")
+    logger = logging.getLogger("uvicorn.access")
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False))
+    logger.addHandler(handler)
+    try:
+        path = "/p/" + urllib.parse.quote(slash_pw) + "?q=" + urllib.parse.quote(slash_pw)
+        logger.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4", "GET", path, "1.1", 404)
+    finally:
+        logger.removeHandler(handler)
+    text = buf.getvalue()
+    assert urllib.parse.quote(slash_pw) not in text and slash_pw not in text
+    assert '"GET /p/***?q=***' in text
+
+
+@pytest.mark.parametrize("form", ["key-value", "query-password", "two-hosts"])
+def test_password_and_hosts_come_from_every_connection_string_form(form):
+    kv_pw, q_pw = "Kv" + "Pw0rd" + "Canary", "Qp" + "Pw0rd" + "Canary"
+    h1, h2 = "kv-one" + ".invalid", "kv-two" + ".invalid"
+    value = {
+        "key-value": f"host={h1},{h2} port=5432 user=u password={kv_pw} dbname=x",
+        "query-password": "".join(["postgresql", "://", "u", "@", h1, "/x?password=", q_pw]),
+        "two-hosts": "".join(["postgresql", "://", "u", ":", kv_pw, "@", h1, ",", h2, "/x"]),
+    }[form]
+    values = secret_values_for({"DATABASE_URL": value}, None)
+    assert (q_pw if form == "query-password" else kv_pw) in values and h1 in values
+    if form != "query-password":
+        assert h2 in values
+
+
+def test_loopback_hosts_are_never_patterns():
+    local = "".join(["postgresql", "://", "u", ":", PW, "@", "127.0.0.1", ":5432/x"])
+    values = secret_values_for({"DATABASE_URL": local}, None)
+    assert PW in values and "127.0.0.1" not in values and "localhost" not in values
+
+
+def test_an_exception_without_a_secret_keeps_its_exc_info(masked):
+    buf, attach, _ = masked
+    logger = logging.getLogger("thirdparty.plainexc")
+    attach(logger)
+    records = []
+
+    class Keep(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    keep = Keep()
+    logger.addHandler(keep)
+    try:
+        try:
+            raise ValueError("nothing secret here")
+        except ValueError:
+            logger.exception("plain failure")
+    finally:
+        logger.removeHandler(keep)
+    assert records and records[0].exc_info is not None
+    assert "ValueError: nothing secret here" in buf.getvalue()
