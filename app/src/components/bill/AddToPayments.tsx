@@ -1,5 +1,5 @@
 // "Add to payments" (#331, contract 11.3): shown only when the response carries the action, with
-// the action's label. A tap hands the draft to the host app unchanged; in a plain browser the
+// the action's label. A tap hands the draft's five contract fields to the host app; in a plain browser the
 // "continues in the bank app" notice shows (HostNotice, mounted by the page). `warnings` (today
 // only a past due date) are a small note beside it, also when there is no button.
 import type { BillExplainResponse } from '../../api/billTypes.ts'

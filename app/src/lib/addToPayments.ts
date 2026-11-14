@@ -1,18 +1,28 @@
 // "Add to payments" (contract section 11.3): the app hands the action's payment draft to the host
 // app as `sentti.paymentDraft`, exactly as the response carries it. Sentti never pays: the host
 // shows the payment, the customer confirms it there, and the host executes it.
-import type { AddToPaymentsAction } from '../api/billTypes.ts'
+import type { AddToPaymentsAction, PaymentDraft } from '../api/billTypes.ts'
 import { handOver } from './hostActions.ts'
 import type { HostScope } from './hostBridge.ts'
 
 export const PAYMENT_DRAFT_MESSAGE = 'paymentDraft' as const
 
 /**
- * Sends the draft unchanged (the `amount` Number object included). Returns true when a host took
- * it; otherwise the hand-over helper fires the "continues in the bank app" notice.
+ * The draft as the host gets it: a copy with exactly the five fields of contract 11.3, values
+ * unchanged (the `amount` Number object included). A field the API may add later never reaches
+ * the host.
+ */
+export function hostDraft(draft: PaymentDraft): PaymentDraft {
+  const { payee, iban, reference, amount, due_date } = draft
+  return { payee, iban, reference, amount, due_date }
+}
+
+/**
+ * Sends the draft's five fields to the host. Returns true when a host took it; otherwise the
+ * hand-over helper fires the "continues in the bank app" notice.
  */
 export function addToPayments(action: AddToPaymentsAction, scope?: HostScope): boolean {
-  return handOver(PAYMENT_DRAFT_MESSAGE, action.draft, { scope })
+  return handOver(PAYMENT_DRAFT_MESSAGE, hostDraft(action.draft), { scope })
 }
 
 /** The response's add-to-payments action, or null when it has none (a check failed). */

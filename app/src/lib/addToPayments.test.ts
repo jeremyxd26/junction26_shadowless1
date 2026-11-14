@@ -28,6 +28,18 @@ describe('addToPayments', () => {
     expect(JSON.parse(postMessage.mock.calls[0][0])).toEqual(examples['host.payment_draft'])
   })
 
+  it('sends only the five contract fields when the draft carries more', () => {
+    const postMessage = vi.fn()
+    const scope = { webkit: { messageHandlers: { sentti: { postMessage } } } } as HostScope
+    const action = paymentAction(response.actions)!
+    const extended = { ...action, draft: { ...action.draft, account_holder: 'Someone', internal_id: 'x1' } }
+    expect(addToPayments(extended, scope)).toBe(true)
+    const [message] = postMessage.mock.calls[0]
+    expect(Object.keys(message.payload).sort()).toEqual(['amount', 'due_date', 'iban', 'payee', 'reference'])
+    expect(message.payload).not.toHaveProperty('account_holder')
+    expect(message).toEqual(examples['host.payment_draft'])
+  })
+
   it('returns false outside a host, so the notice can show', () => {
     expect(addToPayments(paymentAction(response.actions)!, {} as HostScope)).toBe(false)
   })
