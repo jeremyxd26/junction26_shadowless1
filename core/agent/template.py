@@ -63,7 +63,13 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
-             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän|"
+             # the everyday ways of asking it (#340); the rules read the same words (rules.plan_what_if)
+             r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
+             r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
+             r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
+             r"\bput (more |some )?(money )?aside\b|"
+             r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
 # One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
 WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
                  "Kerro, kuinka paljon vähentäisit luokassa {category}, niin näytän säästön.")
@@ -205,7 +211,7 @@ NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
 BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
-BILL_WORDS = r"\bbills?\b|\blasku\w*"
+BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
