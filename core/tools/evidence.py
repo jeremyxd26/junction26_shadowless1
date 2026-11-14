@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 
 import psycopg
@@ -76,6 +76,7 @@ FORMULAS = {
     "scale": ("base",),                        # base * factor_num / factor_den, cents (params rounding: down)
     "sum": None,                               # sum of all parts, cents
     "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
+    "mean": ("total", "count"),                # total / count, cents (the average small purchase, #256)
     # S-Bonus estimate (#158). The rule's values and its source travel in params, so a ref names the
     # exact table row or rate it was computed with (core/config/s_group_benefits.yaml).
     # bonus_level, percent_of and rate_of work on the unrounded scaled base, base * share_num / share_den
@@ -84,7 +85,15 @@ FORMULAS = {
     "bonus_level": ("base",),                  # the percent of the highest table row at or below the base
     "percent_of": ("percent", "base"),         # base * percent / 100, cents
     "rate_of": ("base",),                      # base * params["percent"] / 100, cents
+    # Balance forecast (#257): balance - bills due by the day - daily pace * params["days"], cents.
+    "balance_forecast": ("balance", "bills", "pace"),
+    "excess": ("amount", "reserved"),          # max(amount - reserved, 0), cents (a bill, #242)
 }
+
+# A composite part can be a value the user gave instead of a stored number (#242: a bill's amount, read
+# from its barcode or typed). Such a part carries its value inline and has no ref; only these methods.
+INPUT_METHODS = frozenset({"user_input@1", "bill_barcode@1"})
+INPUT_MAX = Decimal("100000.00")   # the largest inline value: a bill amount (contracts/api.md 11.1)
 
 
 def _scaled(base: Decimal, p: dict[str, Any]) -> Decimal:
@@ -97,6 +106,8 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
 
     if formula == "difference":
         return money(values["current"] - values["baseline"])
+    if formula == "excess":
+        return money(max(values["amount"] - values["reserved"], Decimal(0)))
     if formula == "pct_change":
         return pct((values["current"] - values["baseline"]) / values["baseline"] * 100)
     if formula == "share_pct":
@@ -111,6 +122,8 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return money(sum(values.values(), Decimal("0")))
     if formula == "minimum":
         return money(min(values["a"], values["b"]))
+    if formula == "mean":
+        return money(values["total"] / values["count"])
     if formula == "rule_value":
         return Decimal(str((params or {})["value"]))
     if formula == "bonus_level":
@@ -126,6 +139,9 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
     if formula == "rate_of":
         p = params or {}
         return money(_scaled(values["base"], p) * Decimal(str(p["percent"])) / 100)
+    if formula == "balance_forecast":
+        days = Decimal(str((params or {})["days"]))
+        return money(values["balance"] - values["bills"] - values["pace"] * days)
     raise ValueError(f"unknown formula {formula!r}")
 
 
@@ -188,8 +204,22 @@ def period_param(period) -> dict[str, str]:
 
 
 def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
-                   parts: dict[str, str], value: Decimal, params: dict[str, Any] | None = None) -> dict[str, Any]:
+                   parts: dict[str, str | dict[str, Any]], value: Decimal,
+                   params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """`parts` maps each role to a ref, or to an inline input `{method, value, period}` with no ref (a
+    value the user gave, INPUT_METHODS). A part with a ref is stored exactly as before, so the refs of
+    existing numbers do not change."""
     roles = FORMULAS[formula] or tuple(parts)
+
+    def part(role: str) -> dict[str, Any]:
+        p = parts[role]
+        if isinstance(p, str):
+            return {"role": role, "ref": p}
+        if p.get("method") not in INPUT_METHODS:
+            raise ValueError("an inline composite part must be a value the user gave")
+        return {"role": role, "ref": None, "input": {"method": p["method"], "value": str(p["value"]),
+                                                     "period": p["period"]}}
+
     spec = {
         "v": SPEC_VERSION,
         "kind": "composite",
@@ -197,12 +227,31 @@ def composite_spec(customer_id: str, as_of: date, method: str, formula: str,
         "as_of": as_of.isoformat(),
         "method": method,
         "formula": formula,
-        "parts": [{"role": role, "ref": parts[role]} for role in roles],
+        "parts": [part(role) for role in roles],
         "value": str(value),
     }
     if params:  # only when set, so refs of other numbers do not change
         spec["params"] = params
     return spec
+
+
+def input_spec(inline: Any, as_of: str) -> dict[str, Any]:
+    """The pseudo spec of an inline composite part, for showing it like any other part. A stored spec is
+    data: only the input methods, a decimal value and a date period are accepted (ValueError otherwise)."""
+    if not isinstance(inline, dict) or inline.get("method") not in INPUT_METHODS:
+        raise ValueError("not an inline input part")
+    try:
+        value = Decimal(str(inline["value"]))
+    except InvalidOperation:
+        raise ValueError("not a decimal value") from None
+    # A bill amount (the only inline part today): more than 0, at most 100,000.00, in cents. Checked in
+    # this order, so a huge exponent (1e10000) is refused before any arithmetic on it.
+    if not value.is_finite() or not Decimal(0) < value <= INPUT_MAX or value != value.quantize(Decimal("0.01")):
+        raise ValueError("not a bill amount")
+    period = inline["period"]
+    start, end = date.fromisoformat(period["start"]), date.fromisoformat(period["end"])
+    return {"kind": "input", "method": inline["method"], "value": str(value), "as_of": as_of,
+            "params": {"period": {"start": start.isoformat(), "end": end.isoformat()}}}
 
 
 # ---- store ---------------------------------------------------------------------------------------
@@ -299,6 +348,17 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         part_values: dict[str, Decimal] = {}
         parts = []
         for part in spec["parts"]:
+            if part.get("ref") is None:
+                # a value the user gave (#242), stored inline: shown as a part without a ref. A stored spec is
+                # data: a malformed inline part is refused like a bad metric setting (#122), not a 500.
+                try:
+                    part_spec = input_spec(part.get("input"), spec["as_of"])
+                except (ValueError, KeyError, TypeError):
+                    raise EvidenceForbidden(ref) from None
+                part_values[part["role"]] = Decimal(part_spec["value"])
+                parts.append({"role": part["role"], "ref": None, "method": part_spec["method"],
+                              "value": part_spec["value"], "spec": part_spec})
+                continue
             part_owner, part_spec = load(conn, part["ref"])
             if part_owner != customer_id:
                 raise EvidenceForbidden(part["ref"])

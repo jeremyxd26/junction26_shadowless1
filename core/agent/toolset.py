@@ -55,6 +55,11 @@ KNOWN_TOOLS = [
               "(the share only if the user gave one, else the default), with fixed assumptions. An estimate; "
               "never says where the user shops. Returns numbers with ids; cite them as {{id}}.",
               ("Estimating your S-Bonus", "Arvioin S-Bonuksesi")),
+    KnownTool("core.tools.forecast", "get_balance_forecast", "GetBalanceForecastArgs",
+              "The balance from today to the day before payday if the user spends as usual: the lowest projected "
+              "balance and its date, whether it goes below zero, the bills before payday and the usual spending a "
+              "day. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              ("Projecting your balance until payday", "Ennustan saldosi palkkapäivään asti")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
               "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
               "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",
@@ -66,6 +71,13 @@ KNOWN_TOOLS = [
     KnownTool("core.tools.peer", "get_peer_benchmark", "GetPeerBenchmarkArgs",
               "Comparison with people of the same age band and area: median, quartiles and percentile.",
               ("Comparing with people like you", "Vertaan kaltaisiisi")),
+    # Issue #256: small everyday purchases (core/tools/small_purchases.py).
+    KnownTool("core.tools.small_purchases", "get_small_purchases", "GetSmallPurchasesArgs",
+              "Small everyday purchases (restaurants, entertainment, lifestyle) of at most max_amount euros in a "
+              "period, by default the last 3 complete months and 10 euros: count, total, average, a month, share "
+              "of everyday spending and the total per category. Pass max_amount or a period only if the user named "
+              "them. Returns numbers with ids; cite them as {{id}}.",
+              ("Adding up your small purchases", "Lasken pienet ostoksesi yhteen")),
 ]
 
 

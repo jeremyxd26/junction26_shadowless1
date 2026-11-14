@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { envelope, hostPlatform, sendToHost, type HostScope } from './hostBridge.ts'
+import { envelope, hostPlatform, sendToHost, showPersonaButton, type HostScope } from './hostBridge.ts'
 import { canGoBack, goBack } from './url.ts'
 
 const CLOSE = { type: 'sentti.close', v: 1, payload: {} }
@@ -179,5 +179,27 @@ describe('canGoBack: whether the header shows the back button', () => {
     expect(canGoBack()).toBe(true)
     page('/chat', null)
     expect(canGoBack()).toBe(true)
+  })
+})
+
+describe('showPersonaButton: the demo persona button in the header', () => {
+  it('shows it in a plain browser when the back chevron does not take the cell', () => {
+    expect(showPersonaButton({}, false)).toBe(true)
+    expect(showPersonaButton({}, true)).toBe(false)
+  })
+
+  it('hides it inside the iOS host', () => {
+    expect(showPersonaButton(iosHost().scope, false)).toBe(false)
+  })
+
+  it('hides it inside the Android host', () => {
+    expect(showPersonaButton(androidHost().scope, false)).toBe(false)
+  })
+
+  it('reads the host on every call, so a host installed after the first call hides it', () => {
+    const scope: HostScope = {}
+    expect(showPersonaButton(scope, false)).toBe(true)
+    scope.sentti = { postMessage: vi.fn() }
+    expect(showPersonaButton(scope, false)).toBe(false)
   })
 })

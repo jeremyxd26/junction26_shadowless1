@@ -31,7 +31,7 @@ export function InfoIcon() {
   )
 }
 
-function SenttiLabel({ s }: { s: Strings }) {
+export function SenttiLabel({ s }: { s: Strings }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
