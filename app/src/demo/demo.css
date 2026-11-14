@@ -13,6 +13,16 @@
   box-sizing: border-box;
 }
 
+/* Read by screen readers, not shown: the log's announcement of each message name. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 html,
 body {
   margin: 0;
@@ -194,6 +204,10 @@ body {
   border: 0;
   background: rgb(0 0 0 / 0.4);
   cursor: pointer;
+}
+
+.sheet-panel:focus {
+  outline: none;
 }
 
 .sheet-panel {
