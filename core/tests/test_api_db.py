@@ -241,7 +241,7 @@ def test_sannas_safe_to_save_equals_the_contract_example(lead_overview):
         card_free["method"], card_free["evidence_ref"], card_free["value"])
 
 
-def test_aleksis_safe_to_save_equals_the_contract_example():
+def test_aleksis_safe_to_save_equals_the_contract_example(client):   # client: skipped without a database
     """contracts/api.md `card.safe_to_save_aleksi` (persona CUST00849)."""
     from core.tools.safe_to_save import get_safe_to_save
 
