@@ -134,6 +134,19 @@ def test_a_category_answer_gets_the_card_only_for_the_spikes_category(make_pipel
     assert ("card" in log) is attached   # review of #231: no card is built (no connection) when not sent
 
 
+
+@pytest.mark.parametrize("args,attached", [({"category": "Restaurants"}, False), ({"category": "Home & Tech"}, True)])
+def test_without_a_loaded_history_the_cards_own_category_decides(make_pipeline, args, attached):
+    # Review of the #231 bridge: a what-if by category runs metric SQL only, and the label step reads the
+    # history only when it creates a review, so the history is often not loaded. The card still joins
+    # an answer about the spike's category (built, then its own category decides).
+    log: list[str] = []
+    reg = registry(ToolSpec("run_what_if", "what-if", FakeArgs, fake_spending, ("x", "x")))   # loads no history
+    model = ScriptedModel(plans=[[FunctionCall("run_what_if", args), FunctionCall("finish")]], drafts=[GOOD])
+    events = run(pipeline(make_pipeline, model, Steps(log), reg=reg))
+    assert ("card_review" in [p["card"]["card_id"] for e, p in events if e == "card"]) is attached
+    assert "card" in log                       # the category was not known before building
+
 def test_no_card_when_the_triggering_call_failed(make_pipeline):
     log: list[str] = []
     reg = registry(_tool("get_safe_to_spend", fails=True))
