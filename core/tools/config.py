@@ -886,6 +886,18 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "mcc": ("purchases with MCC {codes}", "ostokset, MCC {codes}"),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
+# The everyday names of the MCC selections the what-if rules plan from everyday words (#346, #377). An MCC
+# what-if whose codes are exactly one of these keys is named in words ("Spend 10% less on taxis" / "Käytä 10 %
+# vähemmän: taksit"); any other code list keeps the code text (WHAT_IF_TEXT["mcc"]). Keys are sorted code tuples.
+WHAT_IF_MCC_NAMES: dict[tuple[str, ...], tuple[str, str]] = {
+    MCC_GROUPS["taxi"]: ("taxis", "taksit"),
+    MCC_GROUPS["public_transport"]: ("public transport", "joukkoliikenne"),
+    MCC_GROUPS["fuel"]: ("fuel", "polttoaine"),
+    MCC_GROUPS["parking"]: ("parking", "pysäköinti"),
+    ("5814",): ("takeaway and fast food", "pikaruoka ja noutoruoka"),
+    ("5813",): ("bars", "baarit"),
+    ("7832",): ("cinemas", "elokuvateatterit"),
+}
 
 # ---- spike reviews (#68, contract 0.2.0 sections 3 and 10) ----------------------------------------
 # Fixed, reviewed templates: the AI model never writes them. The question, the option labels and the
