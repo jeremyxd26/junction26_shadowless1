@@ -152,3 +152,16 @@ def test_someone_elses_question_never_gets_the_users_numbers(question, language)
 ])
 def test_no_person_in_these(question):
     assert people.classify(question) is None, question
+
+
+@pytest.mark.parametrize("question,language", FIXTURE["claimed"])
+def test_the_users_own_question_that_the_rules_answered_is_still_answered_by_a_data_tool(question, language):
+    """Re-review of #458: falling to the model is no answer for an own question the rules answered before."""
+    got = decision(question, language)
+    assert not got.startswith("decline:") and got not in ("unclaimed", "ask_clarifying_question"), (question, got)
+
+
+@pytest.mark.parametrize("question,language", FIXTURE["unclaimed"])
+def test_money_paid_to_the_user_by_a_person_is_unclaimed(question, language):
+    """Decision 4 of the re-review: the user's own income, but get_spending would show another number."""
+    assert decision(question, language) == "unclaimed", question
