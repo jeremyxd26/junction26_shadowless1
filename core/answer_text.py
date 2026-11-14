@@ -341,7 +341,10 @@ _BANK_OBJECT_EN = re.compile(
 _BANK_ANY_EN = re.compile(
     r"\binto\s+(?:the\s+|your\s+|an?\s+)?" + _PRODUCT_EN
     + r"|\bmonthly[\s-]+saving\s+of\b(?=.*\bS-?mobiili)|\bS-?mobiili\w*\b(?=.*\bmonthly[\s-]+saving\s+of\b)"
-    + r"|\b(?:a|an|the|your)\s+(?:new\s+)?funds?\s+with\b|^\W*fund\s+(?:your|the)\b|\b" + _INVESTMENT_EN, re.I)
+    + r"|\b(?:a|an|the|your)\s+(?:new\s+)?funds?\s+with\b|^\W*fund\s+(?:your|the)\b|\b" + _INVESTMENT_EN
+    # #499: "In monthly saving, €360.00 a month is enough."; "Monthly saving in S-mobiili: €360.00 a month would do."
+    + r"|\bin\s+(?:your\s+)?monthly[\s-]+saving\b"
+    + r"|\b(?:monthly[\s-]+saving|kuukausisäästämi\w*|kuukausisäästö\w*)(?:\s+(?:in\s+)?S-?mobiili\w*)?\s*:", re.I)
 _ACTION_EN = re.compile(
     r"\b(?:mov(?:e|es|ed|ing)|put(?:s|ting)?|send(?:s|ing)?|sent|set(?:s|ting)?|add(?:s|ed|ing)?|start(?:s|ed|ing)?"
     r"|open(?:s|ed|ing)?|invest(?:s|ed|ing)?|transfer\w*|deposit\w*|sav(?:e|es|ed)|go(?:es)?|going|went"
@@ -350,14 +353,16 @@ _ACTION_EN = re.compile(
     r"|grow(?:s|ing|n)?|grew)\b", re.I)
 # The bill's action ("Add €97.46 to your payments in S-mobiili") is not the saving product: with "payments" and
 # no saving product named, the app alone is a place, not a destination.
-_PAYMENTS = re.compile(r"\bpayments?\b|\bmaksu(?:ihin|t|ja|si)?\b", re.I)
+_PAYMENTS = re.compile(r"\bpayments?\b|\bbills?\b|\bdue\s+date\b|\bmaksu(?:ihin|t|ja|si)?\b|\blasku\w*|\beräpäiv\w*",
+                       re.I)
 _SAVING_PRODUCT = re.compile(r"\bmonthly[\s-]+saving|" + _FUND + r"|kuukausisäästö|kuukausisäästämi|(?<!puskuri)(?<!hätä)rahasto",
                              re.I)
-_PRODUCT_FI = re.compile(r"\bS-?mobiili\w*|kuukausisäästämi\w*|kuukausisäästö(?:ön|ihin)\b|(?<!puskuri)(?<!hätä)rahasto\w*",
-                         re.I)
+_PRODUCT_FI = re.compile(r"\bS-?mobiili\w*|kuukausisäästämi\w*|kuukausisäästö(?:ön|ihin|ssä|stä|llä)\b"
+                         r"|(?<!puskuri)(?<!hätä)rahasto\w*", re.I)
 # the illative ("into ...") is a destination by itself
 _BANK_DESTINATION_FI = re.compile(
-    r"\bS-?mobiiliin\b|kuukausisäästämiseen\b|kuukausisäästö(?:ön|ihin)\b|(?<!puskuri)(?<!hätä)rahasto(?:on|ihin)\b", re.I)
+    r"\bS-?mobiiliin\b|kuukausisäästämiseen\b|kuukausisäästö(?:ön|ihin|ssä)\b|(?<!puskuri)(?<!hätä)rahasto(?:on|ihin)\b",
+    re.I)
 _ACTION_FI = re.compile(
     r"\b(?:laita|laitta|pane|pann|siirr|siirtä|lähetä|lähett|aseta|asett|lisää|lisät|aloita|aloitta|avaa|avat"
     r"|sijoit|säästä|talleta|tallett|pidä|pitä|käytä|käyttä|maksa)\w*", re.I)
