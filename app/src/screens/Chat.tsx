@@ -5,6 +5,7 @@ import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
+import { landBelowHeader } from '../lib/threadScroll.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -63,10 +64,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // (#319) came after it while it was still streaming (#332).
   let lastAskId: number | undefined
   for (const turn of turns) if (turn.kind === 'ask') lastAskId = turn.id
+  // It lands below the header's measured height, so large text does not hide it under the header (#332).
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    document.querySelector(`[data-turn="${lastId}"]`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+    const turn = document.querySelector(`[data-turn="${lastId}"]`)
+    if (turn) landBelowHeader(turn, !reduce)
   }, [lastId, many])
 
   // Every new question stops an answer that is being read aloud, the latest one or an older one.
