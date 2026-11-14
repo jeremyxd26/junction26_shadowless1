@@ -22,12 +22,18 @@ from core.agent.guard import fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
+# A spouse or partner named in the question: another person, whose data the coach never shows (#216).
+# Spending on or for them ("a gift for my wife") is the user's own spending.
+RELATION = (r"(?<!on my )(?<!for my )(?<!to my )(?<!with my )"
+            r"\b(wife|wives|husbands?|spouses?|(girl|boy)friends?|vaimo\w*|puoliso\w*|kumppani\w*|"
+            r"tyttöystäv\w*|poikaystäv\w*|mies(tä)?|mieh\w+)\b|(?<!on )(?<!for )(?<!to )(?<!with )\b(my|our) partners?\b")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
                r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|my (friend|colleague|partner)'?s?\b|"
-                          r"someone else|other (people|customers)|muiden|toisen"),
+                          r"someone else|other (people|customers)|muiden|toisen|" + RELATION),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
@@ -192,12 +198,13 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
 # employer's bonus is not it. The share of groceries comes only from the user: "half" and "all" as words
 # they typed, a whole percentage from 1 to 100 as typed. A share they stated that cannot be read or is
 # outside that range is asked back, as the what-if does; no stated share means the tool's default (R1).
-BONUS = (r"\bs-?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
-         r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*")
+BONUS = (r"(?<!['’])\bs[- ]?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
+         r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*|"
+         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi)\b")
 SHARE_WORDS = [(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b|puoleen", 50),
                (r"\ball\b|\bkaikki\w*", 100)]
 # A share stated in a form the rules cannot read: a fraction or a number written as a word.
-SHARE_UNREADABLE = (r"\b(a |one )?(third|quarter|fifth|tenth)s?\b|\b\w+sosa\w*|"
+SHARE_UNREADABLE = (r"\b(a |one )?(third|quarter|fifth|tenth)s?\b|\b\w+sosa\w*|\b\d+\s?/\s?\d+\b|"
                     r"\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b|"
                     r"\b(kymmenen|kaksikymmentä|kolmekymmentä|neljäkymmentä|viisikymmentä|sata)\b")
 BONUS_SHARE_ASK = ("Which share of your groceries should I count? Tell me as a whole percentage, or say half or all.",
@@ -232,7 +239,8 @@ PEERS = (r"people like me|people my age|others? (of )?my age|other people|others
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
-SPECIFIC_PERSON = r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen"
+SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
+                   + RELATION)
 
 
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
@@ -246,8 +254,8 @@ BRIEF = [
      lambda q, as_of: [("get_safe_to_spend", {})]),
     ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
      lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
-    ("recurring_bills", r"\bbills?\b|payday|pay ?day|palkkapäivä|laskut|laskuni|\bsalary\b|\bincome\b|"
-                        r"take-? ?home pay|\bnet pay\b|\bpalkka\w*|\btulo(t|ni|ja)?\b|\btienaa?\w*|\bansaitse\w*",
+    # Bills, payday and income: the template's own matchers, so the answer cites what was asked.
+    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS,
      lambda q, as_of: [("get_recurring_bills", {})]),
     ("bonus", BONUS, lambda q, as_of: [("get_bonus_estimate", plan_bonus(q))]),
     ("peers", PEERS, lambda q, as_of: [("get_peer_benchmark", {"metric": "spend_total"})]),
@@ -332,6 +340,8 @@ class RuleModel:
                 break
             if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
                 continue  # saving time is no money question
+            if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
+                continue  # "save more of my income" is the save-more question, not the income
             if intent == "peers" and not peer_question:
                 continue  # what others spend, a named person, or no "I": not the peer benchmark
             if intent == "bonus" and plan_bonus(q) is None:

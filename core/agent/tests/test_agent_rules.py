@@ -226,6 +226,40 @@ def test_a_specific_person_is_still_declined():
     assert names(result) == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}
 
 
+@pytest.mark.parametrize("question,lang", [
+    ("What does my wife spend compared with other people?", "en"),
+    ("What does my husband spend compared with other people?", "en"),
+    ("Does my spouse spend more than people like me?", "en"),
+    ("How does my partner compare with people my age?", "en"),
+    ("Paljonko vaimoni kuluttaa verrattuna muihin?", "fi"),
+    ("Paljonko puolisoni tienaa?", "fi"),
+    ("Kuinka paljon mieheni käyttää ruokaan?", "fi"),
+    ("Kulutanko enemmän kuin mieheni?", "fi"),
+])
+def test_a_spouse_or_partner_is_another_person(question, lang):
+    # Review of PR #296: a spouse or partner is a specific person, never the peer benchmark or "my" income.
+    for q in (question, question.translate(str.maketrans("äöÄÖ", "aoAO"))):
+        result = plan(q, language=lang)
+        assert names(result) == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}, q
+
+
+@pytest.mark.parametrize("question,lang", [("Paljonko kulutin miesten vaatteisiin syyskuussa?", "fi"),
+                                           ("How much did I spend on my wife's birthday gift?", "en"),
+                                           ("What did I buy for my husband in August?", "en")])
+def test_mens_clothes_or_a_gift_for_a_spouse_is_the_users_own_spending(question, lang):
+    assert "decline" not in names(plan(question, language=lang))
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("Compare my spending with other people", "en"), ("Do I spend more than other people?", "en"),
+    ("Compare my groceries with other people", "en"),
+])
+def test_a_self_comparison_with_other_people_is_the_peer_benchmark(question, lang):
+    # The coordinator's decision in the review of PR #296: only aggregates are shown, so these get the
+    # peer answer (dev refused them before #216).
+    assert names(plan(question, language=lang)) == ["get_peer_benchmark", "finish"]
+
+
 @pytest.mark.parametrize("question,lang", [("How much is my salary?", "en"), ("Paljonko tuloni ovat kuukaudessa?", "fi"),
                                            ("What is my income?", "en")])
 def test_a_salary_question_reads_the_recurring_income(question, lang):
@@ -282,3 +316,41 @@ def test_more_phrasings_reach_their_tools(question, lang, tools):
 def test_saving_time_and_investing_are_not_save_more():
     assert "get_safe_to_save" not in names(plan("How can I save more time?"))
     assert names(plan("Should I save more by investing in funds?")) == ["decline"]
+
+
+@pytest.mark.parametrize("question,lang", [("How could I save more of my income?", "en"),
+                                           ("How can I save more from my salary?", "en"),
+                                           ("Miten voisin säästää enemmän palkastani?", "fi")])
+def test_save_more_wins_over_the_income(question, lang):
+    # Review of PR #296: "save more of my income" is the save-more question, not the income.
+    assert names(plan(question, language=lang)) == ["get_safe_to_save", "get_basket_breakdown", "finish"]
+
+
+@pytest.mark.parametrize("question,lang", [("What's my take-home pay?", "en"), ("What is my net pay?", "en"),
+                                           ("Paljonko tienaan?", "fi"), ("How much do I earn?", "en"),
+                                           ("When is my next payday?", "en"), ("What is my income?", "en")])
+def test_the_income_rule_and_the_income_takeaway_read_the_same_words(question, lang):
+    # Review of PR #296: a question the rule sends to the bills tool for its income gets the income.
+    from core.agent.guard import fold
+    from core.agent.template import asks_income
+
+    assert names(plan(question, language=lang)) == ["get_recurring_bills", "finish"]
+    assert asks_income(fold(question))
+
+
+@pytest.mark.parametrize("question,lang", [("S-Bonus with 1/2 of my groceries?", "en"),
+                                           ("What would my S-Bonus be with 2/3 of my groceries?", "en")])
+def test_a_bonus_share_written_as_a_fraction_is_asked_back(question, lang):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["ask_clarifying_question"]
+
+
+@pytest.mark.parametrize("question,lang", [("How much s bonus could I get?", "en"), ("Paljonko Bonusta saisin?", "fi")])
+def test_more_bonus_spellings(question, lang):
+    assert names(plan(question, language=lang)) == ["get_bonus_estimate", "finish"]
+
+
+@pytest.mark.parametrize("question,lang", [("What's my employer's bonus?", "en"),
+                                           ("Paljonko bonusta saan työpaikalta?", "fi")])
+def test_another_bonus_with_these_spellings_is_still_not_the_s_bonus(question, lang):
+    assert "get_bonus_estimate" not in names(plan(question, language=lang))

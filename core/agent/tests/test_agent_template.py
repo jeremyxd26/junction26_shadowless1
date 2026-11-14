@@ -126,6 +126,13 @@ def test_a_payday_question_without_bills_gets_the_income(question):
     assert ids(BILLS, question) == ["n6"]
 
 
+@pytest.mark.parametrize("question", ["What's my take-home pay?", "What is my net pay?", "Paljonko tienaan?",
+                                      "How much do I earn?", "Paljonko ansaitsen kuukaudessa?"])
+def test_every_income_phrasing_the_rule_routes_gets_the_income(question):
+    # Review of PR #296: these reached the bills tool but cited the bills due.
+    assert ids(BILLS, question) == ["n6"]
+
+
 
 def test_safe_to_save_with_nothing_left_gives_the_tools_reason():
     zero = {**SAVE, "monthly": n(50, 0, "eur_per_month", "Safe to save a month"),
