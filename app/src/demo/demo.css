@@ -95,11 +95,184 @@ body {
   text-align: center;
 }
 
-/* The slot reserves the scaled height; the phone is always 375 × 812 inside and scaled as a whole. */
-.phone-slot {
+/* The phone and the message log: side by side on a wide screen, the log below on a narrow one. */
+.workspace {
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: center;
+  gap: 24px;
+}
+
+/* The slot reserves the scaled size; the phone is always 375 × 812 inside and scaled as a whole. */
+.phone-slot {
+  display: flex;
+  flex: none;
+  justify-content: center;
+}
+
+.log {
+  width: 300px;
+  max-width: 100%;
+  border: 1px solid var(--frame-line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.log-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.log-empty {
+  margin: 0;
+  color: var(--frame-muted);
+  font-size: 14px;
+}
+
+.log-empty[hidden] {
+  display: none;
+}
+
+.log-list {
+  display: flex;
+  max-height: 520px;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  border-top: 1px solid var(--frame-line);
+  padding-top: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.log-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.log-time {
+  color: var(--frame-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.log-name {
+  font-weight: 600;
+}
+
+.log-body {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  color: var(--frame-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* A mock host sheet over the module, inside the phone. */
+.sheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(0 0 0 / 0.4);
+  cursor: pointer;
+}
+
+.sheet-panel {
+  position: relative;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  background: #ffffff;
+  padding: 8px 16px 24px;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.sheet-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--frame-ink);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.draft {
+  margin: 8px 0 16px;
+}
+
+.draft-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--frame-line);
+  padding: 10px 0;
+}
+
+.draft-label {
+  color: var(--frame-muted);
+}
+
+.draft-value {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.draft-missing {
+  color: #8a1c1c;
+}
+
+.sheet-primary {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--frame-ink);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sheet-note {
+  margin: 12px 0 0;
+  color: var(--frame-muted);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
 }
 
 .phone {
