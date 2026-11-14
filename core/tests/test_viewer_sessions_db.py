@@ -76,7 +76,7 @@ def answer_rows(conn) -> int:
 def test_two_viewers_answer_independently(client, db_conn):
     tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
     needed = answer(client, A, tx_ref, "unexpected_necessities")
-    assert {c["key"]: c["after"]["value"] for c in needed["changes"]}["safe_to_spend"] == 180.26
+    assert {c["key"]: c["after"]["value"] for c in needed["changes"]}["safe_to_spend"] == 97.46
 
     a, b = overview(client, A).json(), overview(client, B).json()
     assert a["reviews"] == [] and items(a)["unexpected_necessities"] == 521.15        # A answered
@@ -287,9 +287,9 @@ def test_the_bill_explanation_starts_from_the_viewers_own_state(client, db_conn)
     pending = bill(client, A)
     answer(client, A, review["tx_ref"], "unexpected_necessities")    # A: "Needed"
     a, b, fresh = bill(client, A), bill(client, B), bill(client, None)
-    assert a["before"]["value"] == overview(client, A).json()["hero"]["primary"]["value"] == 180.26
+    assert a["before"]["value"] == overview(client, A).json()["hero"]["primary"]["value"] == 97.46
     assert b["before"] == fresh["before"] == pending["before"]
-    assert b["before"]["value"] == overview(client, B).json()["hero"]["primary"]["value"] == 221.58
+    assert b["before"]["value"] == overview(client, B).json()["hero"]["primary"]["value"] == 138.79
     assert a["before"]["evidence_ref"] != b["before"]["evidence_ref"]        # computed with A's labels
     for s in (a, b):   # each from its own state, the bill added in full
         assert s["effect"] == "full"

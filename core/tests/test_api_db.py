@@ -59,10 +59,10 @@ def test_lead_overview_matches_the_reference_answers(lead_overview):
     o = lead_overview
     assert (o["customer_id"], o["as_of"], o["greeting"]) == (LEAD, "2026-09-30", "Hi Sanna")
     assert o["reviews"] == []
-    # Q3: safe to spend in the next 7 days, 2026-10-01 .. 2026-10-07, budget limit binding, status ok
+    # Q3: safe to spend in the next 7 days, 2026-10-01 .. 2026-10-07, budget limit binding (after the goal)
     hero = o["hero"]
     assert (hero["type"], hero["status"], hero["primary"]["value"], hero["primary"]["unit"]) == (
-        "metric", "ok", 180.26, "eur")
+        "metric", "below_usual", 97.46, "eur")   # #391: after the savings goal, under the usual 137.80
     assert (hero["primary"]["period"]["start"], hero["primary"]["period"]["end"]) == ("2026-10-01", "2026-10-07")
     assert [c["key"] for c in hero["components"]] == [
         "balance", "bills_due", "essentials_reserve", "irregular_reserve", "cushion"]
@@ -181,7 +181,7 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
     spec = {"v": 1, "kind": "metric", "customer_id": LEAD, "as_of": "2026-09-30",
             "method": "safe_to_spend.safe_to_spend_7d_eur@1",
             "source": {"file": "03_safe_to_spend.sql", "column": "safe_to_spend_7d_eur", "settings": {}},
-            "value": "180.26"}
+            "value": "97.46"}   # #391: after the savings goal
     ref = evidence.make_ref(spec)
     conn = tools_db.connect()
     try:
@@ -192,7 +192,7 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
     assert response.status_code == 200, response.text
     e = response.json()
     assert (e["kind"], e["number"]["value"], e["number"]["unit"], e["number"]["label"]) == (
-        "metric", 180.26, "eur", "Safe to spend")
+        "metric", 97.46, "eur", "Safe to spend")
     assert e["method"]["doc"].endswith("metrics.md#3-safe-to-spend")
     assert (e["query"], e["row_count"], e["parts"]) == (None, None, [])
     assert e["reconciles"] is True  # the #55 resolver re-runs 03_safe_to_spend.sql for this customer

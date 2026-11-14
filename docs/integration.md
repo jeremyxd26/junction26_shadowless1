@@ -66,7 +66,7 @@ Every message is `{"type": "...", "v": 1, "payload": {...}}`. Message names are 
 |---|---|---|---|---|
 | module → host | `sentti.close` | `{}` | The customer leaves the module: the back button on the module's first screen. The host closes the WebView. | main (#170) |
 | module → host | `sentti.paymentDraft` | `{payee, iban, reference, amount, due_date}` | The customer taps "Add to payments" on an explained bill. **S-mobiili shows the payment in its own payment screen, and the customer confirms it there.** Sentti never pays (`contracts/api.md` section 11.3). | contract 0.3.0 on main; app planned (#331) |
-| module → host | `sentti.openHostScreen` | `{"target": "monthly_saving"}` | The customer taps a card's link into the bank's own screen. `target` is `monthly_saving` (the safe-to-save card) or `bonus_to_fund` (the S-Bonus estimate); the payday plan will reuse it (#258). The host ignores a target it does not know. | contract 0.3.1 on dev; app planned (#268) |
+| module → host | `sentti.openHostScreen` | `{"target": "monthly_saving"}` | The customer taps a card's link into the bank's own screen. `target` is `monthly_saving` (the safe-to-save card), `bonus_to_fund` (the S-Bonus estimate) or `contact_bank` (the way to a human: refusals and bills with warning signs, contract 0.3.3, #420); the payday plan will reuse it (#258). The host ignores a target it does not know. | contract 0.3.1 on dev; app planned (#268) |
 | module → host | `sentti.ready` | `{"version": "1", "language": "fi"}` | The module has loaded; the host may now send `host.context` and `host.session`. | planned, no issue yet |
 | module → host | `sentti.openTransaction` | `{"transaction_id": "tx_606016"}` | The customer taps a transaction in an evidence sheet. The host opens it in its own transaction view; the host maps the id. | planned, no issue yet |
 | host → module | `host.context` | `{"language": "fi", "theme": {"color-brand": "#007841"}}` | Language and theme, section 4. | planned, no issue yet |
@@ -85,6 +85,7 @@ Every amount in a message is a Number object of the API contract (`contracts/api
 |---|---|---|
 | `monthly_saving` | the safe-to-save card, when the monthly figure is above 0 | its monthly saving screen |
 | `bonus_to_fund` | the S-Bonus estimate, when an estimate is offered | its Bonus to fund screen |
+| `contact_bank` | a refusal, the "I can't answer that one yet" answer and the "nothing found" fallback of `/api/ask` (`done.actions`), and a bill explanation with a failed check or an unknown payee together with another sign (contract 0.3.3, #420) | its own way to contact S-Pankki, a human at the bank |
 
 - The host shows its own screen, with its own figures and terms; the customer decides everything there. Sentti recommends nothing there, says nothing about returns and moves no money.
 - **The host ignores a target it does not know**, so a newer module never makes an older host fail. No answer from the host is defined.

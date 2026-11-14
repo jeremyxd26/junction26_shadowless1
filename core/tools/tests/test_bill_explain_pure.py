@@ -344,10 +344,39 @@ def test_a_bill_covered_by_what_is_already_counted(fake):
 def test_a_failed_reference_is_a_sign_and_removes_the_draft(fake):
     out = explain(fields_bill(reference="12345"))
     assert out["checks"] == {"iban": "pass", "reference": "fail", "due_date": "pass"}
-    assert out["actions"] == [] and out["warnings"] == []
+    # no payment draft; a warning sign brings the way to the bank (#420)
+    assert out["actions"] == [{"type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank"}]
+    assert out["warnings"] == []
     assert out["signals"][0] == {"code": "reference_check_failed", "numbers": [], "text":
                                  "This reference number does not pass its check. Compare it with the paper bill "
                                  "before paying."}
+
+
+def test_an_unknown_payee_alone_does_not_bring_the_way_to_the_bank(fake):
+    """#420, decided in the review of #435: an unknown payee alone is a sign but brings no contact_bank."""
+    out = explain(fields_bill(), lang="fi")
+    assert [s["code"] for s in out["signals"]] == ["new_payee"]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments"]
+
+
+def test_an_unknown_payee_with_another_sign_brings_it_after_the_draft(fake):
+    """An unknown payee due within the week: the draft stays and contact_bank follows it (schema-checked by
+    explain()); pick actions by type, never by index."""
+    fake.row = {"free_until_payday_eur": Decimal("12422.56"), "balance_limit_7d_eur": Decimal("5797.19")}
+    out = explain(fields_bill(due=date(2026, 10, 2)), lang="fi")   # before payday: counted in safe to spend
+    assert [s["code"] for s in out["signals"]] == ["new_payee", "short_term"]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments", "open_host_screen"]
+    assert out["actions"][1] == {"type": "open_host_screen", "label": "Ota yhteyttä S-Pankkiin",
+                                 "target": "contact_bank"}
+
+
+@pytest.mark.parametrize("codes,wanted", [
+    (["iban_check_failed"], True), (["reference_check_failed"], True), (["new_payee", "short_term"], True),
+    (["new_payee", "amount_above_usual"], True), (["new_payee"], False), (["short_term"], False),
+    (["amount_above_usual"], False), (["amount_above_usual", "short_term"], False), ([], False),
+])
+def test_which_signs_bring_the_way_to_the_bank(codes, wanted):
+    assert be.contact_bank_wanted(codes) is wanted
 
 
 def test_a_past_due_date_is_a_warning_and_keeps_the_draft(fake):
@@ -594,15 +623,17 @@ def test_every_run_resets_the_bill_setting_so_it_cannot_leak_into_the_next_run()
     assert ("app.extra_bill_due_eur", "") in calls
     calls.clear()
     metric_sql.run(Conn(), "03_safe_to_spend.sql", "CUST00860", AS_OF, {"extra_bill_due_eur": "145.00"})
-    assert calls[:3] == [("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),      # the resets first,
+    assert calls[:4] == [("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),      # the resets first,
+                         ("app.savings_goal_eur", ""),                               # (#391 too)
                          ("app.extra_bill_due_eur", "145.00")]                       # then the caller's value
 
 
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
-# SHA-256 of 03_safe_to_spend.sql as on main before #242 (LF line endings). The file without the bill
-# setting must stay exactly this text, so the hero cannot change silently. A deliberate change of 03 updates
-# this hash, after checking the hero's numbers (scripts/demo_check.py).
-PINNED_03 = "24469abf84faf631a0ec8e9256c71fc63307a79c4ea0fab27862af78a7a97a5b"
+# SHA-256 of 03_safe_to_spend.sql without the bill setting (LF line endings), as after #391 (pay yourself
+# first: the budget limit after a fixed savings goal). The file without the bill setting must stay exactly this
+# text, so the hero cannot change silently. A deliberate change of 03 updates this hash, after checking the
+# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py).
+PINNED_03 = "a54331f3b5eab5b3b1ec705ed7d45a8d1f900c727f17010eea8c82e43a2bcfcd"
 
 
 def test_03_without_the_bill_setting_is_the_heros_file_unchanged():
