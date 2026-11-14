@@ -78,10 +78,24 @@ def test_a_view_with_data_or_an_error_without_a_reason_is_not_a_missing_data_ans
     assert template.missing_data_answer([], [], "en", AS_OF) is None
 
 
-def outside(reason: str):
+def outside(reason: str, **details):
     def tool(ctx, args: FakeArgs):
-        raise PeriodOutOfRange("no data", reason=reason)
+        raise PeriodOutOfRange("no data", reason=reason, **details)
     return ToolSpec("fake_outside", "A period outside the data.", FakeArgs, tool, ("Looking", "Katson"))
+
+
+@pytest.mark.parametrize("first,accepted", [("2024-10-03", True), (None, False)])
+def test_a_mixed_answer_may_name_the_first_day_the_tool_returned(make_pipeline, first, accepted):
+    # the error's own dates are returned dates (rule 3): the composer may say where the data starts
+    text = "In August 2026 you spent {{n1}}; my data starts on 3 October 2024."
+    draft = {"language": "en", "text": text, "cited": ["n1"], "lesson_key": None}
+    model = ScriptedModel(plans=[[FunctionCall("fake_spending", {}), FunctionCall("fake_outside", {}),
+                                  FunctionCall("finish")]], drafts=[draft, draft])
+    details = {"first": first, "last": "2026-09-30"} if first else {}
+    events = run(make_pipeline(model, registry(outside("period_before_data", **details))),
+                 "How much did I spend in August and in 2023?", language="en")
+    done = dict(events)["done"]
+    assert (done["text"] == text) is accepted   # without the returned day, the template writes the answer
 
 
 @pytest.mark.parametrize("reason", ["period_in_future", "period_before_data"])

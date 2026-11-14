@@ -385,7 +385,10 @@ class Pipeline:
                 break
 
         numbers = ctx.numbers.all()
-        allowed = allowed_from(numbers.values(), views, self.as_of)
+        # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
+        # may be named too, exactly as returned (#379 part B, found by r-w5)
+        allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
+                               self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
             self._attach_review(ctx, review, emit, a)
         # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
