@@ -248,8 +248,10 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
         "peer_p75": model_number(data.peer_p75),
         "percentile": model_number(data.percentile),
         "vs_median": model_number(data.vs_median),
-        "peer_group": {"level": data.peer_group.level, "label": data.peer_group.label,
-                       "size": model_number(data.peer_group.size), "comparable": data.peer_group.comparable},
+        # No group label: the age band and the postal area stay on the card (#487); the sentence needs only
+        # the size and whether the group is comparable.
+        "peer_group": {"level": data.peer_group.level, "size": model_number(data.peer_group.size),
+                       "comparable": data.peer_group.comparable},
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
     }

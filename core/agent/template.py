@@ -40,9 +40,11 @@ REFUSAL: dict[str, dict[str, Any]] = {
     },
     "out_of_scope": {
         "label": ("This is outside what I can help with", "Tämä ei kuulu siihen, missä voin auttaa"),
-        # The warmer generic decline (#287, the product owner's text); the four brief questions follow as chips.
-        "text": ("That's outside my lane — I'm your money coach. I can help with things like:",
-                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi näissä:"),
+        # The warmer generic decline (#287, the product owner's first sentence). It reads complete without the
+        # four brief questions that follow as chips (#352): a full stop and two examples in words.
+        "text": ("That's outside my lane — I'm your money coach. I can help with things like your spending or your bills.",
+                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
+                 "laskuissasi."),
     },
     "unsafe": {
         "label": ("I can't help with that request", "En voi auttaa tässä pyynnössä"),
@@ -149,8 +151,29 @@ def pick(pair: tuple[str, str], language: str) -> str:
     return pair[1] if language == "fi" else pair[0]
 
 
-def refusal(kind: str, language: str) -> tuple[str, dict[str, str]]:
-    entry = REFUSAL[kind]
+# A request to make up or forecast a number about the user's own money (#352, decision 3) is no off-topic
+# question: it keeps the kind `out_of_scope` (no new refusal kind) but gets its own text, and the chips offer
+# the typical income instead.
+MADE_UP = fold_pattern(r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+                       r"guess (a |an |some )?(number|amount|figure)|"
+                       r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
+                       r"arvaa (jokin |joku )?(luku|summa)|mika tahansa (luku|summa)")
+MADE_UP_REFUSAL = {
+    "label": ("I only use numbers from your transactions", "Käytän vain tilitapahtumiesi lukuja"),
+    "text": ("I only use numbers from your own transactions, so I can't make up or forecast an amount. I can show "
+             "your typical monthly income instead.",
+             "Käytän vain omien tilitapahtumiesi lukuja, joten en voi keksiä tai ennustaa summaa. Voin näyttää "
+             "tavallisen kuukausitulosi."),
+}
+MADE_UP_CHIP = ("How much income did I get last month?", "Paljonko tuloja sain viime kuussa?")
+
+
+def made_up_request(question: str) -> bool:
+    return bool(re.search(MADE_UP, fold(question)))
+
+
+def refusal(kind: str, language: str, question: str = "") -> tuple[str, dict[str, str]]:
+    entry = MADE_UP_REFUSAL if kind == "out_of_scope" and made_up_request(question) else REFUSAL[kind]
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
 
 
@@ -164,10 +187,44 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
 THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+# #352: the full introduction once per conversation; a later greeting, identity, capabilities or help
+# message gets one short sentence (no "Hi") and the chips.
+AGAIN = {
+    "greeting": ("Hello again — what would you like to know about your money?",
+                 "Hei taas — mitä haluaisit tietää raha-asioistasi?"),
+    "identity": ("I'm Sentti, an AI money coach that works with your own transactions.",
+                 "Olen Sentti, tekoälyvalmentaja, joka käyttää omia tilitapahtumiasi."),
+    "capabilities": ("I can show where your money goes, what's safe to spend this week and how you could save more.",
+                     "Voin näyttää, mihin rahasi menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten "
+                     "voisit säästää enemmän."),
+    "help": ("Here are some things you can ask me.", "Tässä muutama asia, jota voit kysyä minulta."),
+}
+# "Is my data safe with you?" (#352): a fixed answer, DRAFT for the product owner (the review of #484). It says
+# only what the code does: what the model gets (core/agent/gemini.py, the tools' model views; #487 keeps the
+# peer group and the bill id out) and that the demo server keeps a record. Exempt from the two-sentence rule.
+PRIVACY = ("Your own numbers are calculated from your transactions; comparisons with others and the S-Bonus use group "
+           "figures and fixed rules. When an AI model writes an answer, it gets your question as you typed it, the "
+           "earlier turns of this chat, and the amounts, dates and categories I calculated, never your customer number, "
+           "an account number or shop names from your transactions. This demo runs on synthetic data, and its server "
+           "keeps a record of questions and answers.",
+           "Omat lukusi lasketaan tilitapahtumistasi; vertailut muihin ja S-Bonus perustuvat ryhmän lukuihin ja "
+           "kiinteisiin sääntöihin. Kun tekoälymalli kirjoittaa vastauksen, se saa kysymyksesi sellaisena kuin kirjoitit "
+           "sen, tämän keskustelun aiemmat viestit sekä laskemani summat, päivämäärät ja luokat, ei koskaan "
+           "asiakasnumeroasi, tilinumeroa eikä tilitapahtumiesi kauppojen nimiä. Tämä demo käyttää keksittyä dataa, "
+           "ja sen palvelin tallentaa kysymykset ja vastaukset.")
+# A message in a language Sentti does not speak (#352): one line, in English.
+LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
 
 
-def meta_text(intent: str, language: str) -> str:
-    return pick(THANKS if intent == "thanks" else INTRO, language)
+def meta_text(intent: str, language: str, introduced: bool = False) -> str:
+    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation."""
+    if intent == "thanks":
+        return pick(THANKS, language)
+    if intent == "privacy":
+        return pick(PRIVACY, language)
+    if intent == "language":
+        return pick(LANGUAGE, language)
+    return pick(AGAIN[intent] if introduced and intent in AGAIN else INTRO, language)
 
 
 def brief_questions(language: str) -> list[str]:
