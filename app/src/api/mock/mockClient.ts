@@ -163,6 +163,8 @@ function reviewEvidence(review: ReviewCard): EvidenceResponse {
         mcc: null,
         amount: (-review.amount.value).toFixed(2),
         currency: 'EUR',
+        // Money out: the purchase's own display with the bank sign, as the core writes rows.
+        display: `-${review.amount.display}`,
       },
     ],
     row_count: null,
