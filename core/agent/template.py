@@ -67,7 +67,7 @@ SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to s
              r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
              r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
              r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
-             r"\b(how much|amount) (could|can|would) i save\b|\bput (more |some )?(money )?aside\b|"
+             r"\bput (more |some )?(money )?aside\b|"
              r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
 WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
                  "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
