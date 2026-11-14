@@ -181,22 +181,24 @@ def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
     assert card.primary.method == "safe_to_spend.safe_to_spend_7d_eur@1" and card.primary.value == 180.26
 
 
-# ---- #346: a merchant-category group by its name -------------------------------------------------------
+# ---- #346: a merchant-category group by its name, on the model's path only ---------------------------
 
 @pytest.mark.parametrize("name, codes", [("taxi", "4121"), ("public transport", "4111"), ("Fuel", "5541,5542"),
                                          ("parking", "7523")])
-def test_an_mcc_group_name_stands_for_its_codes(name, codes):
-    from core.tools.what_if import WhatIfSelection
+def test_an_mcc_group_name_stands_for_its_codes_in_the_models_arguments(name, codes):
+    from core.tools.what_if import ModelWhatIfArgs
 
-    assert WhatIfSelection(kind="mcc", value=name).value == codes
+    args = ModelWhatIfArgs.model_validate({"selection": {"kind": "mcc", "value": name}, "cut_pct": 10})
+    assert args.selection.value == codes
 
 
-def test_the_health_group_by_name_is_still_refused():
+def test_the_health_group_by_name_is_still_refused_and_the_api_keeps_the_codes():
     from pydantic import ValidationError
 
-    from core.tools.what_if import WhatIfSelection
+    from core.tools.what_if import ModelWhatIfArgs, RunWhatIfArgs
 
-    with pytest.raises(ValidationError):
-        WhatIfSelection(kind="mcc", value="health")
-    with pytest.raises(ValidationError):
-        WhatIfSelection(kind="mcc", value="taxis please")
+    for model in (ModelWhatIfArgs, RunWhatIfArgs):
+        with pytest.raises(ValidationError):
+            model.model_validate({"selection": {"kind": "mcc", "value": "health"}, "cut_pct": 10})
+    with pytest.raises(ValidationError):      # /api/whatif: the contract's codes only
+        RunWhatIfArgs.model_validate({"selection": {"kind": "mcc", "value": "taxi"}, "cut_pct": 10})

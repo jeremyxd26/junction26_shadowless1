@@ -55,7 +55,7 @@ KNOWN_TOOLS = [
               "(the share only if the user gave one, else the default), with fixed assumptions. An estimate; "
               "never says where the user shops. Returns numbers with ids; cite them as {{id}}.",
               ("Estimating your S-Bonus", "Arvioin S-Bonuksesi")),
-    KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
+    KnownTool("core.tools.what_if", "run_what_if", "ModelWhatIfArgs",   # group names accepted (#346)
               "Savings from cutting a selection by a percentage, from the last 6 complete months. The selection "
               "is a spending category, a basket, a merchant-category group (kind mcc, value taxi, "
               "public_transport, fuel, parking, restaurants, groceries or electronics_home) or a merchant alias. "

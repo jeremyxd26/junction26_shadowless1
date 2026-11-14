@@ -366,7 +366,34 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
                                                displays=[numbers[i].display for i in set(used)],
                                                dates=allowed.dates, periods=allowed.periods)
         errors += [f"rendered text: {p}" for p in rendered if p not in errors]
+        repeated = repeated_period(draft.text, numbers)
+        if repeated:
+            errors.append(f"'{repeated}': the number's display already says how often; write it once")
     return draft, errors
+
+
+# A token whose display carries its period ("€229.56 a month", "229,56 € / kk") followed by a period word
+# again renders as "€3,010.59 a month a month" (live, #288; r-w3 met it in a template, #390).
+_PERIOD_UNITS = {"eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
+_PERIOD_WORDS = re.compile(
+    r"\s*(?:,\s*)?(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"
+    r"|/\s*(?:pv|vk|kk|v)\b|päivässä\b|viikossa\b|kuukaudessa\b|kuussa\b|vuodessa\b|vuosittain\b"
+    r"|kuukausittain\b|viikoittain\b)", re.I)
+_REPEATED_RENDERED = re.compile(
+    r"\b((?:a|per) (?:day|week|month|year))\W+\1\b|(/ ?(?:pv|vk|kk|v))\W*\2\b"
+    r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)\W+\3\b", re.I)
+
+
+def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
+    """The period phrase written again after a number whose display already carries it, or None."""
+    for m in TOKEN.finditer(text):
+        number = numbers.get(m.group(0)[2:-2])
+        if number is not None and number.unit.value in _PERIOD_UNITS:
+            after = _PERIOD_WORDS.match(text, m.end())
+            if after:
+                return (number.display + after.group(0)).strip()
+    found = _REPEATED_RENDERED.search(render(text, numbers))
+    return found.group(0) if found else None
 
 
 def render(text: str, numbers: dict[str, Number]) -> str:
