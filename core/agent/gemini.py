@@ -207,6 +207,10 @@ class GeminiModel:
         self.composer_prompt = self.composer.version
         self.schema = answer_schema()
 
+    def unavailable_reason(self) -> str | None:
+        """Why the model may not be used now ("off", "budget", "pause"), or None (#244)."""
+        return self.client.unavailable_reason()
+
     def plan(self, request: PlanInput) -> PlanResult:
         if request.round == 1:
             self.client.start_answer(request)   # the answer's request count and deadline (gemini_client.py)
@@ -282,6 +286,28 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     return GeminiModel(client)
 
 
+def model_state(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGER,
+                off_switch: Path = OFF_SWITCH) -> str:
+    """One line for the service log at start (#244): the language model is on (model, fallback, daily
+    budget and requests in the last 24 hours) or off and why (no key, budget 0, the switch file, the
+    budget used up). No key material and no other setting's value."""
+    env = GeminiSettings()
+    s = settings or env
+    if not getattr(s, "gemini_api_key", None):
+        return "language model: off (no GEMINI_API_KEY); the rules plan and the templates write"
+    model = getattr(s, "gemini_model", None) or DEFAULT_MODEL
+    budget = getattr(s, "daily_budget", env.daily_budget)
+    if budget == 0:
+        return f"language model: off (MODEL_DAILY_BUDGET=0); {model} not called, the templates write"
+    if Path(off_switch).exists():
+        return f"language model: off (switch file {Path(off_switch).name} present); the templates write"
+    fallback = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model or FALLBACK_MODELS.get(model)
+    used = Ledger(ledger_path, budget, off_switch).count()
+    state = "off (daily budget used up)" if used >= budget else "on"
+    return (f"language model: {state}; model {model}, fallback {fallback or 'none'}, "
+            f"daily budget {budget} requests, {used} sent in the last 24 h")
+
+
 # ---- rules first --------------------------------------------------------------------------------------
 
 def not_recognised(result: PlanResult) -> bool:
@@ -306,6 +332,9 @@ class RulesFirstModel:
         self.model_id = model.model_id
         self.planner_prompt = f"rules-first: {model.planner_prompt}"
         self.composer_prompt = model.composer_prompt
+
+    def unavailable_reason(self) -> str | None:
+        return self.model.unavailable_reason()
 
     def plan(self, request: PlanInput) -> PlanResult:
         if request.round == 1:

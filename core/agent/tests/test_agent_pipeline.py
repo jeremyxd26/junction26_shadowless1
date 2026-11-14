@@ -48,7 +48,7 @@ def test_invented_number_is_rejected_retried_then_template(make_pipeline):
     pipe = make_pipeline(model)
     events = run(pipe)
     done = dict(events)["done"]
-    assert done["outcome"] == "fallback" and "llm_unavailable" in done["warnings"]
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]  # #244: the template answered
     assert "30" not in done["text"]                       # the template cites tokens only
     assert len(model.compose_inputs) == 2 and model.compose_inputs[1].validation_errors  # retried with errors
     record = audit_records(pipe)[-1]
