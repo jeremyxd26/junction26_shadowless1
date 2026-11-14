@@ -134,8 +134,9 @@ def assert_opens_like(e, path):
         assert (e["row_count"], e["query"], e["parts"]) == (None, None, []), path
 
 
-def opens_with_the_same_number(client, number, path):
-    response = client.get(f"/api/evidence/{number['evidence_ref']}", params={"customer_id": LEAD, "limit": 200})
+def opens_with_the_same_number(client, number, path, customer_id=LEAD):
+    response = client.get(f"/api/evidence/{number['evidence_ref']}",
+                          params={"customer_id": customer_id, "limit": 200})
     assert response.status_code == 200, (path, response.text)
     e = response.json()
     n = e["number"]
@@ -279,8 +280,8 @@ def test_the_overview_runs_the_metric_file_once(client, monkeypatch):
 
 # ---- POST /api/whatif ----------------------------------------------------------------------------
 
-def post_whatif(client, kind, value, cut_pct=20, language="en"):
-    return client.post("/api/whatif", json={"customer_id": LEAD, "language": language,
+def post_whatif(client, kind, value, cut_pct=20, language="en", customer_id=LEAD):
+    return client.post("/api/whatif", json={"customer_id": customer_id, "language": language,
                                             "scenario": {"selection": {"kind": kind, "value": value},
                                                          "cut_pct": cut_pct}})
 
@@ -361,3 +362,23 @@ def test_refused_selections_are_422(client):
     unknown = client.post("/api/whatif", json={"customer_id": "CUST99999", "scenario": {
         "selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}})
     assert unknown.status_code == 404 and unknown.json()["error"]["code"] == "customer_not_found"
+
+
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+def test_a_category_with_one_or_two_purchases_is_not_offered_with_the_reason(client, customer_id):
+    """Review of #379 part B, B1: never a 500. The existing status not_offered, every saving and the baseline
+    0, and the chat's sentence as the caveat; every number opens, and the card opens the purchases."""
+    response = post_whatif(client, "category", "Travel", customer_id=customer_id)
+    assert response.status_code == 200, response.text
+    w = response.json()
+    assert w["status"] == "not_offered" and w["assumptions"] == [] and len(w["caveats"]) == 1
+    assert all(w[k]["value"] == 0 for k in ("baseline_per_month", "saving_per_month", "saving_per_week",
+                                            "saving_per_year"))
+    if customer_id == "CUST00849":
+        assert w["caveats"] == ["Between 1 Apr and 30 Sep 2026 you made a single travel purchase of \u20ac203.95, "
+                                "so there is no monthly habit to cut."]
+    for path, number in numbers_in(w):
+        if number["evidence_ref"] is not None:
+            opens_with_the_same_number(client, number, path, customer_id)
+    rows = client.get(f"/api/evidence/{w['evidence_ref']}", params={"customer_id": customer_id}).json()["rows"]
+    assert 1 <= len(rows) < config.TOO_FEW_TRANSACTIONS and all(r["category"] == "Travel" for r in rows)

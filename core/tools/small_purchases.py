@@ -175,14 +175,23 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
                       model_view=_model_view(data, notes, args.period.preset.value))
 
 
+def _what(label: str, language: str) -> str:
+    return label.lower() if language == "en" else label
+
+
+def cut_prompt(category: str, language: str) -> str:
+    """The prompt of the card's action for a category: its what-if with no amount, which the what-if rule claims
+    and asks by how much (#142, #403)."""
+    return _t("action_prompt", language, what=_what(config.label(config.CATEGORY_LABELS[category], language), language))
+
+
 def _card(data: SmallPurchasesData, language: str) -> Card:
     ref = data.total.evidence_ref
     actions = [Action(type="open_evidence", label=_t("show", language), evidence_ref=ref)]
     if data.categories:
-        largest = data.categories[0].label
-        what = largest.lower() if language == "en" else largest
-        actions.append(Action(type="ask", label=_t("action_label", language, what=what),
-                              prompt=_t("action_prompt", language, what=what)))
+        largest = data.categories[0]
+        actions.append(Action(type="ask", label=_t("action_label", language, what=_what(largest.label, language)),
+                              prompt=cut_prompt(largest.key, language)))
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=data.period.label, evidence_ref=ref,

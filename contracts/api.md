@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.3 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.4 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420, #421 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.3. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.4. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -2991,7 +2991,7 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 - `changes`: the overview numbers that moved, each `{key, label, before: Number, after: Number}`. It is empty when `changed` is false. Before and after have different `evidence_ref`s, because evidence keeps resolving to the numbers as they were.
 - `effect` (#382): `{items, text, text_rendered, numbers}`, or `null` when `changed` is false.
   - `items`: the headline numbers, each `{key, label, before: Number, after: Number}` with ids: `safe_to_spend`, `safe_to_save` (the overview's monthly figure, when the overview shows it), `irregular_reserve`, and the basket the purchase moved into (`unclassified` after an undo while open). Every item is listed even when its value did not move, so the app can show "no change". `before` and `after` are exactly the overview's numbers before and after, with their evidence refs.
-  - `text`, `text_rendered`, `numbers`: the effect as one or two sentences with number tokens (section 2.4), the same text as `message`. The app shows it in the card's confirmation.
+  - `text`, `text_rendered`, `numbers`: the effect as one or two sentences with number tokens (section 2.4), the same text as `message`. The app shows it in the card's confirmation. `numbers` holds only the numbers the text cites (its tokens), not every Number of `items`.
   - An undo returns the same structure with the sides swapped.
 - **Rounding:** derived figures are computed from unrounded values and rounded once, so a figure can differ by 0.01 from the same sum of displayed figures (for example 12,360.83 against 12,656.12 − 295.28 = 12,360.84).
 - `refetch`: what to reload for everything else.
@@ -3723,6 +3723,7 @@ A barcode whose reference fails its check:
 | `comparison` | A [Comparison](#23-comparison), only when `matched`, else `null`:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`), `null` when the typical amount is 0.<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
 | `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €138.79: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
+| `forecast` | The forecast balance on the bill's due date, before and after the bill (since 0.3.4, #421), or `null` when the balance forecast cannot be computed for a known reason: no transactions, no balance, the bills due of the two paths differ (as `safe_to_spend`), or a failed consistency check of the forecast. The rest of the explanation is unchanged. Fields:<br>- `status`: `covered`; `tight`, when the balance after the bill is below a margin (a server constant, €100); `not_covered`, when it is below zero; or `outside_forecast`, when the due date is before `as_of` or on or after the next payday (the forecast covers today up to the day before payday).<br>- `before`: the balance forecast's own Number for the due date (`balance_forecast.balance_eur@1`), with the same `evidence_ref` as that day of the forecast. For a bill due today it is the balance now (`safe_to_spend.balance_eur@1`).<br>- `already_counted`: what the forecast already subtracts for the matched bill's series by the due date (`balance_forecast.bills_to_date_eur@1` for that series), or `null` when nothing is. This is the part of the forecast's bills up to the due date, not `safe_to_spend.reserved` (up to payday): a monthly bill expected after the due date is not in the balance on the due date yet.<br>- `counted`: what the bill takes from the forecast: the bill's `amount` Number, or, with `already_counted`, only the excess `max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`). So a bill already among the forecast's bills is never subtracted twice.<br>- `after`: `before - counted` (`bill.forecast_after_eur@1`).<br>- `shortfall`: for `not_covered`, `counted - before` (`bill.forecast_shortfall_eur@1`), else `null`.<br>- `text`: one sentence. For `not_covered` it names the shortfall and the date. No text suggests borrowing.<br>- `chip`: for `not_covered`, an `ask` action with the forecast question ("Will my money last until payday?"), else `null`.<br>For `outside_forecast` the Numbers are `null`. The status never removes the payment draft. The due date is taken as printed, with no shift to a banking day, as in `safe_to_spend.effect`. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
 | `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank, when `signals` holds `iban_check_failed` or `reference_check_failed`, or `new_payee` together with another sign; `new_payee`, `short_term` or `amount_above_usual` alone do not bring it. Pick an action by its `type`, never by its index: with a failed check, `contact_bank` is the only action. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
 | `warnings` | Sentences the app may show as a small note, as `warnings` are elsewhere in this contract; empty when there is nothing to note. A warning never repeats a signal. Today there is one: a due date in the past, that the payee may charge late-payment interest, without an amount. |
@@ -3735,9 +3736,9 @@ The known payee names of the demo (fictional companies; the sample bills of #249
 | Housing (`bill_housing_payment`) | Housing / Asuminen | Esimerkki Asunnot Oy |
 | Utilities (`bill_utilities_payment`) | Utilities / Kodin laskut | Esimerkki Energia Oy, Esimerkki Vesi Oy |
 
-**Evidence of the computed numbers.** `comparison.change`, `comparison.change_pct`, `safe_to_spend.counted` and `safe_to_spend.free_until_payday_after` open as `composite` (section 9). Their parts are the numbers they are computed from; the bill's amount is a part without an `evidence_ref`. `safe_to_spend.after` opens as a `composite` like the hero's `primary`: the smaller of the two limits, each a part. The budget limit is the hero's own. The balance limit after the bill opens as `metric`: a re-run of `03_safe_to_spend.sql` whose stored settings hold the counted amount (`app.extra_bill_due_eur`, a typed and bounded setting), so it reconciles. The `bill.*` methods are defined in the design documents (#242).
+**Evidence of the computed numbers.** `comparison.change`, `comparison.change_pct`, `safe_to_spend.counted` and `safe_to_spend.free_until_payday_after` open as `composite` (section 9). Their parts are the numbers they are computed from; the bill's amount is a part without an `evidence_ref`. `safe_to_spend.after` opens as a `composite` like the hero's `primary`: the smaller of the two limits, each a part. The budget limit is the hero's own. The balance limit after the bill opens as `metric`: a re-run of `03_safe_to_spend.sql` whose stored settings hold the counted amount (`app.extra_bill_due_eur`, a typed and bounded setting), so it reconciles. `forecast.before` and `forecast.already_counted` open as the balance forecast's own numbers do: `before` as a `composite` of the balance, the bills by that day and the daily pace, and `already_counted` as `transactions`. `forecast.counted` (with `already_counted`), `forecast.after` and `forecast.shortfall` open as `composite`, and the bill's amount is a part without an `evidence_ref` (#421). The `bill.*` methods are defined in the design documents (#242).
 
-**Sentences embed displays.** The texts of `match`, `basket`, `safe_to_spend`, `signals` and `warnings` are fixed server templates that embed the `display` of the numbers they cite, not number tokens (section 2.4): no model writes them.
+**Sentences embed displays.** The texts of `match`, `basket`, `safe_to_spend`, `forecast`, `signals` and `warnings` are fixed server templates that embed the `display` of the numbers they cite, not number tokens (section 2.4): no model writes them.
 
 A matched bill, read from the barcode of section 11.1: the payee is a known payee name of the housing bill. The amount is higher than usual and due before payday, and €780.00 of it is already counted in the bills due before payday, so only the excess of €32.40 is added. It is due tomorrow, so it carries the warning sign `short_term`:
 
@@ -3835,6 +3836,36 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
     },
     "text": "Due before your payday on 15 Oct. €780.00 is already counted for your Housing bill, so only the extra €32.40 is added: free until payday goes from €395.74 to €363.34, and your weekly safe to spend from €184.68 to €169.56."
   },
+  "forecast": {
+    "status": "covered",
+    "before": {
+      "value": 825.63, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "balance_forecast.balance_eur@1", "evidence_ref": "ev_f2c4a6s8t0b2",
+      "label": "Forecast balance on the due date", "display": "€825.63"
+    },
+    "already_counted": {
+      "value": 780.0, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "balance_forecast.bills_to_date_eur@1", "evidence_ref": "ev_f3h5o7u9s1e3",
+      "label": "Already in the forecast for this bill by the due date", "display": "€780.00"
+    },
+    "counted": {
+      "value": 32.4, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "bill.forecast_counted_eur@1", "evidence_ref": "ev_f4k6m8p0r2t4",
+      "label": "Taken from the forecast by this bill", "display": "€32.40"
+    },
+    "after": {
+      "value": 793.23, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "bill.forecast_after_eur@1", "evidence_ref": "ev_f5k7m9p1r3t5",
+      "label": "Forecast balance after this bill", "display": "€793.23"
+    },
+    "shortfall": null,
+    "text": "Your forecast balance on 1 Oct 2026 covers this bill: €793.23 would be left after it.",
+    "chip": null
+  },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
     { "term": "due_date", "label": "Due date (eräpäivä)", "text": "The last day to pay the bill without a late-payment charge." },
@@ -3921,6 +3952,16 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
     "after": null,
     "text": "Due on 20 Oct, after your payday on 15 Oct, so it changes nothing before then."
   },
+  "forecast": {
+    "status": "outside_forecast",
+    "before": null,
+    "already_counted": null,
+    "counted": null,
+    "after": null,
+    "shortfall": null,
+    "text": "Due on 20 Oct 2026, beyond your balance forecast, which runs until the day before your payday on 15 Oct 2026.",
+    "chip": null
+  },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
     { "term": "due_date", "label": "Due date (eräpäivä)", "text": "The last day to pay the bill without a late-payment charge." },
@@ -3934,6 +3975,188 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
   "signals": [
     { "code": "reference_check_failed", "text": "This reference number does not pass its check. Compare it with the paper bill before paying.", "numbers": [] },
     { "code": "new_payee", "text": "This payee is not one of your regular bills.", "numbers": [] }
+  ]
+}
+```
+
+A bill the forecast does not cover, typed by CUST00849, the persona whose forecast is tightest: €700.00 to an unknown payee, due on 14 Oct, the forecast's lowest day (€641.43). Nothing of it is in the forecast yet, so it takes the whole amount and is €58.57 short: `forecast.status` is `not_covered`, with the `shortfall` and the forecast question as the `chip`. The payment draft stays, and the way to the bank follows it (a new payee with another sign, section 3, `contact_bank`):
+
+<!-- example: bill.response_not_covered -->
+```json
+{
+  "customer_id": "CUST00849",
+  "as_of": "2026-09-30",
+  "language": "en",
+  "bill": {
+    "source": "fields",
+    "payee": "Esimerkki Remontti Oy",
+    "iban": "FI71 1234 5600 0098 76",
+    "reference": "12344",
+    "amount": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "user_input@1", "evidence_ref": null,
+      "label": "Amount due", "display": "€700.00"
+    },
+    "due_date": "2026-10-14"
+  },
+  "checks": {
+    "iban": "pass",
+    "reference": "pass",
+    "due_date": "pass"
+  },
+  "match": {
+    "status": "not_matched",
+    "bill_id": null,
+    "label": null,
+    "text": "This payee is not one of your regular bills."
+  },
+  "comparison": null,
+  "basket": {
+    "key": "unexpected_necessities",
+    "label": "Unexpected necessities",
+    "text": "It is not one of your regular bills, so it would count as an unexpected necessity. Nothing is saved."
+  },
+  "safe_to_spend": {
+    "effect": "full",
+    "next_payday": "2026-10-15",
+    "reserved": null,
+    "counted": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.counted_eur@1", "evidence_ref": "ev_fa842817d5f6",
+      "label": "Added to the bills before payday", "display": "€700.00"
+    },
+    "free_until_payday_before": {
+      "value": 819.62, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_ef509d0e7ccb",
+      "label": "Free until payday", "display": "€819.62"
+    },
+    "free_until_payday_after": {
+      "value": 119.62, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.free_until_payday_after_eur@1", "evidence_ref": "ev_ee61b33a3f53",
+      "label": "Free until payday after this bill", "display": "€119.62"
+    },
+    "before": {
+      "value": 123.15, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_b947397749c0",
+      "label": "Safe to spend", "display": "€123.15"
+    },
+    "after": {
+      "value": 55.82, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "bill.safe_to_spend_after_eur@1", "evidence_ref": "ev_a50e19ad3a3b",
+      "label": "Safe to spend after this bill", "display": "€55.82"
+    },
+    "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Your weekly safe to spend goes from €123.15 to €55.82."
+  },
+  "forecast": {
+    "status": "not_covered",
+    "before": {
+      "value": 641.43, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "balance_forecast.balance_eur@1", "evidence_ref": "ev_e556874c14c9",
+      "label": "Forecast balance on the due date", "display": "€641.43"
+    },
+    "already_counted": null,
+    "counted": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "user_input@1", "evidence_ref": null,
+      "label": "Amount due", "display": "€700.00"
+    },
+    "after": {
+      "value": -58.57, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "bill.forecast_after_eur@1", "evidence_ref": "ev_c3153e0e6d7c",
+      "label": "Forecast balance after this bill", "display": "-€58.57"
+    },
+    "shortfall": {
+      "value": 58.57, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "bill.forecast_shortfall_eur@1", "evidence_ref": "ev_91c833639e58",
+      "label": "Short of this bill", "display": "€58.57"
+    },
+    "chip": {
+      "type": "ask",
+      "label": "See your balance forecast",
+      "prompt": "Will my money last until payday?"
+    },
+    "text": "Your forecast balance on 14 Oct 2026 does not cover this bill: it is €58.57 short."
+  },
+  "glossary": [
+    {
+      "term": "reference_number",
+      "label": "Reference number (viitenumero)",
+      "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught."
+    },
+    {
+      "term": "due_date",
+      "label": "Due date (eräpäivä)",
+      "text": "The last day to pay the bill without a late-payment charge."
+    },
+    {
+      "term": "virtual_barcode",
+      "label": "Virtual barcode (virtuaaliviivakoodi)",
+      "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them."
+    },
+    {
+      "term": "late_payment_interest",
+      "label": "Late-payment interest (viivästyskorko)",
+      "text": "Interest the payee may charge for each day a bill is paid after its due date."
+    }
+  ],
+  "actions": [
+    {
+      "type": "add_to_payments",
+      "label": "Add to payments",
+      "draft": {
+        "payee": "Esimerkki Remontti Oy",
+        "iban": "FI7112345600009876",
+        "reference": "12344",
+        "amount": {
+          "value": 700.0, "unit": "eur",
+          "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+          "method": "user_input@1", "evidence_ref": null,
+          "label": "Amount due", "display": "€700.00"
+        },
+        "due_date": "2026-10-14"
+      }
+    },
+    {
+      "type": "open_host_screen",
+      "label": "Contact S-Pankki",
+      "target": "contact_bank"
+    }
+  ],
+  "warnings": [],
+  "signals": [
+    {
+      "code": "new_payee",
+      "text": "This payee is not one of your regular bills.",
+      "numbers": []
+    },
+    {
+      "code": "amount_above_usual",
+      "text": "This bill is €700.00, more than your largest regular bill (€613.93 a month).",
+      "numbers": [
+        {
+          "value": 700.0, "unit": "eur",
+          "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+          "method": "user_input@1", "evidence_ref": null,
+          "label": "Amount due", "display": "€700.00"
+        },
+        {
+          "value": 613.93, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "1 Apr – 30 Sep 2026" },
+          "method": "recurring.typical_month_eur@1", "evidence_ref": "ev_523fbc172441",
+          "label": "Usual amount", "display": "€613.93 a month"
+        }
+      ]
+    }
   ]
 }
 ```
@@ -4020,3 +4243,4 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
 | 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
+| 0.3.4 | After 0.3.3. The forecast balance on a bill's due date (#421).<br><br>New:<br>- `forecast` in the response of section 11 (`POST /api/bill/explain`): `{status, before, already_counted, counted, after, shortfall, text, chip}`, or `null`. It is `null` when the balance forecast cannot be computed: no transactions, no balance, the bills due of the two paths differ, or a failed consistency check of the forecast; the rest of the explanation is unchanged. `status` is one of `covered`, `tight` (below a server constant, €100), `not_covered` and `outside_forecast`. `before` is the balance forecast's own Number for the due date. A bill already among the forecast's bills takes only its excess over what the forecast subtracts for it by the due date. `chip` is an `ask` action with the forecast question, for `not_covered` only. The status never removes the payment draft.<br>- Methods `bill.forecast_counted_eur@1`, `bill.forecast_after_eur@1` and `bill.forecast_shortfall_eur@1`, which open as `composite`.<br><br>Changed examples: `bill.response` (`covered`, with €780.00 already in the forecast for the housing bill on 1 Oct) and `bill.response_unknown` (`outside_forecast`, due after payday). New example `bill.response_not_covered` (CUST00849, €700.00 due on 14 Oct: €58.57 short, with the `shortfall` and the `chip`). |

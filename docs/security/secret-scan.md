@@ -9,6 +9,36 @@ Two checks prove that no secret is in the repository, its history or its GitHub 
 
 `.gitleaks.toml` and the CI job come from #83 (PR #94). They are in `dev`, and the gitleaks parts of this page apply once they reach `main`.
 
+## A branch before a merge, without CI
+
+`scripts/scan_diff_secrets.py` (#472) reads only the lines a branch adds. It is the check to run when the CI secret scan cannot run, and a quick one before any merge:
+
+```
+git fetch origin "+refs/heads/*:refs/remotes/origin/*" "+refs/pull/*/head:refs/pull/*/head"
+python scripts/scan_diff_secrets.py --pr 443                  # a pull request head against origin/dev
+python scripts/scan_diff_secrets.py --base origin/dev         # the current branch against origin/dev
+python scripts/scan_diff_secrets.py --range A..B              # what a range of commits added
+```
+
+What it reads:
+- by default, every commit from the merge base to the head, and the final diff. A secret that one commit adds and a later one removes is still found: a merge commit brings that history into `dev` and `main`;
+- a merge commit as its remerge diff (git 2.36 or newer): only the lines written while resolving it. What a merge brings from its parents is read in their own commits, or is already in the base;
+- `--net-only`: the final diff alone;
+- added lines only, binary files read as text.
+
+What it reports:
+- common key shapes, and values assigned to a key, secret, password or token name, quoted or not (`export API_TOKEN=...`, `password: ...`);
+- database URLs with a password that the allowlist does not cover (path and value together). The allowlist is the base's copy of `.gitleaks.toml`, so a branch cannot allowlist its own value; a branch that edits `.gitleaks.toml` or `.gitleaksignore` gets a note;
+- literal values of the local `.env`;
+- added env files: `.env`, `.env.*`, `*.env`, except `*.example`.
+
+Output: one line per kind and file, with the commits it was seen in. Never a value. Exit codes:
+- 1 on a finding;
+- 0 when clean;
+- 2 when it cannot run: a missing ref (named, with the fetch command), an unreadable `.env` or `.gitleaks.toml`, or no git. It then prints `NOT RUN:` and the reason.
+
+It does not replace gitleaks, which has many more rules and reads the whole history in CI. The history, pull request heads and GitHub texts are covered by `scan_env_values.py` below.
+
 ## Before the repository goes public
 
 Run both checks right before the switch, from the main checkout with an up-to-date `.env`:
@@ -22,6 +52,7 @@ python scripts/scan_env_values.py
 - The first line also fetches the head of every pull request, closed ones included. Those refs become public with the repository, even when their branch was deleted. The script runs the same fetch itself unless it gets `--no-fetch`.
 - Both checks must end clean: `no leaks found`, and `RESULT: clean` with `0 / 0 / 0` for every variable.
 - The script exits 2 and prints `NOT RUN` when it loads no value, for example from an empty or missing `.env`.
+- One more step of this list comes later, after the event rather than before the switch: delete by hand the data the dev service keeps (audit files, model response cache, journal), with the checklist in `docs/security/server-data.md`.
 
 **If anything is found**:
 - the key counts as leaked, even if the repository is still private;
@@ -40,6 +71,22 @@ The checks do not cover:
 - **GitHub content outside the API texts listed above**: review comment edit histories beyond what `userContentEdits` returns (at most 50 versions per body, 20 per comment or review), commit comments, releases, the wiki (off) and discussions (off).
 - **Objects that no ref reaches** but that GitHub still serves by SHA, such as a force-pushed commit. There are none as long as nobody force-pushes, which the team rules forbid outside one's own branch.
 - **Forks.** There are none while the repository is private.
+
+## Known false findings of the branch scan
+
+`scripts/scan_diff_secrets.py` (#472) reports these synthetic test values. The rule is not weakened for them.
+
+| Kind | File | What it is |
+|---|---|---|
+| `secret_assignment` | `.gitleaks.toml` | The `FAKE_SECRET` line of the global allowlist |
+| `secret_assignment` | `core/tools/tests/test_tools_pure.py` | The same `FAKE_SECRET` test value |
+| `secret_assignment` | `core/agent/tests/test_gemini_model.py` | The `test-k...` key of the Gemini adapter tests |
+| `secret_assignment_unquoted` | `deploy/remote-deploy.sh` | The fixtures of the deploy script's log mask |
+
+- **A dev to main batch** (`--base origin/main --head origin/dev`) is expected to exit 1 with exactly one line: `secret_assignment in core/agent/tests/test_gemini_model.py`. That was the result on `dev` at 281c6d1. Any other line is a real finding.
+- **New commits on one of these lines.** A finding names only the kind and the file, so a new value in one of these files looks the same. When the commits it names are new, read the line.
+- **Criss-cross merges.** When a branch and its base have more than one merge base, the scan starts at the one git picks. A commit of `dev` can then be attributed to the branch: a false finding, on the safe side. The allowlist is read at that merge base (for `--range A..B`, at `A`).
+- **The whole history.** A range from the first commit reads the allowlist there, and the first commit has none. Pass `--gitleaks-config .gitleaks.toml`, or the allowlisted test URLs show up as findings as well.
 
 ## Last result
 
