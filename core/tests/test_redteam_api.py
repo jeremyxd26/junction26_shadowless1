@@ -70,8 +70,7 @@ def test_errors_are_the_envelope_and_leak_nothing(client, method, path, body):
         assert marker not in r.text, marker
 
 
-@pytest.mark.xfail(strict=True, reason="API docs are on in the app and hidden only by the proxy; issue #62")
-@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])  # fixed by #62: off unless API_DOCS=1
 def test_api_docs_are_not_served_by_the_app(client, path):
     assert client.get(path).status_code == 404
 
