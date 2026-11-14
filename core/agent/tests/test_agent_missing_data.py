@@ -277,6 +277,44 @@ def test_a_planned_unfiltered_total_for_an_unknown_object_becomes_the_breakdown(
     assert done["follow_ups"][0] == "How much did I spend on restaurants last month?"
 
 
+@pytest.mark.parametrize("question,word", [
+    ("how much did I spend on food delivery last month?", "food delivery"),
+    ("how much did I spend at a food court last month?", "food court"),
+    ("how much did I spend at food trucks last month?", "food trucks"),
+    ("how much did I spend at food stalls last month?", "food stalls"),
+    ("how much did I spend on my dog food last month?", "dog food"),
+    ("how much did I spend on my dog's food last month?", "dog's food"),
+    ("how much did I spend on pet food last month?", "pet food"),
+    ("how much did I spend on street food last month?", "street food"),
+])
+def test_a_planned_unfiltered_total_for_a_food_compound_becomes_the_breakdown(make_pipeline, question, word):
+    # review of #534: the rules claim none of these, so a model may plan the total; "food" is a category word, so
+    # the compound itself is the unknown thing, and the answer quotes it in the user's words
+    from core.tools.models import Card, ToolResult
+
+    ran: list[str] = []
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        card = Card(card_id="card_baskets001", type="breakdown", title="Where your money went",
+                    subtitle="1 Apr – 30 Sep 2026", evidence_ref="ev_aaaaaaaaaaa3")
+        return ToolResult(tool="get_basket_breakdown", data={}, card=card, evidence=[], model_view=basket_view())
+
+    specs = (ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson")),
+             ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson")))
+    model = ScriptedModel(plans=[[FunctionCall("get_spending", {"period": {"preset": "last_month"}}),
+                                  FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(*specs)), question, language="en")
+    done = dict(events)["done"]
+    assert ran == ["get_basket_breakdown"] and model.compose_inputs == []
+    assert [p["card"]["card_id"] for e, p in events if e == "card"] == ["card_baskets001"]
+    assert done["outcome"] == "answered" and f"“{word}”" in done["text"] and "147" not in done["text"]
+
+
 def test_the_guard_leaves_a_filtered_plan_and_a_question_without_an_unknown_object_alone(make_pipeline):
     from core.tools.models import ToolResult
 
@@ -358,6 +396,19 @@ def test_the_pipeline_answers_a_what_if_with_nothing_to_cut_and_no_compose_reque
     assert done["text"] == "Between 1 Apr and 30 Sep 2026 you made no public transport purchases, so there is nothing to cut."
     assert "could not be computed" not in done["text"]
 
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_a_single_purchase_total_says_why_no_monthly_habit_is_shown(language):
+    # #527: the human sentence keeps the too-few note as its second sentence (the tool's other notes stay on the card)
+    from core.agent import answer_sentences
+    note = config.label(config.TEXT["note_too_few"], language)
+    view = {"total": {"id": "n1", "value": 155.98, "unit": "eur", "label": "Travel"},
+            "tx_count": {"id": "n2", "value": 1, "unit": "count", "label": "x"}, "period": "1 Apr \u2013 30 Sep 2026",
+            "direction": "out", "comparison": None, "notes": [note], "filter_labels": ["Travel"]}
+    sentences, ids = answer_sentences.spending(view, language, lambda s, **kw: True)
+    assert sentences[-1] == note and len(sentences) == 2 and ids == ["n1", "n2"]
+    view["notes"] = []
+    assert len(answer_sentences.spending(view, language, lambda s, **kw: True)[0]) == 1
 
 
 # ---- #510: the guard with a second tool, markup, period words, the date phrase, health codes -----------------

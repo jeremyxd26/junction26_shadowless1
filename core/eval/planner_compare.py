@@ -4,7 +4,7 @@
         --thinking minimal --ledger var/m169/planner-lite-requests.jsonl --cap 61 --out var/m169/planner-lite.jsonl
     python core/eval/planner_compare.py --summary var/m169/planner-lite.jsonl var/m169/planner-flash.jsonl
 
-Questions: the 39 phrasings the rules do not recognise (issue #340, r-qa's table: 30 as typed and 9 typed
+Questions: the 39 phrasings the rules do not recognise (issue #340, the QA table: 30 as typed and 9 typed
 without diacritics), the eval's red-team questions, and three live problem questions with a hand key.
 It sends the service's own planner prompt and tool declarations (default_registry), as the pipeline's
 first round does, with no history. Every response is cached in var/gemini-cache; the ledger caps the

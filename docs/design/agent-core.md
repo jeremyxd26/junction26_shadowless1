@@ -75,7 +75,7 @@ This document defines how the coach answers a question: which tools exist, what 
 
 | Component | Responsibility | Owner |
 |---|---|---|
-| Metrics layer | Pure functions and precomputed tables that produce Number objects. Formulas, method ids and SQL come from #6. | core (r-w2 defines it) |
+| Metrics layer | Pure functions and precomputed tables that produce Number objects. Formulas, method ids and SQL come from #6. | core |
 | Tool registry | Typed wrappers that the model can call (section 6). Each tool calls the metrics layer and returns a typed result, a card and a compact view for the model. | core |
 | Evidence store | Saves the recipe of each number and resolves `GET /api/evidence/{ref}` (section 5). | core |
 | Coach orchestrator | Runs one answer: guard, planner loop, tools, cards, composer, validator, audit. | core |

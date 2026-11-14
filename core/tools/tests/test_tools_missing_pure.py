@@ -73,6 +73,14 @@ def test_a_too_few_sentence_names_a_code_list_once(kind, value, lang, expected):
     assert _purchases_of(sel, _what(sel, None, lang), lang) == expected
 
 
+@pytest.mark.parametrize("period,noted", [({"preset": "last_month"}, False), ({"preset": "last_6_months"}, True)])
+def test_the_too_few_note_is_about_a_habit_over_months_never_one_month(period, noted):
+    # review of #534: two grocery purchases in August are no "habit" question; over six months they are
+    result = get_spending(ctx(), {"period": period, "filter": {"categories": ["Groceries"]}})
+    assert result.model_view["tx_count"]["value"] == 2
+    assert any("no monthly habit" in n for n in result.model_view["notes"]) is noted
+
+
 @pytest.mark.parametrize("value", ["8021", "5411,8021", "8011", "8099,5812"])
 def test_a_what_if_on_any_health_code_is_refused_whatever_the_customers_history(value):
     # #510: the customer below has no Health purchase at all; the health group is refused before any SQL

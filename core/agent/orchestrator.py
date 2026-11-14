@@ -48,7 +48,7 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel, meta_intent, unknown_object
+from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import find_dates, length_problems, scan_numbers
@@ -389,8 +389,14 @@ class Pipeline:
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
+        foreign = bool(CYRILLIC.search(message))
         if meta is not None:
-            return self._introduce(meta, "en" if CYRILLIC.search(message) else lang, emit, a)
+            return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
+        if foreign and not re.search(r"[A-Za-z]", message):   # #352: a language Sentti does not speak
+            return self._introduce("language", "en", emit, a)
+        if human_request(message):   # #352: a human or a hard topic: the refusal with the way to the bank (#420)
+            a.planner_turns.append({"round": 1, "source": "rules", "human_request": True})
+            return self._refuse("out_of_scope", lang, emit, a)
 
         # The customer is bound here, from the request, and never from model output (R4).
         # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
@@ -481,7 +487,7 @@ class Pipeline:
                     clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
-                # question is the normal answer (#341, r-coord's decision).
+                # question is the normal answer (#341).
                 a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
@@ -882,11 +888,20 @@ class Pipeline:
             emit(event, payload)
         return send
 
-    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
-        """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
-        which the app renders as question chips): outcome "answered", nothing cited, no warning."""
-        a.introduced = template.meta_text(intent, lang) == template.pick(template.INTRO, lang)
-        text = self._deliver(template.meta_text(intent, lang), {}, emit)
+    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer, foreign: bool = False) -> str:
+        """Sentti's introduction (or a thank-you, the privacy answer, the language line) and the four brief
+        questions as chips (done.follow_ups, which the app renders as question chips): outcome "answered",
+        nothing cited, no warning. The full introduction comes once per conversation; a later greeting,
+        identity, capabilities or help message gets one short sentence (#352). A message in Russian gets the
+        English text and the line that Sentti answers in English or Finnish."""
+        conv = a.conversation
+        text = template.meta_text(intent, lang, introduced=conv is not None and conv.introduced)
+        a.introduced = text == template.pick(template.INTRO, lang)
+        if a.introduced and conv is not None:
+            conv.introduced = True
+        if foreign:
+            text = f"{text} {template.pick(template.LANGUAGE, 'en')}"
+        text = self._deliver(text, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
@@ -929,13 +944,18 @@ class Pipeline:
         return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
-        text, refusal = template.refusal(kind, lang)
+        text, refusal = template.refusal(kind, lang, a.question)
         text = self._deliver(text, {}, emit)
         a.outcome, a.refusal, a.text, a.text_rendered = "refused", refusal, text, text
+        if kind == "out_of_scope" and template.made_up_request(a.question):
+            # #352: no made-up or forecast number; the chips offer the typical income instead
+            follow_ups = [template.pick(template.MADE_UP_CHIP, lang), *template.brief_questions(lang)[:2]]
+        elif kind == "out_of_scope":
+            follow_ups = template.brief_questions(lang)   # the generic decline: the four brief questions (#287)
+        else:
+            follow_ups = template.follow_ups(a.question, lang, refused=True)
         emit("done", {"answer_id": a.answer_id, "outcome": "refused", "text": text, "text_rendered": text, "cited": [],
-                      # The generic decline offers the four brief questions as chips (#287).
-                      "follow_ups": template.brief_questions(lang) if kind == "out_of_scope"
-                      else template.follow_ups(a.question, lang, refused=True), "lesson": None,
+                      "follow_ups": follow_ups, "lesson": None,
                       "refusal": refusal, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang

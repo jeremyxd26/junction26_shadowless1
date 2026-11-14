@@ -143,7 +143,7 @@ def test_a_flood_from_other_addresses_never_blocks_a_fresh_presenter(proxied):
 
 
 def test_a_room_behind_one_address_is_not_limited_by_the_address(proxied):
-    """Everyone on a venue's Wi-Fi is one client address (r-sec): twenty viewers tapping twice each in the
+    """Everyone on a venue's Wi-Fi is one client address (security review): twenty viewers tapping twice each in the
     same minute all get through with the default limits; only a single viewer is held to 10 a minute."""
     with client() as c:
         statuses = []

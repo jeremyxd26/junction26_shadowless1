@@ -182,7 +182,9 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         # Never in the whole data (#379): what is missing, and the customer's own largest categories.
         raise MissingData("category_absent", what=total_label, top=top_categories(rows, lang))
     total, tx_count = reg(total), reg(tx_count)
-    too_few = args.filter is not None and 0 < n_value < config.TOO_FEW_TRANSACTIONS
+    # the note is about a monthly habit, so only over the what-if window or longer, never a single month (#534)
+    months = (period.end.year - period.start.year) * 12 + period.end.month - period.start.month + 1
+    too_few = args.filter is not None and 0 < n_value < config.TOO_FEW_TRANSACTIONS and months >= config.WINDOW_MONTHS
     if n_value == 0:
         notes.append(_text("note_empty", lang))
     elif too_few:

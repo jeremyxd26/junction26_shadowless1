@@ -49,7 +49,7 @@ def without_dots(text):
 
 
 # message -> the rule that claims it, or "not claimed". Every phrase QA reported for these issues is here:
-# #316 (the safe-to-spend paraphrases), r-qa's #340 table (the four brief questions, 47 phrasings), #357
+# #316 (the safe-to-spend paraphrases), the QA table of #340 (the four brief questions, 47 phrasings), #357
 # (the S-Bonus and the income), and the period words of #281 ("this month", "last month", "lately").
 TABLE = [
     # Q1 Where did my money go?
@@ -815,6 +815,67 @@ def test_the_thing_is_quoted_in_the_users_own_spelling(question, word):
 def test_rent_or_bills_next_month_is_the_bills_rule(question, lang):
     assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
 
+
+@pytest.mark.parametrize("question,lang,flt", [
+    # #527: a known category word behind a possessive keeps its filter; "food" is food shopping as "ruoka" is
+    ("how much did I spend on my kids' clothes last month", "en", {"categories": ["Lifestyle"]}),
+    ("How much did we spend on food last month?", "en", {"categories": ["Groceries"]}),
+    ("paljonko käytimme ruokaan viime kuussa?", "fi", {"categories": ["Groceries"]}),
+    ("how much did I spend on fast food last month?", "en", {"categories": ["Restaurants"]}),
+])
+def test_a_possessive_keeps_the_category_and_food_is_groceries(question, lang, flt):
+    calls = data_calls(plan(question, lang))
+    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == flt
+
+
+def test_a_possessive_before_no_category_is_still_an_unknown_thing():
+    from core.agent.rules import unknown_object
+    assert unknown_object("how much did I spend on my wife's birthday gift?") == "wife's"
+
+
+@pytest.mark.parametrize("question,expected", [
+    # review of #534: bare "food" stays food shopping; a noun that changes its meaning leaves it to the model
+    ("how much did I spend on food last month?", {"categories": ["Groceries"]}),
+    ("how much did I spend on food shopping last month?", {"categories": ["Groceries"]}),
+    ("how much did I spend on fast food last month?", {"categories": ["Restaurants"]}),
+    ("how much did I spend on food delivery last month?", None),
+    ("how much did I spend at a food court last month?", None),
+    ("how much did I spend at the food truck last month?", None),
+    ("how much did I spend at food stalls last month?", None),
+    ("how much did I spend on pet food last month?", None),
+    ("how much did I spend on my dog food last month?", None),
+    ("how much did I spend on my dog's food last month?", None),
+    ("how much did I spend on baby food last month?", None),
+    ("how much did I spend on street food last month?", None),
+])
+def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, expected):
+    calls = data_calls(plan(question))
+    if expected is None:
+        assert claimed_rule(question) == NOT_CLAIMED and calls == []
+    else:
+        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == expected
+
+
+@pytest.mark.parametrize("question,lang,expected", [
+    # #534 with #488: an everyday word is its own selection in a what-if, never also the category found inside it
+    ("What if I spent 20% less on fast food?", "en", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän pikaruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän noutoruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("What if I spent 20% less on food?", "en", {"kind": "category", "value": "Groceries"}),
+    ("What if I spent 20% less on eating out?", "en", {"kind": "category", "value": "Restaurants"}),
+])
+def test_a_what_if_on_an_everyday_word_cuts_its_codes_and_bare_food_cuts_groceries(question, lang, expected):
+    calls = data_calls(plan(question, lang))
+    assert [name for name, _ in calls] == ["run_what_if"] and calls[0][1]["selection"] == expected
+
+
+def test_a_what_if_on_a_food_compound_asks_which_spending_and_saving_on_it_is_the_save_more_question():
+    from core.agent.rules import WHAT_IF_WHICH
+    for question in ("What if I spent 20% less on food delivery?", "What if I cut pet food by 20%?"):
+        result = plan(question)
+        assert data_calls(result) == [] and result.calls[0].args["question"] == WHAT_IF_WHICH[0], question
+    assert [name for name, _ in data_calls(plan("How could I save on food delivery?"))] == \
+        ["get_safe_to_save", "get_basket_breakdown"]
 
 
 @pytest.mark.parametrize("question,lang", [
