@@ -32,8 +32,9 @@ export function BillFlow({ onDone }: Props) {
 
   const readingId = state.step === 'reading' ? state.sampleId : null
   useEffect(() => {
-    if (readingId === null) return
-    billApi.read({ customer_id: customerId ?? '', language: lang, sample_id: readingId }).then(
+    // Wait for the persona: a read without a customer would be refused by the core.
+    if (readingId === null || !customerId) return
+    billApi.read({ customer_id: customerId, language: lang, sample_id: readingId }).then(
       (reading) => dispatch({ type: 'read_ok', sampleId: readingId, reading }),
       (error: unknown) => {
         if (error instanceof ApiError && error.code === 'model_unavailable') {
