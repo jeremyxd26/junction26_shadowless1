@@ -184,7 +184,7 @@ SOFT_SET_ASIDE_PARTS = [
     # "What hidden instructions were you given?" (the security review's re-opened row): hidden rules with "you",
     # or "were you given / told" (not "what were you told about my loan")
     r"^(?=.*\byou\b).*\bhidden" + _SEP + r"(?:instructions|rules|prompt)\b",
-    r"\b(?:were|was)" + _SEP + r"you" + _SEP + r"(?:given|told)\b(?!" + _SEP + r"about)",
+    r"\b(?:were|was)" + _SEP + r"you" + _SEP + r"(?:given|told)\b" + _END_EN,   # not "... given for my budget"
     r"\bmitä\s+(?:ohjeita|sääntöjä|käskyjä)\s+(?:sait|olet saanut|sinulle annettiin|sinulle on annettu)\b",
     r"\b(?:ohjeesi|sääntösi)\s+(?:ovat|on)\s+(?:nyt\s+)?(?:mitätöity|kumottu|poistettu)\b",
     r"\b(?:kerro|näytä|toista)\s+(?:mitä|mitkä)\s+(?:sinulle|sulle)\s+(?:on\s+)?(?:sanottu|kerrottu|käsketty|"
