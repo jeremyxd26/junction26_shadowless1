@@ -1,12 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Language, OverviewResponse } from '../../api/types.ts'
+import type { Language, OverviewResponse, SafeToSaveCard } from '../../api/types.ts'
 import contract from '../../api/mock/contract-examples.json'
 import { strings } from '../../lib/i18n.ts'
 import { OpeningContext, type Opening } from '../../lib/openingContext.ts'
 import { SettingsContext } from '../../lib/settings.ts'
 import { clientTurns, openingChips, type ClientTurnProps } from '../clientTurns.tsx'
-import { inSentence, lessonOne, opensOnReveal, periodSpan, revealOf } from './lessons.ts'
+import { inSentence, lessonOne, lessonsFor, lessonThree, lessonTwo, opensOnReveal, periodSpan, revealOf } from './lessons.ts'
 import { lessonStrings } from './lessonStrings.ts'
 import { LessonTurn } from './LessonTurn.tsx'
 import turnSource from './LessonTurn.tsx?raw'
@@ -27,6 +27,8 @@ const sanna = examples['overview.response_pending']
 const aino = examples['overview.response']
 const noHero = examples['overview.response_no_hero']
 const clone = (overview: OverviewResponse): OverviewResponse => JSON.parse(JSON.stringify(overview))
+/** An overview with nothing to teach from: no hero, no baskets card, no safe to save. */
+const bare = (): OverviewResponse => ({ ...clone(noHero), hero: null, safe_to_save: null, cards: [] })
 const displays = (overview: OverviewResponse | null) => lessonOne(overview)?.options.map((option) => [option.source, option.number.display])
 
 // The props a client turn gets; `onBusy` arrives with #694, so the object fits with and without it.
@@ -103,12 +105,12 @@ describe('lesson 1: the reveal', () => {
   it('a right pick, a wrong pick in kind words, and each other option by its label', () => {
     const en = lessonStrings('en')
     expect(revealOf(lesson, 'hero').verdict).toBe('right')
-    expect(en.right.week('€138.79')).toBe('Right: €138.79 is your safe amount this week.')
+    expect(en.one.right.week('€138.79')).toBe('Right: €138.79 is your safe amount this week.')
     expect(revealOf(lesson, 'weekly').verdict).toBe('close')
-    expect(en.close.week('€138.79')).toBe('Close. €138.79 is your safe amount this week.')
+    expect(en.one.close.week('€138.79')).toBe('Close. €138.79 is your safe amount this week.')
     const others = revealOf(lesson, 'essentials').others.map((option) => en.isLabel(option.number.display, inSentence(option.number.label)))
     expect(others).toEqual(['€83.78 a week is typically left each week.', '€1,889.04 a month is regular essentials.'])
-    expect(en.concept).toBe('Safe to spend is the money left for you after your regular bills and your saving are taken care of.')
+    expect(en.one.concept).toBe('Safe to spend is the money left for you after your regular bills and your saving are taken care of.')
   })
 
   it('keeps an acronym or a name at the start of a label', () => {
@@ -144,7 +146,8 @@ describe('the lesson turn (#703)', () => {
     for (const display of ['€83.78 a week', '€138.79', '€1,889.04 a month']) {
       expect(html).toMatch(new RegExp(`<button type="button" class="min-h-11[^"]*">${display.replace(/[.$]/g, '\\$&')}</button>`))
     }
-    expect(html).not.toContain('Lesson 1 of')
+    // Sanna has all three lessons today.
+    expect(html).toContain('>Lesson 1 of 3</p>')
   })
 
   it('in Finnish', () => {
@@ -169,7 +172,7 @@ describe('the lesson turn (#703)', () => {
   })
 
   it('a profile without a lesson gets one sentence, never an empty turn, in EN and FI', () => {
-    for (const [lang, overview] of [['en', noHero], ['fi', noHero], ['en', null]] as const) {
+    for (const [lang, overview] of [['en', bare()], ['fi', bare()], ['en', null]] as const) {
       const html = render(overview, lang)
       expect(html).toContain(`data-step-heading="" tabindex="-1"`)
       expect(html).toContain(lessonStrings(lang).none)
@@ -187,4 +190,96 @@ describe('the lesson turn (#703)', () => {
   // turn, not the last turn: that is #694's Chat.tsx (`lastAskId`). On dev without #694, pushing a
   // client turn makes the streaming answer not latest and its status region goes.
   it.todo('pushing the lesson while an answer streams neither cuts nor repeats the answer\'s announcement — depends on #694 (latest = last ask turn)')
+})
+
+describe('lesson 2: where the money goes (#704)', () => {
+  it('the three basket labels, each with its share display, in the basket row order', () => {
+    expect(lessonTwo(sanna)?.rows.map((row) => [row.key, row.label, row.display])).toEqual([
+      ['regular_essentials', 'Regular essentials', '62.7%'],
+      ['unexpected_necessities', 'Unexpected necessities', '11.3%'],
+      ['everyday_spending', 'Everyday spending', '19.9%'],
+    ])
+  })
+
+  it('the amount display when a basket has no share, and hidden without the three baskets', () => {
+    const noShare = clone(aino)
+    const card = noShare.cards.find((c) => c.type === 'breakdown') as unknown as { items: { key: string; share: unknown }[] }
+    card.items[0].share = null
+    expect(lessonTwo(noShare)?.rows[0].display).toBe('€1,180.21 a month')
+    const missing = clone(aino)
+    const missingCard = missing.cards.find((c) => c.type === 'breakdown') as unknown as { items: { key: string }[] }
+    missingCard.items = missingCard.items.filter((item) => item.key !== 'everyday_spending')
+    expect(lessonTwo(missing)).toBeNull()
+    expect(lessonTwo(bare())).toBeNull()
+  })
+
+  it('reveals with no verdict and the three-basket concept, EN and FI', () => {
+    expect(lessonStrings('en').two.reveal).toBe('Here is how your spending splits:')
+    expect(lessonStrings('en').two.concept).toBe(
+      'Sentti sorts spending into three baskets: regular essentials you pay every month, unexpected necessities you must pay but cannot plan, and everyday spending you choose.',
+    )
+    expect(lessonStrings('fi').two.reveal).toBe('Näin kulutuksesi jakautuu:')
+  })
+})
+
+describe('lesson 3: how much can you set aside (#704)', () => {
+  it('monthly, weekly (the right one) and safe to spend, by display', () => {
+    const lesson = lessonThree(sanna)!
+    expect(lesson.options.map((option) => [option.source, option.number.display])).toEqual([
+      ['monthly', '€364.31 a month'],
+      ['weekly', '€83.78 a week'],
+      ['hero', '€138.79'],
+    ])
+    expect(lesson.right.source).toBe('weekly')
+    expect(revealOf(lesson, 'weekly').verdict).toBe('right')
+    expect(revealOf(lesson, 'hero').verdict).toBe('close')
+    expect(lessonStrings('en').three.right('€83.78 a week')).toBe('Right: €83.78 a week is what you can set aside each week.')
+    expect(lessonStrings('en').three.concept).toBe('Pay yourself first: the saving goes aside first, and everyday spending comes from what is left.')
+  })
+
+  it('carries the reason of a month that leaves nothing, and is hidden without safe to save or weekly', () => {
+    const zero = clone(sanna)
+    zero.safe_to_save = (contract.examples as unknown as Record<string, SafeToSaveCard>)['card.safe_to_save_zero']
+    const lesson = lessonThree(zero)!
+    expect(lesson.reason?.amount.display).toBe('€1.59 a month')
+    expect(lesson.reason?.text).toMatch(/^Nothing is left in a typical month/)
+    const noWeekly = clone(sanna)
+    noWeekly.safe_to_save = { ...noWeekly.safe_to_save!, weekly: undefined }
+    expect(lessonThree(noWeekly)).toBeNull()
+    expect(lessonThree(bare())).toBeNull()
+  })
+})
+
+describe('today\'s lessons in one turn (#704)', () => {
+  beforeAll(() => {
+    vi.stubGlobal('document', { documentElement: {} })
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }))
+    vi.stubGlobal('window', {
+      location: new URL('http://localhost/'),
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+      addEventListener() {},
+      removeEventListener() {},
+    })
+  })
+  afterAll(() => vi.unstubAllGlobals())
+
+  it('Sanna and Aino get lessons 1, 2 and 3; a profile without a hero gets 2 and 3; nothing to teach from gets none', () => {
+    expect(lessonsFor(sanna).map((lesson) => lesson.id)).toEqual([1, 2, 3])
+    expect(lessonsFor(aino).map((lesson) => lesson.id)).toEqual([1, 2, 3])
+    expect(lessonsFor(noHero).map((lesson) => lesson.id)).toEqual([2, 3])
+    expect(lessonsFor(bare())).toEqual([])
+  })
+
+  it('without a hero the turn starts at lesson 2: "Lesson 1 of 2", the basket question with the three labels', () => {
+    const html = render(noHero)
+    expect(html).toContain('>Lesson 1 of 2</p>')
+    expect(html).toContain('>Which basket takes the biggest part of your money?</h3>')
+    for (const label of ['Regular essentials', 'Unexpected necessities', 'Everyday spending']) expect(html).toContain(`</span>${label}</button>`)
+  })
+
+  it('"Next lesson" and the end of the day, EN and FI', () => {
+    expect(lessonStrings('en').next).toBe('Next lesson')
+    expect(lessonStrings('en').done).toBe("That's all for today. Ask me anything below.")
+    expect(lessonStrings('fi').next).toBe('Seuraava oppitunti')
+  })
 })
