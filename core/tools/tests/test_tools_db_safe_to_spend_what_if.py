@@ -25,7 +25,9 @@ AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
 PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
-EVERYONE = SAMPLE + PERSONAS
+# the sample customers' cases check the worked numbers of metrics.md: on a private database only (#502)
+SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]
+EVERYONE = SAMPLE_CASES + PERSONAS
 D = Decimal
 
 # metrics.md section 3 and personas.md Q3 (as_of 2026-09-30): safe to spend 7d, binding limit, status
@@ -129,7 +131,7 @@ def test_components_add_up_to_free_until_payday(conn, customer_id):
     assert abs(signed - dec(data.free_until_payday)) <= D("0.02")
 
 
-@pytest.mark.parametrize("customer_id", SAMPLE + ["CUST00860"])
+@pytest.mark.parametrize("customer_id", SAMPLE_CASES + ["CUST00860"])
 def test_bills_due_is_the_same_number_as_the_bills_card(conn, customer_id):
     ctx = ctx_for(conn, customer_id)
     safe = get_safe_to_spend(ctx).data
@@ -147,7 +149,7 @@ def test_lead_persona_bills_due_is_the_eval_reference(conn):
     assert dec(bills_due) == row["bills_due_eur"] == D("928.50")
 
 
-@pytest.mark.parametrize("customer_id", SAMPLE + ["CUST00860"])
+@pytest.mark.parametrize("customer_id", SAMPLE_CASES + ["CUST00860"])
 def test_safe_to_spend_evidence_and_card(conn, customer_id):
     result = get_safe_to_spend(ctx_for(conn, customer_id))
     assert_reconciles(conn, customer_id, result.evidence)
@@ -167,6 +169,7 @@ def test_safe_to_spend_evidence_and_card(conn, customer_id):
 OTHER_DATES = [(date(2026, 5, 20), "late", date(2026, 5, 31)), (date(2026, 9, 14), "upcoming", date(2026, 9, 15))]
 
 
+@pytest.mark.sample_customer   # CUST00001's own salary dates of metrics.md section 3
 @pytest.mark.parametrize("as_of, salary_status, payday", OTHER_DATES)
 def test_safe_to_spend_on_other_dates_equals_03(conn, as_of, salary_status, payday):
     result = get_safe_to_spend(ctx_for(conn, "CUST00001", as_of=as_of))
@@ -187,12 +190,13 @@ def test_safe_to_spend_on_other_dates_equals_03(conn, as_of, salary_status, payd
 
 
 def test_what_if_rejects_an_mcc_the_customer_uses_for_health(conn):
-    ctx = ctx_for(conn, "CUST00001")
+    ctx = ctx_for(conn, "CUST00860")
     health_mcc = next(t.mcc for t in ctx.history() if t.category == "Health" and t.mcc)
     with pytest.raises(Exception, match="R9"):
         run_what_if(ctx, {"selection": {"kind": "mcc", "value": health_mcc}, "cut_pct": 20})
 
 
+@pytest.mark.sample_customer   # CUST00001's worked number of metrics.md section 3
 def test_safe_to_spend_in_finnish(conn):
     result = get_safe_to_spend(ctx_for(conn, "CUST00001", "fi"))
     assert result.data.safe_to_spend.display == "103,18 €"
@@ -224,8 +228,8 @@ def test_what_if_dining_out_equals_04_and_the_worked_numbers(conn, customer_id):
     ({"kind": "mcc", "value": "5812,5813,5814"}, "estimate"),
 ])
 def test_what_if_statuses_equal_04(conn, scenario, status):
-    result = run_what_if(ctx_for(conn, "CUST00001"), {"selection": scenario, "cut_pct": 20})
-    row = sql_row(conn, "04_what_if.sql", "CUST00001",
+    result = run_what_if(ctx_for(conn, "CUST00860"), {"selection": scenario, "cut_pct": 20})
+    row = sql_row(conn, "04_what_if.sql", "CUST00860",
                   {"whatif": f"{scenario['kind']}:{scenario['value']}", "whatif_pct": "20"})[0]
     assert result.data.status == row["status"] == status
     assert dec(result.data.saving_per_month) == row["saving_month_eur"]
@@ -236,22 +240,22 @@ def test_what_if_statuses_equal_04(conn, scenario, status):
 
 
 def test_what_if_merchant_alias_maps_to_the_merchant_and_never_reaches_the_model(conn):
-    ctx = ctx_for(conn, "CUST00001")
+    ctx = ctx_for(conn, "CUST00860")   # the lead persona: 210 restaurant purchases (#502)
     history = ctx.history()
     alias_map = aliases.build(history, AS_OF)
     restaurant = next(t.merchant_id for t in sorted(history, key=lambda t: t.tx_date, reverse=True)
                       if t.category == "Restaurants" and t.merchant_id)
     alias = alias_map.for_merchant(restaurant).key
     result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50})
-    row = sql_row(conn, "04_what_if.sql", "CUST00001", {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
+    row = sql_row(conn, "04_what_if.sql", "CUST00860", {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
     assert dec(result.data.saving_per_month) == row["saving_month_eur"]
     assert result.data.scenario.selection == {"kind": "merchant", "value": restaurant}   # app side
     assert result.model_view["selection"] == {"kind": "merchant", "value": alias}        # model side
-    assert_model_view_clean(result.model_view, "CUST00001")
+    assert_model_view_clean(result.model_view, "CUST00860")
 
 
 def test_what_if_rejects_a_health_merchant(conn):
-    ctx = ctx_for(conn, "CUST00001")
+    ctx = ctx_for(conn, "CUST00860")
     history = ctx.history()
     health = next(t.merchant_id for t in history if t.category == "Health" and t.merchant_id)
     alias = aliases.build(history, AS_OF).for_merchant(health).key
@@ -259,6 +263,7 @@ def test_what_if_rejects_a_health_merchant(conn):
         run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 20})
 
 
+@pytest.mark.sample_customer   # CUST00002's Travel of metrics.md; a persona's 422 is in core/tests/test_api_db.py
 def test_what_if_without_spending_is_an_invalid_scenario(conn):
     # CUST00002 has no Travel in the window (metrics.md section 6 worked numbers: 0.00 a month)
     assert sql_row(conn, "04_what_if.sql", "CUST00002", {"whatif": "category:Travel", "whatif_pct": "20"}) == []
@@ -266,7 +271,7 @@ def test_what_if_without_spending_is_an_invalid_scenario(conn):
         run_what_if(ctx_for(conn, "CUST00002"), {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
 
 
-@pytest.mark.parametrize("customer_id", SAMPLE + ["CUST00860"])
+@pytest.mark.parametrize("customer_id", SAMPLE_CASES + ["CUST00860"])
 def test_what_if_evidence_and_card(conn, customer_id):
     result = run_what_if(ctx_for(conn, customer_id), RESTAURANTS_20)
     assert_reconciles(conn, customer_id, result.evidence)
@@ -299,17 +304,17 @@ def test_metric_files_run_in_a_read_only_transaction(conn, tmp_path, monkeypatch
 
     monkeypatch.setattr(metric_sql, "METRICS_DIR", tmp_path)
     (tmp_path / "probe.sql").write_text(
-        "SELECT 'CUST00001'::text AS customer_id, current_setting('transaction_read_only') AS ro;", encoding="utf-8")
+        "SELECT 'CUST00860'::text AS customer_id, current_setting('transaction_read_only') AS ro;", encoding="utf-8")
     (tmp_path / "write.sql").write_text(
-        "INSERT INTO coach_evidence (ref, customer_id, spec) VALUES ('ev_readonlyprobe', 'CUST00001', '{}');\n"
-        "SELECT 'CUST00001'::text AS customer_id;", encoding="utf-8")
-    assert metric_sql.run_one(conn, "probe.sql", "CUST00001", AS_OF)["ro"] == "on"
+        "INSERT INTO coach_evidence (ref, customer_id, spec) VALUES ('ev_readonlyprobe', 'CUST00860', '{}');\n"
+        "SELECT 'CUST00860'::text AS customer_id;", encoding="utf-8")
+    assert metric_sql.run_one(conn, "probe.sql", "CUST00860", AS_OF)["ro"] == "on"
     with pytest.raises(errors.ReadOnlySqlTransaction):
-        metric_sql.run(conn, "write.sql", "CUST00001", AS_OF)
+        metric_sql.run(conn, "write.sql", "CUST00860", AS_OF)
     assert conn.execute("SELECT count(*) FROM coach_evidence WHERE ref = 'ev_readonlyprobe'").fetchone()[0] == 0
     # inside a caller's transaction: a savepoint, and the caller's transaction stays writable afterwards
     with conn.transaction(force_rollback=True):
-        assert metric_sql.run_one(conn, "probe.sql", "CUST00001", AS_OF)["ro"] == "off"
+        assert metric_sql.run_one(conn, "probe.sql", "CUST00860", AS_OF)["ro"] == "off"
         assert conn.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] == "off"
 
 
@@ -320,14 +325,14 @@ def test_metric_files_run_in_a_read_only_transaction(conn, tmp_path, monkeypatch
 ])
 def test_metric_evidence_refuses_other_files_and_reserved_settings(conn, source):
     """A stored spec is data: another file, or a setting that moves the customer range or as_of, is refused."""
-    spec = {"v": 1, "kind": "metric", "customer_id": "CUST00001", "as_of": AS_OF.isoformat(),
+    spec = {"v": 1, "kind": "metric", "customer_id": "CUST00860", "as_of": AS_OF.isoformat(),
             "method": "safe_to_spend.bills_due_eur@1", "source": source, "value": "586.32"}
     ref = evidence.make_ref(spec)
     with conn.transaction(force_rollback=True):  # the crafted spec is never kept
         conn.execute("INSERT INTO coach_evidence (ref, customer_id, spec) VALUES (%s, %s, %s)",
-                     (ref, "CUST00001", json.dumps(spec)))
+                     (ref, "CUST00860", json.dumps(spec)))
         with pytest.raises(evidence.EvidenceForbidden):
-            evidence.resolve(conn, ref, "CUST00001")
+            evidence.resolve(conn, ref, "CUST00860")
 
 
 def test_safe_to_spend_refuses_a_bills_total_that_differs_from_03(conn, monkeypatch):
@@ -344,4 +349,4 @@ def test_safe_to_spend_refuses_a_bills_total_that_differs_from_03(conn, monkeypa
 
     monkeypatch.setattr(safe_to_spend.recurring, "bills_due_numbers", off_by_a_cent)
     with pytest.raises(safe_to_spend.BillsDueMismatch):
-        get_safe_to_spend(ctx_for(conn, "CUST00001"))
+        get_safe_to_spend(ctx_for(conn, "CUST00860"))
