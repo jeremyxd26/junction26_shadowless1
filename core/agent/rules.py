@@ -412,6 +412,11 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
                    ("Paljonko käytin viime kuussa?", "Paljonko käytin ravintoloihin viime kuussa?"))
 
 
+class OfferContact(list):
+    """Calls whose answer offers the way to a human at the bank (#420): the NOT_YET answer. Set where that
+    text is chosen; RuleModel.plan turns it into PlanResult.offer_contact."""
+
+
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
 BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD, SMALL_PURCHASES = (
     fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD, SMALL_PURCHASES))
@@ -538,6 +543,7 @@ class Claim:
     calls: tuple[FunctionCall, ...] = ()
     candidates: tuple[str, ...] = ()   # not claimed: the rules that competed for it
     reason: str = ""                   # not claimed: "competing", "period", "what_if_which", "follow_up", ""
+    offer_contact: bool = False        # the NOT_YET answer: it offers the way to the bank (#420)
 
 
 def _filter_of(q: str) -> dict:
@@ -624,7 +630,7 @@ def _resolve(found: list[str], q: str, spending: dict | None) -> tuple[str | Non
 def _claimed(rule: str, planned: list[tuple[str, dict]], tools: set[str], lang: str) -> Claim:
     calls = tuple(FunctionCall(name, args) for name, args in planned if name in tools)
     if not calls:  # the rule's tool is not registered
-        return Claim(rule, tuple(RuleModel._clarify(NOT_YET, NOT_YET_OPTIONS, lang)))
+        return Claim(rule, tuple(RuleModel._clarify(NOT_YET, NOT_YET_OPTIONS, lang)), offer_contact=True)
     return Claim(rule, calls + (FunctionCall("finish"),))
 
 
@@ -853,7 +859,7 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        return PlanResult(calls=calls, recognised=recognised)
+        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact))
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
@@ -871,7 +877,7 @@ class RuleModel:
             return [FunctionCall("finish")], True
         found = claim(request)
         if found.rule is not None:
-            return list(found.calls), True
+            return (OfferContact(found.calls) if found.offer_contact else list(found.calls)), True
         lang = request.language
         if found.reason == "what_if_which":
             return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
