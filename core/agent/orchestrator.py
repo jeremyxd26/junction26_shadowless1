@@ -120,6 +120,10 @@ class AskRequest:
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
+    # The viewer session key (#144, #253): a hash of the viewer cookie, from known_viewer(request). The
+    # answer's labels are this viewer's answers; None reads the shared state. Never logged, never in a
+    # model view or the audit record.
+    viewer: str | None = None
 
 
 @dataclass
@@ -217,7 +221,7 @@ class Pipeline:
 
         # The customer is bound here, from the request, and never from model output (R4).
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
-                          numbers=LockedNumberRegistry())
+                          numbers=LockedNumberRegistry(), viewer=req.viewer)  # every call's copy keeps it
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
