@@ -69,6 +69,17 @@ def test_payday_questions_that_are_not_a_forecast_keep_their_tools(question, lan
     assert result.recognised and names(result) == tools + ["finish"]
 
 
+@pytest.mark.parametrize("question,lang", [
+    ("How much money have I spent since last payday?", "en"),
+    ("Did my money last until payday last month?", "en"),
+    ("What was my balance on payday?", "en"),
+    ("Mikä oli saldoni palkkapäivänä?", "fi"),
+    ("Riittivätkö rahat viime palkkapäivään?", "fi"),
+])
+def test_questions_about_the_past_are_not_a_forecast(question, lang):
+    assert "get_balance_forecast" not in names(plan(question, language=lang))
+
+
 def test_brief_question_details_and_what_if_args():
     assert plan("Where did my money go?").calls[0].args == {"period": {"preset": "last_6_months"}}
     restaurants_20 = {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}

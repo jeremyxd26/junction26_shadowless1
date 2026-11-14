@@ -367,8 +367,8 @@ cases:
   expected_tools: [get_balance_forecast]
   tags: [forecast, lead]
   numbers:
-  - {name: balance_now, value: 14276.35, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
-  - {name: bills_until_payday, value: 928.5, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: balance_now, value: 14276.35, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 928.5, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: bills_due_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -380,8 +380,8 @@ cases:
   expected_tools: [get_balance_forecast]
   tags: [forecast]
   numbers:
-  - {name: balance_now, value: 10745.42, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
-  - {name: bills_until_payday, value: 1290.78, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: balance_now, value: 10745.42, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 1290.78, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: bills_due_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -393,8 +393,8 @@ cases:
   expected_tools: [get_balance_forecast]
   tags: [forecast]
   numbers:
-  - {name: balance_now, value: 24310.32, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
-  - {name: bills_until_payday, value: 754.25, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: balance_now, value: 24310.32, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 754.25, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: bills_due_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -406,8 +406,8 @@ cases:
   expected_tools: [get_balance_forecast]
   tags: [forecast, young_adult]
   numbers:
-  - {name: balance_now, value: 1902.64, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
-  - {name: bills_until_payday, value: 662.59, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: balance_now, value: 1902.64, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 662.59, unit: eur, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: bills_due_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
