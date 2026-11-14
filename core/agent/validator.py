@@ -277,6 +277,19 @@ UNAVAILABLE_CLAIM = re.compile(
     re.I)
 
 
+# "€185.30 on health, which includes your gym visits" (#395): no tool says what a category contains, so a
+# draft that says so states something no data supports.
+CONTENTS_CLAIM = re.compile(
+    r"\b(?:which|that)\s+(?:includes?|included|covers?|contains?)\b|\bincluding\s+(?:your|the)\b"
+    r"|\b(?:includes|covers|contains)\s+your\b|\bsisältä(?:ä|vät|en)\b|\bpitää\s+sisällään\b", re.I)
+
+
+def contents_claim(text: str) -> str | None:
+    """The words in which a draft says what a category contains, or None."""
+    m = CONTENTS_CLAIM.search(text)
+    return m.group(0) if m else None
+
+
 def unavailable_claim(text: str) -> str | None:
     """The words in which a draft says a figure is not available or cannot be calculated, or None."""
     m = UNAVAILABLE_CLAIM.search(text)

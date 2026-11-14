@@ -49,8 +49,8 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
-from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, plain_text, render,
-                                  unavailable_claim, validate)
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
+                                  render, unavailable_claim, validate)
 from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
@@ -677,6 +677,10 @@ class Pipeline:
                     if claim:
                         # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
                         errors.append(f"'{claim}': no calculation failed; say what the data shows instead")
+                    inside = contents_claim(draft.text)
+                    if inside:
+                        # No tool says what a category contains (#395).
+                        errors.append(f"'{inside}': name a category only by its label, never what it contains")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
