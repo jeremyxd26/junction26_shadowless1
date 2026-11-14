@@ -87,3 +87,12 @@ def test_a_term_without_a_number_is_the_definition_alone(client, persona):
     answer = ask(client, persona, "What is a budget?", "en")
     assert answer["outcome"] == "answered" and answer["numbers"] == {}
     assert answer["text_rendered"] == glossary.BY_KEY["budget"].text[0]
+
+
+@pytest.mark.parametrize("persona", PERSONAS)
+def test_the_evidence_of_the_cited_number_opens(client, persona):
+    answer = ask(client, persona, "What is safe to save?", "en")
+    (number,) = answer["numbers"].values()
+    r = client.get(f"/api/evidence/{number['evidence_ref']}?customer_id={persona}")
+    assert r.status_code == 200, r.text
+    assert number["method"].startswith("safe_to_spend.safe_to_save_monthly")
