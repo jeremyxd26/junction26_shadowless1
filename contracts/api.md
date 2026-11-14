@@ -3363,8 +3363,8 @@ A barcode whose reference fails its check:
 |---|---|
 | `bill` | The bill as the service read it:<br>- `source`: `barcode` or `fields`.<br>- `payee`: the name as sent, or `null` for a barcode without one.<br>- `iban` and `reference`: formatted for display (the IBAN in groups of four; a national reference in groups of five from the right, an `RF` reference in groups of four).<br>- `amount` (Number): `method` is `bill_barcode@1` for a barcode and `user_input@1` for `fields`; `evidence_ref` is `null`, because the number does not come from the customer's data; the period is the due date.<br>- `due_date`. |
 | `checks` | `{iban, reference, due_date}`: `iban` and `reference` are `pass` or `fail` (the IBAN's mod-97 check; the reference's check digit, national or `RF`); `due_date` is `pass`, or `past` when it is before `as_of`. A barcode always gives `pass` for both, because a barcode that fails a check is 422. |
-| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only (the table below). There is no fuzzy matching. No match is a normal outcome. |
-| `comparison` | A [Comparison](#23-comparison), only when `matched`, else `null`:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`), `null` when the typical amount is 0.<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
+| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence: the regular bill ("This is your regular Housing bill."), a bill from the same payee category when the matched bill does not fit it ("This bill is from the same payee category as your regular Utilities payments.", #400), or why there is no match.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only (the table below). There is no fuzzy matching. No match is a normal outcome. |
+| `comparison` | A [Comparison](#23-comparison), only when the bill is the customer's regular bill, else `null`. A matched bill is the regular bill when it fits it: the series is paid once a month (not `spread`) and the amount is at least half of its typical month (#400). A matched bill that does not fit (another billing rhythm, or less than half a typical month, like a quarterly water bill among utilities) has `comparison` `null`, and `match.text` names the payee category instead (example `bill.response_category`). The fields:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`), `null` when the typical amount is 0.<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
 | `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €221.58: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
@@ -3506,6 +3506,120 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
   "warnings": [],
   "signals": [
     { "code": "short_term", "text": "The due date is less than a week away.", "numbers": [] }
+  ]
+}
+```
+
+A matched bill of the same payee category (#400): the gallery's water sample (sample_4, typed fields) for Sanna. Its payee is a known payee name of the utilities bill, but utilities are paid several times a month (`spread`), so the bill is not the regular bill: `comparison` is `null` and `match.text` names the payee category. Its reference fails its check, so there is no payment draft.
+
+<!-- example: bill.response_category -->
+```json
+{
+  "customer_id": "CUST00860",
+  "as_of": "2026-09-30",
+  "language": "en",
+  "bill": {
+    "source": "fields",
+    "payee": "Esimerkki Vesi Oy",
+    "iban": "FI25 1234 5600 0010 04",
+    "reference": "551 90324",
+    "amount": {
+      "value": 42.75,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-20",
+        "end": "2026-10-20",
+        "label": "20 Oct 2026"
+      },
+      "method": "user_input@1",
+      "evidence_ref": null,
+      "label": "Amount due",
+      "display": "€42.75"
+    },
+    "due_date": "2026-10-20"
+  },
+  "checks": {
+    "iban": "pass",
+    "reference": "fail",
+    "due_date": "pass"
+  },
+  "match": {
+    "status": "matched",
+    "bill_id": "bill_utilities_payment",
+    "label": "Utilities",
+    "text": "This bill is from the same payee category as your regular Utilities payments."
+  },
+  "comparison": null,
+  "basket": {
+    "key": "regular_essentials",
+    "label": "Regular essentials",
+    "text": "It counts as regular essentials, like your other Utilities payments."
+  },
+  "safe_to_spend": {
+    "effect": "after_payday",
+    "next_payday": "2026-10-15",
+    "reserved": null,
+    "counted": null,
+    "free_until_payday_before": {
+      "value": 12656.12,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.free_until_payday_eur@1",
+      "evidence_ref": "ev_d22d6fd467e0",
+      "label": "Free until payday",
+      "display": "€12,656.12"
+    },
+    "free_until_payday_after": null,
+    "before": {
+      "value": 221.58,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-07",
+        "label": "Next 7 days"
+      },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+      "evidence_ref": "ev_cdf9de44b51e",
+      "label": "Safe to spend",
+      "display": "€221.58"
+    },
+    "after": null,
+    "text": "Due on 20 Oct 2026, after your payday on 15 Oct 2026, so it changes nothing before then."
+  },
+  "glossary": [
+    {
+      "term": "reference_number",
+      "label": "Reference number (viitenumero)",
+      "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught."
+    },
+    {
+      "term": "due_date",
+      "label": "Due date (eräpäivä)",
+      "text": "The last day to pay the bill without a late-payment charge."
+    },
+    {
+      "term": "virtual_barcode",
+      "label": "Virtual barcode (virtuaaliviivakoodi)",
+      "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them."
+    },
+    {
+      "term": "late_payment_interest",
+      "label": "Late-payment interest (viivästyskorko)",
+      "text": "Interest the payee may charge for each day a bill is paid after its due date."
+    }
+  ],
+  "actions": [],
+  "warnings": [],
+  "signals": [
+    {
+      "code": "reference_check_failed",
+      "text": "This reference number does not pass its check. Compare it with the paper bill before paying.",
+      "numbers": []
+    }
   ]
 }
 ```
