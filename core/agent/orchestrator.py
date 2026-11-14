@@ -211,6 +211,8 @@ class _Answer:
     clarify: dict[str, Any] | None = None
     text: str | None = None
     text_rendered: str | None = None
+    introduced: bool = False   # the answer is Sentti's introduction, which itself says Sentti is an AI (#420)
+    offer_contact: bool = False   # the rules' "I can't answer that one yet" answer (PlanResult.offer_contact)
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
@@ -281,6 +283,7 @@ class Pipeline:
     def _run(self, req: AskRequest, emit: Emit, a: _Answer) -> str:
         conv, reset = self.store.resolve(req.conversation_id, req.customer_id)
         a.conversation = conv
+        emit = self._with_answer_fields(emit, a)
         message = guard.clean(req.message)
         a.question = message
         detected = guard.detect_language(message)
@@ -382,6 +385,7 @@ class Pipeline:
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341, r-coord's decision).
+                a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
@@ -738,9 +742,32 @@ class Pipeline:
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
 
+    @staticmethod
+    def _with_answer_fields(emit: Emit, a: _Answer) -> Emit:
+        """Every `done` event gets `actions` and `ai_disclosure` (#420, contract 0.3.3):
+        - a refusal, the rules' "I can't answer that one yet" answer (a.offer_contact) and the "nothing
+          found" fallback (outcome `fallback`) carry the way to a human, `open_host_screen` with target
+          `contact_bank`; the general clarifying question does not;
+        - the first answer of a conversation carries the AI disclosure, unless it is the introduction,
+          which says it itself; a later answer never repeats it."""
+        def send(event: str, payload: dict[str, Any]) -> None:
+            if event == "done":
+                lang = a.language.get("resolved") or "en"
+                disclose = a.conversation is not None and not a.conversation.disclosed and not a.introduced
+                if a.conversation is not None:
+                    a.conversation.disclosed = True
+                payload = {**payload,
+                           "actions": [tool_config.contact_bank_action(lang)]
+                           if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
+                           else payload.get("actions", []),
+                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
+            emit(event, payload)
+        return send
+
     def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
         """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
         which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        a.introduced = template.meta_text(intent, lang) == template.pick(template.INTRO, lang)
         text = self._deliver(template.meta_text(intent, lang), {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
