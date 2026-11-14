@@ -1,0 +1,485 @@
+{
+ "question": "Where did my money go?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.8-flash",
+ "tools": [
+  {
+   "name": "get_basket_breakdown",
+   "args": {
+    "period": {
+     "preset": "last_6_months"
+    }
+   },
+   "numbers": [
+    {
+     "value": 77.4,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.share_pct@1",
+     "evidence_ref": "ev_4ee44c92a77a",
+     "label": "Share of spending",
+     "display": "77.4%",
+     "id": "n1"
+    },
+    {
+     "value": 1204.34,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_2ab36415a028",
+     "label": "Housing",
+     "display": "€1,204.34 a month",
+     "id": "n2"
+    },
+    {
+     "value": 197.93,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_968b64abb644",
+     "label": "Groceries",
+     "display": "€197.93 a month",
+     "id": "n3"
+    },
+    {
+     "value": 150.49,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_47ff302f6c10",
+     "label": "Utilities",
+     "display": "€150.49 a month",
+     "id": "n4"
+    },
+    {
+     "value": 92.29,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_74e99a0a20c6",
+     "label": "Transportation",
+     "display": "€92.29 a month",
+     "id": "n5"
+    },
+    {
+     "value": 1645.05,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_f2f61ab9fb94",
+     "label": "Regular essentials",
+     "display": "€1,645.05 a month",
+     "id": "n6"
+    },
+    {
+     "value": 6.8,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.share_pct@1",
+     "evidence_ref": "ev_95a71a8b18fe",
+     "label": "Share of spending",
+     "display": "6.8%",
+     "id": "n7"
+    },
+    {
+     "value": 93.37,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_e3b73e12b3eb",
+     "label": "Home & Tech",
+     "display": "€93.37 a month",
+     "id": "n8"
+    },
+    {
+     "value": 51.23,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_8d3e48505b14",
+     "label": "Health",
+     "display": "€51.23 a month",
+     "id": "n9"
+    },
+    {
+     "value": 144.6,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_c9d69464ef15",
+     "label": "Unexpected necessities",
+     "display": "€144.60 a month",
+     "id": "n10"
+    },
+    {
+     "value": 15.7,
+     "unit": "percent",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.share_pct@1",
+     "evidence_ref": "ev_6bcec6adaf95",
+     "label": "Share of spending",
+     "display": "15.7%",
+     "id": "n11"
+    },
+    {
+     "value": 102.66,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_c47d9fc90041",
+     "label": "Restaurants",
+     "display": "€102.66 a month",
+     "id": "n12"
+    },
+    {
+     "value": 98.55,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_f9fffdf28097",
+     "label": "Lifestyle",
+     "display": "€98.55 a month",
+     "id": "n13"
+    },
+    {
+     "value": 55.8,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_9932a5242385",
+     "label": "Entertainment",
+     "display": "€55.80 a month",
+     "id": "n14"
+    },
+    {
+     "value": 48.68,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_0dced51f4764",
+     "label": "Travel",
+     "display": "€48.68 a month",
+     "id": "n15"
+    },
+    {
+     "value": 28.76,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_de006331afde",
+     "label": "Transportation",
+     "display": "€28.76 a month",
+     "id": "n16"
+    },
+    {
+     "value": 334.44,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "baskets.month_avg_eur@1",
+     "evidence_ref": "ev_e0a67efa12f5",
+     "label": "Everyday spending",
+     "display": "€334.44 a month",
+     "id": "n17"
+    },
+    {
+     "value": 2124.09,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "spender_profile.spend_month_eur@1",
+     "evidence_ref": "ev_5735a1e0bb69",
+     "label": "Total spending",
+     "display": "€2,124.09 a month",
+     "id": "n18"
+    }
+   ],
+   "model_view": {
+    "tool": "get_basket_breakdown",
+    "period": "1 Apr – 30 Sep 2026",
+    "monthly_average": true,
+    "total": {
+     "id": "n18",
+     "value": 2124.09,
+     "unit": "eur_per_month",
+     "label": "Total spending"
+    },
+    "baskets": [
+     {
+      "key": "regular_essentials",
+      "label": "Regular essentials",
+      "amount": {
+       "id": "n6",
+       "value": 1645.05,
+       "unit": "eur_per_month",
+       "label": "Regular essentials"
+      },
+      "share": {
+       "id": "n1",
+       "value": 77.4,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Housing",
+        "label": "Housing",
+        "amount": {
+         "id": "n2",
+         "value": 1204.34,
+         "unit": "eur_per_month",
+         "label": "Housing"
+        }
+       },
+       {
+        "key": "Groceries",
+        "label": "Groceries",
+        "amount": {
+         "id": "n3",
+         "value": 197.93,
+         "unit": "eur_per_month",
+         "label": "Groceries"
+        }
+       },
+       {
+        "key": "Utilities",
+        "label": "Utilities",
+        "amount": {
+         "id": "n4",
+         "value": 150.49,
+         "unit": "eur_per_month",
+         "label": "Utilities"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Transportation",
+        "amount": {
+         "id": "n5",
+         "value": 92.29,
+         "unit": "eur_per_month",
+         "label": "Transportation"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unexpected_necessities",
+      "label": "Unexpected necessities",
+      "amount": {
+       "id": "n10",
+       "value": 144.6,
+       "unit": "eur_per_month",
+       "label": "Unexpected necessities"
+      },
+      "share": {
+       "id": "n7",
+       "value": 6.8,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Home & Tech",
+        "amount": {
+         "id": "n8",
+         "value": 93.37,
+         "unit": "eur_per_month",
+         "label": "Home & Tech"
+        }
+       },
+       {
+        "key": "Health",
+        "label": "Health",
+        "amount": {
+         "id": "n9",
+         "value": 51.23,
+         "unit": "eur_per_month",
+         "label": "Health"
+        }
+       }
+      ]
+     },
+     {
+      "key": "everyday_spending",
+      "label": "Everyday spending",
+      "amount": {
+       "id": "n17",
+       "value": 334.44,
+       "unit": "eur_per_month",
+       "label": "Everyday spending"
+      },
+      "share": {
+       "id": "n11",
+       "value": 15.7,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Restaurants",
+        "label": "Restaurants",
+        "amount": {
+         "id": "n12",
+         "value": 102.66,
+         "unit": "eur_per_month",
+         "label": "Restaurants"
+        }
+       },
+       {
+        "key": "Lifestyle",
+        "label": "Lifestyle",
+        "amount": {
+         "id": "n13",
+         "value": 98.55,
+         "unit": "eur_per_month",
+         "label": "Lifestyle"
+        }
+       },
+       {
+        "key": "Entertainment",
+        "label": "Entertainment",
+        "amount": {
+         "id": "n14",
+         "value": 55.8,
+         "unit": "eur_per_month",
+         "label": "Entertainment"
+        }
+       },
+       {
+        "key": "Travel",
+        "label": "Travel",
+        "amount": {
+         "id": "n15",
+         "value": 48.68,
+         "unit": "eur_per_month",
+         "label": "Travel"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Transportation",
+        "amount": {
+         "id": "n16",
+         "value": 28.76,
+         "unit": "eur_per_month",
+         "label": "Transportation"
+        }
+       }
+      ]
+     }
+    ],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\"language\":\"en\",\"text\":\"During 1 Apr – 30 Sep 2026, your spending split across three main areas. **Regular essentials** took {{n6}} or {{n1}} of your spending. Everyday spending accounted for {{n17}} or {{n11}}, while unexpected necessities made up {{n10}} or {{n7}}.\",\"cited\":[\"n6\",\"n1\",\"n17\",\"n11\",\"n10\",\"n7\"],\"lesson_key\":\"fixed_vs_flexible\"}",
+         "thought_signature": "EmkKZwFpFH0Tw0VxzfQopfIB_3b3Awd_acIfegdjR64HC152CL-vfttOKO-eWulTsi8haV2QtHupe_qPjuIVqLAhXSuM_1OeU4dGSfoorJIyP349V_2EP-JsMcsBuU8lh2VuTGIVh0FGDpI="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2800,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 112
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_basket_breakdown",
+   "finish"
+  ],
+  "text": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. **Regular essentials** took {{n6}} or {{n1}} of your spending. Everyday spending accounted for {{n17}} or {{n11}}, while unexpected necessities made up {{n10}} or {{n7}}.",
+  "text_rendered": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. **Regular essentials** took €1,645.05 a month or 77.4% of your spending. Everyday spending accounted for €334.44 a month or 15.7%, while unexpected necessities made up €144.60 a month or 6.8%."
+ }
+}

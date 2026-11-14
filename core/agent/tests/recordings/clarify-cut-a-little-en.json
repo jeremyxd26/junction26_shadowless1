@@ -1,0 +1,54 @@
+{
+ "question": "What if I cut it a little?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "model",
+ "model": "gemini-3.8-flash",
+ "tools": [],
+ "exchanges": [
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_15105263403249246466",
+          "args": {
+           "question": "What percentage would you like to cut, and for which category?",
+           "options": [
+            "Ten percent",
+            "Twenty percent",
+            "Thirty percent"
+           ]
+          },
+          "name": "ask_clarifying_question"
+         },
+         "thought_signature": "Es8TCswTAWkUfRMu6CGjy0zagaMgFLGw5Je4g8tB7T8O83bOrGVY-FOBP_6iyC7_546t28lPXfnkUmXBofqNHnyYXCin0fUhV0lf9elBoMVi504TG_MiAaSZUbUQNuV1Qh_1ejRCbMsXGQSeoQuvm2cnmZtNf5v9mdF-QssK9nbsYlGf7Y0UrObA3-fRIGtKBMvKYdOWOxPfOI_Dnv8PufbixnnqhIfbg3BAYsEP07wEE92goh0vOJ0-oGBpq0pyBXqOGQYRXEhrdZ8XF3_iEoI2yWnMZsHx033zXnk8YndDEYZ8fPVpzdxxKTcyBhMnUV4TY9LPQeZ1Pi5psxbED1sv4WbSgmn-9KhU_gaAFs6EwUMSNI9R5t4Kw9f_PKSHq_N2LIBJAZJfFNFeLfzuMMO23xe8hgsHl1rFcKrpitK6-6Cx0TWoShcctS9zw5Ru6evqO5S6I6kz7sDKGGaQ055zTIv3k_6AIKBKtolMPgz-lkh8I1Eb3IFllh_k_04kgOhIWH3NzsYOQpo0AYlwtI3p0-03UsGNsY8jSJIxFm2Tbs9iIalNv4VCsRI4jbR4diDPxhVhFRZSPTTqPO483W69NDOLPU51LFtUBuX84ym9eb0AhrMB-Xe0FIIbixnf129vdCNmZeQqmsmbUXU5tAgeLkGffoL9z5pBBCVeCNR6x6VFCE1sZ8UY4P9TqR4vhqOM-YWevmbZPOunZ4LvpYuKIqf3tQrf3RDCYSQLQDpSBEETR0hWMZ-8pe6yU324HzWo1Dd88gScZRmH6zug_WdjyytVgQxih9qkEAat2eVnGFTchjijQ7uuFqNM1-zh0k3zu8E_rLgy4xQnMqhYDwW2lRC8Qf8kmdSi5dOHMg0T27dbOr14WE7tIzwUe7TjLfShdM70_XaZO0QDBrj9NE9jKGO-gC0p9v-DuN-UBaZn60KB3zhdy4xLOGzkUj9l9nAU4E9zClLl2l_Sq4sqJqJT_hWeFyaoH8l6x88gj6Wz0RH54rJmYbX2VIAuLkGfONwkWbZ7675T5Lo3Ih-roOZkHN0xQua0tLZFz1Z3jIRiyM0_WEtnaw-qqI4wolRrlFK7bDAKBS0rh7-OVA3519qOwNb-Rn2nl6U65uvMyqvBjrJNINsqVXsIHgZuV5ypmDUC3p8ZdybM0s8DJkHkIRahBIl4AYEcDynmHLNGyiAYLof506p9xKjaCC7gdekmeFeEYNvSzFI3TeEBR6EpbcXV7cWoa9P9oiQ1dne80e50pPXXCQaXgtnmC9VbsQU757uQNwQQHEXLdnrlSDzbJmsljXnAU_7psEg0VDl3n65R2_S60IOw180nC61W4ElxIvSt0UOoLOHIXow_7qKolXOJBgR6nbuTZFRoL-XAbDrINf8BrH2kI7u4ijYpU_uW98SxcuFEiCCtruwQ-gfT_cuHCY3y2A0aapWCAy-fh4lSeHU7RxSii3EkhSWCMsBwHEGgCIoRehthKYYj85QnLG8PWyIvdxzsrHjLZ9UOpIoRk3EJm4fK9HTTiTSiXIiiWSoPISR0PSWCPf0IzJxuri5bNRbgayfX5NaNNohhXJSO_lUWhPa1BHzys9jNZzoRuJ7HxpXBOPAL-Kv6VY2_75e-mdLXBRVEio0ughlE0LTVoeBu2axHEGr_ww1uerLkGtYtUopv9gEqoH9DNH6aXLGHVrndESRJd3CQmCROw1d5NQrBQkvVLpBcN9IMv5sdhLvqnHNNWHAElX-0LvZf-BhEsNy36Ujba4SG7EyanhdPUVhV6lMtJ69TLhZ_kPjnyThCSLK1w_DpHW9RPi1WxUoDCYr8GtPd503lqSjIS55GJFBjDpAKlMRJeo5GYRb-PinQFw0t8wbX0Qu6AnVY5W1i3mCf7DR4Xkf0ReOmO7ARR27Z5han296GIWo5KsFwOtFvdAjgXOyic6fe8OABcRTIPydemECjN2pVK4JJ2mdfuXKmeuszmiscGDcaA0xSt-su3nXq_syW1-v-l6mdsMaG_fZnZlho2mfg4iZUC7e1YxS83jEXNuTeuNRL1qT2gobVmqD9z7W37UpczH5LSM1ggCwGwOgH38G2zZ31ghEliQdYV3wgK3HaIfcqoJiQ7Zbtp-Y6pSqnXXqETtHFpolQISK9qILzfxtiyRKqncpcuVbU_CMAzfIIMF-ZveN2k11y1ewlMoLQcwedjXeYwXqHiMj_MrtBiIuW_sOQz0It91hfccj_Q6XZwdbnYtgZ23cxM0K9s_n38wFxQ-lYivH6sg1b3w8AIKhRcQ6pYBMaZ6cjeZnujVy6D9_9pyyDeC0UdIjTMBFqog8M4rEu6VT4qgDfhFB4Ap6_D0HfbaPBgV-Qboup-2jze7iYZ3Srk2-gvXmnXBM4P1NktNCkCALXHTahhEeATd-jlk2ERAfcT7ckoQd1kNvoH_GEW0ckGzUMgW5Sdv6nZp1uPFL9LxIm_PBdaeSLS9jGsQA-NCcnrPK-R9H3xnMbkOXBKtSEd-jOW1fq146IvSw_sFBKmOanpB60ySjND8ip33C2pNKtJeWMeN9CZWHicVNCVF4sO8etTFXD4IABFeguBFytgTJrVXP7lx6deSe0H0PYbSP8tqPUQ2lLWYRkV9WIxcioYIE9dLic2jX2sE67gT8TCl9sWYTZkKeggAOmdVx1oI9WhJGpl9pt3FljBcoLBrILClVS84st0EONHaujqUjVkW05ZZQmoOxgjmWQYizolZv5up6oAUtsuxUVlEQ_qhar-qhpmn__JRNpWfiwCrS5JrcEPVjwCjEUlo-oE_nXz5bJudOSwjBtzYpfsx7thN1vTc7K5j1sB4pTM137j1d_Fv_Knw9tkfqTBrn8fYcfvyXOclJM09wQrNCWD6wiZ2fieuAkXyS5ol5QTwMsiKqMzwFaKlktvX9LJ-4e9AuvNrS2iY1fBQjWukDMcapwIh9m-8uBwe36j0Z6iHkug_9IiijgiOYlhoqc0OLmnP66bkLTe916GYR5rCxrjOQZfzGmLO5vHRiVNi5Lx_-__wH7M7w-pbC2NqGUHZA4ExW4UiKBhLFhCkq2JOzwUvKrI8WOSdonD0S7a9dWCMAF7DBlRbBIXZ9rsrNUG81EuT8W2Y1liNNgSsl-3IUL49uIXyOuSH1dqJGelwYH0c58Qz63Qem1Gm4dMuLEs-sq9fTJZhJb8giiEzX8aYqxEpugN6DSgxmirGrJDkFE_oOlxBpBodpcpvp-fDEOoGOI3EShjJ5LOjelCCnX5X4Td5CgjLoYHYiDZA9Lr_aFunILi2SoZt2FNOdfoYIWJlI62I4Pr9Uc4LwGesWb0b7lL9fQ6cbYk9h5Hn_wnig8JQzNf6TLoOlP"
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2941,
+     "thoughts_token_count": 650,
+     "candidates_token_count": 48
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "clarify",
+  "refusal_kind": null,
+  "tool_calls": [
+   "ask_clarifying_question"
+  ],
+  "text": "What percentage would you like to cut, and for which category?",
+  "text_rendered": "What percentage would you like to cut, and for which category?"
+ }
+}
