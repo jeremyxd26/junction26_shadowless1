@@ -18,6 +18,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.tools import label_answer, reviews
+from core.tools.cache import TOOL_CACHE
 
 from .deps import customer_connection
 from .errors import envelope
@@ -40,6 +41,11 @@ def post_label(request: Request, body: LabelRequest) -> LabelResponse | JSONResp
             return envelope("tx_ref_not_found", body.language)
         except reviews.BasketNotAllowed:
             return envelope("basket_not_allowed", body.language)
+    if result["changed"]:
+        # Memory hygiene for the tool cache (#86): the new label set is in every key, so the customer's
+        # old entries can never be served again; dropping them only frees memory. The write itself never
+        # goes through the cache.
+        TOOL_CACHE.invalidate_customer(body.customer_id)
     if result["changed"]:  # the audit record of every label write (design 7.8): who, which ref, what, when
         label = result["label"] or {}
         log.info("audit label: customer=%s tx_ref=%s basket=%s review_state=%s labelled_at=%s",

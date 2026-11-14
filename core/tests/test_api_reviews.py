@@ -219,3 +219,43 @@ def test_switched_off_serves_no_review_and_labels_nothing(client, monkeypatch):
     o = overview(client)
     assert o["reviews"] == [] and "unclassified" not in items(o)
     assert_error(client.post("/api/baskets/label", json=body()), 404, "tx_ref_not_found")
+
+
+
+def test_a_label_write_drops_the_customers_tool_cache_entries(client, tool_cache_off, monkeypatch):
+    """#86: after a label write the customer's cached tool results leave memory (hygiene; the key has
+    already changed with the labels). Another customer's entries stay."""
+    from core.tools.cache import Entry
+    from core.tools.models import ToolResult
+
+    monkeypatch.setattr(tool_cache_off, "mode", "memory")
+    tool_cache_off.put("lead-key", Entry(LEAD, "fake", ToolResult(tool="fake", data=None), ()))
+    tool_cache_off.put("other-key", Entry("CUST00493", "fake", ToolResult(tool="fake", data=None), ()))
+    card = overview(client)["reviews"][0]
+    label(client, card["tx_ref"], "everyday_spending")
+    assert tool_cache_off.get("lead-key", LEAD) is None
+    assert tool_cache_off.get("other-key", "CUST00493") is not None
+
+
+def test_demo_path_with_the_tool_cache_on_never_serves_stale_numbers(client, tool_cache_off, monkeypatch):
+    """#86 end to end: with the cache on, a warm overview is served from it; after the answer the
+    numbers move (new labels, new key); after the undo the earlier numbers come back (the old key)."""
+    monkeypatch.setattr(tool_cache_off, "mode", "memory")
+
+    def numbers(o):
+        return o["hero"]["primary"]["value"] if o["hero"] else None, items(o)
+
+    first = overview(client)
+    card = first["reviews"][0]
+    misses = tool_cache_off.stats.misses
+    assert numbers(overview(client)) == numbers(first) and tool_cache_off.stats.misses == misses   # warm
+
+    label(client, card["tx_ref"], "unexpected_necessities")
+    after = overview(client)
+    assert numbers(after) != numbers(first)
+    assert items(after) == {"regular_essentials": 1889.04, "unexpected_necessities": 521.15,
+                            "everyday_spending": 600.41}                     # the published numbers
+
+    label(client, card["tx_ref"], None)                                      # undo: pending again
+    back = overview(client)
+    assert numbers(back) == numbers(first)
