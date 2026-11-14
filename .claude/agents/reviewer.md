@@ -17,7 +17,7 @@ You are given an issue number and a PR number or branch. Do not edit files.
    - No secrets, keys, personal data or `.env` content in the diff.
    - Error handling on the demo path.
    - `<base>` would still run with one command after the merge.
-3. If the `codex` CLI is installed, get a second opinion: `codex exec "Review the changes on this branch against origin/<base> for bugs, security issues and missed edge cases. Be concise."`. Include its findings under "Codex second opinion" and say where you disagree.
+3. If the `codex` CLI is installed, get a second opinion, but only on a clean copy that holds no `.env`: make a new empty directory, write the diff into it (`git diff origin/<base>...origin/<branch> > <dir>/changes.diff`), export the branch into it (`git archive origin/<branch> | tar -x -C <dir>`), and run there `codex exec --sandbox read-only "Review changes.diff against the code in this directory for bugs, security issues and missed edge cases. Be concise."`. Never run it in the repository checkout or in a directory made by `git worktree add`: both hold `.env`. Include its findings under "Codex second opinion" and say where you disagree; if the CLI is not installed, say so.
 4. Output:
    - `PASS`, `RISK` or `FAIL`
    - evidence: commands and key output
