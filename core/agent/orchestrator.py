@@ -103,6 +103,12 @@ REVIEW_FILLER = re.compile(
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
 REVIEW_BARE = re.compile(r"(?:about|me|this|that|it|minulta|sitä|tätä|siitä|tästä|sita|tata|siita|tasta)", re.I)
 _AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
+# The #368 path ("what was that €1,080?", "mikä se 1080 euron ostos oli?") also answers only a message about that
+# purchase and nothing else (#424): after the purchase reference, the amount and the purchase's own date, only the
+# #402 fillers and these purchase-question words may be left ("…and also what is my balance" takes the normal path).
+PURCHASE_FILLER = re.compile(
+    r"(?:was|is|were|oli|on|se|tämä|tuo|tama|what|again|exactly|hey|hi|so|ok|okay|oh|hmm|um|uh|sorry|wait|please|"
+    r"pls|really|actually|just|now|hei|no|siis|taas|nyt|vielä|viela|oikein|tarkalleen|kiitos)", re.I)
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
 
@@ -855,6 +861,15 @@ class Pipeline:
                     or all(REVIEW_BARE.fullmatch(w) for w in words))
         return bool(anchored), dates
 
+    @staticmethod
+    def _only_about_the_purchase(message: str) -> tuple[bool, list[date]]:
+        """The #368 path's message asks only about the purchase (#424): after every purchase reference, the amounts
+        and any date, nothing is left but filler words. Returns the dates it removed (the caller checks them)."""
+        spans, rest = find_dates(PURCHASE_REFERENCE.sub(" ", message), blank_all=True)
+        words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
+        alone = all(REVIEW_FILLER.fullmatch(w) or PURCHASE_FILLER.fullmatch(w) for w in words)
+        return alone, [span.start for span in spans]
+
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
         """Answer "what was that €1,080?" (#341) when an amount in the question is within a euro of the
@@ -870,6 +885,10 @@ class Pipeline:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
             return False
+        if not about_question:
+            alone, named_dates = self._only_about_the_purchase(message)
+            if not alone:
+                return False   # "what was that €1,080 and how much did I spend?": the normal path (#424)
         # A refusal rule always wins, as for the introduction (#287): "should I invest €1,080 in bitcoin?"
         # or "will the bank approve my €1,080 loan?" is refused on the normal path.
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
@@ -885,7 +904,7 @@ class Pipeline:
         if (asked or not about_question) and not any(
                 abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
-        if about_question and any(d != date.fromisoformat(probe["date"]) for d in named_dates):
+        if any(d != date.fromisoformat(probe["date"]) for d in named_dates):
             return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
         card = self._review_card(ctx, review)
         if card is None:
