@@ -34,6 +34,7 @@ interface Strings {
   nothingOpens: string
   targets: Record<HostTarget, string>
   invalidJson: string
+  startOver: string
   notEnvelope: string
   announce: (name: string) => string
 }
@@ -62,6 +63,7 @@ const TEXT: Record<Lang, Strings> = {
     nothingOpens: 'Demo: nothing opens',
     targets: { monthly_saving: 'Monthly saving', bonus_to_fund: 'Bonus to fund' },
     invalidJson: '(not JSON)',
+    startOver: 'Start over',
     notEnvelope: '(not a message object)',
     announce: (name) => `Message: ${name}`,
   },
@@ -88,6 +90,7 @@ const TEXT: Record<Lang, Strings> = {
     nothingOpens: 'Demo: mitään ei avata',
     targets: { monthly_saving: 'Kuukausisäästö', bonus_to_fund: 'Bonus rahastoon' },
     invalidJson: '(ei JSONia)',
+    startOver: 'Aloita alusta',
     notEnvelope: '(ei viestiobjekti)',
     announce: (name) => `Viesti: ${name}`,
   },
@@ -157,7 +160,10 @@ const langButtons = (['en', 'fi'] as const).map((lang) => {
 })
 langGroup.append(langText, ...langButtons)
 const note = el('p', 'note')
-controls.append(personaLabel, langGroup, note)
+const startOverButton = el('button', 'toggle start-over')
+startOverButton.type = 'button'
+startOverButton.addEventListener('click', () => startOver())
+controls.append(personaLabel, langGroup, startOverButton, note)
 
 const workspace = el('div', 'workspace')
 const slot = el('div', 'phone-slot')
@@ -380,20 +386,44 @@ function showHostScreen(payload: Record<string, unknown>) {
   })
 }
 
-function openModule() {
+/**
+ * Opens the module. With `reset`, the iframe first goes to `/api/viewer/reset`, which sets a new
+ * viewer cookie (the review answers are kept per viewer) and redirects to `/`; that first load
+ * then reloads the module with the chosen persona and language, and the host stub is installed
+ * on the reload, as on every load.
+ */
+function openModule(reset = false) {
   state.open = true
   closeSheet(false)
   frame?.remove()
-  frame = el('iframe', 'module')
-  frame.title = 'Sentti'
-  frame.width = String(PHONE_W)
-  frame.height = String(MODULE_H)
-  frame.addEventListener('load', () => installHost(frame!))
-  frame.src = moduleUrl()
+  const current = el('iframe', 'module')
+  frame = current
+  current.title = 'Sentti'
+  current.width = String(PHONE_W)
+  current.height = String(MODULE_H)
+  let resetting = reset
+  current.addEventListener('load', () => {
+    if (resetting) {
+      resetting = false
+      current.src = moduleUrl()
+      return
+    }
+    installHost(current)
+  })
+  current.src = reset ? '/api/viewer/reset' : moduleUrl()
   home.hidden = true
-  hostBody.append(frame)
-  frame.focus()
+  hostBody.append(current)
+  current.focus()
   syncPageUrl()
+}
+
+/** "Start over": a fresh viewer, so "Sentti asks" and the money flight run again for the lead persona. */
+function startOver() {
+  // A new run starts with an empty message log too.
+  logList.replaceChildren()
+  logEmpty.hidden = false
+  logAnnounce.textContent = ''
+  openModule(true)
 }
 
 function closeModule() {
@@ -437,6 +467,7 @@ function render() {
   langText.textContent = t.language
   langGroup.setAttribute('aria-label', t.language)
   note.textContent = t.note
+  startOverButton.textContent = t.startOver
   logTitle.textContent = t.messages
   logEmpty.textContent = t.noMessages
   for (const button of langButtons) {
