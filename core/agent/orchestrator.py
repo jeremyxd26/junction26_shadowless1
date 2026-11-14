@@ -439,6 +439,7 @@ class Pipeline:
         data_calls = 0
         planner_fallback = False
         template_answer = False   # the rule planner asked for its own template answer (#552)
+        bonus_received = False    # the S-Bonus received: the estimate after a designed lead (#639)
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
         a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
@@ -465,6 +466,7 @@ class Pipeline:
             planner_fallback |= source == "fallback"
             # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
             template_answer = template_answer or getattr(plan, "template_answer", False)
+            bonus_received = bonus_received or getattr(plan, "bonus_received", False)   # #639
             model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
@@ -588,10 +590,13 @@ class Pipeline:
         dropped = a.health_dropped is not None
         health_total = any(_health_spending(c) for c in a.calls)
         designed = ("rule_template" if template_answer else "health_filter_dropped" if dropped
-                    else "health" if health_total else "national_context" if national else None)
+                    else "health" if health_total else "national_context" if national
+                    else "bonus_received" if bonus_received else None)
         unavailable = planner_fallback or a.composer_unavailable is not None
+        lead = (template.unknown_lead(a.health_dropped, lang) if dropped
+                else template.pick(template.BONUS_RECEIVED_LEAD, lang) if designed == "bonus_received" else None)
         draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or designed is not None,
-                                             a=a, lead=template.unknown_lead(a.health_dropped, lang) if dropped else None)
+                                             a=a, lead=lead)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).

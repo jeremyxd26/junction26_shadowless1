@@ -1,14 +1,19 @@
 // One turn of the chat: the question, then Sentti's answer in the Sentti answer shape
-// (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
-// action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
+// (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson → at most
+// one next step (#684). While the stream runs: the stages and a card skeleton. The answer carries
+// no AI line and no source label; the AI disclosure is behind the header's ⓘ (#685).
 import type { Action } from '../api/types.ts'
-import { STAGES, actionsOf, doneActions, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
+import { STAGES, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
+import { captionOf } from '../lib/answerFigures.ts'
+import { nextStep } from '../lib/nextStep.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { isClientTurn } from '../lib/thread.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
+import { ClientTurnView } from './ClientTurnView.tsx'
 import { TokenText } from './cards.tsx'
 import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
@@ -20,9 +25,15 @@ export const ACTION_CHIP =
 export const QUESTION_CHIP =
   'inline-flex min-h-11 items-center rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-semibold text-ink hover:bg-mint'
 
-/** Answer text with number chips: 16 px, with room for the 32 px inline chips. */
+/** Answer text with its numbers as text (#684): 16 px; the line keeps room for the 44 px number targets. */
 const ANSWER_TEXT = 'text-base leading-8 text-ink-2'
-const TAKEAWAY = 'text-xl font-bold leading-9 text-ink'
+/** The first sentence: a little larger, in the normal weight, not large bold (#684). */
+const TAKEAWAY = 'text-lg leading-8 text-ink'
+/** The clarify question keeps its emphasis: it is the whole answer. */
+const CLARIFY = 'text-xl font-bold leading-9 text-ink'
+/** The one next step: a link-like button, not a pill (#684). */
+const NEXT_STEP =
+  'inline-flex min-h-11 items-center text-left text-base font-semibold text-brand underline decoration-brand/40 decoration-1 underline-offset-4 hover:decoration-brand'
 
 export function InfoIcon() {
   return (
@@ -33,11 +44,12 @@ export function InfoIcon() {
   )
 }
 
-export function SenttiLabel({ s }: { s: Strings }) {
+/** "Sentti" with the AI tag; a client turn (#319), which the AI model does not write, shows it without. */
+export function SenttiLabel({ s, ai = true }: { s: Strings; ai?: boolean }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
-      <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>
+      {ai && <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>}
     </p>
   )
 }
@@ -90,17 +102,17 @@ function CardSkeleton() {
   )
 }
 
-function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: string) => void }) {
+function ActionChip({ action, onAsk, className = ACTION_CHIP }: { action: Action; onAsk: (question: string) => void; className?: string }) {
   if (action.type === 'open_evidence') {
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openEvidence(action.evidence_ref)}>
+      <button type="button" className={className} onClick={() => openEvidence(action.evidence_ref)}>
         {action.label}
       </button>
     )
   }
   if (action.type === 'ask') {
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => onAsk(action.prompt)}>
+      <button type="button" className={className} onClick={() => onAsk(action.prompt)}>
         {action.label}
       </button>
     )
@@ -108,7 +120,7 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
   if (action.type === 'open_whatif') {
     // The what-if sheet (#154) takes the action's scenario unchanged.
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openWhatIf(action.scenario)}>
+      <button type="button" className={className} onClick={() => openWhatIf(action.scenario)}>
         {action.label}
       </button>
     )
@@ -118,7 +130,7 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
     const target = hostScreenTarget(action.target)
     if (!target) return null
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openHostScreen(target)}>
+      <button type="button" className={className} onClick={() => openHostScreen(target)}>
         {action.label}
       </button>
     )
@@ -153,12 +165,15 @@ interface Props {
 export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
+  if (isClientTurn(turn)) return <ClientTurnView turn={turn} label={<SenttiLabel s={s} ai={false} />} />
   const { answer } = turn
   const { done } = answer
   const streaming = answer.status === 'streaming'
   const outcome = done?.outcome
   const hasContent = answer.cards.length > 0 || answer.text.length > 0
-  const followUps = latest && done ? done.follow_ups : []
+  // At most one next step, from what the response carries; a follow-up only on the latest answer.
+  const picked = nextStep(done, answer.cards)
+  const step = picked?.kind === 'question' && !latest ? null : picked
 
   let body
   if (done && outcome === 'refused') {
@@ -167,14 +182,14 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       <div className="border-l-4 border-line-strong pl-4">
         {done.refusal && <p className="text-xs font-semibold text-muted">{done.refusal.label}</p>}
         <p className={`mt-1 ${ANSWER_TEXT}`}>
-          <TokenText text={answer.text} numbers={answer.numbers} />
+          <TokenText text={answer.text} numbers={answer.numbers} plain />
         </p>
       </div>
     )
   } else if (done && outcome === 'clarify' && done.clarify) {
     body = (
       <>
-        <p className={TAKEAWAY}>{done.clarify.question}</p>
+        <p className={CLARIFY}>{done.clarify.question}</p>
         {latest && (
           <>
             <QuestionChips questions={done.clarify.options} onAsk={onAsk} />
@@ -194,24 +209,27 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       <>
         {takeaway && (
           <p className={TAKEAWAY}>
-            <TokenText text={takeaway} numbers={answer.numbers} />
+            <TokenText text={takeaway} numbers={answer.numbers} plain />
           </p>
         )}
-        {answer.cards.map((card) => (
-          <AnswerCard key={card.card_id} card={card} />
+        {/* One main number per answer: only the first card draws one large (#684). */}
+        {answer.cards.map((card, index) => (
+          <AnswerCard
+            key={card.card_id}
+            card={card}
+            later={index > 0}
+            previousCaption={index > 0 ? captionOf(answer.cards[index - 1]) : null}
+          />
         ))}
         {holdText && <CardSkeleton />}
         {rest && (
           <p className={ANSWER_TEXT}>
-            <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} />
+            <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} plain />
           </p>
         )}
       </>
     )
   }
-
-  // The answer's own actions (`done.actions`, 0.3.3: the way to a human), then the cards' actions.
-  const actions = [...doneActions(done), ...(done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : [])]
 
   return (
     <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
@@ -225,8 +243,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
         </div>
       )}
-      {/* The first answer of a conversation says once, in the API's words, that Sentti is an AI. */}
-      {done?.ai_disclosure && <p className="text-xs text-muted">{done.ai_disclosure}</p>}
+      {/* No AI line here: `done.ai_disclosure` is the overview's text, behind the header's ⓘ (#685). */}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
       {/* Written from the template without the AI model (warning `llm_unavailable`, #282):
@@ -244,14 +261,17 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           <p className="mt-1 text-sm text-muted">{done.lesson.text}</p>
         </aside>
       )}
-      {actions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action, index) => (
-            <ActionChip key={`${action.type}-${index}`} action={action} onAsk={onAsk} />
-          ))}
+      {step && (
+        <div data-next-step="" className="flex">
+          {step.kind === 'action' ? (
+            <ActionChip action={step.action} onAsk={onAsk} className={NEXT_STEP} />
+          ) : (
+            <button type="button" className={NEXT_STEP} onClick={() => onAsk(step.question)}>
+              {step.question}
+            </button>
+          )}
         </div>
       )}
-      <QuestionChips questions={followUps} onAsk={onAsk} />
 
       {answer.status === 'error' && answer.error && (
         <>

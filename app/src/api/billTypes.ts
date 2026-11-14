@@ -1,6 +1,5 @@
 // Types for contract section 11: POST /api/bill/explain (11.1-11.3) and the sample-bill reading
-// (11.4: GET /api/bill/samples, POST /api/bill/read). Section 11.4 is marked "not implemented yet"
-// in the contract, so its types may change until #249 and #250 are on the dev environment.
+// (11.4: GET /api/bill/samples, POST /api/bill/read; implemented since contract 0.3.7).
 // Kept apart from types.ts so the bill flow can grow without touching the shared types.
 import type { Comparison, Language, Num } from './types.ts'
 
@@ -175,7 +174,7 @@ export interface BillExplainResponse {
   signals: BillSignal[]
 }
 
-// ---- 11.4 Sample bills (not implemented yet in the core) ----------------------------------
+// ---- 11.4 Sample bills (contract 0.3.7) -----------------------------------------------------
 
 export interface BillSample {
   sample_id: string
@@ -201,9 +200,17 @@ export interface BillReadField {
   value: string
   /** The same, formatted for display. */
   display: string
-  /** `checked` only when code checked it (a parsed barcode, or a passing check digit). */
+  /**
+   * `checked` only for an IBAN or a reference whose own check digits pass, read from the barcode
+   * or printed. `payee`, `amount`, `due_date` and `barcode` are always `unchecked`: a language
+   * model transcribes the barcode, which has no check digit over the amount or the due date.
+   */
   status: 'checked' | 'unchecked'
   source: 'barcode' | 'printed'
+  /**
+   * A sentence, shown under the field as sent: a failed check digit (the field stays `unchecked`
+   * so a misread digit can be corrected), or a barcode value that differs from the printed one.
+   */
   note: string | null
 }
 
