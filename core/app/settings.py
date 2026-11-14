@@ -68,4 +68,7 @@ class Settings(BaseSettings):
     label_rate_limit_per_min: int = Field(default=120, ge=0)           # per client address
     label_rate_limit_customer_per_min: int = Field(default=60, ge=0)   # per client address and customer
     label_rate_limit_viewer_per_min: int = Field(default=10, ge=0)     # per viewer session
-    label_new_sessions_per_hour: int = Field(default=300, ge=0)        # new viewer sessions per client address
+    # New viewer sessions per client address and hour. At 300, one attendee on the venue network could
+    # stop the room's first answers for an hour with 5 requests a minute; the session cap with
+    # least-recently-active eviction (core.tools.reviews.MAX_SESSIONS) is the real bound on storage.
+    label_new_sessions_per_hour: int = Field(default=1000, ge=0)

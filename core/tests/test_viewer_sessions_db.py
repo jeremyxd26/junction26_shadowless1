@@ -97,6 +97,37 @@ def test_two_viewers_answer_independently(client, db_conn):
     assert [r.basket for r in shared] == [None]
 
 
+WHATIF_NUMBERS = ("baseline_per_month", "saving_per_month", "one_off_excluded", "regular_excluded")
+
+
+def whatif(client, value: str | None, basket: str) -> dict:
+    as_viewer(client, value)
+    r = client.post("/api/whatif", json={"customer_id": LEAD, "language": "en", "scenario": {
+        "selection": {"kind": "basket", "value": basket}, "cut_pct": 20}})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def numbers_of(w: dict) -> dict:
+    return {k: w[k]["value"] for k in WHATIF_NUMBERS}
+
+
+def test_the_what_if_starts_from_the_viewers_own_state(client):
+    """Review of #199: after A taps "Needed", A's what-if uses A's labels, as A's hero does; B and a
+    viewer without a cookie still see the pending state."""
+    review = overview(client, A).json()["reviews"][0]
+    basket = "unexpected_necessities"
+    before = whatif(client, A, basket)
+    assert numbers_of(before)["one_off_excluded"] == 0                    # pending: the purchase is in no basket
+    answer(client, A, review["tx_ref"], basket)                          # A: "Needed"
+
+    a, b, fresh = whatif(client, A, basket), whatif(client, B, basket), whatif(client, None, basket)
+    assert numbers_of(a) == {**numbers_of(before), "one_off_excluded": review["amount"]["value"]}   # 1080.42
+    assert a["evidence_ref"] != before["evidence_ref"]                  # computed with A's labels
+    assert numbers_of(b) == numbers_of(fresh) == numbers_of(before)      # B and a new viewer: still pending
+    assert b["evidence_ref"] == fresh["evidence_ref"] == before["evidence_ref"]
+
+
 def test_no_cookie_gets_one_and_the_shared_pending_state(client, db_conn):
     r = overview(client, None)
     assert r.json()["reviews"][0]["current_basket"]["key"] == "unclassified"
@@ -166,6 +197,19 @@ def one_new_session_an_hour(db_conn, monkeypatch):
         with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
             app.state.pool = StubPool(db_conn)
             yield c
+
+
+def test_a_first_answer_that_admits_nobody_gives_its_slot_back(one_new_session_an_hour):
+    """The slot is reserved before the write and released when no session was admitted (an undo with no
+    answer to undo), so it is still free for the next viewer's real first answer."""
+    client = one_new_session_an_hour
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    assert answer(client, C, tx_ref, None)["review_state"] == "pending"   # changed nothing: released
+    answer(client, A, tx_ref, "unexpected_necessities")                  # the hour's one session
+    as_viewer(client, B)
+    third = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": tx_ref,
+                                                    "basket": "unexpected_necessities"})
+    assert third.status_code == 429
 
 
 def test_new_sessions_per_address_count_only_admitted_ones(one_new_session_an_hour):

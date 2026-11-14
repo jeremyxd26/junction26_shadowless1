@@ -164,14 +164,39 @@ def test_label_writes_are_limited_per_viewer():
         assert label(c).status_code == 503                              # another viewer
 
 
-def test_a_subset_of_limits_and_check_then_record():
-    clock = Clock()
-    lim = SlidingWindowLimiter({"address": 1, "viewer": 1}, window_s=60, clock=clock)
+def test_a_subset_of_limits():
+    lim = SlidingWindowLimiter({"address": 1, "viewer": 1}, window_s=60, clock=Clock())
     assert lim.allow({"viewer": "v1"}) == (True, 0)                     # the address limit is not named
     assert lim.allow({"address": "a"}) == (True, 0)
-    assert lim.check({"address": "b"}) == (True, 0) and lim.check({"address": "b"}) == (True, 0)  # no count
-    lim.record({"address": "b"})
-    assert lim.check({"address": "b"})[0] is False
+    assert lim.allow({"address": "a"})[0] is False
+
+
+def test_reserve_takes_the_slot_at_once_and_release_gives_it_back():
+    """Review of #199: two concurrent first answers cannot both take the last new-session slot."""
+    clock = Clock()
+    lim = SlidingWindowLimiter({"address": 2}, window_s=3600, clock=clock)
+    ok1, _, t1 = lim.reserve({"address": "a"})
+    clock.t += 1
+    ok2, _, t2 = lim.reserve({"address": "a"})
+    assert ok1 and ok2 and t1 != t2
+    assert lim.reserve({"address": "a"}) == (False, 3599, None)        # full while both are reserved
+    lim.release({"address": "a"}, t2)                                  # the second write admitted nobody
+    ok3, _, t3 = lim.reserve({"address": "a"})
+    assert ok3 and t3 is not None
+    lim.release({"address": "a"}, t1)
+    lim.release({"address": "a"}, t3)
+    assert lim.size() == 0                                             # an empty key is dropped
+    lim.release({"address": "a"}, t3)                                  # releasing twice changes nothing
+
+
+def test_a_released_token_that_left_the_window_changes_nothing():
+    clock = Clock()
+    lim = SlidingWindowLimiter({"address": 1}, window_s=60, clock=clock)
+    _, _, token = lim.reserve({"address": "a"})
+    clock.t += 61
+    assert lim.allow({"address": "a"}) == (True, 0)                    # the old hit slid out
+    lim.release({"address": "a"}, token)
+    assert lim.allow({"address": "a"})[0] is False                     # the new hit still counts
 
 
 class FakeRequest:
@@ -184,3 +209,42 @@ def test_a_malformed_cookie_counts_as_none(bad):
     assert viewer.cookie_value(FakeRequest({viewer.COOKIE: bad})) is None   # viewer_of then issues a new one
     good = viewer.new_value()
     assert viewer.cookie_value(FakeRequest({viewer.COOKIE: good})) == good
+    assert viewer.known_viewer(FakeRequest({viewer.COOKIE: bad})) is None   # read-only: the shared state
+    assert viewer.known_viewer(FakeRequest({viewer.COOKIE: good})) == viewer.session_key(good)
+
+
+# ---- every route that reads labels gets the viewer (review of #199) --------------------------------------
+
+WHATIF_BODY = {"customer_id": "CUST00860", "language": "en",
+               "scenario": {"selection": {"kind": "basket", "value": "unexpected_necessities"}, "cut_pct": 20}}
+
+
+def test_the_what_if_context_carries_the_viewer(monkeypatch):
+    """POST /api/whatif builds its ToolContext with the viewer of the cookie, as the overview does, so
+    a viewer's what-if starts from their own answers (the numbers: test_viewer_sessions_db.py)."""
+    from contextlib import contextmanager
+
+    from core.app.api import whatif
+    from core.app.api.errors import ApiError
+
+    seen: list[str | None] = []
+
+    @contextmanager
+    def no_database(request, customer_id):
+        yield None
+
+    def capture(ctx, body):
+        seen.append(ctx.viewer)
+        raise ApiError("invalid_scenario")
+
+    monkeypatch.setattr(whatif, "customer_connection", no_database)
+    monkeypatch.setattr(whatif, "build", capture)
+    a, b = viewer.new_value(), viewer.new_value()
+    with client() as c:
+        for value in (a, b, None):
+            c.cookies.clear()
+            if value is not None:
+                c.cookies.set(viewer.COOKIE, value, domain="testserver.local")
+            assert c.post("/api/whatif", json=WHATIF_BODY).status_code == 422
+    assert seen[:2] == [viewer.session_key(a), viewer.session_key(b)]
+    assert seen[2] is not None and len(seen[2]) == 64 and seen[2] not in seen[:2]   # a new viewer, no answers

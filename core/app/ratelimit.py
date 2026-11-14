@@ -6,8 +6,10 @@ whose name it does not give is not checked. A request is admitted only if every 
 and only an admitted request counts. When a limit is full, the result says how many seconds until the
 oldest counted request leaves the window: that is the `Retry-After` of the 429.
 
-`check` and `record` split `allow` in two, for a limit that should count only an event that happened
-(a new viewer session is counted once its first answer is stored, not for every refused attempt).
+`reserve` and `release` are for a limit that should count only an event that happened (a new viewer
+session counts once its first answer is stored, not for every refused attempt): `reserve` checks and
+counts in one step, so two concurrent requests cannot both take the last slot, and `release` takes the
+reserved count back when the event did not happen after all.
 
 It lives under core/app so every endpoint can use it: POST /api/baskets/label now, and POST /api/ask
 (#59, whose limiter has the same shape) can move to it later. Memory stays bounded: empty keys are
@@ -35,21 +37,30 @@ class SlidingWindowLimiter:
 
     def allow(self, keys: dict[str, str]) -> tuple[bool, int]:
         """(admitted, retry_after_seconds); an admitted request is counted for every named limit."""
-        with self._lock:
-            ok, retry = self._check(keys, self._clock())
-            if ok:
-                self._record(keys, self._clock())
-            return ok, retry
+        ok, retry, _ = self.reserve(keys)
+        return ok, retry
 
-    def check(self, keys: dict[str, str]) -> tuple[bool, int]:
-        """Like allow, but counts nothing."""
+    def reserve(self, keys: dict[str, str]) -> tuple[bool, int, float | None]:
+        """Like allow, and also returns the token that `release` takes (None when refused)."""
         with self._lock:
-            return self._check(keys, self._clock())
+            now = self._clock()
+            ok, retry = self._check(keys, now)
+            if not ok:
+                return False, retry, None
+            self._record(keys, now)
+            return True, 0, now
 
-    def record(self, keys: dict[str, str]) -> None:
-        """Count one event for every named limit (after a check that allowed it)."""
+    def release(self, keys: dict[str, str], token: float) -> None:
+        """Take back the count of a reserved request that did not happen (the same keys as `reserve`)."""
         with self._lock:
-            self._record(keys, self._clock())
+            for name in self.limits:
+                if name not in keys:
+                    continue
+                hits = self._hits.get((name, keys[name]))
+                if hits is not None and token in hits:
+                    hits.remove(token)
+                    if not hits:
+                        del self._hits[(name, keys[name])]
 
     def _check(self, keys: dict[str, str], now: float) -> tuple[bool, int]:
         self._calls += 1

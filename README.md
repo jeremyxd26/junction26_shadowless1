@@ -34,7 +34,7 @@ Settings:
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 - `VIEWER_COOKIE_SECURE` (default `true`): the viewer cookie is sent over https only. Set it to `false` only for local development over http.
 - `LABEL_RATE_LIMIT_PER_MIN` (default 120), `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` (default 60) and `LABEL_RATE_LIMIT_VIEWER_PER_MIN` (default 10): limits on `POST /api/baskets/label` per minute. They apply per client address, per (address, customer) and per viewer; no limit is shared by everyone. A venue's Wi-Fi is one client address, so the address limits are sized for a room.
-- `LABEL_NEW_SESSIONS_PER_HOUR` (default 300): new viewer sessions per client address per hour.
+- `LABEL_NEW_SESSIONS_PER_HOUR` (default 1000): new viewer sessions per client address per hour.
 - `0` turns any of these limits off.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
@@ -93,7 +93,9 @@ The first `GET /api/overview/{customer_id}` of a customer with a qualifying spik
   - 10 per viewer.
 
   A venue's Wi-Fi is one client address, so the address limits are sized for a room; the per-viewer limit and the cap are what protect. When a limit is reached the endpoint returns 429 `rate_limited` with `Retry-After`.
-- One client address can start at most 300 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored. With the 2-hour lifetime, one address holds at most about 600 live sessions, far below the cap.
+- One client address can start at most 1000 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored. The 10,000-viewer cap with least-recently-active eviction is the real bound on storage.
+
+On a shared network, one person can block label writes for the others on that network for a while. Nobody's numbers change. The presenter uses their own network, not the venue Wi-Fi.
 
 For a fresh state of your own, open `/api/viewer/reset`, which only issues a new cookie, or use a new private window.
 

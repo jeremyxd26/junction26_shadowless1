@@ -22,8 +22,10 @@ Rate limits (review of #144), all per process and in memory, none shared by all 
   a flood never blocks the presenter's tap;
 - a one-hour window on NEW viewer sessions per client address (LABEL_NEW_SESSIONS_PER_HOUR): a first
   answer that would admit a session is refused once the address has admitted that many in the hour.
-  Only an admitted session counts, and no address is ever stored in the database. With the cap of
-  core.tools.reviews.MAX_SESSIONS, filling the table costs hundreds of address-hours.
+  The first answer reserves its slot before the write (so concurrent first answers cannot overshoot)
+  and releases it unless a session was admitted: only an admitted session counts, and no address is
+  ever stored in the database. The cap of core.tools.reviews.MAX_SESSIONS with least-recently-active
+  eviction stays the real bound on storage.
 The client address is the one the reverse proxy saw (core.agent.api.client_address, as /api/ask).
 """
 
@@ -89,22 +91,25 @@ def post_label(request: Request, response: Response, body: LabelRequest) -> Labe
     # The allowlist first, with no database (#101): a customer who is not served gets 404
     # customer_not_found, as on the overview, never tx_ref_not_found.
     with customer_connection(request, body.customer_id) as conn:
-        first_answer = not reviews.viewer_established(conn, viewer)
-        if first_answer:
-            allowed, retry_after = new_sessions.check({"address": address})
+        reserved = None   # a first answer reserves a new-session slot; released unless a session is admitted
+        if not reviews.viewer_established(conn, viewer):
+            allowed, retry_after, reserved = new_sessions.reserve({"address": address})
             if not allowed:
                 return rate_limited(body.language, retry_after)
+        admitted = False
         try:
             result = label_answer.answer(conn, body.customer_id, request.app.state.settings.demo_today,
                                          body.tx_ref, body.basket, body.language, viewer=viewer)
+            admitted = bool(result["changed"])
         except reviews.ReviewNotFound:
             return envelope("tx_ref_not_found", body.language)
         except reviews.BasketNotAllowed:
             return envelope("basket_not_allowed", body.language)
         except reviews.TooManyAnswers:
             return rate_limited(body.language, int(reviews.SESSION_TTL.total_seconds()))
-    if first_answer and result["changed"]:
-        new_sessions.record({"address": address})  # a session was admitted: count it, nothing else
+        finally:
+            if reserved is not None and not admitted:
+                new_sessions.release({"address": address}, reserved)   # no session was admitted
     if result["changed"]:  # the audit record of every label write (design 7.8): who, which ref, what, when
         label = result["label"] or {}
         log.info("audit label: customer=%s tx_ref=%s basket=%s review_state=%s labelled_at=%s",

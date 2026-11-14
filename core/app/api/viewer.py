@@ -64,6 +64,15 @@ def viewer_of(request: Request, response: Response, *, refresh: bool = False) ->
     return session_key(value)
 
 
+def known_viewer(request: Request) -> str | None:
+    """The viewer's session key from a valid cookie, or None; never sets a cookie. For a route that only
+    reads labels and returns its own Response object (the /api/ask stream), where a cookie set on an
+    injected Response would be dropped. None reads the shared state, which is exactly what a viewer
+    without a cookie has: no answers."""
+    value = cookie_value(request)
+    return session_key(value) if value is not None else None
+
+
 @router.get("/api/viewer/reset", include_in_schema=False)
 def reset_viewer(request: Request) -> RedirectResponse:
     """A fresh viewer state for the presenter: a new cookie, nothing else. Not linked from the app."""
