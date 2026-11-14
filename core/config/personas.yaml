@@ -4,7 +4,8 @@
 #
 # The data is synthetic. display_name is invented (no surname); customer_id is the key.
 # Fields of the /api/personas contract (contracts/api.md, section 5): customer_id, display_name,
-# age_band, postal_area {code, label}, profile {key, label}, tagline, default_language.
+# age_band, postal_area {code, label}, profile {key, label}, tagline (tagline_fi in Finnish, #554),
+# default_language.
 # Keys follow docs/design/metrics.md: age bands of section 6, profile keys of section 5.
 # profile is the output of core/metrics/05_spender_profile.sql on as_of; the API may recompute it.
 # Profile labels are the contract's ("Steady", "Everyday spender"). The contract has no label for
@@ -32,6 +33,7 @@ personas:
       key: big_ticket
       label: Big ticket
     tagline: A large home and tech purchase in late September, on top of regular bills.
+    tagline_fi: Iso kodin ja tekniikan hankinta syyskuun lopussa säännöllisten laskujen lisäksi.
     default_language: en
     demo_role: recent_unexpected
     why: >-
@@ -52,6 +54,7 @@ personas:
       key: steady
       label: Steady
     tagline: More than half of spending goes to housing; eats out every month.
+    tagline_fi: Yli puolet kulutuksesta menee asumiseen; syö ulkona joka kuukausi.
     default_language: en
     demo_role: midlife_essentials
     why: >-
@@ -71,6 +74,7 @@ personas:
       key: everyday_heavy
       label: Everyday spender
     tagline: Almost a third of spending is everyday purchases, with restaurants the largest part.
+    tagline_fi: Lähes kolmannes kulutuksesta on arjen ostoksia, ja niistä suurin osuus menee ravintoloihin.
     default_language: en
     demo_role: young_everyday
     why: >-
@@ -91,6 +95,7 @@ personas:
       key: steady
       label: Steady
     tagline: Regular salary and housing bills; the balance dipped below zero several times since April.
+    tagline_fi: Säännöllinen palkka ja asumisen laskut; saldo on käynyt miinuksella useita kertoja huhtikuun jälkeen.
     default_language: en
     demo_role: young_adult
     why: >-

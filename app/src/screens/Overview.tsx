@@ -1,19 +1,31 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { BasketKey, LabelChange, LabelResponse, Num, OverviewResponse, ReviewCard } from '../api/types.ts'
-import { HeroSummary, type NumberMotion } from '../components/cards.tsx'
+import { BasketStrip } from '../components/BasketStrip.tsx'
+import { HeroSummary, TokenText, type NumberMotion } from '../components/cards.tsx'
+import { SenttiLabel } from '../components/AnswerView.tsx'
 import { ReviewAnswered, ReviewAsking, type ReviewError } from '../components/ReviewCard.tsx'
 import { Toast } from '../components/Toast.tsx'
+import { answerChanges, answerMotion } from '../lib/answerMotion.ts'
 import { BASKETS } from '../lib/baskets.ts'
-import { applyChanges } from '../lib/changes.ts'
+import { applyChanges, isBasketsCard } from '../lib/changes.ts'
+import { chatStrings } from '../lib/chatStrings.ts'
+import { onAsked } from '../lib/threadEvents.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
+import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { OverviewRow } from '../components/OverviewRow.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
-type Phase = { kind: 'asking' } | { kind: 'answered'; basket: BasketKey } | { kind: 'not_sure' } | { kind: 'gone' }
+type Phase =
+  | { kind: 'asking' }
+  // `label`: the basket's name as the label response gave it, for answers that point here (#452).
+  | { kind: 'answered'; basket: BasketKey; label: string }
+  | { kind: 'not_sure' }
+  | { kind: 'gone' }
 
 /**
  * The numbers of the latest label response, shown over the overview until the overview
@@ -39,6 +51,11 @@ interface ToastState {
   undo: boolean
   retry: boolean
   retryUntil: number | null
+  /**
+   * The answer came with `effect`: while Sentti's reply is on screen it shows that confirmation, so
+   * there is no visual toast. The live region still reads the message.
+   */
+  silent: boolean
 }
 
 type Motion = NumberMotion & { seq: number }
@@ -47,8 +64,8 @@ type Motion = NumberMotion & { seq: number }
 const HINT_MS = 6000
 /** How long a toast with no action (the undo confirmation) stays; screen readers got it at once. */
 const NOTE_MS = 4000
-/** Keys whose "was …" hint is shown: the hero, its reserve and the basket the purchase moved to. */
-const HINTED = new Set(['safe_to_spend', 'irregular_reserve', 'regular_essentials', 'unexpected_necessities', 'everyday_spending'])
+/** How long the answer's toast stays; its Undo is also on the answered card. */
+const TOAST_MS = 6000
 
 /**
  * Sentti's opening turn in the thread on `/` (OpeningTurn): this week's picture, the review
@@ -61,6 +78,21 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   // overview no longer lists it) and comes back if the answer is undone while the review is open.
   const [card] = useState<ReviewCard | null>(() => overview.reviews[0] ?? null)
   const [phase, setPhase] = useState<Phase>({ kind: 'asking' })
+  // Tell the thread which review card the opening shows (#450): answers point to it only then.
+  // Once answered, the basket goes with it, so those answers say where the purchase went (#452).
+  const reportReview = useOpening()?.reportReview
+  useEffect(() => {
+    if (!reportReview) return
+    const shown: ShownReview | null = !card
+      ? null
+      : phase.kind === 'asking'
+        ? { txRef: card.tx_ref, phase: 'asking' }
+        : phase.kind === 'answered'
+          ? { txRef: card.tx_ref, phase: 'answered', basketKey: phase.basket, basketLabel: phase.label }
+          : null
+    reportReview(shown)
+    return () => reportReview(null)
+  }, [reportReview, card, phase])
   const [closing, setClosing] = useState(false)
   const [busy, setBusy] = useState<BasketKey | 'undo' | null>(null)
   const [error, setError] = useState<ReviewError | null>(null)
@@ -70,6 +102,12 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const [toast, setToast] = useState<ToastState | null>(null)
   // The toast of an answer waits for the amount to land; `shownToast` is the run it belongs to.
   const [shownToast, setShowToast] = useState<number | null>(null)
+  // Sentti's short reply under the question (#317): mounted at the tap, before the API answers, so
+  // the mini basket row the amount flies into is on screen when the answer arrives.
+  const [reply, setReply] = useState<BasketKey | null>(null)
+  // The answer's own confirmation (`effect`, contract 0.3.2), shown in the reply when the core sends it.
+  const [replyNote, setReplyNote] = useState<{ text: string; numbers: Record<string, Num> } | null>(null)
+  const replyRef = useRef<HTMLDivElement>(null)
 
   const seq = useRef(0)
   const timers = useRef<number[]>([])
@@ -113,11 +151,23 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     [overview, overlay, overlayLive, labels],
   )
 
+  // A question sent in the thread closes the toast: it must not linger while the customer talks.
+  useEffect(() => onAsked(() => setToast(null)), [])
+
   useEffect(() => {
     if (!focusCard.current) return
     focusCard.current = false
     cardRef.current?.focus({ preventScroll: true })
   }, [phase])
+
+  /**
+   * The answer's toast goes by itself after a while, so it does not cover Sentti's reply: Undo stays
+   * on the answered card (#315). A toast with an error and Retry stays until it is closed.
+   */
+  const hideToastLater = useCallback(
+    (run: number) => later(TOAST_MS, () => setToast((current) => (current && current.seq === run ? null : current))),
+    [later],
+  )
 
   /** The flight's milestones: counters of the basket rows start, the amount lands, the pill is gone. */
   const onFlight = useCallback(
@@ -141,13 +191,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
         later(250 + 450, () => {
           setMotion((current) => (current && current.seq === run ? { ...current, waiting: null } : current))
           setShowToast(run)
+          hideToastLater(run)
           refreshAfter(run)
         })
       } else {
         setFlight((current) => (current && current.seq === run ? null : current))
       }
     },
-    [later, refreshAfter],
+    [later, refreshAfter, hideToastLater],
   )
 
   function apply(response: LabelResponse, asked: BasketKey | null) {
@@ -155,12 +206,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     timers.current = []
     const run = ++seq.current
     const reduced = prefersReducedMotion()
-    const changes = response.changed ? response.changes : []
+    // The hero, counters and overlay follow `changes[]` only; `effect` is the reply's text.
+    const changes = answerChanges(response)
     if (changes.length > 0) setOverlay({ seq: run, changes, refreshedFrom: null })
 
     const answered = response.review_state === 'answered' && asked !== null
     const basket = (response.label?.basket ?? asked) as BasketKey
-    const hasWaitingRow = document.querySelector('[data-amount-key="unclassified"]') !== null
+    // Only Sentti's reply holds the flight's cells; a basket card in a later answer never does.
+    const hasWaitingRow = replyRef.current?.querySelector('[data-amount-key="unclassified"]') != null
     const flies =
       answered &&
       !reduced &&
@@ -168,25 +221,12 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       changes.some((change) => change.key === 'unclassified') &&
       changes.some((change) => change.key === basket)
 
-    const counts = Object.fromEntries(
-      changes.map((change) => [
-        change.key,
-        // Basket rows start counting when the amount leaves the waiting row.
-        { seq: run, from: change.before, run: !flies || !(change.key in BASKETS) },
-      ]),
-    )
-    const was = answered
-      ? Object.fromEntries(changes.filter((change) => HINTED.has(change.key)).map((change) => [change.key, change.before]))
-      : {}
-    setMotion({
-      seq: run,
-      counts,
-      was,
-      steady: answered && changes.length > 0 && !changes.some((change) => change.key === 'safe_to_spend'),
-      highlight: answered ? basket : null,
-      waiting: flies ? 'keep' : null,
-    })
+    setMotion(answerMotion(changes, answered, basket, flies, run))
 
+    // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), there is
+    // no visual toast over it: Undo stays on the answered card, and the live region reads the whole
+    // message (`text_rendered`) once. Without `effect`, or without the reply (no baskets card), the
+    // toast works as before.
     setToast({
       seq: run,
       text: response.message.text,
@@ -195,10 +235,18 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       undo: answered,
       retry: false,
       retryUntil: null,
+      silent: answered && Boolean(response.effect),
     })
     focusCard.current = true
     if (answered) {
-      setPhase({ kind: 'answered', basket })
+      // The basket's name from the API: the label response, else the overview's baskets card.
+      const label =
+        response.label?.label ??
+        overviewRef.current.cards.find(isBasketsCard)?.items.find((item) => item.key === basket)?.label ??
+        ''
+      setPhase({ kind: 'answered', basket, label })
+      setReply(basket)
+      setReplyNote(response.effect ? { text: response.effect.text, numbers: response.effect.numbers } : null)
       later(HINT_MS, () =>
         setMotion((current) =>
           current && current.seq === run ? { ...current, was: {}, steady: false, highlight: null } : current,
@@ -206,6 +254,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       )
     } else {
       setPhase(response.review_state === 'pending' ? { kind: 'asking' } : { kind: 'gone' })
+      setReply(null)
+      setReplyNote(null)
       // The undo confirmation has no action, so it may go: it would cover the answer buttons.
       later(NOTE_MS, () => setToast((current) => (current && current.seq === run ? null : current)))
     }
@@ -215,6 +265,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       setFlight({ seq: run, basket, display: card?.amount.display ?? '' })
     } else {
       setShowToast(run)
+      if (answered) hideToastLater(run)
       later(reduced ? 0 : tokenMs('--duration-money', 900) + 100, () => refreshAfter(run))
     }
   }
@@ -224,10 +275,13 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     lastRequest.current = basket
     setBusy(basket ?? 'undo')
     setError(null)
+    if (basket !== null) setReply(basket)
     try {
       const response = await api.label({ customer_id: customerId, tx_ref: card.tx_ref, basket, language: lang })
       apply(response, basket)
     } catch (caught) {
+      // Nothing was saved, so the reply mounted at the tap goes (an undo keeps the answered reply).
+      if (basket !== null) setReply(null)
       if (caught instanceof ApiError && caught.code === 'tx_ref_not_found') {
         // The review expired: remove the card quietly and show the overview as it is now.
         setPhase({ kind: 'gone' })
@@ -243,7 +297,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       const until = wait ? Date.now() + wait * 1000 : null
       if (basket === null) {
         const run = ++seq.current
-        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable, retryUntil: until })
+        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable, retryUntil: until, silent: false })
         setShowToast(run)
       } else {
         setError({ message, retryable, until })
@@ -264,9 +318,13 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   }
 
   const visibleToast = toast && shownToast === toast.seq ? toast : null
+  const baskets = view.cards.find(isBasketsCard)
+  const replyLabel = reply ? baskets?.items.find((item) => item.key === reply)?.label : undefined
+  // The reply's own condition below: a silent toast stays silent only while the reply shows.
+  const replyShown = Boolean(reply && baskets)
 
   return (
-    <div className={`flex flex-col gap-3 ${visibleToast ? 'pb-40' : ''}`}>
+    <div className="flex flex-col gap-3">
       {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
@@ -285,7 +343,37 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           onRetry={() => void send(lastRequest.current)}
         />
       )}
-      {card && phase.kind === 'answered' && <ReviewAnswered ref={cardRef} card={card} basket={phase.basket} />}
+      {card && phase.kind === 'answered' && (
+        <ReviewAnswered
+          ref={cardRef}
+          card={card}
+          basket={phase.basket}
+          onUndo={busy === null ? () => void send(null) : undefined}
+        />
+      )}
+
+      {reply && baskets && (
+        // Sentti's short reply: where the purchase went, and the mini row the amount flies into.
+        <div ref={replyRef} data-opening-part="reply" className="card-enter flex flex-col gap-2">
+          <SenttiLabel s={chatStrings(lang)} />
+          <div className="rounded-lg border border-line bg-surface p-3">
+            {/* With `effect`, its text under the row says it all; the client title is for older cores. */}
+            {!replyNote && (
+              <p className="mb-2 text-base font-bold text-ink">
+                {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
+              </p>
+            )}
+            <BasketStrip card={baskets} motion={motion ?? undefined} keys={['unclassified', reply]} title={null} flight />
+            {/* Under the strip: the text arrives with the answer, so above it would move the flight's
+                target while the amount flies. */}
+            {replyNote && (
+              <p className="mt-1 text-sm leading-7 text-ink-2">
+                <TokenText text={replyNote.text} numbers={replyNote.numbers} />
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {view.suggested_questions.length > 0 && (
         // The first three questions as sent, stacked; each is asked in this thread.
@@ -304,11 +392,13 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
         </ul>
       )}
 
+      <OverviewRow disabled={busy !== null} />
+
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">
         {visibleToast?.rendered ?? ''}
       </p>
-      {visibleToast && (
+      {visibleToast && !(visibleToast.silent && replyShown) && (
         <Toast
           text={visibleToast.text}
           numbers={visibleToast.numbers}
@@ -318,13 +408,10 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           onClose={() => setToast(null)}
         />
       )}
-      {flight && <FlyingAmount flight={flight} onEvent={onFlight} />}
+      {flight && <FlyingAmount flight={flight} scope={replyRef} onEvent={onFlight} />}
     </div>
   )
 }
-
-/** Room the toast takes at the bottom of the screen; the flight's rows must stay above it. */
-const TOAST_SPACE = 220
 
 const BASKET_COLOUR: Record<string, string> = {
   regular_essentials: '--color-basket-essentials',
@@ -337,15 +424,24 @@ const BASKET_COLOUR: Record<string, string> = {
  * it was answered into (`--duration-flight`, `--ease-expressive`); its border turns to the
  * basket's colour. Decoration only: hidden from screen readers, never shown with reduced motion.
  */
-function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: number, event: 'start' | 'land' | 'done') => void }) {
+function FlyingAmount({
+  flight,
+  scope,
+  onEvent,
+}: {
+  flight: Flight
+  /** Sentti's reply: the flight's cells are looked up inside it only. */
+  scope: RefObject<HTMLElement | null>
+  onEvent: (run: number, event: 'start' | 'land' | 'done') => void
+}) {
   const pill = useRef<HTMLSpanElement>(null)
   const [landed, setLanded] = useState(false)
   const { seq: run, basket } = flight
 
   useLayoutEffect(() => {
     const element = pill.current
-    const source = document.querySelector<HTMLElement>('[data-amount-key="unclassified"]')
-    const target = document.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
+    const source = scope.current?.querySelector<HTMLElement>('[data-amount-key="unclassified"]')
+    const target = scope.current?.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
     let cancelled = false
     const animations: Animation[] = []
 
@@ -396,8 +492,10 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
     // The flight never moves the page: a question asked meanwhile must stay in view. When the rows
     // are not on screen (above the header or where the toast comes up), the amount does not fly
     // and the numbers simply change.
+    // The visible band, measured now: under the header and above the composer. The toast comes up
+    // only after the landing, so it does not cover the flight.
     const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
-    const floor = window.innerHeight - TOAST_SPACE
+    const floor = document.getElementById('chat-input')?.closest('form')?.getBoundingClientRect().top ?? window.innerHeight
     const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
     if (rows.some((box) => !box || box.top < header || box.bottom > floor)) {
       onEvent(run, 'start')
@@ -410,7 +508,7 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
       cancelled = true
       for (const animation of animations) animation.cancel()
     }
-  }, [run, basket, onEvent])
+  }, [run, basket, scope, onEvent])
 
   return createPortal(
     <span

@@ -51,7 +51,7 @@ export function Header({
 
   return (
     <header
-      className="sticky top-0 z-40 bg-page/95 pt-[env(safe-area-inset-top)] backdrop-blur select-none [-webkit-touch-callout:none]"
+      className="@container sticky top-0 z-40 bg-page/95 pt-[env(safe-area-inset-top)] backdrop-blur select-none [-webkit-touch-callout:none]"
       onPointerDown={(event) => {
         cancel()
         if (event.target instanceof Element && event.target.closest('button')) return
@@ -73,7 +73,12 @@ export function Header({
       onPointerLeave={cancel}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <div className="grid min-h-13 grid-cols-[44px_1fr_44px] items-center px-2">
+      {/* The side columns are as wide as their 2.75rem buttons in rem, not px, so with large text the
+          buttons and their columns grow together and the header never runs past the screen (#590).
+          At normal size 2.75rem is 44px, as before. One row needs about 12.3rem; below 13rem (200 %
+          text on a phone) the title moves to a second row under the two buttons instead of
+          overlapping them. At normal size the header is 20rem or wider, so it stays one row. */}
+      <div className="grid min-h-13 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center px-2">
         {showBack ? (
           <button
             type="button"
@@ -104,7 +109,7 @@ export function Header({
         )}
         {/* The title with its AI tag opens the AI disclosure; the right cell is kept for the overview
             button (#322). The accessible name is `titleLabel`: "Sentti, AI" / "Sentti, tekoäly". */}
-        <h1 className="flex justify-center">
+        <h1 className="flex justify-center @max-[13rem]:col-span-3 @max-[13rem]:row-start-2">
           <button
             type="button"
             onClick={() => setAbout(true)}
@@ -122,7 +127,7 @@ export function Header({
           onClick={openOverview}
           disabled={!overviewReady}
           aria-label={t.overview}
-          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent @max-[13rem]:col-start-3 @max-[13rem]:row-start-1"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />

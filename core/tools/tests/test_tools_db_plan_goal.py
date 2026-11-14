@@ -53,9 +53,13 @@ def test_the_plan_and_safe_to_spend_cite_the_same_goal_in_every_review_state(con
         where = f"{customer_id} {state} {language}"
         assert goal.value > 0, where
 
+        # The plan's result holds the same goal Number and ref (#468). Since #560 its answer text names what already
+        # goes to savings, or that no regular transfer shows, in the goal sentence's place: the text cites no goal.
+        assert (plan.data.savings_goal.value, plan.data.savings_goal.evidence_ref) == (goal.value, goal.evidence_ref), where
+        assert plan.data.saving_seen is not None, where
         plan_goals = [n for n in cited(plan.model_view, plan_ctx, language, "How could I save more?")
                       if n.method == GOAL_METHOD]
-        assert [(n.value, n.evidence_ref) for n in plan_goals] == [(goal.value, goal.evidence_ref)], where
+        assert plan_goals == [], where
         hero_goals = [n for n in cited(hero.model_view, hero_ctx, language, "What can I safely spend this week?")
                       if n.method == GOAL_METHOD]
         assert all(n.evidence_ref == goal.evidence_ref for n in hero_goals), where

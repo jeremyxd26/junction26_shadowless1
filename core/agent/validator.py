@@ -394,6 +394,31 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     return errors
 
 
+# #569: the national context figure (Statistics Finland's survey) is context, never a verdict: the sentence that
+# cites it cites no other number and has no comparison or judgement word, so a draft never reads "you spend more
+# than households your age". A rejected draft is retried and then answered by the template's own line.
+NATIONAL_METHOD = "national_context.monthly_eur@1"
+NATIONAL_COMPARISON = re.compile(
+    r"\b(more|less|than|above|below|higher|lower|average|exceed\w*|compared?|comparison|whereas|while|twice|double"
+    r"|half|too|should|only|enemmän|vähemmän|kuin|yli|alle|keskiarvo\w*|verrat\w*|vertailu\w*|kun taas"
+    r"|kaksinkertai\w*|puolet|liikaa|pitäisi|vain)\b", re.I)
+
+
+def national_problems(text: str, numbers: dict[str, Number]) -> list[str]:
+    """Why a text turns the national context figure into a comparison, or []."""
+    problems = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        ids = TOKEN.findall(sentence)
+        if not any(numbers.get(i) is not None and numbers[i].method == NATIONAL_METHOD for i in ids):
+            continue
+        if len(set(ids)) > 1:
+            problems.append("the national context figure stands in its own sentence, with no other number")
+        word = NATIONAL_COMPARISON.search(TOKEN.sub(" ", sentence))
+        if word:
+            problems.append(f"the national context figure is context, never a comparison: '{word.group(0)}'")
+    return problems
+
+
 def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
              allowed: Allowed) -> tuple[AnswerDraft | None, list[str]]:
     """(draft, []) when the composer output passes every rule, else (None or draft, errors)."""
@@ -437,6 +462,8 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
             errors.append("the text must be in Finnish")
     errors += check_text(draft.text, allowed)
     if not unknown:
+        errors += national_problems(draft.text, numbers)
+    if not unknown:
         # Rule 3 again on the text the user reads: each token replaced by its display. A token glued to
         # another token, a digit, a unit word or a month ("{{n2}}{{n2}}", "{{n2}}.{{n2}}", "{{n2}} euros",
         # "On {{n2}} August 2026") leaves digits there that the token-stripped check cannot see.
@@ -459,14 +486,31 @@ _REPEATED_RENDERED = re.compile(
     r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)[ \t]+\3\b", re.I)
 
 
+# The same period named before the token, in its clause (#600): "Based on a typical month of {{n}}" renders as "a
+# typical month of €294.73 a month"; "tavallisena kuukautena kulutat {{n}}" as "… 294,73 € / kk".
+_PERIOD_BEFORE = {
+    unit: re.compile(r"\b(?:(?:an?|per|each|every|your|the|in an?)\s+)?(?:typical|usual|normal|average|regular|"
+                     r"ordinary)\s+" + en + r"\b|\b(?:tavallise|tyypillise|keskimääräise|normaali)\w*\s+" + fi,
+                     re.I)
+    for unit, en, fi in (("eur_per_day", "day", r"päiv\w*"), ("eur_per_week", "week", r"viik\w*"),
+                         ("eur_per_month", "month", r"kuuka\w*"), ("eur_per_year", "year", r"vuo(?:si|de|tena)\w*"))}
+_CLAUSE_WINDOW = 40   # characters between the phrase and the token, with no sentence break
+
+
 def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
-    """The period phrase written again after a number whose display already carries it, or None."""
+    """The period phrase written again after a number whose display already carries it, or named before it in its
+    clause ("a typical month of {{n}}"), rendered; or None."""
     for m in TOKEN.finditer(text):
         number = numbers.get(m.group(0)[2:-2])
         if number is not None and number.unit.value in _PERIOD_UNITS:
             after = _PERIOD_WORDS.match(text, m.end())
             if after:
                 return (number.display + after.group(0)).strip()
+            window = re.split(r"[.!?]\s", text[max(0, m.start() - 80):m.start()])[-1]
+            before = [b for b in _PERIOD_BEFORE[number.unit.value].finditer(window)
+                      if len(window) - b.end() <= _CLAUSE_WINDOW]
+            if before:
+                return f"{before[-1].group(0)}{window[before[-1].end():]}{number.display}".strip()
     found = _REPEATED_RENDERED.search(render(text, numbers))
     return found.group(0) if found else None
 
@@ -543,6 +587,36 @@ FIXED_CUT = re.compile(
 # Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
 # "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
 KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
+# A budget, goal or limit the customer set or did not set (#547): "You did not set a budget for August 2026" was a
+# claim no tool returned. A draft may say it only when the answer's data holds such a figure (a label that names a
+# budget, goal or limit: the safe-to-spend card's "Your monthly budget allows", the savings goal).
+_SETTING_EN = r"(?:budgets?|goals?|limits?|targets?|caps?)"
+_SETTING_FI = r"\w*(?:budjet|tavoit|raja|katto)\w*"   # with a compound: "säästötavoitetta", "kuukausibudjettia"
+_SET_EN = r"(?:set|set\s+up|created|defined|made|chosen|picked|entered|added|agreed(?:\s+on)?)"
+SETTING_CLAIM = re.compile(
+    rf"\byou(?:\s+have|['’]ve|\s+had|['’]d)?\s+(?:not\s+|never\s+|yet\s+to\s+)?{_SET_EN}\s+(?:up\s+)?"
+    rf"(?:a|an|any|your|no|yourself\s+a)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:did\s*n['’]?t|did\s+not|have\s*n['’]?t|have\s+not|had\s*n['’]?t|had\s+not|never)\s+(?:yet\s+)?"
+    rf"(?:{_SET_EN}|have|had|got)\s+(?:up\s+)?(?:a|an|any|your)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:do\s*n['’]?t|do\s+not)\s+have\s+(?:a|an|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\b(?:no|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\s+(?:was|were|is|are|has\s+been|have\s+been)\s+(?:set|defined|set\s+up)\b"
+    rf"|\b{_SETTING_EN}\s+(?:that\s+)?you(?:\s+have|['’]ve)?\s+{_SET_EN}\b"
+    rf"|\byour\s+(?:[\w-]+\s+)?budget\s+(?:was|is|for|of)\b"
+    rf"|\bet\s+(?:ole\s+)?(?:asettanut|määrittänyt|määritellyt|laatinut|tehnyt|valinnut|asettaneet)\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b(?:asetit|määritit|laadit|olet\s+(?:asettanut|määrittänyt|laatinut))\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\bsinulla\s+ei\s+ole\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b{_SETTING_FI}\s+ei\s+ole\s+(?:asetettu|määritetty|määritelty)"
+    rf"|\bbudjettisi\s+(?:oli|on)\b", re.I)
+_SETTING_LABEL = re.compile(r"budget|goal|limit|target|budjet|tavoit|raja", re.I)
+
+
+def setting_claim(text: str, labels: Iterable[str] = ()) -> str | None:
+    """The words in which a draft says the customer set or did not set a budget, goal or limit, when no label in the
+    answer's data names one; None otherwise (#547)."""
+    if any(_SETTING_LABEL.search(label) for label in labels):
+        return None
+    m = SETTING_CLAIM.search(text)
+    return m.group(0).strip() if m else None
 # The stand's count without its noun (row 2): "cost {{n1}} across {{n2}}." The count follows across / over / in
 # / yhteensä and no noun follows it. A count whose noun comes first ("the number of transactions was {{n2}}",
 # "tapahtumien määrä oli {{n2}}") is fine (review of #437).
@@ -592,8 +666,51 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# A Health total is stated plainly (#571, R9): the total, the period and the count, nothing more. A draft that
+# cites a Health Number never adds a tip, an offer, a comparison or a judgement, in any language the answer uses.
+_HEALTH_LABEL = re.compile(r"\bhealth\b|\bterveys|\bterveyteen\b", re.I)
+_HEALTH_EXTRA = re.compile(
+    r"\b(a lot|too much|quite|only|little|high|low|higher|lower|more than|less than|usual|unusual|normal|average|"
+    r"try|consider|could|should|might|maybe|tip|tips|advice|save|saving|cut|reduce|compare|compared|people like you|"
+    r"worry|healthy|unhealthy|good|bad|great|"
+    # an offer, a trend or advice on it (security review of #607): "want to see …", "up from …", "keep an eye"
+    r"want|wants|see|show|up from|down from|since|keep|keeping|remember|notable|notably|look after|take care)\b|"
+    r"\b(paljon|vähän|liikaa|korkea|matala|tavallista|tavallinen|normaali|keskimäär\w*|kannattaa|kannattaisi|voisit|"
+    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono|"
+    r"haluat\w*|näe\w*|näet|nähdä|näytä\w*|näytän|katso\w*|nous\w*|lask(i|ivat|enut)|lähtien|pidä\w*|muista\w*|"
+    r"huomattava\w*|huolehdi\w*|huolehti\w*)\b", re.I)
+
+
+def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first tip, offer, comparison or judgement word in a draft that cites a Health Number, or None."""
+    if not any(_HEALTH_LABEL.search(numbers[i].label or "") for i in TOKEN.findall(text) if i in numbers):
+        return None
+    m = _HEALTH_EXTRA.search(TOKEN.sub(" ", text))
+    if m:
+        return m.group(0)
+    return "?" if "?" in text else None   # a question back is an offer too
+
+
+# #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
+# payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
+_META_TEXT = re.compile(
+    r"\b(is|are|gets?) declined\b|\bdeclined before\b|\bdeclined by my\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) (instructed|programmed)\b|"
+    r"\bi was (told|instructed|programmed|set up)\b|\bhow i(?: was|['’]ve been| have been| am|['’]m) set up\b|"
+    r"\bmy (instructions|rules|guidelines|prompt|system prompt|programming)\b|\bper my\b|"
+    r"\bhylätään\b|\bennen kuin (kirjoitan|vastaan)\b|\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|"
+    r"\bminulla ei ole lupaa\b|\bminulla on ohjeet\b|\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+
+
+def meta_text(text: str) -> str | None:
+    """The first words in a draft about the model's own rules, instructions or process, or None."""
+    m = _META_TEXT.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
-                   labels: Iterable[str] = ()) -> list[str]:
+                   labels: Iterable[str] = (), views: Iterable[Any] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
     `labels` are the labels in the answer's data, which a draft may always name (#419)."""
     problems = []
@@ -619,10 +736,93 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    setting = setting_claim(text, labels)
+    if setting:
+        problems.append(f"'{setting}': no tool returned a budget, goal or limit; never say the user set or did not "
+                        "set one, answer with the figures in <data>")
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
+    extra = health_extra(text, numbers)
+    if extra:
+        problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
+    meta = meta_text(text)
+    if meta:
+        problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
     used = TOKEN.findall(text)
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")
+    problems += safe_to_spend_problems(text, views)
+    return problems
+
+
+# ---- pay yourself first in a model draft (#552) ------------------------------------------------------------
+# The safe-to-spend view says which limit binds (binding_limit) and holds the savings goal set aside first. A
+# draft about safe to spend cites the goal when the budget side binds, and names the binding limit as the cause,
+# never the other one. The sides are the view's own Numbers: the balance side is the balance limit, free until
+# payday and the components (balance, bills, reserves, cushion); the budget side is the budget limit, the goal and
+# the usual pace.
+_CAUSE = re.compile(r"\b(?:because(?:\s+of)?|based\s+on|due\s+to|driven\s+by|comes?\s+from|set\s+by|limited\s+by"
+                    r"|capped\s+by|depends?\s+on|thanks\s+to|koska|perustuu|johtuu)\b", re.I)
+_SIDE_WORD = re.compile(
+    r"\b(?:(?P<budget>budget\w*|goals?|set(?:ting)?\s+aside|aside|sav(?:e|es|ing|ings)\b|\w*budjet\w*|\w*tavoit\w*"
+    r"|sivuun|\w*s[aä][aä]st[oöaä]\w*)"
+    r"|(?P<balance>balance|bills?|reserves?|account|\w*saldo\w*|\w*lasku\w*|varau\w*|tili\w*))", re.I)
+# A concessive clause up to its comma ("although your balance is X, …", "vaikka saldosi on X, …"): its side word
+# is not the cause (review of #574)
+_CONCESSIVE = re.compile(r"\b(?:although|though|while|even\s+if|even\s+though|vaikka)\b[^,;]*[,;]?", re.I)
+# A sentence that refers back to the one before ("This is based on …", "Se johtuu …")
+_BACK_REFERENCE = re.compile(r"^\W*(?:this|that|it|the\s+reason|se|tämä|tuo|syy)\b", re.I)
+_BALANCE_KEYS = ("balance_limit", "free_until_payday")
+_BUDGET_KEYS = ("budget_limit", "savings_goal", "usual_week")
+
+
+def _node_id(node: Any) -> str | None:
+    return node.get("id") if isinstance(node, dict) and isinstance(node.get("id"), str) else None
+
+
+def _node_value(node: Any) -> float:
+    return node.get("value") if isinstance(node, dict) and isinstance(node.get("value"), (int, float)) else 0
+
+
+def safe_to_spend_problems(text: str, views: Iterable[Any] = ()) -> list[str]:
+    """What a draft gets wrong about safe to spend (#552), as retry reasons; [] when nothing."""
+    problems: list[str] = []
+    cited = set(TOKEN.findall(text))
+    for view in views:
+        if not isinstance(view, dict) or view.get("tool") != "get_safe_to_spend":
+            continue
+        binding = view.get("binding_limit")
+        safe, goal = view.get("safe_to_spend"), view.get("savings_goal")
+        if binding not in ("budget", "balance") or _node_id(safe) not in cited:
+            continue   # a draft that does not answer with safe to spend
+        balance = {_node_id(view.get(k)) for k in _BALANCE_KEYS} | \
+            {_node_id(c.get("amount")) for c in view.get("components") or [] if isinstance(c, dict)}
+        budget = {_node_id(view.get(k)) for k in _BUDGET_KEYS}
+        balance.discard(None)
+        budget.discard(None)
+        if binding == "budget" and _node_value(goal) > 0 and _node_id(goal) and _node_id(goal) not in cited:
+            problems.append(f"the savings goal is set aside first: say it with {{{{{_node_id(goal)}}}}} next to safe "
+                            "to spend, for example 'after setting aside {{" + _node_id(goal) + "}} first'")
+        if _node_value(goal) <= 0 and _node_id(goal) in cited:
+            problems.append("no savings goal is set aside (it is zero): do not cite it; name the limit that binds")
+        if _node_value(view.get("balance_limit")) == _node_value(view.get("budget_limit")):
+            continue   # both limits allow the same: either may be named
+        binding_ids, other_ids = (budget, balance) if binding == "budget" else (balance, budget)
+        names_binding = any(m.lastgroup == binding for m in _SIDE_WORD.finditer(text))
+        if cited & other_ids and not cited & binding_ids and not names_binding:
+            # only the other side's figures, and the binding limit neither cited nor named ("…, ja laskut ovat X")
+            problems.append(f"safe to spend is set by the {binding} limit: cite it, not only the other side's figures")
+        other = "balance" if binding == "budget" else "budget"
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            tokens = set(TOKEN.findall(sentence))
+            if tokens and _node_id(safe) not in tokens and not _BACK_REFERENCE.search(sentence):
+                continue   # a statement about other figures ("Your bills of X are covered because …")
+            masked = _CONCESSIVE.sub(lambda c: " " * len(c.group(0)), sentence)
+            for m in _CAUSE.finditer(masked):
+                side = _SIDE_WORD.search(masked, m.end())
+                if side and side.lastgroup == other:
+                    problems.append(f"'{sentence[m.start():side.end()]}': safe to spend is set by the {binding} limit, "
+                                    f"not the {other}; name the {binding} limit as the reason")
+                    break
     return problems
