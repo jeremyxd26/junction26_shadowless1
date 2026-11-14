@@ -20,7 +20,7 @@ export function OpeningChips() {
             <button
               type="button"
               onClick={() => opening.pushClientTurn(request)}
-              className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-3 py-1.5 text-left text-[15px] font-medium leading-5 text-ink hover:bg-mint"
+              className="relative min-h-9 rounded-md border border-line bg-surface px-3 py-1.5 text-left text-[15px] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
             >
               {request.question}
             </button>
