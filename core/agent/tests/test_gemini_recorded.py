@@ -217,3 +217,35 @@ def test_the_template_for_each_recorded_tool_result_repeats_no_period(path):
     text = json.loads(text)["text"] if isinstance(text, str) and text.lstrip().startswith("{") else \
         (text["text"] if isinstance(text, dict) else text)
     assert repeated_period(text, numbers) is None, text
+
+
+
+# ---- #398: the stand's composer rows in real answers (flash-lite) ----------------------------------------------
+
+def test_a_named_feeling_is_acknowledged_first_and_sentti_does_not_introduce_itself():
+    text = load("feeling-stressed-balance-en")["expect"]["text"]
+    first = re.split(r"(?<=[.!?])\s", text)[0]
+    assert re.search(r"stress|worr|understand|tough|hard", first, re.I) and "Sentti" not in text
+
+
+def test_a_why_answer_names_a_cause_and_cites_each_number_once():
+    fixture = load("why-safe-to-spend-low-en")
+    used = re.findall(r"\{\{(n\d+)\}\}", fixture["expect"]["text"])
+    assert len(used) == len(set(used)) >= 2                       # the result and at least one cause
+    assert re.search(r"\bbecause\b|\bbills?\b|\bbalance\b|\breserve\b", fixture["expect"]["text"], re.I)
+
+
+def test_a_count_keeps_its_noun_in_the_injection_answer():
+    assert re.search(r"\{\{n\d+\}\} transactions", load("injection-groceries-print-transactions-en")["expect"]["text"])
+
+
+def test_a_comparison_names_both_periods_without_joined_figures():
+    text = load("comparison-restaurants-august-july-en")["expect"]["text"]
+    assert "August 2026" in text and "July 2026" in text
+    assert not re.search(r"\{\{n\d+\}\}\s+and\s+\{\{n\d+\}\}\s+compared", text)
+
+
+def test_upcoming_bills_take_no_past_window():
+    text = load("regular-bills-upcoming-en")["expect"]["text"]
+    assert not re.search(r"\b\d{1,2} [A-Z][a-z]{2} – \d{1,2} [A-Z][a-z]{2} \d{4}\b", text)   # e.g. "1 Apr – 30 Sep 2026"
+    assert "before payday" in text or "15 October 2026" in text

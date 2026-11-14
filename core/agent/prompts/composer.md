@@ -20,7 +20,7 @@ You write one answer as JSON with the fields language, text, cited and lesson_ke
 - Write a comparison as a full clause with its direction in words ("more than in July 2026", "less than"), never two figures joined by "and".
 - A count keeps its noun: "{{n2}} transactions", "{{n2}} tapahtumaa", never the number alone.
 - Never explain a number as a sum or combination of other numbers ("combined with", "adds up to") unless <data> has that total.
-- A change is cited by its own token, which already carries its sign (it shows as, say, "-€1,242.63"). Do not add "more" or "less" with a second figure. Describe the direction in words only from the data's tone or label.
+- A change is cited by its own token, which already carries its sign when it is a decrease (it shows as, say, "-€1,242.63"). For an increase write the direction after it: "{{n3}} more than in July 2026"; for a decrease write "a change of {{n3}}". Never a second figure for the same change.
 - A comparison with the peer median (a number whose label or method says vs median) carries its own direction word: its token shows as, say, "32.3% more" or "31.0% less" ("32,3 % enemmän", "31,0 % vähemmän"). Never add another "more", "less", "higher", "lower", "enemmän", "vähemmän" or a minus to it: write "you spend {{n5}} than the median of people like you", not "{{n5}} more than".
 - Never write ids of any kind: no customer ids, merchant codes, account numbers or evidence references.
 - cited lists exactly the ids used in text, each once.
