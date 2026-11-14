@@ -9,14 +9,16 @@ said there was no data and added unrelated 2026 totals."""
 from __future__ import annotations
 
 import pytest
-from agent_fakes import AS_OF, run
+from agent_fakes import AS_OF, audit_records, registry, run
 
 from core.agent import template
 from core.agent.model import PlanInput
-from core.agent.registry import ClarifyArgs
+from core.agent.registry import ClarifyArgs, ToolSpec
 from core.agent.rules import (KEEP_OUT_OPTIONS, KEEP_OUT_WHICH, WHAT_IF_AMOUNT, RuleModel, claim, plan_what_if)
 from core.agent.toolset import KNOWN_TOOLS
 from core.agent.validator import Allowed, check_text
+from core.tools.models import Args
+from core.tools.periods import PeriodOutOfRange
 
 TOOLS = [{"name": t.function, "description": "", "parameters_json_schema": {}} for t in KNOWN_TOOLS]
 RENT_EN = "If I cannot reduce rent, what is one realistic way to save more without cutting essentials?"
@@ -125,6 +127,11 @@ def test_not_sure_is_the_savings_plan_which_cuts_only_flexible_categories(messag
 def test_a_question_of_its_own_after_the_question_back_is_read_as_before():
     found = chain([RENT_EN, "How much did I spend last month?"])
     assert only(found, "get_spending") == {"period": {"preset": "last_month"}}
+    assert only(chain([RENT_EN, "Restaurants last month"]), "get_spending") == {
+        "filter": {"categories": ["Restaurants"]}, "period": {"preset": "last_month"}}
+    for reply in ["How much did I spend?", "How much on restaurants?", "Paljonko käytin?"]:
+        found = chain([RENT_EN, reply])
+        assert found.rule is None or found.rule != "what_if", (reply, found)
 
 
 @pytest.mark.parametrize("messages", [
@@ -180,3 +187,31 @@ def test_the_before_data_answer_names_the_data_range_from_the_tools_error(langua
     text, chips = template.missing_data_answer([], errors, language, AS_OF)
     assert first in text and last in text
     assert chips   # periods inside the data, questions the rules answer
+
+
+class _SpendArgs(Args):
+    period: dict | None = None
+    filter: dict | None = None
+
+
+def _before_data(ctx, args: _SpendArgs):
+    raise PeriodOutOfRange("no data", reason="period_before_data", first="2024-10-01", last="2026-09-30")
+
+
+@pytest.mark.parametrize("language,question,first,last", [
+    ("en", "Show my transactions in 2021", "October 2024", "September 2026"),
+    ("fi", "Näytä tapahtumani vuonna 2021", "lokakuusta 2024", "syyskuuhun 2026"),
+])
+def test_the_pipeline_answers_transactions_in_2021_once_with_the_range_and_no_other_total(make_pipeline, language,
+                                                                                         question, first, last):
+    spec = ToolSpec("get_spending", "Spending.", _SpendArgs, _before_data, ("Looking", "Katson"))
+    pipe = make_pipeline(RuleModel(), registry(spec))
+    events = run(pipe, question, language=language)
+    done = dict(events)["done"]
+    assert done["outcome"] == "answered" and done["cited"] == [] and done["refusal"] is None
+    assert first in done["text"] and last in done["text"]
+    assert done["follow_ups"]
+    assert "card" not in [e for e, _ in events]      # no totals of another period
+    calls = [c for t in audit_records(pipe)[-1]["planner_turns"] for c in t.get("calls") or [] if c["name"] != "finish"]
+    assert [c["name"] for c in calls] == ["get_spending"]   # one call, nothing else planned
+    assert calls[0]["args"]["period"] == {"preset": "custom", "start": "2021-01-01", "end": "2021-12-31"}

@@ -2169,6 +2169,9 @@ def _kept_out_reply(request: PlanInput, q: str, tools: set[str], lang: str) -> C
     its own; then the other rules read it as before."""
     if len(q.split()) > 6 or any(re.search(rx, q) for name, rx in INTENTS if name != "what_if"):
         return None
+    if re.search(SELF_SPEND, q) or re.search(COMPLETE_WORDS, q) or re.search(r"\bhow much\b|\bpaljonko\b", q) or \
+            (plan_spending(request.question, date.fromisoformat(request.as_of)) or {}).get("period"):
+        return None   # a spending question of its own ("How much did I spend?", "Restaurants last month")
     chain: list[str] = []
     for turn in reversed(request.history[-KEEP_OUT_TURNS:]):
         if not isinstance(turn, dict) or turn.get("calls") or not isinstance(turn.get("question"), str):
