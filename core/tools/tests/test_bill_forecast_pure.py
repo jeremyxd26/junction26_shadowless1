@@ -241,6 +241,27 @@ def test_a_forecast_that_cannot_be_computed_gives_a_null_block(fake, failure):  
     assert out["forecast"] is None and out["actions"]
 
 
+@pytest.mark.parametrize("where", ["projection", "balance_on"])
+def test_a_failed_consistency_check_of_the_forecast_gives_a_null_block(fake, where, caplog):  # noqa: F811
+    """Review of #461: the forecast's own consistency checks (RuntimeError in projection() or balance_on()) never
+    take the bill explanation down: the block is null, with a line in the log, and the rest stands."""
+    if where == "projection":
+        def broken(ctx):
+            raise RuntimeError("the forecast's bills up to payday differ from the bills due before payday")
+        fake.projection = broken
+    else:
+        p = with_forecast(fake)
+
+        def bad_day(day, label):
+            raise RuntimeError("a forecast day's evidence differs from the projection")
+        p.balance_on = bad_day
+    fake.row = ROW
+    with caplog.at_level("WARNING"):
+        out = explain(unknown("145.00", date(2026, 10, 10)))
+    assert out["forecast"] is None and out["safe_to_spend"] is not None and out["actions"]
+    assert "balance forecast unavailable for a bill" in caplog.text
+
+
 def test_the_forecasts_numbers_are_written_with_the_bills(fake):  # noqa: F811
     with_forecast(fake)
     explain(unknown("145.00", date(2026, 10, 10)))

@@ -253,7 +253,7 @@ def forecast_window(due: date, today: date, payday: date) -> str | None:
 
 def forecast_status(after: Decimal) -> str:
     """The forecast balance on the due date after the bill: below zero `not_covered`, below the margin (a
-    setting) `tight`, else `covered` (#421)."""
+    server constant, config.BILL_FORECAST_MARGIN_EUR) `tight`, else `covered` (#421)."""
     if after < 0:
         return "not_covered"
     if after < config.BILL_FORECAST_MARGIN_EUR:
@@ -371,7 +371,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         "basket": basket,
         "safe_to_spend": safe_to_spend,
         "forecast": forecast,
-        "glossary":[{"term": term, "label": config.label(config.BILL_GLOSSARY[term][0], lang),
+        "glossary": [{"term": term, "label": config.label(config.BILL_GLOSSARY[term][0], lang),
                       "text": config.label(config.BILL_GLOSSARY[term][1], lang)} for term in GLOSSARY_TERMS],
         "actions": actions,
         "warnings": warnings,
@@ -492,6 +492,9 @@ def _forecast(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: BillIt
         p = forecast_tool.projection(ctx)
     except (forecast_tool.NoForecast, *HERO_KNOWN_FAILURES):
         return None
+    except RuntimeError as exc:   # a consistency check of the forecast failed: no block, the explanation stands
+        log.warning("balance forecast unavailable for a bill (%s)", exc)
+        return None
     due = bill.due_date
     out: dict[str, Any] = {"status": "outside_forecast", "before": None, "already_counted": None, "counted": None,
                            "after": None, "shortfall": None, "chip": None}
@@ -504,7 +507,11 @@ def _forecast(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: BillIt
         return out
 
     # The forecast's own Number for the due date: today's row is the balance now, any later day its projection.
-    before = p.balance if due == p.today else p.balance_on(p.by_date[due], _t("forecast_before", lang))
+    try:
+        before = p.balance if due == p.today else p.balance_on(p.by_date[due], _t("forecast_before", lang))
+    except RuntimeError as exc:   # the day's evidence differs from the projection: no block (review of #461)
+        log.warning("balance forecast unavailable for a bill (%s)", exc)
+        return None
     before_v = _value(before)
     due_period = Period(start=due, end=due, label=_day(due, lang))
     on_due = {"period": evidence.period_param(due_period)}
