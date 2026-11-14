@@ -50,10 +50,12 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
+from core.answer_text import scan_numbers
 from core.app.api import texts as api_texts
+from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
-from core.tools.periods import PeriodOutOfRange
+from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
 
@@ -75,7 +77,10 @@ UNCLASSIFIED = "unclassified"   # the basket of a purchase whose review is pendi
 ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
-CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")
+# A what-if or a cut names an amount too, but it is not a question about one purchase (#341).
+WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bif i\b|\bcut\b|\breduc|\bjos\b|vähent|leikk", re.I)
+REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42  # a message in Russian gets the English introduction (#287)
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -275,6 +280,10 @@ class Pipeline:
                           numbers=LockedNumberRegistry(), viewer=req.viewer)
         # The label state, as the overview establishes it (#196): before the model plans, once per answer.
         review = self._establish_labels(ctx, a)  # `pending` below is the round's list of calls
+        # "What was that €1,080?" (#341): the amount of the pending review's purchase is answered from the
+        # review card, with no plan and no model request.
+        if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
+            return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -286,10 +295,18 @@ class Pipeline:
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
-            plan, source = self._plan(PlanInput(
+            plan_in = PlanInput(
                 question=message, language=lang, as_of=self.as_of.isoformat(), tools=self.registry.schemas(),
                 history=history, responses=list(responses), model_turns=list(model_turns), guard_flags=a.flags,
-                round=rnd), a)
+                round=rnd)
+            plan, source = self._plan(plan_in, a)
+            if rnd == 1 and source == "model" and plan.calls and all(c.name == "finish" for c in plan.calls):
+                # The model planned a question with no data call (#341): the composer could then only
+                # introduce Sentti, with no number and no card. The rules plan it instead, and a
+                # question they do not recognise gets their general clarifying question.
+                a.planner_turns.append({"round": rnd, "source": "model", "error": "no data call",
+                                        "latency_ms": self._ms(t_plan)})
+                plan, source = self.fallback.plan(plan_in), "rules"
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
@@ -315,11 +332,14 @@ class Pipeline:
                                           "status": "ok" if kind == "control" else "not_run"})
                 # The rules answered in the model's place: after a planner error, or for a question
                 # they do not recognise while the model may not be used (#244).
-                if source == "fallback" or (a.model_unavailable is not None and not getattr(plan, "recognised", True)):
+                in_place = source == "fallback" or (a.model_unavailable is not None
+                                                    and not getattr(plan, "recognised", True))
+                if in_place:
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
-                return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
+                # The clarifying question then says plainly that the question was not worked out (#341).
+                return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=in_place)
 
             for call, exc in rejected:
                 responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
@@ -667,18 +687,75 @@ class Pipeline:
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 
-    def _clarify(self, args: Any, lang: str, emit: Emit, a: _Answer) -> str:
+    def _clarify(self, args: Any, lang: str, emit: Emit, a: _Answer, not_worked_out: bool = False) -> str:
         question, options = args.question, list(args.options)
         # The clarifying question is model text: it passes the same text rules (R1, R9, R7).
         if any(check_text(t, Allowed(frozenset({self.as_of}), frozenset())) for t in [question, *options]):
             question = template.pick(template.CLARIFY["question"], lang)
             options = list(template.pick(template.CLARIFY["options"], lang))
+        if not_worked_out:
+            question = f"{template.pick(template.NOT_WORKED_OUT, lang)} {question}"
         text = self._deliver(question, {}, emit)
         a.outcome, a.clarify, a.text, a.text_rendered = "clarify", {"question": question, "options": options}, text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "clarify", "text": text, "text_rendered": text, "cited": [],
                       "follow_ups": [], "lesson": None, "refusal": None, "clarify": a.clarify, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
+
+    def _review_card(self, ctx: ToolContext, review: Any) -> dict[str, Any] | None:
+        """The pending review's card on one connection, or None (no purchase, data unavailable)."""
+        try:
+            with self.data.connection() as conn:
+                ctx.conn = conn
+                try:
+                    return self.labels.card(ctx, review)
+                finally:
+                    ctx.conn = None
+        except (DataUnavailable, psycopg.OperationalError, PoolTimeout):
+            return None
+
+    def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
+                              a: _Answer) -> bool:
+        """Answer "what was that €1,080?" (#341) when an amount in the question is within a euro of the
+        pending review's purchase: the purchase's category, date and amount, why Sentti asks, and the
+        review card. False (the normal path answers) for any other question."""
+        asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
+        if not asked or WHAT_IF_WORDS.search(message):
+            return False
+        # A probe on a private registry first, so a question with another amount registers no number.
+        probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
+        if probe is None or not any(abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR
+                                    for v in asked):
+            return False
+        card = self._review_card(ctx, review)
+        if card is None:
+            return False
+        number_id = card["amount"]["id"]
+        numbers = ctx.numbers.all()
+        purchase_day = date.fromisoformat(card["date"])
+        when = (f"{purchase_day.day}.{purchase_day.month}.{purchase_day.year}" if lang == "fi"
+                else f"{purchase_day.day} {MONTHS_EN[purchase_day.month - 1]} {purchase_day.year}")
+        category = tool_config.label(tool_config.CATEGORY_LABELS.get(card["category"], (card["category"],) * 2), lang)
+        text = template.pick(template.REVIEW_PURCHASE, lang).format(
+            category=category, date=when, amount="{{" + number_id + "}}", why=card["why"])
+        draft, errors = validate({"language": lang, "text": text, "cited": [number_id], "lesson_key": None},
+                                 language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
+        if errors or draft is None:
+            log.warning("review purchase answer failed the validator (%d problems)", len(errors))
+            return False
+        a.planner_turns.append({"round": 1, "source": "rules", "review_amount": True})
+        a.cards.append(card["card_id"])
+        emit("card", {"card": card})
+        text = self._deliver(draft.text, numbers, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {number_id: {"value": numbers[number_id].value, "unit": numbers[number_id].unit.value,
+                                 "method": numbers[number_id].method, "evidence_ref": numbers[number_id].evidence_ref}}
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": [number_id], "follow_ups": template.follow_ups(message, lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [],
+                                             "answer": TOKEN.sub("[number]", text)})
+        return True
 
     def _deliver(self, text: str, numbers: dict[str, Any], emit: Emit) -> str:
         """Send the text sentence by sentence; a `numbers` event precedes the first sentence citing a
