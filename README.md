@@ -31,7 +31,19 @@ The tests that need a database are skipped when `DATABASE_URL` is not set.
 
 CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `dev` and `main`: the tests without a database, the eval set and red-team regressions (no model calls), `ruff check .` (`pip install -r requirements-dev.txt`) and a gitleaks scan of the whole history (`.gitleaks.toml`). It uses no secrets.
 
-### Spike reviews and the demo reset
+## Dev environment
+
+The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
+
+To deploy `origin/dev`, you need the instance SSH key at `~/.ssh/shadowless1_dev_ed25519`:
+
+```
+bash deploy/dev.sh
+```
+
+The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+
+## Spike reviews and the demo reset
 
 The first `GET /api/overview/{customer_id}` of a customer with a qualifying spike creates a pending review in the `spike_reviews` table. The service creates that table if it is missing. While the review is pending, the purchase is "Waiting for your answer" (`unclassified`). `POST /api/baskets/label` stores the answer. Design: `docs/design/agent-core.md` section 7.8; contract: `contracts/api.md` sections 6 and 10.
 
@@ -47,17 +59,7 @@ Reference answers, such as the eval set's expected values, are the state with no
 
 **Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
 
-## Dev environment
-
-The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
-
-To deploy `origin/dev`, you need the instance SSH key at `~/.ssh/shadowless1_dev_ed25519`:
-
-```
-bash deploy/dev.sh
-```
-
-The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 
 ## Data
 
@@ -129,8 +131,6 @@ pip install -r core/requirements.txt
 pytest core/tools -q
 ```
 The pure-logic tests need no database. The database-backed tests run when `DATABASE_URL` is set (environment or `.env`) and are skipped otherwise. They only read one customer at a time and write evidence specs to the `coach_evidence` table, which they create if it is missing. Add `--durations=0` to see per-test times.
-
-The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 
 ## License
 
