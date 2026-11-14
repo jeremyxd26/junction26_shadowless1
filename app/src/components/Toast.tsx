@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import type { Num } from '../api/types.ts'
 import { useSettings } from '../lib/settings.ts'
 import { TokenText } from './cards.tsx'
@@ -16,15 +17,34 @@ interface Props {
 }
 
 /**
- * The confirmation after a review answer, pinned just above the composer (bar height 73 px,
- * DESIGN.md "Shell", plus the safe area and an 8 px gap), so the input is never covered. It stays
- * until the customer closes it, undoes or asks the next question, so Undo never disappears on a
- * timer. Screen readers hear `text_rendered` through the overview's live region, not this copy.
+ * The confirmation after a review answer, pinned 8 px above the composer, so the input is never
+ * covered. The composer's height is measured (the form around `#chat-input`, which already holds the
+ * safe area in its padding) and followed as it changes, for example with 200 % text. The answer's
+ * toast closes by itself after 6 s (Undo stays on the answered card), and when the customer closes
+ * it or asks the next question; a toast with Retry stays until it is closed. Screen readers hear
+ * `text_rendered` through the overview's live region, not this copy.
  */
 export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClose }: Props) {
   const { t } = useSettings()
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const node = box.current
+    const composer = document.getElementById('chat-input')?.closest('form')
+    if (!node || !composer) return
+    const place = () => {
+      node.style.bottom = `${composer.getBoundingClientRect().height + 8}px`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(composer)
+    return () => observer.disconnect()
+  }, [])
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+81px)] z-40 flex justify-center px-4">
+    // Without a composer on the page, it sits 16 px above the safe area.
+    <div
+      ref={box}
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] z-40 flex justify-center px-4"
+    >
       <div className="toast-in pointer-events-auto flex w-full max-w-[448px] items-start gap-1 rounded-lg bg-ink py-2 pl-4 pr-1 text-surface shadow-float [&_:focus-visible]:outline-mint">
         <p className="flex-1 py-2 text-sm leading-6">
           <TokenText text={text} numbers={numbers} />
