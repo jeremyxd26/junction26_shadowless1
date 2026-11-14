@@ -120,6 +120,9 @@ class AskRequest:
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
+    # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
+    # with the `llm_unavailable` warning, and no model request is made.
+    model_allowed: bool = True
 
 
 @dataclass
@@ -146,6 +149,10 @@ class _Answer:
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
+    # Why the model may not be used for this answer (#232: "model_window"; the adapter's own reasons come
+    # with #244). Set at one place before planning (Pipeline._model_unavailable); it decides the
+    # `llm_unavailable` warning, and a plan by the rules then still makes an "answered" outcome.
+    model_unavailable: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -225,6 +232,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        a.model_unavailable = self._model_unavailable(req)
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -253,6 +261,10 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
+                # The rules asked back in the model's place: say so. A rules decline is a refusal either way.
+                if "decline" not in controls and (planner_fallback or a.model_unavailable) \
+                        and "llm_unavailable" not in a.warnings:
+                    a.warnings.append("llm_unavailable")
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -291,11 +303,17 @@ class Pipeline:
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=planner_fallback, a=a)
+        draft, used_template = self._compose(compose_in, numbers, allowed,
+                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
-        if a.outcome == "fallback":
+        if a.model_unavailable is not None:
+            # The model may not be used: the rules planned, the tools ran and the template wrote. That is an
+            # answer, with the warning (the rule agreed for #232 and #244).
+            a.outcome = "answered"
+        else:
+            a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
+        if (a.outcome == "fallback" or a.model_unavailable is not None) and "llm_unavailable" not in a.warnings:
             a.warnings.append("llm_unavailable")
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
@@ -310,7 +328,17 @@ class Pipeline:
                                    "answer": TOKEN.sub("[number]", text)})
         return lang
 
+    @staticmethod
+    def _model_unavailable(req: AskRequest) -> str | None:
+        """The one place that decides whether the model may be used for this answer (#232; #244 adds the
+        adapter's reasons: an off-switch, the budget, a pause)."""
+        return "model_window" if not getattr(req, "model_allowed", True) else None
+
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
+        if a.model_unavailable is not None:  # the rules plan, no model request
+            plan = self.fallback.plan(request)
+            a.planner_turns.append({"round": request.round, "source": "rules", "model_unavailable": a.model_unavailable})
+            return plan, "rules" if plan.recognised else "fallback"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:
@@ -536,6 +564,7 @@ class Pipeline:
             "warnings": a.warnings,
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
+            "model_unavailable": a.model_unavailable,  # why the model was not used (#232, #244)
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

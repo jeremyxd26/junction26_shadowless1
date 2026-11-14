@@ -75,15 +75,20 @@ curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "A
 Answer pipeline settings:
 - `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
 - `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is read when the service starts. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs. When it is off, the route does not exist, and the path answers like any unknown path.
-- Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
-  - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
-  - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
-  - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per client address and customer, default 10. One address that uses up its window for a persona never blocks that persona for other visitors.
+- Limits on `POST /api/ask`, per process and per minute, checked before the stream opens. `0` turns a limit off, which is for local eval runs only. Two kinds (#232):
+  - **Model windows** protect the language-model budget. When one is used up, the question is still answered, by the rule planner and the template, with the `llm_unavailable` warning and no model request. So a room on one Wi-Fi address never loses the chat.
+    - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
+    - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
+    - `ASK_RATE_LIMIT_CUSTOMER_PER_MIN`: per client address and customer, default 10.
+  - **The hard ceiling** protects the service itself. Only it answers 429 with `Retry-After`.
+    - `ASK_HARD_LIMIT_PER_MIN`: per client address, default 120.
+    - `ASK_HARD_LIMIT_GLOBAL_PER_MIN`: all asks together, default 600.
+  - The model budget has its own guard in the Gemini adapter (#66): a daily cap, pauses and a per-answer cap.
 - `TRUSTED_PROXIES`: comma-separated peers whose `X-Forwarded-For` is believed, default loopback only. From any other peer the header is ignored. In the image, uvicorn runs with `--proxy-headers` behind Caddy, which replaces `X-Forwarded-For`, so uvicorn already reports the client's address.
 
 To run the eval set against a local service with the keyword model:
 ```
-AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 ASK_RATE_LIMIT_GLOBAL_PER_MIN=0 ASK_RATE_LIMIT_CUSTOMER_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
+AUDIT_API=1 ASK_RATE_LIMIT_PER_MIN=0 ASK_RATE_LIMIT_GLOBAL_PER_MIN=0 ASK_RATE_LIMIT_CUSTOMER_PER_MIN=0 ASK_HARD_LIMIT_PER_MIN=0 ASK_HARD_LIMIT_GLOBAL_PER_MIN=0 uvicorn core.app.main:create_app --factory --port 8000
 python core/eval/run.py --source api --base-url http://localhost:8000 --tag spending
 ```
 
