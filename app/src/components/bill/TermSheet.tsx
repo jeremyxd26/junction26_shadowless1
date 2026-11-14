@@ -19,6 +19,12 @@ export function TermSheet({ label, text, number, onClose }: Props) {
   const { t } = useSettings()
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
+  // The latest onClose, so the effect below runs only when the sheet opens and closes: a parent
+  // re-render must not move focus back to the panel.
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -26,14 +32,14 @@ export function TermSheet({ label, text, number, onClose }: Props) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       const dialogs = document.querySelectorAll('[role="dialog"]')
-      if (dialogs[dialogs.length - 1] === panel.current) onClose()
+      if (dialogs[dialogs.length - 1] === panel.current) close.current()
     }
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
       previous?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
