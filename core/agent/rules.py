@@ -18,7 +18,7 @@ import re
 from datetime import date
 
 from core.agent import template
-from core.agent.guard import fold, fold_pattern
+from core.agent.guard import ROLE_TEXT, SET_ASIDE, fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -31,7 +31,8 @@ RELATION = (r"(?<!on my )(?<!for my )(?<!to my )(?<!with my )"
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               + SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|my (friend|colleague|partner)'?s?\b|"
                           r"someone else|other (people|customers)|muiden|toisen|" + RELATION),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
