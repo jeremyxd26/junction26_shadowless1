@@ -39,12 +39,14 @@ __SITE__ {
 	handle @core {
 		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 		# The largest legitimate body is a question of 500 characters in a small JSON envelope; anything
-		# over 64 KB is refused with 413. A declared Content-Length over 65536 is refused before any byte
-		# goes to the service; a chunked body is cut at 64 KB by request_body (handle_errors makes it 413).
-		@oversized header_regexp Content-Length ^(6553[7-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4}|[1-9][0-9]{5,})$
+		# over 65536 bytes (64 KiB) is refused with 413. A declared Content-Length over 65536 (leading
+		# zeros included) is refused before any byte goes to the service. A body without a
+		# Content-Length (HTTP/1.1 chunked, or an HTTP/2 or HTTP/3 stream) is cut at 65536 bytes by
+		# request_body, and handle_errors makes it 413. KiB, not KB: Caddy reads KB as 1000 bytes.
+		@oversized header_regexp Content-Length ^0*(6553[7-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4}|[1-9][0-9]{5,})$
 		respond @oversized "" 413
 		request_body {
-			max_size 64KB
+			max_size 64KiB
 		}
 		reverse_proxy 127.0.0.1:8000
 	}
