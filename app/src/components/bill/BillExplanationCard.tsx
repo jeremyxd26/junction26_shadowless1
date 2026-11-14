@@ -5,7 +5,7 @@
 //   buttons that open a short sheet with the response's glossary text.
 // Every number is a NumberChip with the API's `display`; every sentence of the response is shown as
 // plain text, never split into chips. The match sentence is the step's heading (BillFlow).
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import type { BillExplainResponse, BillGlossaryEntry, BillSafeToSpend } from '../../api/billTypes.ts'
 import type { Comparison } from '../../api/types.ts'
 import { BASKETS } from '../../lib/baskets.ts'
@@ -33,13 +33,14 @@ interface Props {
 
 export function BillExplanationCard({ response, children }: Props) {
   const [term, setTerm] = useState<BillGlossaryEntry | null>(null)
+  const closeTerm = useCallback(() => setTerm(null), [])
   return (
     <div className="flex flex-col gap-3">
       <ComparisonCard response={response} />
       {response.safe_to_spend && <SafeToSpendCard safe={response.safe_to_spend} />}
       {children}
       <TermsCard response={response} onTerm={setTerm} />
-      {term && <TermSheet label={term.label} text={term.text} onClose={() => setTerm(null)} />}
+      {term && <TermSheet label={term.label} text={term.text} onClose={closeTerm} />}
     </div>
   )
 }
