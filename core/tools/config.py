@@ -1122,17 +1122,16 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                  "{amount} {category}, {date} — välttämätön hankinta vai oma valinta?"),
     "option_unexpected_necessities": ("Needed", "Välttämätön"),
     "option_everyday_spending": ("My choice", "Oma valinta"),
+    # The options' effect before the answer (#416): only where the purchase goes and that the numbers are
+    # recalculated, never a promise about safe to spend or safe to save; the real effect comes with the answer
+    # (label_answer.effect_text, #382). The basket words are the effect's own ("now counts as …").
     "effect_unexpected_necessities": (
-        "It counts as an unexpected necessity. {product} keeps a bigger reserve for surprises like this, so "
-        "your safe to spend goes down.",
-        "Se lasketaan välttämättömäksi yllätysmenoksi. {product} varaa jatkossa enemmän rahaa tällaisiin "
-        "yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee.",
+        "It will count as an unexpected necessity. {product} then recalculates your numbers with it.",
+        "Se lasketaan odottamattomaksi välttämättömäksi menoksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "effect_everyday_spending": (
-        "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this "
-        "month is higher than usual.",
-        "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta "
-        "arkikulutuksesi on tässä kuussa tavallista suurempi.",
+        "It will count as everyday spending. {product} then recalculates your numbers with it.",
+        "Se lasketaan arjen kulutukseksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "why": (
         # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to
