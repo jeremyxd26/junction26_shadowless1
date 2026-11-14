@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.3 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.9 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420, #433 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.3. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.9. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -3866,7 +3866,7 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
 }
 ```
 
-A matched bill of the same payee category (#400): the gallery's water sample (sample_4, typed fields) for Sanna. Its payee is a known payee name of the utilities bill, but utilities are paid several times a month (`spread`), so the bill is not the regular bill: `comparison` is `null` and `match.text` names the payee category. Its reference fails its check, so there is no payment draft.
+A matched bill of the same payee category (#400): the gallery's water sample (sample_4, typed fields) for Sanna. Its payee is a known payee name of the utilities bill, but utilities are paid several times a month (`spread`), so the bill is not the regular bill: `comparison` is `null` and `match.text` names the payee category. Its reference fails its check, so there is no payment draft, and the way to a human (`contact_bank`, section 3) is the only action.
 
 <!-- example: bill.response_category -->
 ```json
@@ -3931,7 +3931,7 @@ A matched bill of the same payee category (#400): the gallery's water sample (sa
     },
     "free_until_payday_after": null,
     "before": {
-      "value": 221.58,
+      "value": 138.79,
       "unit": "eur",
       "period": {
         "start": "2026-10-01",
@@ -3939,9 +3939,9 @@ A matched bill of the same payee category (#400): the gallery's water sample (sa
         "label": "Next 7 days"
       },
       "method": "safe_to_spend.safe_to_spend_7d_eur@1",
-      "evidence_ref": "ev_cdf9de44b51e",
+      "evidence_ref": "ev_61150a8cc692",
       "label": "Safe to spend",
-      "display": "€221.58"
+      "display": "€138.79"
     },
     "after": null,
     "text": "Due on 20 Oct 2026, after your payday on 15 Oct 2026, so it changes nothing before then."
@@ -3968,7 +3968,13 @@ A matched bill of the same payee category (#400): the gallery's water sample (sa
       "text": "Interest the payee may charge for each day a bill is paid after its due date."
     }
   ],
-  "actions": [],
+  "actions": [
+    {
+      "type": "open_host_screen",
+      "label": "Contact S-Pankki",
+      "target": "contact_bank"
+    }
+  ],
   "warnings": [],
   "signals": [
     {
@@ -4134,3 +4140,4 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
 | 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
+| 0.3.9 | A clarification, no new field (#433). Section 11.2: a matched bill has a `comparison` only when it fits the customer's regular bill (paid once a month, at least half of its typical month; #400). A matched bill that does not fit has `comparison` `null`, and `match.text` names the payee category ("This bill is from the same payee category as your regular Utilities payments."). New example `bill.response_category`: the gallery's water sample for Sanna. |
