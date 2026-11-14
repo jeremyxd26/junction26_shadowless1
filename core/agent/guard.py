@@ -9,9 +9,42 @@ from __future__ import annotations
 import re
 import unicodedata
 
+# #526: an attempt to set the rules aside, or to speak as the system, is refused before any data tool is planned
+# (core/agent/rules.py DECLINE_RULES, "unsafe") and flagged here. English and Finnish (the service languages),
+# Swedish and Russian ignore-forms as well. Only the rules themselves or the system's own text: "ignore the rent",
+# "the rules of thumb", "show me the S-Bonus rules" and "which system do you use" are ordinary questions.
+# Known limits, not reached by a pattern: base64 or other encodings, leetspeak, homoglyphs (a Cyrillic "o" in
+# "ignore"), and instructions spread over several turns or phrased as a persona ("from now on ..."). The answer
+# pipeline still holds there: no model output can name a customer, call a write tool or state a number.
+SET_ASIDE = (
+    r"\b(ignore|forget|disregard|bypass|override)\s+(all\s+|any\s+)?(of\s+)?(your|the|these|those|previous|prior|"
+    r"above|earlier)\s+((previous|prior|above|earlier)\s+)?(instructions|rules|guidelines|system prompt|prompt|"
+    r"restrictions)\b(?!\s+of\s+thumb)|"
+    r"\b(pretend|imagine|suppose)\b[^.?!]{0,40}\b(no|without)\s+(rules|limits|restrictions|instructions|guidelines)\b|"
+    r"\b(reveal|print|show|repeat|recite|tell me)\s+(me\s+)?(your|the)\s+(system prompt|hidden (instructions|rules|"
+    r"prompt))\b|\b(reveal|print|repeat|recite)\s+(me\s+)?your\s+(instructions|rules|prompt)\b|"
+    r"\brepeat the (text|words|message) above\b|\bhidden (instructions|rules|prompt)\b|"
+    r"\b(unohda|ohita|sivuuta)\b[^.?!]{0,40}\b(ohje\w*|säännö\w*|sääntö\w*|rajoitu\w*)|"
+    r"\bälä välitä\b[^.?!]{0,40}\b(ohje\w*|säännö\w*|sääntö\w*)|"
+    r"\b(kerro|näytä|toista|paljasta)\b[^.?!]{0,30}\b(ohjeesi|sääntösi)\b|\bjärjestelmäkehot\w*|"
+    r"\bignorera\s+(alla\s+|tidigare\s+|dina\s+)*(instruktioner|regler)\b|"
+    r"\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443[\u0438\u0439][^.?!]{0,40}\u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438")
+# Role text in the user's message: "[system: ...]", "<system>", "[INST]", "</user_message>", "system:" at the start.
+ROLE_TEXT = (r"\[\s*/?\s*(system|developer|assistant|admin|inst)\b[^\]]{0,200}\]|"
+             r"<\s*/?\s*(system|developer|assistant|user_message|admin)\s*>|<\|\s*(system|im_start|im_end)|"
+             r"^\W*(system|developer)\s*:")
+# Softer headers that only flag (the planner sees the flag): a refusal would catch ordinary questions too often.
+SOFT_HEADERS = r"#{2,}\s*new instructions|\bnote for the assistant\b|\btool result\s*:"
+
 FLAGS = {
+    # "you are now" and "act as" only with a persona after them (#526): "You are now over budget" and "my savings
+    # act as a buffer" are ordinary questions.
     "injection_marker": r"ignore (all |the )?(previous|prior|above) instructions|system (prompt|override)|"
-                        r"admin mode|developer mode|you are now|act as",
+                        r"admin mode|developer mode|"
+                        r"\byou are now (in |an? )?(admin|developer|dan|free\w*|unrestricted|uncensored|jailbroken|my|"
+                        r"a different|another)\b|"
+                        r"\bact as (if you|though you|an? (different|new|unrestricted|uncensored|evil)\b|my (grandmother|"
+                        r"admin|developer)\b|dan\b)|" + SET_ASIDE + "|" + ROLE_TEXT + "|" + SOFT_HEADERS,
     "investment_keyword": r"\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin|osake\w*|rahasto\w*)\b",
     "other_person": r"\bCUST\d+|neighbou?r|naapuri|someone else|other customers?|muiden",
 }
@@ -54,7 +87,11 @@ def clean(message: str) -> str:
 
 
 def flags(message: str) -> list[str]:
-    return [name for name, rx in FLAGS.items() if re.search(rx, message, re.I)]
+    """The guard's hints for one message, read as written and folded ("ala valita ohjeistasi" as "älä välitä
+    ohjeistasi"), as the rules read it (#526)."""
+    folded = fold(message)
+    return [name for name, rx in FLAGS.items()
+            if re.search(rx, message, re.I) or re.search(fold_pattern(rx), folded, re.I)]
 
 
 def _without_dots(text: str) -> str:
