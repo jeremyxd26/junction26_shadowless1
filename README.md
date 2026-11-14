@@ -33,8 +33,8 @@ Settings:
 - `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 - `VIEWER_COOKIE_SECURE` (default `true`): the viewer cookie is sent over https only. Set it to `false` only for local development over http.
-- `LABEL_RATE_LIMIT_PER_MIN`, `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` and `LABEL_RATE_LIMIT_VIEWER_PER_MIN`: limits on `POST /api/baskets/label`, each 10 a minute by default. They apply per client address, per (address, customer) and per viewer; no limit is shared by everyone.
-- `LABEL_NEW_SESSIONS_PER_HOUR` (default 10): new viewer sessions per client address per hour.
+- `LABEL_RATE_LIMIT_PER_MIN` (default 120), `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` (default 60) and `LABEL_RATE_LIMIT_VIEWER_PER_MIN` (default 10): limits on `POST /api/baskets/label` per minute. They apply per client address, per (address, customer) and per viewer; no limit is shared by everyone. A venue's Wi-Fi is one client address, so the address limits are sized for a room.
+- `LABEL_NEW_SESSIONS_PER_HOUR` (default 300): new viewer sessions per client address per hour.
 - `0` turns any of these limits off.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
@@ -87,13 +87,13 @@ The first `GET /api/overview/{customer_id}` of a customer with a qualifying spik
 - A request without the cookie sees the pending state, as before. That covers the eval set, the tests and API clients without cookies.
 - A viewer's answers last 2 hours. Each label write also renews the cookie for 2 hours, so an answer never outlives its cookie.
 - At most 10,000 viewers keep answers at a time. That is a storage bound: when it is reached, the least recently active viewer's answers are dropped, and that viewer sees the pending card again.
-- `POST /api/baskets/label` is rate-limited, and no limit is shared by everyone. Each window is 10 a minute:
-  - per client address;
-  - per client address and customer;
-  - per viewer.
+- `POST /api/baskets/label` is rate-limited per minute, and no limit is shared by everyone:
+  - 120 per client address;
+  - 60 per client address and customer;
+  - 10 per viewer.
 
-  When a limit is reached it returns 429 `rate_limited` with `Retry-After`.
-- One client address can start at most 10 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored.
+  A venue's Wi-Fi is one client address, so the address limits are sized for a room; the per-viewer limit and the cap are what protect. When a limit is reached the endpoint returns 429 `rate_limited` with `Retry-After`.
+- One client address can start at most 300 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored. With the 2-hour lifetime, one address holds at most about 600 live sessions, far below the cap.
 
 For a fresh state of your own, open `/api/viewer/reset`, which only issues a new cookie, or use a new private window.
 
@@ -113,6 +113,7 @@ Reference answers, such as the eval set's expected values, are the state with no
 1. Run `reset_reviews.py` for the personas right before the demo.
 2. The presenter opens the app and taps "Needed" and then "Undo" once. Their session now has an answer and is active.
 3. **Do not run the reset during the demo.** It deletes every viewer's answers, the presenter's included, by design.
+4. **The presenter uses a network of their own** (a phone hotspot), not the venue Wi-Fi. Then their address limits are theirs alone.
 
 The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 

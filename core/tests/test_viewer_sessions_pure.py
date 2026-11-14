@@ -133,11 +133,25 @@ def test_the_customer_window_is_per_address(proxied):
 
 def test_a_flood_from_other_addresses_never_blocks_a_fresh_presenter(proxied):
     with client() as c:                                                 # the default limits
-        for n in range(1, 4):                                           # three addresses, junk refs
-            for _ in range(30):
-                label(c, **{"X-Forwarded-For": f"203.0.113.{n}"})
+        flood = []
+        for n in range(1, 4):                                           # three addresses past their own limit
+            for _ in range(130):
+                flood.append(label(c, **{"X-Forwarded-For": f"203.0.113.{n}"}).status_code)
         presenter = label(c, **{"X-Forwarded-For": "192.0.2.10"})
-    assert presenter.status_code == 503                                 # reached the database step, not 429
+    assert 429 in flood                                                 # the flooders are limited ...
+    assert presenter.status_code == 503                                 # ... the presenter reaches the database step
+
+
+def test_a_room_behind_one_address_is_not_limited_by_the_address(proxied):
+    """Everyone on a venue's Wi-Fi is one client address (r-sec): twenty viewers tapping twice each in the
+    same minute all get through with the default limits; only a single viewer is held to 10 a minute."""
+    with client() as c:
+        statuses = []
+        for _ in range(20):
+            c.cookies.clear()
+            c.cookies.set(viewer.COOKIE, viewer.new_value(), domain="testserver.local")
+            statuses += [label(c, **{"X-Forwarded-For": "198.51.100.7"}).status_code for _ in range(2)]
+    assert statuses == [503] * 40                                       # no 429 for anyone in the room
 
 
 def test_label_writes_are_limited_per_viewer():
