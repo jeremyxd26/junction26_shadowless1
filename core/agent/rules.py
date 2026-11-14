@@ -694,6 +694,9 @@ ASKED_SPENDING = (r"\bhow much (did|have|had|was|were) (i|we|it)?\b|\bhow much (
                   r"\bwhat did (i|we) spend\b|\bwhat (i|we) (spent|paid)\b|\bdid (i|we) (spend|pay|buy)\b|"
                   r"\b(paljonko|kuinka paljon) (kaytin|kulutin|maksoin|kaytimme|kulutimme|meni|kului|on mennyt|"
                   r"olen kayttanyt|olen kuluttanut)\b|\bkaytinko\b|\bkulutinko\b|\bmita kaytin\b")
+# An elliptical follow-up that names a category asks too: "How much on restaurants in August? And on groceries?",
+# "Entä ruokaan?" (review of #496), so the asking clauses' filter keeps both.
+FOLLOW_UP_CLAUSE = r"^(?:and|also|plus|or|but|what about|how about|enta|entapa|ja|seka|tai|mutta)\b"
 # Clauses: sentences with their own "." / "?" / "!", each split again where CLAUSE_BREAK splits.
 SENTENCE_BREAK = rf"(?<=[.!?])\s+|[,;]\s*(?={_QUESTION_WORD})|\s+(?:and|also|plus|ja|seka)\s+(?={_QUESTION_WORD})"
 
@@ -717,7 +720,8 @@ def asks_spending(clause: str, as_of: date, peer_question: bool = False) -> bool
     rule survives in it alone."""
     p = fold(clause).strip()
     asking = p.endswith("?") or re.match(ASKING, p) or re.search(ASKED_SPENDING, p)
-    if not asking or not _names_spending(p, as_of):
+    follow_up = bool(re.match(FOLLOW_UP_CLAUSE, p) and _filter_of(p))
+    if not follow_up and (not asking or not _names_spending(p, as_of)):
         return False
     spending = plan_spending(p, as_of)
     found = [f for f in _matched(p, peer_question, spending) if f != "spending"] + ["spending"]
@@ -910,27 +914,39 @@ def claim(request: PlanInput) -> Claim:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
-    long = long_message(question, [topics for _, topics in clauses])
-    asked = asking_clauses(question, as_of, peer_question) if long else []
-    drop = long and not asked
+    def decide(drop: bool, asked: list[str]) -> Claim:
+        def asked_in(part: str) -> str | None:
+            return " ".join(c for c in asked if c.rstrip("?").strip() in part) or None
 
-    def asked_in(part: str) -> str | None:
-        return " ".join(c for c in asked if c.rstrip("?").strip() in part) or None
+        if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
+            parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part))
+                     for part, _ in clauses]
+            declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
+            if declined is not None:
+                return declined          # a refusal of one part is the answer to the whole message
+            unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
+            calls = list(unique.values())
+            if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1
+                   for part in parts) and len(calls) <= MAX_DATA_CALLS:
+                rules = list(dict.fromkeys(part.rule for part in parts))
+                return Claim(rules[0] if len(rules) == 1 else "+".join(rules),
+                             tuple(calls) + (FunctionCall("finish"),))
+            competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
+            return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
+        return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None)
 
-    if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-        parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part)) for part, _ in clauses]
-        declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
-        if declined is not None:
-            return declined          # a refusal of one part is the answer to the whole message
-        unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
-        calls = list(unique.values())
-        if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1 for part in parts) \
-                and len(calls) <= MAX_DATA_CALLS:
-            rules = list(dict.fromkeys(part.rule for part in parts))
-            return Claim(rules[0] if len(rules) == 1 else "+".join(rules), tuple(calls) + (FunctionCall("finish"),))
-        competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
-        return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-    return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None)
+    # A long message is decided as a short one (#399, review of #496), with two exceptions, by construction:
+    # - a clause asks about spending: the spending filter is the asking clauses' own;
+    # - no clause asks, and the short decision claims the spending rule: the sum of the categories the statements
+    #   mention is not the answer, so the spending rule is dropped and the other rules, or the model, take it.
+    # A short decision that is competing or a question back stays so: the other rule never answers alone.
+    if not long_message(question, [topics for _, topics in clauses]):
+        return decide(False, [])
+    asked = asking_clauses(question, as_of, peer_question)
+    if asked:
+        return decide(False, asked)
+    short = decide(False, [])
+    return decide(True, []) if "spending" in (short.rule or "").split("+") else short
 
 
 class RuleModel:
