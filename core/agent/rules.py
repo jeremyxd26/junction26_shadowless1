@@ -276,22 +276,31 @@ PRESETS = [
     # the singular and the plural genitive, with the digit or the word (#543, #651): "viimeisten kolmen kuukauden".
     # Each month alternative ends on the whole word, "aikana" optional, so a bare message full-matches it (#673).
     # The number before "viimeisen" is the same period ("kolmen viimeisen kuukauden", #665).
+    # "kk" and "kuun" are the month too, the digit may touch "kk", and "viime" may stand for "viimeisen" after the
+    # number: "viimeisen 3kk", "viimeisen kolmen kk", "3 viime kuun" (#665)
     (r"last (3|three) months|past (3|three) months|viimeis(en|ten) (3|kolmen) kuukauden( aikana)?\b|"
-     r"\b(3|kolmen) viimeisen kuukauden( aikana)?\b|viimeiset (3|kolme) kuukautta", "last_3_months"),
+     r"\b(3|kolmen) viimeisen kuukauden( aikana)?\b|viimeiset (3|kolme) kuukautta|"
+     r"viimeis(en|ten) (3|kolmen) ?(kuun|kk)\b|\b(3|kolmen) viime(isen|isten)? (kuukauden|kuun|kk)\b", "last_3_months"),
     (AVERAGE_MONTHLY := r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|"
                         r"\bkeskimäärin kuukaudessa\b",
      "last_6_months"),   # the metric's window (#395 row 14)
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
     (r"last (6|six) months|past (6|six) months|viimeis(en|ten) (6|kuuden) kuukauden( aikana)?\b|"
-     r"\b(6|kuuden) viimeisen kuukauden( aikana)?\b", "last_6_months"),
+     r"\b(6|kuuden) viimeisen kuukauden( aikana)?\b|"
+     r"viimeis(en|ten) (6|kuuden) ?(kuun|kk)\b|\b(6|kuuden) viime(isen|isten)? (kuukauden|kuun|kk)\b", "last_6_months"),
     # the plural genitive and the number in words are the same period (#543, #651): "viimeisten 12 kuukauden aikana",
     # "viimeisen kahdentoista kuukauden" (the answers' own wording). "12" and "vuoden" are whole words: "viimeisen
-    # 120 päivän" and "viimeisen vuodenvaihteen" are not twelve months (#665).
-    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12 kk|vuoden)\b|"
-     r"viimeis(en|ten) (12|kahdentoista) kuukauden( aikana)?\b|\b(12|kahdentoista) viimeisen kuukauden( aikana)?\b",
+    # 120 päivän" and "viimeisen vuodenvaihteen" are not twelve months (#665). "viimeisen 12 kuun", "viimeisen 12kk",
+    # "viimeisen 12 kk" and "12 viime kuun" are twelve months, as before (#665).
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen vuoden\b|"
+     r"viimeis(en|ten) (12|kahdentoista) kuukauden( aikana)?\b|\b(12|kahdentoista) viimeisen kuukauden( aikana)?\b|"
+     r"viimeis(en|ten) (12|kahdentoista) ?(kuun|kk)\b|\b(12|kahdentoista) viime(isen|isten)? (kuukauden|kuun|kk)\b",
      "last_12_months"),
-    (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
+    # "viime kuun" after a number is that many months ("3 viime kuun", "kolmen viime kuun", #665), never last month
+    (r"last month|previous month|viime kuussa|(?<!\d )(?<!kahden )(?<!kolmen )(?<!neljän )(?<!viiden )(?<!kuuden )"
+     r"(?<!seitsemän )(?<!kahdeksan )(?<!yhdeksän )(?<!kymmenen )(?<!toista )viime kuun\b|viime kuukausi\b|"
+     r"edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
     (r"last week|viime viikolla", "last_week"),
@@ -336,7 +345,8 @@ YEARS_AGO = r"\b" + _N + r" years? ago\b|\b" + _N + r" (?:vuotta|vuosi) sitten\b
 COUNT_WORDS = {**NUMBER_WORDS, "twelve": 12, "kahdentoista": 12}
 _C = r"(\d{1,4}|" + "|".join(sorted(COUNT_WORDS, key=len, reverse=True)) + r")"
 MONTHS_BACK = (r"\b(?:last|past) " + _C + r" months\b|\bviimeis(?:en|ten) " + _C + r" kuukauden\b|\b" + _C +
-               r" viimeisen kuukauden\b")
+               r" viimeisen kuukauden\b|\bviimeis(?:en|ten) " + _C + r" ?(?:kuun|kk)\b|\b" + _C +
+               r" viime(?:isen|isten)? (?:kuukauden|kuun|kk)\b")   # "viimeisen 9kk", "24 viime kuun"
 DAYS_BACK = (r"\b(?:last|past) " + _C + r" days\b|\bviimeis(?:en|ten) " + _C + r" paivan\b|\b" + _C +
              r" viimeisen paivan\b")
 NUMBER_BEFORE_LAST = r"\b(\d+|\w+toista|\w+kymmenen|" + "|".join(COUNT_WORDS) + r") viimeis"

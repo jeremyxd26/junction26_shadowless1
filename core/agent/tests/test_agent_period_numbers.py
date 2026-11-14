@@ -49,9 +49,31 @@ RESTAURANTS = {"categories": ["Restaurants"]}
     ("Paljonko käytin ravintoloihin kahden viimeisen kuukauden aikana?", custom("2026-08-01")),
     # no number: the past complete month, as before
     ("Paljonko käytin ravintoloihin viimeisen kuukauden aikana?", custom("2026-09-01")),
+    # "kk" and "kuun" are the month, the digit may touch "kk", "viime" after the number: the same periods
+    ("Paljonko käytin ravintoloihin viimeisen 12 kuun aikana?", {"preset": "last_12_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 12kk aikana?", {"preset": "last_12_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 12 kk aikana?", {"preset": "last_12_months"}),
+    ("Paljonko käytin ravintoloihin 12 viime kuun aikana?", {"preset": "last_12_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 3kk aikana?", {"preset": "last_3_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen kolmen kk aikana?", {"preset": "last_3_months"}),
+    ("Paljonko käytin ravintoloihin kolmen viime kuun aikana?", {"preset": "last_3_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 6kk aikana?", {"preset": "last_6_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen kuuden kk aikana?", {"preset": "last_6_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 9kk aikana?", custom("2026-01-01")),
+    ("Paljonko käytin ravintoloihin viimeisen 24 kk aikana?", custom("2024-10-01")),
+    ("Paljonko käytin ravintoloihin 2 viime kuun aikana?", custom("2026-08-01")),
+    # "viime kuun" with no number is last month, as before
+    ("Paljonko käytin ravintoloihin viime kuun aikana?", {"preset": "last_month"}),
 ])
 def test_a_period_gets_the_period_it_names(question, period):
     assert first_call(question) == ("get_spending", {"filter": RESTAURANTS, "period": period})
+
+
+@pytest.mark.parametrize("question", ["Paljonko käytin ravintoloihin viimeisen 121 kk aikana?",
+                                      "Paljonko käytin ravintoloihin viimeisen 121 kuukauden aikana?"])
+def test_a_count_out_of_range_asks_and_is_never_another_period(question):
+    name, args = first_call(question)
+    assert name == "ask_clarifying_question" and args["question"] == "Mitä ajanjaksoa tarkoitat?"
 
 
 def test_the_breakdown_gets_the_counted_range_too():
