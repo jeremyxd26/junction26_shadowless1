@@ -46,10 +46,10 @@ const en = {
   } as Record<string, string>,
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
-  /** The overview sheet's title and the header button's name (#321, #322). */
-  overview: 'Overview',
   reviewWhy: 'Why Sentti asks',
   questionsLabel: 'Questions to ask',
+  /** The overview sheet's title and the header button's name (#321, #322). */
+  overview: 'Overview',
   mockBadge: 'Mock data',
   heroPendingTitle: 'Safe to spend this week',
   heroPending: 'Safe to spend is still being calculated. Check back soon.',
@@ -112,9 +112,9 @@ const fi: Strings = {
   },
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',
-  overview: 'Yleiskatsaus',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
+  overview: 'Yleiskatsaus',
   mockBadge: 'Testidata',
   heroPendingTitle: 'Käyttövara tällä viikolla',
   heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',
