@@ -32,7 +32,11 @@ export function envelope(name: string, payload: Record<string, unknown> = {}): H
   return { type: `sentti.${name}`, v: BRIDGE_VERSION, payload }
 }
 
-/** Which host is listening: iOS, Android or none (a plain browser). */
+/**
+ * Which host is listening: iOS, Android or none (a plain browser). iOS wins when both objects
+ * exist, so a message is never sent twice: a page in WKWebView cannot get a real Android bridge,
+ * but a page may define its own `window.sentti`.
+ */
 export function hostPlatform(scope: HostScope = currentScope()): 'ios' | 'android' | null {
   if (typeof scope.webkit?.messageHandlers?.sentti?.postMessage === 'function') return 'ios'
   if (typeof scope.sentti?.postMessage === 'function') return 'android'

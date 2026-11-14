@@ -78,28 +78,47 @@ export function closeEvidence() {
   else setParams({ evidence: null })
 }
 
-/**
- * Whether the back button has somewhere to go: an inner screen or an open sheet, or a host app
- * to hand control to. On the first screen in a plain browser it has none, so it is not shown.
- */
-export function canGoBack(): boolean {
-  const state = window.history.state as { screen?: boolean; sheet?: boolean } | null
-  if (state?.screen || state?.sheet) return true
-  if (hostPlatform() !== null) return true
-  return window.location.pathname !== '/'
+type BackState = { screen?: boolean; sheet?: boolean } | null
+
+/** A sheet is open: opened by the app (history state) or deep-linked (`?evidence=`). */
+function sheetOpen(state: BackState): boolean {
+  return Boolean(state?.sheet) || new URLSearchParams(window.location.search).has('evidence')
 }
 
 /**
- * Back from a screen. On the first screen, hand control back to the host app with
- * `sentti.close` (iOS or Android); in a plain browser, stay inside the module.
+ * The first screen is the overview (`/`) with no sheet open, however the customer got there:
+ * the history state says nothing about it (Chat → overview pushes a `screen` entry too).
+ */
+function onFirstScreen(state: BackState): boolean {
+  return window.location.pathname === '/' && !sheetOpen(state)
+}
+
+/**
+ * Whether the back button has somewhere to go: a sheet to close, an inner screen to leave, or,
+ * on the first screen, a host app to hand control to. In a plain browser the first screen has
+ * none, so the button is not shown there.
+ */
+export function canGoBack(): boolean {
+  const state = window.history.state as BackState
+  if (!onFirstScreen(state)) return true
+  return hostPlatform() !== null
+}
+
+/**
+ * Back: close the open sheet, or leave an inner screen; on the first screen, hand control back
+ * to the host app with `sentti.close` (iOS or Android, docs/integration.md). If no host takes the
+ * message there (a plain browser, or the host's handler throws), nothing happens.
  */
 export function goBack() {
-  const state = window.history.state as { screen?: boolean; sheet?: boolean } | null
-  if (state?.screen || state?.sheet) {
-    window.history.back()
+  const state = window.history.state as BackState
+  if (sheetOpen(state)) {
+    closeEvidence()
     return
   }
-  if (sendToHost('close')) return
-  if (window.location.pathname !== '/') navigate('/')
-  else window.history.back()
+  if (onFirstScreen(state)) {
+    sendToHost('close')
+    return
+  }
+  if (state?.screen) window.history.back()
+  else navigate('/')
 }
