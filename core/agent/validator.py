@@ -463,6 +463,11 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
     `labels` are the labels in the answer's data, which a draft may always name (#419)."""
     problems = []
+    cited_methods = [numbers[i].method for i in TOKEN.findall(text) if i in numbers]
+    if any(m.startswith("peer_benchmark.") for m in cited_methods):
+        ranked = re.search(r"\b(?:top|bottom|best|worst|rank\w*|paras|huonoin|kärki\w*|sijoitu\w*)\b", text, re.I)
+        if ranked:
+            problems.append(f"'{ranked.group(0)}': no ranking words in a comparison with similar people")
     borrowing = answer_text.borrowing_suggestion(text, labels)
     if borrowing:
         problems.append(f"'{borrowing}': never suggest borrowing (a loan, credit, a credit card, instalments, an "
