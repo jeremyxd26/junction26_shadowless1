@@ -234,7 +234,7 @@ def get_bonus_estimate(ctx: ToolContext, args: GetBonusEstimateArgs | dict | Non
     # G: the category's month average over the last 6 complete months, as the basket card computes one.
     period = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of, lang).period
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))  # the request's labels, read once (#68)
     n_months = months_with_history(period.start, period.end, history[0].tx_date if history else None) \
         if is_whole_months(period.start, period.end) else 1
     nb = NumberBuilder(ctx, rows)
