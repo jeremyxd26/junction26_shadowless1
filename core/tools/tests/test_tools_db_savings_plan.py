@@ -28,10 +28,12 @@ def context(conn, customer_id):
 @pytest.mark.parametrize("customer_id", sorted(PERSONAS))
 def test_the_plan_of_each_persona(conn, customer_id):
     (first, other_key, other), month, year = PERSONAS[customer_id]
-    d = get_savings_plan(context(conn, customer_id), {}).data
+    result = get_savings_plan(context(conn, customer_id), {})
+    d = result.data
     assert [(lv.key, lv.saving.value) for lv in d.levers] == [("Restaurants", first), (other_key, other)]
     assert (d.total_month.value, d.total_year.value) == (month, year)
-    assert d.bonus is None or d.total_month.value == round(first + other, 2)   # the S-Bonus never in the total
+    assert d.total_month.value == round(first + other, 2)   # the S-Bonus never in the total (#411: not shown at all)
+    assert "bonus_estimate." not in result.card.model_dump_json() and "bonus_extra" not in result.model_view
     for n in (d.total_month, d.total_year):
         assert evidence.resolve(conn, n.evidence_ref, customer_id).reconciles is True
 

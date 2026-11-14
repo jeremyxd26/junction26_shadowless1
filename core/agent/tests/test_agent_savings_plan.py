@@ -104,14 +104,78 @@ def test_a_cut_share_without_words_is_cited_as_a_number(fake, monkeypatch, langu
     assert "25.15" not in text and "25,15" not in text and "S-Bonus" not in text
 
 
-def test_two_cut_shares_without_words_still_cite_three_numbers(fake, monkeypatch):  # noqa: F811
+def test_two_equal_shares_without_words_are_one_number_said_once(fake, monkeypatch):  # noqa: F811
+    """Review of #411: 15 and 15 are one Number, cited once, so safe to save is not dropped needlessly."""
     from core.tools import config
 
     monkeypatch.setattr(config, "SAVINGS_PLAN_FIRST", ("Restaurants", 15))
     monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
     text, cited = rendered()
-    assert text == "These changes could add about €63.17 a month: eating out 15.0% less and spending 15.0% less on lifestyle."
+    assert text == ("These changes could add about €63.17 a month: eating out and spending on lifestyle, each 15.0% "
+                    "less. You could already set aside about €184.61 a month.")
+    assert len(cited) == len(set(cited)) == 3
+
+
+def test_two_different_shares_without_words_cite_three_numbers(fake, monkeypatch):  # noqa: F811
+    from core.tools import config
+
+    monkeypatch.setattr(config, "SAVINGS_PLAN_FIRST", ("Restaurants", 15))
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 30)
+    text, cited = rendered()
+    assert text == "These changes could add about €63.17 a month: eating out 15.0% less and spending 30.0% less on lifestyle."
     assert len(cited) == 3
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_the_s_bonus_question_comes_first_and_the_bonus_rule_claims_it(fake, language):  # noqa: F811
+    """Decision of #411: the S-Bonus is offered as the answer's first follow-up, and the bonus rule answers that
+    exact prompt with get_bonus_estimate (its own Number and evidence)."""
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None, language=language)
+    view = sp.get_savings_plan(ctx, {}).model_view
+    question = "How could I save more?" if language == "en" else "Miten voisin säästää enemmän?"
+    chips = template.follow_ups(question, language, views=[view])
+    assert chips[0] == view["follow_up"] and len(chips) == 3 and len(set(chips)) == 3
+    result = plan(view["follow_up"], BASE + ["get_savings_plan"], language)
+    assert result.recognised and [c.name for c in result.calls] == ["get_bonus_estimate", "finish"]
+
+
+@pytest.mark.parametrize("message,language,chip", [
+    ("How could I save more?", "en", "How much S-Bonus could I get?"),
+    ("Miten voisin säästää enemmän?", "fi", "Paljonko S-Bonusta voisin saada?")])
+def test_an_answer_to_save_more_offers_the_s_bonus_question_first(fake, tmp_path, monkeypatch,  # noqa: F811
+                                                                  message, language, chip):
+    """End to end (rule planner, no database): done.follow_ups starts with the S-Bonus question, and the answer
+    and the card carry no S-Bonus amount."""
+    from agent_fakes import FakeData
+    from fastapi.testclient import TestClient
+
+    from core.agent.api import Agent, AskLimits
+    from core.agent.audit import AuditLog
+    from core.agent.orchestrator import Pipeline
+    from core.agent.registry import Registry, ToolSpec
+    from core.app.main import create_app
+    from core.app.settings import Settings
+
+    for name in ("DATABASE_URL", "AUDIT_API", "ASK_RATE_LIMIT_PER_MIN", "TRUSTED_PROXIES"):
+        monkeypatch.delenv(name, raising=False)
+    app = create_app(Settings(_env_file=None))
+    with TestClient(app) as c:
+        audit, data, reg = AuditLog(tmp_path / "audit"), FakeData(), Registry()
+        reg.register(ToolSpec("get_savings_plan", "The savings plan.", sp.GetSavingsPlanArgs, sp.get_savings_plan,
+                              ("Planning", "Suunnittelen")))
+        app.state.agent = Agent(pipeline=Pipeline(reg, RuleModel(), data, as_of=AS_OF, audit=audit), data=data,
+                                audit=audit, limits=AskLimits(0, 0, 0))
+        r = c.post("/api/ask", json={"customer_id": "CUST00860", "conversation_id": None, "message": message,
+                                     "language": language}, headers={"Accept": "application/json"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["outcome"] == "answered" and body["follow_ups"][0] == chip, body
+    assert "25.15" not in r.text and "25,15" not in r.text
+
+
+def test_without_a_tool_question_the_follow_ups_are_the_brief_questions():
+    assert template.follow_ups("How could I save more?", "en", views=[{"tool": "get_spending"}]) == \
+        template.follow_ups("How could I save more?", "en")
 
 
 def test_no_lever_says_so_plainly_and_keeps_safe_to_save(fake):  # noqa: F811

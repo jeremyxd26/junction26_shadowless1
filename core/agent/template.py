@@ -175,10 +175,14 @@ def brief_questions(language: str) -> list[str]:
     return [pick(q, language) for q in BRIEF_QUESTIONS]
 
 
-def follow_ups(question: str, language: str, refused: bool = False) -> list[str]:
-    """The partner's four questions minus the one just asked (agent-core.md section 7.6)."""
+def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
+    """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
+    question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the
+    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411)."""
     asked = question.strip().lower()
-    out = [pick(q, language) for q in BRIEF_QUESTIONS if pick(q, language).lower() != asked]
+    offered = [v["follow_up"] for v in views or [] if isinstance(v, dict) and isinstance(v.get("follow_up"), str)
+               and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
+    out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
 
 
@@ -432,8 +436,9 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
 # (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
 # share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
 # cut share takes the place of the year, then of safe to save, so the answer never cites more than three
-# numbers. The levers' own amounts and the S-Bonus extra stay on the card. Nothing quotes safe to spend
-# (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
+# numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
+# amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
+# to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
 PLAN_SENTENCE = {
     "plan": ("These changes could add about {total}, about {year}: {cuts}.",
              "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
@@ -442,6 +447,8 @@ PLAN_SENTENCE = {
     "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
     "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
     "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
+    "each": ("eating out and spending on {other}, each {cut} less",
+             "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
     "and": (" and ", " ja "),
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
     "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
@@ -470,24 +477,30 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     if not (total and year and levers):
         return None
     first_key = tools_config.SAVINGS_PLAN_FIRST[0]
-    cuts, cut_ids = [], []
+    shares, cut_ids = {}, []                 # lever key -> its share in words or as a token
     for lever in levers:
         words, cut = lever.get("cut_words"), num(lever.get("cut"))
         if isinstance(words, str) and words and not re.search(r"\d", words):
-            share = words
+            shares[lever.get("key")] = words
         elif cut is not None:
-            share = tok(cut)              # "15.0%": a cut share without words is cited, never typed
-            cut_ids.append(cut["id"])
+            shares[lever.get("key")] = tok(cut)   # "15.0%": a cut share without words is cited, never typed
+            if cut["id"] not in cut_ids:           # two equal shares are one Number: said and counted once
+                cut_ids.append(cut["id"])
         else:
             return None
-        if lever.get("key") == first_key:
-            cuts.append(s("first").format(cut=share))
-            continue
-        other = lever.get("category") or ""
+    first = next((lv for lv in levers if lv.get("key") == first_key), None)
+    other_lever = next((lv for lv in levers if lv.get("key") != first_key), None)
+    other = ""
+    if other_lever is not None:
+        other = other_lever.get("category") or ""
         if not other or re.search(r"\d", other):
             return None
         other = other.lower() if language == "en" else other   # "luokassa Ostokset ja vapaa-aika"
-        cuts.append(s("other").format(cut=share, other=other))
+    if first and other_lever and shares[first["key"]] == shares[other_lever["key"]]:
+        cuts = [s("each").format(cut=shares[first["key"]], other=other)]
+    else:
+        cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
+               ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
     # The total and any cited cut share first, then safe to save, then the year, within three numbers.
     with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
     with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS

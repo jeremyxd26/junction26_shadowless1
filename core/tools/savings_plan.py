@@ -16,8 +16,10 @@ total a month and a year computed here; no model adds numbers (rules in docs/des
   (`savings_plan.cut_pct@1`), so an answer can cite it as a number instead of bare digits.
 - These are savings from cutting below the usual pace: they add to safe to save, never to safe to spend
   (r-w6's invariant, #381). Safe to save a month is shown next to the plan as it is today, never added in.
-- The S-Bonus estimate for the default share is a separate extra, only when it is offered, in the card's
-  estimate text and never part of the total (product owner, #369).
+- The S-Bonus is never shown with the plan, never part of the total (product owner, #369): no amount on the
+  card or in the model view. When its estimate is offered, its own question ("How much S-Bonus could I
+  get?") is the answer's first follow-up, answered with its own Number and evidence (coordinator, #411).
+- The card has no digit outside a Number or the period: each row's label says its cut in words.
 - When no lever reaches the threshold, the card is the baskets card (where the money goes), next to safe to
   save (coordinator, #411). A failure of safe to save or the S-Bonus leaves them out; the plan still stands.
 """
@@ -53,7 +55,7 @@ class GetSavingsPlanArgs(Args):
 class Lever(BaseModel):
     key: str            # the category
     category: str       # its label in the request language: "Restaurants", "Lifestyle"
-    label: str          # the card row: "Restaurants 20% less" (card text only, never in the model view)
+    label: str          # the card row, in words: "Restaurants, a fifth less" (no digit outside a Number)
     cut_pct: int
     cut: Number         # the cut share as a rule value, so an answer cites it as a token
     cut_words: str | None   # the cut share in words ("a fifth"), or None when the setting has none
@@ -65,7 +67,7 @@ class SavingsPlanData(BaseModel):
     total_month: Number | None      # None when no lever reaches the threshold
     total_year: Number | None
     safe_to_save: Number | None     # shown next to the plan, never added in
-    bonus: Number | None            # the S-Bonus extra, never in the total
+    follow_up: str | None           # the S-Bonus question, offered when the estimate is (coordinator, #411)
 
 
 def _t(key: str, language: str, **kw: Any) -> str:
@@ -165,8 +167,10 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
             saving = shown(result.saving_per_month)
             cut, _ = nb.composite(config.SAVINGS_PLAN_METHODS["cut_pct"], "rule_value", {}, Unit.PERCENT,
                                   saving.period, _t("cut", lang, what=what), params={"value": str(pct)})
-            levers.append(Lever(key=category, category=what, label=_t("lever", lang, what=what, pct=pct),
-                                cut_pct=pct, cut=reg(cut), cut_words=cut_words(pct, lang), saving=saving))
+            words = cut_words(pct, lang)
+            label = _t("lever", lang, what=what, words=words) if words else _t("lever_no_words", lang, what=what)
+            levers.append(Lever(key=category, category=what, label=label, cut_pct=pct, cut=reg(cut),
+                                cut_words=words, saving=saving))
 
     total_month = total_year = None
     if levers:
@@ -183,15 +187,16 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
     # Safe to save: the safe-to-save tool's own headline (its view's `monthly`), the same Number and ref.
     safe_to_save = shown(_decoration("safe to save", lambda: get_safe_to_save(private, {}).data.monthly))
 
-    def bonus_extra() -> Number | None:
-        data = get_bonus_estimate(private, {}).data
-        return data.total_month if data.status != "not_offered" else None
-    bonus = shown(_decoration("S-Bonus", bonus_extra))
+    # The S-Bonus is never shown with the plan: no amount on the card or in the model view, so nothing can put
+    # it next to the total. When the estimate is offered, its own question is the answer's first follow-up, and
+    # that answer has its own Number and evidence (coordinator, #411).
+    bonus_offered = _decoration("S-Bonus", lambda: get_bonus_estimate(private, {}).data.status != "not_offered")
+    follow_up = _t("bonus_follow_up", lang) if bonus_offered else None
 
     extra_evidence: list = []
     card = None
     if levers:
-        card = _card(levers, total_month, bonus, lang)
+        card = _card(levers, total_month, lang)
     else:   # no lever: where the money goes, next to safe to save (coordinator, #411)
         baskets = _decoration("baskets", lambda: get_basket_breakdown(private, dict(config.SAVINGS_PLAN_NONE_BASKETS)))
         if baskets is not None and baskets.card is not None:
@@ -199,26 +204,24 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
             extra_evidence = list(baskets.evidence)
 
     data = SavingsPlanData(levers=levers, total_month=total_month, total_year=total_year,
-                           safe_to_save=safe_to_save, bonus=bonus)
+                           safe_to_save=safe_to_save, follow_up=follow_up)
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(tool=TOOL, data=data, card=card, notes=[], evidence=list(nb.specs) + extra_evidence,
                       model_view=_model_view(data))
 
 
-def _card(levers: list[Lever], total_month: Number, bonus: Number | None, language: str) -> Card:
+def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
     """The existing breakdown card: the total a month as the headline and one row per lever (each row's key is
-    its category). The S-Bonus extra is in the estimate text, never a row or part of the total."""
+    its category, its label in words). No digit outside a Number or the period: no S-Bonus amount, and the
+    estimate text is the assumption in words."""
     ref = total_month.evidence_ref
     items = [{"key": lv.key, "label": lv.label, "amount": lv.saving.model_dump(), "share": None, "change": None,
               "flags": []} for lv in levers]
-    estimate_text = _t("estimate_text", language)
-    if bonus is not None:
-        estimate_text += " " + _t("bonus", language, bonus=bonus.display)
     host_label = config.label(config.SAFE_TO_SAVE_TEXT["host_monthly_saving"], language)   # one label (#267)
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=total_month.period.label, evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": estimate_text},
+        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
                  Action(type="open_host_screen", target="monthly_saving", label=host_label)],
         display_hint="list", total=total_month, comparison=None, items=items,
@@ -227,7 +230,8 @@ def _card(levers: list[Lever], total_month: Number, bonus: Number | None, langua
 
 def _model_view(data: SavingsPlanData) -> dict[str, Any]:
     """Numbers and labels only (R3), and no digit outside a Number: each cut share is a Number (a rule value)
-    and, when the setting has them, words. `kind` tells the template which answer to write."""
+    and, when the setting has them, words. No S-Bonus number (coordinator, #411): only its question, which the
+    answer offers as its first follow-up. `kind` tells the template which answer to write."""
     return {
         "tool": TOOL,
         "kind": "plan" if data.levers else "none",
@@ -236,5 +240,5 @@ def _model_view(data: SavingsPlanData) -> dict[str, Any]:
         "total_month": model_number(data.total_month),
         "total_year": model_number(data.total_year),
         "safe_to_save": model_number(data.safe_to_save),
-        "bonus_extra": model_number(data.bonus),
+        "follow_up": data.follow_up,
     }

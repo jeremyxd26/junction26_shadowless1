@@ -1025,9 +1025,9 @@ SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
 # ---- the savings plan (#369, metrics.md section 13) ---------------------------------------------------
 # "How could I save more?": a few cuts below the usual pace, from the what-if tool, with one total a month and
 # a year. The two cut levers are always different categories, so nothing is counted twice; small purchases are
-# no lever (in the data they are restaurant visits, which the first lever covers). The S-Bonus estimate is a
-# separate extra in the card's estimate text, never part of the total (product owner, #369). The bank button
-# uses the one label of SAFE_TO_SAVE_TEXT["host_monthly_saving"] (#267).
+# no lever (in the data they are restaurant visits, which the first lever covers). The S-Bonus is never shown
+# with the plan: its question is the answer's first follow-up (coordinator, #411). The bank button uses the one
+# label of SAFE_TO_SAVE_TEXT["host_monthly_saving"] (#267).
 SAVINGS_PLAN_FIRST = ("Restaurants", 20)             # eating out, cut by 20 %
 SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the flexible everyday categories
 SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
@@ -1046,10 +1046,12 @@ SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Your savings plan", "Säästösuunnitelmasi"),
     "total_month": ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
     "total_year": ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
-    "lever": ("{what} {pct}% less", "{what} {pct} % vähemmän"),
+    # card rows in words: no digit outside a Number on the card (review of #411)
+    "lever": ("{what}, {words} less", "{what}, {words} vähemmän"),
+    "lever_no_words": ("{what}, less than usual", "{what}, tavallista vähemmän"),
     "cut": ("Cut in {what}", "Vähennys: {what}"),
-    "bonus": ("Shopping at S Group stores could add about {bonus} in S-Bonus, not in the total.",
-              "Ostokset S-ryhmän kaupoista voisivat tuoda lisäksi noin {bonus} S-Bonusta, ei mukana summassa."),
+    # the answer's first follow-up when the S-Bonus estimate is offered; the bonus rule claims it as written
+    "bonus_follow_up": ("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"),
     "estimate_label": ("Estimate", "Arvio"),
     "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
                       "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),

@@ -93,8 +93,8 @@ def test_two_levers_their_total_and_twelve_times_it(fake):
     assert [(lv.cut.value, lv.cut.method, lv.cut.unit.value) for lv in d.levers] == [
         (20, "savings_plan.cut_pct@1", "percent"), (10, "savings_plan.cut_pct@1", "percent")]
     assert all(fake.specs[lv.cut.evidence_ref]["formula"] == "rule_value" for lv in d.levers)
-    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save, the S-Bonus
-    assert len(ctx.numbers.all()) == 8
+    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save
+    assert len(ctx.numbers.all()) == 7
 
 
 def test_the_two_cut_levers_are_always_different_categories(fake):
@@ -173,36 +173,65 @@ def test_a_failing_safe_to_save_or_s_bonus_never_takes_the_plan_down(fake, monke
     monkeypatch.setattr(sp, "get_bonus_estimate", lambda ctx, args: (_ for _ in ()).throw(ValueError("bad")))
     result, _ = plan()
     d = result.data
-    assert (d.safe_to_save, d.bonus) == (None, None) and d.total_month.value == 63.17 and result.card is not None
-    assert result.model_view["safe_to_save"] is None and result.model_view["bonus_extra"] is None
-    assert "S-Bonus" not in result.card.estimate["text"]
+    assert (d.safe_to_save, d.follow_up) == (None, None) and d.total_month.value == 63.17 and result.card is not None
+    assert result.model_view["safe_to_save"] is None and result.model_view["follow_up"] is None
 
 
-def test_the_s_bonus_and_safe_to_save_are_never_in_the_total(fake):
-    d = plan()[0].data
+def test_the_s_bonus_is_never_in_the_total_the_card_or_the_model_view(fake):
+    """Decision of #411: no S-Bonus amount anywhere in the plan's answer; when the estimate is offered, its own
+    question is the answer's follow-up (answered with its own Number and evidence)."""
+    result, ctx = plan()
+    d = result.data
     assert d.total_month.value == 45.91 + 17.26                      # not + 25.15, not + 184.61
-    assert d.bonus.value == 25.15 and d.safe_to_save.value == 184.61
+    assert d.safe_to_save.value == 184.61
+    assert "25.15" not in repr(result.model_view) and "25.15" not in result.card.model_dump_json()
+    assert not [n for n in ctx.numbers.all().values() if n.method.startswith("bonus_estimate.")]
+    assert result.model_view["follow_up"] == "How much S-Bonus could I get?"
+    assert plan("fi")[0].model_view["follow_up"] == "Paljonko S-Bonusta voisin saada?"
     fake.bonus_status = "not_offered"
-    assert plan()[0].data.bonus is None
+    assert plan()[0].model_view["follow_up"] is None
 
 
-def test_the_card_is_a_breakdown_with_the_levers_and_the_s_bonus_in_the_estimate(fake):
-    """Every row key is a category (contract section 3, breakdown items); the S-Bonus extra is in the estimate
-    text, never a row or part of the total. The bank button has the one label of #267 and no amount."""
+def test_the_card_is_a_breakdown_with_the_levers_in_words(fake):
+    """Every row key is a category (contract section 3, breakdown items) and every row label says its cut in
+    words. The bank button has the one label of #267 and no amount."""
     card = plan()[0].card
     assert (card.type, card.display_hint, card.title) == ("breakdown", "list", "Your savings plan")
     assert card.total.method == "savings_plan.total_month_eur@1"
     assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle"]
-    assert card.items[0]["label"] == "Restaurants 20% less"
-    assert card.estimate["text"].endswith("could add about €25.15 a month in S-Bonus, not in the total.")
+    assert [i["label"] for i in card.items] == ["Restaurants, a fifth less", "Lifestyle, a tenth less"]
+    assert card.estimate["text"] == "About, if you cut these as shown and the rest of your spending stays as it is."
     show, host = card.actions
     assert (show.type, host.type, host.target, host.label) == ("open_evidence", "open_host_screen", "monthly_saving",
                                                                "See monthly saving in S-mobiili")
-    assert not any(ch.isdigit() for ch in host.label)
     fi = plan("fi")[0].card
-    assert fi.items[0]["label"] == "Ravintolat 20 % vähemmän"
+    assert fi.items[0]["label"] == "Ravintolat, viidenneksen vähemmän"
     assert fi.actions[1].label == "Katso kuukausisäästäminen S-mobiilissa"
-    assert "S-Bonusta, ei mukana summassa." in fi.estimate["text"]
+
+
+def digits_outside_numbers_and_dates(node, key=""):
+    """Strings of a card's JSON with a digit, outside Number objects, the card's ids and refs, and the period."""
+    if isinstance(node, dict):
+        if {"value", "unit", "method", "display"} <= set(node):   # a Number (its period is a date)
+            return
+        for k, v in node.items():
+            if k not in ("card_id", "evidence_ref", "subtitle"):   # ids, refs and the period label (a date)
+                yield from digits_outside_numbers_and_dates(v, k)
+    elif isinstance(node, list):
+        for v in node:
+            yield from digits_outside_numbers_and_dates(v, key)
+    elif isinstance(node, str) and any(ch.isdigit() for ch in node):
+        yield f"{key}: {node}"
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+@pytest.mark.parametrize("other_pct", [10, 15])
+def test_the_card_json_has_no_digit_outside_numbers_and_dates(fake, monkeypatch, language, other_pct):
+    """Review of #411: every number of the card is a Number object (contract section 2.1)."""
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", other_pct)
+    card = plan(language)[0].card
+    assert card.subtitle == card.total.period.label
+    assert list(digits_outside_numbers_and_dates(card.model_dump(mode="json"))) == []
 
 
 def strings_outside_numbers(node):
@@ -224,7 +253,7 @@ def test_the_model_view_gives_every_number_as_a_number(fake, language):
     so the composer never copies bare digits; each cut share is a Number and, for the default shares, words."""
     view = plan(language)[0].model_view
     assert "ev_" not in repr(view) and "CUST" not in repr(view)
-    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "safe_to_save", "bonus_extra"}
+    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "safe_to_save", "follow_up"}
     assert view["kind"] == "plan" and [lv["key"] for lv in view["levers"]] == ["Restaurants", "Lifestyle"]
     assert all(set(lv) == {"key", "category", "cut", "cut_words", "saving"} for lv in view["levers"])
     assert [lv["cut"]["value"] for lv in view["levers"]] == [20, 10]
@@ -244,3 +273,4 @@ def test_a_share_without_words_is_a_number_only(fake, monkeypatch):
     result = plan()[0]
     other = result.model_view["levers"][1]
     assert other["cut_words"] is None and other["cut"]["value"] == 15 and result.data.levers[1].cut.display == "15.0%"
+    assert result.card.items[1]["label"] == "Lifestyle, less than usual"     # the card row stays in words
