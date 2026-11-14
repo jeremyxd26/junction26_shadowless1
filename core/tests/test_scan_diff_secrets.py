@@ -150,6 +150,7 @@ def test_code_and_placeholders_are_not_assignments(repo):
                    "max_tokens = 1200000000000\n"
                    "token_url = 'https://example.invalid/oauth2/token'\n"),
         "compose.yaml": "password: ${DB_PASSWORD}\nsecret: $SOME_SECRET_VALUE\n",
+        "template.py": 'password = "{db_password_placeholder1}"\nmessage = "token=\\\\nabc"\n',
     })
     assert scan_head(repo) == []
 

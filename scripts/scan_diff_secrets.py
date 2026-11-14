@@ -56,8 +56,9 @@ KEY_SHAPES = {
 }
 # A secret-like name, also at the end of a longer one (GEMINI_API_KEY, DB_PASSWORD), then `=` or `:`.
 SECRET_NAME = r"(?i)(?<![A-Za-z0-9])(?:api[_-]?key|secret(?:[_-]?key)?|password|passwd|token)['\"]?\s*[:=]\s*"
-QUOTED_ASSIGNMENT = re.compile(SECRET_NAME + r"""['"][^'"\s]{12,}['"]""")
-UNQUOTED_ASSIGNMENT = re.compile(SECRET_NAME + r"""(?P<v>[^\s'"`#;,()\[\]{}<>]{12,})(?P<call>\(?)""")
+# Braces mark a template ("{password}", f-strings), a backslash an escape in a string literal: not a value.
+QUOTED_ASSIGNMENT = re.compile(SECRET_NAME + r"""['"][^'"\s{}]{12,}['"]""")
+UNQUOTED_ASSIGNMENT = re.compile(SECRET_NAME + r"""(?P<v>[^\s'"`#;,()\[\]{}<>\\]{12,})(?P<call>\(?)""")
 # An unquoted value that is code, not a secret: a dotted name, a $variable or an UPPER_CASE constant.
 CODE_VALUE = re.compile(r"^(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+|\$\w+|[A-Z_][A-Z0-9_]*)$")
 POSTGRES_URL = re.compile(r"""postgres(?:ql)?://[^:/@\s"'`]+:(?P<pw>[^@\s"'`]+)@""")
