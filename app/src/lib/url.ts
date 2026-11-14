@@ -2,6 +2,7 @@
 // settings are query parameters (`?evidence=`, `?persona=`, `?lang=`), so the WebView back
 // button closes a sheet the same way it leaves a screen.
 import { useSyncExternalStore } from 'react'
+import { sendToHost } from './hostBridge.ts'
 
 const CHANGE = 'sentti:navigate'
 
@@ -77,17 +78,17 @@ export function closeEvidence() {
   else setParams({ evidence: null })
 }
 
-/** Back from a screen; on the first screen, hand control back to the host app if it listens. */
+/**
+ * Back from a screen. On the first screen, hand control back to the host app with
+ * `sentti.close` (iOS or Android); in a plain browser, stay inside the module.
+ */
 export function goBack() {
   const state = window.history.state as { screen?: boolean; sheet?: boolean } | null
   if (state?.screen || state?.sheet) {
     window.history.back()
     return
   }
-  const host = (window as unknown as {
-    webkit?: { messageHandlers?: { sentti?: { postMessage(message: unknown): void } } }
-  }).webkit?.messageHandlers?.sentti
-  if (host) host.postMessage({ type: 'close' })
-  else if (window.location.pathname !== '/') navigate('/')
+  if (sendToHost('close')) return
+  if (window.location.pathname !== '/') navigate('/')
   else window.history.back()
 }
