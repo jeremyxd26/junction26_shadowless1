@@ -6,7 +6,7 @@
   or percent, and Unicode number characters other than digits (#123, R1). Ordinary text still passes.
 - /api/ask answers 400 to a message that is empty after the input guard (only zero-width or bidi
   marks), before any model call (#105, OWASP LLM10).
-The attack strings mirror r-sec's red-team tests (PR #108, core/tests/test_redteam_agent.py).
+The attack strings mirror the red-team tests (PR #108, core/tests/test_redteam_agent.py).
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def test_inline_links_stay_rejected(text):
 # ---- #123: numbers in words ------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("text", [
-    "Your balance is one million euros.",                     # r-sec's cases (PR #108)
+    "Your balance is one million euros.",                     # the red-team cases (PR #108)
     "Saldosi on miljoona euroa.",
     "You can safely spend twice that amount, about three hundred euros.",
     "You spent Ⅿ euros.",                                # Roman numeral one thousand
@@ -78,7 +78,7 @@ def test_inline_links_stay_rejected(text):
     "Tuhansia euroja meni asumiseen.",
     "You spent about ½ of it on rent.",                  # a fraction character
     "You spent {{n1}}, about ten euros more.",
-    "Ero on kolme promillea.",                                # per mille, dollars and kronor as units (r-w4, #59)
+    "Ero on kolme promillea.",                                # per mille, dollars and kronor as units (#59)
     "That is five dollars a week.",
     "Se maksoi viisi kruunua.",
     "You spent {{n1}} euros.",                                # a unit word right after a token

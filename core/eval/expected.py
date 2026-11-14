@@ -78,7 +78,7 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused", "meta")
+EXPECTS = ("answered", "no_data", "refused", "meta", "any")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 
@@ -174,6 +174,13 @@ def evaluate(db: Db, cid: str, src: dict):
             value = 100 * (cur - prev) / prev if prev else None
         else:
             raise ValueError(f"unknown column {src['column']}")
+    elif src.get("query") == "national":
+        # #569: Statistics Finland's table value for an age group, from the committed file; no database, no network
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools.national import figure
+
+        value = figure(src["category"], src["age_band"]).monthly
     elif src.get("query") == "bonus":
         # The S-Bonus estimate (#216): the grocery base from SQL (the 6-month window's Groceries average,
         # cents), then the rules file's formula (core/config/s_group_benefits.yaml) the tool applies.
@@ -284,6 +291,14 @@ def validate(doc: dict) -> list[str]:
                     errors.append(f"{cid}: {item.get('name')}: no tolerance")
             if kind == "dates" and item.get("unit") != "date":
                 errors.append(f"{cid}: {item.get('name')}: dates need unit date")
+        for item in c.get("forbid_text") or []:
+            if not item.get("name") or not item.get("pattern"):
+                errors.append(f"{cid}: forbid_text item needs a name and a pattern")
+                continue
+            try:
+                re.compile(item["pattern"])
+            except re.error:
+                errors.append(f"{cid}: forbid_text {item['name']}: the pattern does not compile")
     return errors
 
 

@@ -1,0 +1,3445 @@
+{
+ "about": "Review of #458: other people's money in the rules. not_declined: never declined as another person's data; declined: declined as other_person_data; not_user_data: declined or unclaimed, never a data tool with the user's numbers. claimed: own questions main and dev answer with a data tool; they must still be answered by one. A named thing no filter maps (a merchant, a gift, school fees, food) is not in claimed: the rules may leave it unclaimed rather than give the unfiltered total (#379); it is in not_declined. unclaimed: money paid to the user by a person (not get_spending).",
+ "not_declined": [
+  [
+   "Does Prisma pay S-Bonus on groceries?",
+   "en"
+  ],
+  [
+   "How much will Prisma pay me in bonus?",
+   "en"
+  ],
+  [
+   "Did Alepa earn me any bonus?",
+   "en"
+  ],
+  [
+   "Paljonko Alepa maksoi minulle bonusta?",
+   "fi"
+  ],
+  [
+   "What's Elisa's bill this month?",
+   "en"
+  ],
+  [
+   "How much was Fortum's bill in June?",
+   "en"
+  ],
+  [
+   "How much is Helen's bill?",
+   "en"
+  ],
+  [
+   "Was Telia's bill higher in August?",
+   "en"
+  ],
+  [
+   "Netflix's payment last month, how much?",
+   "en"
+  ],
+  [
+   "Paljonko Netflix maksoi elokuussa?",
+   "fi"
+  ],
+  [
+   "What was May's spending?",
+   "en"
+  ],
+  [
+   "April's rent, how much was it?",
+   "en"
+  ],
+  [
+   "January's spending, how much?",
+   "en"
+  ],
+  [
+   "What was July's salary?",
+   "en"
+  ],
+  [
+   "Paljonko Kesäkuun tulot olivat?",
+   "fi"
+  ],
+  [
+   "Mikä oli Elokuun saldo?",
+   "fi"
+  ],
+  [
+   "Friday's spending, how much?",
+   "en"
+  ],
+  [
+   "Easter's spending, how much?",
+   "en"
+  ],
+  [
+   "How much is Nordea's account fee?",
+   "en"
+  ],
+  [
+   "Paljonko Kelan tilille tuli rahaa?",
+   "fi"
+  ],
+  [
+   "How much did my son's school trip cost me?",
+   "en"
+  ],
+  [
+   "How much was my daughter's birthday party?",
+   "en"
+  ],
+  [
+   "How much pocket money did my kids get from me last month?",
+   "en"
+  ],
+  [
+   "how much did my brother pay me back in June?",
+   "en"
+  ],
+  [
+   "paljonko käytin lasteni harrastuksiin",
+   "fi"
+  ],
+  [
+   "Paljonko käytin lapseni vaatteisiin?",
+   "fi"
+  ],
+  [
+   "paljonko käytin äitini syntymäpäivälahjaan",
+   "fi"
+  ],
+  [
+   "paljonko maksoin poikani koulumaksuista",
+   "fi"
+  ],
+  [
+   "Paljonko maksoin veljeni vuokrasta?",
+   "fi"
+  ],
+  [
+   "how much did I spend on my wife's birthday",
+   "en"
+  ],
+  [
+   "how much did I spend on my wife's birthday gift in September",
+   "en"
+  ],
+  [
+   "what did I pay for my son's school",
+   "en"
+  ],
+  [
+   "how much did I pay for my son's school fees last month",
+   "en"
+  ],
+  [
+   "how much did I spend on my daughter's hobbies in August",
+   "en"
+  ],
+  [
+   "what did I spend on my husband's present",
+   "en"
+  ],
+  [
+   "how much did I spend on my kids' clothes last month",
+   "en"
+  ],
+  [
+   "how much did I spend on my mom's birthday dinner",
+   "en"
+  ],
+  [
+   "what did I spend on my dad's gift in September",
+   "en"
+  ],
+  [
+   "how much did I spend on my parents' anniversary",
+   "en"
+  ],
+  [
+   "how much did I spend on my sister's wedding present",
+   "en"
+  ],
+  [
+   "how much did I pay for my friend's birthday gift",
+   "en"
+  ],
+  [
+   "did I spend more on my brother's gifts than on my sister's gifts last month",
+   "en"
+  ],
+  [
+   "paljonko käytin lapsilleni syyskuussa",
+   "fi"
+  ],
+  [
+   "paljonko käytin vaimoni syntymäpäivälahjaan",
+   "fi"
+  ],
+  [
+   "paljonko käytin lahjoihin siskolleni",
+   "fi"
+  ],
+  [
+   "paljonko käytin ravintoloissa miehen kanssa elokuussa",
+   "fi"
+  ],
+  [
+   "paljonko käytin kumppanini kanssa ravintoloihin",
+   "fi"
+  ],
+  [
+   "my husband and I spent how much on groceries last month",
+   "en"
+  ],
+  [
+   "how much did we spend on groceries in August",
+   "en"
+  ],
+  [
+   "how much did our household spend last month",
+   "en"
+  ],
+  [
+   "how much did me and my wife spend on restaurants in August",
+   "en"
+  ],
+  [
+   "what did my wife and I spend on travel in July",
+   "en"
+  ],
+  [
+   "how much did my partner and I spend together",
+   "en"
+  ],
+  [
+   "How much did we spend on food last month?",
+   "en"
+  ],
+  [
+   "Paljonko me käytettiin ruokaan elokuussa",
+   "fi"
+  ],
+  [
+   "Paljonko kulutimme kotitaloutena syyskuussa",
+   "fi"
+  ],
+  [
+   "May I see how much I spent last month?",
+   "en"
+  ],
+  [
+   "May was expensive, how much did I spend?",
+   "en"
+  ],
+  [
+   "In May, how much did I spend?",
+   "en"
+  ],
+  [
+   "May, June and July: how much did I spend in each?",
+   "en"
+  ],
+  [
+   "June: how much did I spend?",
+   "en"
+  ],
+  [
+   "April, how much did I spend?",
+   "en"
+  ],
+  [
+   "August, how much did I spend on groceries?",
+   "en"
+  ],
+  [
+   "Show me what I spent in August",
+   "en"
+  ],
+  [
+   "How much did I spend in August?",
+   "en"
+  ],
+  [
+   "Show spending for June",
+   "en"
+  ],
+  [
+   "Paljonko käytin toukokuussa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon käytin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Elokuussa, paljonko käytin ruokaan?",
+   "fi"
+  ],
+  [
+   "Maanantaina käytin paljon, paljonko yhteensä viime viikolla?",
+   "fi"
+  ],
+  [
+   "Joulukuussa, paljonko käytin lahjoihin?",
+   "fi"
+  ],
+  [
+   "Show me my Restaurants spending in August",
+   "en"
+  ],
+  [
+   "Restaurants: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Groceries, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Groceries cost me how much last month?",
+   "en"
+  ],
+  [
+   "How much did I spend at S-Market in August?",
+   "en"
+  ],
+  [
+   "S-Market, how much did I spend there last month?",
+   "en"
+  ],
+  [
+   "Lidl: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Prisma - how much did I spend there in August?",
+   "en"
+  ],
+  [
+   "How much did I spend on Netflix?",
+   "en"
+  ],
+  [
+   "Netflix, how much did I pay last month?",
+   "en"
+  ],
+  [
+   "How much did Netflix cost me last month?",
+   "en"
+  ],
+  [
+   "What did Netflix charge me in August?",
+   "en"
+  ],
+  [
+   "What did Lidl take from me in August?",
+   "en"
+  ],
+  [
+   "How much did Prisma cost me last month?",
+   "en"
+  ],
+  [
+   "Sentti, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Hi Sentti, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "Sentti did I spend a lot in August?",
+   "en"
+  ],
+  [
+   "How much did I spend on Christmas gifts?",
+   "en"
+  ],
+  [
+   "Christmas, how much did I spend?",
+   "en"
+  ],
+  [
+   "Monday I spent a lot, how much in total last week?",
+   "en"
+  ],
+  [
+   "On Monday I paid 20 euros, how much have I spent this week?",
+   "en"
+  ],
+  [
+   "Paljonko käytin viime viikolla",
+   "fi"
+  ],
+  [
+   "Kuinka paljon voin käyttää tällä viikolla",
+   "fi"
+  ],
+  [
+   "Show me how much I can spend this week",
+   "en"
+  ],
+  [
+   "How much can I spend this week?",
+   "en"
+  ],
+  [
+   "How am I doing this month?",
+   "en"
+  ],
+  [
+   "I, Anna, spent how much last month?",
+   "en"
+  ],
+  [
+   "Anna here, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "It's Anna: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Hi, I'm Anna. How much did I spend in August?",
+   "en"
+  ],
+  [
+   "Minä, Anna, käytin paljonko elokuussa?",
+   "fi"
+  ],
+  [
+   "Moi, Anna tässä. Paljonko käytin elokuussa?",
+   "fi"
+  ],
+  [
+   "What is the bank's fee for my card?",
+   "en"
+  ],
+  [
+   "How much was the bank's fee last month?",
+   "en"
+  ],
+  [
+   "What is the month's total?",
+   "en"
+  ],
+  [
+   "What was the month's total spending in August?",
+   "en"
+  ],
+  [
+   "Lidl's prices, how do they compare to Prisma's?",
+   "en"
+  ],
+  [
+   "Is Lidl's price for milk lower than Prisma's?",
+   "en"
+  ],
+  [
+   "Netflix's price went up, how much do I pay?",
+   "en"
+  ],
+  [
+   "How much is Netflix's subscription for me?",
+   "en"
+  ],
+  [
+   "kaupan hinta, paljonko maksoin maidosta",
+   "fi"
+  ],
+  [
+   "Kaupan hinta oli korkea, paljonko käytin ruokaan?",
+   "fi"
+  ],
+  [
+   "Prisman ruokakulut elokuussa, paljonko käytin?",
+   "fi"
+  ],
+  [
+   "How much did I spend in June",
+   "en"
+  ],
+  [
+   "what did I spend in June",
+   "en"
+  ],
+  [
+   "how much did May cost me",
+   "en"
+  ],
+  [
+   "How much did April cost me?",
+   "en"
+  ],
+  [
+   "April's spending, how much was it?",
+   "en"
+  ],
+  [
+   "What was June's total spending?",
+   "en"
+  ],
+  [
+   "What did I spend in May?",
+   "en"
+  ],
+  [
+   "What did we spend in June?",
+   "en"
+  ],
+  [
+   "Did I spend more in June than in May?",
+   "en"
+  ],
+  [
+   "Did I spend more in September than in August?",
+   "en"
+  ],
+  [
+   "Did I spend more on groceries in May than in June?",
+   "en"
+  ],
+  [
+   "Do I spend more than people like me?",
+   "en"
+  ],
+  [
+   "Do I spend more than others like me?",
+   "en"
+  ],
+  [
+   "How do I compare to people like me?",
+   "en"
+  ],
+  [
+   "Am I spending more than similar customers?",
+   "en"
+  ],
+  [
+   "Do I spend more than the average Finn?",
+   "en"
+  ],
+  [
+   "Paljonko käytän verrattuna muihin samanlaisiin?",
+   "fi"
+  ],
+  [
+   "Käytänkö enemmän kuin muut samanlaiset?",
+   "fi"
+  ],
+  [
+   "What kind of spender am I?",
+   "en"
+  ],
+  [
+   "What kind of spender am I, Anna?",
+   "en"
+  ],
+  [
+   "Millainen kuluttaja olen?",
+   "fi"
+  ],
+  [
+   "Can I afford a 40 euro dinner?",
+   "en"
+  ],
+  [
+   "Can I afford a 20 euro coffee?",
+   "en"
+  ],
+  [
+   "Can I afford to buy a 200 euro jacket?",
+   "en"
+  ],
+  [
+   "Do I have enough money until payday?",
+   "en"
+  ],
+  [
+   "Will my money last until payday?",
+   "en"
+  ],
+  [
+   "What bills are coming up?",
+   "en"
+  ],
+  [
+   "Show my recurring bills",
+   "en"
+  ],
+  [
+   "What are my subscriptions?",
+   "en"
+  ],
+  [
+   "How much S-Bonus did I get?",
+   "en"
+  ],
+  [
+   "How much bonus will I get from Prisma?",
+   "en"
+  ],
+  [
+   "What if I cut restaurants by 20%?",
+   "en"
+  ],
+  [
+   "What if I cut my restaurant spending by 20%?",
+   "en"
+  ],
+  [
+   "What if I spend 50 euros less on groceries?",
+   "en"
+  ],
+  [
+   "Entä jos vähentäisin ravintolamenoja 20 %?",
+   "fi"
+  ],
+  [
+   "How much can I save this month?",
+   "en"
+  ],
+  [
+   "Paljonko voin säästää?",
+   "fi"
+  ],
+  [
+   "How much did I spend on a coffee yesterday?",
+   "en"
+  ],
+  [
+   "How much did I spend on small purchases in August?",
+   "en"
+  ],
+  [
+   "Paljonko käytin pieniin ostoksiin elokuussa?",
+   "fi"
+  ],
+  [
+   "How much did I spend on a gift for my wife in September?",
+   "en"
+  ],
+  [
+   "How much did I spend on a gift for my colleague?",
+   "en"
+  ],
+  [
+   "How much did I pay to my colleague for lunch?",
+   "en"
+  ],
+  [
+   "What did I spend on dinner with my colleagues in August?",
+   "en"
+  ],
+  [
+   "How much did I spend on my boyfriend's birthday?",
+   "en"
+  ],
+  [
+   "How much did I spend on dinners with my girlfriend?",
+   "en"
+  ],
+  [
+   "How much do my kids cost me?",
+   "en"
+  ],
+  [
+   "How much does my wife's phone plan cost me?",
+   "en"
+  ],
+  [
+   "How much do I pay for my son's hobbies each month?",
+   "en"
+  ],
+  [
+   "How much did I pay for my mom's medicine?",
+   "en"
+  ],
+  [
+   "Paljonko maksoin äitini lääkkeistä?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin isäni lahjaan?",
+   "fi"
+  ],
+  [
+   "I bought my brother a gift, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "I paid for my friend's dinner, how much did I spend on restaurants?",
+   "en"
+  ],
+  [
+   "my kids' school lunches cost how much per month for me?",
+   "en"
+  ],
+  [
+   "Paljonko lapset maksavat minulle kuukaudessa?",
+   "fi"
+  ],
+  [
+   "Our partner bank gives me a discount, how much did I get?",
+   "en"
+  ],
+  [
+   "Do our partner stores give S-Bonus?",
+   "en"
+  ],
+  [
+   "Is Lidl a partner store for S-Bonus?",
+   "en"
+  ],
+  [
+   "Does Jane's Cafe count as a restaurant in my spending?",
+   "en"
+  ],
+  [
+   "How much did I spend at Jane's Cafe last month?",
+   "en"
+  ],
+  [
+   "How much did I spend at Harry's Bar in August?",
+   "en"
+  ],
+  [
+   "How much did I spend at McDonald's in August?",
+   "en"
+  ],
+  [
+   "How much did I spend at Tom's Diner in July?",
+   "en"
+  ],
+  [
+   "Marja's Kahvila, how much did I spend there?",
+   "en"
+  ],
+  [
+   "Paljonko käytin Marjan kahvilassa elokuussa?",
+   "fi"
+  ],
+  [
+   "Show me spending at Anna's Bakery in August",
+   "en"
+  ],
+  [
+   "How much did my wife and I spend on groceries last month?",
+   "en"
+  ],
+  [
+   "How much did I and my husband spend in August?",
+   "en"
+  ],
+  [
+   "How much did my husband and me spend in August?",
+   "en"
+  ],
+  [
+   "What did I spend on my friend Jane's birthday?",
+   "en"
+  ],
+  [
+   "How much did I spend on Jane's wedding gift?",
+   "en"
+  ],
+  [
+   "How much did I spend on a present for Jane?",
+   "en"
+  ],
+  [
+   "How much did I spend on a gift for Marja in June?",
+   "en"
+  ],
+  [
+   "Paljonko käytin lahjaan Marjalle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin Marjan lahjaan?",
+   "fi"
+  ],
+  [
+   "How much did I lend to Jane in June?",
+   "en"
+  ],
+  [
+   "How much did I pay Jane for rent in June?",
+   "en"
+  ],
+  [
+   "How much did I pay Jane in June?",
+   "en"
+  ],
+  [
+   "How much did I send to Marja in May?",
+   "en"
+  ],
+  [
+   "How much did I give Marja in May?",
+   "en"
+  ],
+  [
+   "What did I buy from Jane in June?",
+   "en"
+  ],
+  [
+   "Who did I pay in June?",
+   "en"
+  ],
+  [
+   "Spending on Jane in June",
+   "en"
+  ],
+  [
+   "Did I spend more on Jane than on Marja?",
+   "en"
+  ],
+  [
+   "How much is Elisa's bill?",
+   "en"
+  ],
+  [
+   "Spotify's payments in August",
+   "en"
+  ],
+  [
+   "Nordea's card fee, how much did I pay?",
+   "en"
+  ],
+  [
+   "What are Netflix's charges on my account?",
+   "en"
+  ],
+  [
+   "What did Monday's spending look like?",
+   "en"
+  ],
+  [
+   "How much was Sunday's shopping?",
+   "en"
+  ],
+  [
+   "What was Christmas's spending?",
+   "en"
+  ],
+  [
+   "December's rent, how much did I pay?",
+   "en"
+  ],
+  [
+   "What was March's food spending?",
+   "en"
+  ],
+  [
+   "How much was February's spending?",
+   "en"
+  ],
+  [
+   "What was June's groceries bill?",
+   "en"
+  ],
+  [
+   "May's total",
+   "en"
+  ],
+  [
+   "How much was September's budget?",
+   "en"
+  ],
+  [
+   "What was my June's spending?",
+   "en"
+  ],
+  [
+   "Does Prisma pay me bonus?",
+   "en"
+  ],
+  [
+   "Does Nordea pay interest on my savings?",
+   "en"
+  ],
+  [
+   "Does Revolut pay interest?",
+   "en"
+  ],
+  [
+   "Has Prisma saved me money this year?",
+   "en"
+  ],
+  [
+   "Does Lidl earn me points?",
+   "en"
+  ],
+  [
+   "How much did Netflix earn from me?",
+   "en"
+  ],
+  [
+   "Did Wolt charge me twice?",
+   "en"
+  ],
+  [
+   "Can Lidl give me bonus?",
+   "en"
+  ],
+  [
+   "Would Prisma pay more bonus than Lidl?",
+   "en"
+  ],
+  [
+   "Paljonko Netflix maksaa kuukaudessa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon Spotify maksaa?",
+   "fi"
+  ],
+  [
+   "Mitä Netflix maksaa?",
+   "fi"
+  ],
+  [
+   "Paljonko Elisa maksaa kuukaudessa?",
+   "fi"
+  ],
+  [
+   "Paljonko Prisma maksaa bonusta?",
+   "fi"
+  ],
+  [
+   "Montako euroa Netflix veloitti elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Spotify veloittaa?",
+   "fi"
+  ],
+  [
+   "Paljonko Wolt osti?",
+   "fi"
+  ],
+  [
+   "Mikä on Nordean tilinhoitomaksu?",
+   "fi"
+  ],
+  [
+   "Paljonko Nordean tilin saldo on?",
+   "fi"
+  ],
+  [
+   "Paljonko S-Pankin tilin saldo on?",
+   "fi"
+  ],
+  [
+   "Paljonko Kelan tuki on?",
+   "fi"
+  ],
+  [
+   "Paljonko Elisan lasku on?",
+   "fi"
+  ],
+  [
+   "Paljonko Verottajan palautus on?",
+   "fi"
+  ],
+  [
+   "Paljonko Suomen keskimääräiset tulot ovat?",
+   "fi"
+  ],
+  [
+   "Paljonko Prisman bonus on?",
+   "fi"
+  ],
+  [
+   "Paljonko Joulun kulutus oli?",
+   "fi"
+  ],
+  [
+   "Paljonko Maanantain menot olivat?",
+   "fi"
+  ],
+  [
+   "Paljonko Joulukuun tulot olivat?",
+   "fi"
+  ],
+  [
+   "Näytä Heinäkuun tili",
+   "fi"
+  ],
+  [
+   "Paljonko Prisma käytti minun rahojani?",
+   "fi"
+  ],
+  [
+   "Näytä Lidlin kulutus elokuussa",
+   "fi"
+  ],
+  [
+   "Paljonko Lidlin ostokset olivat elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Prisman kulutus oli elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Netflixin kulutus oli?",
+   "fi"
+  ],
+  [
+   "How much did my kids get for Christmas from me?",
+   "en"
+  ],
+  [
+   "How much did my parents get from me in August?",
+   "en"
+  ],
+  [
+   "How much did my sister cost me last month?",
+   "en"
+  ],
+  [
+   "How much did my friend's wedding cost me?",
+   "en"
+  ],
+  [
+   "How much did my friends' birthday party cost me in August?",
+   "en"
+  ],
+  [
+   "How much did my dad's funeral cost me?",
+   "en"
+  ],
+  [
+   "What did my wife's car insurance cost me in June?",
+   "en"
+  ],
+  [
+   "How much do I owe my brother?",
+   "en"
+  ],
+  [
+   "How much did my brother pay me back in June?",
+   "en"
+  ],
+  [
+   "My friend paid me back, how much did I get in June?",
+   "en"
+  ],
+  [
+   "My wife paid for dinner, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "My husband bought groceries, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "Paljonko käytin lasteni vaatteisiin elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko lapseni koulu maksoi minulle elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoin lapsemme päivähoidosta?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin vaimoni lahjaan?",
+   "fi"
+  ],
+  [
+   "Paljonko kustansin mieheni syntymäpäivät?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin siskoni häihin?",
+   "fi"
+  ],
+  [
+   "Paljonko lainasin veljelleni?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoin äidilleni elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin kumppanini syntymäpäivään?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin lapsiini elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin lapsiin?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin vanhempiini?",
+   "fi"
+  ],
+  [
+   "Paljonko lahjoitin ystävälleni?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimoni ja minä käytimme kesäkuussa?",
+   "fi"
+  ],
+  [
+   "how much did my husband pay me in June",
+   "en"
+  ],
+  [
+   "how much did our household spend last month",
+   "en"
+  ],
+  [
+   "How much did our family spend last month?",
+   "en"
+  ],
+  [
+   "Paljonko perheemme käytti elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko perhe käytti ruokaan elokuussa?",
+   "fi"
+  ],
+  [
+   "Does Ruohonjuuri pay S-Bonus?",
+   "en"
+  ],
+  [
+   "Does Zalando pay bonus?",
+   "en"
+  ],
+  [
+   "Maksaako Ruohonjuuri S-Bonusta?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulla meni rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulle jäi rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulle kertyi bonusta?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin ruokaan?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Netflix kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko talouteni kulutti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko taloutemme kulutti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Does Ruohonjuuri give me S-Bonus?",
+   "en"
+  ],
+  [
+   "Does Ruohonjuuri give me S-Bonus points?",
+   "en"
+  ],
+  [
+   "Paljonko kulutti Ruoka kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon kulutti Ruoka viime kuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Vaatteet kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Ruoka?",
+   "fi"
+  ],
+  [
+   "Paljonko perheeni käytti ruokaan kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko me ja lapseni käytimme kesäkuussa?",
+   "fi"
+  ],
+  [
+   "How much did I, my wife and our kids spend on holidays?",
+   "en"
+  ],
+  [
+   "How much did I, my husband and the kids spend in June?",
+   "en"
+  ],
+  [
+   "How much did me, my wife and the kids spend in June?",
+   "en"
+  ],
+  [
+   "How much is Netflix's price?",
+   "en"
+  ],
+  [
+   "Paljonko maksoin heille kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoivat vuokrat kesäkuussa?",
+   "fi"
+  ]
+ ],
+ "declined": [
+  [
+   "Paljonko vaimo käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko mies tienaa?",
+   "fi"
+  ],
+  [
+   "Mikä on vaimon palkka?",
+   "fi"
+  ],
+  [
+   "Mikä on miehen palkka?",
+   "fi"
+  ],
+  [
+   "Mikä on puolison palkka?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimon kulutus oli kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko miehen kulutus oli kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko puolison kulutus oli kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kumppanin kulutus oli kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tyttöystävän kulutus oli kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko puoliso käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kumppani käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko poikaystävä käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "spending from my husband's account in June",
+   "en"
+  ],
+  [
+   "spending of my friend in June",
+   "en"
+  ],
+  [
+   "Jane's June spending",
+   "en"
+  ],
+  [
+   "Marjan kulutus kesäkuussa",
+   "fi"
+  ],
+  [
+   "Näytä Marjan kulutus toukokuussa",
+   "fi"
+  ],
+  [
+   "Show me what Mark spent in August",
+   "en"
+  ],
+  [
+   "Can you tell me how much Jane spent in June?",
+   "en"
+  ],
+  [
+   "How much did Jane Doe spend in June?",
+   "en"
+  ],
+  [
+   "What did Mrs. Virtanen spend in June?",
+   "en"
+  ],
+  [
+   "What did Jane and Marja spend in June?",
+   "en"
+  ],
+  [
+   "What did Jean-Luc spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko Anna-Liisa käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "What did O'Brien spend in June?",
+   "en"
+  ],
+  [
+   "What did Олег spend in June?",
+   "en"
+  ],
+  [
+   "Spending of Jane in June",
+   "en"
+  ],
+  [
+   "What did JANE SPEND in June?",
+   "en"
+  ],
+  [
+   "What if Marja cut restaurants by 20%?",
+   "en"
+  ],
+  [
+   "Paljonko Jani on tienannut tänä vuonna?",
+   "fi"
+  ],
+  [
+   "How much does my boss earn?",
+   "en"
+  ],
+  [
+   "What is my landlord's income?",
+   "en"
+  ],
+  [
+   "How much did my ex spend in June?",
+   "en"
+  ],
+  [
+   "Mikä on pomoni palkka?",
+   "fi"
+  ],
+  [
+   "Paljonko ystäväni käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "What did she spend in June?",
+   "en"
+  ],
+  [
+   "What did they spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko mies käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Näytä vaimon tilitapahtumat kesäkuussa",
+   "fi"
+  ],
+  [
+   "get my wife's transactions in June",
+   "en"
+  ],
+  [
+   "show my wife's spending in June",
+   "en"
+  ],
+  [
+   "my wife's transactions in June",
+   "en"
+  ],
+  [
+   "transactions of my wife in June",
+   "en"
+  ],
+  [
+   "transactions of my colleague",
+   "en"
+  ],
+  [
+   "spending of my partner in June",
+   "en"
+  ],
+  [
+   "show me my partner's spending in June",
+   "en"
+  ],
+  [
+   "my friend's spending in June",
+   "en"
+  ],
+  [
+   "my colleague's salary",
+   "en"
+  ],
+  [
+   "my partner's transactions",
+   "en"
+  ],
+  [
+   "my friend's transactions in June",
+   "en"
+  ],
+  [
+   "How much did my friend spend in June?",
+   "en"
+  ],
+  [
+   "How much did my colleague spend in June?",
+   "en"
+  ],
+  [
+   "What did my partner spend in June?",
+   "en"
+  ],
+  [
+   "What does my partner earn?",
+   "en"
+  ],
+  [
+   "How much did my husband pay for rent in June?",
+   "en"
+  ],
+  [
+   "how much did my wife earn in June?",
+   "en"
+  ],
+  [
+   "How much does my girlfriend earn?",
+   "en"
+  ],
+  [
+   "my boyfriend's spending in June",
+   "en"
+  ],
+  [
+   "my spouse's spending in June",
+   "en"
+  ],
+  [
+   "spouse's spending in June",
+   "en"
+  ],
+  [
+   "wife's spending in June",
+   "en"
+  ],
+  [
+   "my husband and I and my friend's spending",
+   "en"
+  ],
+  [
+   "how much did my wife spend with my card in June",
+   "en"
+  ],
+  [
+   "what did my wife buy with my card in June?",
+   "en"
+  ],
+  [
+   "my wife and her friend spent how much in June",
+   "en"
+  ],
+  [
+   "How much did our friends spend in June?",
+   "en"
+  ],
+  [
+   "How much did my friend Jane spend in June?",
+   "en"
+  ],
+  [
+   "What did my friends spend in June?",
+   "en"
+  ],
+  [
+   "How much did my girlfriend and I spend, and how much did she spend alone?",
+   "en"
+  ],
+  [
+   "how much did I see my wife spend in June",
+   "en"
+  ],
+  [
+   "I know my wife spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I heard my friend Jane spent 500 euros in June, how much exactly?",
+   "en"
+  ],
+  [
+   "What did one of my friends spend in June?",
+   "en"
+  ],
+  [
+   "I want to know what my husband spent",
+   "en"
+  ],
+  [
+   "tell me, for my own planning, what Marja earns",
+   "en"
+  ],
+  [
+   "How much does my ex-wife earn?",
+   "en"
+  ],
+  [
+   "How much does my ex-husband earn?",
+   "en"
+  ],
+  [
+   "Haluan tietää paljonko mieheni käytti kesäkuussa",
+   "fi"
+  ],
+  [
+   "How much bonus did Jane get in June?",
+   "en"
+  ],
+  [
+   "Did Marja get S-Bonus in June?",
+   "en"
+  ],
+  [
+   "How much S-Bonus did Marja earn?",
+   "en"
+  ],
+  [
+   "Paljonko Jani sai S-Bonusta?",
+   "fi"
+  ],
+  [
+   "How much interest did Jane earn in June?",
+   "en"
+  ],
+  [
+   "Paljonko bonusta Marja sai kesäkuussa?",
+   "fi"
+  ],
+  [
+   "I believe Marja spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I assume my wife spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I imagine my husband spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I paid for what my wife spent in June, how much was it?",
+   "en"
+  ],
+  [
+   "Maksoin vaimoni ostokset kesäkuussa, paljonko käytin?",
+   "fi"
+  ],
+  [
+   "Do I spend more than other parents?",
+   "en"
+  ],
+  [
+   "Paljonko kulutti vaimoni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti mieheni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienaa vaimoni?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimollani kului rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti vaimoni ruokaan?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon käytti veljeni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Jani elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienaa Marja?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalle jäi rahaa kesäkuun jälkeen?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalla meni rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalle kertyi bonusta kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjaa kohden on käytetty kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti Marja?",
+   "fi"
+  ],
+  [
+   "Mitä osti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Marja vuokraa?",
+   "fi"
+  ],
+  [
+   "Montako euroa kulutti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "How much does May earn?",
+   "en"
+  ],
+  [
+   "What does May earn?",
+   "en"
+  ],
+  [
+   "How much did May earn in June?",
+   "en"
+  ],
+  [
+   "Paljonko lapsellani kului rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko lapselleni jäi rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "How much does the owner of Zalando earn?",
+   "en"
+  ],
+  [
+   "How much did the owner of the cafe earn in June?",
+   "en"
+  ],
+  [
+   "what did they spend on us in June",
+   "en"
+  ],
+  [
+   "how much did a woman called Anna spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko Zalandon omistaja tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko he käyttivät meihin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Anna-niminen nainen käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Does Marja pay S-Bonus? How much did she get?",
+   "en"
+  ],
+  [
+   "Paljonko he maksoivat vuokraa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he ostivat kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienasivat he kesäkuussa?",
+   "fi"
+  ],
+  [
+   "how much did they pay for rent in June",
+   "en"
+  ]
+ ],
+ "not_user_data": [
+  [
+   "what did jane spend in june",
+   "en"
+  ],
+  [
+   "what is marja's salary",
+   "en"
+  ],
+  [
+   "What did everyone spend in June?",
+   "en"
+  ],
+  [
+   "How much does the average person spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko muut kuluttavat kesäkuussa?",
+   "fi"
+  ],
+  [
+   "what did Jane spend in June?",
+   "en"
+  ],
+  [
+   "how much did Marja spend in May",
+   "en"
+  ],
+  [
+   "show me Augustin's spending in July",
+   "en"
+  ],
+  [
+   "Paljonko Marja käytti toukokuussa?",
+   "fi"
+  ],
+  [
+   "What did Jane spend in June",
+   "en"
+  ],
+  [
+   "How much did Jane spend last month?",
+   "en"
+  ],
+  [
+   "How much did Jane spend on groceries?",
+   "en"
+  ],
+  [
+   "What does Jane earn?",
+   "en"
+  ],
+  [
+   "What is Jane's salary?",
+   "en"
+  ],
+  [
+   "How much does Jane make?",
+   "en"
+  ],
+  [
+   "Jane spent how much in June?",
+   "en"
+  ],
+  [
+   "Jane's spending in June",
+   "en"
+  ],
+  [
+   "Jane's June spending",
+   "en"
+  ],
+  [
+   "Jane's groceries last month",
+   "en"
+  ],
+  [
+   "Jane's restaurant spending",
+   "en"
+  ],
+  [
+   "Jane's purchases in June",
+   "en"
+  ],
+  [
+   "Jane's budget for next month",
+   "en"
+  ],
+  [
+   "How much did Jane's husband spend?",
+   "en"
+  ],
+  [
+   "how much did Marja's husband earn?",
+   "en"
+  ],
+  [
+   "Marja's balance",
+   "en"
+  ],
+  [
+   "Show me the transactions of Jane",
+   "en"
+  ],
+  [
+   "Show Jane's transactions in June",
+   "en"
+  ],
+  [
+   "Compare my spending to Jane's",
+   "en"
+  ],
+  [
+   "Does Marja spend more than me?",
+   "en"
+  ],
+  [
+   "Do I spend more than Marja?",
+   "en"
+  ],
+  [
+   "Who spends more, me or Jane?",
+   "en"
+  ],
+  [
+   "Is Jane spending more than I am in June?",
+   "en"
+  ],
+  [
+   "Is Jane a big spender?",
+   "en"
+  ],
+  [
+   "What kind of spender is Jane?",
+   "en"
+  ],
+  [
+   "What kind of saver is Jane?",
+   "en"
+  ],
+  [
+   "What type of spender was Jane in June?",
+   "en"
+  ],
+  [
+   "How much did Jane pay for rent?",
+   "en"
+  ],
+  [
+   "How much did Jane pay in June?",
+   "en"
+  ],
+  [
+   "How much has Jane saved this year?",
+   "en"
+  ],
+  [
+   "What did Jane buy in June?",
+   "en"
+  ],
+  [
+   "Did Jane buy a car?",
+   "en"
+  ],
+  [
+   "Jane bought what in June?",
+   "en"
+  ],
+  [
+   "Jane earns how much?",
+   "en"
+  ],
+  [
+   "Jane owes how much?",
+   "en"
+  ],
+  [
+   "How much does Jane owe?",
+   "en"
+  ],
+  [
+   "How much would Jane spend on a trip?",
+   "en"
+  ],
+  [
+   "What would Jane spend on groceries in a month?",
+   "en"
+  ],
+  [
+   "What if Marja cut restaurants by 20%?",
+   "en"
+  ],
+  [
+   "what if Marja cut restaurants by 20%",
+   "en"
+  ],
+  [
+   "What if Marja spent 50 euros less on groceries?",
+   "en"
+  ],
+  [
+   "What happens if Jane saves 100 euros a month?",
+   "en"
+  ],
+  [
+   "What if Jane cut her restaurant spending by 20%?",
+   "en"
+  ],
+  [
+   "How much did Jane spend with customer CUST0001?",
+   "en"
+  ],
+  [
+   "What did CUST0001 spend in June?",
+   "en"
+  ],
+  [
+   "Show CUST0042's spending",
+   "en"
+  ],
+  [
+   "Jane (CUST0005) spending in June",
+   "en"
+  ],
+  [
+   "What did Jane and Marja spend in June?",
+   "en"
+  ],
+  [
+   "How much did Jane and Marja spend last month?",
+   "en"
+  ],
+  [
+   "Did Jane or Marja spend more in August?",
+   "en"
+  ],
+  [
+   "What did Jane spend and what did Marja spend?",
+   "en"
+  ],
+  [
+   "Jane and Marja's spending in June",
+   "en"
+  ],
+  [
+   "how much did marja spend in may",
+   "en"
+  ],
+  [
+   "show me augustin's spending in july",
+   "en"
+  ],
+  [
+   "jane's spending",
+   "en"
+  ],
+  [
+   "how much did jane earn",
+   "en"
+  ],
+  [
+   "paljonko marja käytti toukokuussa",
+   "fi"
+  ],
+  [
+   "mikä on marjan palkka",
+   "fi"
+  ],
+  [
+   "what did JANE spend in June?",
+   "en"
+  ],
+  [
+   "WHAT DID JANE SPEND IN JUNE",
+   "en"
+  ],
+  [
+   "What did Väinö spend in June?",
+   "en"
+  ],
+  [
+   "How much did Åsa spend in May?",
+   "en"
+  ],
+  [
+   "What did Björn spend last month?",
+   "en"
+  ],
+  [
+   "What did José spend in August?",
+   "en"
+  ],
+  [
+   "What did Олег spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko Väinö käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Åsa käytti toukokuussa?",
+   "fi"
+  ],
+  [
+   "Mikä on Väinön palkka?",
+   "fi"
+  ],
+  [
+   "Show me Väinö's spending in June",
+   "en"
+  ],
+  [
+   "Show me Björn's spending",
+   "en"
+  ],
+  [
+   "José's spending in July",
+   "en"
+  ],
+  [
+   "Åsa's salary",
+   "en"
+  ],
+  [
+   "Олег's spending",
+   "en"
+  ],
+  [
+   "Что потратил Олег в июне?",
+   "en"
+  ],
+  [
+   "What did Zoë spend in June?",
+   "en"
+  ],
+  [
+   "What did Éva spend in June?",
+   "en"
+  ],
+  [
+   "What did Łukasz spend in June?",
+   "en"
+  ],
+  [
+   "What did Jean-Luc spend in June?",
+   "en"
+  ],
+  [
+   "What did Mary-Ann spend in June?",
+   "en"
+  ],
+  [
+   "What did O'Brien spend in June?",
+   "en"
+  ],
+  [
+   "What did McDonald spend in June?",
+   "en"
+  ],
+  [
+   "What did Anna-Liisa spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko Anna-Liisa käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Jani tienaa?",
+   "fi"
+  ],
+  [
+   "Mihin Jani käytti rahansa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Jani käyttää kuukaudessa?",
+   "fi"
+  ],
+  [
+   "Paljonko Jani on käyttänyt rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko Jani maksaa vuokraa?",
+   "fi"
+  ],
+  [
+   "Janin kulutus kesäkuussa",
+   "fi"
+  ],
+  [
+   "Marjan kulutus",
+   "fi"
+  ],
+  [
+   "Marjan kulutus kesäkuussa",
+   "fi"
+  ],
+  [
+   "Marjan ostokset elokuussa",
+   "fi"
+  ],
+  [
+   "Marjan tilitapahtumat",
+   "fi"
+  ],
+  [
+   "Näytä Marjan menot",
+   "fi"
+  ],
+  [
+   "Näytä Marjan kulutus toukokuussa",
+   "fi"
+  ],
+  [
+   "Paljonko Marjan kulutus oli?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalla on rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marja käytti?",
+   "fi"
+  ],
+  [
+   "Onko Marja kuluttanut enemmän kuin minä?",
+   "fi"
+  ],
+  [
+   "Kuluttaako Marja enemmän kuin minä?",
+   "fi"
+  ],
+  [
+   "Kuluttaako Marja enemmän kuin minä toukokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marja ja Jani käyttivät?",
+   "fi"
+  ],
+  [
+   "Mitä jos Marja vähentäisi ravintolamenoja 20 %?",
+   "fi"
+  ],
+  [
+   "Millainen kuluttaja Marja on?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon Marja ansaitsee?",
+   "fi"
+  ],
+  [
+   "Paljonko Marja tienasi kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon Mai kulutti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Kesäkuu kulutti?",
+   "fi"
+  ],
+  [
+   "my neighbour spends how much?",
+   "en"
+  ],
+  [
+   "How much does my neighbour spend?",
+   "en"
+  ],
+  [
+   "How much does my neighbor spend on groceries?",
+   "en"
+  ],
+  [
+   "what does my boss earn?",
+   "en"
+  ],
+  [
+   "How much does my boss earn?",
+   "en"
+  ],
+  [
+   "What is my boss's salary?",
+   "en"
+  ],
+  [
+   "How much does my boss spend on lunch?",
+   "en"
+  ],
+  [
+   "How much does my ex spend?",
+   "en"
+  ],
+  [
+   "What does my ex earn?",
+   "en"
+  ],
+  [
+   "How much did my ex spend in June?",
+   "en"
+  ],
+  [
+   "What is my landlord's income?",
+   "en"
+  ],
+  [
+   "How much does my landlord earn?",
+   "en"
+  ],
+  [
+   "How much does my landlord make from my rent?",
+   "en"
+  ],
+  [
+   "my landlord's income",
+   "en"
+  ],
+  [
+   "my boss's salary",
+   "en"
+  ],
+  [
+   "What is my teacher's salary?",
+   "en"
+  ],
+  [
+   "How much does my doctor earn?",
+   "en"
+  ],
+  [
+   "How much does my cousin spend?",
+   "en"
+  ],
+  [
+   "How much does my uncle earn?",
+   "en"
+  ],
+  [
+   "How much does my grandmother spend on food?",
+   "en"
+  ],
+  [
+   "How much does my roommate spend on groceries?",
+   "en"
+  ],
+  [
+   "How much does my flatmate spend?",
+   "en"
+  ],
+  [
+   "How much does my fiancee earn?",
+   "en"
+  ],
+  [
+   "How much does my ex-wife earn?",
+   "en"
+  ],
+  [
+   "How much does my stepdad earn?",
+   "en"
+  ],
+  [
+   "How much does my son spend on games?",
+   "en"
+  ],
+  [
+   "How much does my daughter spend on clothes?",
+   "en"
+  ],
+  [
+   "How much did my son spend last month?",
+   "en"
+  ],
+  [
+   "How much did my daughter earn?",
+   "en"
+  ],
+  [
+   "How much do my parents spend on food?",
+   "en"
+  ],
+  [
+   "What does my brother earn?",
+   "en"
+  ],
+  [
+   "My brother earns how much?",
+   "en"
+  ],
+  [
+   "my sister spent how much in June",
+   "en"
+  ],
+  [
+   "my mom's spending",
+   "en"
+  ],
+  [
+   "my dad's salary",
+   "en"
+  ],
+  [
+   "my friend Octavia spent how much in June?",
+   "en"
+  ],
+  [
+   "How much did my friend Octavia spend?",
+   "en"
+  ],
+  [
+   "What did my friend Anna spend in June?",
+   "en"
+  ],
+  [
+   "My colleague earns how much?",
+   "en"
+  ],
+  [
+   "How much does my colleague make?",
+   "en"
+  ],
+  [
+   "What does my coworker earn?",
+   "en"
+  ],
+  [
+   "my wife's spending",
+   "en"
+  ],
+  [
+   "my husband's spending in June",
+   "en"
+  ],
+  [
+   "my wife spends how much on food?",
+   "en"
+  ],
+  [
+   "how much does my girlfriend spend?",
+   "en"
+  ],
+  [
+   "my partner's salary",
+   "en"
+  ],
+  [
+   "how much does my partner earn",
+   "en"
+  ],
+  [
+   "my spouse's income",
+   "en"
+  ],
+  [
+   "my wife's account balance",
+   "en"
+  ],
+  [
+   "what is my wife's balance",
+   "en"
+  ],
+  [
+   "Naapurini kulutus",
+   "fi"
+  ],
+  [
+   "Paljonko naapurini käyttää?",
+   "fi"
+  ],
+  [
+   "Paljonko naapuri käyttää rahaa?",
+   "fi"
+  ],
+  [
+   "Mikä on pomoni palkka?",
+   "fi"
+  ],
+  [
+   "Paljonko pomoni tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko exäni käyttää rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko exäni tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko entinen vaimoni tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko veljeni käyttää?",
+   "fi"
+  ],
+  [
+   "Veljeni käyttää paljon, paljonko?",
+   "fi"
+  ],
+  [
+   "Paljonko veljeni käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko siskoni tienaa?",
+   "fi"
+  ],
+  [
+   "Mikä on isäni palkka?",
+   "fi"
+  ],
+  [
+   "Paljonko vuokranantajani tienaa vuokrastani?",
+   "fi"
+  ],
+  [
+   "Paljonko ystäväni käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko työkaverini tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko lapseni käyttävät rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko poikani käytti rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tyttäreni käytti rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimoni käytti ruokaan elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko mieheni käytti elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko miehen kulutus on?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimon kulutus on?",
+   "fi"
+  ],
+  [
+   "Paljonko puolisoni käyttää?",
+   "fi"
+  ],
+  [
+   "Paljonko tyttöystäväni käytti?",
+   "fi"
+  ],
+  [
+   "Paljonko poikaystäväni tienaa?",
+   "fi"
+  ],
+  [
+   "Näytä vaimoni tilitapahtumat",
+   "fi"
+  ],
+  [
+   "Näytä naapurin kulutus",
+   "fi"
+  ],
+  [
+   "What does everyone spend on groceries?",
+   "en"
+  ],
+  [
+   "How much does everyone spend on restaurants?",
+   "en"
+  ],
+  [
+   "How much do other customers spend on groceries?",
+   "en"
+  ],
+  [
+   "What do other customers spend in June?",
+   "en"
+  ],
+  [
+   "What do others spend on food?",
+   "en"
+  ],
+  [
+   "How much do other people earn?",
+   "en"
+  ],
+  [
+   "How much does the average Finn spend?",
+   "en"
+  ],
+  [
+   "What does the average Finn spend on groceries?",
+   "en"
+  ],
+  [
+   "How much do Finns spend on food?",
+   "en"
+  ],
+  [
+   "What does the average customer spend?",
+   "en"
+  ],
+  [
+   "Show me the top spenders",
+   "en"
+  ],
+  [
+   "Who spends the most?",
+   "en"
+  ],
+  [
+   "Who are the richest customers?",
+   "en"
+  ],
+  [
+   "How much do people in Helsinki spend?",
+   "en"
+  ],
+  [
+   "How much does a typical family spend?",
+   "en"
+  ],
+  [
+   "Paljonko keskivertosuomalainen käyttää?",
+   "fi"
+  ],
+  [
+   "Paljonko muut käyttävät ruokaan?",
+   "fi"
+  ],
+  [
+   "Paljonko kaikki käyttävät ruokaan kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Mitä muut asiakkaat kuluttavat?",
+   "fi"
+  ],
+  [
+   "Show me Mark's spending",
+   "en"
+  ],
+  [
+   "What did Mark spend?",
+   "en"
+  ],
+  [
+   "Mark spent how much?",
+   "en"
+  ],
+  [
+   "Show me what Mark spent in August",
+   "en"
+  ],
+  [
+   "How much has Mark spent this year?",
+   "en"
+  ],
+  [
+   "How much did the Johnsons spend?",
+   "en"
+  ],
+  [
+   "What is the Virtanens' spending?",
+   "en"
+  ],
+  [
+   "What did Mr Smith spend?",
+   "en"
+  ],
+  [
+   "What did Mrs. Virtanen spend in June?",
+   "en"
+  ],
+  [
+   "How much did Dr. Smith earn?",
+   "en"
+  ],
+  [
+   "How much did John Smith spend in June?",
+   "en"
+  ],
+  [
+   "How much did Jane Doe spend in June?",
+   "en"
+  ],
+  [
+   "Show me Jane Doe's transactions",
+   "en"
+  ],
+  [
+   "List Jane Doe's spending",
+   "en"
+  ],
+  [
+   "Tell me about Jane's spending",
+   "en"
+  ],
+  [
+   "Tell me how much Jane spent",
+   "en"
+  ],
+  [
+   "Tell me what Jane spent in June",
+   "en"
+  ],
+  [
+   "Can you tell me how much Jane spent in June?",
+   "en"
+  ],
+  [
+   "Can you show me how much Jane spent in June?",
+   "en"
+  ],
+  [
+   "I want to know how much Jane spent",
+   "en"
+  ],
+  [
+   "I wonder how much Jane spends",
+   "en"
+  ],
+  [
+   "Could you check how much Jane spent in June?",
+   "en"
+  ],
+  [
+   "Please show how much Jane has spent",
+   "en"
+  ],
+  [
+   "Hey Sentti, what did Jane spend?",
+   "en"
+  ],
+  [
+   "Sentti, what did Jane spend in June?",
+   "en"
+  ],
+  [
+   "Sentti, show Marja's spending",
+   "en"
+  ],
+  [
+   "Hi, what did Jane spend in June?",
+   "en"
+  ],
+  [
+   "And what about Jane?",
+   "en"
+  ],
+  [
+   "What about Jane's spending?",
+   "en"
+  ],
+  [
+   "What about Marja in June?",
+   "en"
+  ],
+  [
+   "And Marja?",
+   "en"
+  ],
+  [
+   "What did she spend in June?",
+   "en"
+  ],
+  [
+   "What did he spend in June?",
+   "en"
+  ],
+  [
+   "What did they spend in June?",
+   "en"
+  ],
+  [
+   "Jane in June, how much?",
+   "en"
+  ],
+  [
+   "Spending of Jane in June",
+   "en"
+  ],
+  [
+   "Spending by Jane in June",
+   "en"
+  ],
+  [
+   "The spending of Marja in May",
+   "en"
+  ],
+  [
+   "How much money does Jane have?",
+   "en"
+  ],
+  [
+   "How much money did Jane spend?",
+   "en"
+  ],
+  [
+   "How much did Jane's family spend?",
+   "en"
+  ],
+  [
+   "Jane's expenses in June",
+   "en"
+  ],
+  [
+   "Jane's income",
+   "en"
+  ],
+  [
+   "Jane's savings",
+   "en"
+  ],
+  [
+   "Jane's card payments",
+   "en"
+  ],
+  [
+   "how much did Jane pay to Lidl",
+   "en"
+  ],
+  [
+   "how much did Jane spend at Lidl in June",
+   "en"
+  ],
+  [
+   "did Jane shop at Prisma in June",
+   "en"
+  ],
+  [
+   "did Marja pay her rent on time",
+   "en"
+  ],
+  [
+   "How much rent does Marja pay?",
+   "en"
+  ],
+  [
+   "How big is Marja's rent?",
+   "en"
+  ],
+  [
+   "What is Jane's rent?",
+   "en"
+  ],
+  [
+   "How much did Jane's rent cost in June?",
+   "en"
+  ],
+  [
+   "Paljonko Anna-Liisa kulutti?",
+   "fi"
+  ],
+  [
+   "Paljonko Åsa maksoi vuokraa?",
+   "fi"
+  ],
+  [
+   "Näytä Marjan ostokset kesäkuussa",
+   "fi"
+  ],
+  [
+   "Mitä Marja osti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marja säästi?",
+   "fi"
+  ],
+  [
+   "Paljonko Jani on tienannut tänä vuonna?",
+   "fi"
+  ],
+  [
+   "Mitä Jani ostaa?",
+   "fi"
+  ],
+  [
+   "Marja kuluttaa paljonko?",
+   "fi"
+  ],
+  [
+   "Paljonko miehet käyttävät ruokaan?",
+   "fi"
+  ],
+  [
+   "What did the Virtanen family spend?",
+   "en"
+  ],
+  [
+   "Paljonko kulutti Fazer minulta?",
+   "fi"
+  ]
+ ],
+ "claimed": [
+  [
+   "Does Prisma pay S-Bonus on groceries?",
+   "en"
+  ],
+  [
+   "Did Alepa earn me any bonus?",
+   "en"
+  ],
+  [
+   "What's Elisa's bill this month?",
+   "en"
+  ],
+  [
+   "How much was Fortum's bill in June?",
+   "en"
+  ],
+  [
+   "How much is Helen's bill?",
+   "en"
+  ],
+  [
+   "Was Telia's bill higher in August?",
+   "en"
+  ],
+  [
+   "Netflix's payment last month, how much?",
+   "en"
+  ],
+  [
+   "Paljonko Netflix maksoi elokuussa?",
+   "fi"
+  ],
+  [
+   "What was May's spending?",
+   "en"
+  ],
+  [
+   "April's rent, how much was it?",
+   "en"
+  ],
+  [
+   "January's spending, how much?",
+   "en"
+  ],
+  [
+   "What was July's salary?",
+   "en"
+  ],
+  [
+   "Paljonko Kesäkuun tulot olivat?",
+   "fi"
+  ],
+  [
+   "How much pocket money did my kids get from me last month?",
+   "en"
+  ],
+  [
+   "how much did we spend on groceries in August",
+   "en"
+  ],
+  [
+   "how much did our household spend last month",
+   "en"
+  ],
+  [
+   "Paljonko me käytettiin ruokaan elokuussa",
+   "fi"
+  ],
+  [
+   "Paljonko kulutimme kotitaloutena syyskuussa",
+   "fi"
+  ],
+  [
+   "May I see how much I spent last month?",
+   "en"
+  ],
+  [
+   "In May, how much did I spend?",
+   "en"
+  ],
+  [
+   "May, June and July: how much did I spend in each?",
+   "en"
+  ],
+  [
+   "June: how much did I spend?",
+   "en"
+  ],
+  [
+   "April, how much did I spend?",
+   "en"
+  ],
+  [
+   "August, how much did I spend on groceries?",
+   "en"
+  ],
+  [
+   "Show me what I spent in August",
+   "en"
+  ],
+  [
+   "How much did I spend in August?",
+   "en"
+  ],
+  [
+   "Show spending for June",
+   "en"
+  ],
+  [
+   "Paljonko käytin toukokuussa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon käytin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Elokuussa, paljonko käytin ruokaan?",
+   "fi"
+  ],
+  [
+   "Maanantaina käytin paljon, paljonko yhteensä viime viikolla?",
+   "fi"
+  ],
+  [
+   "Show me my Restaurants spending in August",
+   "en"
+  ],
+  [
+   "Restaurants: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Groceries, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Groceries cost me how much last month?",
+   "en"
+  ],
+  [
+   "S-Market, how much did I spend there last month?",
+   "en"
+  ],
+  [
+   "Lidl: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Prisma - how much did I spend there in August?",
+   "en"
+  ],
+  [
+   "Netflix, how much did I pay last month?",
+   "en"
+  ],
+  [
+   "How much did Netflix cost me last month?",
+   "en"
+  ],
+  [
+   "How much did Prisma cost me last month?",
+   "en"
+  ],
+  [
+   "Sentti, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Hi Sentti, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "Sentti did I spend a lot in August?",
+   "en"
+  ],
+  [
+   "Monday I spent a lot, how much in total last week?",
+   "en"
+  ],
+  [
+   "On Monday I paid 20 euros, how much have I spent this week?",
+   "en"
+  ],
+  [
+   "Paljonko käytin viime viikolla",
+   "fi"
+  ],
+  [
+   "Kuinka paljon voin käyttää tällä viikolla",
+   "fi"
+  ],
+  [
+   "Show me how much I can spend this week",
+   "en"
+  ],
+  [
+   "How much can I spend this week?",
+   "en"
+  ],
+  [
+   "I, Anna, spent how much last month?",
+   "en"
+  ],
+  [
+   "Anna here, how much did I spend last month?",
+   "en"
+  ],
+  [
+   "It's Anna: how much did I spend last month?",
+   "en"
+  ],
+  [
+   "Hi, I'm Anna. How much did I spend in August?",
+   "en"
+  ],
+  [
+   "Minä, Anna, käytin paljonko elokuussa?",
+   "fi"
+  ],
+  [
+   "Moi, Anna tässä. Paljonko käytin elokuussa?",
+   "fi"
+  ],
+  [
+   "How much was the bank's fee last month?",
+   "en"
+  ],
+  [
+   "What was the month's total spending in August?",
+   "en"
+  ],
+  [
+   "Prisman ruokakulut elokuussa, paljonko käytin?",
+   "fi"
+  ],
+  [
+   "How much did I spend in June",
+   "en"
+  ],
+  [
+   "what did I spend in June",
+   "en"
+  ],
+  [
+   "how much did May cost me",
+   "en"
+  ],
+  [
+   "How much did April cost me?",
+   "en"
+  ],
+  [
+   "April's spending, how much was it?",
+   "en"
+  ],
+  [
+   "What was June's total spending?",
+   "en"
+  ],
+  [
+   "What did I spend in May?",
+   "en"
+  ],
+  [
+   "What did we spend in June?",
+   "en"
+  ],
+  [
+   "Did I spend more in June than in May?",
+   "en"
+  ],
+  [
+   "Did I spend more in September than in August?",
+   "en"
+  ],
+  [
+   "Did I spend more on groceries in May than in June?",
+   "en"
+  ],
+  [
+   "Do I spend more than people like me?",
+   "en"
+  ],
+  [
+   "Do I spend more than others like me?",
+   "en"
+  ],
+  [
+   "How do I compare to people like me?",
+   "en"
+  ],
+  [
+   "Käytänkö enemmän kuin muut samanlaiset?",
+   "fi"
+  ],
+  [
+   "What kind of spender am I?",
+   "en"
+  ],
+  [
+   "What kind of spender am I, Anna?",
+   "en"
+  ],
+  [
+   "Millainen kuluttaja olen?",
+   "fi"
+  ],
+  [
+   "Do I have enough money until payday?",
+   "en"
+  ],
+  [
+   "Will my money last until payday?",
+   "en"
+  ],
+  [
+   "What bills are coming up?",
+   "en"
+  ],
+  [
+   "Show my recurring bills",
+   "en"
+  ],
+  [
+   "How much S-Bonus did I get?",
+   "en"
+  ],
+  [
+   "What if I cut restaurants by 20%?",
+   "en"
+  ],
+  [
+   "What if I cut my restaurant spending by 20%?",
+   "en"
+  ],
+  [
+   "Entä jos vähentäisin ravintolamenoja 20 %?",
+   "fi"
+  ],
+  [
+   "How much can I save this month?",
+   "en"
+  ],
+  [
+   "I bought my brother a gift, how much did I spend in August?",
+   "en"
+  ],
+  [
+   "Is Lidl a partner store for S-Bonus?",
+   "en"
+  ],
+  [
+   "Paljonko käytin Marjan kahvilassa elokuussa?",
+   "fi"
+  ],
+  [
+   "How much did I lend to Jane in June?",
+   "en"
+  ],
+  [
+   "How much did I pay Jane for rent in June?",
+   "en"
+  ],
+  [
+   "How much did I send to Marja in May?",
+   "en"
+  ],
+  [
+   "How much is Elisa's bill?",
+   "en"
+  ],
+  [
+   "December's rent, how much did I pay?",
+   "en"
+  ],
+  [
+   "What was March's food spending?",
+   "en"
+  ],
+  [
+   "How much was February's spending?",
+   "en"
+  ],
+  [
+   "What was June's groceries bill?",
+   "en"
+  ],
+  [
+   "What was my June's spending?",
+   "en"
+  ],
+  [
+   "Does Lidl earn me points?",
+   "en"
+  ],
+  [
+   "How much did Netflix earn from me?",
+   "en"
+  ],
+  [
+   "Paljonko Elisan lasku on?",
+   "fi"
+  ],
+  [
+   "Paljonko Suomen keskimääräiset tulot ovat?",
+   "fi"
+  ],
+  [
+   "Paljonko Joulukuun tulot olivat?",
+   "fi"
+  ],
+  [
+   "Näytä Lidlin kulutus elokuussa",
+   "fi"
+  ],
+  [
+   "Paljonko Lidlin ostokset olivat elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Prisman kulutus oli elokuussa?",
+   "fi"
+  ],
+  [
+   "How much did my parents get from me in August?",
+   "en"
+  ],
+  [
+   "How much did my sister cost me last month?",
+   "en"
+  ],
+  [
+   "Paljonko käytin lasteni vaatteisiin elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko lapseni koulu maksoi minulle elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi vuokra kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi sähkö elokuussa?",
+   "fi"
+  ],
+  [
+   "paljonko maksoi vuokra kesäkuussa",
+   "fi"
+  ],
+  [
+   "paljonko maksoi sähkö elokuussa",
+   "fi"
+  ]
+ ],
+ "unclaimed": [
+  [
+   "how much did my husband pay me in June",
+   "en"
+  ],
+  [
+   "How much did my brother pay me back in June?",
+   "en"
+  ],
+  [
+   "My friend paid me back, how much did I get in June?",
+   "en"
+  ],
+  [
+   "How much did my wife give me in June?",
+   "en"
+  ],
+  [
+   "How much did my parents send me in June?",
+   "en"
+  ],
+  [
+   "How much did my dad lend me in June?",
+   "en"
+  ],
+  [
+   "How much did Jane send me last month?",
+   "en"
+  ],
+  [
+   "Paljonko vaimoni antoi minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko vanhempani lähettivät minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Fazer kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Zalando kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Ruohonjuuri kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Biltema kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Jysk kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Lindex kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Marimekko kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Rautia kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Alko kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Yle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Vakuutus kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Puhelin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Apteekki kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Lääkäri kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Parturi kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Kampaaja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Prisma's spending in June",
+   "en"
+  ],
+  [
+   "Helen's spending in June",
+   "en"
+  ],
+  [
+   "Lidl's income",
+   "en"
+  ],
+  [
+   "Netflix's salary",
+   "en"
+  ],
+  [
+   "Paljonko Lidlin tulot olivat kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Mikä on Prisman palkka?",
+   "fi"
+  ],
+  [
+   "Paljonko he maksoivat minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he maksoivat minulle?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoivat he minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he antoivat minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he lähettivät minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko vanhempani maksoivat minulle elokuussa?",
+   "fi"
+  ],
+  [
+   "how much did they pay me in June",
+   "en"
+  ]
+ ]
+}

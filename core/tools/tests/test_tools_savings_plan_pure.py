@@ -47,19 +47,21 @@ def baskets_card():
 
 @pytest.fixture
 def fake(monkeypatch):
-    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate", baskets_calls=[])
+    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate", baskets_calls=[],
+                            modes=set())
 
-    def run_what_if(ctx, args):
+    def run_what_if(ctx, args, too_few="raise"):
         category, pct = args["selection"]["value"], args["cut_pct"]
         state.calls.append((category, pct))
+        state.modes.add(too_few)
         result = state.what_ifs.get(category)
         if result is None:
             raise WhatIfRefused("no spending")
         return result
 
     monkeypatch.setattr(sp, "run_what_if", run_what_if)
-    monkeypatch.setattr(sp, "get_safe_to_save", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
-        monthly=num("184.61", "ev_save", "safe_to_spend.safe_to_save_monthly_eur@1"))))
+    monkeypatch.setattr(sp, "get_safe_to_spend", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
+        savings_goal=num("360.00", "ev_goal", "safe_to_spend.savings_goal_eur@1"))))
     monkeypatch.setattr(sp, "get_bonus_estimate", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
         status=state.bonus_status, total_month=num("25.15", "ev_bonus", "bonus_estimate.total_month_eur@1"))))
     monkeypatch.setattr(evidence, "write", lambda conn, specs: state.specs.update(specs))
@@ -93,8 +95,12 @@ def test_two_levers_their_total_and_twelve_times_it(fake):
     assert [(lv.cut.value, lv.cut.method, lv.cut.unit.value) for lv in d.levers] == [
         (20, "savings_plan.cut_pct@1", "percent"), (10, "savings_plan.cut_pct@1", "percent")]
     assert all(fake.specs[lv.cut.evidence_ref]["formula"] == "rule_value" for lv in d.levers)
-    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save
-    assert len(ctx.numbers.all()) == 7
+    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save; then
+    # (#380, #503 review) the two levers' baselines for the card's estimate, after all of them, so n1..n7 stay
+    registered = ctx.numbers.all()
+    assert len(registered) == 9
+    assert [registered[f"n{i}"].method for i in (8, 9)] == ["what_if.baseline_month_eur@1"] * 2
+    assert [n.id for n in result.card.estimate.observed] == ["n8", "n9"]
 
 
 def test_the_two_cut_levers_are_always_different_categories(fake):
@@ -140,14 +146,14 @@ def test_a_cut_the_what_if_does_not_offer_or_refuses_is_no_lever(fake):
     assert d.total_month.value == 10.01
 
 
-def test_no_lever_at_all_gives_the_baskets_card_and_safe_to_save(fake):
+def test_no_lever_at_all_gives_the_baskets_card_and_the_goal(fake):
     """Decision of #411: no lever reaches the threshold, so the card is where the money goes (the baskets card,
     computed on the private context) next to safe to save; its numbers carry the answer's ids."""
     fake.what_ifs = {c: what_if("20.00", "2.00", ref=f"ev_{c[:3]}") for c in SANNA}
     result, ctx = plan()
     assert result.data.levers == [] and result.data.total_month is None and result.data.total_year is None
     assert result.model_view["kind"] == "none"
-    assert result.model_view["safe_to_save"]["value"] == 184.61       # today's answer is still there
+    assert result.model_view["savings_goal"]["value"] == 360.0       # today's answer is still there
     assert fake.baskets_calls == [config.SAVINGS_PLAN_NONE_BASKETS]
     card = result.card
     assert (card.card_id, card.type, card.total.evidence_ref) == ("card_baskets", "breakdown", "ev_bask_total")
@@ -161,7 +167,7 @@ def test_a_failing_baskets_card_leaves_the_no_lever_answer_without_a_card(fake, 
     fake.what_ifs = {c: what_if("20.00", "2.00", ref=f"ev_{c[:3]}") for c in SANNA}
     monkeypatch.setattr(sp, "get_basket_breakdown", lambda ctx, args: (_ for _ in ()).throw(RuntimeError("down")))
     result, _ = plan()
-    assert result.card is None and result.model_view["safe_to_save"]["value"] == 184.61
+    assert result.card is None and result.model_view["savings_goal"]["value"] == 360.0
 
 
 def test_a_failing_safe_to_save_or_s_bonus_never_takes_the_plan_down(fake, monkeypatch):
@@ -169,12 +175,12 @@ def test_a_failing_safe_to_save_or_s_bonus_never_takes_the_plan_down(fake, monke
     def boom(ctx, args):
         raise RuntimeError("down")
 
-    monkeypatch.setattr(sp, "get_safe_to_save", boom)
+    monkeypatch.setattr(sp, "get_safe_to_spend", boom)
     monkeypatch.setattr(sp, "get_bonus_estimate", lambda ctx, args: (_ for _ in ()).throw(ValueError("bad")))
     result, _ = plan()
     d = result.data
-    assert (d.safe_to_save, d.follow_up) == (None, None) and d.total_month.value == 63.17 and result.card is not None
-    assert result.model_view["safe_to_save"] is None and result.model_view["follow_up"] is None
+    assert (d.savings_goal, d.follow_up) == (None, None) and d.total_month.value == 63.17 and result.card is not None
+    assert result.model_view["savings_goal"] is None and result.model_view["follow_up"] is None
 
 
 def test_the_s_bonus_is_never_in_the_total_the_card_or_the_model_view(fake):
@@ -182,14 +188,33 @@ def test_the_s_bonus_is_never_in_the_total_the_card_or_the_model_view(fake):
     question is the answer's follow-up (answered with its own Number and evidence)."""
     result, ctx = plan()
     d = result.data
-    assert d.total_month.value == 45.91 + 17.26                      # not + 25.15, not + 184.61
-    assert d.safe_to_save.value == 184.61
+    assert d.total_month.value == 45.91 + 17.26                      # not + 25.15, not + 360.00
+    assert d.savings_goal.value == 360.0
     assert "25.15" not in repr(result.model_view) and "25.15" not in result.card.model_dump_json()
     assert not [n for n in ctx.numbers.all().values() if n.method.startswith("bonus_estimate.")]
     assert result.model_view["follow_up"] == "How much S-Bonus could I get?"
     assert plan("fi")[0].model_view["follow_up"] == "Paljonko S-Bonusta voisin saada?"
     fake.bonus_status = "not_offered"
     assert plan()[0].model_view["follow_up"] is None
+
+
+def test_the_goal_is_the_safe_to_spend_answers_number_and_never_in_the_total(fake):
+    """#468: the plan names the savings goal set aside first, the very Number of the safe-to-spend answer (same
+    method and ref), registered in the answer's registry; it is never added to the plan's total."""
+    result, ctx = plan()
+    goal = result.data.savings_goal
+    assert (goal.evidence_ref, goal.method, goal.value) == ("ev_goal", "safe_to_spend.savings_goal_eur@1", 360.0)
+    assert ctx.numbers.all()[goal.id].evidence_ref == "ev_goal"
+    assert result.data.total_month.value == 63.17                    # not 63.17 + 360.00
+    assert result.model_view["savings_goal"]["id"] == goal.id
+
+
+def test_a_goal_of_zero_is_left_out(fake, monkeypatch):
+    monkeypatch.setattr(sp, "get_safe_to_spend", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
+        savings_goal=num("0.00", "ev_goal0", "safe_to_spend.savings_goal_eur@1"))))
+    result, ctx = plan()
+    assert result.data.savings_goal is None and result.model_view["savings_goal"] is None
+    assert not [n for n in ctx.numbers.all().values() if n.method == "safe_to_spend.savings_goal_eur@1"]
 
 
 def test_the_card_is_a_breakdown_with_the_levers_in_words(fake):
@@ -200,7 +225,7 @@ def test_the_card_is_a_breakdown_with_the_levers_in_words(fake):
     assert card.total.method == "savings_plan.total_month_eur@1"
     assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle"]
     assert [i["label"] for i in card.items] == ["Restaurants, a fifth less", "Lifestyle, a tenth less"]
-    assert card.estimate["text"] == "About, if you cut these as shown and the rest of your spending stays as it is."
+    assert card.estimate.text == "About, if you cut these as shown and the rest of your spending stays as it is."
     show, host = card.actions
     assert (show.type, host.type, host.target, host.label) == ("open_evidence", "open_host_screen", "monthly_saving",
                                                                "See monthly saving in S-mobiili")
@@ -253,7 +278,8 @@ def test_the_model_view_gives_every_number_as_a_number(fake, language):
     so the composer never copies bare digits; each cut share is a Number and, for the default shares, words."""
     view = plan(language)[0].model_view
     assert "ev_" not in repr(view) and "CUST" not in repr(view)
-    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "safe_to_save", "follow_up"}
+    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "savings_goal", "follow_up",
+                         "already_saving", "already_share", "saving_seen"}   # what already goes to savings (#560)
     assert view["kind"] == "plan" and [lv["key"] for lv in view["levers"]] == ["Restaurants", "Lifestyle"]
     assert all(set(lv) == {"key", "category", "cut", "cut_words", "saving"} for lv in view["levers"])
     assert [lv["cut"]["value"] for lv in view["levers"]] == [20, 10]
@@ -274,3 +300,25 @@ def test_a_share_without_words_is_a_number_only(fake, monkeypatch):
     other = result.model_view["levers"][1]
     assert other["cut_words"] is None and other["cut"]["value"] == 15 and result.data.levers[1].cut.display == "15.0%"
     assert result.card.items[1]["label"] == "Lifestyle, less than usual"     # the card row stays in words
+
+
+def test_the_plan_asks_the_what_if_for_its_structured_mode(fake):
+    # #379 part B: in the chat's mode a category with 1-2 purchases raises MissingData, which would end the plan;
+    # the structured mode answers not_offered, so it is no lever
+    plan()
+    assert fake.modes == {"not_offered"}
+
+
+def test_a_what_if_that_reports_too_few_purchases_never_ends_the_plan(fake, monkeypatch):
+    # the crash part B's bridge check found: a MissingData for one "other" category; the plan is still made
+    from core.tools.missing import MissingData
+    real = sp.run_what_if
+
+    def raising(ctx, args, too_few="raise"):
+        if args["selection"]["value"] == "Travel":
+            raise MissingData("too_few_transactions", what="travel", period="1 Apr \u2013 30 Sep 2026", n=1)
+        return real(ctx, args, too_few)
+
+    monkeypatch.setattr(sp, "run_what_if", raising)
+    d = plan()[0].data
+    assert [lv.key for lv in d.levers] and d.total_month is not None and "Travel" not in [lv.key for lv in d.levers]

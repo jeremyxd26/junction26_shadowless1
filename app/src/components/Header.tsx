@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { canGoBack, goBack, useUrl } from '../lib/url.ts'
+import { canGoBack, goBack, openOverview, useUrl } from '../lib/url.ts'
 import { showPersonaButton } from '../lib/hostBridge.ts'
 import { hostStrings } from '../lib/hostStrings.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -24,7 +24,16 @@ function longPressMs(): number {
  * where nobody would guess the long press, a visible button in the left cell opens it too, unless
  * the back chevron takes that cell.
  */
-export function Header({ onLongPress, disclosure }: { onLongPress: () => void; disclosure: string }) {
+export function Header({
+  onLongPress,
+  disclosure,
+  overviewReady,
+}: {
+  onLongPress: () => void
+  disclosure: string
+  /** The overview has loaded; while it loads or after it failed, the overview button is disabled. */
+  overviewReady: boolean
+}) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
@@ -42,7 +51,7 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
 
   return (
     <header
-      className="sticky top-0 z-40 bg-page/95 pt-[env(safe-area-inset-top)] backdrop-blur select-none [-webkit-touch-callout:none]"
+      className="@container sticky top-0 z-40 bg-page/95 pt-[env(safe-area-inset-top)] backdrop-blur select-none [-webkit-touch-callout:none]"
       onPointerDown={(event) => {
         cancel()
         if (event.target instanceof Element && event.target.closest('button')) return
@@ -64,7 +73,12 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
       onPointerLeave={cancel}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <div className="grid min-h-13 grid-cols-[44px_1fr_44px] items-center px-2">
+      {/* The side columns are as wide as their 2.75rem buttons in rem, not px, so with large text the
+          buttons and their columns grow together and the header never runs past the screen (#590).
+          At normal size 2.75rem is 44px, as before. One row needs about 12.3rem; below 13rem (200 %
+          text on a phone) the title moves to a second row under the two buttons instead of
+          overlapping them. At normal size the header is 20rem or wider, so it stays one row. */}
+      <div className="grid min-h-13 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center px-2">
         {showBack ? (
           <button
             type="button"
@@ -94,20 +108,34 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
           <span aria-hidden="true" />
         )}
         {/* The title with its AI tag opens the AI disclosure; the right cell is kept for the overview
-            button (#322). The accessible name is "Sentti, AI". */}
-        <h1 className="flex justify-center">
+            button (#322). The accessible name is `titleLabel`: "Sentti, AI" / "Sentti, tekoäly". */}
+        <h1 className="flex justify-center @max-[13rem]:col-span-3 @max-[13rem]:row-start-2">
           <button
             type="button"
             onClick={() => setAbout(true)}
             aria-haspopup="dialog"
-            aria-label="Sentti, AI"
+            aria-label={t.titleLabel}
             className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
           >
             Sentti
             <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
           </button>
         </h1>
-        <span aria-hidden="true" />
+        {/* The overview sheet from anywhere in the thread (#322), the same sheet as the overview row. */}
+        <button
+          type="button"
+          onClick={openOverview}
+          disabled={!overviewReady}
+          aria-label={t.overview}
+          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent @max-[13rem]:col-start-3 @max-[13rem]:row-start-1"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+            <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+            <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+            <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+          </svg>
+        </button>
       </div>
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
       {about &&

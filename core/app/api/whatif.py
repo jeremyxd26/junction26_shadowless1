@@ -12,7 +12,10 @@
   - a selection with no spending in the window.
   Only the tool's refusal type (`WhatIfRefused`) and the argument validation are mapped; any other
   error of the tool is a bug and stays a 500.
-- A cut of regular essentials is not an error: the tool returns the status `not_offered`.
+- A cut of regular essentials is not an error: the tool returns the status `not_offered`. Nor is a
+  selection with fewer than 3 purchases in the window (#379): `not_offered`, every saving and the baseline 0,
+  and the chat's sentence ("…a single travel purchase of €203.95, so there is no monthly habit to cut.") as
+  the caveat.
 - Error messages are in the body's `language` (contract section 1), through `request.state.language`.
 - The labels are the viewer's (#144, core.app.api.viewer), as on the overview: after a viewer answers a
   spike review, their what-if starts from the same state as their hero; other viewers are unaffected.
@@ -52,7 +55,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
     except ValidationError:
         raise ApiError("invalid_scenario") from None
     try:
-        result = run_what_if(ctx, args)
+        result = run_what_if(ctx, args, too_few="not_offered")
     except WhatIfRefused:  # the tool's refusals: R9, unknown alias, no spending in the window
         raise ApiError("invalid_scenario") from None
     card = result.card
@@ -61,7 +64,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
         "as_of": ctx.as_of,
         "language": ctx.language,
         **result.data.model_dump(mode="json"),
-        "estimate": card.estimate,
+        "estimate": card.estimate.model_dump(mode="json") if card.estimate else None,
         "evidence_ref": card.evidence_ref,
     })
 

@@ -35,7 +35,6 @@ def spending_periods(result):
     "maybe I spend too much on groceries?",    # MAY-be
     "help me decide how much to spend on food",  # DEC-ide
     "how much did I spend at the doctor?",     # d-OCT-or
-    "can I afford a new sofa, maybe next month?",
 ])
 def test_no_month_is_read_from_inside_a_word(question):
     for period in spending_periods(plan(question)):
@@ -99,3 +98,9 @@ def test_compared_to_a_month_after_a_september_turn_compares_september(question)
                                   {"preset": "custom", "start": "2026-09-01", "end": "2026-09-30"}), args
     assert args.get("compare_to") == "previous_period", args
     assert args.get("filter") == {"baskets": ["everyday_spending"]}, args
+
+
+def test_maybe_next_month_is_the_future_not_may():
+    # #379: "next month" is the future period (October 2026), never May read from "maybe".
+    assert spending_periods(plan("can I afford a new sofa, maybe next month?")) == [
+        {"preset": "custom", "start": "2026-10-01", "end": "2026-10-31"}]

@@ -1,8 +1,9 @@
 // Mock mode only (`/cards`): every card example of the contract on one page, so each card
 // renderer can be checked at 375 px without a persona that happens to have that card.
 // A live build does not include this page (see App.tsx).
-import type { BreakdownCard, Card, OverviewResponse, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, OverviewResponse, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BasketStrip } from '../components/BasketStrip.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
@@ -11,6 +12,19 @@ import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
+
+/** An opening that asks about the `card.review` purchase, for the pointer's "Show" state. */
+const REVIEW_TX = (examples['card.review'] as ReviewCard).tx_ref
+const ASKING_OPENING: Opening = {
+  reviewTxRef: REVIEW_TX,
+  shownReview: { txRef: REVIEW_TX, phase: 'asking' },
+  reportReview: () => {},
+  threadReviews: {},
+  claimThreadReview: () => {},
+  releaseThreadReview: () => {},
+  refresh: () => {},
+  scrollToReview: () => {},
+}
 
 /** The contract has no standalone `bills` example; it is a card of `overview.response`. */
 const OVERVIEW_CARDS = (examples['overview.response'] as { cards: Card[] }).cards
@@ -56,7 +70,7 @@ export default function CardGallery() {
           insights) and the no-hero example. */}
       {(['overview.response_pending', 'overview.response', 'overview.response_no_hero'] as const).map((name) => (
         <section key={name} id={`${name}-sheet`} aria-label={`${name} overview sheet content`} className="flex flex-col gap-2">
-          <p className="font-mono text-xs text-muted">{name} → OverviewSheetContent</p>
+          <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">{name} → OverviewSheetContent</p>
           <OverviewSheetContent overview={examples[name] as OverviewResponse} />
         </section>
       ))}
@@ -64,47 +78,60 @@ export default function CardGallery() {
           money go?" and the overview sheet), the same in Finnish, and the mini row of Sentti's
           answer after "Needed" / "My choice", which carries the flight targets. */}
       <section id="overview.response_pending-strip" aria-label="overview.response_pending basket strip" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">overview.response_pending → BasketStrip</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response_pending → BasketStrip</p>
         <BasketStrip card={PENDING_BASKETS} />
       </section>
       <section id="overview.response_pending-strip-fi" aria-label="overview.response_pending basket strip, Finnish" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">overview.response_pending → BasketStrip (FI texts)</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response_pending → BasketStrip (FI texts)</p>
         <BasketStrip card={PENDING_BASKETS_FI} />
       </section>
       <section id="overview.response_pending-strip-mini" aria-label="overview.response_pending mini basket row" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">{'overview.response_pending → BasketStrip keys=[unclassified, unexpected_necessities] title=null flight'}</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">{'overview.response_pending → BasketStrip keys=[unclassified, unexpected_necessities] title=null flight'}</p>
         <BasketStrip card={PENDING_BASKETS} keys={['unclassified', 'unexpected_necessities']} title={null} flight />
       </section>
       {SAFE_TO_SAVE.map((name) => (
         <section key={name} id={name} aria-label={name} className="flex flex-col gap-2">
-          <p className="font-mono text-xs text-muted">{name}</p>
+          <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">{name}</p>
           <SafeToSaveCard card={examples[name] as SafeToSaveData} />
         </section>
       ))}
+      {/* Safe to save inside a chat answer (#477): the card draws no actions there (AnswerView does). */}
+      <section id="card.safe_to_save-answer" aria-label="card.safe_to_save in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.safe_to_save → in an answer</p>
+        <AnswerCard card={examples['card.safe_to_save'] as Card} />
+      </section>
       <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">overview.response → cards[type=bills]</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
       </section>
       {/* Answer cards with their own renderers (#264): profile, peer, and bills inside an answer. */}
       {(['card.profile', 'card.peer'] as const).map((name) => (
         <section key={name} id={`${name}-answer`} aria-label={`${name} in an answer`} className="flex flex-col gap-2">
-          <p className="font-mono text-xs text-muted">{name} → in an answer</p>
+          <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">{name} → in an answer</p>
           <AnswerCard card={examples[name] as Card} />
         </section>
       ))}
       <section id="bills-answer" aria-label="bills in an answer" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">overview.response → cards[type=bills] → in an answer</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response → cards[type=bills] → in an answer</p>
         {OVERVIEW_CARDS.filter((card) => card.type === 'bills').map((card) => (
           <AnswerCard key={card.card_id} card={card} />
         ))}
       </section>
-      {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
+      {/* A review card inside a chat answer (#318, #450): when nobody shows the question (here: no
+          opening), the answer shows the card with its answer buttons; when the opening shows it,
+          only a line and "Show". */}
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">card.review → in an answer</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.review → in an answer (nobody shows it: the card itself)</p>
         <AnswerCard card={examples['card.review'] as Card} />
       </section>
+      <section id="card.review-in-answer-asking" aria-label="card.review in an answer, opening asks" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.review → in an answer (the opening shows it: a pointer)</p>
+        <OpeningContext.Provider value={ASKING_OPENING}>
+          <AnswerCard card={examples['card.review'] as Card} />
+        </OpeningContext.Provider>
+      </section>
       <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">bill flow (section 11, mock)</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">bill flow (section 11, mock)</p>
         <BillFlow />
       </section>
     </div>

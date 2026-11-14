@@ -17,7 +17,7 @@ digits are left over.
 
 A date expression needs a year: "15 Oct 2026", "October 15, 2026", "September 2026",
 "1–15 Jun 2026", "1 Jun – 15 Aug 2026", "2026-10-15", "15.10.2026", "1.–15.6.2026",
-"1.6.–15.8.2026", "syyskuu 2026", "syyskuussa 2026", "15. lokakuuta 2026".
+"1.6.–15.8.2026", "1.10.2024–31.1.2025", "syyskuu 2026", "syyskuussa 2026", "15. lokakuuta 2026".
 
 Known limits (documented, not chased): numbers written as words ("twice", "kolme"), and wrong
 wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the
@@ -65,10 +65,12 @@ def _fi_lower(g: str) -> str:
 # Longest forms first; each match is removed before the next pattern runs.
 DATE_PATTERNS = [
     ("date", rf"(?P<y>\d{{4}})-(?P<m>\d{{2}})-(?P<d>\d{{2}})"),
+    ("range", rf"(?P<d1>\d{{1,2}})\.(?P<m1>\d{{1,2}})\.(?P<y1>\d{{4}}){_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m2>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.(?P<m1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m2>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.(?P<m>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("date", rf"(?P<d>\d{{1,2}})\.(?P<m>\d{{1,2}})\.(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}+{_en('mn1')}(?:{_S}+(?P<y1>\d{{4}}))?{_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn2')}{_S}+(?P<y>\d{{4}})"),
+    ("range", rf"(?P<d1>\d{{1,2}}){_S}+{_en('mn1')}(?:{_S}+(?P<y1>\d{{4}}))?{_S}+and{_S}+(?P<d2>\d{{1,2}}){_S}+{_en('mn2')}{_S}+(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}}){_S}?{_D}{_S}?(?P<d2>\d{{1,2}}){_S}+{_en('mn')}{_S}+(?P<y>\d{{4}})"),
     ("range", rf"(?P<d1>\d{{1,2}})\.{_S}?{_D}{_S}?(?P<d2>\d{{1,2}})\.{_S}*{_fi_lower('mn')}{_S}+(?P<y>\d{{4}})"),
     ("date", rf"(?P<d>\d{{1,2}}){_S}+{_en('mn')},?{_S}+(?P<y>\d{{4}})"),
@@ -225,6 +227,111 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
 
 
+# Sentti never suggests borrowing (#419): a loan, credit, a credit card as a way to pay, instalments,
+# financing, "buy now, pay later" or an overdraft, in a suggesting sense. Naming them is fine (the credit
+# decision decline says "loan"; a repayment bill keeps its label); proposing them is not.
+# A negation in the same clause turns a borrowing word into a statement: "I can't recommend taking a loan",
+# "I would not use a credit card", "Älä ota lainaa" (review of #437). Also used by the cut-suggestion check.
+NEGATION = re.compile(
+    r"\b(?:not|never|cannot|no\s+need|no\s+reason\s+to|avoid\w*|instead\s+of|rather\s+than|ei|älä|älkää|en|et|eivät"
+    r"|emme|ette"
+    r"|ilman)\b|n['’]t\b|\bnothing\s+to\b", re.I)
+# A negation that still suggests: "Why not take out a loan?", "Don't hesitate to use your credit card", "It's
+# not a bad idea to…" (review of #437).
+SUGGESTING_NEGATION = re.compile(
+    r"\bwhy\s+not\b|\bdon['’]?t\s+(?:hesitate|forget|be\s+afraid)\b|\bnever\s+hesitate\b"
+    r"|\bnot\s+(?:a\s+)?(?:bad|terrible|crazy)\s+(?:idea|option|choice|move)\b|\bnothing\s+wrong\s+with\b"
+    r"|\bno\s+reason\s+not\s+to\b|\bno\s+reason\s+to\s+(?:hesitate|wait|delay)\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
+    r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b"
+    r"|\bcan['’]?t\s+go\s+wrong\b|\bcannot\s+go\s+wrong\b|\bwhy\s+(?:you\s+)?wouldn['’]?t\b|\bdon['’]?t\s+see\s+why\b",
+    re.I)
+# A borrowing question quoted back before a decline ("You asked whether to take a loan; I can't advise on
+# that", "Kysyit, kannattaako ottaa lainaa; en voi neuvoa"): with a negation anywhere in the sentence, such a
+# frame makes the words a quote, not a suggestion. A bare "if" is no frame: "If you do not have enough,
+# consider a loan" suggests (review of #437).
+QUOTING_FRAME = re.compile(
+    r"\bwhether\b|\basked\b|\bask(?:ing)?\s+(?:about|if|whether)\b|\bquestion\s+(?:about|of|whether)\b"
+    r"|\bkannattaako\b|\bkysyit\b|\bkysymy\w*|\bpitäisikö\b", re.I)
+# The borrowing words as the subject of a negated predicate: "Taking a loan is not something I suggest".
+_NEGATED_PREDICATE = re.compile(
+    r"[^.!?;:,]*?\b(?:(?:is|are|was|would\s+be)\s+(?:not|never)|isn['’]t|aren['’]t|wasn['’]t|ei\s+ole)\b", re.I)
+# A sentence that quotes the question back ("You asked whether to take a loan.") takes its decline from the
+# next sentence ("I can't recommend that.") (review of #437).
+_QUOTED_BACK = re.compile(r"\s*(?:you\s+asked|kysyit)\b", re.I)
+
+
+def negated(clause: str) -> bool:
+    """A clause with a negation that makes it a statement ("I can't recommend a loan"), not one that still
+    suggests ("why not take a loan?")."""
+    return bool(NEGATION.search(clause)) and not SUGGESTING_NEGATION.search(clause)
+
+
+_CLAUSE_START = re.compile(r"[.!?;:,]|\b(?:but|so|mutta|joten|vaan)\b", re.I)
+_CREDIT_DATA = r"(?!\s+(?:cards?|statements?|bills?|numbers?|purchases?|spending|transactions?|repayments?|payments?|fees?|interest|debt|balance|limits?))"
+_BORROW_NOUN = (r"(?:(?:small|personal|short-term|quick|payday|consumer|cheap)\s+)?"
+                r"(?:loans?|credit(?:\s+cards?|\s+line)?|overdraft\w*|instal{1,2}ment\s+plans?|instal{1,2}ments|financing)")
+BORROWING_SUGGESTION = re.compile(
+    r"\b(?:take|taking|get|getting|use|apply\s+for|applying\s+for|consider|try|open|opening|suggest|suggesting"
+    r"|recommend|recommending"
+    r"|(?:consider|try|start|recommend|suggest|by|keep|think\s+about)\s+using)\s+(?:out\s+)?"
+    r"(?:a\s+|an\s+|your\s+|some\s+|the\s+)?" + _BORROW_NOUN + r"\b" + _CREDIT_DATA +
+    r"|\b(?:an?\s+|your\s+|the\s+)?" + _BORROW_NOUN + r"\s+(?:could|can|would|might|may|will)\s+(?:\w+\s+)?"
+    r"(?:cover|help|bridge|fill|tide|fund|pay\s+for|get\s+you|solve|ease|spread)\b"
+    r"|\b" + _BORROW_NOUN + r"\s+(?:is|are|would\s+be|could\s+be|might\s+be|may\s+be)\s+(?:an?\s+|one\s+|another\s+"
+    r"|your\s+|the\s+)?(?:\w+\s+)?(?:option|choice|way|solution|idea|route|answer|alternative)\b"
+    r"|\b(?:loans?|credit|overdraft\w*|financing)\s+(?:is|are)\s+available\b"
+    r"|\boffers?\s+(?:you\s+)?(?:an?\s+|some\s+)?(?:\w+\s+)?(?:loans?|credit|overdraft\w*|financing|instal{1,2}ments?)\b"
+    + _CREDIT_DATA +
+    r"|\bborrow(?:ing)?\b(?!\s+(?:decisions?|costs?))"
+    r"|\bpay\s+(?:for\s+it\s+|it\s+|this\s+)?later\b(?!\s+(?:purchases?|services?|payments?|transactions?|bills?"
+    r"|charges?|costs?))|\bpay\s+(?:for\s+it\s+|it\s+|this\s+)?in\s+instal{1,2}ments\b"
+    r"|\bbuy\s+now,?\s+pay\s+later\b|\bbnpl\b|\bput\s+it\s+on\s+(?:a|your)\s+credit\s+card\b"
+    r"|\bfinanc(?:e|ing)\s+(?:it|this|that|the\s+\w+)\b"
+    r"|\b(?:ota|ottaa|otat|ottamalla|ottaisi\w*|hae|hakea|haet|hakisi\w*|käytä|käyttää|käytät|käyttäisi\w*"
+    r"|harkitse|harkita)\s+(?:\w+\s+)?"
+    r"(?:laina|lainaa|lainan|luottoa|luoton|luottokorttia|tililuottoa|osamaksu\w*|pikavippi\w*|rahoitusta"
+    r"|kulutusluottoa)\b"
+    r"|\blainaa\s+(?:rahaa|\w+(?:lta|ltä))\b"
+    r"|\bosamaksulla\b|\bluottokortilla\b|\b(?:tili)?luotolla\b|\blainalla\b|\blainarahalla\b"
+    r"|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
+
+
+def _a_statement(text: str, m: re.Match) -> bool:
+    """The borrowing words at `m` are a statement, not a suggestion (review of #437):
+    - a negation in the same clause before them ("I can't recommend taking a loan", "Älä ota lainaa");
+    - a quoting frame before them and a negation anywhere in the sentence ("You asked whether to take a loan;
+      I can't advise on that", "En voi neuvoa, kannattaako ottaa lainaa");
+    - they are the subject of a negated predicate ("Taking a loan is not something I suggest").
+    A negation that still suggests ("why not", "can't go wrong") never makes a statement."""
+    ends = [e.end() for e in _SENTENCE_END.finditer(text, 0, m.start())]
+    sentence_start = ends[-1] if ends else 0
+    after = _SENTENCE_END.search(text, m.end())
+    sentence_end = after.end() if after else len(text)
+    sentence = text[sentence_start:sentence_end]
+    starts = [c.end() for c in _CLAUSE_START.finditer(text, sentence_start, m.start())]
+    if negated(text[starts[-1] if starts else sentence_start:m.end()]):
+        return True
+    if QUOTING_FRAME.search(text, sentence_start, m.start()) and negated(sentence):
+        return True
+    if _QUOTED_BACK.match(sentence):
+        following = _SENTENCE_END.search(text, sentence_end)
+        if negated(text[sentence_end:following.end() if following else len(text)]):
+            return True
+    return bool(_NEGATED_PREDICATE.match(text, m.end(), sentence_end)) and not SUGGESTING_NEGATION.search(sentence)
+
+
+def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
+    """The words in which a text suggests borrowing, or None. Labels from the user's own data (a
+    category or bill such as "Loan repayment") are taken out first; a negation or a quoted-back question
+    makes the words a statement (`_a_statement`, review of #437)."""
+    for label in sorted((x for x in labels if x), key=len, reverse=True):
+        text = re.sub(re.escape(label), " ", text, flags=re.I)
+    for m in BORROWING_SUGGESTION.finditer(text):
+        if not _a_statement(text, m):
+            return m.group(0).strip()
+    return None
+
+
 def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
@@ -314,3 +421,80 @@ def display_matches(display: str, value: float, unit: str, language: str, method
         return _same(display or "", formatted(value, unit, language, method))
     except (ValueError, ArithmeticError):
         return False
+
+
+# ---- #417: an amount is never put into the bank's screen or product in one sentence ----------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" reads like personal investment advice. The rule fires on a DESTINATION or ACTION use only (decided
+# in the review of #475): an amount in the same sentence as moving, putting, sending, setting, adding,
+# starting, opening or investing into, to or in the bank's screen or product. A plain statement of a figure
+# passes ("Your monthly saving is €184.61.", "In S-mobiili your balance is €5,864.86."). Shared by the
+# pipeline's validator (token text, model drafts only) and the eval runner (rendered text, every answer).
+# A bare "fund" is the bank's product only as a noun with a determiner or in the plural, so "enough to fund
+# the trip" and "an emergency fund" pass.
+_INVESTMENT_EN = r"(?:(?:investment|index|equity|stock|bond|mutual|money[- ]market)\s+funds?\b(?!-)|fund\s+units?\b)"
+_FUND = (r"(?:(?:a|an|the|your|this|that)\s+(?:new\s+)?funds?\b(?!-)|funds\b(?!-)|" + _INVESTMENT_EN
+         + r"|Bonus\s+to\s+fund\b)")
+_PRODUCT_EN = r"(?:S-?mobiili\w*|monthly[\s-]+saving\b(?:\s+screen\b)?|" + _FUND + ")"
+_BANK_DESTINATION_EN = re.compile(
+    r"\b(?:into|to|in|towards?|for|with)\s+(?:the\s+|your\s+|an?\s+)?" + _PRODUCT_EN
+    + r"|\binto\s+(?:your\s+)?monthly\s+savings\b|\bBonus\s+to\s+fund\b", re.I)
+_BANK_OBJECT_EN = re.compile(
+    r"\b(?:open|start|set\s+up|buy|bought)\w*\s+(?:a\s+|an\s+|the\s+|your\s+)?(?:new\s+)?" + _PRODUCT_EN, re.I)
+# Destinations or product uses that need no verb (like the Finnish illative): a bare "into <product>"; "monthly
+# saving of <amount>" together with the app ("Consider monthly saving of €360.00 in S-mobiili."); "a fund with
+# <amount>"; an imperative "Fund your future ..."; and a named investment product (index fund, fund units), never
+# a plain statement since Sentti has no fund data.
+_BANK_ANY_EN = re.compile(
+    r"\binto\s+(?:the\s+|your\s+|an?\s+)?" + _PRODUCT_EN
+    + r"|\bmonthly[\s-]+saving\s+of\b(?=.*\bS-?mobiili)|\bS-?mobiili\w*\b(?=.*\bmonthly[\s-]+saving\s+of\b)"
+    + r"|\b(?:a|an|the|your)\s+(?:new\s+)?funds?\s+with\b|^\W*fund\s+(?:your|the)\b|\b" + _INVESTMENT_EN
+    # #499: "In monthly saving, €360.00 a month is enough."; "Monthly saving in S-mobiili: €360.00 a month would do."
+    + r"|\bin\s+(?:your\s+)?monthly[\s-]+saving\b"
+    + r"|\b(?:monthly[\s-]+saving|kuukausisäästämi\w*|kuukausisäästö\w*)(?:\s+(?:in\s+)?S-?mobiili\w*)?\s*:", re.I)
+_ACTION_EN = re.compile(
+    r"\b(?:mov(?:e|es|ed|ing)|put(?:s|ting)?|send(?:s|ing)?|sent|set(?:s|ting)?|add(?:s|ed|ing)?|start(?:s|ed|ing)?"
+    r"|open(?:s|ed|ing)?|invest(?:s|ed|ing)?|transfer\w*|deposit\w*|sav(?:e|es|ed)|go(?:es)?|going|went"
+    r"|turn(?:s|ed|ing)?|convert\w*|top(?:s|ped|ping)?\s+up|pa(?:y|ys|ying|id)|contribut\w*|allocat\w*"
+    r"|direct(?:s|ed|ing)?(?!\s+debit)|keep(?:s|ing)?|kept|park(?:s|ed|ing)?|leav(?:e|es|ing)|left|stash\w*"
+    r"|grow(?:s|ing|n)?|grew)\b", re.I)
+# The bill's action ("Add €97.46 to your payments in S-mobiili") is not the saving product: with "payments" and
+# no saving product named, the app alone is a place, not a destination.
+_PAYMENTS = re.compile(r"\bpayments?\b|\bbills?\b|\bdue\s+date\b|\bmaksu(?:ihin|t|ja|si)?\b|\blasku\w*|\beräpäiv\w*",
+                       re.I)
+_SAVING_PRODUCT = re.compile(r"\bmonthly[\s-]+saving|" + _FUND + r"|kuukausisäästö|kuukausisäästämi|(?<!puskuri)(?<!hätä)rahasto",
+                             re.I)
+_PRODUCT_FI = re.compile(r"\bS-?mobiili\w*|kuukausisäästämi\w*|kuukausisäästö(?:ön|ihin|ssä|stä|llä)\b"
+                         r"|(?<!puskuri)(?<!hätä)rahasto\w*", re.I)
+# the illative ("into ...") is a destination by itself
+_BANK_DESTINATION_FI = re.compile(
+    r"\bS-?mobiiliin\b|kuukausisäästämiseen\b|kuukausisäästö(?:ön|ihin|ssä)\b|(?<!puskuri)(?<!hätä)rahasto(?:on|ihin)\b",
+    re.I)
+_ACTION_FI = re.compile(
+    r"\b(?:laita|laitta|pane|pann|siirr|siirtä|lähetä|lähett|aseta|asett|lisää|lisät|aloita|aloitta|avaa|avat"
+    r"|sijoit|säästä|talleta|tallett|pidä|pitä|käytä|käyttä|maksa)\w*", re.I)
+# A sentence ends at . ! or ? followed by white space, or at a line break; "€1,080.42" and "360,00 €" stay
+# whole, and a semicolon or a dash does not end a sentence.
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+_EURO_AMOUNT = re.compile(r"€\s?[0-9]|[0-9]\s?€")
+
+
+def bank_action(sentence: str) -> bool:
+    """True when the sentence moves, puts, sends, sets, adds, starts, opens or invests into, to or in the bank's
+    screen or product (English), or names one in the illative or with such a verb (Finnish)."""
+    if _PAYMENTS.search(sentence) and not _SAVING_PRODUCT.search(sentence):
+        return False
+    if _BANK_OBJECT_EN.search(sentence) or _BANK_ANY_EN.search(sentence) or (
+            _ACTION_EN.search(sentence) and _BANK_DESTINATION_EN.search(sentence)):
+        return True
+    return bool(_BANK_DESTINATION_FI.search(sentence)
+                or (_ACTION_FI.search(sentence) and _PRODUCT_FI.search(sentence)))
+
+
+def amount_beside_bank_product(text: str) -> str | None:
+    """Rendered text: the first sentence that has a euro amount and puts something into the bank's screen or
+    product, or None. "Your monthly saving is €184.61." and "an AI money coach inside S-mobiili" pass."""
+    for sentence in SENTENCE_BREAK.split(text):
+        if _EURO_AMOUNT.search(sentence) and bank_action(sentence):
+            return sentence.strip()
+    return None

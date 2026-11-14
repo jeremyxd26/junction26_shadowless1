@@ -51,6 +51,17 @@ describe('bill flow steps', () => {
     expect(state).toEqual({ step: 'fields', sampleId: 'sample_2', reading, notice: null, error })
   })
 
+  it('sends the current fields on "Try again": a new confirm, not the failed request', () => {
+    const failed = run(
+      { type: 'pick', sampleId: 'sample_2' },
+      { type: 'read_ok', sampleId: 'sample_2', reading },
+      { type: 'confirm', request },
+      { type: 'explain_failed', error },
+    )
+    const edited = { ...request, payee: 'Esimerkki Koti Oy' }
+    expect(flowReducer(failed, { type: 'confirm', request: edited })).toMatchObject({ step: 'explaining', request: edited })
+  })
+
   it('starts over on back', () => {
     const state = run({ type: 'pick', sampleId: 'sample_2' }, { type: 'read_ok', sampleId: 'sample_2', reading }, { type: 'back' })
     expect(state).toBe(initialFlow)
