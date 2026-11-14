@@ -93,7 +93,7 @@ def test_a_recorded_exchange_replays_without_network(path):
         pytest.skip(f"tools not in this checkout: {sorted(missing)}")
     replay = Replay(fixture["exchanges"])
     gemini = GeminiModel(GeminiClient(fixture["model"], replay, cache="off", fallback_model=None,
-                                      sleep=lambda s: None))
+                                      compose_model=fixture.get("compose_model"), sleep=lambda s: None))
     model = gemini if fixture["planner"] == "model" else RulesFirstModel(RuleModel(), gemini)
     audit = Audit()
     pipeline = Pipeline(recorded_registry(fixture), model, NoDatabase(), as_of=date.fromisoformat(fixture["as_of"]),
