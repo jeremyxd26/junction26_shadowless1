@@ -71,3 +71,14 @@ def test_a_too_few_sentence_names_a_code_list_once(kind, value, lang, expected):
     from core.tools.what_if import WhatIfSelection, _purchases_of, _what
     sel = WhatIfSelection(kind=kind, value=value)
     assert _purchases_of(sel, _what(sel, None, lang), lang) == expected
+
+
+@pytest.mark.parametrize("value", ["8021", "5411,8021", "8011", "8099,5812"])
+def test_a_what_if_on_any_health_code_is_refused_whatever_the_customers_history(value):
+    # #510: the customer below has no Health purchase at all; the health group is refused before any SQL
+    from core.tools.what_if import run_what_if
+    no_health = [t for t in history() if t.category != "Health"]
+    customer = ToolContext(customer_id="CUST00042", as_of=TODAY, conn=_FakeStore(), language="en", _history=no_health)
+    assert not any(t.category == "Health" for t in customer.history())
+    with pytest.raises(ValueError, match="R9|health"):
+        run_what_if(customer, {"selection": {"kind": "mcc", "value": value}, "cut_pct": 20})
