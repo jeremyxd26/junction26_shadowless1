@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template, validator
+from core.agent import guard, offers, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -557,13 +557,18 @@ class Pipeline:
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
-        text = self._deliver(draft.text, numbers, emit)
+        # #572: at most one listed follow-up offer as the last sentence, its question first among the chips
+        offered, follow_ups = offers.apply(
+            draft.text, template.follow_ups(message, lang, views=views), views=views, language=lang,
+            question=message, kind=getattr(a, "kind", "ordinary"), numbers=len(set(TOKEN.findall(draft.text))),
+            outcome=a.outcome, used_template=used_template, review_pending=review is not None)
+        text = self._deliver(offered, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.follow_ups(message, lang, views=views),
+                      "cited": cited, "follow_ups": follow_ups,
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
@@ -861,6 +866,11 @@ class Pipeline:
                     # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
                     errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
                                              labels=_labels_in(request.data))
+                    # #572: no offer or question from the model (the server adds the one listed offer); the
+                    # habit tip's rules
+                    errors += offers.draft_problems(draft.text, numbers, kind=getattr(a, "kind", "ordinary"),
+                                                    has_data=bool(request.data), data=request.data,
+                                                    question=request.question)
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

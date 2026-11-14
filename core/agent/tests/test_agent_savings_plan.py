@@ -139,13 +139,15 @@ def test_the_s_bonus_question_comes_first_and_the_bonus_rule_claims_it(fake, lan
     assert result.recognised and [c.name for c in result.calls] == ["get_bonus_estimate", "finish"]
 
 
-@pytest.mark.parametrize("message,language,chip", [
-    ("How could I save more?", "en", "How much S-Bonus could I get?"),
-    ("Miten voisin säästää enemmän?", "fi", "Paljonko S-Bonusta voisin saada?")])
-def test_an_answer_to_save_more_offers_the_s_bonus_question_first(fake, tmp_path, monkeypatch,  # noqa: F811
-                                                                  message, language, chip):
-    """End to end (rule planner, no database): done.follow_ups starts with the S-Bonus question, and the answer
-    and the card carry no S-Bonus amount."""
+@pytest.mark.parametrize("message,language,offer,chip", [
+    ("How could I save more?", "en", "How does my spending compare with people like me?", "How much S-Bonus could I get?"),
+    ("Miten voisin säästää enemmän?", "fi", "Miten kulutukseni vertautuu kaltaisiini?",
+     "Paljonko S-Bonusta voisin saada?")])
+def test_an_answer_to_save_more_offers_the_peer_comparison_then_the_s_bonus_question(
+        fake, tmp_path, monkeypatch, message, language, offer, chip):  # noqa: F811
+    """End to end (rule planner, no database): done.follow_ups starts with the plan's follow-up offer, the peer
+    comparison (#572, the coordinator: the offer's chip first), then the S-Bonus question (#411); the answer and
+    the card carry no S-Bonus amount."""
     from agent_fakes import FakeData
     from fastapi.testclient import TestClient
 
@@ -169,7 +171,7 @@ def test_an_answer_to_save_more_offers_the_s_bonus_question_first(fake, tmp_path
                                      "language": language}, headers={"Accept": "application/json"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["outcome"] == "answered" and body["follow_ups"][0] == chip, body
+    assert body["outcome"] == "answered" and body["follow_ups"][:2] == [offer, chip], body
     assert "25.15" not in r.text and "25,15" not in r.text
 
 

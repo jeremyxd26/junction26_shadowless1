@@ -184,9 +184,15 @@ class ReferenceSource:
             value = expected.fresh_value(self.db, customer_id, item)
             labels.append(value)
             parts.append(f"{label_of(item['name'])}: {label_of(value)}.")
+        follow_ups = None
+        if case.get("offer"):   # #572: the answer ends with the listed offer, and its question is the first chip
+            from core.agent import offers
+            offer = offers.listed(case["offer"], language if language in ("en", "fi") else "en")
+            parts.append(offer.text)
+            follow_ups = [offer.chip]
         return Answer(text=" ".join(parts), outcome="answered", numbers=numbers, dates=dates, labels=labels,
                       tool_calls=list(case.get("expected_tools") or []), length_exempt=True,
-                      tool_numbers=[{"id": f"n{i + 1}", **n} for i, n in enumerate(numbers)])
+                      tool_numbers=[{"id": f"n{i + 1}", **n} for i, n in enumerate(numbers)], follow_ups=follow_ups)
 
 
 # ---- the coach's API --------------------------------------------------------------------------------

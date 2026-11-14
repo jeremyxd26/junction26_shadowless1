@@ -199,6 +199,15 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
         m = re.search(f["pattern"], ans.text, re.I)
         if m:
             fails.append(f"forbidden phrase {f['name']}: '{m.group(0)}'")
+    if case.get("offer"):   # #572: the listed follow-up offer is the last sentence, its question the first chip
+        from core.agent import offers
+        want = offers.listed(case["offer"], lang if lang in ("en", "fi") else "en")
+        if offers.strip_offer(ans.text)[1] != want.text:
+            fails.append(f"offer: the last sentence is not the listed offer '{want.text}'")
+        if ans.follow_ups is None:
+            fails.append("unverified: the source did not report its chips")
+        elif not ans.follow_ups or ans.follow_ups[0] != want.chip:
+            fails.append(f"chips: the offer's question '{want.chip}' comes first")
     for rule, rx in DENY.items():
         m = re.search(rx, ans.text, re.I)
         if m:

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from core.agent import offers
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import GeminiModel, RulesFirstModel
 from core.agent.gemini_client import GeminiClient
@@ -110,7 +111,10 @@ def test_a_recorded_exchange_replays_without_network(path):
     assert (done.get("refusal") or {}).get("kind") == expect["refusal_kind"]
     calls = [c["name"] for t in audit.records[-1]["planner_turns"] for c in t.get("calls") or []]
     assert calls == expect["tool_calls"]
-    assert done["text"] == expect["text"] and done["text_rendered"] == expect["text_rendered"]
+    # #572: the server may append one listed follow-up offer after the recorded model text
+    text, offered = offers.strip_offer(done["text"])
+    rendered, offered_rendered = offers.strip_offer(done["text_rendered"])
+    assert text == expect["text"] and rendered == expect["text_rendered"] and offered == offered_rendered
     assert replay.exchanges == []                       # every recorded response was used
     for marker in RAW_ROW_MARKERS:                      # R3: no raw rows, ids or balances in the answer
         assert marker not in done["text_rendered"]
