@@ -63,7 +63,14 @@ DECLINE_RULES = [
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto|bitcoin|krypto)\w*|"
                           r"\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b|"
-                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*"),
+                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*|"
+                          # whether or how to invest, with any tail ("Should I invest like the average Finn?"), before
+                          # the peer rule (#650; R7)
+                          r"\bshould (i|we) (\w+ ){0,2}invest\w*\b|\b(how|where|what) (should|would|could|can|do) (i|we) "
+                          r"(\w+ )?invest\w*\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?invest\w*\b|"
+                          r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
+                          r"\b(miten|kuinka|mihin) (minun |meidän )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
+                          r"(\w+ )?sijoittaa\b"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
     # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my

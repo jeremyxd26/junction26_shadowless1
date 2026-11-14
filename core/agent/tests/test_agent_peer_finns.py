@@ -60,6 +60,32 @@ def test_finns_without_the_user_or_with_a_named_person_stay_declined(lang, quest
 
 
 @pytest.mark.parametrize("lang,question", [
+    ("en", "Should I invest like the average Finn?"), ("en", "Should I invest like people like me?"),
+    ("en", "Should I start investing like the average Finn?"), ("en", "How should I invest compared to people like me?"),
+    ("en", "Where should I invest my savings?"), ("en", "Is it smart to invest like other Finns?"),
+    ("fi", "Pitäisikö minun sijoittaa kuten keskiverto suomalainen?"),
+    ("fi", "Pitäisikö minun sijoittaa kuten muut kaltaiseni?"), ("fi", "Miten minun pitäisi sijoittaa?"),
+    ("fi", "Pitäisikö minun alkaa sijoittaa?"), ("fi", "Mihin voin sijoittaa rahani?"),
+])
+def test_whether_or_how_to_invest_is_declined_before_the_peer_rule(lang, question):
+    # review of #655, R7: dev answered the "people like me" forms with the peer total and asked back for the others
+    assert calls(question, lang) == [("decline", {"kind": "investment_advice"})]
+
+
+@pytest.mark.parametrize("lang,question,metric", [
+    ("en", "Do I spend more than the average Finn on groceries?", "Groceries"),
+    ("en", "How much do I spend compared to people like me?", "spend_total"),
+    ("fi", "Kulutanko enemmän kuin muut kaltaiseni?", "spend_total"),
+])
+def test_a_spending_comparison_next_to_the_invest_rule_stays_the_peer_benchmark(lang, question, metric):
+    assert calls(question, lang) == [("get_peer_benchmark", {"metric": metric})]
+
+
+def test_spending_less_to_invest_is_no_investment_advice():
+    assert calls("Should I spend less so I can invest?", "en")[0][0] != "decline"
+
+
+@pytest.mark.parametrize("lang,question", [
     ("en", "What do other Finns spend on groceries?"), ("fi", "Paljonko keskiverto suomalainen kuluttaa?"),
 ])
 def test_finns_with_no_comparison_with_the_user_are_no_peer_question(lang, question):
