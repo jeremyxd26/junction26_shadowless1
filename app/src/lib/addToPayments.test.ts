@@ -47,4 +47,11 @@ describe('addToPayments', () => {
   it('finds no action when a check failed', () => {
     expect(paymentAction(unknown.actions)).toBeNull()
   })
+
+  it('keeps the payment action whatever the forecast says', () => {
+    for (const status of ['covered', 'tight', 'not_covered', 'outside_forecast']) {
+      const withForecast = { ...response, forecast: { ...(response.forecast ?? {}), status } }
+      expect(paymentAction(withForecast.actions)).toEqual(response.actions[0])
+    }
+  })
 })

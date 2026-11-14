@@ -56,6 +56,8 @@ const en = {
   latePayment: 'Late-payment interest',
   latePaymentHint: 'If a bill is paid after its due date',
   warningSigns: 'Warning signs',
+  forecastTitle: 'Balance on the due date',
+  forecastStatus: { covered: 'Covered', tight: 'Tight', not_covered: 'Not covered' } as Record<string, string>,
   paymentNote: 'Sentti doesn’t pay. Your bank app shows the payment for you to check and confirm.',
 }
 
@@ -115,6 +117,8 @@ const fi: BillStrings = {
   latePayment: 'Viivästyskorko',
   latePaymentHint: 'Jos lasku maksetaan eräpäivän jälkeen',
   warningSigns: 'Varoitusmerkit',
+  forecastTitle: 'Saldo eräpäivänä',
+  forecastStatus: { covered: 'Riittää', tight: 'Tiukalla', not_covered: 'Ei riitä' },
   paymentNote: 'Sentti ei maksa. Pankkisovelluksesi näyttää maksun, ja sinä tarkistat ja vahvistat sen.',
 }
 

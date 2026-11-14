@@ -95,6 +95,23 @@ export interface BillSafeToSpend {
   text: string
 }
 
+/**
+ * The forecast balance on the bill's due date (since contract 0.3.4, #421). Every Number is
+ * `null` for `outside_forecast`; `shortfall` only for `not_covered`; `chip` (an `ask` action) only
+ * for `not_covered`. The status never removes the payment draft.
+ */
+export interface BillForecast {
+  status: 'covered' | 'tight' | 'not_covered' | 'outside_forecast' | string
+  before: Num | null
+  already_counted: Num | null
+  counted: Num | null
+  after: Num | null
+  shortfall: Num | null
+  /** One sentence that embeds the displays it cites; shown as plain text. */
+  text: string
+  chip: { type: 'ask'; label: string; prompt: string } | null
+}
+
 export interface BillGlossaryEntry {
   term: 'reference_number' | 'due_date' | 'virtual_barcode' | 'late_payment_interest' | string
   label: string
@@ -136,6 +153,8 @@ export interface BillExplainResponse {
   comparison: Comparison | null
   basket: BillBasket
   safe_to_spend: BillSafeToSpend | null
+  /** Since 0.3.4; missing or `null` from an older API, or when the forecast cannot be computed. */
+  forecast?: BillForecast | null
   glossary: BillGlossaryEntry[]
   /** At most one; empty when a check failed. The app shows the button only when it is here. */
   actions: AddToPaymentsAction[]
