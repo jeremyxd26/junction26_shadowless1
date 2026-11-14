@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { TEXT, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+import { CHIP_ROW, TEXT, downOnly, findBrowser, line, parseAmount, parseArgs, rowProblems, rowQuestions } from './demo-check-lib.mjs'
 
 describe('TEXT', () => {
   it('finds the hand-over action by the labels the app and the core use, in EN and FI', () => {
@@ -85,5 +85,26 @@ describe('line', () => {
   it('lines up the status', () => {
     expect(line(5, 'SKIP', 'x')).toBe('5 SKIP  x')
     expect(line(1, 'PASS', 'y')).toBe('1 PASS  y')
+  })
+})
+
+describe('the opening chip row (#784, #788)', () => {
+  it('finds the row inside the opening by its data-opening-part', () => {
+    expect(CHIP_ROW).toBe('[data-turn="opening"] [data-opening-part="client-chips"]')
+  })
+
+  it('keeps the question chips, in row order, and leaves the client-turn chips out', () => {
+    const en = ['Where did my money go?', 'How could I save more?', 'Show Sentti a bill', 'What can I safely spend this week? ']
+    expect(rowQuestions(en)).toEqual(['Where did my money go?', 'How could I save more?', 'What can I safely spend this week?'])
+    const fi = ['Mihin rahani menivät?', 'Miten voisin säästää enemmän?', 'Näytä Sentille lasku']
+    expect(rowQuestions(fi)).toEqual(['Mihin rahani menivät?', 'Miten voisin säästää enemmän?'])
+    expect(rowQuestions([])).toEqual([])
+  })
+
+  it('passes a row with the first question and another, and names what is missing', () => {
+    expect(rowProblems(['Where did my money go?', 'How could I save more?'], TEXT.en.firstQuestion)).toEqual([])
+    expect(rowProblems(['Mihin rahani menivät?', 'Miten voisin säästää enemmän?'], TEXT.fi.firstQuestion)).toEqual([])
+    expect(rowProblems([], TEXT.en.firstQuestion)).toEqual(['0 question chips in the row, not 2 or more', 'no "Where did my money go?" chip in the row'])
+    expect(rowProblems(['How could I save more?', 'Can I afford a dinner out?'], TEXT.en.firstQuestion)).toEqual(['no "Where did my money go?" chip in the row'])
   })
 })
