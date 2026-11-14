@@ -113,4 +113,9 @@ describe('bill mock', () => {
       expect(forecast.shortfall !== null).toBe(forecast.status === 'not_covered')
     }
   })
+
+  it('copied covered and outside_forecast exactly from the contract examples (0.3.4)', () => {
+    expect((examples['bill.response'] as BillExplainResponse).forecast).toEqual(FORECASTS.covered)
+    expect((examples['bill.response_unknown'] as BillExplainResponse).forecast).toEqual(FORECASTS.outside_forecast)
+  })
 })
