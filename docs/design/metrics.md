@@ -71,7 +71,7 @@ The flow column of the shared classification block (`02_baskets.sql` to `06_peer
 | Bills (pro rata) | the total until payday | `bills_pro_rata` | section 3.2 |
 | Peer benchmark | the customer's own figure | `peer_group`: the group size | section 6 |
 | Balance forecast | the balance today; the bills until payday | `spending_as_usual`: the daily pace; `bills_on_usual_days`; `no_income_before_payday` | section 3.3 |
-| Savings plan (dev, #369) | the levers' baselines | `cuts_as_shown` | `core/tools/savings_plan.py` |
+| Savings plan (#369) | the levers' savings a month (each a what-if, whose evidence opens its baseline) | `cuts_as_shown` | `core/tools/savings_plan.py` |
 
 ## 1. Three baskets — "Where did my money go?"
 
