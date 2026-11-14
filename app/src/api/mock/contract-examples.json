@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.9",
+  "contract_version": "0.3.11",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -466,8 +466,8 @@
             "fi": "Välttämätön"
           },
           "effect": {
-            "en": "It counts as an unexpected necessity. Sentti keeps a bigger reserve for surprises like this, so your safe to spend goes down.",
-            "fi": "Se lasketaan välttämättömäksi yllätysmenoksi. Sentti varaa jatkossa enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee."
+            "en": "It will count as an unexpected necessity. Sentti then recalculates your numbers with it.",
+            "fi": "Se lasketaan odottamattomaksi välttämättömäksi menoksi. Sentti laskee sen jälkeen lukusi uudelleen."
           }
         },
         {
@@ -477,12 +477,12 @@
             "fi": "Oma valinta"
           },
           "effect": {
-            "en": "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this month is higher than usual.",
-            "fi": "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta arkikulutuksesi on tässä kuussa tavallista suurempi."
+            "en": "It will count as everyday spending. Sentti then recalculates your numbers with it.",
+            "fi": "Se lasketaan arjen kulutukseksi. Sentti laskee sen jälkeen lukusi uudelleen."
           }
         }
       ],
-      "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+      "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
       "actions": [
         {
           "type": "open_evidence",
@@ -3171,8 +3171,8 @@
                 "fi": "Välttämätön"
               },
               "effect": {
-                "en": "It counts as an unexpected necessity. Sentti keeps a bigger reserve for surprises like this, so your safe to spend goes down.",
-                "fi": "Se lasketaan välttämättömäksi yllätysmenoksi. Sentti varaa jatkossa enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee."
+                "en": "It will count as an unexpected necessity. Sentti then recalculates your numbers with it.",
+                "fi": "Se lasketaan odottamattomaksi välttämättömäksi menoksi. Sentti laskee sen jälkeen lukusi uudelleen."
               }
             },
             {
@@ -3182,12 +3182,12 @@
                 "fi": "Oma valinta"
               },
               "effect": {
-                "en": "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this month is higher than usual.",
-                "fi": "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta arkikulutuksesi on tässä kuussa tavallista suurempi."
+                "en": "It will count as everyday spending. Sentti then recalculates your numbers with it.",
+                "fi": "Se lasketaan arjen kulutukseksi. Sentti laskee sen jälkeen lukusi uudelleen."
               }
             }
           ],
-          "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+          "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
           "actions": [
             {
               "type": "open_evidence",
