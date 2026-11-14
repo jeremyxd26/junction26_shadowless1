@@ -596,6 +596,75 @@ def test_when_the_owner_fails_each_waiter_computes_itself():
     assert len(calls) >= 2
 
 
+class Cancelled(BaseException):
+    """A cancelled request (or a KeyboardInterrupt): not an Exception, so a broad handler does not catch it."""
+
+
+def test_an_owner_that_raises_a_base_exception_never_hands_it_to_a_waiter():
+    """Review of #260: the owner's BaseException is its own; the waiter gets the failure marker and computes."""
+    import threading
+    import time
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    calls = []
+
+    def cancelled_first(ctx, args):
+        calls.append(1)
+        if len(calls) == 1:
+            time.sleep(0.2)          # the second caller arrives while this one is in flight
+            raise Cancelled()
+        return FakeTool()(ctx, args)
+
+    barrier = threading.Barrier(2)
+    outcomes = [None, None]
+
+    def run(i):
+        barrier.wait()
+        try:
+            outcomes[i] = c.prepare("cancelled", FakeArgs, cancelled_first, ctx_for(), {}).source
+        except BaseException as exc:  # noqa: BLE001 - recorded for the assertions
+            outcomes[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sum(isinstance(o, Cancelled) for o in outcomes) == 1         # only the owner sees its own failure
+    assert [o for o in outcomes if not isinstance(o, BaseException)] == ["tool"]   # the other one computed
+    assert len(calls) == 2 and c.stats.waits == 0 and c._inflight == {}
+
+
+def test_a_waiters_own_interrupt_is_not_swallowed():
+    """The waiter catches only a timeout around the owner's result, so its own interrupt reaches it."""
+    from concurrent.futures import Future
+
+    class Interrupted(Future):
+        def result(self, timeout=None):
+            raise Cancelled()
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    ctx = ctx_for()
+    c.ensure_labels_key(ctx)
+    from core.tools.cache import args_json
+
+    c._inflight[ToolCache.key(ctx, "fake", args_json(FakeArgs, {})[1])] = Interrupted()   # another caller owns it
+    tool = FakeTool()
+    with pytest.raises(Cancelled):
+        c.prepare("fake", FakeArgs, tool, ctx, {})
+    assert tool.calls == 0
+
+
+def test_a_caller_that_missed_while_the_owner_finished_finds_the_stored_result():
+    """Codex on #260: the memory layer is checked again under the lock before a caller claims the key."""
+    c = ToolCache(mode="memory")
+    tool = FakeTool()
+    c.run("fake", FakeArgs, tool, ctx_for(), {})                     # the owner stored its result
+    c.get = lambda key, customer_id: None                            # this caller's first look came too early
+    prepared = c.prepare("fake", FakeArgs, tool, ctx_for(), {})
+    assert prepared.source == "memory" and prepared.hit and tool.calls == 1 and c._inflight == {}
+
+
 def test_a_waiter_that_times_out_computes_itself():
     c = ToolCache(mode="memory", wait_s=0.05)
     tool = SlowTool(0.4)

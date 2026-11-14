@@ -48,7 +48,8 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -162,11 +163,20 @@ class Entry:
     registered: tuple[tuple[str, Number], ...]
 
 
+class _OwnerFailed:
+    """What a failed owner hands the callers waiting for its key, in place of a result. Never the owner's
+    own exception: a cancelled request's BaseException (or a KeyboardInterrupt) belongs to that request
+    alone. A waiter that receives this computes itself."""
+
+
+OWNER_FAILED = _OwnerFailed()
+
+
 @dataclass(frozen=True)
 class Prepared:
     entry: Entry
     hit: bool          # served from memory or disk
-    source: str        # "memory", "disk", "tool" or "off"
+    source: str        # "memory", "disk", "inflight" (another caller's computation), "tool" or "off"
     seconds: float
     key: str | None = None
 
@@ -368,7 +378,14 @@ class ToolCache:
         # wait for its result (ten cold overviews run the metric SQL once). A waiter whose owner fails or
         # takes longer than wait_s computes itself. No deadlock: a caller waits only here, before it owns
         # anything, and an owner computes without waiting on another key; every wait is also bounded.
+        # The owner stores its result before it leaves _inflight, so a caller that missed above while an
+        # owner was finishing finds the result in memory here and does not compute it again.
         with self._lock:
+            stored = self._memory.get(key)
+            if stored is not None and stored.customer_id == ctx.customer_id:
+                self._memory.move_to_end(key)
+                self.stats.hits += 1
+                return Prepared(stored, True, "memory", time.perf_counter() - t0, key)
             flight = self._inflight.get(key)
             owner = flight is None
             if owner:
@@ -376,14 +393,15 @@ class ToolCache:
         if not owner:
             try:
                 entry = flight.result(timeout=self.wait_s)
-            except Exception:  # noqa: BLE001 - the owner failed or is slow: compute here instead
-                pass
-            else:
-                if entry.customer_id == ctx.customer_id:   # the key holds the customer; checked anyway
-                    with self._lock:
-                        self.stats.hits += 1
-                        self.stats.waits += 1
-                    return Prepared(entry, True, "inflight", time.perf_counter() - t0, key)
+            except (FutureTimeout, CancelledError):   # the owner is slow: compute here instead
+                entry = None
+            # Only these two: the owner never sets an exception, and the waiter's own interrupt must
+            # reach it. OWNER_FAILED (the owner raised) also makes the waiter compute.
+            if isinstance(entry, Entry) and entry.customer_id == ctx.customer_id:   # checked anyway
+                with self._lock:
+                    self.stats.hits += 1
+                    self.stats.waits += 1
+                return Prepared(entry, True, "inflight", time.perf_counter() - t0, key)
 
         try:
             # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
@@ -399,9 +417,9 @@ class ToolCache:
                 self.put(key, entry)
             with self._lock:
                 self.stats.misses += 1
-        except BaseException as exc:
+        except BaseException:
             if owner:
-                flight.set_exception(exc)
+                flight.set_result(OWNER_FAILED)   # never the exception itself: it is this caller's alone
             raise
         finally:
             if owner:
