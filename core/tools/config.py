@@ -209,6 +209,8 @@ BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (
 # A matched bill is the regular bill only when it fits it (#400): a once-a-month series and at least half of its
 # typical month. Otherwise it is a bill from the same payee category (a quarterly water bill among utilities).
 BILL_FIT_MIN_RATIO = Decimal("0.5")
+# The forecast on the due date (#421): below this balance after the bill, it is `tight`; below zero `not_covered`.
+BILL_FORECAST_MARGIN_EUR = Decimal("100")
 
 BILL_TEXT: dict[str, tuple[str, str]] = {
     "amount": ("Amount due", "Maksettava summa"),
@@ -294,6 +296,28 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
     "action": ("Add to payments", "Lisää maksuihin"),
+    # The forecast on the due date (#421): one sentence for each status, never advice to borrow (#419).
+    "forecast_before": ("Forecast balance on the due date", "Ennustettu saldo eräpäivänä"),
+    "forecast_already": ("Already in the forecast for this bill by the due date",
+                         "Tälle laskulle jo ennusteessa eräpäivään mennessä"),
+    "forecast_counted": ("Taken from the forecast by this bill", "Lasku vie ennusteesta"),
+    "forecast_after": ("Forecast balance after this bill", "Ennustettu saldo laskun jälkeen"),
+    "forecast_shortfall": ("Short of this bill", "Laskusta puuttuu"),
+    "forecast_covered": ("Your forecast balance on {due} covers this bill: {after} would be left after it.",
+                         "Ennustettu saldosi {due} riittää tähän laskuun: sen jälkeen jäisi {after}."),
+    "forecast_tight": ("Your forecast balance on {due} covers this bill, but only {after} would be left after it.",
+                       "Ennustettu saldosi {due} riittää tähän laskuun, mutta sen jälkeen jäisi vain {after}."),
+    "forecast_not_covered": ("Your forecast balance on {due} does not cover this bill: it is {shortfall} short.",
+                             "Ennustettu saldosi {due} ei riitä tähän laskuun: siitä puuttuu {shortfall}."),
+    "forecast_beyond": ("Due on {due}, beyond your balance forecast, which runs until the day before your payday "
+                        "on {payday}.",
+                        "Eräpäivä {due} on saldoennusteen ulkopuolella: ennuste ulottuu palkkapäivää {payday} "
+                        "edeltävään päivään."),
+    "forecast_past": ("The due date {due} has passed, so your balance forecast does not include it.",
+                      "Eräpäivä {due} on jo mennyt, joten saldoennuste ei sisällä sitä."),
+    # the chip of `not_covered`: the forecast question as the rules know it (core/agent/rules.py)
+    "forecast_chip": ("See your balance forecast", "Katso saldoennusteesi"),
+    "forecast_prompt": ("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
 }
 # The message of a 422 invalid_bill, by reason (contracts/api.md section 11.1).
 BILL_REFUSAL_TEXT: dict[str, tuple[str, str]] = {

@@ -226,6 +226,12 @@ def fake(monkeypatch):
 
     monkeypatch.setattr(metric_sql, "run_one", run_one)
     monkeypatch.setattr(evidence, "write", lambda conn, specs: state.specs.update(specs))
+
+    def no_forecast(ctx):   # the forecast block (#421) has its own tests (test_bill_forecast_pure.py)
+        raise be.forecast_tool.NoForecast("not in these tests")
+
+    state.projection = no_forecast
+    monkeypatch.setattr(be.forecast_tool, "projection", lambda ctx: state.projection(ctx))
     return state
 
 
