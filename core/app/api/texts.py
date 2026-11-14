@@ -156,9 +156,73 @@ METHODS: dict[str, MethodInfo] = {
 }
 
 
+# What a metric file's number is made of, in plain words (#554): the app shows the summary under "How it was
+# calculated", so it never names a file. One sentence per metrics.md section, and one per number for the
+# hero's safe to spend and its parts (metrics.md section 3).
+METRIC_SUMMARIES: dict[str, Pair] = {
+    "#3-safe-to-spend": (
+        "Part of the safe-to-spend calculation: your balance, the bills due before payday, reserves for essentials "
+        "and the unexpected, a cushion and your savings goal.",
+        "Osa turvallisesti käytettävissä olevan summan laskelmaa: saldosi, ennen palkkapäivää erääntyvät laskut, "
+        "varaukset välttämättömiin ja odottamattomiin menoihin, puskuri ja säästötavoitteesi."),
+    "#31-safe-to-save-33": (
+        "Part of safe to save: what a typical month of the last six leaves after bills, essentials, the reserve "
+        "and your usual everyday spending.",
+        "Osa turvallisesti säästettävissä olevan summan laskelmaa: mitä kuuden viime kuukauden tavallisesta "
+        "kuukaudesta jää laskujen, välttämättömien menojen, varauksen ja tavallisen arkikulutuksen jälkeen."),
+    "#4-what-if-savings": (
+        "Part of the what-if: your usual monthly spending on what you chose, without one-off purchases and regular "
+        "essentials, and what your cut would save.",
+        "Osa mitä jos -laskelmaa: tavallinen kuukausikulutuksesi valitsemassasi kohteessa ilman kertaostoksia ja "
+        "säännöllisiä menoja sekä se, mitä vähennyksesi säästäisi."),
+    "#5-spender-profile": (
+        "Part of your spender profile, from your own transactions in the last six complete months.",
+        "Osa kuluttajaprofiiliasi, laskettu omista tilitapahtumistasi kuudelta viime täydeltä kuukaudelta."),
+    "#6-peer-benchmark": (
+        "A figure of a group of at least 20 similar customers, compared with your own monthly average; no one's "
+        "own data is shown.",
+        "Vähintään 20 samankaltaisen asiakkaan ryhmän tunnusluku verrattuna omaan kuukausikeskiarvoosi; kenenkään "
+        "omia tietoja ei näytetä."),
+}
+SAFE_TO_SPEND_SUMMARIES: dict[str, Pair] = {
+    "safe_to_spend_7d_eur": (
+        "The smaller of what your balance allows and what your monthly budget allows for the next 7 days, after "
+        "your savings goal.",
+        "Pienempi seuraavan 7 päivän summista, jotka saldosi ja kuukausibudjettisi sallivat, kun säästötavoite on "
+        "ensin laitettu sivuun."),
+    "free_until_payday_eur": (
+        "Your balance minus the bills due before payday, the reserves for essentials and the unexpected until "
+        "payday, and the cushion.",
+        "Saldosi miinus ennen palkkapäivää erääntyvät laskut, varaukset välttämättömiin ja odottamattomiin menoihin "
+        "palkkapäivään asti sekä puskuri."),
+    "balance_limit_7d_eur": (
+        "What is free until payday, spread evenly over the days to payday, for the next 7 days.",
+        "Palkkapäivään asti vapaana oleva summa jaettuna tasan palkkapäivään jäljellä oleville päiville, seuraavalle "
+        "7 päivälle."),
+    "budget_limit_7d_eur": (
+        "What a typical month leaves free, minus your savings goal, for 7 days.",
+        "Tavallisesta kuukaudesta vapaaksi jäävä summa miinus säästötavoitteesi, 7 päivää kohden."),
+    "balance_eur": ("The latest balance of your account.", "Tilisi viimeisin saldo."),
+    "essentials_reserve_eur": (
+        "Your usual spending on essentials per day, for each day until payday.",
+        "Tavalliset välttämättömät menosi päivää kohden, jokaiselle päivälle palkkapäivään asti."),
+    "irregular_reserve_eur": (
+        "A reserve for unexpected necessities at your usual daily pace, for each day until payday.",
+        "Varaus odottamattomiin välttämättömiin menoihin tavallisella päivätahdillasi, jokaiselle päivälle "
+        "palkkapäivään asti."),
+    "cushion_eur": (
+        "A fixed safety margin kept aside before anything counts as safe to spend.",
+        "Kiinteä turvamarginaali, joka pidetään sivussa ennen kuin mitään lasketaan turvallisesti käytettäväksi."),
+    "savings_goal_eur": (
+        "The amount you set aside each month first; safe to spend counts only what remains.",
+        "Summa, jonka laitat joka kuukausi ensin sivuun; turvallisesti käytettävissä oleva summa lasketaan vasta "
+        "jäljelle jäävästä."),
+}
+
+
 def _metric(unit: Unit, en: str, fi: str, file: str, section: str) -> MethodInfo:
-    return MethodInfo(unit, (en, fi), (f"Calculated by core/metrics/{file}.", f"Laskettu tiedostolla core/metrics/{file}."),
-                      METRICS_DOC + section)
+    """An output column of a metric file (`file` stays for the reader; the summary never names it)."""
+    return MethodInfo(unit, (en, fi), METRIC_SUMMARIES[section], METRICS_DOC + section)
 
 
 # Numbers of the safe-to-spend and what-if tools (#55), re-run from their metric files (evidence kind "metric").
@@ -174,6 +238,7 @@ for _col, _unit, _en, _fi in [
     ("savings_goal_eur", Unit.EUR_PER_MONTH, "Savings goal set aside first", "Ensin sivuun laitettava säästötavoite"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+    METHODS[f"safe_to_spend.{_col}@1"].summary = SAFE_TO_SPEND_SUMMARIES[_col]
 METHODS["safe_to_save.week_eur@1"] = MethodInfo(
     Unit.EUR_PER_WEEK, ("Typically left each week", "Tavallisesti jää viikossa"),
     ("What a typical month leaves, per week (x 7 / 30.4375).",
