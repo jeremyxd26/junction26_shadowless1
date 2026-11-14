@@ -79,7 +79,7 @@ export function EstimateNote({ estimate, id, onHero = false }: { estimate: Estim
           <ul className="mt-1 flex flex-col gap-1">
             {observed.map((number, index) => (
               <li key={number.evidence_ref ?? `${number.method}-${index}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <span className={`min-w-0 flex-1 basis-0 ${muted}`}>{number.label}</span>
+                <span className={`min-w-[min(6rem,100%)] flex-1 basis-0 break-words ${muted}`}>{number.label}</span>
                 <NumberChip number={number} tone={tone} />
               </li>
             ))}
@@ -93,7 +93,7 @@ export function EstimateNote({ estimate, id, onHero = false }: { estimate: Estim
           <ul className="mt-1 flex flex-col gap-1">
             {assumptions.map((assumption, index) => (
               <li key={`${assumption.code}-${index}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <span className={`min-w-0 flex-1 basis-0 ${muted}`}>{assumption.text}</span>
+                <span className={`min-w-[min(6rem,100%)] flex-1 basis-0 break-words ${muted}`}>{assumption.text}</span>
                 {/* A `user_input@1` value has no evidence ref, so NumberChip draws a plain chip, not a button. */}
                 {assumption.value && <NumberChip number={assumption.value} tone={tone} />}
               </li>
