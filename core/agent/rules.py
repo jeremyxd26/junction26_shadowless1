@@ -18,23 +18,24 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-from core.agent import template
+from core.agent import people, template
 from core.agent.guard import flags, fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
-# A spouse or partner named in the question: another person, whose data the coach never shows (#216).
-# Spending on or for them ("a gift for my wife") is the user's own spending.
-RELATION = (r"(?<!on my )(?<!for my )(?<!to my )(?<!with my )"
-            r"\b(wife|wives|husbands?|spouses?|(girl|boy)friends?|vaimo\w*|puoliso\w*|kumppani\w*|"
-            r"tyttöystäv\w*|poikaystäv\w*|mies(tä)?|mieh\w+)\b|(?<!on )(?<!for )(?<!to )(?<!with )\b(my|our) partners?\b")
+# Another person's money (#216, #350, #405, decided in the review of #458): core/agent/people.py decides,
+# right after the decline rules, whether a question asks about someone else (declined), cannot tell
+# (unclaimed) or is the user's own. Its relation words keep a comparison with a specific person out of
+# the peer rule.
+RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.PERSON_FI), key=len, reverse=True))
+            + r")\b")
 
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
                r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
-    ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|my (friend|colleague|partner)'?s?\b|"
-                          r"someone else|other (people|customers)|muiden|toisen|" + RELATION),
+    ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
+                          r"someone else|other (people|customers)|muiden|toisen"),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
@@ -294,8 +295,7 @@ SMALL_FILLERS = frozenset({
 })
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
-SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
-                   + RELATION)
+SPECIFIC_PERSON = r"\bCUST\d+|neighbou?r|naapuri|someone else|\bcustomer\b|toisen|" + RELATION
 
 
 # "Will my money last until payday?" (#257). It needs the money or balance phrasing, so a bills
@@ -845,6 +845,11 @@ def claim(request: PlanInput) -> Claim:
             continue
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
+    verdict = people.classify(question, peer_question)   # #350, #405: someone else's money
+    if verdict == people.DECLINE:
+        return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
+    if verdict == people.UNCLAIMED:   # cannot tell whose money: never the user's own numbers
+        return Claim(None, reason="other_person")
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
