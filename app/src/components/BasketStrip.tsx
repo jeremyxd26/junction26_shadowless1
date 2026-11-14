@@ -2,13 +2,14 @@ import { useId } from 'react'
 import type { BreakdownCard } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { stripItems } from '../lib/basketStrip.ts'
+import { useSettings } from '../lib/settings.ts'
 import type { NumberMotion } from './cards.tsx'
 import { NumberChip } from './NumberChip.tsx'
 
 export interface BasketStripProps {
   /** The baskets breakdown, as the API sends it. */
   card: BreakdownCard
-  /** The #35 counters, "was" hints and highlight, only where the flight plays. */
+  /** The #35 counters, "was …" hints and highlight, only where the flight plays. */
   motion?: NumberMotion
   /** Only these basket keys, in the card's order (e.g. the mini row of a review answer: the
    *  waiting cell and the chosen basket). All baskets when left out. */
@@ -22,13 +23,14 @@ export interface BasketStripProps {
 }
 
 /**
- * The basket strip: a heading and a 2-column list of cells, each icon + label + colour and the
+ * The basket strip: a heading and a 2-column list of cells (one column below 350 px), each icon + label + colour and the
  * amount as a number chip. Used in three places (#312): Sentti's short answer after a review
  * answer (a mini row the amount flies into, `flight`), the answer to "Where did my money go?", and
  * the overview sheet (#320). Labels wrap and are never truncated. The strip is not a button and has
  * no tap target of its own; an amount chip opens its evidence like everywhere else.
  */
 export function BasketStrip({ card, motion, keys, title, flight = false }: BasketStripProps) {
+  const { t } = useSettings()
   const items = stripItems(card, { keys, waiting: motion?.waiting ?? null })
   const heading = title === undefined ? card.title : title
   const ownId = useId()
@@ -47,9 +49,10 @@ export function BasketStrip({ card, motion, keys, title, flight = false }: Baske
           {heading}
         </h2>
       )}
-      <ul className="grid grid-cols-2 gap-x-3 gap-y-2">
+      <ul className="grid grid-cols-1 gap-x-3 gap-y-2 min-[350px]:grid-cols-2">
         {items.map((item) => {
           const look = BASKETS[item.key]
+          const was = motion?.was[item.key]
           const highlighted = motion?.highlight === item.key
           const leaving = item.key === 'unclassified' && motion?.waiting === 'leave'
           return (
@@ -70,8 +73,14 @@ export function BasketStrip({ card, motion, keys, title, flight = false }: Baske
                 <span className="min-w-0 break-words">{item.label}</span>
               </p>
               <span data-amount-key={flight ? item.key : undefined} className="max-w-full">
-                <NumberChip number={item.amount} size="inline" count={motion?.counts[item.key]} />
+                <NumberChip
+                  number={item.amount}
+                  size="inline"
+                  tone={item.key === 'unclassified' ? 'neutral' : 'mint'}
+                  count={motion?.counts[item.key]}
+                />
               </span>
+              {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
             </li>
           )
         })}
