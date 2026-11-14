@@ -146,6 +146,9 @@ def test_someone_elses_question_never_gets_the_users_numbers(question, language)
     "how much is safe to spend before payday?", "How much can I safely spend this week?",
     "You can safely spend twice that amount, about three hundred euros.",
     "Someone in your household often pays the bills alone.", "how do they compare to Prisma's prices?",
+    "Arjen kulutus", "That cut would save you", "Voit käyttää turvallisesti 180,26", "Taxis this month",
+    "a pasted wall of digits is longer than any IBAN or reference",
+    "Mitä jos vähentäisin kulutusta luokassa Ravintolat?", "so you spent nothing on travel",
 ])
 def test_no_person_in_these(question):
     assert people.classify(question) is None, question
