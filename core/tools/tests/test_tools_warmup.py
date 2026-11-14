@@ -12,6 +12,12 @@ from core.tools.warmup import WarmCall
 PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
 
 
+@pytest.fixture(autouse=True)
+def no_review_writes(monkeypatch):
+    """No database here: spike reviews are off unless a test fakes them."""
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
+
+
 class EmptyArgs(Args):
     pass
 
@@ -200,3 +206,73 @@ def test_a_preset_key_without_its_labels_is_never_trusted(monkeypatch):
     ctx.labels_key = "a key from another context"
     ToolCache(mode="memory").ensure_labels_key(ctx)
     assert ctx.labels_key == labels_key_of({5: "everyday_spending"}) and ctx._labels == {5: "everyday_spending"}
+
+
+labels_seen: list[tuple] = []
+
+
+def labels_tool(ctx, args):
+    labels_seen.append((ctx.customer_id, ctx.language, dict(ctx._labels), ctx.labels_key))
+    return ToolResult(tool="labels_tool", data=None, model_view={})
+
+
+def test_the_pending_review_comes_first_once_per_persona_and_sets_the_label_key(monkeypatch):
+    from core.tools.cache import labels_key_of
+
+    ensured = []
+    labels_seen.clear()
+
+    def fake_ensure_pending_for(ctx):
+        ensured.append(ctx.customer_id)
+        ctx._labels = {606016: "unclassified"}            # what the overview's first serve would create
+
+    monkeypatch.setattr(warmup.reviews, "ensure_pending_for", fake_ensure_pending_for)
+    calls = (WarmCall("labels", __name__, "labels_tool", "EmptyArgs", {}),)
+    warmup.warm(ToolCache(mode="memory"), None, PERSONAS[:2], ["en", "fi"], date(2026, 9, 30),
+                out=lambda _: None, calls=calls)
+    assert ensured == PERSONAS[:2]                                  # once per persona, not per language
+    key = labels_key_of({606016: "unclassified"})
+    assert len(labels_seen) == 4
+    assert all(s[2] == {606016: "unclassified"} and s[3] == key for s in labels_seen)
+
+
+def test_a_failed_pending_review_check_does_not_stop_the_warm_up(monkeypatch):
+    def broken(ctx):
+        raise RuntimeError("no database")
+
+    monkeypatch.setattr(warmup.reviews, "ensure_pending_for", broken)
+    lines: list[str] = []
+    rows = warmup.warm(ToolCache(mode="memory"), None, PERSONAS[:1], ["en"], date(2026, 9, 30),
+                       out=lines.append, calls=FAKE_CALLS)
+    assert any("pending review check failed (RuntimeError)" in line for line in lines)
+    assert {r.source for r in rows if r.tool == "fake_tool"} == {"tool"}
+
+
+def test_the_first_overview_after_the_warm_up_hits_even_when_the_review_is_created_by_it(monkeypatch):
+    """#240: on a database without a review the warm-up's ensure_pending_for creates it, so the first
+    overview (which calls ensure_pending_for before its tools, and finds the review) has the same label
+    key and is served from the cache. Without that call the warm-up would store the "no review" state."""
+    from core.tools.context import ToolContext
+
+    calls = (WarmCall("fake", __name__, "fake_tool", "EmptyArgs", {}),)
+
+    def overview_hits(cache, created):
+        def ensure(ctx):                          # the first serve creates the review, later serves find it
+            ctx._labels = dict(created.setdefault(ctx.customer_id, {606016: "unclassified"}))
+        monkeypatch.setattr(warmup.reviews, "ensure_pending_for", ensure)
+        ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=None, language="en")
+        warmup.reviews.ensure_pending_for(ctx)    # what overview.build does first
+        return cache.prepare("fake_tool", EmptyArgs, fake_tool, ctx, {}).hit
+
+    created: dict = {}
+    cache = ToolCache(mode="memory")
+    monkeypatch.setattr(warmup.reviews, "ensure_pending_for",
+                        lambda ctx: setattr(ctx, "_labels", dict(created.setdefault(ctx.customer_id,
+                                                                                    {606016: "unclassified"}))))
+    warmup.warm(cache, None, ["CUST00860"], ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
+    assert overview_hits(cache, created) is True
+
+    old_style = ToolCache(mode="memory")                     # a warm-up that skipped ensure_pending_for
+    monkeypatch.setattr(warmup.reviews, "ensure_pending_for", lambda ctx: None)
+    warmup.warm(old_style, None, ["CUST00860"], ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
+    assert overview_hits(old_style, {}) is False             # the review appears later: another key
