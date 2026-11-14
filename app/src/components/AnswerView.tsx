@@ -2,7 +2,7 @@
 // (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
 // action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
 import type { Action } from '../api/types.ts'
-import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
+import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -173,7 +173,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
     )
   } else {
     // Answered and fallback share one layout, so nothing changes its look when `done` arrives;
-    // a fallback only adds its quiet note. Until a card arrives, the text waits for `done`: an
+    // a fallback shows the service's short text as it is, with the cards. Until a card arrives, the text waits for `done`: an
     // answer without cards may still turn out to be a refusal or a clarification, which look
     // different, so the stages and the skeleton stay until then.
     const holdText = streaming && answer.cards.length === 0
@@ -194,12 +194,6 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
             <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} />
           </p>
         )}
-        {done && outcome === 'fallback' && (
-          <p className="flex gap-2 text-sm text-muted">
-            <InfoIcon />
-            {s.fallbackNote}
-          </p>
-        )}
       </>
     )
   }
@@ -215,6 +209,14 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       {(hasContent || streaming || done) && <SenttiLabel s={s} />}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
+      {/* Written from the template without the AI model (warning `llm_unavailable`, #282):
+          a quiet note under the answer, whatever the outcome. */}
+      {writtenByTemplate(done) && (
+        <p className="flex gap-2 text-sm text-muted">
+          <InfoIcon />
+          {s.templateNote}
+        </p>
+      )}
 
       {done?.lesson && (
         <aside className="rounded-md bg-sunken p-4">
