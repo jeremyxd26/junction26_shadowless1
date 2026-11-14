@@ -294,6 +294,17 @@ for _id, _unit, _name, _summary in [
      ("Safe to spend after the bill", "Turvallisesti käytettävissä laskun jälkeen"),
      ("The smaller of the balance limit, recomputed with the bill, and the monthly budget limit.",
       "Pienempi kahdesta: laskun kanssa uudelleen laskettu saldoraja ja kuukausibudjetin raja.")),
+    ("bill.forecast_counted_eur@1", Unit.EUR, ("Taken from the forecast by the bill", "Lasku vie ennusteesta"),
+     ("The bill's amount, or only its excess over what the balance forecast already subtracts for the same bill "
+      "by the due date.",
+      "Laskun summa tai vain se osa, joka ylittää sen, mitä saldoennuste vähentää samasta laskusta jo "
+      "eräpäivään mennessä.")),
+    ("bill.forecast_after_eur@1", Unit.EUR, ("Forecast balance after the bill", "Ennustettu saldo laskun jälkeen"),
+     ("The forecast balance on the due date minus what the bill takes from it.",
+      "Ennustettu saldo eräpäivänä miinus se, mitä lasku siitä vie.")),
+    ("bill.forecast_shortfall_eur@1", Unit.EUR, ("Short of the bill", "Laskusta puuttuu"),
+     ("What the bill takes from the forecast minus the forecast balance on the due date.",
+      "Se, mitä lasku vie ennusteesta, miinus ennustettu saldo eräpäivänä.")),
 ]:
     METHODS[_id] = MethodInfo(_unit, _name, _summary, BILL_DOC)
 # Small purchases (#256): the output columns of 08_small_purchases.sql, metrics.md section 12.

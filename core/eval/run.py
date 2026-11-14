@@ -113,6 +113,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append("unverified: the source did not report its chips")
         elif len(ans.follow_ups) < 4:
             fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
+    if case["expect"] == "no_data" and ans.follow_ups is not None and not ans.follow_ups:
+        fails.append("chips: a period without data offers what Sentti can answer instead (#379)")
     if case["expect"] in ("refused", "no_data", "meta"):
         for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")

@@ -42,6 +42,7 @@ const examples = contract.examples as unknown as {
   'personas.response': PersonasResponse
   'overview.response': OverviewResponse
   'overview.response_pending': OverviewResponse
+  'overview.response_no_hero': OverviewResponse
   'evidence.response': EvidenceResponse
   'evidence.response_composite': EvidenceResponse
   'error.response': ErrorEnvelope
@@ -236,9 +237,19 @@ function withShares(overview: OverviewResponse): OverviewResponse {
   }
 }
 
+/**
+ * `?mock=no_hero` in the page URL serves the contract's `overview.response_no_hero` for its
+ * customer (safe to spend cannot be computed, contract 0.2.2), to check that fallback.
+ */
+function noHero(customerId: string): OverviewResponse | undefined {
+  const example = examples['overview.response_no_hero']
+  const asked = new URLSearchParams(window.location.search).get('mock') === 'no_hero'
+  return asked && example.customer_id === customerId ? example : undefined
+}
+
 /** The overview as the core would serve it now: pending, or with the answer applied. */
 function currentOverview(customerId: string): OverviewResponse | undefined {
-  const base = OVERVIEWS[customerId]
+  const base = noHero(customerId) ?? OVERVIEWS[customerId]
   const basket = answers[customerId]
   if (!base || !basket) return base
   const answered = applyChanges(clone(base), answerExample(basket).changes)
