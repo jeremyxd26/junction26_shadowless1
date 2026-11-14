@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from . import errors, evidence, labels, overview, personas, whatif
+from . import bill_samples, errors, evidence, labels, overview, personas, whatif
 
 
 def register(app: FastAPI) -> None:
@@ -17,3 +17,4 @@ def register(app: FastAPI) -> None:
     app.include_router(overview.router)
     app.include_router(whatif.router)
     app.include_router(labels.router)  # POST /api/baskets/label (#68)
+    app.include_router(bill_samples.router)  # GET /api/bill/samples and its images (#249)
