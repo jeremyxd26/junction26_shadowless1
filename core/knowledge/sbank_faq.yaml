@@ -23,8 +23,8 @@ entries:
     topic: payments
     questions_en: ["How does direct debit work at S-Bank?", "How do I set up a direct debit?"]
     questions_fi: ["Miten suoramaksu toimii?", "Miten otan suoramaksun käyttöön?"]
-    answer_en: "With a direct debit, the biller sends the bill details to the bank, and the bank takes the amount from the account automatically on the due date; the biller also sends a bill that mentions this. S-Bank's help pages say direct debit is for customers without S-Bank online banking codes, and it is set up at an S-Bank customer service point."
-    answer_fi: "Suoramaksussa laskuttaja lähettää laskun tiedot pankille, ja pankki veloittaa summan tililtä automaattisesti eräpäivänä; laskuttaja lähettää myös laskun, jossa tästä kerrotaan. S-Pankin ohjeiden mukaan suoramaksu on tarkoitettu asiakkaille, joilla ei ole S-Pankin verkkopankkitunnuksia, ja se otetaan käyttöön S-Pankin asiakaspalvelupisteessä."
+    answer_en: "With a direct debit, the biller sends the bill details to the bank, and the bank takes the amount from the account automatically on the due date; the biller also sends a bill that mentions this. S-Bank's help pages say direct debit can be used by customers who do not have S-Bank online banking codes, and it is set up at an S-Bank customer service point."
+    answer_fi: "Suoramaksussa laskuttaja lähettää laskun tiedot pankille, ja pankki veloittaa summan tililtä automaattisesti eräpäivänä; laskuttaja lähettää myös laskun, jossa tästä kerrotaan. S-Pankin ohjeiden mukaan suoramaksua voivat käyttää asiakkaat, joilla ei ole S-Pankin verkkopankkitunnuksia, ja se otetaan käyttöön S-Pankin asiakaspalvelupisteessä."
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-suoramaksu/"
     retrieved_at: "2026-11-15"
     keywords:
@@ -167,8 +167,8 @@ entries:
     topic: accounts
     questions_en: ["How do I open a bank account for my child?", "Can my kid have an S-Bank account?"]
     questions_fi: ["Miten avaan pankkitilin lapselle?", "Voiko lapselle avata tilin S-Pankkiin?"]
-    answer_en: "S-Bank's help pages say a child's own bank account can be opened in S-Bank's online service or at an S-Bank customer service point. The bank can tell you what it needs from the guardians."
-    answer_fi: "S-Pankin ohjeiden mukaan lapselle voi avata oman pankkitilin S-Pankin sähköisessä asiointipalvelussa tai asiakaspalvelupisteessä. Pankki kertoo, mitä se tarvitsee huoltajilta."
+    answer_en: "S-Bank's help pages say a child's own bank account can be opened in S-Bank's online service or at an S-Bank customer service point. The bank can tell you more about it."
+    answer_fi: "S-Pankin ohjeiden mukaan lapselle voi avata oman pankkitilin S-Pankin sähköisessä asiointipalvelussa tai asiakaspalvelupisteessä. Pankki kertoo asiasta lisää."
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-avaan-pankkitilin-lapselle/"
     retrieved_at: "2026-11-15"
     keywords:
@@ -191,8 +191,8 @@ entries:
     topic: cards
     questions_en: ["What should I do if my card is lost or stolen?", "How do I block my card?"]
     questions_fi: ["Mitä teen, jos korttini katoaa tai varastetaan?", "Miten suljen korttini?"]
-    answer_en: "S-Bank's help pages say to close the card at once, in S-mobiili or by calling the card blocking service, which is open around the clock, and then to report a theft to the police. A Visa or S-Etukortti Debit card that is closed this way is replaced with a new card automatically."
-    answer_fi: "S-Pankin ohjeiden mukaan kortti suljetaan heti S-mobiilissa tai soittamalla korttien sulkupalveluun, joka on auki ympäri vuorokauden, ja varkaudesta tehdään rikosilmoitus poliisille. Näin suljetun Visa- tai S-Etukortti Debit -kortin tilalle lähetetään uusi kortti automaattisesti."
+    answer_en: "S-Bank's help pages say to close the card at once by calling the card blocking service, which is open around the clock, and then to report a theft to the police. A Visa or S-Etukortti Debit card that is closed this way is replaced with a new card automatically."
+    answer_fi: "S-Pankin ohjeiden mukaan kortti suljetaan heti soittamalla korttien sulkupalveluun, joka on auki ympäri vuorokauden, ja varkaudesta tehdään rikosilmoitus poliisille. Näin suljetun Visa- tai S-Etukortti Debit -kortin tilalle lähetetään uusi kortti automaattisesti."
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/korttini-on-varastettu-tai-kadonnut/"
     retrieved_at: "2026-11-15"
     keywords:

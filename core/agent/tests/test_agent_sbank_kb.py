@@ -84,6 +84,22 @@ def test_the_customers_own_figures_and_a_recommendation_are_never_answered_here(
     assert sbank_kb.answer_for(question, "fi" if re.search(r"[äö]|paljonko|kannattaako", question, re.I) else "en") is None
 
 
+@pytest.mark.parametrize("question, lang", [
+    ("Can I afford a new bicycle?", "en"), ("Keep my savings separate from bills", "en"), ("I paid swiftly", "en"),
+    ("Is my pink jacket expensive?", "en"), ("What's bank interest?", "en")])
+def test_english_phrases_are_whole_words_and_an_apostrophe_s_is_not_s_bank(question, lang):
+    assert sbank_kb.find_bank_entry(question, lang) is None and sbank_kb.answer_for(question, lang) is None
+
+
+@pytest.mark.parametrize("question, lang", [
+    ("Show my S-Bank transactions", "en"), ("What's on my S-Bank account?", "en"),
+    ("What are my latest S-mobiili purchases?", "en"), ("Tell me about my S-Bank account", "en"),
+    ("Näytä S-Pankin tilitapahtumani", "fi"), ("Onko S-Pankin tililläni tarpeeksi rahaa vuokraan?", "fi"),
+    ("Kerro S-Pankin tilistäni", "fi")])
+def test_an_own_data_question_about_s_bank_never_gets_the_dont_know_line(question, lang):
+    assert sbank_kb.answer_for(question, lang) is None
+
+
 def test_no_match_but_clearly_about_s_bank_is_the_dont_know_line():
     en = sbank_kb.answer_for("Is S-Bank open on Sunday?", "en")
     fi = sbank_kb.answer_for("Onko S-Pankilla kahvila?", "fi")

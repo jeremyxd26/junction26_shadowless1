@@ -73,9 +73,9 @@ SOURCE_LINE = ("From S-Bank's public help pages: {url}", "S-Pankin julkisilta oh
 UNKNOWN = ("I don't know that one; the bank can tell you.", "En tiedä sitä; pankki osaa kertoa.")
 
 # The message names S-Bank, S-mobiili or an S-Bank card (folded: lower case, no diacritics).
-ABOUT_SBANK = r"\bs[- ]?(?:bank|pank|mobiil|etukort)\w*"
+ABOUT_SBANK = r"(?<![\w'])s[- ]?(?:bank|pank|mobiil|etukort)\w*"
 # The bank's name inside a phrase, dropped for a second look: "my S-Bank card", "S-Pankin korttini".
-BANK_NAME = r"(?<![\w-])s[- ]?(?:bank's|bank|pankin|pankki)\s+"
+BANK_NAME = r"(?<![\w'-])s[- ]?(?:bank's|bank|pankin|pankki)\s+"
 # The customer's own figures: a data question, never a knowledge-base answer.
 OWN_FIGURES = (r"\d|€|\beur(?:o|os)?\b|\bhow (?:much|many)\b|\bbalance\b|\b(?:did|have|had) (?:i|we) "
                r"(?:spend|spent|pay|paid|buy|bought|earn|earned|get|got|receive|received|save|saved)\b|"
@@ -88,6 +88,9 @@ OWN_FIGURES = (r"\d|€|\beur(?:o|os)?\b|\bhow (?:much|many)\b|\bbalance\b|\b(?:
 OUT_OF_SCOPE = (r"\bloan\w*|\bborrow\w*|\bmortgage\w*|\bcredit (?:card )?(?:limit|decision|score)\w*|\binvest\w*|\bfunds?\b|"
                 r"\bstocks?\b|\bshares?\b|\binsurance\w*|\blain\w*|\bluot\w*|\bsijoit\w*|\brahasto\w*|\bosake\w*|"
                 r"\bvakuutu\w*")
+# The customer's own things ("my S-Bank transactions", "S-Pankin tilitapahtumani"): never the "I don't know" line,
+# which would take an own-data question away from the planner; a matching entry still answers ("block my card").
+OWN_THINGS = r"\b(?:my|mine|our|minun|mun|meidan)\b|\b\w{3,}ni\b"
 # A recommendation or a comparison: out of scope (the mentor rule), never a knowledge-base answer.
 ADVICE = (r"\bshould i\b(?! do\b)|\bwhich (?:\w+ )?(?:is|would be) (?:better|best)\b|\bbest\b|\bbetter\b|\brecommend\w*|"
           r"\bworth it\b|\bcompare\w*|\bkannattaako\b|\bkannattaa\b|\bparas\w*|\bparempi\w*|\bsuosittel\w*|"
@@ -99,11 +102,13 @@ def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s'/-]", " ", text).split())
 
 
-def _compile(phrases: tuple[str, ...]) -> tuple[tuple[re.Pattern, int], ...]:
-    return tuple((re.compile(r"(?<![\w-])" + re.escape(_norm(p))), len(_norm(p))) for p in phrases if _norm(p))
+def _compile(phrases: tuple[str, ...], end: str) -> tuple[tuple[re.Pattern, int], ...]:
+    return tuple((re.compile(r"(?<![\w-])" + re.escape(_norm(p)) + end), len(_norm(p))) for p in phrases if _norm(p))
 
 
-_KEYWORDS = {e.id: {"en": _compile(e.keywords_en + e.questions_en), "fi": _compile(e.keywords_fi + e.questions_fi)}
+# English phrases are whole words (a plural allowed: "bic" is not "bicycle"); Finnish ones are stems ("e-lask").
+_KEYWORDS = {e.id: {"en": _compile(e.keywords_en + e.questions_en, r"(?:e?s)?(?![\w-])"),
+                    "fi": _compile(e.keywords_fi + e.questions_fi, "")}
              for e in ENTRIES}
 
 
@@ -147,7 +152,8 @@ class KbAnswer:
 
 def answer_for(question: str, lang: str) -> KbAnswer | None:
     """The route's answer, or None (the usual path): the entry's text and its source line; for a message
-    clearly about S-Bank with no entry, the "I don't know that one" line. Never for the customer's own figures,
+    clearly about S-Bank with no entry and nothing of the customer's own, the "I don't know that one" line.
+    Never for the customer's own figures,
     a recommendation, a loan, credit, investment or insurance question, or a message with more than one line."""
     if not question.strip() or "\n" in question.strip() or own_figures(question) or asks_advice(question):
         return None
@@ -155,6 +161,6 @@ def answer_for(question: str, lang: str) -> KbAnswer | None:
     entry = find_bank_entry(question, lang)
     if entry is not None:
         return KbAnswer(entry.id, entry.answer(lang), SOURCE_LINE[i].format(url=entry.source_url))
-    if about_sbank(question):
+    if about_sbank(question) and not re.search(OWN_THINGS, _norm(question)):
         return KbAnswer(None, UNKNOWN[i])
     return None
