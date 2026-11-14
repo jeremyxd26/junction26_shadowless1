@@ -262,3 +262,24 @@ def test_the_service_logs_the_model_state_at_start(caplog):
         with TestClient(create_app(Settings(_env_file=None))):
             pass
     assert any(r.getMessage().startswith("language model: off (no GEMINI_API_KEY)") for r in caplog.records)
+
+
+@pytest.mark.parametrize("value", ["abc", "-1"])
+def test_a_malformed_daily_budget_starts_the_service_with_the_model_off(monkeypatch, caplog, value):
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+    from core.app.main import create_app
+    from core.app.settings import Settings
+
+    monkeypatch.setenv("MODEL_DAILY_BUDGET", value)
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with TestClient(create_app(Settings(_env_file=None, gemini_api_key="test-key-not-real"))) as client:
+            assert client.get("/healthz").status_code == 200
+    lines = [r.getMessage() for r in caplog.records if r.name == "uvicorn.error"]
+    assert any(line.startswith("language model: off (model settings invalid: ValidationError)") for line in lines)
+    assert all("test-key-not-real" not in line and value not in line.split(":")[0] for line in lines)
+    assert isinstance(make_agent_model(Settings(_env_file=None, gemini_api_key="test-key-not-real")), RuleModel)
