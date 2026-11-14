@@ -4,6 +4,9 @@ Sections and their tools:
 - hero: the safe-to-spend metric card, from HERO_TOOL = get_safe_to_spend (#55, switched on in #79):
   safe to spend in the next 7 days with its components, status and estimate text; null when the tool
   fails for a known reason (HERO_KNOWN_FAILURES).
+- safe_to_save: the safe_to_save card, from SAVE_TOOL = get_safe_to_save (#165); null on a known failure.
+  It reads the same row of 03_safe_to_spend.sql as the hero (safe_to_spend.metric_row, cached on the
+  request's ToolContext), so the overview runs the file once.
 - cards: the basket breakdown over the last 6 complete months (get_basket_breakdown) and the bills
   before payday (get_recurring_bills).
 - insights: none yet (no insight tool exists).
@@ -25,12 +28,13 @@ from core.tools.baskets import get_basket_breakdown
 from core.tools.bills import get_recurring_bills
 from core.tools.context import ToolContext
 from core.tools.models import ToolResult
+from core.tools.safe_to_save import get_safe_to_save
 from core.tools.safe_to_spend import BillsDueMismatch, NoTransactions, get_safe_to_spend
 
 from . import texts
 from .deps import CUSTOMER_ID_PATTERN, customer_connection
 from .personas import persona_by_id
-from .schemas import Language, MetricCard, OverviewResponse
+from .schemas import Language, MetricCard, OverviewResponse, SafeToSaveCard
 
 router = APIRouter()
 
@@ -39,6 +43,9 @@ HERO_TOOL: Callable[[ToolContext, dict], ToolResult] = get_safe_to_spend
 # The tool's known failures: the hero is null instead of a 500 for the whole overview. Anything else is
 # a bug and stays a 500.
 HERO_KNOWN_FAILURES = (BillsDueMismatch, NoTransactions)
+# The safe_to_save card's tool and its known failure (no transactions up to as_of): then the card is null.
+SAVE_TOOL: Callable[[ToolContext, dict], ToolResult] = get_safe_to_save
+SAVE_KNOWN_FAILURES = (NoTransactions,)
 log = logging.getLogger("uvicorn.error")
 
 
@@ -46,7 +53,7 @@ def _card(result: ToolResult) -> dict[str, Any]:
     return result.card.model_dump(mode="json")
 
 
-def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewResponse:
+def build(ctx: ToolContext, hero_tool: Callable | None = None, save_tool: Callable | None = None) -> OverviewResponse:
     lang = ctx.language
     persona = persona_by_id(ctx.customer_id)
     greeting = (texts.pick(texts.GREETING, lang).format(name=persona["display_name"]) if persona
@@ -67,13 +74,17 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
         log.warning("hero unavailable (%s)", type(exc).__name__)
         hero = None
 
+    try:
+        safe_to_save = SafeToSaveCard.model_validate(_card((save_tool or SAVE_TOOL)(ctx, {})))
+    except SAVE_KNOWN_FAILURES as exc:
+        log.warning("safe to save unavailable (%s)", type(exc).__name__)
+        safe_to_save = None
+
     cards = [
         _card(get_basket_breakdown(ctx, {"period": {"preset": "last_6_months"}})),
         _card(get_recurring_bills(ctx, {"include_income": False})),
     ]
-    # EXTENSION POINT (contract 0.2.0, section 6): `reviews` (at most one pending review card, #68)
-    # and `safe_to_save` (a safe_to_save card, #53/#55) are top-level fields, not entries of `cards`.
-    # `safe_to_save` is added once its tool exists.
+    # `reviews` (at most one pending review card, #68) is a top-level field, not an entry of `cards`.
     reviews: list[dict[str, Any]] = [review] if review is not None else []
     insights: list[dict[str, Any]] = []  # EXTENSION POINT: insight tools (habit_trend, one_off, ...)
 
@@ -84,6 +95,7 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
         "greeting": greeting,
         "ai_disclosure": texts.pick(texts.AI_DISCLOSURE, lang),
         "hero": hero,
+        "safe_to_save": safe_to_save,
         "cards": cards,
         "reviews": reviews,
         "insights": insights,
@@ -100,4 +112,4 @@ def get_overview(
     with customer_connection(request, customer_id) as conn:   # allowlist first, no database (#101)
         ctx = ToolContext(customer_id=customer_id, as_of=request.app.state.settings.demo_today, conn=conn,
                           language=lang)
-        return build(ctx, HERO_TOOL)
+        return build(ctx, HERO_TOOL, SAVE_TOOL)

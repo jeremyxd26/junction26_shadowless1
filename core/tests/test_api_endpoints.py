@@ -16,7 +16,7 @@ from core.app.api.errors import ApiError
 from core.app.api.schemas import ErrorResponse, OverviewResponse, PersonasResponse
 from core.app.main import create_app
 from core.app.settings import Settings
-from core.tools import aliases, config
+from core.tools import aliases, config, safe_to_spend
 from core.tools.context import ToolContext
 from core.tools.db import Tx
 from core.tools.models import Card, Number, Period, ToolResult
@@ -115,7 +115,7 @@ class _FakePool:
 
 
 def test_unexpected_error_is_500_internal_without_its_text(clean_env, monkeypatch):
-    def boom(ctx, hero_tool=None):
+    def boom(*args, **kwargs):
         raise RuntimeError("secret detail that must not leak")
 
     monkeypatch.setattr(overview, "build", boom)
@@ -132,7 +132,7 @@ CANARY = "postgresql://canary_user:canary_pw@canary-host.example/canary_db"
 
 def test_unhandled_exception_text_reaches_neither_the_log_nor_the_body(clean_env, monkeypatch, caplog):
     """The exception is caught without re-raising: Starlette's 500 handler would log the traceback."""
-    def boom(ctx, hero_tool=None):
+    def boom(*args, **kwargs):
         raise RuntimeError(f"connection failed: {CANARY}")
 
     monkeypatch.setattr(overview, "build", boom)
@@ -228,8 +228,25 @@ def _history() -> list[Tx]:
     return h
 
 
-def _ctx() -> ToolContext:
-    return ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=_FakeStore(), _history=_history())
+# The row of 03_safe_to_spend.sql for Sanna (contracts/api.md `card.safe_to_save`), as metric_row caches
+# it on the context: the safe-to-save tool then runs without a database.
+SANNA_03_ROW = {
+    "free_month_eur": Decimal("783.79"), "everyday_month_eur": Decimal("599.18"),
+    "safe_to_save_monthly_eur": Decimal("184.61"), "essentials_shortfall_month_eur": Decimal("0.00"),
+    "free_until_payday_eur": Decimal("12567.56"), "everyday_until_payday_eur": Decimal("295.28"),
+    "safe_to_save_eur": Decimal("12272.28"), "save_reason": None, "save_reason_category": None,
+    "save_reason_month_eur": None, "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+}
+
+
+NO_ROW = object()   # 03 returns no row for the customer (no transactions up to as_of)
+
+
+def _ctx(row: dict | object = SANNA_03_ROW) -> ToolContext:
+    ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=_FakeStore(), _history=_history())
+    ctx._labels = {}   # no labels: the context reads no reviews table
+    ctx.shared[safe_to_spend.row_key(ctx, safe_to_spend.settings_for(ctx))] = None if row is NO_ROW else row
+    return ctx
 
 
 def _stub_hero(ctx, args) -> ToolResult:
@@ -265,6 +282,33 @@ def test_any_other_hero_failure_is_not_hidden():
 
     with pytest.raises(RuntimeError):
         overview.build(_ctx(), hero_tool=bug)
+
+
+def test_the_save_tool_failing_leaves_the_hero_and_the_rest(caplog):
+    """#191 review: a known failure of the safe-to-save tool gives a null card, not a 500."""
+    def failing(ctx, args):
+        raise safe_to_spend.NoTransactions("no transactions up to as_of for this customer")
+
+    caplog.set_level(logging.DEBUG)
+    body = overview.build(_ctx(), hero_tool=_stub_hero, save_tool=failing)
+    assert body.safe_to_save is None and body.hero is not None and body.hero.primary.value == 184.68
+    assert [c.type for c in body.cards] == ["breakdown", "bills"]
+    assert "safe to save unavailable (NoTransactions)" in caplog.text and "as_of" not in caplog.text
+
+
+def test_no_row_of_03_gives_a_null_hero_and_a_null_card():
+    """Both tools read the same row: when 03 returns none, both sections are null and the rest stays."""
+    body = overview.build(_ctx(NO_ROW))   # the real get_safe_to_spend and get_safe_to_save
+    assert body.hero is None and body.safe_to_save is None
+    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna"
+    OverviewResponse.model_validate(body.model_dump(mode="json"))
+
+
+def test_the_save_card_comes_from_the_real_tool_on_the_shared_row():
+    body = overview.build(_ctx(), hero_tool=_stub_hero)
+    card = body.safe_to_save
+    assert (card.monthly.value, card.stock.value, card.reason) == (184.61, 12272.28, None)
+    assert [c.key for c in card.monthly_components] == ["free_month", "everyday_month"]
 
 
 def test_the_hero_comes_from_get_safe_to_spend():
