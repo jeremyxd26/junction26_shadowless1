@@ -139,7 +139,9 @@ def test_safe_to_save_with_nothing_left_gives_the_tools_reason():
     zero = {**SAVE, "monthly": n(50, 0, "eur_per_month", "Safe to save a month"),
             "reason": {"kind": "essentials_exceed_income", "category": None, "amount": n(52, 120.0, "eur_per_month"),
                        "text": "Bills and essentials already use up your income."}}
-    draft = template_draft([zero], [], "en", None, "How much could I save a month?")
+    # Not a save-more question: the monthly figure (0) and the reason (#342 keeps the reason alone after
+    # "How could I save more?", where the what-if offer follows).
+    draft = template_draft([zero], [], "en", None, "What can I safely save a month?")
     assert draft["cited"][0] == "n50" and "Bills and essentials already use up your income." in draft["text"]
 
 
@@ -156,9 +158,11 @@ BONUS = {"tool": "get_bonus_estimate", "kind": "estimate", "status": "estimate",
 
 def test_the_bonus_answer_states_the_estimate_and_its_assumption():
     draft = template_draft([BONUS], [], "en", None, "How much S-Bonus could I get?")
-    assert draft["cited"] == ["n66", "n60", "n67", "n61"]          # the share is cited with its own label
-    assert "Share at S-Group stores: {{n60}}" in draft["text"]
-    assert draft["text"].endswith("not a fact about where you shop.")
+    # Renat's length rule (#342): one sentence, the share named so a "half" answer never reads like one
+    # for all groceries (review of #246), the assumption as its "if" clause.
+    assert draft["cited"] == ["n60", "n66", "n67"]
+    assert draft["text"] == ("If {{n60}} of your groceries came from S Group stores, your S-Bonus would be about "
+                             "{{n66}}, or {{n67}}.")
     nothing = {**BONUS, "status": "not_offered", "reason": "These purchases stay below the lowest Bonus level, so no Bonus would be paid."}
     draft = template_draft([nothing], [], "en", None, "How much S-Bonus could I get?")
     assert draft["cited"] == [] and "below the lowest Bonus level" in draft["text"]
@@ -174,7 +178,8 @@ PEER = {"tool": "get_peer_benchmark", "metric": "spend_total", "period": "1 Apr 
 
 def test_the_peer_answer_states_position_difference_median_and_group_size():
     draft = template_draft([PEER], [], "en", None, "How do I compare with people like me?")
-    assert draft["cited"] == ["n74", "n75", "n71", "n76"]
+    # Renat's length rule (#342): the difference from the median in one sentence; the rest on the card.
+    assert draft["cited"] == ["n75"] and draft["text"] == "You spend {{n75}} than the median of people like you."
     hidden = {**PEER, "shown": False, "reason": "group_too_small"}
     draft = template_draft([hidden], [], "en", None, "How do I compare with people like me?")
     assert draft["cited"] == [] and "too few people like you" in draft["text"]
@@ -197,10 +202,10 @@ def test_the_profile_answer_names_the_type_before_its_numbers():
             "traits": [], "features": [{"key": "keep_rate", "decides_label": "Keep rate",
                                         "value": n(90, 15.4, "percent", "Keep rate")}],
             "top_everyday_category": None, "notes": []}
-    for lang, lead in [("en", "Your spender profile: Big ticket. A few large purchases shape your months."),
-                       ("fi", "Kuluttajaprofiilisi: Big ticket. A few large purchases shape your months.")]:
-        text = template_draft([view], [], lang, None, "What kind of spender am I?")["text"]
-        assert text.startswith(lead) and "{{n90}}" in text
+    # Renat's length rule (#342): the type and the feature that decided it in one sentence.
+    for lang, text in [("en", "Your spender profile is Big ticket: the share of your income left over is {{n90}}."),
+                       ("fi", "Kuluttajaprofiilisi on Big ticket: tuloistasi jää jäljelle {{n90}}.")]:
+        assert template_draft([view], [], lang, None, "What kind of spender am I?")["text"] == text
 
 
 

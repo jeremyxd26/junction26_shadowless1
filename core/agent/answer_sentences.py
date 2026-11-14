@@ -1,9 +1,9 @@
 """Rule answers as short human sentences (#342): one takeaway first, then at most one more sentence.
 
 template_draft (template.py) asks `for_view` for each tool's model view. It returns the sentences and
-the number ids they cite, or None for a tool written elsewhere: the safe-to-spend sentence, the spender
-profile, the peer benchmark and the S-Bonus estimate keep their own texts (PR #296), and an unknown
-tool keeps the old "label: number" form.
+the number ids they cite, or None for a tool written elsewhere: the safe-to-spend sentence keeps its own
+text (PR #296), a peer comparison that is not shown and an S-Bonus that is not offered keep their reason,
+and an unknown tool keeps the old "label: number" form.
 
 Rules for every text here (coordinator, #342):
 - at most two short sentences and about 35 words, in plain words, English and Finnish, the takeaway
@@ -364,6 +364,79 @@ def safe_to_save(view: dict[str, Any], language: str, save_more: bool) -> Senten
     return sentences, _ids(*cited)
 
 
+# ---- spender profile, peer comparison, S-Bonus (the texts of #216, shortened to the length rule) ---------
+# One sentence each: "What kind of spender am I?" plans the profile and the peer comparison, so the two
+# views together stay at two sentences and two numbers. The description, the other features, the peer
+# median and the group stay on the cards.
+
+PROFILE = ("Your spender profile is {label}: {feature}.", "Kuluttajaprofiilisi on {label}: {feature}.")
+PROFILE_ONLY = ("Your spender profile is {label}.", "Kuluttajaprofiilisi on {label}.")
+# The features that decide a profile (metrics.md section 5; "steady" lists the three whose rules did not
+# match, keep rate first), as the clause that explains it.
+PROFILE_FEATURE = {
+    "keep_rate": ("the share of your income left over is {n}", "tuloistasi jää jäljelle {n}"),
+    "one_off_share": ("occasional big purchases make up {n} of your spending", "kertaostosten osuus kulutuksestasi on {n}"),
+    "everyday_share_pct": ("everyday spending makes up {n} of your spending",
+                           "arjen kulutuksen osuus kulutuksestasi on {n}"),
+}
+
+
+def profile(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    label = (view.get("profile") or {}).get("label")
+    if not isinstance(label, str) or not ok(label):
+        return None
+    deciding = [f for f in view.get("features") or [] if isinstance(f, dict) and f.get("decides_label")]
+    for feature in deciding[:1]:
+        n = _tok(feature.get("value"))
+        if n and feature.get("key") in PROFILE_FEATURE:
+            clause = pick(PROFILE_FEATURE[feature["key"]], language).format(n=n)
+            return [pick(PROFILE, language).format(label=label, feature=clause)], _ids(n)
+    return [pick(PROFILE_ONLY, language).format(label=label)], []
+
+
+# The difference from the median: the tool's display carries "more" or "less" ("14.6% less").
+PEER = {"total": ("You spend {vs} than the median of people like you.",
+                  "Kulutat {vs} kuin kaltaistesi mediaani."),
+        "metric": ("On {metric} you spend {vs} than the median of people like you.",
+                   "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani.")}
+PEER_SAME = {"total": ("You spend about the same as the median of people like you.",
+                       "Kulutat suunnilleen saman verran kuin kaltaistesi mediaani."),
+             "metric": ("On {metric} you spend about the same as the median of people like you.",
+                        "Luokassa {metric} kulutat suunnilleen saman verran kuin kaltaistesi mediaani.")}
+
+
+def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    vs = _tok(view.get("vs_median"))
+    if view.get("shown") is False or not vs:
+        return None                      # the reason alone, in template.py (PEER_REASON)
+    kind = "total" if view.get("metric") == "spend_total" else "metric"
+    metric = view.get("metric_label") if isinstance(view.get("metric_label"), str) else ""
+    if kind == "metric" and not (metric and ok(metric)):
+        return None
+    metric = metric.lower() if language == "en" else metric
+    if _value(view.get("vs_median")) == 0:
+        return [pick(PEER_SAME[kind], language).format(metric=metric)], []
+    return [pick(PEER[kind], language).format(vs=vs, metric=metric)], _ids(vs)
+
+
+# The estimate with its assumption in one sentence: the share (typed or the default) is named, so a
+# "half" answer never reads like one for all groceries (review of #246).
+BONUS = ("If {share} of your groceries came from S Group stores, your S-Bonus would be about {month}, "
+         "or {year}.",
+         "Jos {share} ruokaostoksistasi tulisi S-ryhmän kaupoista, S-Bonuksesi olisi noin {month} eli {year}.")
+BONUS_MONTH = ("If {share} of your groceries came from S Group stores, your S-Bonus would be about {month}.",
+               "Jos {share} ruokaostoksistasi tulisi S-ryhmän kaupoista, S-Bonuksesi olisi noin {month}.")
+
+
+def bonus(view: dict[str, Any], language: str) -> Sentences | None:
+    share, month, year = (_tok(view.get(k)) for k in ("share", "total_month", "total_year"))
+    if view.get("status") == "not_offered" or not (share and month):
+        return None                      # the tool's reason, in template.py
+    if year:
+        return [pick(BONUS, language).format(share=share, month=month, year=year)], _ids(share, month, year)
+    return [pick(BONUS_MONTH, language).format(share=share, month=month)], _ids(share, month)
+
+
 # ---- dispatch ---------------------------------------------------------------------------------------------
 
 def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, asks_income: bool,
@@ -381,4 +454,10 @@ def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, as
         return what_if(view, language, ok)
     if tool == "get_safe_to_save":
         return safe_to_save(view, language, save_more)
+    if tool == "get_spender_profile":
+        return profile(view, language, ok)
+    if tool == "get_peer_benchmark":
+        return peer(view, language, ok)
+    if tool == "get_bonus_estimate":
+        return bonus(view, language)
     return None

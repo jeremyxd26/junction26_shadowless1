@@ -331,16 +331,9 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
 
 
-PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
-
-
 def lead_sentences(view: dict[str, Any], language: str) -> list[str]:
-    """Text that comes before a tool's numbers: the spender profile's own label and description, so
-    the answer to "What kind of spender am I?" names the type (review of #246). Text, never a number."""
-    profile = view.get("profile") if view.get("tool") == "get_spender_profile" else None
-    if isinstance(profile, dict) and isinstance(profile.get("label"), str):
-        description = profile.get("description") if isinstance(profile.get("description"), str) else ""
-        return [pick(PROFILE_LEAD, language).format(label=profile["label"], description=description).strip()]
+    """Text that comes before a tool's numbers. None today: the spender profile names its type in its own
+    sentence (answer_sentences.profile, #342), so the answer stays within two sentences."""
     return []
 
 
