@@ -23,9 +23,20 @@ export function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+/**
+ * A duration token in milliseconds. The token file says `600ms`, but the CSS minifier of the
+ * build rewrites it to `.6s`, so both units are read; anything else gives `fallback`.
+ */
 export function tokenMs(name: string, fallback: number): number {
-  const value = parseFloat(token(name))
-  return Number.isFinite(value) ? value : fallback
+  return parseDuration(token(name), fallback)
+}
+
+export function parseDuration(value: string, fallback: number): number {
+  const match = /^(\d*\.?\d+)(ms|s)?$/.exec(value.trim())
+  if (!match) return fallback
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount)) return fallback
+  return match[2] === 's' ? amount * 1000 : amount
 }
 
 const NUMBER = /\d(?:[\d\s\u00a0\u202f.,']*\d)?/
@@ -72,10 +83,13 @@ export function useCountedText(to: Num, count: Count | undefined, duration: numb
 
   useEffect(() => {
     if (!moves || !run || seq === undefined || from === undefined) return
-    const start = performance.now()
+    // The clock starts at the first frame, and progress stays within [0, 1], so every frame lies
+    // between the old and the new value (a frame time can be earlier than performance.now()).
+    let start: number | null = null
     let raf = 0
     const step = (now: number) => {
-      const t = Math.min(1, (now - start) / duration)
+      if (start === null) start = now
+      const t = duration > 0 ? Math.min(1, Math.max(0, (now - start) / duration)) : 1
       if (t >= 1) {
         setFrame(null)
         setDone(seq)
