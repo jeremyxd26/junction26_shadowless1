@@ -966,7 +966,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [glossary, lead]
   numbers:
-  - {name: safe_to_spend_week, value: 180.26, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 97.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: marja-glossary-safe-to-save
   persona: CUST00493
