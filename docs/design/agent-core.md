@@ -75,7 +75,7 @@ This document defines how the coach answers a question: which tools exist, what 
 
 | Component | Responsibility | Owner |
 |---|---|---|
-| Metrics layer | Pure functions and precomputed tables that produce Number objects. Formulas, method ids and SQL come from #6. | core (r-w2 defines it) |
+| Metrics layer | Pure functions and precomputed tables that produce Number objects. Formulas, method ids and SQL come from #6. | core |
 | Tool registry | Typed wrappers that the model can call (section 6). Each tool calls the metrics layer and returns a typed result, a card and a compact view for the model. | core |
 | Evidence store | Saves the recipe of each number and resolves `GET /api/evidence/{ref}` (section 5). | core |
 | Coach orchestrator | Runs one answer: guard, planner loop, tools, cards, composer, validator, audit. | core |
@@ -90,7 +90,7 @@ This document defines how the coach answers a question: which tools exist, what 
 | The model sees | The model never sees |
 |---|---|
 | The user's question, wrapped as data | Transaction rows, one by one |
-| The previous questions and answers of this conversation, with numbers masked | Merchant ids. It sees aliases such as `store_a` with the digit-free label the app also shows, such as "Grocery store A". |
+| The earlier turns of this conversation (section 7.6). The planner gets the earlier questions, its earlier function calls and their compact results, numbers included. The composer gets only the previous question and the previous answer with its numbers masked as `[number]`. | Merchant ids. It sees aliases such as `store_a` with the digit-free label the app also shows, such as "Grocery store A". |
 | A compact view of each tool result: number ids, values, units, labels, period labels and flags | `balance_after` series, timestamps, account ids |
 | Category, basket and profile labels | `customer_id`, postal code, exact age. It sees only coarse peer-group labels such as "Age 25-34, postal area 005". |
 | The date `as_of` | Evidence refs and the evidence store |
@@ -383,10 +383,10 @@ The planner chooses tools freely. The eval set (section 9) checks that each cano
 | 0. Validate (before the stream) | Check the body, including an empty message or one over 500 characters (400 `invalid_request`), the customer (404 `customer_not_found`) and the rate limit (429 `rate_limited`). These are plain HTTP errors: the stream is not opened yet. | none |
 | 1. Start | Open the stream. Resolve the conversation: it belongs to one customer, so an id that is unknown, expired or owned by another customer starts a new conversation (`warnings: conversation_reset`), and earlier tool results are never reused. Resolve the language: the request value, or a detector for `auto`. If the detector is unsure, use the previous turn's language, then the persona default. | `meta` |
 | 1a. Input guard | Strip control characters. Flag injection markers, investment keywords and references to other people as hints for the planner and the audit log. Nothing is blocked on keywords alone, because "How much did I invest?" is a valid question about the user's own Invest Deposit history (R7). | `status` (`understanding`) |
-| 2. Plan, model call 1 | Gemini gets the planner system prompt, the masked history, the question and the 8 data tools plus 3 control functions. Mode `ANY`: the model must call a function. It may return several calls in parallel. | |
+| 2. Plan, model call 1 | Gemini gets the planner system prompt, the history (earlier questions, function calls and their compact results, numbers not masked; section 7.6), the question and the 8 data tools plus 3 control functions. Mode `ANY`: the model must call a function. It may return several calls in parallel. | |
 | 3. Tools | Validate the arguments; on an error, return it to the model as a function response. Run valid calls in parallel on the 3-connection pool. Register number ids and evidence. Build cards. | `status` (`tool`) per tool, `card` per card-worthy result |
 | 4. Loop | If the model did not call `finish`, send the function responses back (model turns appended verbatim) and call again in mode `ANY`. At most 2 tool rounds and 6 data calls, then go to the composer anyway. `decline` or `ask_clarifying_question` ends the turn at once. | |
-| 5. Compose, model call 2 | A fresh, tool-free request: the composer system prompt, the question, the language, the masked previous turn and a quoted DATA block holding the tools' `model_view`s. Output is JSON constrained by the `AnswerDraft` schema. | `status` (`writing`) |
+| 5. Compose, model call 2 | A fresh, tool-free request: the composer system prompt, the question, the language, the previous question and the previous answer with its numbers masked, and a quoted DATA block holding the tools' `model_view`s. Output is JSON constrained by the `AnswerDraft` schema. | `status` (`writing`) |
 | 6. Validate | Schema plus semantic checks (section 7.4). On failure, retry once with the list of errors added. On a second failure, use a template answer from the tool results (`outcome: "fallback"`) (R12). | |
 | 7. Deliver | Send the validated text sentence by sentence. Before a sentence that cites a number not sent yet, send a `numbers` event. Then send `done` and write the audit record (R15). | `numbers`, `delta`, `done` |
 
@@ -450,7 +450,7 @@ The composer prompt forbids both, and the eval set samples for them.
 - **Memory:** an in-memory store keyed by `conversation_id`, keeping the last 6 turns for 30 minutes on a single instance. Production would use a shared store.
   - A conversation belongs to the customer who started it. A request with a `conversation_id` that is unknown, expired or owned by another customer starts a new conversation and never sees earlier tool results (R4).
   - The planner gets the previous questions, its previous function calls and their compact results, so "and last month?" or "what if I cut that by 20%?" resolve without the app resending anything.
-  - The composer gets only the previous question and answer with numbers masked as `[number]`. It cannot copy an old number; it has to cite a fresh tool result.
+  - The composer gets only the previous question and the previous answer with its numbers masked as `[number]`. It cannot copy an old number; it has to cite a fresh tool result.
 - **Follow-up suggestions** (`follow_ups`): a deterministic, localised table per intent and tool. It always offers the partner's four questions, minus the one just asked, and never depends on the model.
 - **Lessons** (financial literacy): a catalogue of about 7 short, human-reviewed concepts in English and Finnish (the `lesson_key` enum above). The composer picks at most one key that fits the answer, and the server inserts the reviewed text. The model never writes the lesson itself.
 
@@ -552,7 +552,7 @@ Both figures are estimates (R13), and nothing says where to put the money (R7). 
 |---|---|---|
 | An invented or miscalculated number | Number tokens, the digit check in the validator, retry, then template | R1, R12 |
 | A number that cannot be traced | Every Number has `evidence_ref`, which resolves and reconciles | R2 |
-| Raw data reaching the model | `model_view` projections, merchant aliases, masked history. A canary merchant id in the test data must never appear in a logged prompt. | R3 |
+| Raw data reaching the model | `model_view` projections (the planner's history holds the same projections), merchant aliases, and for the composer the previous answer with its numbers masked. A canary merchant id in the test data must never appear in a logged prompt. | R3 |
 | Another customer's data | `customer_id` lives only in the server context. Tools have no customer argument. Evidence checks ownership. | R4 |
 | Future or ambiguous periods | Clamping to `as_of`, resolved periods in every Number, period labels in the text | R5 |
 | Actions with side effects | Read-only registry, no free-text arguments. A spike label is written only by the app through `POST /api/baskets/label` when the customer taps an answer; no tool can write it (section 7.8). | R6 |
