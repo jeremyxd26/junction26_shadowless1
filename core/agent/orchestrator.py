@@ -904,7 +904,9 @@ class Pipeline:
                     if repeated:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
-                        errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                        errors.append(f"'{repeated}': the number's display already says how often; write the "
+                                      "number alone, with no period phrase after it and no 'a typical month of' or "
+                                      "'tavallisena kuukautena' before it")
                     joined = validator.amount_with_bank_product(draft.text, numbers)
                     if joined:
                         # #417: an amount next to the bank's screen or product reads as advice to put it

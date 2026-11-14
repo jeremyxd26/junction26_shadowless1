@@ -486,14 +486,31 @@ _REPEATED_RENDERED = re.compile(
     r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)[ \t]+\3\b", re.I)
 
 
+# The same period named before the token, in its clause (#600): "Based on a typical month of {{n}}" renders as "a
+# typical month of €294.73 a month"; "tavallisena kuukautena kulutat {{n}}" as "… 294,73 € / kk".
+_PERIOD_BEFORE = {
+    unit: re.compile(r"\b(?:(?:an?|per|each|every|your|the|in an?)\s+)?(?:typical|usual|normal|average|regular|"
+                     r"ordinary)\s+" + en + r"\b|\b(?:tavallise|tyypillise|keskimääräise|normaali)\w*\s+" + fi,
+                     re.I)
+    for unit, en, fi in (("eur_per_day", "day", r"päiv\w*"), ("eur_per_week", "week", r"viik\w*"),
+                         ("eur_per_month", "month", r"kuuka\w*"), ("eur_per_year", "year", r"vuo(?:si|de|tena)\w*"))}
+_CLAUSE_WINDOW = 40   # characters between the phrase and the token, with no sentence break
+
+
 def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
-    """The period phrase written again after a number whose display already carries it, or None."""
+    """The period phrase written again after a number whose display already carries it, or named before it in its
+    clause ("a typical month of {{n}}"), rendered; or None."""
     for m in TOKEN.finditer(text):
         number = numbers.get(m.group(0)[2:-2])
         if number is not None and number.unit.value in _PERIOD_UNITS:
             after = _PERIOD_WORDS.match(text, m.end())
             if after:
                 return (number.display + after.group(0)).strip()
+            window = re.split(r"[.!?]\s", text[max(0, m.start() - 80):m.start()])[-1]
+            before = [b for b in _PERIOD_BEFORE[number.unit.value].finditer(window)
+                      if len(window) - b.end() <= _CLAUSE_WINDOW]
+            if before:
+                return f"{before[-1].group(0)}{window[before[-1].end():]}{number.display}".strip()
     found = _REPEATED_RENDERED.search(render(text, numbers))
     return found.group(0) if found else None
 
