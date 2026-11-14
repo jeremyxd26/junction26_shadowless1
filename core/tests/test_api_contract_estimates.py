@@ -20,7 +20,7 @@ ESTIMATE_EXAMPLES = sorted(n for n in examples() if n.startswith("estimate."))
 
 
 def test_there_is_one_estimate_example_per_kind_without_a_card_example():
-    assert {"estimate.bonus", "estimate.forecast"} <= set(ESTIMATE_EXAMPLES)
+    assert {"estimate.bonus", "estimate.forecast", "estimate.savings_plan"} <= set(ESTIMATE_EXAMPLES)   # dev: the plan
 
 
 @pytest.mark.parametrize("name", ESTIMATE_EXAMPLES)
