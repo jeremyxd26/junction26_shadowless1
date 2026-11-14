@@ -11,12 +11,14 @@ import pytest
 from core.tools.baskets import GetBasketBreakdownArgs, get_basket_breakdown
 from core.tools.cache import ToolCache
 from core.tools.context import ToolContext
+from core.tools.forecast import GetBalanceForecastArgs, get_balance_forecast
 from core.tools.safe_to_spend import GetSafeToSpendArgs, get_safe_to_spend
 
 AS_OF = date(2026, 9, 30)
 CALLS = [
     ("get_basket_breakdown", GetBasketBreakdownArgs, get_basket_breakdown, {"period": {"preset": "last_6_months"}}),
     ("get_safe_to_spend", GetSafeToSpendArgs, get_safe_to_spend, {}),   # card extras hold Number objects
+    ("get_balance_forecast", GetBalanceForecastArgs, get_balance_forecast, {}),   # a total and item dicts (#257)
 ]
 
 
