@@ -43,7 +43,7 @@ from typing import Any, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template
+from core.agent import guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -661,6 +661,13 @@ class Pipeline:
                     a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                     continue
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
+                joined = None if errors else validator.amount_with_bank_product(draft.text, numbers)
+                if joined:
+                    # #417, model drafts only: an amount next to the bank's screen or product reads as
+                    # advice to put it there. The retry gets the reason; the template writes after it.
+                    errors = [f"'{joined}': never name an amount and the bank's screen or product (S-mobiili, "
+                              "monthly saving, a fund) in one sentence; state the amount alone, the card's "
+                              "button opens the screen"]
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

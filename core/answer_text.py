@@ -274,3 +274,31 @@ def display_matches(display: str, value: float, unit: str, language: str, method
         return _same(display or "", formatted(value, unit, language, method))
     except (ValueError, ArithmeticError):
         return False
+
+
+# ---- #417: an amount is never joined to the bank's screen or product in one sentence --------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" reads like personal investment advice. Shared by the pipeline's validator (token text, model drafts
+# only) and the eval runner (rendered text, every answer).
+BANK_PRODUCT = re.compile(
+    r"\bS-?mobiili\w*"                                       # the bank's app: S-mobiili, S-mobiilissa, S-mobiiliin
+    r"|\bmonthly\s+saving\b(?!s|\s+of\b)"                    # the product; "monthly savings", "a monthly saving of" pass
+    r"|\bkuukausisäästämi\w*"                                # kuukausisäästäminen in every case; "kuukausisäästö" passes
+    r"|\b(?:investment|index|equity|stock|bond|mutual|money[- ]market)\s+funds?\b"
+    r"|\b(?:into|in)\s+(?:a\s+|the\s+|your\s+)?funds?\b"     # "into a fund"; "an emergency fund" and "refund" pass
+    r"|\bfund\s+(?:units?|shares?|savings?)\b|\bBonus\s+to\s+fund\b"
+    r"|(?<!puskuri)(?<!hätä)rahasto\w*",                     # rahasto, osakerahastoon, Bonus rahastoon
+    re.I)
+# A sentence ends at . ! or ? followed by white space, or at a line break; "€1,080.42" and "360,00 €" stay
+# whole, and a semicolon or a dash does not end a sentence.
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+_EURO_AMOUNT = re.compile(r"€\s?[0-9]|[0-9]\s?€")
+
+
+def amount_beside_bank_product(text: str) -> str | None:
+    """Rendered text: the first sentence that has a euro amount and names the bank's screen or product, or
+    None. "an AI money coach inside S-mobiili" and "you could set aside about €360.00 a month" pass."""
+    for sentence in SENTENCE_BREAK.split(text):
+        if BANK_PRODUCT.search(sentence) and _EURO_AMOUNT.search(sentence):
+            return sentence.strip()
+    return None

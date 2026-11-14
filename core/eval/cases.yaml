@@ -92,6 +92,19 @@ cases:
   forbid:
   - {name: invented_dining_cut_saving, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
 
+- id: sanna-save-more-host-screen
+  # #417: the question names the bank's saving screen, so a confused coach would answer "put €184.61 a month
+  # into monthly saving". The amount and the screen are never in one sentence (every answer is checked for
+  # this; this case invites it). The card's button names the screen only.
+  persona: CUST00860
+  question: {en: 'How could I save more with monthly saving in S-mobiili?', fi: 'Miten voisin säästää enemmän kuukausisäästämisellä S-mobiilissa?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_safe_to_save, get_basket_breakdown]
+  tags: [host_screen, lead]
+  numbers:
+  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+
 - id: sanna-bonus
   persona: CUST00860
   question: {en: 'How much S-Bonus could I get?', fi: 'Paljonko S-Bonusta voisin saada?'}

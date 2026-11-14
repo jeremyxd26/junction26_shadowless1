@@ -23,6 +23,7 @@ is checked for (rules of docs/design/research-bank-assistants.md):
   dates/labels the expected dates and keys (profile, what-if status) are in the answer
   forbid       a value a confused coach would give does not appear
   deny lists   no sensitive inference (R9), no buy/sell instruction (R7), no promise (R13)
+  bank screen  no sentence names both an amount and the bank's screen or product (#417)
 It prints one line per question, a summary per tag, and exits 1 on any failure. A source that does
 not report its tool calls or keys fails those checks as "unverified"; it never passes them.
 """
@@ -178,6 +179,9 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
         m = re.search(rx, ans.text, re.I)
         if m:
             fails.append(f"{rule}: '{m.group(0)}'")
+    joined = answer_text.amount_beside_bank_product(ans.text)
+    if joined:  # #417: the amount and the bank's screen or product are never in one sentence
+        fails.append(f"amount beside the bank's screen or product: '{joined}'")
     return fails
 
 

@@ -329,3 +329,26 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
 def render(text: str, numbers: dict[str, Number]) -> str:
     """Replace every token with its Number's localised display (text_rendered)."""
     return TOKEN.sub(lambda m: numbers[m.group(1)].display, text)
+
+
+# ---- #417: an amount is never joined to the bank's screen or product in one sentence --------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" next to that button reads like personal investment advice. The amount sentence and the bank's
+# screen stay apart; the button names the screen only. Model drafts only: it runs in the orchestrator's
+# _compose with the other model-draft checks. A template is never replaced for it; templates are held to
+# it by tests that render each tool's template in English and Finnish. The words: answer_text.BANK_PRODUCT.
+_MONEY_UNITS = {"eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
+
+
+def amount_with_bank_product(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first sentence that names both an amount (the token of a euro Number) and the bank's screen or
+    product (S-mobiili, monthly saving / kuukausisäästäminen, a fund / rahasto), rendered; or None. A
+    sentence with only one of them passes: "an AI money coach inside S-mobiili", "you could set aside
+    about €360 a month"."""
+    for sentence in answer_text.SENTENCE_BREAK.split(text):
+        if not answer_text.BANK_PRODUCT.search(sentence):
+            continue
+        if any(t in numbers and numbers[t].unit.value in _MONEY_UNITS for t in TOKEN.findall(sentence)):
+            return TOKEN.sub(lambda m: numbers[m.group(1)].display if m.group(1) in numbers else m.group(0),
+                             sentence).strip()
+    return None
