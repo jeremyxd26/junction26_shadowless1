@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -108,8 +109,13 @@ def metric_row(ctx: ToolContext) -> tuple[dict[str, str], dict[str, Any]]:
     settings = settings_for(ctx)
     key = row_key(ctx, settings)
     if key not in ctx.shared:
-        ctx.shared[key] = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of,
-                                             settings)
+        # The answer pipeline runs tools in parallel lanes on copies of one context that share `shared`:
+        # one lock per key, stored in `shared` itself (dict.setdefault is atomic), so a second lane waits
+        # for the first lane's row instead of running the file again (#217).
+        with ctx.shared.setdefault(("lock", key), threading.Lock()):
+            if key not in ctx.shared:
+                ctx.shared[key] = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id,
+                                                     ctx.as_of, settings)
     row = ctx.shared[key]
     if row is None:
         raise NoTransactions("no transactions up to as_of for this customer")
