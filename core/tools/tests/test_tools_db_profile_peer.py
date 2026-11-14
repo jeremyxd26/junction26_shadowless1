@@ -372,3 +372,43 @@ def test_a_labelled_customer_is_classified_alike_in_profile_peer_and_baskets(con
     assert you.kind == "transactions" and you.reconciles                     # the rows path: Python equals 06
     median = evidence.resolve(conn, peer.data.peer_median.evidence_ref, "CUST00860")
     assert median.kind == "peer_aggregate" and median.reconciles             # re-run with the stored labels
+
+
+# ---- #235: the four review states of the lead persona, labels injected through the context ----------------
+# Nothing touches the spike-review tables (the tools still write their evidence rows): the context's
+# labels (what labels.for_context returns) are set directly. Values: profile, one_off_share, everyday_share_pct, unexpected_share_pct.
+
+LABEL_STATES = {
+    "no review": ({}, "big_ticket", "6.0", "19.9", "17.3"),
+    "pending": ({SPIKE_860: "unclassified"}, "big_ticket", "6.0", "19.9", "11.3"),
+    "Needed": ({SPIKE_860: "unexpected_necessities"}, "big_ticket", "6.0", "19.9", "17.3"),
+    "My choice": ({SPIKE_860: "everyday_spending"}, "big_ticket", "6.0", "25.9", "11.3"),
+}
+
+
+def labelled_ctx(conn, labels_by_tx):
+    ctx = ctx_for(conn, "CUST00860")
+    ctx._labels = dict(labels_by_tx)
+    return ctx
+
+
+@pytest.mark.parametrize("state", list(LABEL_STATES))
+def test_profile_shares_in_every_review_state_equal_the_basket_card(conn, state):
+    labels_by_tx, key, one_off, everyday, unexpected = LABEL_STATES[state]
+    profile = get_spender_profile(labelled_ctx(conn, labels_by_tx)).data
+    features = {f.key: f.value for f in profile.features}
+    assert (profile.profile.key, dec(features["one_off_share"]), dec(features["everyday_share_pct"]),
+            dec(features["unexpected_share_pct"])) == (key, D(one_off), D(everyday), D(unexpected))
+    card = get_basket_breakdown(labelled_ctx(conn, labels_by_tx), {"period": {"preset": "last_6_months"}}).data
+    shares = {b.key: b.share.value for b in card.baskets}
+    assert features["everyday_share_pct"].value == shares["everyday_spending"]          # one denominator:
+    assert features["unexpected_share_pct"].value == shares["unexpected_necessities"]   # all spending
+
+
+def test_a_label_never_moves_the_peer_group_statistics(conn):
+    plain = get_peer_benchmark(ctx_for(conn, "CUST00860"), {"metric": "everyday_spending"}).data
+    labelled = get_peer_benchmark(labelled_ctx(conn, {SPIKE_860: "everyday_spending"}),
+                                  {"metric": "everyday_spending"}).data
+    group = lambda d: (d.peer_median.value, d.peer_p25.value, d.peer_p75.value, d.peer_group.size.value)  # noqa: E731
+    assert group(labelled) == group(plain)                   # the labels are this customer's only
+    assert labelled.you.value > plain.you.value              # only the customer's own value moves
