@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
-from core.tools import baskets, config, evidence, labels, metric_sql, periods
+from core.tools import baskets, config, evidence, labels, metric_sql, national, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
 from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, PeriodArg, ToolResult, Unit
@@ -66,6 +67,16 @@ class PeerGroup(BaseModel):
     comparable: bool
 
 
+class NationalContext(BaseModel):
+    """#569: Statistics Finland's household budget survey for the customer's age group and the metric's category,
+    beside the comparison: a cited table value, never an input of any other number and never a cut offer."""
+    amount: Number          # EUR a month per consumption unit, national_context.monthly_eur@1
+    age_group: str          # the table's own band, "17-24"
+    survey_year: int
+    source: str             # "Statistics Finland" / "Tilastokeskus", in the request language
+    what: str               # what the survey's category holds, in the words of the line
+
+
 class PeerBenchmarkData(BaseModel):
     metric: str
     metric_label: str
@@ -80,6 +91,7 @@ class PeerBenchmarkData(BaseModel):
     vs_median: Number | None     # None also when the group median is 0
     peer_group: PeerGroup
     peer_source: Literal["marts", "range"]
+    national: NationalContext | None = None   # #569: only for a kept category, a shown card and a table age group
 
 
 # ---- pure logic --------------------------------------------------------------------------------------
@@ -192,6 +204,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
                              comparable=bool(row["comparable"])),
         peer_source=row["peer_source"],
     )
+    # #569: registered after every Number of the comparison, so their ids and refs do not change
+    data.national = _national(nb, reg, metric, level, row["peer_group"], lang) if shown else None
     evidence.write(ctx.conn, nb.specs)
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
     # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
@@ -199,6 +213,27 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
         and what_if_offered(ctx, metric, rows)
     return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang, offered) if shown else None,
                       notes=notes, evidence=list(nb.specs), model_view=_model_view(data, estimate, notes, offered))
+
+
+def age_band_of(level: str, peer_group: str) -> str | None:
+    """The customer's age band of 06 ("35-44"), the first word of the peer group at every level with an age; None
+    for the level "all"."""
+    return peer_group.split(" ", 1)[0] if level.startswith("age_band") and peer_group else None
+
+
+def _national(nb: NumberBuilder, reg, metric: str, level: str, peer_group: str, lang: str) -> NationalContext | None:
+    """#569: the survey's monthly value for the customer's age group and the metric's category, as a Number whose
+    evidence cites the table (rule_value: no transactions). None for a category the file does not keep (Restaurants,
+    Health, Housing, any other) or without a table age group (75+, the level "all")."""
+    fig = national.figure(metric, age_band_of(level, peer_group))
+    if fig is None:
+        return None
+    start, end = date(fig.survey_year, 1, 1), date(fig.survey_year, 12, 31)
+    year = Period(start=start, end=end, label=periods.period_label(start, end, lang))
+    amount, _ = nb.composite(config.METHODS["national_month"], "rule_value", {}, Unit.EUR_PER_MONTH, year,
+                             _t("national_label", lang), params=fig.params())
+    return NationalContext(amount=reg(amount), age_group=fig.age_group, survey_year=fig.survey_year,
+                           source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang))
 
 
 def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
@@ -289,4 +324,9 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
         "offers_cut": offers_cut,   # the card offers a cut, and the answer says the same (#418, #379 part B)
+        # #569: only when there is a line, so the model view of every other peer answer stays as it was
+        # (no age digits: the answer may not state a digit that is no Number or returned period)
+        **({"national": {"amount": model_number(data.national.amount), "survey": data.national.amount.period.label,
+                         "source": data.national.source, "what": data.national.what, "context_only": True}}
+           if data.national else {}),
     }

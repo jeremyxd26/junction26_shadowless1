@@ -953,3 +953,62 @@ cases:
   - {name: safe_to_save_month, value: 199.95, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
   - {name: plan_eating_out_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+
+# #569: one line of national context beside the peer comparison of a kept category (Groceries, Transportation):
+# Statistics Finland's household budget survey, 2022, per consumption unit, for the customer's age group. A dropped
+# category (Restaurants) and housing get no line; health is never compared.
+- id: sanna-national-groceries
+  persona: CUST00860
+  question: {en: 'How does my grocery spending compare with people like me?', fi: 'Miten ruokaostokseni vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: national_groceries_month, value: 332.33, unit: eur_per_month, tolerance: 0.005, source: {query: national, category: Groceries, age_band: 35-44}}
+  - {name: peer_gap_pct, value: 14.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Groceries}, column: vs_median_pct}}
+
+- id: aleksi-national-transport
+  persona: CUST00849
+  question: {en: 'How does my transportation spending compare with people like me?', fi: 'Miten liikkumiseen käyttämäni rahat vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: national_transport_month, value: 176.83, unit: eur_per_month, tolerance: 0.005, source: {query: national, category: Transportation, age_band: 25-34}}
+  - {name: peer_gap_pct, value: -20.7, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Transportation}, column: vs_median_pct}}
+
+- id: eetu-national-dropped-restaurants
+  persona: CUST00349
+  question: {en: 'How do my restaurant costs compare with people like me?', fi: 'Miten ravintolakuluni vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: peer_gap_pct, value: 51.7, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Restaurants}, column: vs_median_pct}}
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
+
+- id: marja-national-housing
+  persona: CUST00493
+  question: {en: 'Compare my housing costs with people like me'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: peer_gap_pct, value: -1.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Housing}, column: vs_median_pct}}
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
+
+- id: sanna-national-health
+  persona: CUST00860
+  question: {en: 'How does my health spending compare with people like me?'}
+  intent: peers
+  expect: refused
+  refusal_kinds: [out_of_scope]
+  tags: [peers, national, sensitive]
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}

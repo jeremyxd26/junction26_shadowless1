@@ -25,6 +25,7 @@ import re
 from datetime import date
 from typing import Any, Callable
 
+from core import answer_text
 from core.tools import config
 
 Sentences = tuple[list[str], list[str]]
@@ -442,7 +443,33 @@ PEER_SAME = {"total": ("You spend about the same as the median of people like yo
                         "Luokassa {metric} kulutat suunnilleen saman verran kuin kaltaistesi mediaani.")}
 
 
+# #569: one line of national context after the comparison: two facts side by side, no comparison word between the
+# customer's amount and the survey's; the survey's period (its year, as the Number's returned period) and the source.
+# No age digits (the digit rule): "your age group". Short, so the comparison and the line fit the length rule.
+NATIONAL = ("Households of your age spent {amount} per adult-equivalent {period} ({source}).",   # the display says "a month"
+            "Ikäryhmäsi kotitaloudet käyttivät {amount} aikuista vastaavaa henkilöä kohti {period} ({source}).")
+
+
+def _national(view: dict[str, Any], language: str, ok: Ok) -> tuple[list[str], list[str]]:
+    n = view.get("national") if isinstance(view.get("national"), dict) else None
+    amount = _tok(n.get("amount")) if n else None
+    if not n or not amount or not all(isinstance(n.get(k), str) and ok(n[k]) for k in ("survey", "source")):
+        return [], []
+    return [pick(NATIONAL, language).format(amount=amount, period=in_period(n["survey"], language),
+                                            source=n["source"])], _ids(amount)
+
+
 def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    found = _peer(view, language, ok)
+    if found is None:
+        return None
+    extra, ids = _national(view, language, ok)
+    if extra and answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
+        return found          # the comparison and its offer come first; the context line only when it fits
+    return found[0] + extra, found[1] + ids
+
+
+def _peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     vs = _tok(view.get("vs_median"))
     if view.get("shown") is False or not vs:
         return None                      # the reason alone, in template.py (PEER_REASON)

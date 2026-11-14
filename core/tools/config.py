@@ -79,6 +79,8 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # Statistics Finland's household budget survey beside the peer comparison (#569): a cited table value
+    "national_month": "national_context.monthly_eur@1",
     # get_balance_forecast (#257, metrics.md section 3.3)
     "daily_pace": "balance_forecast.daily_pace_eur@1",
     "bills_to_date": "balance_forecast.bills_to_date_eur@1",
@@ -625,6 +627,12 @@ CITY_LABELS: dict[str, tuple[str, str]] = {   # metrics.md section 6: first two 
     "01": ("Vantaa", "Vantaa"),
     "02": ("Espoo and Kauniainen", "Espoo ja Kauniainen"),
 }
+# The national context line (#569): what the survey's category holds, in the words of the line. Context, never a
+# verdict: no comparison word between the customer's amount and the survey's.
+NATIONAL_WHAT: dict[str, tuple[str, str]] = {
+    "Groceries": ("food and non-alcoholic beverages", "elintarvikkeisiin ja alkoholittomiin juomiin"),
+    "Transportation": ("transport without buying a vehicle", "liikenteeseen ilman ajoneuvon ostoa"),
+}
 PEER_TEXT: dict[str, tuple[str, str]] = {
     "title": ("{what}: you and people like you", "{what}: sinä ja kaltaisesi"),
     "subtitle": ("Monthly average, {label}", "Kuukausikeskiarvo, {label}"),
@@ -660,6 +668,10 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
         "Compared with at least 20 other customers. Only group statistics are shown.",
         "Verrattu vähintään 20 muuhun asiakkaaseen. Vain ryhmän tunnusluvut näytetään.",
     ),
+    # #569: the label of the national context Number; no digits (a composed text may copy a label), so the
+    # table's age group is named in the evidence and the data file, not here
+    "national_label": ("Households of your age group, per consumption unit",
+                       "Ikäryhmäsi kotitaloudet, kulutusyksikköä kohti"),
     "note": (
         "Only group statistics are shown, never another customer's transactions.",
         "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
