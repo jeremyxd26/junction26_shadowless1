@@ -102,6 +102,8 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
                     <span className="w-20 shrink-0 text-sm text-muted">{label}</span>
                     <span className="min-w-0 flex-1 basis-20 text-base font-semibold break-words text-ink">{read.display}</span>
                     {mark}
+                    {/* A read note (a failed check digit, a barcode that differs from the print), as sent, under its field. */}
+                    {read.note && <p className="basis-full text-sm text-ink-2">{read.note}</p>}
                   </li>
                 )
               }
@@ -144,16 +146,6 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
       </CardShell>
 
       {reading && <p className="rounded-lg bg-sunken p-3 text-sm text-ink-2">{s.checkedMeans}</p>}
-      {/* A read note on a read-only field is shown here, so it is never hidden. */}
-      {!editingAll &&
-        FIELD_KEYS.map((key) => {
-          const read = reading?.fields[key]
-          return read?.note ? (
-            <p key={key} className="text-sm text-ink-2">
-              <span className="font-semibold">{s.fieldLabels[key]}:</span> {read.note}
-            </p>
-          ) : null
-        })}
       {missingCustomer && (
         <p role="alert" className="text-sm font-semibold text-danger">
           {s.noCustomer}

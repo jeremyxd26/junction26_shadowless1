@@ -32,7 +32,7 @@ export function ErrorBlock({ message, onRetry, until = null, children }: ErrorPr
           <RetryButton
             onRetry={onRetry}
             until={until}
-            className="min-h-11 rounded-pill bg-mint px-5 font-semibold text-ink hover:bg-mint-hover"
+            className="min-h-11 rounded-3xl bg-mint px-5 py-2 font-semibold text-ink hover:bg-mint-hover"
           />
         )}
         {children}

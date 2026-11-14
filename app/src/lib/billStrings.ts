@@ -72,7 +72,7 @@ const fi: BillStrings = {
   confirmTitle: 'Luin laskusi. Onko tämä oikein?',
   cardTitle: 'Laskun tiedot',
   cardSubtitle: 'Luettu laskusta · tarkista ennen kuin jatkat',
-  checkedMeans: 'Tarkistettu tarkoittaa, että koodi on varmistanut tilinumeron tai viitenumeron sen tarkisteesta. Tietoja, joita et ole vahvistanut, ei koskaan käytetä.',
+  checkedMeans: 'Tarkistettu tarkoittaa, että koodi on varmistanut tilinumeron tai viitenumeron tarkisteen avulla. Tietoja, joita et ole vahvistanut, ei koskaan käytetä.',
   looksRight: 'Näyttää oikealta, selitä',
   editDetails: 'Muokkaa tietoja',
   typeTitle: 'Kirjoita laskun tiedot',
