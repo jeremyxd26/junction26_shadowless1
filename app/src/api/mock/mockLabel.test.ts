@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LabelRequest, OverviewResponse } from '../types.ts'
 import contract from './contract-examples.json'
 import { createMockClient } from './mockClient.ts'
@@ -43,5 +43,41 @@ describe('mock review answers: Undo matches the answer it undoes (#521)', () => 
     expect(undo.changes.find((c) => c.key === 'safe_to_spend')?.after.value).toBeGreaterThan(
       undo.changes.find((c) => c.key === 'safe_to_spend')!.before.value,
     )
+  })
+})
+
+describe('mock: the safe-to-save week and day follow the month after an answer (#712)', () => {
+  // The mock reads `?mock=` scenarios from the page's URL.
+  beforeEach(() => vi.stubGlobal('window', { location: new URL('http://localhost/?persona=CUST00860') }))
+  afterEach(() => vi.unstubAllGlobals())
+  const displays = (overview: OverviewResponse) =>
+    [overview.safe_to_save?.monthly, overview.safe_to_save?.weekly, overview.safe_to_save?.daily].map((n) => n?.display)
+
+  it('Needed: the contract after-state (€184.61 · €42.46 · €6.07); Undo: back to €364.31 · €83.78 · €11.97', async () => {
+    const api = createMockClient()
+    const before = await api.overview('CUST00860', 'en')
+    expect(displays(before)).toEqual(['€364.31 a month', '€83.78 a week', '€11.97 a day'])
+    await api.label(request('unexpected_necessities'))
+    const answered = await api.overview('CUST00860', 'en')
+    expect(displays(answered)).toEqual(['€184.61 a month', '€42.46 a week', '€6.07 a day'])
+    // The week and the day are the contract card's own Numbers, with their evidence, not recomputed.
+    const card = examples['card.safe_to_save'] as unknown as NonNullable<OverviewResponse['safe_to_save']>
+    expect(answered.safe_to_save?.weekly?.evidence_ref).toBe(card.weekly?.evidence_ref)
+    expect(answered.safe_to_save?.daily?.evidence_ref).toBe(card.daily?.evidence_ref)
+    // So are the parts of the month and of the stock: €783.79 − €599.18 under €184.61, not the old €963.49.
+    const parts = (overview: OverviewResponse) => overview.safe_to_save?.monthly_components.map((c) => c.amount.display)
+    expect(parts(answered)).toEqual(['€783.79 a month', '€599.18 a month'])
+    expect(answered.safe_to_save?.stock_components).toEqual(card.stock_components)
+    expect(answered.safe_to_save?.subtitle).toBe(card.subtitle)
+    await api.label(request(null))
+    const undone = await api.overview('CUST00860', 'en')
+    expect(displays(undone)).toEqual(['€364.31 a month', '€83.78 a week', '€11.97 a day'])
+    expect(parts(undone)).toEqual(['€963.49 a month', '€599.18 a month'])
+  })
+
+  it('My choice moves no safe-to-save number, so the week and the day stay', async () => {
+    const api = createMockClient()
+    await api.label(request('everyday_spending'))
+    expect(displays(await api.overview('CUST00860', 'en'))).toEqual(['€364.31 a month', '€83.78 a week', '€11.97 a day'])
   })
 })

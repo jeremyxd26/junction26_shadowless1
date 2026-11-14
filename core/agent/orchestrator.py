@@ -52,12 +52,13 @@ from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
-from core.answer_text import find_dates, length_problems, scan_numbers
+from core.answer_text import answer_kind, find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.missing import MissingData
+from core.tools.numbers import model_number
 from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
@@ -329,6 +330,7 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary or why (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
     health_dropped: str | None = None
@@ -403,6 +405,7 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
+        a.kind = answer_kind(message)   # a why/how answer may be longer (#572)
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -438,6 +441,7 @@ class Pipeline:
         data_calls = 0
         planner_fallback = False
         template_answer = False   # the rule planner asked for its own template answer (#552)
+        bonus_received = False    # the S-Bonus received: the estimate after a designed lead (#639)
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
         a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
@@ -464,6 +468,7 @@ class Pipeline:
             planner_fallback |= source == "fallback"
             # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
             template_answer = template_answer or getattr(plan, "template_answer", False)
+            bonus_received = bonus_received or getattr(plan, "bonus_received", False)   # #639
             model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
@@ -587,10 +592,13 @@ class Pipeline:
         dropped = a.health_dropped is not None
         health_total = any(_health_spending(c) for c in a.calls)
         designed = ("rule_template" if template_answer else "health_filter_dropped" if dropped
-                    else "health" if health_total else "national_context" if national else None)
+                    else "health" if health_total else "national_context" if national
+                    else "bonus_received" if bonus_received else None)
         unavailable = planner_fallback or a.composer_unavailable is not None
+        lead = (template.unknown_lead(a.health_dropped, lang) if dropped
+                else template.pick(template.BONUS_RECEIVED_LEAD, lang) if designed == "bonus_received" else None)
         draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or designed is not None,
-                                             a=a, lead=template.unknown_lead(a.health_dropped, lang) if dropped else None)
+                                             a=a, lead=lead)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -849,7 +857,15 @@ class Pipeline:
                           **({"details": exc.details} if getattr(exc, "details", None) else {}))
         except MissingData as exc:   # a category never used, too few purchases (#379)
             # its Numbers are registered here, in call order, whether or not the tool cache ran the tool
-            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.register(ctx.numbers))
+            details = exc.register(ctx.numbers)
+            record.update(status="error", error=exc.reason, reason=exc.reason, details=details)
+            # The audit's tool outputs list what the call returned (#609): its reason and the model view of each
+            # Number the missing-data answer may cite, so a cited number is one a tool of the answer returned.
+            if before is not None:
+                before.wait()
+            with a.lock:
+                a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = {
+                    "error": exc.reason, **{key: model_number(ctx.numbers.get(details[key])) for key in exc.numbers}}
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning
@@ -891,7 +907,7 @@ class Pipeline:
                 if not errors:
                     # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
                     # gets the reason and the template writes after it.
-                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))), kind=a.kind)
                     claim = None if request.errors else unavailable_claim(draft.text)
                     if claim:
                         # Nothing failed, so "not available" describes a wrong plan, not the data (#316).

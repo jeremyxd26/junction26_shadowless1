@@ -216,12 +216,34 @@ def parse_number(raw: str, language: str) -> float:
     return float(raw.replace(",", ""))
 
 
-# One main takeaway and at most one more short sentence (Renat's answer-length rule, #288): the rest
-# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and
-# the eval (an answered outcome over it fails). The introduction and the decline texts are exempt.
-MAX_SENTENCES = 2
-MAX_SHORT_WORDS = 35
+# The answer-length rule (Renat's decision of 14 Nov 12:10, #572, after #288's two sentences): the main takeaway
+# first, then at most two more short sentences; a why/how answer and a general money answer may have four. The rest
+# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and the eval (an
+# answered outcome over it fails). The introduction and the decline texts are exempt.
+MAX_SENTENCES = 3
+MAX_SENTENCES_LONG = 4                   # kind "why" or "general"
+MAX_SHORT_WORDS = 55
+MAX_LONG_WORDS = 75
 MAX_NUMBERS = 3
+LONG_KINDS = ("why", "general")
+# The templates keep their own budget (#288): two short sentences and about 35 words, so no template answer changes
+# with this rule (#572); a template that fits a line only when it stays within it asks with kind "template".
+MAX_TEMPLATE_SENTENCES = 2
+MAX_TEMPLATE_WORDS = 35
+# A why or how question ("why is it lower?", "how does an e-invoice work?", "miksi…", "miten…"); "how much" and
+# "how many" ask an amount, so they stay ordinary.
+WHY_HOW = re.compile(r"\bwhy\b|\bhow come\b|\bhow (?!much\b|many\b|long\b)\w+|\bmiksi\b|\bmiten\b|\bminkä takia\b",
+                     re.I)
+
+
+def answer_kind(question: str, general: bool = False) -> str:
+    """The length rule's kind of an answer: "general" (a general money answer, #572), "why" (a why or how question)
+    or "ordinary"."""
+    if general:
+        return "general"
+    return "why" if WHY_HOW.search(question or "") else "ordinary"
+
+
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 # Abbreviations whose dot ends no sentence ("approx. {{n1}}", "esim. ruoka").
 _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
@@ -332,11 +354,15 @@ def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
     return None
 
 
-def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
+def length_problems(text: str, numbers: int, displays: Iterable[str] = (), kind: str = "ordinary") -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
-    2026" names one thing, so it is one word, and its dots end no sentence)."""
-    plain = re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
+    2026" names one thing, so it is one word, and its dots end no sentence). `kind` (answer_kind): "why" and
+    "general" allow four sentences."""
+    max_sentences = (MAX_SENTENCES_LONG if kind in LONG_KINDS else MAX_TEMPLATE_SENTENCES if kind == "template"
+                     else MAX_SENTENCES)
+    max_words = MAX_LONG_WORDS if kind in LONG_KINDS else MAX_TEMPLATE_WORDS if kind == "template" else MAX_SHORT_WORDS
+    plain =re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
     for d in sorted((d for d in displays if d), key=len, reverse=True):
         plain = plain.replace(d, "NUM")
     spans, blanked = find_dates(plain, blank_all=True)
@@ -351,11 +377,11 @@ def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> li
     plain = _ABBREVIATION.sub(lambda m: m.group(1).replace(".", ""), plain)
     problems = []
     sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
-    if sentences > MAX_SENTENCES:
-        problems.append(f"too long: {sentences} sentences, at most {MAX_SENTENCES}")
+    if sentences > max_sentences:
+        problems.append(f"too long: {sentences} sentences, at most {max_sentences}")
     words = len(plain.split())
-    if words > MAX_SHORT_WORDS:
-        problems.append(f"too long: {words} words, at most {MAX_SHORT_WORDS}")
+    if words > max_words:
+        problems.append(f"too long: {words} words, at most {max_words}")
     if numbers > MAX_NUMBERS:
         problems.append(f"too many numbers: {numbers}, at most {MAX_NUMBERS}; the cards show the rest")
     return problems

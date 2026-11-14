@@ -19,10 +19,16 @@ const en = {
   stageNow: 'in progress',
   stagesLabel: 'Progress',
   orType: 'Or type your answer',
+  /** The bill reading's fact marker only; chat answers carry no source label (#685). */
   fact: 'From your transactions',
   templateNote: 'Written from a standard template this time, without the AI model. The numbers are the same.',
   stopped: 'You stopped this answer.',
+  stoppedForNext: 'Stopped for your next question.',
   askAgain: 'Ask again',
+  /** A paste over the 500-character limit was cut to fit (#716). */
+  cut: 'Cut to the 500-character limit.',
+  /** Shown when 50 characters or fewer are left. */
+  charactersLeft: (left: number) => (left === 1 ? '1 character left' : `${left} characters left`),
   more: 'more',
   less: 'less',
   same: 'no change',
@@ -57,7 +63,10 @@ const fi: ChatStrings = {
   fact: 'Tilitapahtumistasi',
   templateNote: 'Kirjoitettu tällä kertaa vakiopohjalla ilman tekoälymallia. Luvut ovat samat.',
   stopped: 'Pysäytit tämän vastauksen.',
+  stoppedForNext: 'Keskeytetty seuraavan kysymyksesi vuoksi.',
   askAgain: 'Kysy uudelleen',
+  cut: 'Lyhennetty 500 merkkiin.',
+  charactersLeft: (left: number) => (left === 1 ? '1 merkki jäljellä' : `${left} merkkiä jäljellä`),
   more: 'enemmän',
   less: 'vähemmän',
   same: 'ei muutosta',

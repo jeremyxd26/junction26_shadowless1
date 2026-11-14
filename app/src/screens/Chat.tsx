@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
+import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
+import { lastAskId } from '../lib/thread.ts'
+import { landBelowHeader } from '../lib/threadScroll.ts'
+import { NEAR_LIMIT, fitPaste } from '../lib/questionLength.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -42,7 +46,22 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     [chatSend],
   )
   const [draft, setDraft] = useState('')
+  // A paste over the limit was cut to fit; the note stays until the draft changes again (#716).
+  const [cut, setCut] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const left = MAX_QUESTION - draft.length
+  const note = cut ? s.cut : left <= NEAR_LIMIT ? s.charactersLeft(left) : null
+
+  /** A paste that would go over 500 characters is cut to fit, at a word break when one is near. */
+  const paste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const field = event.currentTarget
+    const fitted = fitPaste(draft, field.selectionStart ?? draft.length, field.selectionEnd ?? draft.length, event.clipboardData.getData('text'))
+    if (!fitted) return
+    event.preventDefault()
+    setDraft(fitted.value)
+    setCut(true)
+    requestAnimationFrame(() => field.setSelectionRange(fitted.caret, fitted.caret))
+  }
 
   // Send `?q=` once, then drop it, so Back or a reload does not ask again. The timeout is
   // cleared if the effect is torn down first (React's strict mode runs effects twice).
@@ -59,10 +78,15 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // the view (DESIGN.md: no autoscroll while streaming). Under an opening even the first one is.
   const lastId = turns.at(-1)?.id
   const many = turns.length > 1 || Boolean(opening)
+  // Follow-ups and the answer's announcement belong to the last ask turn, even when a client turn
+  // (#319) came after it while it was still streaming (#332).
+  const latestAsk = lastAskId(turns)
+  // It lands below the header's measured height, so large text does not hide it under the header (#332).
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    document.querySelector(`[data-turn="${lastId}"]`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+    const turn = document.querySelector(`[data-turn="${lastId}"]`)
+    if (turn) landBelowHeader(turn, !reduce)
   }, [lastId, many])
 
   // Every new question stops an answer that is being read aloud, the latest one or an older one.
@@ -79,6 +103,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     }
     send(draft)
     setDraft('')
+    setCut(false)
     input.current?.blur()
   }
 
@@ -128,12 +153,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
       )}
 
       {turns.map((turn, index) => {
-        const latest = index === turns.length - 1
+        const last = index === turns.length - 1
         return (
-          <div key={turn.id} className={latest && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
+          <div key={turn.id} className={last && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
             <TurnView
               turn={turn}
-              latest={latest}
+              latest={turn.id === latestAsk}
               suggestions={suggestions}
               onAsk={send}
               onRetry={() => retry(turn.id, turn.question)}
@@ -144,8 +169,21 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
 
       <form
         onSubmit={submit}
-        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] items-center gap-3 border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
+        // The icon buttons and their gaps keep their pixel size at any text size, so the input keeps
+        // its room at 200 % text (#705); the text and the input grow.
+        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] flex-wrap items-center gap-[12px] border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
       >
+        {/* How much room is left near the limit, or that a paste was cut (#716): a line of its own above the row. */}
+        {note && (
+          <p id="chat-input-note" className="order-first basis-full text-sm text-muted">
+            {note}
+          </p>
+        )}
+        {/* A cut paste is announced once; the count is read with the field, not on every key. */}
+        <p role="status" className="sr-only">
+          {cut ? s.cut : ''}
+        </p>
+        <ComposerBillButton />
         <label htmlFor="chat-input" className="sr-only">
           {s.inputLabel}
         </label>
@@ -153,29 +191,34 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           id="chat-input"
           ref={input}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setCut(false)
+          }}
+          onPaste={paste}
+          aria-describedby={note ? 'chat-input-note' : undefined}
           maxLength={MAX_QUESTION}
           placeholder={s.placeholder}
           enterKeyHint="send"
           autoComplete="off"
-          className="h-12 min-w-0 flex-1 rounded-pill border border-line-strong bg-surface px-5 text-base text-ink-2 placeholder:text-muted"
+          className="h-12 min-w-0 flex-1 rounded-pill border border-line-strong bg-surface px-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted"
         />
         {busy ? (
           <button
             type="button"
             onClick={stop}
             aria-label={s.stop}
-            className="inline-flex size-12 shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
+            className="inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
           >
-            <span aria-hidden="true" className="size-4 rounded-[3px] bg-on-deep" />
+            <span aria-hidden="true" className="size-[16px] rounded-[3px] bg-on-deep" />
           </button>
         ) : (
           <button
             type="submit"
             aria-label={s.send}
-            className="inline-flex size-12 shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
+            className="inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.25">
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[24px]" fill="none" stroke="currentColor" strokeWidth="2.25">
               <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>

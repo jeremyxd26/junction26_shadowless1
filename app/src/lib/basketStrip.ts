@@ -8,7 +8,7 @@ type Item = BreakdownCard['items'][number]
  * The breakdown items the strip shows, in the card's order:
  * - only the known baskets (`BASKETS`), and only `keys` when given;
  * - the waiting cell (`unclassified`) only while it has an amount, or while it counts to zero and
- *   fades out after an answer (`waiting` of the #35 motion), the same rule as `BasketsCard`.
+ *   fades out after an answer (`waiting` of the #35 motion), the rule the baskets card had before #696 removed it.
  */
 export function stripItems(
   card: BreakdownCard,

@@ -6,7 +6,7 @@ import { openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 type Size = 'inline' | 'lead' | 'md' | 'lg' | 'hero'
-type Tone = 'mint' | 'warning' | 'neutral' | 'hero'
+type Tone = 'mint' | 'warning' | 'neutral' | 'hero' | 'plain'
 
 const sizes: Record<Size, string> = {
   // Inline chips sit in running text: the pill is 32px high and an invisible
@@ -23,12 +23,27 @@ const sizes: Record<Size, string> = {
   hero: 'min-h-16 px-5 text-[length:min(var(--text-hero),15.5vw)] leading-(--text-hero--line-height) tracking-tight',
 }
 
+/**
+ * The `plain` tone of a chat answer (#684): the number as text, no pill. Inline it takes the size
+ * of the text around it; an invisible ::after keeps the 44 px target. `lg` is the answer's one
+ * main number.
+ */
+const plainSizes: Record<Size, string> = {
+  inline: 'relative align-baseline after:absolute after:-inset-x-2 after:-inset-y-2.5 after:content-[""]',
+  lead: 'relative align-baseline after:absolute after:-inset-x-2 after:-inset-y-2 after:content-[""]',
+  md: 'min-h-11',
+  lg: 'min-h-11 text-[length:min(var(--text-review-amount),11vw)] leading-(--text-review-amount--line-height) tracking-tight',
+  hero: 'min-h-16 text-[length:min(var(--text-hero),15.5vw)] leading-(--text-hero--line-height) tracking-tight',
+}
+
 const tones: Record<Tone, string> = {
   mint: 'bg-mint-tint text-ink border-mint-line',
   warning: 'bg-warning-tint text-ink border-warning/40',
   neutral: 'bg-waiting-tint text-ink border-line-strong/40',
   // White figures on the green safe-to-spend block (DESIGN.md).
   hero: 'bg-transparent text-on-hero border-on-hero-muted/60',
+  // No colour of its own: the caller's text colour (ink, or a change's tone).
+  plain: '',
 }
 
 const pressed: Record<Tone, string> = {
@@ -36,6 +51,8 @@ const pressed: Record<Tone, string> = {
   warning: 'hover:border-brand active:bg-mint-line',
   neutral: 'hover:border-brand active:bg-mint-line',
   hero: 'hover:border-on-hero active:bg-on-hero/10',
+  // A thin underline says it opens its transactions; it is not the glossary's dotted one.
+  plain: 'underline decoration-current/35 decoration-1 underline-offset-4 hover:decoration-current',
 }
 
 interface Props {
@@ -62,7 +79,10 @@ export function NumberChip({ number, size = 'md', tone = 'mint', count, wrap = f
   // amount ("€1,080.55" / "a month") when its container is too narrow, e.g. at 200 % text (#493).
   const inText = (size === 'inline' || size === 'lead') && !wrap
   const wrapping = chipWrapping(inText)
-  const className = `inline-flex min-w-11 items-center justify-center ${wrapping} rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
+  const className =
+    tone === 'plain'
+      ? `inline-flex items-center ${wrapping} font-semibold tabular-nums ${plainSizes[size]}`
+      : `inline-flex min-w-11 items-center justify-center ${wrapping} rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
   const body = inText ? text : <DisplayText text={text} />
   // A new count cross-fades the figure in (the only motion left under reduced motion).
   const shown = count ? (

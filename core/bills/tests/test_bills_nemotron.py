@@ -48,11 +48,16 @@ def gemini_answer(fields: dict) -> dict:
 
 
 class _Body:
+    """A response body with a position, like urllib's: read() and read1() (at most one network read)."""
+
     def __init__(self, data: bytes) -> None:
-        self.data = data
+        self._io = io.BytesIO(data)
 
     def read(self, size: int = -1) -> bytes:
-        return self.data if size is None or size < 0 else self.data[:size]
+        return self._io.read(size)
+
+    def read1(self, size: int = -1) -> bytes:
+        return self._io.read1(size)
 
     def __enter__(self):
         return self
@@ -341,7 +346,7 @@ def test_make_reader_puts_nemotron_first_only_when_it_is_set_up(tmp_path):
 
 def test_the_start_up_line_says_which_reader_reads_without_the_key_or_the_url(tmp_path):
     on = reader_state(settings(), ledger_path=tmp_path / "l.jsonl")
-    assert on.startswith(f"bill reader: Nemotron {NEMOTRON} on the Verda inference API (12 s, daily budget 30")
+    assert on.startswith(f"bill reader: Nemotron {NEMOTRON} on the Verda inference API (30 s, daily budget 30")
     assert on.endswith("fallback the Gemini extract role") and KEY not in on and URL not in on
     assert reader_state(settings(verda_inference_key=None)) == "bill reader: the Gemini extract role (no " \
                                                                "VERDA_INFERENCE_KEY)"
@@ -372,8 +377,12 @@ def test_a_redirect_is_never_followed_by_the_real_opener():
     class Redirect(http.server.BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802 - http.server's name
             seen.append(self.path)
+            # read the body and say the answer has none: a socket closed with unread data sends a reset on Windows,
+            # which can reach the client before the 302 (ConnectionAbortedError 10053, a flake in full runs, #645)
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
             self.send_response(302)
             self.send_header("Location", "http://other.example/x")
+            self.send_header("Content-Length", "0")
             self.end_headers()
 
         def log_message(self, *args):  # quiet
@@ -405,6 +414,8 @@ def _url(scheme: str, host: str, userinfo: str = "") -> str:
     (_url("http", "inference.example"), False), (_url("ftp", "inference.example"), False),
     ("file:///etc/passwd", False), (_url("https", "inference.example", "user" + ":" + "pw"), False),
     (_url("https", "inference.example", "user"), False), ("not a url", False), ("https://", False),
+    (_url("https", "inference.example:8443"), True),                              # a port is fine (#637)
+    (_url("https", "inference.example:99999"), False), (_url("https", "inference.example:abc"), False),
 ])
 def test_only_an_https_url_with_a_host_and_no_credentials_turns_the_reader_on(url, ok, tmp_path):
     from core.bills.nemotron import valid_url
@@ -436,13 +447,151 @@ def test_ten_thousand_unclosed_think_tags_take_no_time():
     assert time.perf_counter() - t < 0.5
 
 
-@pytest.mark.parametrize("argv, nemotron_on", [([], False), (["--reader", "nemotron"], True),
-                                               (["--reader=nemotron"], True), (["--reader", "gemini"], False)])
-def test_the_warmup_reads_with_gemini_unless_the_command_line_asks_for_nemotron(monkeypatch, argv, nemotron_on):
+def test_a_non_ascii_letter_before_a_reasoning_block_keeps_the_answer_whole():
+    """#637: "İ".lower() is two characters, so a full lower() moved every index after it by one."""
+    from core.bills.nemotron import without_think
+    assert without_think('İİ<think>reasoning</think>{"payee": "x"}') == 'İİ{"payee": "x"}'
+    assert without_think("Ǆ<THINK>a</THINK>ok") == "Ǆok"
+
+
+# ---- the deadline of the whole reading (#637) -------------------------------------------------------------------
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+class _SlowBody(_Body):
+    """A body that gives `piece` bytes per network read, each read taking `seconds` on the clock."""
+
+    def __init__(self, data: bytes, clock: _Clock, piece: int, seconds: float) -> None:
+        super().__init__(data)
+        self.clock, self.piece, self.seconds, self.reads = clock, piece, seconds, 0
+
+    def read1(self, size: int = -1) -> bytes:
+        self.reads += 1
+        self.clock.now += self.seconds
+        return super().read1(min(self.piece, size) if size and size > 0 else self.piece)
+
+
+def _contents() -> list[dict]:
+    return [{"role": "user", "parts": [{"text": READ_REQUEST},
+                                       {"inline_data": {"mime_type": "image/png", "data": IMAGES["sample_1"]}}]}]
+
+
+def _answer() -> bytes:
+    return json.dumps(completion(json.dumps(printed("sample_1")))).encode("utf-8")
+
+
+def test_an_answer_that_trickles_in_past_the_deadline_is_a_timeout(monkeypatch):
+    """Each read waits less than the socket's timeout, so only the whole reading's deadline stops it."""
+    from core.bills import nemotron as module
+    clock = _Clock()
+    monkeypatch.setattr(module, "time", clock)
+    body = _SlowBody(_answer(), clock, piece=1, seconds=1.0)
+    transport = NemotronTransport(URL, KEY, opener=lambda request, timeout: body)
+    with pytest.raises(module.ProviderTimeout):
+        transport(NEMOTRON, _contents(), {"max_output_tokens": 64}, 5.0)
+    assert body.reads <= 6 < len(_answer())
+
+
+def test_an_answer_read_in_small_pieces_by_the_deadline_is_read(monkeypatch, tmp_path):
+    from core.bills import nemotron as module
+    clock = _Clock()
+    monkeypatch.setattr(module, "time", clock)
+    body = _SlowBody(_answer(), clock, piece=7, seconds=0.0)
+    result = read_bill(nemotron(lambda request, timeout: body, tmp_path), IMAGES["sample_1"], "image/png", "en")
+    assert result["fields"]["iban"]["status"] == "checked" and body.reads > 10
+
+
+@pytest.mark.parametrize("mode", ["length", "chunked", "oversize"])
+def test_the_body_is_read_from_a_real_http_response(mode):
+    """#637: _read_body on urllib's own HTTPResponse (its read1, with a Content-Length or chunked) from a loopback
+    server, opened by the opener _default_opener builds outside the tests."""
+    import http.server
+    import threading
+    import time
+    import urllib.request
+
+    from core.bills import nemotron as module
+    data = b"x" * (module.MAX_RESPONSE_BYTES + 100) if mode == "oversize" else _answer() * 3
+
+    class Answer(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):  # noqa: N802 - http.server's name
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            if mode == "chunked":
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for i in range(0, len(data), 100):
+                    piece = data[i:i + 100]
+                    self.wfile.write(f"{len(piece):x}\r\n".encode("ascii") + piece + b"\r\n")
+                self.wfile.write(b"0\r\n\r\n")
+            else:
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        def log_message(self, *args):  # quiet
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Answer)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    opener = urllib.request.build_opener(module._NoRedirect).open    # what _default_opener returns outside tests
+    request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/chat/completions", data=b"{}",
+                                     method="POST")
+    with opener(request, timeout=5) as response:
+        raw = module._read_body(response, time.monotonic() + 5)
+    server.server_close()
+    assert raw == (data[:module.MAX_RESPONSE_BYTES + 1] if mode == "oversize" else data)
+
+
+def test_an_answer_that_starts_after_the_deadline_is_a_timeout(monkeypatch, tmp_path):
+    """The headers came only after the deadline (each wait within the socket's timeout): no body is read."""
+    from core.bills import nemotron as module
+    clock = _Clock()
+    monkeypatch.setattr(module, "time", clock)
+    body = _SlowBody(_answer(), clock, piece=4096, seconds=0.0)
+
+    def late(request, timeout):
+        clock.now += timeout + 1.0
+        return body
+
+    with pytest.raises(BillReadUnavailable) as exc:
+        read_bill(nemotron(late, tmp_path), IMAGES["sample_1"], "image/png", "en")
+    assert exc.value.reason == "timeout" and body.reads == 0
+
+
+@pytest.mark.parametrize("argv, reader", [([], "gemini"), (["--reader", "nemotron"], "nemotron"),
+                                          (["--reader=nemotron"], "nemotron"), (["--reader", "gemini"], "gemini"),
+                                          (["--reader", "nemotron-only"], "alone"),
+                                          (["--reader=nemotron-only"], "alone")])
+def test_the_warmup_reads_with_gemini_unless_the_command_line_asks_for_nemotron(monkeypatch, argv, reader):
     """D1: deploy/remote-deploy.sh runs the warm-up with no switch: the Gemini reader, never the provider."""
-    asked: list[bool] = []
-    monkeypatch.setattr(warmup, "reading_client", lambda nemotron=False: asked.append(nemotron))
-    assert warmup.main(argv) == 0 and asked == [nemotron_on]
+    asked: list[str] = []
+    monkeypatch.setattr(warmup, "reading_client", lambda nemotron=False, alone=False: asked.append(
+        "alone" if alone else "nemotron" if nemotron else "gemini"))
+    assert warmup.main(argv) == 0 and asked == [reader]
+
+
+def test_nemotron_only_builds_the_nemotron_client_alone(monkeypatch, capsys):
+    """#637: no Gemini reader behind it, so a Nemotron timeout is a timeout in the warm-up's line."""
+    monkeypatch.setenv("VERDA_INFERENCE_KEY", KEY)
+    monkeypatch.setenv("VERDA_INFERENCE_URL", URL)
+    client = warmup.reading_client(alone=True)
+    assert isinstance(client, GeminiClient) and isinstance(client.transport, NemotronTransport)
+    assert not isinstance(client, FallbackReader)
+    monkeypatch.delenv("VERDA_INFERENCE_KEY")
+    assert warmup.reading_client(alone=True) is None
+    assert warmup.main(["--reader", "nemotron-only"]) == 0
+    assert capsys.readouterr().out.strip() == "bill readings skipped: Nemotron is not set up"
 
 
 # ---- the payee is a name (review of #594, D2; security rows A3, A6, A7) ------------------------------------
@@ -458,9 +607,19 @@ def _payee(text: str):
     "evil" + ".example.com/pay", "pay evil-site" + ".io today",                  # a domain
     "sk-" + "abcdefghijklmnopqrstuvwxyz123456", "AIza" + "Sy" + "A" * 33,         # key-shaped tokens
     "nvapi-" + "b" * 30, "Bearer " + "abcdefghijklmnopqrstuvwxyz",
+    "evil" + ".oy.example.com",                                                  # a domain behind a company form
 ])
 def test_a_phone_number_a_domain_or_a_key_shaped_token_is_no_payee(payee):
     assert _payee(payee) is None
+
+
+@pytest.mark.parametrize("payee", [
+    "As.Oy Kotikatu 5", "S.Oy Esimerkki", "Asunto Oy Kotikatu 5", "K. Virtanen", "Lassila & Tikanoja Oyj",
+    "Esimerkki Ab Oy", "Helsingin Seudun Asunnot Oy", "Tilitoimisto Ky", "Esimerkki Tmi", "Urheiluseura ry",
+])
+def test_an_ordinary_payee_is_read(payee):
+    """#637: a company form after a dot ("As.Oy", "S.Oy") is a name, not a domain."""
+    assert _payee(payee).value == payee
 
 
 @pytest.mark.parametrize("sample_id", sorted(TRUTH))

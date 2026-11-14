@@ -57,9 +57,9 @@ describe('speak and stopSpeaking', () => {
   })
 
   it('keeps the state when a stopped utterance ends late after a quick second tap', () => {
-    speak('3', 'Safe to spend is €221.58.', en)
+    speak('3', 'Safe to spend is €138.79.', en)
     stopSpeaking('3')
-    speak('3', 'Safe to spend is €221.58.', en)
+    speak('3', 'Safe to spend is €138.79.', en)
     expect(speakingNow()).toBe('3')
     spoken[0].onerror?.() // the cancelled first utterance reports "interrupted" only now
     expect(speakingNow()).toBe('3')
