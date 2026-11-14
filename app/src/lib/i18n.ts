@@ -43,6 +43,7 @@ const en = {
     below_usual: 'less room than usual this week',
     nothing_free: 'nothing free to spend this week',
   } as Record<string, string>,
+  movedTo: 'Moved to',
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
   /** The accessible name of the header title ("Sentti" with its AI tag). */
@@ -51,6 +52,8 @@ const en = {
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
+  /** The grey line under the overview row's title (#321). */
+  overviewHint: 'Baskets, bills and safe to save',
   mockBadge: 'Mock data',
   heroPendingTitle: 'Safe to spend this week',
   heroPending: 'Safe to spend is still being calculated. Check back soon.',
@@ -110,12 +113,14 @@ const fi: Strings = {
     below_usual: 'tällä viikolla tavallista vähemmän',
     nothing_free: 'tällä viikolla ei vapaata käytettävää',
   },
+  movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',
   titleLabel: 'Sentti, tekoäly',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
+  overviewHint: 'Korit, laskut ja säästövara',
   mockBadge: 'Testidata',
   heroPendingTitle: 'Käyttövara tällä viikolla',
   heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',

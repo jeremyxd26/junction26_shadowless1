@@ -174,6 +174,13 @@ def evaluate(db: Db, cid: str, src: dict):
             value = 100 * (cur - prev) / prev if prev else None
         else:
             raise ValueError(f"unknown column {src['column']}")
+    elif src.get("query") == "national":
+        # #569: Statistics Finland's table value for an age group, from the committed file; no database, no network
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools.national import figure
+
+        value = figure(src["category"], src["age_band"]).monthly
     elif src.get("query") == "bonus":
         # The S-Bonus estimate (#216): the grocery base from SQL (the 6-month window's Groceries average,
         # cents), then the rules file's formula (core/config/s_group_benefits.yaml) the tool applies.

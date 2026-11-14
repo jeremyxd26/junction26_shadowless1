@@ -366,7 +366,55 @@ def _head(np: str) -> str | None:
     return " ".join(tokens)
 
 
+# The person the user gave, sent, lent, owed, paid or bought something for (#542): "How much did I give my husband?",
+# "What did I buy my wife?", "How much did I pay Marja?", "Paljonko annoin miehelleni?", "Mitä ostin Marjalle?",
+# "Paljonko käytin vaimooni?". It is the user's own money, but no category or filter maps the person.
+GIVE_TO_EN = re.compile(r"\b(?:give|gave|given|send|sent|lend|lent|owe|owed|buy|bought|get|got|pay|paid)\s+"
+                        r"((?:my|our|his|her|their)\s+[^\W\d_][\w'-]*|[A-Z][^\W\d_][\w'-]*)")
+FI_TO_SUFFIX = re.compile(r"(?:lle|lleni|llesi|llemme|llenne|lleen)$")
+# allative stems kind_of does not know from PERSON_FI ("miehelleni", "äidilleni", "veljelleni")
+FI_TO_STEMS = {"miehe", "aidi", "velje", "poja", "tyttare", "lapse", "vanhemmi", "sisare", "esimiehe"}
+FI_INTO_PERSON = {"vaimooni", "mieheeni", "lapsiini", "lapseeni", "aitiini", "isaani", "siskooni", "veljeeni",
+                  "ystavaani", "puolisooni", "poikaani", "tyttareeni", "kumppaniini", "vanhempiini"}
+
+
+_ASKING = re.compile(r"\b(?:how much|how many|what|which|paljonko|kuinka paljon|mita|mihin|kenelle)\b", re.I)
+
+
+def to_person(question: str) -> bool:
+    """The question names a person as the one the user's money went to (see GIVE_TO_EN), in the part that asks:
+    "I bought my brother a gift, how much did I spend in August?" asks for August's spending."""
+    parts = [p for p in re.split(r"[.?!,;]", _plain(question)) if _ASKING.search(fold(p))]
+    plain = " ".join(parts) if parts else _plain(question)
+    if any(kind_of(m.group(1)) in ("person", "name") for m in GIVE_TO_EN.finditer(plain)):
+        return True
+    for token in re.findall(r"[^\W\d_]+", plain):
+        word = fold(token)
+        if word in FI_INTO_PERSON:
+            return True
+        stem = FI_TO_SUFFIX.sub("", word)
+        if stem != word and (stem in FI_TO_STEMS or kind_of(token) in ("person", "name")):
+            return True
+    return False
+
+
+# The coach's own terms (#601): "safe to spend" and "safe to save" are money, like "budget", whoever owns them ("my
+# wife's safe to spend" is her money), and never a name, however they are capitalised ("What Is Safe To Spend?").
+PRODUCT_TERM = re.compile(r"\bsafe[ -]to[ -](?:spend|save)\b", re.I)
+
+
+def _normalised(question: str) -> str:
+    """The question as the people rules read it (#601): the coach's own terms read as the money word "budget", in any
+    case ("What Is Safe To Spend?": its capitals mark no name; a real name keeps its capital and its reading)."""
+    # "my wife safe to spend" is "my wife's budget": a person word right before the term owns it
+    question = re.sub(r"\b(my|our|his|her|their)\s+([^\W\d_]+)\s+(?=safe[ -]to[ -](?:spend|save)\b)",
+                      lambda m: f"{m.group(1)} {m.group(2)}'s " if fold(m.group(2)) in PERSON_EN else m.group(0),
+                      question, flags=re.I)
+    return PRODUCT_TERM.sub("budget", question)
+
+
 def classify(question: str, peer_question: bool = False) -> str | None:
+    question = _normalised(question)
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
     plain = " ".join(plain.split())
     if JOINT_LIST.search(_plain(question)):

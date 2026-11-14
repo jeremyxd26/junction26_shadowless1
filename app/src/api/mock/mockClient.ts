@@ -38,7 +38,7 @@ import type {
   WhatIfResponse,
   WhatIfScenarioRequest,
 } from '../types.ts'
-import { FORECASTS } from './billForecast.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -60,6 +60,7 @@ const examples = contract.examples as unknown as {
   'whatif.response': WhatIfResponse
   'bill.response': unknown
   'bill.response_unknown': unknown
+  'bill.response_not_covered': unknown
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -75,7 +76,7 @@ const CARD_EXAMPLES = [
  * ref whatever the persona is: the `bill.*` numbers first, any other of their refs after the
  * persona's own overview (so a hero ref still opens the hero's evidence for Aino).
  */
-const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], FORECASTS]
+const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], examples['bill.response_not_covered'], TIGHT_FORECAST]
 
 /** Sanna as in core/config/personas.yaml (lead persona of the demo). */
 const SANNA: Persona = {
@@ -274,6 +275,16 @@ function currentOverview(customerId: string): OverviewResponse | undefined {
   })
 }
 
+/**
+ * The contract has no example for undoing "My choice" (`label.response_wanted`); its undo example
+ * (`label.response_undo`) is the undo of "Needed" and says safe to spend goes back up. Safe to spend
+ * never moved after "My choice", so its undo gets this neutral text, with no numbers (#521).
+ */
+const WANTED_UNDO_TEXT: Record<'en' | 'fi', string> = {
+  en: 'Undone: safe to spend stays the same, and the purchase is waiting for your answer again.',
+  fi: 'Kumottu: käyttövara pysyy ennallaan, ja ostos odottaa taas vastaustasi.',
+}
+
 const TX_REF_NOT_FOUND = {
   code: 'tx_ref_not_found',
   message: 'This question is no longer open.',
@@ -297,7 +308,11 @@ function label(request: LabelRequest): LabelResponse {
   }
   if (request.basket === null && current) {
     delete answers[request.customer_id]
-    return { ...clone(examples['label.response_undo']), changes: reversed(answerExample(current).changes) }
+    const undo = { ...clone(examples['label.response_undo']), changes: reversed(answerExample(current).changes) }
+    if (current !== 'everyday_spending') return undo
+    // The undo of "My choice": its own changes reversed, and the neutral text above.
+    const text = WANTED_UNDO_TEXT[request.language === 'fi' ? 'fi' : 'en']
+    return { ...undo, message: { text, text_rendered: text, numbers: {} }, effect: null }
   }
   const basket = request.basket as BasketKey
   answers[request.customer_id] = basket
