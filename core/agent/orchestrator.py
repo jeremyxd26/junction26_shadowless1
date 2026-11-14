@@ -847,7 +847,7 @@ class Pipeline:
                     # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
                     # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
                     errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
-                                             labels=_labels_in(request.data))
+                                             labels=_labels_in(request.data), views=request.data)
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
