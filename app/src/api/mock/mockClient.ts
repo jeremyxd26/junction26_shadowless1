@@ -38,7 +38,7 @@ import type {
   WhatIfResponse,
   WhatIfScenarioRequest,
 } from '../types.ts'
-import { FORECASTS } from './billForecast.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -60,6 +60,7 @@ const examples = contract.examples as unknown as {
   'whatif.response': WhatIfResponse
   'bill.response': unknown
   'bill.response_unknown': unknown
+  'bill.response_not_covered': unknown
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -75,7 +76,7 @@ const CARD_EXAMPLES = [
  * ref whatever the persona is: the `bill.*` numbers first, any other of their refs after the
  * persona's own overview (so a hero ref still opens the hero's evidence for Aino).
  */
-const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], FORECASTS]
+const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], examples['bill.response_not_covered'], TIGHT_FORECAST]
 
 /** Sanna as in core/config/personas.yaml (lead persona of the demo). */
 const SANNA: Persona = {

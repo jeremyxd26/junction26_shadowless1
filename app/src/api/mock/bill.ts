@@ -16,9 +16,11 @@
 // - any `fields` → `bill.response_unknown` as an ECHO: the typed payee, IBAN, reference and due
 //   date are copied into `bill` as sent, unformatted and unchecked. Its amount, checks,
 //   sentences and numbers stay the example's, so they do not describe what was typed.
-// - `forecast` (contract 0.3.4): the examples' own when they carry it, else the PROVISIONAL fixture
-//   of billForecast.ts (barcode → covered; fields → outside_forecast; typed bills from
-//   Esimerkki Vesi Oy → not_covered and Esimerkki Energia Oy → tight).
+// - `forecast` (contract 0.3.4) comes from the examples: the barcode → `covered`, typed fields →
+//   `outside_forecast`. A typed bill from Esimerkki Vesi Oy (the typed-fallback sample), or the
+//   contract's own typed request, gets `bill.response_not_covered` (the typed text fields echoed as
+//   above). Only `tight` has no contract example: a typed bill from Esimerkki Energia Oy gets the
+//   PROVISIONAL fixture of billForecast.ts.
 // Texts of the responses stay English in Finnish, as in the what-if mock.
 import type { BillApi } from '../bill.ts'
 import { BillApiError } from '../bill.ts'
@@ -32,7 +34,7 @@ import type {
   BillSamplesResponse,
 } from '../billTypes.ts'
 import type { Language } from '../types.ts'
-import { FORECASTS } from './billForecast.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -40,6 +42,7 @@ const examples = contract.examples as unknown as {
   'bill.request_fields': BillExplainRequest
   'bill.response': BillExplainResponse
   'bill.response_unknown': BillExplainResponse
+  'bill.response_not_covered': BillExplainResponse
   'bill.error': BillErrorEnvelope
   'bill.read_response': BillReadResponse
 }
@@ -264,27 +267,34 @@ function explain(request: BillExplainRequest): BillExplainResponse {
     if (/\D/.test(digits)) throw invalidBill('barcode_chars', lang)
     if (digits.length !== 54) throw invalidBill('barcode_length', lang)
     if (digits !== examples['bill.request'].barcode) throw invalidBill('barcode_check', lang)
-    const response = { ...clone(examples['bill.response']), language: lang }
-    response.forecast = response.forecast ?? clone(FORECASTS.covered)
-    return response
+    return { ...clone(examples['bill.response']), language: lang }
   }
 
   const fields = request.fields!
+  const payee = fields.payee.trim()
+  if (payee === 'Esimerkki Vesi Oy' || sameFields(fields, examples['bill.response_not_covered'].bill)) {
+    const notCovered = clone(examples['bill.response_not_covered'])
+    notCovered.language = lang
+    notCovered.bill = { ...notCovered.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
+    return notCovered
+  }
   const response = clone(examples['bill.response_unknown'])
   response.language = lang
   response.bill = { ...response.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
-  const provisional = PROVISIONAL_FORECAST_BY_PAYEE[fields.payee.trim()]
-  response.forecast = provisional ? clone(provisional) : (response.forecast ?? clone(FORECASTS.outside_forecast))
+  // PROVISIONAL: no contract example has `tight`.
+  if (payee === 'Esimerkki Energia Oy') response.forecast = clone(TIGHT_FORECAST)
   return response
 }
 
-/**
- * PROVISIONAL: typed bills from these fictional payees get a hand-written forecast, so every status
- * can be seen in the demo (the water bill is the typed fallback sample).
- */
-const PROVISIONAL_FORECAST_BY_PAYEE: Record<string, BillExplainResponse['forecast']> = {
-  'Esimerkki Vesi Oy': FORECASTS.not_covered,
-  'Esimerkki Energia Oy': FORECASTS.tight,
+/** The typed fields of a contract example's bill (amount by its value string, as typed). */
+function sameFields(fields: NonNullable<BillExplainRequest['fields']>, bill: BillExplainResponse['bill']): boolean {
+  return (
+    fields.payee === bill.payee &&
+    noSpaces(fields.iban) === noSpaces(bill.iban) &&
+    noSpaces(fields.reference) === noSpaces(bill.reference) &&
+    fields.amount === bill.amount.value.toFixed(2) &&
+    fields.due_date === bill.due_date
+  )
 }
 
 export function createMockBillApi(): BillApi {

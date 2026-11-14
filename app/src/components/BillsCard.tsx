@@ -33,13 +33,14 @@ export function BillsCard({ card }: { card: BillsData }) {
 
       <ul className="mt-3 flex flex-col divide-y divide-line">
         {card.items.map((item) => (
-          <li key={item.bill_id} className="flex min-h-14 items-center justify-between gap-3 py-2">
-            <div className="min-w-0">
+          // With large text the amount moves under the bill's lines instead of covering them (#541).
+          <li key={item.bill_id} className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+            <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
               <p className="text-base font-semibold text-ink">{item.label}</p>
               <p className="text-sm text-muted">{item.status_label}</p>
               {item.next_expected && <p className="text-sm text-muted">{t.billsNext(formatDate(item.next_expected, lang))}</p>}
             </div>
-            <span className="shrink-0">
+            <span className="ml-auto max-w-full shrink-0">
               <NumberChip number={item.due_until_payday} />
             </span>
           </li>

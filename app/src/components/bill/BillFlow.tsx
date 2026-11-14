@@ -7,7 +7,7 @@ import { billApi } from '../../api/bill.ts'
 import { ApiError } from '../../api/errors.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { strings } from '../../lib/i18n.ts'
-import { navigate } from '../../lib/url.ts'
+import { askInThread } from '../../lib/url.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CardShell } from '../cards.tsx'
 import { ErrorBlock, LoadingBlock } from '../States.tsx'
@@ -22,8 +22,8 @@ interface Props {
   /** Called when the user is finished with an explained bill. */
   onDone?: () => void
   /**
-   * Asks a question in the thread, the path of every ask chip (no history entry). Without it (the
-   * mock-only /cards page has no thread) the question opens the thread with `?q=`.
+   * Asks a question in the thread, the path of every ask chip. Without it, the app's shared
+   * `askInThread` opens the thread with the question and replaces the history entry (no new one).
    */
   onAsk?: (question: string) => void
 }
@@ -147,9 +147,4 @@ function BackButton({ label, onClick }: { label: string; onClick: () => void }) 
       {label}
     </button>
   )
-}
-
-/** Outside the thread: open it with the question, like an `ask` action elsewhere in the app. */
-function askInThread(question: string) {
-  navigate('/', { q: question })
 }
