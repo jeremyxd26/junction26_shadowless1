@@ -14,12 +14,12 @@ answer, the Gemini extract role reads instead, so the demo never waits for the n
 key, an unusable Nemotron answer gets one more Nemotron request, then the "could not read" path.
 
 Settings, from the environment (and the repository's .env, like the Gemini settings), names in .env.example:
-- VERDA_INFERENCE_URL, VERDA_INFERENCE_KEY: the inference endpoint's base URL and its key (never logged, never
-  in an error, never in a cache entry). Separate from VERDA_CLIENT_ID / VERDA_CLIENT_SECRET (the instance API),
-  which this module never reads.
-- NEMOTRON_VL_MODEL: the model id (default PROVIDER.default_model).
-- BILL_READER: auto (default: Nemotron when the URL, the key and a model id are set, else Gemini), gemini, or
-  nemotron (the same as auto, said explicitly).
+- VERDA_INFERENCE_KEY: the inference endpoint's key (never logged, never in an error, never in a cache entry).
+  Separate from VERDA_CLIENT_ID / VERDA_CLIENT_SECRET (the instance API), which this module never reads.
+- VERDA_INFERENCE_URL: the endpoint's base URL (default PROVIDER.default_url, the provider's own).
+- NEMOTRON_VL_MODEL: the model id (default PROVIDER.default_model, the provider's own).
+- BILL_READER: auto (default: Nemotron when the key is set, else Gemini), gemini, or nemotron (the same as auto,
+  said explicitly).
 - NEMOTRON_TIMEOUT_S: seconds per reading (default 12, at most 30), so a slow provider falls back in time.
 - NEMOTRON_DAILY_BUDGET: Nemotron requests in any rolling 24 hours (default 30; 0 turns the reader off),
   counted in var/nemotron-requests.jsonl.
@@ -56,12 +56,15 @@ MAX_RESPONSE_BYTES = 32 * 1024
 
 @dataclass(frozen=True)
 class Provider:
-    """What is open until Verda confirms it (#573), in one place, so another answer is a one-line change:
-    the path under VERDA_INFERENCE_URL, the model id when NEMOTRON_VL_MODEL is not set, how the image goes,
-    the response format, and the reasoning switch that #169 needed for Nemotron on an OpenAI-compatible API."""
+    """The provider's details in one place, so another answer is a one-line change (#573). From Verda (relayed on
+    14 Nov): an OpenAI-compatible chat API at default_url, model id default_model, text and image input; the
+    reasoning comes back in `reasoning_content`, which is never read (only `content` is); `max_tokens` limits the
+    length. NVIDIA's guide for Nemotron-3.5-Super-VL turns the reasoning off per request with
+    chat_template_kwargs.enable_thinking=false; the "/no_think" system line is what #169 needed on the same model."""
 
+    default_url: str = "https://containers.datacrunch.io/nemotron-3-5-super-vl-b300/v1"
     chat_path: str = "/chat/completions"
-    default_model: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"   # the Super VL id on NVIDIA Build (#169)
+    default_model: str = "nemotron-3.5-super-vl"
     image: str = "data_url"            # an OpenAI image_url part holding data:<mime>;base64,<bytes>
     response_format: str = "json_schema"   # "json_object" if the endpoint takes no schema
     reasoning_off: bool = True         # "/no_think" and chat_template_kwargs.enable_thinking=false
@@ -298,15 +301,17 @@ def model_id(s: NemotronSettings) -> str:
     return (s.nemotron_vl_model or "").strip() or PROVIDER.default_model
 
 
+def base_url(s: NemotronSettings) -> str:
+    return (s.verda_inference_url or "").strip() or PROVIDER.default_url
+
+
 def reader_choice(s: NemotronSettings) -> tuple[str, str]:
     """("nemotron", "") or ("gemini", why): the reader the service uses."""
     if s.bill_reader == "gemini":
         return "gemini", "BILL_READER=gemini"
-    missing = [name for name, value in (("VERDA_INFERENCE_URL", s.verda_inference_url),
-                                        ("VERDA_INFERENCE_KEY", s.verda_inference_key)) if not value]
-    if missing:
-        return "gemini", "no " + " and no ".join(missing)
-    if not valid_url(s.verda_inference_url):
+    if not s.verda_inference_key:
+        return "gemini", "no VERDA_INFERENCE_KEY"
+    if not valid_url(base_url(s)):
         return "gemini", "VERDA_INFERENCE_URL is not an https URL with a host and no credentials"   # never echoed
     if s.nemotron_daily_budget == 0:
         return "gemini", "NEMOTRON_DAILY_BUDGET=0"
@@ -337,7 +342,7 @@ def make_nemotron_client(s: NemotronSettings, *, cache: str = "on", cache_dir: P
         return None
     model = model_id(s)
     key = s.verda_inference_key.get_secret_value() if s.verda_inference_key is not None else ""
-    transport = None if cache == "replay" else NemotronTransport(str(s.verda_inference_url), key, opener=opener)
+    transport = None if cache == "replay" else NemotronTransport(base_url(s), key, opener=opener)
     return GeminiClient(model, transport, cache=cache, cache_dir=None if cache == "off" else cache_dir,
                         ledger=Ledger(ledger_path, s.nemotron_daily_budget, off_switch,
                                       kind_caps={"extract": s.nemotron_daily_budget}),

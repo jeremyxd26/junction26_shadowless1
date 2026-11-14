@@ -314,8 +314,8 @@ def test_the_warmup_counts_both_ledgers_and_its_second_reading_comes_from_the_ca
     ({}, ("nemotron", "")),
     ({"bill_reader": "gemini"}, ("gemini", "BILL_READER=gemini")),
     ({"verda_inference_key": None}, ("gemini", "no VERDA_INFERENCE_KEY")),
-    ({"verda_inference_url": None, "verda_inference_key": None},
-     ("gemini", "no VERDA_INFERENCE_URL and no VERDA_INFERENCE_KEY")),
+    ({"verda_inference_url": None, "verda_inference_key": None}, ("gemini", "no VERDA_INFERENCE_KEY")),
+    ({"verda_inference_url": None}, ("nemotron", "")),     # the provider's own URL (PROVIDER.default_url)
     ({"nemotron_daily_budget": 0}, ("gemini", "NEMOTRON_DAILY_BUDGET=0")),
     ({"nemotron_vl_model": None}, ("nemotron", "")),       # the default model id of PROVIDER
 ])
@@ -404,7 +404,7 @@ def _url(scheme: str, host: str, userinfo: str = "") -> str:
     (_url("https", "inference.example"), True),
     (_url("http", "inference.example"), False), (_url("ftp", "inference.example"), False),
     ("file:///etc/passwd", False), (_url("https", "inference.example", "user" + ":" + "pw"), False),
-    (_url("https", "inference.example", "user"), False), ("not a url", False), ("https://", False), ("", False),
+    (_url("https", "inference.example", "user"), False), ("not a url", False), ("https://", False),
 ])
 def test_only_an_https_url_with_a_host_and_no_credentials_turns_the_reader_on(url, ok, tmp_path):
     from core.bills.nemotron import valid_url
@@ -467,3 +467,42 @@ def test_a_phone_number_a_domain_or_a_key_shaped_token_is_no_payee(payee):
 def test_the_answer_key_payees_are_still_read(sample_id):
     payee = TRUTH[sample_id]["payee"]
     assert _payee(payee).value == payee
+
+
+
+# ---- the provider's own details (relayed from Verda on 14 Nov) -------------------------------------------------
+
+def test_the_providers_url_and_model_id_are_the_defaults(tmp_path):
+    from core.bills.nemotron import base_url, model_id, valid_url
+    s = NemotronSettings(_env_file=None, verda_inference_key=KEY)          # only the key set
+    assert base_url(s) == PROVIDER.default_url == "https://containers.datacrunch.io/nemotron-3-5-super-vl-b300/v1"
+    assert model_id(s) == PROVIDER.default_model == "nemotron-3.5-super-vl" and valid_url(base_url(s))
+    opener = Opener(completion(json.dumps(printed("sample_1"))))
+    client = make_nemotron_client(s, cache="off", ledger_path=tmp_path / "l.jsonl", opener=opener)
+    read_bill(client, IMAGES["sample_1"], "image/png", "en")
+    request = opener.requests[0][0]
+    assert request.get_full_url() == PROVIDER.default_url + "/chat/completions"
+    body = json.loads(request.data)
+    assert body["model"] == "nemotron-3.5-super-vl" and body["max_tokens"] > 0
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert reader_state(s, ledger_path=tmp_path / "l.jsonl").startswith(
+        "bill reader: Nemotron nemotron-3.5-super-vl on the Verda inference API")
+
+
+def provider_answer(content: str, reasoning: str = "The bill shows a barcode, so I read it first.") -> dict:
+    """A chat completion in the provider's shape: the reasoning beside the answer, in `reasoning_content`."""
+    answer = completion(content)
+    answer["choices"][0]["message"]["reasoning_content"] = reasoning
+    return answer
+
+
+def test_only_the_content_is_read_never_the_reasoning(tmp_path):
+    fields = printed("sample_2")
+    result = read_bill(nemotron(Opener(provider_answer(json.dumps(fields))), tmp_path), IMAGES["sample_2"],
+                       "image/png", "en")
+    assert result["fields"]["iban"]["value"] == fields["iban"].replace(" ", "")
+    # an answer only in the reasoning is no reading: the reasoning is never read
+    with pytest.raises(BillReadUnavailable) as exc:
+        read_bill(nemotron(Opener(provider_answer("", reasoning=json.dumps(fields))), tmp_path / "b"),
+                  IMAGES["sample_2"], "image/png", "en")
+    assert exc.value.reason == "empty"
