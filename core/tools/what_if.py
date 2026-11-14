@@ -206,7 +206,8 @@ def _card(result: WhatIfResult, cut_pct: int, language: str) -> Card:
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,
         estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language, pct=cut_pct),
                           observed=[result.baseline_per_month],   # #380
-                          assumptions=[assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
+                          assumptions=[assumption("what_if.next_months_like_last", language),   # #503 review
+                                       assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         result=result.model_dump(mode="json"),
     )

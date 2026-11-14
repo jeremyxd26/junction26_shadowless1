@@ -365,11 +365,36 @@ def test_refused_selections_are_422(client):
 
 
 def test_the_overview_hero_says_what_it_observed_and_what_it_assumes(lead_overview):
-    """#380 on the wire: the hero's estimate lists the balance and the bills as observed and the four assumptions,
-    each value the same Number as on the card (same ref)."""
-    est = lead_overview["hero"]["estimate"]
+    """#380 on the wire: the hero's estimate lists both limbs (#503 review): observed are the balance, the bills and
+    the budget limit (the card's own Numbers, same refs); the assumptions are the balance limb's four and the budget
+    limb's two, the goal's value the same Number as on the card."""
+    hero = lead_overview["hero"]
+    est = hero["estimate"]
     assert [a["code"] for a in est["assumptions"]] == ["spending_as_usual", "reserve_for_unexpected", "cushion",
+                                                       "bills_on_usual_days", "budget_from_usual_month",
                                                        "savings_goal_first"]
-    components = {c["key"]: c["amount"]["evidence_ref"] for c in lead_overview["hero"]["components"]}
-    assert [n["evidence_ref"] for n in est["observed"]] == [components["balance"], components["bills_due"]]
-    assert est["assumptions"][3]["value"]["evidence_ref"] == lead_overview["hero"]["secondary"][3]["evidence_ref"]
+    components = {c["key"]: c["amount"]["evidence_ref"] for c in hero["components"]}
+    assert [n["evidence_ref"] for n in est["observed"]] == [components["balance"], components["bills_due"],
+                                                            hero["secondary"][2]["evidence_ref"]]   # the budget limit
+    assert est["assumptions"][5]["value"]["evidence_ref"] == hero["secondary"][3]["evidence_ref"]   # the goal
+
+
+def test_an_estimate_number_is_a_complete_object_read_from_the_estimate(client):
+    """#503 review (contract section 3, Estimates): the Numbers inside an estimate are complete objects that the app
+    reads from the estimate; the forecast's daily pace is on no card, and the answer's `numbers` map holds only the
+    Numbers the text cites, so a Number the text does not cite is in the estimate only."""
+    r = client.post("/api/ask", json={"customer_id": LEAD, "message": "Will my money last until payday?",
+                                      "language": "en"}, headers={"Accept": "application/json"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    forecast = [c for c in body["cards"] if c.get("display_hint") == "time_series"]
+    assert forecast, [c["type"] for c in body["cards"]]
+    est = forecast[0]["estimate"]
+    listed = est["observed"] + [a["value"] for a in est["assumptions"] if a["value"]]
+    for n in listed:
+        assert {"value", "unit", "period", "method", "evidence_ref", "label", "display"} <= set(n), n
+    pace = next(a["value"] for a in est["assumptions"] if a["code"] == "spending_as_usual")
+    assert pace["evidence_ref"] not in str({k: v for k, v in forecast[0].items() if k != "estimate"})   # on no card
+    numbers = body.get("numbers") or {}
+    ids = set(numbers) if isinstance(numbers, dict) else {n["id"] for n in numbers}
+    assert ids <= set(body.get("cited") or []), (ids, body.get("cited"))     # the map holds only cited Numbers

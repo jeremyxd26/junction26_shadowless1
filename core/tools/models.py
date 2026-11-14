@@ -174,7 +174,8 @@ class Action(BaseModel):
 AssumptionCode = Literal[
     "cut_share", "bonus_all_at_s_group", "bonus_share", "bonus_level", "spending_as_usual",
     "reserve_for_unexpected", "next_months_like_last", "savings_goal_first", "cushion", "bills_pro_rata",
-    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown"]
+    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown", "budget_from_usual_month",
+    "bonus_household", "bonus_table", "bonus_payment_card", "bonus_goods"]
 ASSUMPTION_CODES: tuple[str, ...] = AssumptionCode.__args__
 
 
@@ -207,8 +208,9 @@ class Estimate(BaseModel):
 
     @model_validator(mode="after")
     def _warn_without_assumptions(self) -> Estimate:
-        if not self.assumptions and self.label not in _WARNED_EMPTY:
-            _WARNED_EMPTY.add(self.label)
+        key = f"{self.label}|{self.text}"   # per estimate: the label is the same for every tool
+        if not self.assumptions and key not in _WARNED_EMPTY:
+            _WARNED_EMPTY.add(key)
             logging.getLogger(__name__).warning("an estimate card has no assumptions (#380)")
         return self
 
