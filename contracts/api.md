@@ -36,7 +36,7 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 | Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7). |
 | Customer | Demo mode has no login: the app picks a persona from `/api/personas` and sends its `customer_id`. In production the customer comes from the bank session and the field is ignored. The core never lets the AI model choose the customer. **Only the persona customers are served:** any other `customer_id`, also a real customer of the dataset, gets 404 `customer_not_found`, exactly like an id that does not exist (section 4). |
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
-| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language`, and `/api/ask` also accepts `auto` (detect from the message). Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST; a POST body that cannot be parsed is answered in English. |
+| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language; a POST body that cannot be read is answered in English. |
 | Dates | `YYYY-MM-DD`. Periods are inclusive at both ends. |
 | Timestamps | ISO 8601 with offset, for example `2026-11-14T10:32:05+02:00`. They are wall-clock times of events such as `labelled_at`, not dataset dates. |
 | Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[]` entry carries a positive `amount` and an `operation` (`add` or `subtract`). Raw transaction rows in evidence keep the bank sign: negative means money out. |
@@ -850,11 +850,11 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
 
 ## 4. Errors
 
-Every error response has the same envelope, and the `error` event inside the `/api/ask` stream uses it too. The app shows `message` (already localised: `?lang` for a GET, the body's `language` for a POST, section 1) and offers a retry when `retryable` is true.
+Every error response has the same envelope, and the `error` event inside the `/api/ask` stream uses it too. The app shows `message` (already localised: `?lang` for a GET, the body's `language` for a POST, the detected language for `/api/ask` with `auto`, section 1) and offers a retry when `retryable` is true.
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid_request` | Malformed body or a bad parameter. |
+| 400 | `invalid_request` | Malformed body or a bad parameter. A what-if selection the core refuses is a 422 `invalid_scenario` instead (section 8.1). |
 | 404 | `customer_not_found` | Unknown `customer_id`, or any customer that is not a persona (section 1): both get the same answer. |
 | 404 | `not_found` | Unknown route: the path names no endpoint of this contract. |
 | 405 | `invalid_request` | A known path with a method it does not take. The `Allow` header lists the methods it takes. |
@@ -945,7 +945,7 @@ The home screen. It is fully deterministic: no AI model is called, and its numbe
 - `safe_to_save`: a card of type `safe_to_save` (section 3, `metrics.md` section 3.1). The headline is `monthly`, what a typical month leaves. The second line is `stock` with its one-sentence `stock_explanation`, money in the account beyond what is needed until payday; the app shows it with no call to action. It is **not** added to safe to spend: both come out of the same money, and the app never shows them as a sum.
 - `cards`: Card[] (spending baskets, bills before payday, and more later).
 - `reviews`: Card[] of type `review` (section 3) with **at most one item**: the customer's pending review, if any. The app hides the section when the list is empty. Server rules:
-  - **One at a time:** a pending review is served again, never created again. A new one is created only after the previous one is answered or has expired (7 days after creation). The review is created when the customer's data is first served, so whichever comes first creates it; later requests serve the same pending review.
+  - **One at a time:** a pending review is served again, never created again. A new one is created only after the previous one is answered or has expired (7 days after creation). The first overview creates it (with #196, also the first `/api/ask` answer, if that comes first); later requests serve the same pending review.
   - **Undo after the 7 days** closes the review, and the purchase goes back to the basket the rules give it (section 10.1).
   - **Weekly limit:** at most 3 reviews are created per customer per calendar week (Monday to Sunday, Helsinki time, wall clock, not `DEMO_TODAY`).
   - A transaction is never asked about twice.
@@ -1350,6 +1350,280 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
 }
 ```
 
+The same overview when safe to spend cannot be computed for a known reason: `hero` is `null`, and the rest is served as usual (shortened here to the first card):
+
+<!-- example: overview.response_no_hero -->
+```json
+{
+  "customer_id": "CUST00042",
+  "as_of": "2026-09-30",
+  "language": "en",
+  "greeting": "Hi Aino",
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions.",
+  "hero": null,
+  "safe_to_save": {
+    "card_id": "card_save_02",
+    "type": "safe_to_save",
+    "title": "Safe to save",
+    "subtitle": "What a typical month leaves",
+    "evidence_ref": "ev_ai2m4o6n8t0h",
+    "estimate": {
+      "label": "Estimate",
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    },
+    "monthly": {
+      "value": 431.58,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_spend.safe_to_save_monthly_eur@1",
+      "evidence_ref": "ev_ai2m4o6n8t0h",
+      "label": "Typically left each month",
+      "display": "€431.58 a month"
+    },
+    "monthly_components": [
+      {
+        "key": "free_month",
+        "label": "Left after bills, essentials and the reserve",
+        "operation": "add",
+        "amount": {
+          "value": 1080.55,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month",
+          "display": "€1,080.55 a month"
+        }
+      },
+      {
+        "key": "everyday_month",
+        "label": "Usual everyday spending",
+        "operation": "subtract",
+        "amount": {
+          "value": 648.97,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month",
+          "display": "€648.97 a month"
+        }
+      }
+    ],
+    "stock": {
+      "value": 75.92,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.safe_to_save_eur@1",
+      "evidence_ref": "ev_ai1s3a5v7e9n",
+      "label": "In your account beyond what you need until payday",
+      "display": "€75.92"
+    },
+    "stock_explanation": "Money in your account beyond what you need until payday, after bills, reserves, a small cushion and your usual everyday spending.",
+    "stock_components": [
+      {
+        "key": "free_until_payday",
+        "label": "Free until payday",
+        "operation": "add",
+        "amount": {
+          "value": 395.74,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.free_until_payday_eur@1",
+          "evidence_ref": "ev_s4t6w8y0a2c4",
+          "label": "Free until payday",
+          "display": "€395.74"
+        }
+      },
+      {
+        "key": "everyday_until_payday",
+        "label": "Usual everyday spending until payday",
+        "operation": "subtract",
+        "amount": {
+          "value": 319.82,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.everyday_until_payday_eur@1",
+          "evidence_ref": "ev_ai3e5v7d9y1p",
+          "label": "Everyday spending until payday",
+          "display": "€319.82"
+        }
+      }
+    ],
+    "reason": null,
+    "actions": [
+      {
+        "type": "open_evidence",
+        "label": "How is this calculated?",
+        "evidence_ref": "ev_ai2m4o6n8t0h"
+      }
+    ]
+  },
+  "cards": [
+    {
+      "card_id": "card_baskets_01",
+      "type": "breakdown",
+      "title": "Where your money goes in a typical month",
+      "subtitle": "Monthly average, April to September 2026",
+      "evidence_ref": "ev_k4m6p8r0t2v4",
+      "estimate": null,
+      "display_hint": "stacked_bar",
+      "total": {
+        "value": 2211.01,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "spender_profile.spend_month_eur@1",
+        "evidence_ref": "ev_k4m6p8r0t2v4",
+        "label": "Total spending",
+        "display": "€2,211.01 a month"
+      },
+      "comparison": null,
+      "items": [
+        {
+          "key": "regular_essentials",
+          "label": "Regular essentials",
+          "amount": {
+            "value": 1180.21,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.month_avg_eur@1",
+            "evidence_ref": "ev_br1a3c5e7g9i",
+            "label": "Regular essentials",
+            "display": "€1,180.21 a month"
+          },
+          "share": {
+            "value": 53.4,
+            "unit": "percent",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.share_pct@1",
+            "evidence_ref": "ev_bs1a3c5e7g9i",
+            "label": "Share of spending",
+            "display": "53.4%"
+          },
+          "change": null,
+          "flags": []
+        },
+        {
+          "key": "unexpected_necessities",
+          "label": "Unexpected necessities",
+          "amount": {
+            "value": 340.5,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.month_avg_eur@1",
+            "evidence_ref": "ev_bi2b4d6f8h0j",
+            "label": "Unexpected necessities",
+            "display": "€340.50 a month"
+          },
+          "share": {
+            "value": 15.4,
+            "unit": "percent",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.share_pct@1",
+            "evidence_ref": "ev_bt2b4d6f8h0j",
+            "label": "Share of spending",
+            "display": "15.4%"
+          },
+          "change": null,
+          "flags": []
+        },
+        {
+          "key": "everyday_spending",
+          "label": "Everyday spending",
+          "amount": {
+            "value": 690.3,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.month_avg_eur@1",
+            "evidence_ref": "ev_bl3c5e7g9i1k",
+            "label": "Everyday spending",
+            "display": "€690.30 a month"
+          },
+          "share": {
+            "value": 31.2,
+            "unit": "percent",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "baskets.share_pct@1",
+            "evidence_ref": "ev_bu3c5e7g9i1k",
+            "label": "Share of spending",
+            "display": "31.2%"
+          },
+          "change": null,
+          "flags": []
+        }
+      ],
+      "actions": [
+        {
+          "type": "ask",
+          "label": "What is in everyday spending?",
+          "prompt": "What is in my everyday spending?"
+        }
+      ]
+    }
+  ],
+  "reviews": [],
+  "insights": [],
+  "suggested_questions": [
+    "Where did my money go?",
+    "What kind of spender am I?",
+    "What can I safely spend this week?",
+    "How could I save more?"
+  ]
+}
+```
+
 Sanna's overview while her review is pending (values from the dataset, `metrics.md` section 1.1):
 - the Home & Tech purchase is `unclassified` and outside the reserve, so safe to spend is 221.58;
 - the review card asks about the purchase.
@@ -1710,7 +1984,7 @@ The partner's four questions are the main intents, and the app should offer them
 | `customer_id` | string | Persona from `/api/personas`. |
 | `conversation_id` | string or null | `null` starts a new conversation. Send the id from `meta` to ask a follow-up. The server keeps the history (last 6 turns, 30 minutes). The app does not resend it. A conversation belongs to one customer. An id that is unknown, expired or belongs to another customer starts a new conversation: `meta` carries the new id, `done.warnings` contains `conversation_reset`, and earlier tool results are never reused. |
 | `message` | string | The question, at most 500 characters. |
-| `language` | `en`, `fi` or `auto` | `auto` detects the language from the message. |
+| `language` | `en`, `fi` or `auto` | Optional, default `auto`: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Errors use the same language. |
 
 The `Accept` header chooses the response format:
 
@@ -2355,11 +2629,13 @@ Shows how a number was built: the method and either the transactions behind it o
 |---|---|---|
 | `transactions` | `rows`, `row_count`, `reconciles`, `next_cursor` | Sums and counts over the customer's own transactions. |
 | `composite` | `parts`: `{role, number: Number}`[] | Numbers computed from other numbers: changes, safe to spend, savings. Each part has its own `evidence_ref`. |
-| `metric` | `reconciles`; `rows` optional | Numbers read from a metric definition of `metrics.md` (safe to spend, what-if, spender profile). The core re-runs the definition for the customer, and `reconciles: true` confirms that the re-run gives the same value. `rows`, when present, are the transactions it read, with no promise that they add up to the number. `query` and `row_count` are `null`. |
-| `peer_aggregate` | `parts`: `{role, number: Number}`[] for `peer_median`, `peer_p25`, `peer_p75` and `peer_n` (group size); `reconciles` | Peer benchmarks. Shows group statistics only, never other customers' rows. The parts have `evidence_ref: null` (nothing further to open), and the group's level (section 3, `peer`) is named in the group size's label. |
+| `metric` | `reconciles`; `rows` | Numbers read from a metric definition of `metrics.md` (safe to spend, safe to save, what-if; the spender profile with #69, PR #95, not yet merged). The core re-runs the definition for the customer, and `reconciles: true` confirms that the re-run gives the same value. `rows` is always a list, empty today. `query` and `row_count` are `null`. |
+| `peer_aggregate` | `parts`: `{role, number: Number}`[] for `peer_median`, `peer_p25`, `peer_p75` and `peer_n` (group size); `reconciles` | Peer benchmarks (this shape with #69, PR #95, not yet merged). Shows group statistics only, never other customers' rows. The parts have `evidence_ref: null` (nothing further to open), and the group's level (section 3, `peer`) is named in the group size's label. `reconciles: true` confirms that a re-run of `06_peer_benchmark.sql` for the customer gives the same statistic. |
 | `store_index` | `parts` | Store price levels. |
 
 Values the user typed in (`method` = `user_input@1`) have `evidence_ref: null`, so they have no evidence to open.
+
+In the overview's hero, `primary` (safe to spend) opens as a `composite`: the smaller of the two limits, each a part. The `bills_due` component opens as `transactions`, and the other components and the `secondary` numbers as `metric`. The `safe_to_save` card's numbers all open as `metric`.
 
 Transaction rows are source records, not coach numbers. Their `amount` is a **decimal string with the bank sign** (`"-24.50"` means €24.50 out), a common banking-API convention that avoids rounding errors. This is one of the two exemptions from the Number rule (section 1). Each row also carries `display`: its amount formatted like a Number's display in the request language, with the bank sign (`-€24.50`, Finnish `-24,50 €`), so the app never formats a number; `amount` stays the exact decimal string. `reconciles: true` confirms that the rows add up to `number`. For transfers that are not card purchases, `merchant` and `mcc` are `null`.
 
@@ -2457,7 +2733,7 @@ A `metric` number (Sanna's budget limit for the next 7 days, from `core/metrics/
 }
 ```
 
-A `peer_aggregate` number (the median of the `card.peer` example). Its parts are group statistics without refs:
+A `peer_aggregate` number (the median of the `card.peer` example; with #69, PR #95, not yet merged). Its parts are group statistics without refs:
 
 <!-- example: evidence.response_peer -->
 ```json
@@ -2581,11 +2857,11 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 | `customer_id` | string | Persona. |
 | `tx_ref` | string | From the `review` card. |
 | `basket` | `unexpected_necessities`, `everyday_spending` or `null` | The chosen option. `null` undoes the label. |
-| `language` | `en` or `fi` | |
+| `language` | `en` or `fi` | Optional, default `en`. Error messages are in this language too. |
 
 **What the answers do** (`metrics.md` section 1.1). While the review is pending, the purchase is `unclassified`: in no basket and not in the reserve. No answer raises safe to spend above the value shown while the question was pending. Undo and changing the answer only move between the documented states.
 - **"Needed"** (`unexpected_necessities`): the purchase joins that basket and its reserve, so the reserve grows and safe to spend goes **down**. Sanna: 221.58 → 180.26. The message says Sentti keeps a reserve for surprises like this.
-- **"I chose it"** (`everyday_spending`): the purchase joins everyday spending, and safe to spend **stays the same**. It stays a one-off, outside the everyday run rate. The message says this month's everyday spending is higher than usual by the amount.
+- **"My choice"** (`everyday_spending`): the purchase joins everyday spending, and safe to spend **stays the same**. It stays a one-off, outside the everyday run rate. The message says this month's everyday spending is higher than usual by the amount.
 
 **Rules:**
 - **Idempotent:** sending the same answer again returns 200 with `changed: false` and an empty `changes` list.
@@ -2611,8 +2887,7 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 - 404 `customer_not_found`;
 - 404 `tx_ref_not_found`: an unknown ref, the ref of an expired review, **or one of another customer**. The same answer for all three, so nobody can probe for other customers' refs (R4);
 - 422 `basket_not_allowed`: a valid basket key that is not one of the review's two options, for example `regular_essentials`;
-- 429 `rate_limited` (with #144, PR #199, not yet merged): more than 10 label writes a minute from one client address, or 30 for one customer; the response carries `Retry-After`;
-- 429 `rate_limited`.
+- 429 `rate_limited` (with #144, PR #199, not yet merged): the label write is rate-limited; the response carries `Retry-After`.
 
 ### 10.2 Examples
 
@@ -2740,7 +3015,7 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
 }
 ```
 
-If she answers "I chose it" instead, everyday spending gains the purchase and safe to spend stays at 221.58:
+If she answers "My choice" instead, everyday spending gains the purchase and safe to spend stays at 221.58:
 
 <!-- example: label.request_wanted -->
 ```json
@@ -2953,4 +3228,4 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
 | 0.1.2 | Example values follow the safe-to-spend formula (#32).<br><br>New field:<br>- `metric.status` (`ok`, `below_usual`, `nothing_free` or `null`); the hero example carries `"status": "ok"`.<br><br>New method id:<br>- `safe_to_spend.bill_due_eur@1` for each bill's `due_until_payday` (pending as a SQL output column, issue #44); the bills total keeps `safe_to_spend.bills_due_eur@1`.<br><br>Changed example values in `overview.response`:<br>- essentials reserve 147.00 → 134.76;<br>- irregular reserve 61.50 → 167.46;<br>- free until payday 489.46 → 395.74;<br>- balance limit 228.41 → 184.68;<br>- budget limit 292.24 → 248.50;<br>- safe to spend 228.41 → 184.68;<br>- regular essentials 1,180.20 → 1,180.21 a month;<br>- total spending 2,211.00 → 2,211.01 a month.<br><br>`ask.json.response_fi` gains `"status": null` on its metric card. |
 | 0.2.0 | The coach asks about a spending spike (#33).<br><br>New:<br>- Card type `review`: one spike, an opaque `tx_ref`, a merchant alias with no id, the question in English and Finnish, and exactly two options, `unexpected_necessities` ("needed") and `everyday_spending` ("I chose it").<br>- Basket state `unclassified` ("Waiting for your answer"): while a review is pending, the purchase is in no basket and not in the reserve. "Needed" lowers safe to spend, "I chose it" leaves it unchanged, and no answer raises it.<br>- Endpoint `POST /api/baskets/label` (section 10):<br>&nbsp;&nbsp;- idempotent; `changes` is empty when nothing changed;<br>&nbsp;&nbsp;- undo with `basket: null`, which returns the purchase to `unclassified` while the review is open;<br>&nbsp;&nbsp;- `review_state`, and `message` with number tokens;<br>&nbsp;&nbsp;- errors `tx_ref_not_found` (also for another customer's ref, R4) and `basket_not_allowed`, and 400 for a value that is not a basket key.<br>- Overview fields:<br>&nbsp;&nbsp;- `reviews`: at most one pending review; at most 3 created per calendar week; never the same transaction twice; never Health.<br>&nbsp;&nbsp;- `safe_to_save`: a new card type. The headline is `monthly`; the second line is `stock` with `stock_explanation` and no call to action. When `monthly` is 0, a `reason` follows the sign of free month: `essentials_exceed_income` or `largest_everyday_category`. No component amount is negative. Its method ids are pending as SQL outputs (#53).<br>- `/api/ask` may carry the pending `review` card, added by the server.<br>- A timestamp convention (section 1).<br><br>Changed:<br>- `GET /api/overview` now has one idempotent side effect: its first serve creates the pending review. It stays safe to call on every app open.<br>- The changelog moved from section 10 to section 11, so its anchor is `#11-changelog`.<br>- The `invalid_scenario` row of the errors table is reworded: the cancel scenario it mentioned no longer exists.<br><br>New examples, all with dataset values except CUST00042:<br>- `overview.response_pending` and `card.review` (Sanna, review pending);<br>- `card.safe_to_save` (Sanna after "needed"), `card.safe_to_save_aleksi`, `card.safe_to_save_zero` (CUST00002) and `card.safe_to_save_everyday` (CUST00019);<br>- the label examples: "needed", "I chose it", undo and error;<br>- `overview.response` (CUST00042, illustrative) gains `safe_to_save` and an empty `reviews`. |
 | 0.2.1 | No change of shape. The method ids `safe_to_spend.bill_due_eur@1` (#44) and `safe_to_spend.safe_to_save_monthly_eur@1`, `.everyday_month_eur@1`, `.safe_to_save_eur@1`, `.everyday_until_payday_eur@1`, `.essentials_shortfall_month_eur@1`, `.save_reason_month_eur@1` (#53) are real SQL outputs now; the pending notes are removed. The bills card states that its items, each rounded on its own, may differ from `total` by up to 0.01 per item. |
-| 0.2.2 | Documents what the service already returns or what was decided (#134); nothing new is built.<br><br>1. Evidence rows carry `display`, the amount formatted like a Number's display; `amount` stays the exact decimal string (section 9; #106).<br>2. Evidence kinds: `metric` (a re-run of the metric definition, `reconciles`, optional `rows`) and the shape of `peer_aggregate` (group statistics as parts with `evidence_ref: null`, the level in the group size's label); new examples `evidence.response_metric` and `evidence.response_peer` (sections 2.1 and 9; #73, #106, #95).<br>3. Errors: `not_found` (404) for an unknown route; a wrong method is 405 `invalid_request` with `Allow` (section 4; #106).<br>4. `POST /api/whatif`: every refused selection answers 422 `invalid_scenario` with the same body; `language` defaults to `en`; `cut_pct` is a JSON integer; a merchant alias is accepted and the merchant id echoed; `unexpected_necessities` is allowed; new example `whatif.error` (section 8.1; #106).<br>5. Only the persona customers are served; any other id answers 404 `customer_not_found` (sections 1, 4, 5 and 9; #125).<br>6. `hero` is `null` when safe to spend cannot be computed for a known reason; the app hides the card (section 6; #106).<br>7. The hero subtitle shows the period's dates, "1–7 Oct 2026" / "1.–7.10.2026" (section 6; #113, #133).<br>8. The display rules of the one formatter (section 2.1; #111).<br>9. The review card texts as decided on #68: the question with the amount, category and date filled in, the buttons "Needed" / "My choice" ("Välttämätön" / "Oma valinta"), and the Finnish effect texts with "turvallisesti käytettävissä" (sections 3 and 6).<br><br>Also: error messages follow `?lang` for a GET and the body's `language` for a POST (sections 1 and 4).<br><br>Facts added after the first draft:<br>10. The review is created when the customer's data is first served; an undo after the 7 days closes it (section 6, as in 10.1).<br>11. With #144 (PR #199, not yet merged): the per-viewer cookie `sentti_viewer` set by the overview, and 429 `rate_limited` on the label write (sections 6 and 10).<br>12. `safe_to_save`: when free until payday is negative, `stock` is 0 and `stock_components` is empty (section 3; #165).<br>13. The reason text of `card.safe_to_save_everyday` names the category in a form that works for every everyday category (#165). |
+| 0.2.2 | Documents what the service already returns or what was decided (#134); nothing new is built.<br><br>1. Evidence rows carry `display`, the amount formatted like a Number's display; `amount` stays the exact decimal string (section 9; #106).<br>2. Evidence kinds: `metric` (a re-run of the metric definition, `reconciles`, optional `rows`) and the shape of `peer_aggregate` (group statistics as parts with `evidence_ref: null`, the level in the group size's label); new examples `evidence.response_metric` and `evidence.response_peer` (sections 2.1 and 9; #73, #106, #95).<br>3. Errors: `not_found` (404) for an unknown route; a wrong method is 405 `invalid_request` with `Allow` (section 4; #106).<br>4. `POST /api/whatif`: every refused selection answers 422 `invalid_scenario` with the same body; `language` defaults to `en`; `cut_pct` is a JSON integer; a merchant alias is accepted and the merchant id echoed; `unexpected_necessities` is allowed; new example `whatif.error` (section 8.1; #106).<br>5. Only the persona customers are served; any other id answers 404 `customer_not_found` (sections 1, 4, 5 and 9; #125).<br>6. `hero` is `null` when safe to spend cannot be computed for a known reason; the app hides the card (section 6; #106).<br>7. The hero subtitle shows the period's dates, "1–7 Oct 2026" / "1.–7.10.2026" (section 6; #113, #133).<br>8. The display rules of the one formatter (section 2.1; #111).<br>9. The review card texts as decided on #68: the question with the amount, category and date filled in, the buttons "Needed" / "My choice" ("Välttämätön" / "Oma valinta"), and the Finnish effect texts with "turvallisesti käytettävissä" (sections 3 and 6).<br><br>Also: error messages follow `?lang` for a GET, the body's `language` for a POST, and the detected language for `/api/ask` with `auto` (sections 1, 4 and 7.1).<br><br>Facts added after the first draft:<br>10. The first overview creates the review (with #196, also the first `/api/ask` answer); an undo after the 7 days closes it (section 6, as in 10.1).<br>11. With #144 (PR #199, not yet merged): the per-viewer cookie `sentti_viewer` set by the overview, and a rate limit on the label write, answered with 429 `rate_limited` and `Retry-After` (sections 6 and 10).<br>12. `safe_to_save`: when free until payday is negative, `stock` is 0 and `stock_components` is empty (section 3; #165).<br>13. The reason text of `card.safe_to_save_everyday` names the category in a form that works for every everyday category (#165).<br>14. The "My choice" button's text in sections 10.1 and 10.2; the `metric` rows are always a list; the `peer_aggregate` shape is with #69 (PR #95); which hero number opens as which evidence kind (section 9).<br>15. New example `overview.response_no_hero`: the overview when safe to spend cannot be computed (section 6). |

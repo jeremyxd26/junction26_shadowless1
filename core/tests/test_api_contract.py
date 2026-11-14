@@ -29,6 +29,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "personas.response": schemas.PersonasResponse,
     "overview.response": schemas.OverviewResponse,
     "overview.response_pending": schemas.OverviewResponse,
+    "overview.response_no_hero": schemas.OverviewResponse,   # contract 0.2.2: hero null
     "card.review": schemas.ReviewCard,
     "evidence.response": schemas.EvidenceResponse,
     "evidence.response_composite": schemas.EvidenceResponse,
