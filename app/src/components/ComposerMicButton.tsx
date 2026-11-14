@@ -43,10 +43,13 @@ export function ComposerMicButton({ onText }: { onText: (text: string) => void }
   const [ready, setReady] = useState(false)
   const recording = useRef<Recording | null>(null)
   const request = useRef<AbortController | null>(null)
+  const mounted = useRef(false)
 
   // Leaving the screen or switching persona stops the microphone and drops a request in flight.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
       const current = recording.current
       recording.current = null
       if (current) {
@@ -61,9 +64,8 @@ export function ComposerMicButton({ onText }: { onText: (text: string) => void }
       }
       request.current?.abort()
       request.current = null
-    },
-    [],
-  )
+    }
+  }, [])
 
   // The line about a failure goes away after a few seconds, so it never covers the thread for long.
   useEffect(() => {
@@ -120,6 +122,11 @@ export function ComposerMicButton({ onText }: { onText: (text: string) => void }
     } catch (error) {
       setFailure(micFailure(error))
       setPhase('idle')
+      return
+    }
+    // The screen went away while the permission prompt was open: release the microphone at once.
+    if (!mounted.current) {
+      stopTracks(stream)
       return
     }
     const type = pickType((candidate) => MediaRecorder.isTypeSupported(candidate))
