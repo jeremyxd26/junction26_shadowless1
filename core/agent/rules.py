@@ -178,13 +178,18 @@ MAY_MONTH = (r"\b(in|of|for|during|since|from|until|till|to|through|and|or|vs|ve
              r"early|late|mid|before|after|\d{1,2}(st|nd|rd|th)?)\s+may\b|\bmay\s+(\d|and\b|or\b|vs\b|versus\b)")
 
 PRESETS = [
-    (r"last (3|three) months|past (3|three) months|viimeisen (3|kolmen) kuukauden|viimeiset (3|kolme) kuukautta", "last_3_months"),
+    # the singular and the plural genitive, with the digit or the word (#543, #651): "viimeisten kolmen kuukauden"
+    (r"last (3|three) months|past (3|three) months|viimeis(en|ten) (3|kolmen) kuukau|viimeiset (3|kolme) kuukautta",
+     "last_3_months"),
     (r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|\bkeskimäärin kuukaudessa\b",
      "last_6_months"),   # the metric's window (#395 row 14)
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
-    (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
-    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)", "last_12_months"),
+    (r"last (6|six) months|past (6|six) months|viimeis(en|ten) (6|kuuden) kuukau", "last_6_months"),
+    # the plural genitive and the number in words are the same period (#543, #651): "viimeisten 12 kuukauden aikana",
+    # "viimeisen kahdentoista kuukauden" (the answers' own wording)
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)|"
+     r"viimeis(en|ten) (12|kahdentoista) kuukau", "last_12_months"),
     (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
