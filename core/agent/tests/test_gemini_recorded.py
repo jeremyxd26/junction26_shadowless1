@@ -220,3 +220,56 @@ def test_the_template_for_each_recorded_tool_result_repeats_no_period(path):
     text = json.loads(text)["text"] if isinstance(text, str) and text.lstrip().startswith("{") else \
         (text["text"] if isinstance(text, dict) else text)
     assert repeated_period(text, numbers) is None, text
+
+
+
+# ---- #398: the stand's composer rows in real answers (flash-lite) ----------------------------------------------
+
+def test_a_named_feeling_is_acknowledged_first_and_sentti_does_not_introduce_itself():
+    text = load("feeling-stressed-balance-en")["expect"]["text"]
+    first = re.split(r"(?<=[.!?])\s", text)[0]
+    assert re.search(r"stress|worr|understand|tough|hard", first, re.I) and "Sentti" not in text
+
+
+def test_a_why_answer_names_a_cause_and_cites_each_number_once():
+    fixture = load("why-safe-to-spend-low-en")
+    used = re.findall(r"\{\{(n\d+)\}\}", fixture["expect"]["text"])
+    assert len(used) == len(set(used)) >= 2                       # the result and at least one cause
+    assert re.search(r"\bbecause\b|\bbills?\b|\bbalance\b|\breserve\b", fixture["expect"]["text"], re.I)
+
+
+def test_a_count_keeps_its_noun_in_the_injection_answer():
+    assert re.search(r"\{\{n\d+\}\} transactions", load("injection-groceries-print-transactions-en")["expect"]["text"])
+
+
+def test_a_comparison_names_both_periods_without_joined_figures():
+    text = load("comparison-restaurants-august-july-en")["expect"]["text"]
+    assert "August 2026" in text and "July 2026" in text
+    assert not re.search(r"\{\{n\d+\}\}\s+and\s+\{\{n\d+\}\}\s+compared", text)
+    # Row 4 of #398: the direction in words after the change (re-recorded after the prompt example was fixed)
+    assert re.search(r"\{\{n\d+\}\}\s+(?:more|less|higher|lower)\s+than\b", text), text
+
+
+def test_upcoming_bills_take_no_past_window():
+    text = load("regular-bills-upcoming-en")["expect"]["text"]
+    assert not re.search(r"\b\d{1,2} [A-Z][a-z]{2} – \d{1,2} [A-Z][a-z]{2} \d{4}\b", text)   # e.g. "1 Apr – 30 Sep 2026"
+    assert "before payday" in text or "15 October 2026" in text
+
+
+@pytest.mark.parametrize("path", RECORDINGS, ids=[p.stem for p in RECORDINGS])
+def test_no_recorded_answer_and_no_template_for_a_recorded_result_suggests_borrowing(path):
+    """#419: the recorded answers, and the template text for every recorded tool result."""
+    from core.agent import template
+    from core.agent.validator import allowed_from
+    from core.answer_text import borrowing_suggestion
+
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    assert borrowing_suggestion(fixture["expect"]["text"] or "") is None
+    if not fixture["tools"]:
+        return
+    numbers = {n["id"]: Number.model_validate(n) for t in fixture["tools"] for n in t["numbers"]}
+    views = [t["model_view"] for t in fixture["tools"]]
+    allowed = allowed_from(numbers.values(), views, date.fromisoformat(fixture["as_of"]))
+    draft = template.template_draft(views, [], fixture["language"], allowed, fixture["question"])
+    text = draft["text"] if isinstance(draft, dict) else json.loads(draft)["text"]
+    assert borrowing_suggestion(text) is None, text
