@@ -19,6 +19,8 @@ from typing import Any
 
 from fastapi import APIRouter, Path, Query, Request
 
+from core.tools import review_card
+from core.tools import reviews as spike_reviews
 from core.tools.baskets import get_basket_breakdown
 from core.tools.bills import get_recurring_bills
 from core.tools.context import ToolContext
@@ -50,6 +52,13 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
     greeting = (texts.pick(texts.GREETING, lang).format(name=persona["display_name"]) if persona
                 else texts.pick(texts.GREETING_NO_NAME, lang))
 
+    # The pending spike review (#68), found or created before any number is computed, so the hero and
+    # the cards already show its purchase as `unclassified`. Creating it is the only write of this GET
+    # (contract section 6); nothing is created when SPIKE_REVIEWS is off. The reviews it reads become
+    # the context's labels, so no tool of this request reads them again.
+    pending = spike_reviews.ensure_pending_for(ctx)
+    review = review_card.build(ctx, pending) if pending is not None else None
+
     try:
         hero = MetricCard.model_validate(_card((hero_tool or HERO_TOOL)(ctx, {})))
     except HERO_KNOWN_FAILURES as exc:
@@ -64,8 +73,8 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None) -> OverviewRespon
     ]
     # EXTENSION POINT (contract 0.2.0, section 6): `reviews` (at most one pending review card, #68)
     # and `safe_to_save` (a safe_to_save card, #53/#55) are top-level fields, not entries of `cards`.
-    # `reviews` is [] until #68 fills it; `safe_to_save` is added once its tool exists.
-    reviews: list[dict[str, Any]] = []
+    # `safe_to_save` is added once its tool exists.
+    reviews: list[dict[str, Any]] = [review] if review is not None else []
     insights: list[dict[str, Any]] = []  # EXTENSION POINT: insight tools (habit_trend, one_off, ...)
 
     return OverviewResponse.model_validate({

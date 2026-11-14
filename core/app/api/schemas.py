@@ -15,7 +15,7 @@ in core/tests/test_api_contract.py.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -154,11 +154,51 @@ class BillsCard(CardBase):
 Card = Annotated[Union[MetricCard, BreakdownCard, BillsCard], Field(discriminator="type")]
 
 
+# The review card (contract 0.2.0 section 3, #68): the coach asks about one spending spike.
+AnswerBasket = Literal["unexpected_necessities", "everyday_spending"]
+BasketKey = Literal["regular_essentials", "unexpected_necessities", "everyday_spending"]
+
+
+class Bilingual(Model):
+    en: str
+    fi: str
+
+
+class MerchantAlias(Model):
+    alias: str
+    label: str
+
+
+class BasketRef(Model):
+    key: Literal["regular_essentials", "unexpected_necessities", "everyday_spending", "unclassified"]
+    label: str
+
+
+class ReviewOption(Model):
+    basket: AnswerBasket
+    label: Bilingual
+    effect: Bilingual
+
+
+class ReviewCard(CardBase):
+    type: Literal["review"]
+    tx_ref: str
+    date: date
+    category: str
+    merchant: MerchantAlias | None
+    amount: Number
+    current_basket: BasketRef
+    question: Bilingual
+    options: list[ReviewOption] = Field(min_length=2, max_length=2)
+    why: str
+
+
 # ---- errors (section 4) -----------------------------------------------------------------------------
 
 class ErrorBody(Model):
     code: Literal["invalid_request", "customer_not_found", "evidence_not_found", "evidence_forbidden",
-                  "invalid_scenario", "rate_limited", "data_unavailable", "llm_unavailable", "internal",
+                  "invalid_scenario", "tx_ref_not_found", "basket_not_allowed", "rate_limited",
+                  "data_unavailable", "llm_unavailable", "internal",
                   "not_found"]  # not_found: contract addition (#79), an unknown route
     message: str
     retryable: bool
@@ -217,8 +257,7 @@ class OverviewResponse(Model):
     ai_disclosure: str
     hero: MetricCard | None  # safe to spend in the next 7 days (#79); null on a known tool failure
     cards: list[Card]
-    # Always [] until the spike review exists: #68 narrows the item to its review card model.
-    reviews: list[dict[str, Any]]
+    reviews: list[ReviewCard] = Field(max_length=1)  # the pending spike review, if any (#68)
     insights: list[Insight]
     suggested_questions: list[str]
     # EXTENSION POINT (contract 0.2.0): `safe_to_save: SafeToSaveCard` (#53/#55) is added here.
@@ -325,3 +364,46 @@ class WhatIfResponse(Model):
     caveats: list[str]
     estimate: Estimate
     evidence_ref: str
+# ---- POST /api/baskets/label (section 10, #68) ------------------------------------------------------
+
+class LabelRequest(Model):
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 400, not silently dropped
+
+    customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
+    tx_ref: str = Field(max_length=64)
+    # Required and nullable: null undoes the label. A value that is not a basket key is a 400; a basket
+    # key that is not one of the review's two options is a 422 basket_not_allowed (checked later).
+    basket: BasketKey | None
+    language: Language = "en"
+
+
+class LabelState(Model):
+    basket: AnswerBasket
+    label: str
+    labelled_at: str  # ISO 8601 with offset (section 1)
+
+
+class LabelMessage(Model):
+    text: str
+    text_rendered: str
+    numbers: dict[str, NumberWithId]
+
+
+class Change(Model):
+    key: str
+    label: str
+    before: Number
+    after: Number
+
+
+class LabelResponse(Model):
+    customer_id: str
+    as_of: date
+    language: Language
+    tx_ref: str
+    label: LabelState | None
+    review_state: Literal["answered", "pending", "closed"]
+    changed: bool
+    message: LabelMessage
+    changes: list[Change]
+    refetch: list[str]

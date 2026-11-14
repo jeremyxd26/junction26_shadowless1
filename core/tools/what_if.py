@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from core.tools import aliases, config, evidence, metric_sql, periods
+from core.tools import aliases, config, evidence, labels, metric_sql, periods
 from core.tools.context import ToolContext
 from core.tools.formatting import display
 from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
@@ -143,7 +143,8 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
         sql_value = merchant_id
         alias_label = alias_map.for_merchant(merchant_id).label(lang)
 
-    settings = {"whatif": f"{sel.kind}:{sql_value}", "whatif_pct": str(args.cut_pct)}
+    settings = {"whatif": f"{sel.kind}:{sql_value}", "whatif_pct": str(args.cut_pct),
+                **labels.metric_settings_for(ctx)}  # #68
     row = metric_sql.run_one(ctx.conn, config.WHAT_IF_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         # contracts/api.md section 8.1: no spending in the window at all -> 422 invalid_scenario

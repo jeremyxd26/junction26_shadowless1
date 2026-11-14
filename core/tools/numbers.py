@@ -10,7 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from core.tools import config, evidence
+from core.tools import config, evidence, labels
 from core.tools.formatting import display
 from core.tools.models import Number, Period, Unit
 from core.tools.selection import Selection, select, value_of
@@ -58,7 +58,11 @@ class NumberBuilder:
     def transactions(self, sel: Selection, method: str, period: Period, label: str, *,
                      unit: Unit | None = None, params: dict[str, Any] | None = None) -> tuple[Number, Decimal]:
         value = value_of(select(self.rows, sel), sel, method, params)
-        spec = evidence.transactions_spec(self.ctx.customer_id, self.ctx.as_of, method, sel, value, params)
+        # The customer's labels these rows were classified with (#68), so resolving the spec later
+        # re-classifies with the same labels, whatever the customer answered since.
+        label_set = labels.label_set({c.tx.id: c.basket for c in self.rows if c.overridden})
+        spec = evidence.transactions_spec(self.ctx.customer_id, self.ctx.as_of, method, sel, value, params,
+                                          label_set)
         return self.number(value, unit or DEFAULT_UNITS[method], period, method, spec, label), value
 
     def composite(self, method: str, formula: str, parts: dict[str, tuple[Number, Decimal]], unit: Unit,

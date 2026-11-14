@@ -70,8 +70,11 @@ def run(conn: psycopg.Connection, file: str, customer_id: str, as_of: date,
     # The caller's settings first and the customer range and as_of last, in the sequence of set_config
     # calls as well as in value: a later set_config of the same name wins in PostgreSQL, so the
     # server's values win even if a name ever slipped past check_settings (defence in depth, #122).
+    # tx_labels (#68) comes before everything: the customer's labels as JSON, passed by the caller
+    # (core.tools.labels.metric_settings) so its evidence spec records them; empty means none, so a
+    # session-level value can never leak in.
     server = [("demo_today", as_of.isoformat()), ("customer_from", lo), ("customer_to", hi)]
-    values = list((settings or {}).items()) + server
+    values = [("tx_labels", "")] + list((settings or {}).items()) + server
     own_transaction = conn.info.transaction_status == pq.TransactionStatus.IDLE
     with conn.transaction():
         if own_transaction:

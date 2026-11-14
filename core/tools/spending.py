@@ -151,7 +151,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         notes.append(_text("note_clamped", lang, label=period.label))
 
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
     alias_map = aliases.build(history, ctx.as_of)
     base = _base_selection(args, period, alias_map)
     nb = _Numbers(ctx, rows)
