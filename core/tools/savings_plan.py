@@ -39,7 +39,7 @@ from core.tools import config, evidence
 from core.tools.baskets import get_basket_breakdown
 from core.tools.bonus import get_bonus_estimate
 from core.tools.context import NumberRegistry, ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.safe_to_spend import get_safe_to_spend
 from core.tools.missing import MissingData
@@ -164,6 +164,7 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
 
     nb = NumberBuilder(ctx, [])
     levers: list[Lever] = []
+    results = []   # each lever's what-if result, for its baseline in the estimate (#503 review)
     for category, pct, result in ((first_category, first_pct, first),
                                   (other_category, other_pct, others.get(other_category) if other_category else None)):
         if category is not None and counts(result):
@@ -175,6 +176,7 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
             label = _t("lever", lang, what=what, words=words) if words else _t("lever_no_words", lang, what=what)
             levers.append(Lever(key=category, category=what, label=label, cut_pct=pct, cut=reg(cut),
                                 cut_words=words, saving=saving))
+            results.append(result)
 
     total_month = total_year = None
     if levers:
@@ -203,7 +205,11 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
     extra_evidence: list = []
     card = None
     if levers:
-        card = _card(levers, total_month, lang)
+        # #380 / #503 review: the estimate observes each lever's baseline (the what-if's own Number and ref). They
+        # are registered after every Number above, so no existing id or text token of the answer moves; the plan's
+        # answer gains these Numbers on purpose.
+        baselines = [shown(r.baseline_per_month) for r in results]
+        card = _card(levers, total_month, lang, baselines)
     else:   # no lever: where the money goes, next to the savings goal (coordinator, #411, #468)
         baskets = _decoration("baskets", lambda: get_basket_breakdown(private, dict(config.SAVINGS_PLAN_NONE_BASKETS)))
         if baskets is not None and baskets.card is not None:
@@ -217,7 +223,7 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
                       model_view=_model_view(data))
 
 
-def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
+def _card(levers: list[Lever], total_month: Number, language: str, baselines: list[Number]) -> Card:
     """The existing breakdown card: the total a month as the headline and one row per lever (each row's key is
     its category, its label in words). No digit outside a Number or the period: no S-Bonus amount, and the
     estimate text is the assumption in words."""
@@ -228,7 +234,12 @@ def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=total_month.period.label, evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
+        # #380 / #503 review: observed are the levers' baselines (what_if.baseline_month_eur@1); the savings are
+        # baseline x an assumed cut, the estimate itself. Assumed: the coming months, and each lever's cut share.
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language),
+                          observed=list(baselines),
+                          assumptions=[assumption("savings_plan.next_months_like_last", language),
+                                       *(assumption("savings_plan.cuts_as_shown", language, lv.cut) for lv in levers)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
                  Action(type="open_host_screen", target="monthly_saving", label=host_label)],
         display_hint="list", total=total_month, comparison=None, items=items,

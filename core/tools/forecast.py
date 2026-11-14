@@ -36,7 +36,7 @@ from pydantic import BaseModel
 from core.tools import aliases, config, evidence, labels, metric_sql, periods, recurring
 from core.tools.classify import classify, window
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, PeriodArg, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, PeriodArg, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.periods import MONTHS_EN_SHORT, add_months, month_end, month_key
 from core.tools.safe_to_spend import BillsDueMismatch, NoTransactions, metric_row
@@ -377,8 +377,14 @@ def _card(data: BalanceForecastData, language: str) -> Card:
         subtitle=periods.period_label(data.today, data.next_payday - timedelta(days=1), language)
         if data.next_payday - data.today > timedelta(days=1) else periods.period_label(data.today, data.today, language),
         evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language),
-                  "text": _t("estimate_text", language, pace=data.daily_pace.display)},
+        # #380: observed are today's balance and the bills until payday; assumed are the usual daily pace, the
+        # bills' usual days and no money coming in before payday
+        estimate=Estimate(label=_t("estimate_label", language),
+                          text=_t("estimate_text", language, pace=data.daily_pace.display),
+                          observed=[data.balance_now, data.bills_until_payday],
+                          assumptions=[assumption("forecast.spending_as_usual", language, data.daily_pace),
+                                       assumption("forecast.bills_on_usual_days", language),
+                                       assumption("forecast.no_income_before_payday", language)]),
         actions=actions,
         display_hint="time_series",
         total=data.lowest,

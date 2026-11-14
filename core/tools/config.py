@@ -713,6 +713,86 @@ USUAL_WEEK_METHOD = "safe_to_spend.usual_week_eur@1"   # everyday month x 7 / 30
 SAFE_TO_SAVE_WEEK_METHOD = "safe_to_save.week_eur@1"   # #417: safe to save monthly x 7 / 30.4375
 SAFE_TO_SAVE_DAY_METHOD = "safe_to_save.day_eur@1"     # #417: safe to save monthly / 30.4375
 
+# #380: what each estimate assumes, by "<tool>.<code>" (codes: core.tools.models.ASSUMPTION_CODES). One plain
+# sentence each, never a digit: a figure is the assumption's `value` Number. Nothing here changes a formula;
+# each sentence says what the tool already uses (docs/design/metrics.md).
+ASSUMPTION_TEXT = {
+    "safe_to_spend.spending_as_usual": (
+        "Your usual essentials continue until payday, at the pace of recent months.",
+        "Tavalliset välttämättömät menosi jatkuvat palkkapäivään asti viime kuukausien tahtiin."),
+    "safe_to_spend.reserve_for_unexpected": (
+        "A reserve for unexpected costs is kept, as large as recent months needed.",
+        "Odottamattomia menoja varten pidetään varaus, yhtä suuri kuin viime kuukausina on tarvittu."),
+    "safe_to_spend.cushion": (
+        "A small cushion is kept aside until payday.",
+        "Pieni puskuri pidetään sivussa palkkapäivään asti."),
+    "safe_to_spend.savings_goal_first": (
+        "A monthly amount for saving is put aside first, worked out from a typical month.",
+        "Kuukausittainen säästösumma laitetaan sivuun ensin, tavallisen kuukauden perusteella laskettuna."),
+    # #503 review: the budget limit, which binds for every persona, is computed from a typical month
+    "safe_to_spend.budget_from_usual_month": (
+        "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+        "Tavallisen kuukauden tulot, säännölliset laskut ja tavalliset välttämättömät menot toistuvat kuten viime "
+        "kuukausina."),
+    "safe_to_spend.bills_on_usual_days": (
+        "Bills come on their usual days, at their usual amounts.",
+        "Laskut tulevat tavallisina päivinään tavallisin summin."),
+    "safe_to_save.next_months_like_last": (
+        "The coming months are like a typical month of your last six.",
+        "Tulevat kuukaudet ovat kuin tavallinen kuukausi kuuden viimeisen joukosta."),
+    "what_if.next_months_like_last": (
+        "The coming months are like the average of your last six full months.",
+        "Tulevat kuukaudet ovat kuin kuuden viimeisen täyden kuukautesi keskiarvo."),
+    "what_if.cut_share": (
+        "You cut this spending by the share you chose, and the rest stays as it is.",
+        "Vähennät tätä kulutusta valitsemallasi osuudella, ja muu pysyy ennallaan."),
+    "bonus.bonus_all_at_s_group": (
+        "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Kaikki ruokaostoksesi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    "bonus.bonus_share": (
+        "This share of your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Tämä osuus ruokaostoksistasi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    # the fixed assumptions of the estimate (config.BONUS_ASSUMPTIONS), one code each (#503 review)
+    "bonus.bonus_household": (
+        "You are the only shopper in a co-op household.",
+        "Olet osuuskaupan talouden ainoa ostaja."),
+    "bonus.bonus_table": (
+        "The default Bonus table applies, not the KPO or Koillismaa table.",
+        "Käytössä on tavallinen Bonustaulukko, ei KPO:n tai Koillismaan taulukko."),
+    "bonus.bonus_payment_card": (
+        "You pay with an S-Etukortti Visa, which adds the payment benefit.",
+        "Maksat S-Etukortti Visalla, joka tuo maksutapaedun."),
+    "bonus.bonus_goods": (
+        "None of it is alcohol, tobacco or lottery, which earn no Bonus.",
+        "Ostoksissa ei ole alkoholia, tupakkaa eikä arpoja, joista ei saa Bonusta."),
+    "bonus.bonus_level": (
+        "The Bonus level is the one your monthly purchases at S Group reach.",
+        "Bonusprosentti on se, jonka kuukausiostoksesi S-ryhmässä saavuttavat."),
+    "bills.bills_pro_rata": (
+        "Bills paid several times a month count pro rata until payday.",
+        "Useita kertoja kuussa maksettavat laskut lasketaan suhteutettuina palkkapäivään asti."),
+    "peer.peer_group": (
+        "You are compared with other customers of your group; only group statistics are shown.",
+        "Sinua verrataan ryhmäsi muihin asiakkaisiin; vain ryhmän tunnusluvut näytetään."),
+    "forecast.spending_as_usual": (
+        "Your usual everyday spending and essentials continue, at the middle one of your last three full months' "
+        "daily averages; unexpected costs are not counted.",
+        "Tavallinen arjen kulutuksesi ja välttämättömät menosi jatkuvat kolmen viimeisen täyden kuukautesi "
+        "päiväkeskiarvoista keskimmäisen tahtiin; odottamattomia menoja ei lasketa."),
+    "forecast.bills_on_usual_days": (
+        "Bills come on their usual days.",
+        "Laskut tulevat tavallisina päivinään."),
+    "savings_plan.next_months_like_last": (
+        "The coming months are like the average of your last six full months.",
+        "Tulevat kuukaudet ovat kuin kuuden viimeisen täyden kuukautesi keskiarvo."),
+    "savings_plan.cuts_as_shown": (
+        "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+        "Vähennät tätä kulutusta näytetyllä osuudella, ja muu kulutuksesi pysyy ennallaan."),
+    "forecast.no_income_before_payday": (
+        "Salary and other money coming in before payday are not counted.",
+        "Palkkaa ja muita ennen palkkapäivää tulevia rahoja ei lasketa."),
+}
+
 WHAT_IF_NUMBERS = (  # (key, output column, unit value)
     ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
     ("saving_per_month", "saving_month_eur", "eur_per_month"),
@@ -1094,6 +1174,9 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+# #380 / #503 review: the assumption code of each fixed assumption above; the share's code depends on the share
+BONUS_ASSUMPTION_CODES = {"assume_household": "bonus_household", "assume_table": "bonus_table",
+                          "assume_card": "bonus_payment_card", "assume_goods": "bonus_goods", "assume_share": None}
 
 # ---- small purchases (#256, metrics.md section 12, 08_small_purchases.sql) --------------------------
 # The flexible everyday categories whose small purchases are counted: the everyday_spending basket's
