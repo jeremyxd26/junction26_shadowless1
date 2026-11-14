@@ -261,8 +261,9 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                                    "Viitenumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun ennen maksamista."),
     "sig_new_payee": ("This payee is not one of your regular bills.",
                       "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
-    "sig_above_usual": ("This bill is {amount}, at least half as much again as usual ({typical}).",
-                        "Tämä lasku on {amount}, vähintään puolitoista kertaa tavallinen ({typical})."),
+    # No ratio in the words: the threshold is a setting (BILL_ABOVE_USUAL_RATIO), the text stays true for any
+    "sig_above_usual": ("This bill is {amount}, much more than usual ({typical}).",
+                        "Tämä lasku on {amount}, paljon tavallista enemmän ({typical})."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),

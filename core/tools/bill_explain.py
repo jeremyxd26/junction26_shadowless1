@@ -94,10 +94,13 @@ def _clean(text: str | None) -> str | None:
 def canonical_reference(reference: str) -> str:
     """One form of a normalised reference, for the response and the draft. An RF reference loses the zeros
     after its check digits: a typed one keeps them (RF0400009991) while the parser reads the same reference
-    from a barcode without them (RF049991). The value, and so its mod-97 check, is the same. A national
-    reference already has no leading zeros (#241)."""
-    if reference.startswith("RF") and len(reference) > 4:
-        return reference[:4] + (reference[4:].lstrip("0") or "0")
+    from a barcode without them (RF049991). The value, and so its mod-97 check, is the same. Only an
+    all-digit body loses them: in an alphanumeric one (RF9600ABC1) the zeros are part of the reference the
+    payee issued, and a barcode cannot carry letters anyway. A national reference already has no leading
+    zeros (#241)."""
+    body = reference[4:]
+    if reference.startswith("RF") and body.isascii() and body.isdigit():
+        return reference[:4] + (body.lstrip("0") or "0")
     return reference
 
 
@@ -398,7 +401,7 @@ def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: B
                     free_after=free_after.display)]
     # At most one more sentence, on the weekly number (contracts/api.md 11.2: at most two sentences in all).
     before_v = _value(before)
-    if free_after_v < 0:
+    if counted_v > 0 and free_after_v < 0:   # a covered bill (nothing counted) only says that nothing changes
         texts.append(_t("sts_negative", lang, after=after.display))
     elif counted_v > 0 and after_v != before_v:
         texts.append(_t("sts_moves", lang, before=before.display, after=after.display))
