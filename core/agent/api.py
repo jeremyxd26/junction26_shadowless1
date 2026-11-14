@@ -34,7 +34,7 @@ from core.app.api import deps
 from core.app.api.errors import envelope
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import make_agent_model
-from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
+from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, LabelSteps, Pipeline, error_envelope
 from core.agent.toolset import default_registry
 
 router = APIRouter()
@@ -173,8 +173,15 @@ def build_agent(app) -> Agent:
     audit = AuditLog()
     model = make_agent_model(app.state.settings)  # rules first, then Gemini; the rule model without a key
     pipeline = Pipeline(default_registry(), model, data, as_of=app.state.settings.demo_today,
-                        store=ConversationStore(), audit=audit)
+                        store=ConversationStore(), audit=audit, labels=label_steps())
     return Agent(pipeline=pipeline, data=data, audit=audit)
+
+
+def label_steps() -> LabelSteps:
+    """The overview's label functions (#68, #196): the same state for an answer as for the overview."""
+    from core.tools import review_card, reviews
+
+    return LabelSteps(establish=reviews.ensure_pending_for, card=review_card.build, enabled=reviews.enabled)
 
 
 def get_agent(app) -> Agent:
@@ -271,6 +278,7 @@ async def ask(request: Request):
     if not exists:
         return envelope("customer_not_found", lang)
 
+    # SEAM (#144, PR #199): viewer=viewer_of(request, response), with the cookie set on the response.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
                      conversation_id=body.conversation_id)
     if "text/event-stream" in request.headers.get("accept", ""):
