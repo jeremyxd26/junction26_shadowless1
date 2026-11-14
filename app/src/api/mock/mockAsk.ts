@@ -36,9 +36,11 @@ const examples = contract.examples as unknown as {
   'ask.json.response_fi': AskJsonResponse
   'ask.json.request_refusal': AskRequest
   'ask.json.response_refusal': AskJsonResponse
+  'ask.json.response_refusal_first': AskJsonResponse
   'ask.json.request_clarify': AskRequest
   'ask.json.response_clarify': AskJsonResponse
   'error.response': ErrorEnvelope
+  'card.review': Card
 }
 
 /** Customers with mock data; others get the contract's customer_not_found before the stream. */
@@ -105,6 +107,8 @@ function streamOfJson(response: AskJsonResponse): string[] {
     refusal: response.refusal,
     clarify: response.clarify,
     warnings: response.warnings,
+    actions: response.actions ?? [],
+    ai_disclosure: response.ai_disclosure ?? null,
   }
   blocks.push(block('done', done))
   return blocks
@@ -136,22 +140,43 @@ const templateStream = () => cardsWithText(TEMPLATE_TEXT, 'answered', ['llm_unav
 /** Even the template failed the answer check: the fixed short text (`fallback`). */
 const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [])
 
+/** `?mock=review`: the full stream with the contract's `card.review` after its card (#450). */
+function reviewStream(): string[] {
+  const full = blocksOf(examples['ask.sse.stream'])
+  const at = full.findIndex((part) => /^event: card$/m.test(part)) + 1
+  return [...full.slice(0, at), block('card', { card: examples['card.review'] }), ...full.slice(at)]
+}
+
 function normalise(message: string): string {
   return message.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
 
 const sameQuestion = (message: string, request: AskRequest) => normalise(message) === normalise(request.message)
 
-function pickStream(message: string, scenario: string | null): string[] {
+function pickStream(message: string, scenario: string | null, first = true): string[] {
   if (scenario === 'error') return blocksOf(examples['ask.sse.stream_error'])
   if (scenario === 'template') return templateStream()
   if (scenario === 'fallback') return fallbackStream()
+  if (scenario === 'review') return reviewStream()
   if (sameQuestion(message, examples['ask.json.request_refusal']) || /\b(stock|stocks|shares|invest\w*|osak\w*|sijoit\w*)\b/.test(normalise(message))) {
-    return streamOfJson(examples['ask.json.response_refusal'])
+    // The first answer of a conversation carries the AI disclosure (0.3.3).
+    return streamOfJson(examples[first ? 'ask.json.response_refusal_first' : 'ask.json.response_refusal'])
   }
   if (sameQuestion(message, examples['ask.json.request_clarify'])) return streamOfJson(examples['ask.json.response_clarify'])
   if (sameQuestion(message, examples['ask.json.request_fi'])) return streamOfJson(examples['ask.json.response_fi'])
+  // `?mock=refusal`: the refusal with the contact_bank chip, whatever the question.
+  if (scenario === 'refusal') return streamOfJson(examples[first ? 'ask.json.response_refusal_first' : 'ask.json.response_refusal'])
   return blocksOf(examples['ask.sse.stream'])
+}
+
+/** The AI disclosure only on the first answer of a conversation, as the core sends it (0.3.3). */
+function onlyFirstDiscloses(blocks: string[], first: boolean): string[] {
+  if (first) return blocks
+  return blocks.map((part) => {
+    if (eventName(part) !== 'done') return part
+    const data = JSON.parse(part.slice(part.indexOf('data: ') + 6)) as AskDone
+    return block('done', { ...data, ai_disclosure: null })
+  })
 }
 
 function eventName(part: string): string {
@@ -224,5 +249,6 @@ export async function mockAsk(request: AskRequest, signal?: AbortSignal): Promis
   if (signal?.aborted) throw aborted(signal)
   if (!KNOWN_CUSTOMERS.has(request.customer_id)) throw new ApiError(404, examples['error.response'].error)
   const scenario = scenarioFromUrl()
-  return wireStream(pickStream(request.message, scenario), scenario === 'slow' ? 4 : 1, signal)
+  const first = !request.conversation_id
+  return wireStream(onlyFirstDiscloses(pickStream(request.message, scenario, first), first), scenario === 'slow' ? 4 : 1, signal)
 }

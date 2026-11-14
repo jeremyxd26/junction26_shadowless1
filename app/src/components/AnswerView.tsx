@@ -2,7 +2,7 @@
 // (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
 // action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
 import type { Action } from '../api/types.ts'
-import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
+import { STAGES, actionsOf, doneActions, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
@@ -210,7 +210,8 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
     )
   }
 
-  const actions = done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : []
+  // The answer's own actions (`done.actions`, 0.3.3: the way to a human), then the cards' actions.
+  const actions = [...doneActions(done), ...(done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : [])]
 
   return (
     <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
@@ -224,6 +225,8 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
         </div>
       )}
+      {/* The first answer of a conversation says once, in the API's words, that Sentti is an AI. */}
+      {done?.ai_disclosure && <p className="text-xs text-muted">{done.ai_disclosure}</p>}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
       {/* Written from the template without the AI model (warning `llm_unavailable`, #282):

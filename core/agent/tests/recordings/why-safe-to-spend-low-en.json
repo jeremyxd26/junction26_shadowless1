@@ -229,56 +229,7 @@
    }
   }
  ],
- "exchanges": [
-  {
-   "kind": "compose",
-   "response": {
-    "candidates": [
-     {
-      "content": {
-       "parts": [
-        {
-         "text": "{\n  \"language\": \"en\",\n  \"text\": \"Your safe to spend for the next seven days is {{n6}}. This is set by your monthly budget allows of {{n9}}, after accounting for bills before payday of {{n2}} and your balance of {{n1}}.\",\n  \"cited\": [\n    \"n6\",\n    \"n9\",\n    \"n2\",\n    \"n1\"\n  ],\n  \"lesson_key\": \"safety_buffer\"\n}",
-         "thought_signature": "EmAKXgFpFH0TMg-m2baveBLUXUUpLduybV6XhcDGOvDfiCccoXGmQbD8XNELYEyfgAD7vwE5_tBqeZSdatnFTi5NNdgtsHaoGfp6aVAyv8jJ7CtlbYuBSjGVE9yXBDrJbiw="
-        }
-       ],
-       "role": "model"
-      },
-      "finish_reason": "STOP"
-     }
-    ],
-    "usage_metadata": {
-     "prompt_token_count": 3412,
-     "thoughts_token_count": 0,
-     "candidates_token_count": 109
-    }
-   }
-  },
-  {
-   "kind": "compose",
-   "response": {
-    "candidates": [
-     {
-      "content": {
-       "parts": [
-        {
-         "text": "{\n  \"language\": \"en\",\n  \"text\": \"Your safe to spend for the next seven days is {{n6}} because you have {{n2}} in bills due before 15 October 2026.\",\n  \"cited\": [\n    \"n6\",\n    \"n2\"\n  ],\n  \"lesson_key\": \"safety_buffer\"\n}",
-         "thought_signature": "EmAKXgFpFH0T9gp2G28amOuL4i5REYPnlHC-f0GjkHWo-I1kV8YzoZWQnkZLU4aw5X4K0K8ggAoE8MPQCnuz0k0b7bVMlCC5FRpS3x7kQHCOBf7L4Q_hHwnLte6bewLptUQ="
-        }
-       ],
-       "role": "model"
-      },
-      "finish_reason": "STOP"
-     }
-    ],
-    "usage_metadata": {
-     "prompt_token_count": 3472,
-     "thoughts_token_count": 0,
-     "candidates_token_count": 85
-    }
-   }
-  }
- ],
+ "exchanges": [],
  "expect": {
   "outcome": "answered",
   "refusal_kind": null,
@@ -286,7 +237,7 @@
    "get_safe_to_spend",
    "finish"
   ],
-  "text": "Your safe to spend for the next seven days is {{n6}} because you have {{n2}} in bills due before 15 October 2026.",
-  "text_rendered": "Your safe to spend for the next seven days is €166.84 because you have €662.59 in bills due before 15 October 2026."
+  "text": "This week {{n6}} is safe to spend because your monthly budget sets the limit. Your balance alone would allow {{n8}}.",
+  "text_rendered": "This week €166.84 is safe to spend because your monthly budget sets the limit. Your balance alone would allow €382.49."
  }
 }

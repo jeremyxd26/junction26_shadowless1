@@ -148,6 +148,11 @@ MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
     "cinemas": ("Cinemas", "Elokuvateatterit"),
     "other": ("Other", "Muut"),
 }
+# An MCC group named like a category keeps only that category's card purchases (an MCC is set only on a card
+# purchase), a smaller sum: it is always written with "(card purchases)", alone or with its category, and the
+# category alone is the plain name (review of #528). Groups with their own names ("Taxi") are unchanged.
+CARD_PURCHASE_GROUPS: frozenset[str] = frozenset(
+    g for g, (en, _) in MCC_GROUP_LABELS.items() if any(en == c_en for c_en, _ in CATEGORY_LABELS.values()))
 
 # Merchant kinds for alias labels ("Grocery store A"). MCC first, then category. No digits.
 MERCHANT_KIND_BY_MCC: dict[str, tuple[str, str]] = {
@@ -173,11 +178,25 @@ MERCHANT_KIND_BY_CATEGORY: dict[str, tuple[str, str]] = {
 }
 MERCHANT_KIND_DEFAULT = ("Merchant", "Kauppias")
 
+FILTER_LABEL_CAP = 5   # parts of one dimension from which a filter label counts them (#501)
 TEXT: dict[str, tuple[str, str]] = {
     "spending": ("Spending", "Kulutus"),
     "income": ("Income", "Tulot"),
     # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
     "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
+    # a filter of FILTER_LABEL_CAP or more parts in one dimension is counted, not listed (#501)
+    "filter_many": ("Spending in {what}", "Kulutus {what}"),
+    "filter_many_categories": ("several categories", "useassa luokassa"),
+    "filter_many_mcc_groups": ("several groups", "useassa ryhmässä"),
+    "filter_many_baskets": ("several baskets", "useassa korissa"),
+    # across dimensions the selection is an intersection (core/tools/selection.py): a basket "within" (English),
+    # the other parts in brackets (Finnish, no agreement to get wrong), a merchant "at" (#501, review of #528)
+    "filter_within": (" within ", ""),
+    "filter_at": (" at ", " kauppiaalla "),
+    "filter_at_unnamed": (" at the chosen merchant", " valitulla kauppiaalla"),   # the evidence view, no alias
+    # a category with the MCC group of the same name: only its purchases with a merchant code, i.e. card purchases
+    # (a purchase without a card has no merchant and no MCC; docs/design/metrics.md section 0; review of #528)
+    "filter_card_purchases": ("card purchases", "korttiostot"),
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),
@@ -822,6 +841,40 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
                               "usual {usual}.",
                               "Jotta voit laittaa sivuun {goal}, turvallisesti käytettävissä on noin {safe} "
                               "viikossa, alle tavallisen {usual}."),
+    # "Why is my safe to spend lower?" (#552): the rule answer names the limit that binds, and with the budget side
+    # the goal set aside first; the other side's figure says what would not limit it. At most three numbers.
+    "why_budget_goal": ("This week {safe} is safe to spend because your monthly budget sets the limit, after setting "
+                        "aside {goal} first. Your balance alone would allow {balance}.",
+                        "Tällä viikolla turvallisesti käytettävissä on {safe}, koska kuukausibudjettisi asettaa "
+                        "rajan, kun ensin laitat sivuun {goal}. Saldosi yksin sallisi {balance}."),
+    "why_budget": ("This week {safe} is safe to spend because your monthly budget sets the limit. Your balance alone "
+                   "would allow {balance}.",
+                   "Tällä viikolla turvallisesti käytettävissä on {safe}, koska kuukausibudjettisi asettaa rajan. "
+                   "Saldosi yksin sallisi {balance}."),
+    "why_balance": ("This week {safe} is safe to spend because your balance sets the limit, after the bills and "
+                    "reserves before payday. Your monthly budget would allow {budget}.",
+                    "Tällä viikolla turvallisesti käytettävissä on {safe}, koska saldosi asettaa rajan, kun ennen "
+                    "palkkapäivää erääntyvät laskut ja varaukset on otettu huomioon. Kuukausibudjettisi sallisi "
+                    "{budget}."),
+    "why_equal": ("This week {safe} is safe to spend: your balance and your monthly budget set the same limit.",
+                  "Tällä viikolla turvallisesti käytettävissä on {safe}: saldosi ja kuukausibudjettisi asettavat "
+                  "saman rajan."),
+    # #575: the purchase of a pending or "Needed" review, in place of the other side's figure (approved texts). "This"
+    # is safe to spend, which the first sentence names; {amount} is the review card's own Number.
+    "why_review_pending_lowers": ("Your {amount} purchase still waits for your answer: marking it needed would lower "
+                                  "this.",
+                                  "Ostoksesi {amount} odottaa vielä vastaustasi: jos merkitset sen välttämättömäksi, "
+                                  "summa pienenee."),
+    "why_review_pending_same": ("Your {amount} purchase still waits for your answer: marking it needed would not "
+                                "change this.",
+                                "Ostoksesi {amount} odottaa vielä vastaustasi: sen merkitseminen välttämättömäksi ei "
+                                "muuttaisi summaa."),
+    "why_review_needed_moved": ("Marking your {amount} purchase as needed lowered this: it now counts as an unexpected "
+                                "necessity.",
+                                "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa pieneni: se lasketaan nyt "
+                                "odottamattomaksi välttämättömäksi menoksi."),
+    "why_review_needed_same": ("Marking your {amount} purchase as needed did not change this.",
+                               "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa ei muuttunut."),
     "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
@@ -1069,21 +1122,24 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                  "{amount} {category}, {date} — välttämätön hankinta vai oma valinta?"),
     "option_unexpected_necessities": ("Needed", "Välttämätön"),
     "option_everyday_spending": ("My choice", "Oma valinta"),
+    # The options' effect before the answer (#416): only where the purchase goes and that the numbers are
+    # recalculated, never a promise about safe to spend or safe to save; the real effect comes with the answer
+    # (label_answer.effect_text, #382). The basket words are the effect's own ("now counts as …").
     "effect_unexpected_necessities": (
-        "It counts as an unexpected necessity. {product} keeps a bigger reserve for surprises like this, so "
-        "your safe to spend goes down.",
-        "Se lasketaan välttämättömäksi yllätysmenoksi. {product} varaa jatkossa enemmän rahaa tällaisiin "
-        "yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee.",
+        "It will count as an unexpected necessity. {product} then recalculates your numbers with it.",
+        "Se lasketaan odottamattomaksi välttämättömäksi menoksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "effect_everyday_spending": (
-        "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this "
-        "month is higher than usual.",
-        "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta "
-        "arkikulutuksesi on tässä kuussa tavallista suurempi.",
+        "It will count as everyday spending. {product} then recalculates your numbers with it.",
+        "Se lasketaan arjen kulutukseksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "why": (
-        "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
-        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+        # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to
+        # save), so the text says that the effect is real, matching the effect text of the toast.
+        "Only you know what this purchase was. Your answer decides which basket it goes into, which can change "
+        "your safe to spend.",
+        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+        "turvallisesti käytettävissä olevaa summaa.",
     ),
     "amount": ("{category} purchase", "Ostos: {category}"),
     "see_purchase": ("See the purchase", "Näytä ostos"),
@@ -1223,7 +1279,14 @@ SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the
 SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
 SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
 SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1",
-                        "cut_pct": "savings_plan.cut_pct@1"}
+                        "cut_pct": "savings_plan.cut_pct@1",
+                        # what already goes to savings (#560): the share of income, and a sum when several series do
+                        "already_share": "savings_plan.already_share_pct@1",
+                        "already_month": "savings_plan.already_month_eur@1",
+                        "income_month": "savings_plan.income_month_eur@1"}
+# The recurring outflows that are the customer's own saving (#560): the categories of the recurring series that
+# already move money to savings or investments.
+SAVINGS_CATEGORIES = ("Invest Deposit",)
 # A cut share in words, so no answer needs a digit for it; any other share is cited as its Number (#411).
 SAVINGS_PLAN_CUT_WORDS: dict[int, tuple[str, str]] = {
     10: ("a tenth", "kymmenyksen"), 20: ("a fifth", "viidenneksen"), 25: ("a quarter", "neljänneksen"),
@@ -1246,4 +1309,10 @@ SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
     "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
                       "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    # what already goes to savings (#560): the Numbers' labels, and the line when no regular transfer shows
+    "already_month": ("Already goes to savings, a month", "Säästöihin menee jo kuukaudessa"),
+    "already_share": ("Share of your income", "Osuus tuloistasi"),
+    "income_month": ("Your income, a typical month", "Tulosi tavallisena kuukautena"),
+    "already_none": ("In this account I don't see a regular transfer to savings yet.",
+                     "Tällä tilillä en vielä näe säännöllistä siirtoa säästöön."),
 }

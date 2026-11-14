@@ -147,9 +147,11 @@ REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-len
 )
 REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
     "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
-    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "was it needed, or your choice? Your answer decides which basket it goes into, which can change your safe "
+    "to spend.",
     "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
-    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+    "se välttämätön hankinta vai oma valinta? Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+    "turvallisesti käytettävissä olevaa summaa.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
@@ -214,8 +216,28 @@ def made_up_request(question: str) -> bool:
     return bool(re.search(MADE_UP, fold(question)))
 
 
+# A health question beyond its plain total (#571: a what-if, a comparison, advice, an inference) keeps the kind
+# `out_of_scope` but gets its own neutral text: what Sentti does show, without a judgement.
+HEALTH_WORDS = fold_pattern(r"\bhealth(care)?\b(?![\s-](?:club|food|insurance|conscious|kick|bar|store|shop)s?\b)|"
+                            r"tervey(?!s(?:ruo|kaup|vakuut|baar|klub))\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|"
+                            r"lääkär\w*|dentist\w*|hammaslääk\w*|\bchemists?\b|\bmedicines?\b(?! balls?)|"
+                            r"\bheadaches?\b|päänsär\w*|\billness\w*|\bsick\b|sairas\w*")
+HEALTH_REFUSAL = {
+    "label": ("I don't comment on health", "En kommentoi terveyttä"),
+    "text": ("I can tell you what you spent on health in a period, but I don't comment on it, compare it or give "
+             "health advice.",
+             "Voin kertoa, paljonko käytit terveyteen jonkin jakson aikana, mutta en kommentoi sitä, vertaa sitä enkä "
+             "anna terveysneuvoja."),
+}
+
+
 def refusal(kind: str, language: str, question: str = "") -> tuple[str, dict[str, str]]:
-    entry = MADE_UP_REFUSAL if kind == "out_of_scope" and made_up_request(question) else REFUSAL[kind]
+    if kind == "out_of_scope" and made_up_request(question):
+        entry = MADE_UP_REFUSAL
+    elif kind == "out_of_scope" and re.search(HEALTH_WORDS, fold(question)):
+        entry = HEALTH_REFUSAL
+    else:
+        entry = REFUSAL[kind]
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
 
 
@@ -312,6 +334,17 @@ def _iso_day(raw: Any) -> date | None:
 def _quotable(word: str) -> bool:
     """A thing the user named, safe to quote back: up to four words of letters ("Café Müller", "gym")."""
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
+
+
+UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
+                   "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
+
+
+def unknown_lead(word: str, language: str) -> str:
+    """#598: the sentence for a thing no category maps, before the answer to the other question; the user's word is
+    quoted when it is safe to quote, and never with a digit (the answer's text has no digits of its own)."""
+    quote = bool(word) and _quotable(word) and not re.search(r"\d", word)
+    return pick(UNKNOWN_PLAIN, language).format(word=word) if quote else pick(UNKNOWN_NO_WORD, language)
 
 
 def _first_month(details: dict[str, Any]) -> date:
@@ -549,9 +582,10 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return f"{{{{{node['id']}}}}}"
     if tool == "get_safe_to_spend":
         safe, usual = view.get("safe_to_spend"), view.get("usual_week")
-        if view.get("binding_limit") != "budget" or not (_id(safe) and _id(usual)):
+        if view.get("binding_limit") != "budget" or not _id(safe):
             return None
-        if _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
+        # without the usual pace the goal is still said (#552): the plain goal sentence
+        if _id(usual) and _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
             text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["below_usual_with_goal"], language)
             return text.format(goal=tok(goal), safe=tok(safe), usual=tok(usual)), [goal["id"], safe["id"], usual["id"]]
         text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["with_goal"], language)
@@ -564,6 +598,54 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return text.format(goal=tok(goal), weekly=tok(weekly)), [goal["id"], weekly["id"]]
     text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language)
     return text.format(goal=tok(goal), monthly=tok(monthly)), [goal["id"], monthly["id"]]
+
+
+# "Why is my safe to spend lower / so low / so little", "miksi vähemmän / niin vähän" (#552): a rule answer from the
+# safe-to-spend view (why_lower_sentence), never a model guess. Matched on the folded question; the rule planner
+# also wants the safe-to-spend words, or a short bare question, and no category.
+WHY_LOWER = (r"\b(why|how come)\b.*\b(lower|low|so little|less|smaller|so small|only)\b"
+             r"|\bmiksi\b.*\b(vahemman|vahan|pieni\w*|pienempi|pienemp\w*|alhai\w*|matala\w*)\b")
+
+
+def why_lower(q: str) -> bool:
+    return bool(re.search(WHY_LOWER, q))
+
+
+def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The answer to "why is my safe to spend lower?" (#552): the limit that binds by name (the view's
+    binding_limit), with the budget side the savings goal set aside first, and the other side's figure. None when
+    a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    safe, goal, balance, budget = (view.get(k) for k in ("safe_to_spend", "savings_goal", "balance_limit",
+                                                         "budget_limit"))
+    if not (_id(safe) and _id(balance) and _id(budget)):
+        return None
+    if _value(balance) == _value(budget):
+        key, cited = "why_equal", [safe]
+    elif view.get("binding_limit") == "budget":
+        key, cited = ("why_budget_goal", [safe, goal, balance]) if _value(goal) > 0 and _id(goal) else \
+            ("why_budget", [safe, balance])
+    else:
+        key, cited = "why_balance", [safe, budget]
+    tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
+              (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
+    text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
+    text = text.format(**{**{"goal": ""}, **tokens})
+    # #575: a pending or "Needed" review's purchase (core.agent.why_review) takes the place of the other side's
+    # figure: the first sentence stays, the review sentence follows, still at most three numbers.
+    review = view.get("review_effect") or {}
+    amount_id = (review.get("amount") or {}).get("id")
+    review_key = {("pending", True): "why_review_pending_lowers", ("pending", False): "why_review_pending_same",
+                  ("needed", True): "why_review_needed_moved", ("needed", False): "why_review_needed_same"}.get(
+        (review.get("state"), bool(review.get("moved"))))
+    if amount_id and review_key:
+        first = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+        kept = cited[:2] if key == "why_budget_goal" else cited[:1]
+        sentence = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[review_key], language).format(
+            amount="{{" + amount_id + "}}")
+        return first + " " + sentence, [node["id"] for node in kept] + [amount_id]
+    return text, [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
@@ -701,6 +783,16 @@ PLAN_SENTENCE = {
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
     "none_goal": ("None of the usual cuts would add much here; you already set aside about {goal} first.",
                   "Tavalliset vähennykset eivät lisäisi tässä paljon; laitat jo ensin sivuun noin {goal}."),
+    # What already goes to savings (#560), before the plan; it takes the goal's place in the text (the goal stays in
+    # the tool result and on the safe-to-spend card), so the answer never names two amounts "set aside". The
+    # amount's display carries "a month". The neutral line has no digit and no amount (the bank-screen rule) and ends
+    # at "yet": with the plan sentence it would pass the length rule's 35 words, and the card's own action speaks.
+    "already": ("A regular transfer of about {amount} already goes to savings ({share} of your income).",
+                "Säästöihin menee jo säännöllisesti noin {amount}, mikä on {share} tuloistasi."),
+    "already_no_share": ("A regular transfer of about {amount} already goes to savings.",
+                         "Säästöihin menee jo säännöllisesti noin {amount}."),
+    "no_transfer": ("In this account I don't see a regular transfer to savings yet.",
+                    "Tällä tilillä en vielä näe säännöllistä siirtoa säästöön."),
 }
 PLAN_MAX_NUMBERS = 3
 
@@ -718,7 +810,18 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     goal = goal if goal and isinstance(goal.get("value"), (int, float)) and goal["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    # What already goes to savings (#560): a lead sentence with its amount and share, or the neutral line when the
+    # tool saw no regular transfer; either takes the goal's place in the text. None when it could not be read.
+    saving, share = num(view.get("already_saving")), num(view.get("already_share"))
+    lead: tuple[str, list[str]] | None = None
+    if view.get("saving_seen") is True and saving:
+        lead = ((s("already").format(amount=tok(saving), share=tok(share)), [saving["id"], share["id"]]) if share
+                else (s("already_no_share").format(amount=tok(saving)), [saving["id"]]))
+    elif view.get("saving_seen") is False:
+        lead = (s("no_transfer"), [])
     if view.get("kind") != "plan":
+        if lead:
+            return s("none") + " " + lead[0], lead[1]
         return (s("none_goal").format(goal=tok(goal)), [goal["id"]]) if goal else (s("none"), [])
     total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
@@ -749,18 +852,31 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     else:
         cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
                ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
-    # The total and any cited cut share first, then the goal, then the year, within three numbers.
-    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
-    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
     cuts_text = s("and").join(cuts)
+    if lead and lead[1]:
+        # The transfer first, then the plan's total (no year, no goal), within three numbers: the share leaves first,
+        # then the whole lead.
+        if len(lead[1]) + 1 + len(cut_ids) > PLAN_MAX_NUMBERS and len(lead[1]) > 1:
+            lead = (s("already_no_share").format(amount=tok(saving)), [saving["id"]])
+        if len(lead[1]) + 1 + len(cut_ids) <= PLAN_MAX_NUMBERS:
+            text = lead[0] + " " + s("plan_no_year").format(total=tok(total), cuts=cuts_text)
+            return text, lead[1] + [total["id"]] + cut_ids
+        lead = None
+    if lead:   # the neutral line takes the goal's place; the plan sentence is as it is without the goal
+        goal = None
+    # The total and any cited cut share first, then the goal, then the year, within three numbers.
+    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if with_year:
         sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
     else:
         sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
     if with_goal:
         sentences.append(s("goal").format(goal=tok(goal)))
+    if lead:
+        sentences.append(lead[0])
     ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([goal["id"]] if with_goal else [])
     return " ".join(sentences), ids
 
@@ -840,7 +956,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = (safe_to_spend_sentence(view, language)
+        custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
+                  or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:

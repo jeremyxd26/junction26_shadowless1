@@ -34,8 +34,9 @@ export function SpeakButton({ id, text, language }: Props) {
   return (
     <button
       type="button"
+      // One name, "Read aloud"; aria-pressed says whether it is reading now (#582).
       aria-pressed={speaking}
-      aria-label={speaking ? s.stop : s.read}
+      aria-label={s.read}
       onClick={() => (speaking ? stopSpeaking(id) : speak(id, text, voice))}
       className={`inline-flex size-11 shrink-0 items-center justify-center rounded-pill border transition-colors duration-(--duration-fast) ${
         speaking ? 'border-brand bg-mint-tint text-brand' : 'border-transparent text-brand hover:bg-sunken'
