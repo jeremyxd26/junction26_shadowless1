@@ -531,8 +531,8 @@ def test_the_length_rule_by_kind():
 # user's own money), and rows of the same classes written before the checks (hold-out), are rejected; careful plain
 # words and habit advice pass. The checks are classes: borrowing (paying later, in parts, in the red, an advance, a
 # pawn shop, someone else's money), a financial product (interest, or a verb of getting or using one with a product
-# noun), a name (a capitalised word inside a sentence, except Sentti, S-Pankki and S-mobiili), and second person as
-# the subject of a state, a sufficiency or a judgement.
+# noun), a name (a capitalised word inside a sentence, except Sentti; S-Pankki and S-mobiili stay products), and
+# second person as the subject of a state, a sufficiency or a judgement.
 
 PASS3_BORROWING = [
     ("You could borrow from a friend until payday.", "en"),

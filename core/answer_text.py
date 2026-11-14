@@ -557,8 +557,10 @@ def general_problems(text: str) -> list[str]:
             problems.append(f"'{m.group(0)}': {why}")
     names = next((found for found in (_proper_nouns(c) for c in copies[:2]) if found), None)
     if names:
-        problems.append(f"'{names[0]}': a name: a general answer names no bank, brand, shop or product (only Sentti, "
-                        f"S-Pankki and S-mobiili)")
+        # S-Pankki and S-mobiili pass this name check, but the product list above still rejects them in a general
+        # answer (red-team row B, "Use the S-mobiili savings goal for it."), so the reason names Sentti only
+        problems.append(f"'{names[0]}': a name: a general answer names no bank, brand, shop or product (Sentti is "
+                        f"the only name it uses)")
     return problems
 
 

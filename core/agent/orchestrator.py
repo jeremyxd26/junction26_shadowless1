@@ -119,9 +119,10 @@ _NOTHING_ALLOWED = Allowed(frozenset(), frozenset())
 def general_draft_problems(raw: Any, language: str) -> tuple[AnswerDraft | None, list[str]]:
     """Every check a general draft passes before it is shown (#572), in order: the validator with no Numbers and
     nothing allowed (no digit, no date, no markup, the right language field), then the length rule for "general",
-    general_problems (no number in any form, no name but Sentti, S-Pankki and S-mobiili, no product, borrowing,
-    health, link, judging or statement about the user's own money), the positive language check, the draft checks
-    and no "I could not work this out" (composer.md's text for empty <data>). Returns the draft and the reasons."""
+    general_problems (no number in any form, no name but Sentti (S-Pankki and S-mobiili are still products), no
+    product, borrowing, health, link, judging or statement about the user's own money), the positive language check,
+    the draft checks and no "I could not work this out" (composer.md's text for empty <data>). Returns the draft and
+    the reasons."""
     draft, errors = validate(raw, language=language, numbers={}, allowed=_NOTHING_ALLOWED)
     if errors:
         return draft, errors
