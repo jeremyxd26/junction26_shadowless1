@@ -105,6 +105,7 @@ MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner a
 ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
 MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
 LEDGER_WINDOW = timedelta(hours=24)     # the daily budget is a rolling 24 hours
+EXTRACT_REFUSAL_S = 600.0               # a bill reading's refused model id (400/404): readings wait this long
 MIN_ATTEMPT_S = 1.0                     # an attempt needs at least this much of a deadline left
 # The Gemini API rejects a request whose server deadline (the X-Server-Timeout header, which the SDK
 # fills from the client timeout) is under 10 s with HTTP 400. The client-side timeout stays ours.
@@ -398,6 +399,7 @@ class GeminiClient:
                  plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0, extract_timeout_s: float = 15.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
+                 extract_model: str | None = None, extract_thinking: str = "low", extract_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
         if cache not in ("on", "off", "replay"):
             raise ValueError("cache must be on, off or replay")
@@ -423,6 +425,14 @@ class GeminiClient:
         self.compose_thinking = compose_thinking
         self.plan_max_tokens = plan_max_tokens
         self.compose_max_tokens = compose_max_tokens
+        # Bill readings (#250, decision B): their own model, thinking and token cap, so the planner's or the
+        # composer's settings never change a reading's cache key; their own refusal and failure state.
+        self.extract_model = extract_model or model
+        self.extract_thinking = extract_thinking
+        self.extract_max_tokens = extract_max_tokens
+        self._extract_paused_until = 0.0
+        self._extract_pause_code = "error"
+        self._extract_failures = 0
         self.sleep = sleep
         self.clock = clock
         self.calls: list[CallRecord] = []
@@ -478,10 +488,15 @@ class GeminiClient:
         }
         return self._call("plan", contents, config, self.plan_timeout_s)
 
-    def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any]) -> Reply:
+    def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any],
+                accept: Callable[[Reply], bool] | None = None) -> Reply:
         """Read an image into JSON constrained by a schema (#250): one inline image part, no tools, no
         fallback model, one request. The cache key and any recording hold the image's SHA-256, never its
-        bytes. Raises GeminiError("image") for an image that is too large or of another type."""
+        bytes. Raises GeminiError("image") for an image that is too large or of another type.
+
+        `accept` is the caller's test of a usable answer: only an accepted answer is cached, and a cached
+        entry it rejects is a miss, so one bad first answer never makes a sample fail for ever (review of
+        #250). A reading is independent of the answer state of the thread it runs on."""
         if mime_type not in IMAGE_MIME_TYPES or not image or len(image) > MAX_INLINE_IMAGE_BYTES:
             raise GeminiError("image")
         contents = [{"role": "user", "parts": [{"text": text}, {"inline_data": {"mime_type": mime_type, "data": image}}]}]
@@ -489,10 +504,10 @@ class GeminiClient:
             "system_instruction": system,
             "response_mime_type": "application/json",
             "response_json_schema": schema,
-            "thinking_config": {"thinking_level": self.compose_thinking},
-            "max_output_tokens": self.compose_max_tokens,
+            "thinking_config": {"thinking_level": self.extract_thinking},
+            "max_output_tokens": self.extract_max_tokens,
         }
-        return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False)
+        return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False, accept=accept)
 
     def compose(self, system: str, user_text: str, schema: dict[str, Any]) -> Reply:
         contents = [{"role": "user", "parts": [{"text": user_text}]}]
@@ -524,12 +539,16 @@ class GeminiClient:
         if self.cache == "off":
             return None
         try:
-            return json.loads(self._cache_path(key).read_text(encoding="utf-8"))
+            entry = json.loads(self._cache_path(key).read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
         except (OSError, ValueError):
             log.warning("gemini cache entry unreadable; calling the model")
             return None
+        if not isinstance(entry, dict) or not isinstance(entry.get("response"), dict):
+            log.warning("gemini cache entry of another shape; calling the model")   # review of #250
+            return None
+        return entry
 
     def _write_cache(self, key: str, model: str, kind: str, raw: dict[str, Any], latency_ms: int) -> None:
         if self.cache != "on":
@@ -576,7 +595,7 @@ class GeminiClient:
 
     def _give_up(self, kind: str, code: str) -> None:
         """After a timeout, a network error or a 5xx, this answer sends no second request of the kind."""
-        if code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
+        if kind != "extract" and code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
             self._answer.given_up[kind] = code
 
     def _succeeded(self) -> None:
@@ -589,10 +608,12 @@ class GeminiClient:
         """(model, fallback model) of a call kind: the composer's own pair, else the planner's."""
         if kind == "compose":
             return self.compose_model, self.compose_fallback_model
+        if kind == "extract":
+            return self.extract_model, None     # a bill reading: its own model, no fallback (#250)
         return self.model, self.fallback_model
 
     def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float,
-              allow_fallback: bool = True) -> Reply:
+              allow_fallback: bool = True, accept: Callable[[Reply], bool] | None = None) -> Reply:
         primary, fallback = self.models_for(kind)
         if not allow_fallback:
             fallback = None   # a bill reading: one request on one model (#250)
@@ -601,8 +622,8 @@ class GeminiClient:
         config = _for_model(model, config)
         key = self.cache_key(model, kind, contents, config)
         entry = self._read_cache(key)
-        if entry is not None:
-            reply = parse(model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
+        reply = self._cached_reply(model, entry, accept) if entry is not None else None
+        if reply is not None:
             self._record(kind, model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
             return reply
         if self.cache == "replay":
@@ -610,7 +631,7 @@ class GeminiClient:
             raise GeminiError("cache_miss")
 
         deadline = self.clock() + timeout_s
-        given_up = getattr(self._answer, "given_up", {}).get(kind)
+        given_up = None if kind == "extract" else getattr(self._answer, "given_up", {}).get(kind)
         if given_up is not None:
             # A call of this kind already timed out or failed in this answer (the model thinks long on
             # this question, or it is unreachable): a second one would most likely fail too and spend
@@ -618,7 +639,8 @@ class GeminiClient:
             self._record(kind, model, 0, CallUsage(), error=f"{given_up} (not retried)")
             raise GeminiError(given_up)
         try:
-            return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary)
+            return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary,
+                                 accept=accept)
         except GeminiError as exc:
             if exc.code != "server" or skip_primary or fallback is None:
                 self._give_up(kind, exc.code)   # a 5xx with no fallback left fails this call only (#341)
@@ -649,7 +671,7 @@ class GeminiClient:
             self.compose_fallback_model = None
 
     def _attempt(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
-                 deadline: float, fallback: bool = False) -> Reply:
+                 deadline: float, fallback: bool = False, accept: Callable[[Reply], bool] | None = None) -> Reply:
         """One request, after every check: pause, per-answer requests and deadline, ledger slot."""
         assert self.transport is not None
         with self._lock:
@@ -657,7 +679,14 @@ class GeminiClient:
         if paused:
             self._record(kind, model, 0, CallUsage(), error=f"{pause_code} (paused)")
             raise GeminiError(pause_code.split(" ")[0])
-        requests_left, answer_left = self._answer_left()
+        if kind == "extract":
+            with self._lock:
+                extract_paused, extract_code = self.clock() < self._extract_paused_until, self._extract_pause_code
+            if extract_paused:
+                self._record(kind, model, 0, CallUsage(), error=f"{extract_code} (readings paused)")
+                raise GeminiError(extract_code.split(" ")[0])
+        # A bill reading is no part of an answer: the thread's answer state neither limits nor counts it.
+        requests_left, answer_left = (None, None) if kind == "extract" else self._answer_left()
         if requests_left is not None and requests_left <= 0:
             self._record(kind, model, 0, CallUsage(), error="answer_budget")
             raise GeminiError("answer_budget")
@@ -684,6 +713,9 @@ class GeminiClient:
         except Exception as exc:  # noqa: BLE001 - only a short code leaves this function
             code, status = _error_code(exc)
             self._record(kind, model, int((self.clock() - t) * 1000), CallUsage(), error=code, network=True)
+            if kind == "extract":
+                self._extract_failed(code, status)
+                raise GeminiError(code) from None
             if status == 429:
                 self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
             elif status in CONFIG_ERROR_CODES and not fallback:
@@ -700,10 +732,62 @@ class GeminiClient:
             finish = str((raw.get("candidates") or [{}])[0].get("finish_reason") or "")
             self._record(kind, model, latency_ms, _usage(model, raw.get("usage_metadata")), finish=finish,
                          error=exc.code, network=True)
-            self._failed(exc.code)
+            if kind == "extract":
+                self._extract_failed(exc.code, None)
+            else:
+                self._failed(exc.code)
             raise
-        self._write_cache(key, model, kind, raw, latency_ms)
+        usable = accept is None or accept(reply)
+        if usable:
+            self._write_cache(key, model, kind, raw, latency_ms)
         self._record(kind, model, latency_ms, reply.usage, finish=reply.finish_reason, network=True)
-        if not reply.blocked:
+        if kind == "extract":
+            if usable:
+                with self._lock:
+                    self._extract_failures = 0
+            else:
+                self._extract_failed("unusable", None)
+        elif not reply.blocked:
             self._succeeded()
         return reply
+
+    def _cached_reply(self, model: str, entry: dict[str, Any], accept: Callable[[Reply], bool] | None) -> Reply | None:
+        """A cache entry as a reply, or None when it cannot be parsed or its caller rejects it (a miss)."""
+        try:
+            reply = parse(model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
+        except Exception as exc:  # noqa: BLE001 - the class name only
+            log.warning("gemini cache entry unusable (%s); calling the model", type(exc).__name__)
+            return None
+        if accept is not None and not accept(reply):
+            log.warning("gemini cache entry rejected by its caller; calling the model")
+            return None
+        return reply
+
+    def _extract_failed(self, code: str, status: int | None) -> None:
+        """A bill reading's failure touches the readings only (#250, decision B). What belongs to the key and
+        its quota still pauses every call kind: a 429 and a refused key (401, 403). A refused model id (400,
+        404) pauses readings for EXTRACT_REFUSAL_S; a timeout, a network error or a 5xx fails this reading
+        only; other failures in a row pause readings briefly."""
+        if status == 429:
+            self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
+        elif status in (401, 403):
+            self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+        elif status in (400, 404):
+            self._extract_pause(EXTRACT_REFUSAL_S, code)
+        elif code in TRANSIENT_CODES or status in SERVER_ERROR_CODES:
+            pass
+        else:
+            with self._lock:
+                self._extract_failures += 1
+                streak = self._extract_failures
+            if streak >= FAILURE_STREAK_LIMIT:
+                self._extract_pause(FAILURE_STREAK_COOLDOWN_S, f"{code} ({streak} failures in a row)")
+                with self._lock:
+                    self._extract_failures = 0
+
+    def _extract_pause(self, seconds: float, code: str) -> None:
+        with self._lock:
+            self._extract_paused_until = max(self._extract_paused_until, self.clock() + seconds)
+            self._extract_pause_code = code
+        ops_log.error("gemini %s: bill readings paused for %d s; a reading in the cache is still served", code,
+                      seconds)
