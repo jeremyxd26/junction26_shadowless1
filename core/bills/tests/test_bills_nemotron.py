@@ -443,3 +443,27 @@ def test_the_warmup_reads_with_gemini_unless_the_command_line_asks_for_nemotron(
     asked: list[bool] = []
     monkeypatch.setattr(warmup, "reading_client", lambda nemotron=False: asked.append(nemotron))
     assert warmup.main(argv) == 0 and asked == [nemotron_on]
+
+
+# ---- the payee is a name (review of #594, D2; security rows A3, A6, A7) ------------------------------------
+
+def _payee(text: str):
+    from core.bills.read import check_fields
+    import importlib
+    return check_fields({"payee": text}, importlib.import_module("core.bills.parse"), "en")["payee"]
+
+
+@pytest.mark.parametrize("payee", [
+    "Call +358 40 " + "123 4567 now", "040 123 " + "4567",                       # a phone number
+    "evil" + ".example.com/pay", "pay evil-site" + ".io today",                  # a domain
+    "sk-" + "abcdefghijklmnopqrstuvwxyz123456", "AIza" + "Sy" + "A" * 33,         # key-shaped tokens
+    "nvapi-" + "b" * 30, "Bearer " + "abcdefghijklmnopqrstuvwxyz",
+])
+def test_a_phone_number_a_domain_or_a_key_shaped_token_is_no_payee(payee):
+    assert _payee(payee) is None
+
+
+@pytest.mark.parametrize("sample_id", sorted(TRUTH))
+def test_the_answer_key_payees_are_still_read(sample_id):
+    payee = TRUTH[sample_id]["payee"]
+    assert _payee(payee).value == payee
