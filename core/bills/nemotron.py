@@ -20,8 +20,9 @@ Settings, from the environment (and the repository's .env, like the Gemini setti
 - NEMOTRON_VL_MODEL: the model id (default PROVIDER.default_model, the provider's own).
 - BILL_READER: auto (default: Nemotron when the key is set, else Gemini), gemini, or nemotron (the same as auto,
   said explicitly).
-- NEMOTRON_TIMEOUT_S: seconds for the whole reading, from the request to the last byte of the answer (default 30,
-  at most 30), so a slow provider falls back in time. The real check on #616 read warm in 6.5 to 24.5 s (#637).
+- NEMOTRON_TIMEOUT_S: the reading's timeout in seconds (default 30, at most 30), so a slow provider falls back in
+  time: each network wait until the answer's headers arrive, and one deadline for reading the answer's body. The
+  real check on #616 read warm in 6.5 to 24.5 s (#637).
 - NEMOTRON_DAILY_BUDGET: Nemotron requests in any rolling 24 hours (default 30; 0 turns the reader off),
   counted in var/nemotron-requests.jsonl.
 A bad value is the default, with one log line; nothing fails at start-up.
@@ -211,7 +212,8 @@ def valid_url(url: str | None) -> bool:
 
 
 def _read_body(response: Any, deadline: float) -> bytes:
-    """The answer's body, at most MAX_RESPONSE_BYTES + 1 bytes, read by the deadline of the whole reading (#637).
+    """The answer's body, at most MAX_RESPONSE_BYTES + 1 bytes, read by the reading's deadline (#637), which starts
+    when the request is sent; the wait for the headers is urllib's per-wait timeout, as before.
     The socket's timeout holds for each wait alone, so an answer that trickles in a few bytes at a time would run
     on far past it: each read takes what one network read gives (read1), and no read starts after the deadline.
     A wait that started before the deadline still ends by the socket's timeout."""
@@ -251,7 +253,7 @@ class NemotronTransport:
             self.url, data=json.dumps(body).encode("utf-8"), method="POST",
             headers={"Authorization": "Bearer " + self._key, "Content-Type": "application/json",
                      "Accept": "application/json"})
-        deadline = time.monotonic() + timeout_s     # the whole reading, not each wait (#637)
+        deadline = time.monotonic() + timeout_s     # for the body's reading, not each wait (#637)
         try:
             with self._open(request, timeout=timeout_s) as response:
                 raw = _read_body(response, deadline)

@@ -503,6 +503,52 @@ def test_an_answer_read_in_small_pieces_by_the_deadline_is_read(monkeypatch, tmp
     assert result["fields"]["iban"]["status"] == "checked" and body.reads > 10
 
 
+@pytest.mark.parametrize("mode", ["length", "chunked", "oversize"])
+def test_the_body_is_read_from_a_real_http_response(mode):
+    """#637: _read_body on urllib's own HTTPResponse (its read1, with a Content-Length or chunked) from a loopback
+    server, opened by the opener _default_opener builds outside the tests."""
+    import http.server
+    import threading
+    import time
+    import urllib.request
+
+    from core.bills import nemotron as module
+    data = b"x" * (module.MAX_RESPONSE_BYTES + 100) if mode == "oversize" else _answer() * 3
+
+    class Answer(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):  # noqa: N802 - http.server's name
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            if mode == "chunked":
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for i in range(0, len(data), 100):
+                    piece = data[i:i + 100]
+                    self.wfile.write(f"{len(piece):x}\r\n".encode("ascii") + piece + b"\r\n")
+                self.wfile.write(b"0\r\n\r\n")
+            else:
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        def log_message(self, *args):  # quiet
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Answer)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    opener = urllib.request.build_opener(module._NoRedirect).open    # what _default_opener returns outside tests
+    request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/chat/completions", data=b"{}",
+                                     method="POST")
+    with opener(request, timeout=5) as response:
+        raw = module._read_body(response, time.monotonic() + 5)
+    server.server_close()
+    assert raw == (data[:module.MAX_RESPONSE_BYTES + 1] if mode == "oversize" else data)
+
+
 def test_an_answer_that_starts_after_the_deadline_is_a_timeout(monkeypatch, tmp_path):
     """The headers came only after the deadline (each wait within the socket's timeout): no body is read."""
     from core.bills import nemotron as module
