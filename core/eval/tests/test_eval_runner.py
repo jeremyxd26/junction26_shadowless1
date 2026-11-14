@@ -121,10 +121,18 @@ def test_negative_change_with_its_display_passes():
 
 
 def test_number_from_the_question_as_user_input_percent_passes():
+    ans = Answer(text="Cutting dining out by 20% saves €45.91 a month.", outcome="answered",
+                 numbers=[num(45.91, "eur_per_month", "€45.91 a month"), num(20.0, "percent", "20%", method="user_input@1")],
+                 labels=[], tool_calls=[])
+    assert run.check(CUT, ans, "en", CUT["question"]["en"]) == []
+
+
+def test_a_typed_cut_shown_with_a_decimal_fails():
+    """#111: the formatter writes a whole typed percentage as "20%", so "20.0%" does not state it."""
     ans = Answer(text="Cutting dining out by 20.0% saves €45.91 a month.", outcome="answered",
                  numbers=[num(45.91, "eur_per_month", "€45.91 a month"), num(20.0, "percent", "20.0%", method="user_input@1")],
                  labels=[], tool_calls=[])
-    assert run.check(CUT, ans, "en", CUT["question"]["en"]) == []
+    assert any("does not state it" in f for f in run.check(CUT, ans, "en", CUT["question"]["en"]))
 
 
 # ---- invented numbers ----------------------------------------------------------------------------
@@ -170,8 +178,9 @@ def test_wrong_unit_on_the_number_object_fails():
 
 
 def test_percentile_as_percent_and_count_as_days_fail():
-    good = Answer(text="Percentile 51.0%, group of 118 people.", outcome="answered",
-                  numbers=[num(51.0, "percentile", "51.0%"), num(118, "count", "118")], labels=["big_ticket"], tool_calls=[])
+    good = Answer(text="You are at the 51st percentile, in a group of 118 people.", outcome="answered",
+                  numbers=[num(51.0, "percentile", "51st percentile"), num(118, "count", "118")], labels=["big_ticket"],
+                  tool_calls=[])
     assert run.check(PEER, good, "en", "") == []
     bad = Answer(text="Percentile 51.0%, group of 118 people.", outcome="answered",
                  numbers=[num(51.0, "percent", "51.0%"), num(118, "days", "118")], labels=["big_ticket"], tool_calls=[])
@@ -335,15 +344,17 @@ def test_a_count_next_to_a_currency_or_unit_word_fails(text, lang):
     (1209.05, "eur_per_month", "€1,209.05 a month", "1 209,05 € / kk"),
     (551.0, "eur_per_year", "€551.00 a year", "551,00 € / v"),
     (-29.8, "percent", "-29.8%", "-29,8 %"),
-    (51.0, "percentile", "51.0%", "51,0 %"),
+    (51.0, "percentile", "51st percentile", "51. persentiili"),
     (118, "count", "118", "118"),
     (15, "days", "15 days", "15 pv"),
     (6, "months", "6 months", "6 kk"),
 ])
 def test_every_formatter_display_passes(value, unit, en, fi):
     assert answer_text.formatted(value, unit, "en") == en and answer_text.formatted(value, unit, "fi") == fi
-    for display in (en, fi, fi.replace(" ", NBSP), fi.replace(" ", NNBSP), en.replace("-", "\u2212")):
-        assert answer_text.display_matches(display, value, unit)
+    for display in (en, en.replace("-", "−")):
+        assert answer_text.display_matches(display, value, unit, "en")
+    for display in (fi, fi.replace(" ", NBSP), fi.replace(" ", NNBSP)):
+        assert answer_text.display_matches(display, value, unit, "fi")
 
 
 @pytest.mark.parametrize("display,value,unit", [
@@ -353,7 +364,53 @@ def test_every_formatter_display_passes(value, unit, en, fi):
     ("51", 51.0, "percentile"), ("118", 118, "days"),
 ])
 def test_displays_that_are_not_the_formatter_output_fail(display, value, unit):
-    assert not answer_text.display_matches(display, value, unit)
+    assert not answer_text.display_matches(display, value, unit, "en")
+    assert not answer_text.display_matches(display, value, unit, "fi")
+
+
+@pytest.mark.parametrize("display,value,unit,language,ok", [
+    ("4,120", 4120, "count", "en", True),
+    ("4 120", 4120, "count", "fi", True),
+    ("4,120", 4120, "count", "fi", False),     # reads as 4.12 in Finnish
+    ("4 120", 4120, "count", "en", False),
+    ("€180.26", 180.26, "eur", "fi", False),   # the English form in a Finnish answer
+    ("180,26 €", 180.26, "eur", "en", False),
+    ("12,5 %", 12.5, "percent", "en", False),
+    ("€180.26", 180.26, "eur", None, False),   # no language, no match
+])
+def test_only_the_answers_own_language_counts(display, value, unit, language, ok):
+    """Review of #128: the form of the stated language only, not either language's."""
+    assert answer_text.display_matches(display, value, unit, language) is ok
+
+
+# ---- #111: the check compares through the same method-aware formatter -----------------------------
+
+@pytest.mark.parametrize("display,value,unit,method,language,ok", [
+    ("20%", 20.0, "percent", "user_input@1", "en", True),
+    ("20 %", 20.0, "percent", "user_input@1", "fi", True),
+    ("20.0%", 20.0, "percent", "user_input@1", "en", False),
+    ("20.0%", 20.0, "percent", None, "en", True),
+    ("72nd percentile", 72.0, "percentile", "peer_benchmark.percentile@1", "en", True),
+    ("72. persentiili", 72.0, "percentile", "peer_benchmark.percentile@1", "fi", True),
+    ("72.0%", 72.0, "percentile", "peer_benchmark.percentile@1", "en", False),
+    ("32.3% more", 32.3, "percent", "peer_benchmark.vs_median_pct@1", "en", True),
+    ("31,0 % vähemmän", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "fi", True),
+    ("-31.0%", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "en", False),
+    ("31.0% more", -31.0, "percent", "peer_benchmark.vs_median_pct@1", "en", False),
+    ("14.2 a month", 14.2, "count", "spender_profile.everyday_tx_month@1", "en", True),
+    ("14", 14.2, "count", "spender_profile.everyday_tx_month@1", "en", False),
+    ("€0.00", -0.001, "eur", None, "en", True),
+    ("-€0.00", -0.001, "eur", None, "en", False),
+])
+def test_display_is_checked_with_the_numbers_method(display, value, unit, method, language, ok):
+    assert answer_text.display_matches(display, value, unit, language, method=method) is ok
+
+
+def test_same_value_uses_the_method():
+    vs = "peer_benchmark.vs_median_pct@1"
+    assert answer_text.same_value(32.3, 32.34, "percent", vs)
+    assert not answer_text.same_value(32.3, -32.3, "percent", vs)   # "more" is not "less"
+    assert answer_text.same_value(20, 20.0, "percent", "user_input@1")
 
 
 def test_a_capitalised_month_after_a_number_starts_a_sentence():
@@ -370,8 +427,8 @@ def test_a_capitalised_month_after_a_number_starts_a_sentence():
 
 @pytest.mark.parametrize("value,display", [(45.915, "€45.92 a month"), (45.909, "€45.91 a month")])
 def test_a_value_at_the_rounding_edge_is_judged_by_its_display(value, display):
-    ans = Answer(text=f"Cutting dining out by 20.0% saves {display}.", outcome="answered", labels=[], tool_calls=[],
-                 numbers=[num(value, "eur_per_month", display), num(20.0, "percent", "20.0%", method="user_input@1")])
+    ans = Answer(text=f"Cutting dining out by 20% saves {display}.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[num(value, "eur_per_month", display), num(20.0, "percent", "20%", method="user_input@1")])
     fails = run.check(CUT, ans, "en", CUT["question"]["en"])
     if display == "€45.91 a month":   # shown as the SQL value: the user sees the right number
         assert fails == []
