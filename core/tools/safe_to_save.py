@@ -61,6 +61,8 @@ class SaveReason(BaseModel):
 
 class SafeToSaveData(BaseModel):
     monthly: Number
+    weekly: Number                  # #417: monthly x 7 / 30.4375, the same figure a week
+    daily: Number                   # #417: monthly / 30.4375, the same figure a day
     monthly_components: list[SaveComponent]
     stock: Number
     stock_explanation: str
@@ -128,6 +130,15 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
     free_month = value("free_month_eur")
     free_until_payday = value("free_until_payday_eur")
     monthly = shown("monthly")
+    # #417: the headline at three scales. Composites of the monthly Number (its evidence opens the month),
+    # computed from the rounded month so they reconcile to the cent by the stated formula.
+    monthly_value = metric_sql.decimal(row["safe_to_save_monthly_eur"])
+    per_week = reg(nb.composite(config.SAFE_TO_SAVE_WEEK_METHOD, "scale", {"base": (monthly, monthly_value)},
+                              Unit.EUR_PER_WEEK, month, _t("weekly", lang),
+                              params={"factor_num": 7, "factor_den": "30.4375"})[0])
+    per_day = reg(nb.composite(config.SAFE_TO_SAVE_DAY_METHOD, "scale", {"base": (monthly, monthly_value)},
+                             Unit.EUR_PER_DAY, month, _t("daily", lang),
+                             params={"factor_num": 1, "factor_den": "30.4375"})[0])
     # By 03's own reason, which follows the sign of the unrounded free month: a free month between -0.005
     # and 0 rounds to 0.00 but is still a shortfall (review of #191).
     if row.get("save_reason") == "essentials_exceed_income":
@@ -172,7 +183,7 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
 
     _check(row, free_month, free_until_payday)
     data = SafeToSaveData(
-        monthly=monthly, monthly_components=monthly_components, stock=stock,
+        monthly=monthly, weekly=per_week, daily=per_day, monthly_components=monthly_components, stock=stock,
         stock_explanation=_t("stock_explanation", lang), stock_components=stock_components, reason=reason,
         savings_goal=goal, safe_to_spend_week=safe_week, subtitle=subtitle,
     )
@@ -206,6 +217,8 @@ def _card(data: SafeToSaveData, language: str) -> Card:
                  *([Action(type="open_host_screen", target="monthly_saving",
                            label=_t("host_monthly_saving", language))] if data.monthly.value > 0 else [])],
         monthly=data.monthly,
+        weekly=data.weekly,
+        daily=data.daily,
         monthly_components=[c.model_dump() for c in data.monthly_components],
         stock=data.stock,
         stock_explanation=data.stock_explanation,
@@ -224,6 +237,8 @@ def _model_view(data: SafeToSaveData) -> dict[str, Any]:
     return {
         "tool": TOOL,
         "monthly": model_number(data.monthly),
+        "weekly": model_number(data.weekly),
+        "daily": model_number(data.daily),
         "monthly_components": components(data.monthly_components),
         "stock": model_number(data.stock),
         "stock_explanation": data.stock_explanation,
