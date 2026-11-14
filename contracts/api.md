@@ -145,7 +145,7 @@ Card-specific fields:
 | `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `weekly`, `daily` (Numbers, #417): the same headline a week and a day, `monthly` × 7 / 30.4375 (`safe_to_save.week_eur@1`) and `monthly` / 30.4375 (`safe_to_save.day_eur@1`), each a composite whose evidence opens `monthly`. When `monthly` is 0 both are present with 0.00. Each is rounded to cents on its own, so `daily` × 30.4375 can differ from `monthly` by up to about 0.15, and seven times `daily` need not equal `weekly` on screen.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. No answer text puts an amount into the bank's screen or product (since 0.3.5, #417). | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
 
 Estimates (since 0.3.6, #380). Every `estimate` separates what was observed in the customer's transactions from what is assumed, so the app can show "Based on …" and "We assume …" from the structure; the answer text does not list them.
-- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. They are the card's own Numbers (the same values and refs as elsewhere on the card), for example the balance and the bills due before payday for safe to spend.
+- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. They are Numbers the tool already computed, with the same values and refs as where they appear elsewhere: on the card (the balance and the bills due before payday for safe to spend), or in the answer's numbers for an input the card does not show (the forecast's balance today and its bills, the S-Bonus share).
 - `assumptions` (`{code, text, value}`[]): what the estimate assumes. `code` is from the closed list below; `text` is one plain sentence in the request language with no digits; `value` is a Number when the assumption uses one (for example the savings goal), else `null`. A `value` with `method` `user_input@1` (the what-if's own cut) has no evidence ref.
 - Every card that sets `estimate` has at least one assumption, except `stores`, which no tool builds yet. The app ignores a code it does not know.
 
@@ -165,6 +165,136 @@ Estimates (since 0.3.6, #380). Every `estimate` separates what was observed in t
 | `bills_on_usual_days` | balance forecast | Bills come on their usual days (no value). |
 | `no_income_before_payday` | balance forecast | Salary and other money coming in before payday are not counted (no value). |
 | `cuts_as_shown` | savings plan | The plan's cuts happen as shown and the rest of spending stays as it is (no value). |
+
+Examples for the estimate kinds that have no card example here:
+
+The S-Bonus estimate's `estimate` for Sanna (the `metric` card of `get_bonus_estimate`):
+
+<!-- example: estimate.bonus -->
+```json
+{
+  "label": "Estimate",
+  "text": "A what-if on your own grocery spending, not a statement about where you shop. Assumes you are the only shopper in a co-op household. Assumes the default Bonus table, not the KPO or Koillismaa table. Assumes payment with an S-Etukortti Visa, which adds the payment benefit. Assumes none of it is alcohol, tobacco or lottery, which earn no Bonus. Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop.",
+  "observed": [
+    {
+      "value": 628.86,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "spender_profile.spend_month_eur@1",
+      "evidence_ref": "ev_51a5025d7a8c",
+      "label": "Your grocery spending a month",
+      "display": "€628.86 a month"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "bonus_all_at_s_group",
+      "text": "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+      "value": {
+        "value": 100.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.share_pct@1",
+        "evidence_ref": "ev_1372e65d9b6b",
+        "label": "Assumed share at S-Group stores",
+        "display": "100%"
+      }
+    },
+    {
+      "code": "bonus_level",
+      "text": "The Bonus level is the one your monthly purchases at S Group reach.",
+      "value": {
+        "value": 3.5,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.bonus_percent@1",
+        "evidence_ref": "ev_d68dd599f0df",
+        "label": "Bonus level",
+        "display": "3.5%"
+      }
+    }
+  ]
+}
+```
+
+The balance forecast's `estimate` for Sanna (the `breakdown` card of `get_balance_forecast`):
+
+<!-- example: estimate.forecast -->
+```json
+{
+  "label": "Estimate",
+  "text": "If you spend as usual: about €66.79 a day, the middle one of your last three full months' daily averages of everyday spending and essentials, bills left out. Bills come on their usual days. Salary and other money coming in before payday are not counted.",
+  "observed": [
+    {
+      "value": 14276.35,
+      "unit": "eur",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30",
+        "label": "30 Sep 2026"
+      },
+      "method": "safe_to_spend.balance_eur@1",
+      "evidence_ref": "ev_bb521762fd8b",
+      "label": "Balance today",
+      "display": "€14,276.35"
+    },
+    {
+      "value": 928.5,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.bills_due_eur@1",
+      "evidence_ref": "ev_e6923f27178b",
+      "label": "Bills before payday",
+      "display": "€928.50"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "spending_as_usual",
+      "text": "You keep spending as usual: the middle one of your last three full months' daily averages.",
+      "value": {
+        "value": 66.79,
+        "unit": "eur_per_day",
+        "period": {
+          "start": "2026-07-01",
+          "end": "2026-09-30",
+          "label": "1 Jul – 30 Sep 2026"
+        },
+        "method": "balance_forecast.daily_pace_eur@1",
+        "evidence_ref": "ev_d75230f1a1f0",
+        "label": "Usual spending",
+        "display": "€66.79 a day"
+      }
+    },
+    {
+      "code": "bills_on_usual_days",
+      "text": "Bills come on their usual days.",
+      "value": null
+    },
+    {
+      "code": "no_income_before_payday",
+      "text": "Salary and other money coming in before payday are not counted.",
+      "value": null
+    }
+  ]
+}
+```
 
 Actions:
 
