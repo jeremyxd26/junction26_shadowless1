@@ -22,6 +22,9 @@ FLAGS = {
 # - EN_WORDS: English function words; each counts 1.
 # A capitalised word that does not start a sentence is a name ("K-Ruoka", "Ravintola Savoy", "Käpylä")
 # and never counts as Finnish. "å" alone is no Finnish signal: Swedish has it too.
+# Known limit: Swedish with ä or ö ("Hur mycket har jag använt på mat?") is detected as Finnish, because
+# a lower-case word with ä or ö counts 2. The service has no Swedish, so a Finnish answer is accepted.
+# The detector is linear in the text: the validator also runs it on model output, which has no bound.
 # Finnish needs a score of at least 2 and more than the English score; English needs one English word.
 # Anything else is unsure (None): the request's language, then the conversation's, then English.
 FI_STRONG = re.compile(
@@ -29,7 +32,8 @@ FI_STRONG = re.compile(
     r"olen(ko)?|olisi\w*|voin(ko)?|voisi\w*|saan(ko)?|kaytin|kaytan|kayta\w*|kulut\w*|kuussa|kuukau\w*|"
     r"viikko\w*|viikolla|minun|minulla|minulle|minut|kannattaako|myontaako|keta|pitaisi|saast\w*|"
     r"raha\w*|talla|tassa|viime|tanaan|huomenna|kerro\w*|haukku|takia|ole|tyly|enta|lasku\w*|"
-    r"palkka\w*|ruoka\w*|ravintol\w*|turvallisesti|vahenta\w*")
+    r"palkka\w*|ruoka\w*|ravintol\w*|turvallisesti|vahenta\w*|"
+    r"kumpi\w*|kumpaa|\w+mpi|\w+mpaa|halvin\w*|kallein\w*")   # comparisons: "kumpi on halvempi?"
 FI_WEAK = re.compile(r"ja|ei|en|se|etta|kun|jos|mutta|tai|nyt|vai|kanssa|siita|mina|sina")
 EN_WORDS = re.compile(
     r"the|a|an|i|me|my|you|your|is|are|was|were|did|do|does|can|could|would|should|how|what|where|"
@@ -68,10 +72,12 @@ def _finnish_score(word: str) -> int:
 def detect_language(text: str) -> str | None:
     """'fi', 'en', or None when unsure. Typed with or without ä and ö (issue #140)."""
     fi = en = 0
+    end = 0
     for m in re.finditer(r"[^\W\d_]+", text):
         word = m.group(0)
-        before = text[:m.start()].rstrip()
-        starts_sentence = not before or before[-1] in ".!?"
+        # Only the gap since the previous word is looked at, so the whole run is linear in the text.
+        starts_sentence = end == 0 or any(ch in ".!?" for ch in text[end:m.start()])
+        end = m.end()
         if starts_sentence or not word[0].isupper():  # a capitalised word inside a sentence is a name
             fi += _finnish_score(word)
         en += 1 if EN_WORDS.fullmatch(_without_dots(word)) else 0

@@ -86,3 +86,22 @@ def test_language_swedish_with_a_ring_is_unsure_not_finnish():
 def test_language_a_capitalised_word_that_starts_a_sentence_still_counts():
     assert detect_language("Kerro kulutukseni. Paljonko?") == "fi"
     assert detect_language("Paljonko kulutin K-Marketissa?") == "fi"
+
+
+def test_language_known_limit_swedish_with_dots_reads_as_finnish():
+    # Stated in guard.py: a lower-case word with ä or ö counts as Finnish. Pinned so a change is seen.
+    assert detect_language("Hur mycket har jag använt på mat?") == "fi"
+
+
+def test_language_a_finnish_comparison_question():
+    assert detect_language("Prisma vai Lidl, kumpi on halvempi?") == "fi"
+    assert detect_language("Kumpi on kalliimpi, Prisma vai Lidl?") == "fi"
+
+
+def test_language_detection_is_linear_in_the_text():
+    import time
+
+    text = "How much did I spend on food last month? " * 25_000   # about a million characters
+    started = time.perf_counter()
+    assert detect_language(text) == "en"
+    assert time.perf_counter() - started < 5.0      # was 28 s with the slicing before every word
