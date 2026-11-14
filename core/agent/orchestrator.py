@@ -194,6 +194,7 @@ class _Answer:
     text: str | None = None
     text_rendered: str | None = None
     introduced: bool = False   # the answer is Sentti's introduction, which itself says Sentti is an AI (#420)
+    offer_contact: bool = False   # the rules' "I can't answer that one yet" answer (PlanResult.offer_contact)
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
@@ -351,6 +352,7 @@ class Pipeline:
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341, r-coord's decision).
+                a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
@@ -678,7 +680,9 @@ class Pipeline:
     @staticmethod
     def _with_answer_fields(emit: Emit, a: _Answer) -> Emit:
         """Every `done` event gets `actions` and `ai_disclosure` (#420, contract 0.3.3):
-        - a refusal carries the way to a human, `open_host_screen` with target `contact_bank`;
+        - a refusal, the rules' "I can't answer that one yet" answer (a.offer_contact) and the "nothing
+          found" fallback (outcome `fallback`) carry the way to a human, `open_host_screen` with target
+          `contact_bank`; the general clarifying question does not;
         - the first answer of a conversation carries the AI disclosure, unless it is the introduction,
           which says it itself; a later answer never repeats it."""
         def send(event: str, payload: dict[str, Any]) -> None:
@@ -688,7 +692,8 @@ class Pipeline:
                 if a.conversation is not None:
                     a.conversation.disclosed = True
                 payload = {**payload,
-                           "actions": [tool_config.contact_bank_action(lang)] if payload.get("outcome") == "refused"
+                           "actions": [tool_config.contact_bank_action(lang)]
+                           if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
                            else payload.get("actions", []),
                            "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
             emit(event, payload)

@@ -352,14 +352,31 @@ def test_a_failed_reference_is_a_sign_and_removes_the_draft(fake):
                                  "before paying."}
 
 
-def test_warning_signs_bring_the_way_to_the_bank_after_the_draft(fake):
-    """#420: an unknown payee is a warning sign; the draft stays and `contact_bank` follows it (schema-checked
-    by explain()). A bill without signs has no such action (the housing test above)."""
+def test_an_unknown_payee_alone_does_not_bring_the_way_to_the_bank(fake):
+    """#420, decided in the review of #435: an unknown payee alone is a sign but brings no contact_bank."""
     out = explain(fields_bill(), lang="fi")
-    assert "new_payee" in [s["code"] for s in out["signals"]]
+    assert [s["code"] for s in out["signals"]] == ["new_payee"]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments"]
+
+
+def test_an_unknown_payee_with_another_sign_brings_it_after_the_draft(fake):
+    """An unknown payee due within the week: the draft stays and contact_bank follows it (schema-checked by
+    explain()); pick actions by type, never by index."""
+    fake.row = {"free_until_payday_eur": Decimal("12422.56"), "balance_limit_7d_eur": Decimal("5797.19")}
+    out = explain(fields_bill(due=date(2026, 10, 2)), lang="fi")   # before payday: counted in safe to spend
+    assert [s["code"] for s in out["signals"]] == ["new_payee", "short_term"]
     assert [a["type"] for a in out["actions"]] == ["add_to_payments", "open_host_screen"]
     assert out["actions"][1] == {"type": "open_host_screen", "label": "Ota yhteyttä S-Pankkiin",
                                  "target": "contact_bank"}
+
+
+@pytest.mark.parametrize("codes,wanted", [
+    (["iban_check_failed"], True), (["reference_check_failed"], True), (["new_payee", "short_term"], True),
+    (["new_payee", "amount_above_usual"], True), (["new_payee"], False), (["short_term"], False),
+    (["amount_above_usual"], False), (["amount_above_usual", "short_term"], False), ([], False),
+])
+def test_which_signs_bring_the_way_to_the_bank(codes, wanted):
+    assert be.contact_bank_wanted(codes) is wanted
 
 
 def test_a_past_due_date_is_a_warning_and_keeps_the_draft(fake):

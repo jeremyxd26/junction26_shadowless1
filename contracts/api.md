@@ -157,7 +157,7 @@ Actions:
 - `target` comes from a closed list, and no other value is ever sent:
   - `monthly_saving`: the host's monthly saving screen. Carried by the `safe_to_save` card when `monthly` is above 0; when `monthly` is 0 the card has no such action.
   - `bonus_to_fund`: the host's Bonus to fund screen. Carried by the S-Bonus estimate, a `metric` card titled "S-Bonus estimate" in answers to the S-Bonus question, only when the estimate is offered. When the Bonus would be 0 because spending is below the lowest level of the table, the card has no such action.
-  - `contact_bank` (since 0.3.3, #420): the host's own way to contact S-Pankki, a human at the bank. Carried by every refusal of `/api/ask` (`done.actions`, section 7) and by a bill explanation with warning signs (`actions`, section 11). Sentti hands over and says nothing about what the bank will do.
+  - `contact_bank` (since 0.3.3, #420): the host's own way to contact S-Pankki, a human at the bank. Carried in `/api/ask` by every refusal, by the "I can't answer that one yet" answer and by the "nothing found" fallback (`done.actions`, section 7), and by a bill explanation with a failed check or an unknown payee together with another sign (`actions`, section 11). Sentti hands over and says nothing about what the bank will do.
 - `label` names the destination only, for example "See monthly saving in S-mobiili" / "Katso kuukausisäästäminen S-mobiilissa" and "See Bonus to fund in S-mobiili" / "Katso Bonus rahastoon S-mobiilissa", and "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". It has no digits, no fund or product name, nothing about returns and no "you should".
 - The action carries no amount, no evidence ref and no customer data. The app sends the host only `{target}`: the message `sentti.openHostScreen` in the app's `sentti.<name>` envelope (`docs/integration.md` section 3; the envelope of PR #175). The host shows its own screen with its own figures and terms. The service expects no answer and stores nothing.
 - The host ignores a target it does not know. The app renders an action whose target it does not know as nothing. In the demo build, which has no host, the app opens a mock host sheet for the target instead (#268).
@@ -2085,7 +2085,7 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 - `refused`: out of scope; see `refusal.kind`.
 - `fallback`: no usable answer could be built. Even the template's text failed the validator, so the core sends its fixed short text ("I could not find data for that question."). A recognised question whose template answered in the model's place is `answered` with `llm_unavailable`, never `fallback`. A question the rules did not recognise, with the AI model unavailable, gets the general clarifying question (`clarify` with `llm_unavailable`).
 
-`actions` (since 0.3.3, #420) holds the answer's actions (section 3). A refusal carries exactly one, the way to a human: `open_host_screen` with target `contact_bank`, label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". Every other answer has `[]`.
+`actions` (since 0.3.3, #420) holds the answer's actions (section 3). A refusal, the rules' "I can't answer that one yet" answer (`outcome` `clarify`) and the "nothing found" fallback (`outcome` `fallback`) carry exactly one, the way to a human: `open_host_screen` with target `contact_bank`, label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". Every other answer has `[]`, including the general clarifying question.
 
 `ai_disclosure` (since 0.3.3, #420) is the overview's `ai_disclosure` text on the first answer of a conversation, so the app can show once that Sentti is an AI. It is `null` when that first answer is Sentti's introduction (the introduction says it), and on every later answer of the conversation. A new conversation (including after `conversation_reset`) discloses again.
 
@@ -2452,7 +2452,7 @@ A question in Finnish (`language: "auto"` detects `fi`):
   "clarify": null,
   "warnings": [],
   "actions": [],
-  "ai_disclosure": null
+  "ai_disclosure": "Selitykset kirjoittaa tekoäly. Luvut lasketaan tilitapahtumistasi."
 }
 ```
 
@@ -2498,6 +2498,46 @@ Refusal texts are fixed, reviewed templates, not free AI text. A refusal looks l
 }
 ```
 
+The same refusal as the first message of a conversation (`conversation_id` null) also carries the AI disclosure (#420):
+
+<!-- example: ask.json.request_refusal_first -->
+```json
+{
+  "customer_id": "CUST00042",
+  "conversation_id": null,
+  "message": "Should I put my savings into tech stocks?",
+  "language": "auto"
+}
+```
+
+<!-- example: ask.json.response_refusal_first -->
+```json
+{
+  "answer_id": "ans_8d2f4h6k",
+  "conversation_id": "conv_7m3p9r2t",
+  "language": "en",
+  "as_of": "2026-09-30",
+  "outcome": "refused",
+  "text": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+  "text_rendered": "I can't give investment advice, such as which shares or funds to buy. I can show you how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki advisor can help.",
+  "cited": [],
+  "numbers": {},
+  "cards": [],
+  "follow_ups": [
+    "How much could I set aside each month?",
+    "What are my fixed bills?"
+  ],
+  "lesson": null,
+  "refusal": { "kind": "investment_advice", "label": "Investment advice is outside what I can help with" },
+  "clarify": null,
+  "warnings": [],
+  "actions": [
+    { "type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank" }
+  ],
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
+}
+```
+
 - **`clarify`:** the coach asks one short question back, with up to 3 options, and shows no cards. The user's reply, typed or tapped, goes into the same conversation.
 
 <!-- example: ask.json.request_clarify -->
@@ -2532,7 +2572,7 @@ Refusal texts are fixed, reviewed templates, not free AI text. A refusal looks l
   },
   "warnings": [],
   "actions": [],
-  "ai_disclosure": null
+  "ai_disclosure": "Explanations are written by AI. The numbers are calculated from your transactions."
 }
 ```
 
@@ -3672,7 +3712,7 @@ A barcode whose reference fails its check:
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
 | `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €221.58: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
-| `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), when `signals` is not empty: `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
+| `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank, when `signals` holds `iban_check_failed` or `reference_check_failed`, or `new_payee` together with another sign; `new_payee`, `short_term` or `amount_above_usual` alone do not bring it. Pick an action by its `type`, never by its index: with a failed check, `contact_bank` is the only action. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
 | `warnings` | Sentences the app may show as a small note, as `warnings` are elsewhere in this contract; empty when there is nothing to note. A warning never repeats a signal. Today there is one: a due date in the past, that the payee may charge late-payment interest, without an amount. |
 | `signals` | Warning signs, `{code, text, numbers}`[], empty when there are none, in the order of the codes below. This is what the app shows as "warning signs", never as a verdict: no text says that a bill is a fraud. `text` is one plain sentence in the request language, or two for a failed check (what failed and what to do); `numbers` are the Number objects whose `display` it cites, in order (empty when it cites none). The codes:<br>- `iban_check_failed`, `reference_check_failed`: the check digit does not pass (`checks`), for example "This reference number does not pass its check. Compare it with the paper bill before paying."<br>- `new_payee`: the payee matches no regular bill, by label or by known payee name (`match.status` `not_matched` or `no_payee`).<br>- `amount_above_usual`: for a matched bill, the amount is at least 150% of its typical monthly amount; for any other bill, it is above the largest typical monthly amount of the customer's regular bills. Both thresholds are server settings with these defaults.<br>- `short_term`: the due date is fewer than 7 days after `as_of` and not before it (a past due date is in `checks` and `warnings`).<br>Only the two failed checks remove the payment draft; the other signs do not. |
 
@@ -3805,8 +3845,7 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
         },
         "due_date": "2026-10-01"
       }
-    },
-    { "type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank" }
+    }
   ],
   "warnings": [],
   "signals": [
@@ -3968,4 +4007,4 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.0 | The bill explanation (#243; built in #242).<br><br>New:<br>- Section 11, `POST /api/bill/explain`: a bill as a virtual barcode or as typed fields. The response carries `bill`, `checks`, `match`, `comparison`, `basket`, `safe_to_spend`, `glossary`, `actions`, `warnings` and `signals`. Examples `bill.request`, `bill.request_fields`, `bill.response`, `bill.response_unknown` and `bill.error`.<br>- The payee is matched exactly against the recurring bills' labels and a fixed table of fictional payee names, which stands in for the counterparty history a real bank has.<br>- `safe_to_spend`: the bill is applied to the balance side like a bill due before payday, and the hero's own computation runs again: `free_until_payday` and safe to spend, each before and after.<br>- `signals`: warning signs with the codes `iban_check_failed`, `reference_check_failed`, `new_payee`, `amount_above_usual` and `short_term`, never a verdict (#242, decision 10).<br>- The action `add_to_payments` and the host message `sentti.paymentDraft` (section 11.3, example `host.payment_draft`): the host shows, confirms and executes the payment; Sentti does not pay.<br>- Section 11.4, decided and not implemented yet: `GET /api/bill/samples` and `POST /api/bill/read` with `sample_id`; a reading is a proposal of fields marked `checked` or `unchecked` that the user confirms (#249, #250; example `bill.read_response`).<br>- Section 1: a bill reading is the third exception of the Number rule; its fields are strings.<br>- Error codes 422 `invalid_bill`, whose body adds `reason`, and, with the reading, 503 `model_unavailable` (section 4).<br>- Method `bill_barcode@1`, a value read from a bill's virtual barcode, with no evidence ref (sections 2.1 and 9), and the `bill.*` methods of the numbers the bill explanation computes, whose composite evidence has a bill part without a ref.<br><br>The changelog is now section 12. |
 | 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
-| 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal carries the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` when there are warning signs.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify`, `bill.response` and `bill.response_unknown` gain the fields. No refusal text changes. |
+| 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |

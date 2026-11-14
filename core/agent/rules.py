@@ -302,6 +302,11 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
                    ("Paljonko käytin viime kuussa?", "Paljonko käytin ravintoloihin viime kuussa?"))
 
 
+class OfferContact(list):
+    """Calls whose answer offers the way to a human at the bank (#420): the NOT_YET answer. Set where that
+    text is chosen; RuleModel.plan turns it into PlanResult.offer_contact."""
+
+
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
 BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON = (
     fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON))
@@ -354,7 +359,7 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        return PlanResult(calls=calls, recognised=recognised)
+        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact))
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
@@ -413,7 +418,7 @@ class RuleModel:
             calls = [FunctionCall(name, args) for name, args in planned if name in tools]
             if calls:
                 return calls + [FunctionCall("finish")], True
-            return self._clarify(NOT_YET, NOT_YET_OPTIONS, lang), True
+            return OfferContact(self._clarify(NOT_YET, NOT_YET_OPTIONS, lang)), True
         if "get_spending" in tools:
             args = plan_spending(request.question, date.fromisoformat(request.as_of))
             if args is not None:

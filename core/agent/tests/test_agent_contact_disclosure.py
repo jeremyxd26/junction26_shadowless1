@@ -12,8 +12,10 @@ from __future__ import annotations
 import pytest
 from agent_fakes import run
 
+from core.agent import template
 from core.agent.model import FunctionCall, ScriptedModel
 from core.agent.registry import DeclineKind
+from core.agent.rules import RuleModel
 from core.app.api import texts as api_texts
 
 SPEND = [FunctionCall("fake_spending", {"category": "Restaurants"}), FunctionCall("finish")]
@@ -42,6 +44,25 @@ def test_a_rule_refusal_carries_it_too(make_pipeline):
     """The rules decline before any model request ("should I buy bitcoin?"): the same action."""
     done = done_of(run(make_pipeline(ScriptedModel()), "Should I invest my savings in bitcoin?", language="en"))
     assert done["outcome"] == "refused" and done["actions"] == [CONTACT["en"]]
+
+
+def test_the_rules_not_yet_answer_carries_it_and_the_general_clarifying_question_does_not(make_pipeline):
+    """Review of #435: "I can't answer that one yet" (a known question whose tool is not here) offers the
+    way to the bank; the general clarifying question (a question the rules do not know) does not."""
+    not_yet = done_of(run(make_pipeline(RuleModel()), "Where did my money go?", language="en"))
+    assert not_yet["outcome"] == "clarify" and not_yet["text"].startswith("I can't answer that one yet")
+    assert not_yet["actions"] == [CONTACT["en"]]
+    general = done_of(run(make_pipeline(RuleModel()), "Tell me something nice", language="en"))
+    assert general["outcome"] == "clarify" and general["actions"] == []
+
+
+def test_the_nothing_found_fallback_carries_it(make_pipeline, monkeypatch):
+    """Even the template's text fails the validator: the fixed "nothing" text goes out (outcome fallback)."""
+    bad = {"language": "en", "text": "You spent {{n1}}, about 30 € more than usual.", "cited": ["n1"], "lesson_key": None}
+    monkeypatch.setattr(template, "template_draft", lambda *args, **kwargs: dict(bad))
+    done = done_of(run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, bad]))))
+    assert done["outcome"] == "fallback" and done["text"] == template.pick(template.NOTHING, "en")
+    assert done["actions"] == [CONTACT["en"]]
 
 
 def test_a_data_answer_first_discloses_once(make_pipeline):
