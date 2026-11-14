@@ -43,14 +43,32 @@ FIVE = [("Restaurants", "-4.50"), ("Restaurants", "-3.20"), ("Entertainment", "-
         ("Lifestyle", "-6.30"), ("Restaurants", "-2.00")]
 
 
-def test_the_default_is_the_last_full_month_and_ten_euros():
+def test_the_default_is_the_last_three_complete_months_and_ten_euros():
+    """Coordinator, #256: one month holds too few small purchases for any persona; three months and EUR 10."""
     args = GetSmallPurchasesArgs.model_validate({})
-    assert (args.period.preset.value, args.max_amount) == ("last_month", 10.0)
-    result, _, _ = run(august(*FIVE) + [tx(90, date(2026, 9, 3), "Restaurants", "-3.00")])   # September: out
+    assert (args.period.preset.value, args.max_amount) == ("last_3_months", 10.0)
+    june, september = tx(80, date(2026, 6, 30), "Restaurants", "-3.00"), tx(90, date(2026, 9, 3), "Restaurants", "-3.00")
+    result, _, _ = run(august(*FIVE) + [june, september])                      # June: out; September: in
     d = result.data
-    assert (d.period.start, d.period.end) == (date(2026, 8, 1), date(2026, 8, 31))
-    assert (d.count.value, d.total.value, d.average.value) == (5, 25.0, 5.0)
+    assert (d.period.start, d.period.end) == (date(2026, 7, 1), date(2026, 9, 30))
+    assert (d.count.value, d.total.value, d.average.value) == (6, 28.0, 4.67)
     assert d.max_amount.value == 10.0 and d.max_amount.method == "small_purchases.max_amount_eur@1"
+
+
+def test_the_month_average_is_the_total_over_whole_months_only():
+    result, store, _ = run(august(*FIVE, ("Restaurants", "-0.01")))         # 25.01 / 3 = 8.336...
+    m = result.data.month_average
+    assert (m.value, m.unit.value, m.method, m.display) == (8.34, "eur_per_month", "small_purchases.month_avg_eur@1",
+                                                            "€8.34 a month")
+    spec = store.rows[m.evidence_ref]
+    assert spec["formula"] == "scale" and spec["params"] == {"factor_num": 1, "factor_den": 3}
+    one, _, _ = run(august(*FIVE), period={"preset": "last_month"})
+    assert one.data.month_average.value == 25.0
+    part, _, _ = run(august(*FIVE), period={"preset": "this_month"})          # 1-30 Sep is whole: one month
+    assert part.data.month_average is not None
+    odd, _, _ = run(august(*FIVE), period={"preset": "custom", "start": "2026-08-03", "end": "2026-08-31"})
+    assert odd.data.month_average is None                                    # not whole months: no average
+    assert odd.model_view["per_month"] is None
 
 
 def test_exactly_the_limit_counts_a_cent_more_does_not():
@@ -94,7 +112,7 @@ def test_zero_purchases_and_fewer_than_five():
     assert (d.count.value, d.total.value, d.average, d.few, d.categories) == (0, 0.0, None, True, [])
     assert d.share is None                                  # no everyday spending at all
     assert [a.type for a in none.card.actions] == ["open_evidence"]          # nothing to cut
-    assert none.model_view["takeaway"] == {"kind": "few", "largest_category": None}
+    assert none.model_view["takeaway"] == {"kind": "none", "largest_category": None}
     four, _, _ = run(august(*FIVE[:4]))
     assert four.data.few and four.model_view["takeaway"]["kind"] == "few"
     five, _, _ = run(august(*FIVE))
@@ -129,7 +147,7 @@ def test_the_card_is_the_breakdown_card_and_asks_the_what_if_without_an_amount()
     result, _, _ = run(august(*FIVE))
     card = result.card
     assert (card.type, card.display_hint, card.title, card.subtitle) == ("breakdown", "list", "Small purchases",
-                                                                         "August 2026")
+                                                                         "1 Jul – 30 Sep 2026")
     assert card.total.method == "small_purchases.total_eur@1" and card.comparison is None
     assert [i["key"] for i in card.items] == ["Restaurants", "Entertainment", "Lifestyle"]
     assert all(i["change"] is None and i["flags"] == [] for i in card.items)
@@ -146,8 +164,8 @@ def test_the_model_view_has_numbers_and_labels_only():
     view = result.model_view
     text = repr(view)
     assert "m_secret" not in text and "ev_" not in text and "CUST" not in text
-    assert set(view) == {"tool", "period", "max_amount", "count", "total", "average", "share_of_everyday",
-                         "everyday_total", "categories", "takeaway", "notes"}
+    assert set(view) == {"tool", "period", "max_amount", "count", "total", "average", "per_month",
+                         "share_of_everyday", "everyday_total", "categories", "takeaway", "notes"}
     assert view["count"]["value"] == 6 and view["categories"][0]["label"] == "Restaurants"
 
 

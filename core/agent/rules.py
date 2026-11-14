@@ -237,6 +237,12 @@ PEERS = (r"people like me|people my age|others? (of )?my age|other people|others
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
          r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
+# Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
+# snacks?", "Mihin pienet ostokset menevät?". Never the baskets question ("Where did my money go?").
+SMALL_PURCHASES = (r"\bsmall (purchases?|buys|spending|expenses)\b|\blittle (purchases?|buys|things)\b|"
+                   r"\bcoffees? and snacks?\b|\bsnacks? and coffees?\b|"
+                   r"\bpien(et|iä|ten|iin|istä|illä|ille) (ostok\w*|hankin\w*|kulu\w*|meno\w*)|"
+                   r"\bpikkuostok\w*|\bpikkuhankin\w*|\bkahvi\w* ja (välipalo|naposte)\w*")
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
 SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
@@ -268,6 +274,10 @@ FORECAST = (r"^(?!.*(?:" + FORECAST_PAST + r")).*?(?:"
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
 # a specific period or category falls through to get_spending.
 BRIEF = [
+    # Small everyday purchases (#256). The rule claims only the plain question; RuleModel._calls lets a what-if
+    # or peer question about them go to its own rule, and hands one that names an amount or a period other
+    # than the tool's default to the next planner (never answered for defaults the user did not ask, #142).
+    ("small_purchases", SMALL_PURCHASES, lambda q, as_of: [("get_small_purchases", {})]),
     ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
      # The metric's window (metrics.md section 1): month averages of the last 6 complete months.
      lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]),
@@ -303,8 +313,8 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 
 
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
-BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON = (
-    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON))
+BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, SMALL_PURCHASES = (
+    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, SMALL_PURCHASES))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -330,6 +340,17 @@ META = [
     ("thanks", r"(thanks|thank you|thank you so much|thanks a lot|thx|kiitos|kiitti|kiitos paljon|спасибо)"),
     ("greeting", _GREET),
 ]
+
+
+def small_purchase_details(q: str) -> bool:
+    """A folded small-purchases question names an amount or a period other than the tool's default (the
+    last 3 months, which may be named: its digit is not an amount)."""
+    default = next(rx for rx, p in PRESETS if p == config.SMALL_PURCHASE_DEFAULT_PERIOD)
+    rest = re.sub(default, " ", q)
+    other_preset = any(re.search(rx, rest) for rx, p in PRESETS if p != config.SMALL_PURCHASE_DEFAULT_PERIOD)
+    # a month as a word ("july", not "mar" in "market") or a Finnish month stem before "kuu" ("elokuussa")
+    month = re.search(rf"\b{MONTH_RX}(?:\b|(?=kuu))", rest)
+    return bool(re.search(r"\d", rest)) or other_preset or bool(month)
 
 
 def meta_intent(question: str) -> str | None:
@@ -387,6 +408,12 @@ class RuleModel:
         for intent, rx, build in BRIEF:
             if not re.search(rx, q, re.I):
                 continue
+            if intent == "small_purchases":
+                if re.search(WHAT_IF, q) or peer_question:
+                    continue  # a cut or a comparison of the small purchases: the what-if or peer rule
+                if small_purchase_details(q):
+                    # an amount or a period the rule does not read: the next planner plans it with them
+                    return self._default_clarify(lang), False
             # A what-if or bills question that names a period is still a what-if or bills question;
             # a plain spending question with a period goes to get_spending below.
             if intent == "what_if" and spending is not None and not re.search(PERCENT + "|" + HALF, q):
