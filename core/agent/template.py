@@ -258,6 +258,40 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
     return out, extra
 
 
+# Safe to spend as one takeaway sentence with its reason (coordinator, after #246): the amount, and which
+# limit binds. The three numbers are the ones the takeaway always cited.
+SAFE_SENTENCE = {
+    "budget": ("Safe to spend in the coming week: {safe}, because your monthly budget is the limit ({budget}); "
+               "your balance would allow more ({balance}).",
+               "Turvallisesti käytettävissä tulevalla viikolla: {safe}, koska kuukausibudjettisi on raja ({budget}); "
+               "saldosi sallisi enemmän ({balance})."),
+    "balance": ("Safe to spend in the coming week: {safe}, because your balance is the limit ({balance}); "
+                "your monthly budget would allow more ({budget}).",
+                "Turvallisesti käytettävissä tulevalla viikolla: {safe}, koska saldosi on raja ({balance}); "
+                "kuukausibudjettisi sallisi enemmän ({budget})."),
+    "equal": ("Safe to spend in the coming week: {safe}; your balance and your monthly budget set the same limit "
+              "({balance}).",
+              "Turvallisesti käytettävissä tulevalla viikolla: {safe}; saldosi ja kuukausibudjettisi asettavat saman "
+              "rajan ({balance})."),
+}
+
+
+def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The safe-to-spend takeaway as one sentence, and the ids it cites; None when a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    nums = {k: view.get(k) for k in ("safe_to_spend", "balance_limit", "budget_limit")}
+    if not all(isinstance(n, dict) and isinstance(n.get("id"), str) for n in nums.values()):
+        return None
+    if nums["balance_limit"].get("value") == nums["budget_limit"].get("value"):
+        kind, ids = "equal", [nums["safe_to_spend"]["id"], nums["balance_limit"]["id"]]
+    else:
+        kind = "balance" if view.get("binding_limit") == "balance" else "budget"
+        ids = [nums[k]["id"] for k in ("safe_to_spend", "balance_limit", "budget_limit")]
+    tokens = {k.split("_")[0] if k != "safe_to_spend" else "safe": f"{{{{{n['id']}}}}}" for k, n in nums.items()}
+    return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
+
+
 PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
 
 
@@ -330,6 +364,11 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
+        custom = safe_to_spend_sentence(view, language)
+        if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
+            sentences.append(custom[0])
+            cited += custom[1]
+            chosen = []  # the sentence above cites them
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
