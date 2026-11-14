@@ -93,9 +93,11 @@ The owner changed the set after the scan (comments on #22 and #40):
 
 | Slot | Candidates (age, profile, score, safe to spend 7d, status) |
 |---|---|
-| lead tier (every check) | CUST00493 (52, steady, essentials 77.4%, 175.46 ok); CUST00848 (52, saver, 63.0%, 423.94 ok); CUST00151 (42, stretched, 61.0%, 91.83 below_usual) |
-| young_everyday | **CUST00349** (32, everyday_heavy, 30.1%, 285.21 ok); **CUST00849** (25, steady, 28.0%, 166.84 ok); CUST00305 (31, steady, 26.2%, 92.03 ok) |
-| recent_unexpected | **CUST00860** (35, big_ticket, 1,080.42, 180.26 ok); CUST00183 (40, everyday_heavy, 785.80, 281.65 ok); CUST00857 (37, steady, 655.93, 335.46 ok) |
+| lead tier (every check) | CUST00493 (52, steady, essentials 77.4%, 78.86 ok); CUST00848 (52, saver, 63.0%, 233.06 ok); CUST00151 (42, stretched, 61.0%, 91.83 below_usual) |
+| young_everyday | **CUST00349** (32, everyday_heavy, 30.1%, 147.23 below_usual); **CUST00849** (25, steady, 28.0%, 123.15 ok); CUST00305 (31, steady, 26.2%, 92.03 ok) |
+| recent_unexpected | **CUST00860** (35, big_ticket, 1,080.42, 97.46 below_usual); CUST00183 (40, everyday_heavy, 785.80, 240.25 ok); CUST00857 (37, steady, 655.93, 153.77 below_usual) |
+
+Safe to spend 7d and its status are after the savings goal of #391 (as_of 2026-09-30, rule state, no review answered), recomputed per customer with `get_safe_to_spend`. The scan itself ran before #391 and chose on its earlier figures, when all four personas were `ok`; the goal moved several of them to `below_usual`, which the persona choice does not depend on.
 
 Only one of the 78 passing candidates is 18–24 (CUST00164, age 23), and its safe-to-spend status is `below_usual`. Among the passing candidates with status `ok`, Aleksi (25) is the youngest.
 
