@@ -7,7 +7,8 @@
    this answer (a number's period, a date field of a model view, or as_of); if any digit is left, the
    draft fails. Amounts, percentages and counts typed as digits fail in any locale format ("12.5%",
    "1 234,56 €", "−30"), and so do ids, IBANs and digits glued to letters. No sign or unit may be
-   written next to a token (the token's display carries its own). The same check then runs on the
+   written next to a token (the token's display carries its own), and two tokens need a word between
+   them ("{{n2}} {{n4}}" renders as one number). The same check then runs on the
    rendered text, where only the cited displays may stand as whole tokens, so nothing glued to a
    token passes. No number written in words either (issue #123): a magnitude word anywhere, a
    cardinal next to a unit of money or percent, or a Unicode number character other than a digit.
@@ -40,7 +41,19 @@ LESSON_KEYS = ("one_off_vs_habit", "fixed_vs_flexible", "safety_buffer", "small_
 
 TOKEN = re.compile(r"\{\{(n[0-9]+)\}\}")
 ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
-TOKEN_NEIGHBOUR = re.compile(rf"[{answer_text.DASH_CLASS}+€%$]\s?\{{\{{n[0-9]+\}}\}}|\{{\{{n[0-9]+\}}\}}\s?[€%$]")
+# A sign, unit or mark next to a token: a dash, currency, percent, per mille, "×", "#", "+", or a
+# standalone "x" ("x{{n1}}", "{{n1}} x").
+_MARK = re.escape(answer_text.MARKS)
+TOKEN_NEIGHBOUR = re.compile(rf"(?:[{answer_text.DASH_CLASS}{_MARK}]|(?<![^\W\d_])[xX])\s?\{{\{{n[0-9]+\}}\}}|"
+                             rf"\{{\{{n[0-9]+\}}\}}\s?(?:[{_MARK}]|[xX](?![^\W\d_]))")
+LETTER = re.compile(r"[^\W\d_]")
+
+
+def tokens_without_words(text: str) -> list[str]:
+    """Two number tokens with no letter between them: "{{n2}} {{n4}}" reads as one number ("10 500"),
+    "{{n2}}/{{n2}}" as a date, "{{n1}}, {{n2}}" as a decimal. A list separator needs a word after it."""
+    found = list(TOKEN.finditer(text))
+    return [text[a.start():b.end()] for a, b in zip(found, found[1:]) if not LETTER.search(text[a.end():b.start()])]
 
 DENY = {
     "sensitive_inference": re.compile(
@@ -139,6 +152,8 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     errors = answer_text.leftover_digits(TOKEN.sub(" ", text), dates=allowed.dates, periods=allowed.periods)
     if TOKEN_NEIGHBOUR.search(text):
         errors.append("no sign or unit next to a number token: the token's display carries its own")
+    for pair in tokens_without_words(text):
+        errors.append(f"words must stand between two number tokens: '{pair}' reads as one number")
     for name, rx in DENY.items():
         if rx.search(text):
             errors.append(f"not allowed: {name}")
