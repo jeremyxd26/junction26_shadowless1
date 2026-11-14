@@ -186,10 +186,11 @@ AGAIN = {
 }
 # "Is my data safe with you?" (#352): a fixed answer. Draft wording for the product owner's review; it claims
 # only what holds while a language model writes some answers.
-PRIVACY = ("I only use your own transactions in S-mobiili to answer you, and every number I show comes from them. "
-           "I never show your data to anyone else, and I can't move money.",
-           "Käytän vastauksiin vain omia tilitapahtumiasi S-mobiilissa, ja jokainen näyttämäni luku tulee niistä. "
-           "En näytä tietojasi kenellekään muulle enkä voi siirtää rahaa.")
+PRIVACY = ("Every number I show is calculated from your own transactions. When an AI model writes an answer, it gets your "
+           "question and the totals and categories I calculated, never your customer number, account number or the "
+           "shops' names.",
+           "Jokainen näyttämäni luku lasketaan omista tilitapahtumistasi. Kun tekoälymalli kirjoittaa vastauksen, se saa "
+           "kysymyksesi sekä laskemani summat ja luokat, ei koskaan asiakasnumeroasi, tilinumeroasi eikä kauppojen nimiä.")
 # A message in a language Sentti does not speak (#352): one line, in English.
 LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
 
