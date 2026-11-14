@@ -317,6 +317,22 @@ for _id, _unit, _name, _summary in [
 ]:
     METHODS[f"small_purchases.{_id}@1"] = MethodInfo(_unit, _name, _summary, SMALL_DOC)
 
+# The savings plan (#369, metrics.md section 13): the sum of its cut levers, each a what-if saving.
+PLAN_DOC = METRICS_DOC + "#13-savings-plan-369"
+METHODS["savings_plan.total_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
+    ("The sum of the plan's cuts, each the what-if saving of a different category, so nothing is counted twice.",
+     "Suunnitelman vähennysten summa; kukin on eri luokan mitä jos -säästö, joten mitään ei lasketa kahdesti."),
+    PLAN_DOC)
+METHODS["savings_plan.total_year_eur@1"] = MethodInfo(
+    Unit.EUR_PER_YEAR, ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
+    ("The monthly total times twelve.", "Kuukausisumma kertaa kaksitoista."), PLAN_DOC)
+METHODS["savings_plan.cut_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Cut share", "Vähennyksen osuus"),
+    ("How much of a category's usual spending the plan cuts, a setting of the plan.",
+     "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
+    PLAN_DOC)
+
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {
     "age_band+area3": ("same age group and postal area", "sama ikäryhmä ja postinumeroalue"),
