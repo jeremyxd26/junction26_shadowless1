@@ -220,7 +220,7 @@ FI_STOP = {"miten", "kuinka", "paljonko", "milloin", "mihin", "mista", "missa", 
            "minun", "meidan", "kuin"}
 _LEAD = {"how", "much", "many", "what", "which", "show", "tell", "can", "could", "you", "check", "see", "paljonko",
          "kuinka", "paljon", "mita", "mihin", "nayta", "kerro"}
-_BE = {"was", "were", "is", "are", "been", "be", "being", "olivat", "oli", "on", "ovat"}
+_BE = {"was", "were", "is", "are", "been", "be", "being", "olivat", "oli", "on", "ovat", "to"}   # "safe to spend"
 
 
 def _head(np: str) -> str | None:
