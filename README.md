@@ -54,8 +54,9 @@ With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prom
 - Gemini writes the text with numbers as `{{nK}}` tokens. The validator checks the text, and a rejected draft is retried once, then replaced by the template.
 - When Gemini fails (timeout, 429, 503, a refused key or model, an empty or cut response), or cannot be set up, the answer comes from the rule planner and the template. Requests are bounded:
   - The pipeline retries a failed call once, and the adapter never retries the same model again. A 503 tries the fallback model once, and flash is then skipped for 3 minutes.
-  - One answer sends at most 8 requests and gets 15 s for all its model calls.
-  - A 429, 401, 403 or 404, or three other failures in a row, pause model calls for 5 minutes. An outage on both models pauses them for 30 s.
+  - One answer sends at most 8 requests and gets 15 s for all its model calls: each planner call at most 9 s and each composer call at most 5 s, within those 15 s. A question the rules plan gives the composer its 5 s, not the rest of the 15 s, because the template writes the same answer at once.
+  - A timeout, a network error or a 503 (on the fallback model too) fails only that call. It never pauses the model for other users, and the same answer sends no second request of that kind (#341).
+  - A 429, 401, 403 or 404 pauses model calls for 5 minutes, and three malformed, empty or blocked responses in a row pause them for 30 s.
 
 The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
 
@@ -66,6 +67,7 @@ Model settings:
 - `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). The default is the other of flash and pro (pro is called on the `v1beta` API, the only one that serves it). `none` turns it off. A fallback the API refuses turns itself off.
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
+- Per role (#341): `GEMINI_PLANNER_MODEL` and `GEMINI_COMPOSER_MODEL` choose a model for the planner or the composer, for example the faster `gemini-3.5-flash-lite` for the composer. Both default to `GEMINI_MODEL`. Each role's fallback is `GEMINI_FALLBACK_MODEL`, or else the model's usual partner (flash-lite falls back to flash). `GEMINI_PLANNER_THINKING` and `GEMINI_COMPOSER_THINKING` take `default`, `minimal`, `low` (the default), `medium` or `high`. A level the model rejects is sent as `low`: `gemini-3.8-flash` has no `minimal`. `GEMINI_PLANNER_TIMEOUT_S` (default 9) and `GEMINI_COMPOSER_TIMEOUT_S` (default 5) are seconds per call, at most 15. The start-up line shows every role's model, thinking level, timeout and fallback. The cache key holds the model and the thinking level, so a switch never serves another model's saved text. Like `GEMINI_MODEL`, set the model ids as process variables, not in `.env`.
 
 ```
 curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \

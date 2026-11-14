@@ -44,6 +44,15 @@ export function hostPlatform(scope: HostScope = currentScope()): 'ios' | 'androi
 }
 
 /**
+ * Whether the header shows the demo persona button: only in a plain browser (no host listens) and
+ * only when the back chevron does not take the left cell. Reads the host on every call, so a host
+ * object installed after the first render is seen on the next one.
+ */
+export function showPersonaButton(scope: HostScope = currentScope(), canGoBack = false): boolean {
+  return !canGoBack && hostPlatform(scope) === null
+}
+
+/**
  * Sends `sentti.<name>` to the host. Returns true when a host took the message, so the caller
  * can fall back to in-app behaviour in a plain browser or when the host's handler throws.
  */

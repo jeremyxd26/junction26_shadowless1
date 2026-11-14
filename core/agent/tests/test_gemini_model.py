@@ -51,7 +51,7 @@ def test_round_two_replays_the_model_turn_and_answers_every_call_in_order():
     responses = [FunctionResponse("get_spending", {"error": "invalid_arguments"}, "b"),   # rejected ones come first
                  FunctionResponse("get_spending", {"tool": "get_spending", "total": {"id": "n1"}}, "a")]
     contents = plan_contents(plan_input(responses=responses, model_turns=[turn], round=2))
-    assert [c["role"] for c in contents] == ["user", "model", "tool"]
+    assert [c["role"] for c in contents] == ["user", "model", "user"]   # never "tool": flash-lite rejects it (#388)
     assert contents[1] is turn                         # verbatim, thought signature included
     parts = [p["function_response"] for p in contents[2]["parts"]]
     assert [(p["name"], p.get("id")) for p in parts] == [("get_spending", "a"), ("get_spending", "b"),
@@ -283,3 +283,51 @@ def test_a_malformed_daily_budget_starts_the_service_with_the_model_off(monkeypa
     assert any(line.startswith("language model: off (model settings invalid: ValidationError)") for line in lines)
     assert all("test-key-not-real" not in line and value not in line.split(":")[0] for line in lines)
     assert isinstance(make_agent_model(Settings(_env_file=None, gemini_api_key="test-key-not-real")), RuleModel)
+
+
+# ---- #341: settings per role ------------------------------------------------------------------------------
+
+FLASH_ID, PRO_ID, LITE_ID = "gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-3.5-flash-lite"
+
+
+def test_role_settings_default_to_todays_behaviour():
+    c = make_model(settings(gemini_api_key="test-key-not-real")).client
+    assert (c.model, c.compose_model, c.fallback_model, c.compose_fallback_model) == (FLASH_ID, FLASH_ID, PRO_ID, PRO_ID)
+    assert (c.plan_thinking, c.compose_thinking, c.plan_timeout_s, c.compose_timeout_s) == ("low", "low", 9.0, 5.0)
+
+
+def test_the_composer_switches_to_flash_lite_by_settings_and_flash_keeps_a_level_it_accepts():
+    c = make_model(settings(gemini_api_key="test-key-not-real", gemini_composer_model=LITE_ID,
+                            gemini_composer_thinking="minimal", gemini_planner_thinking="minimal",
+                            gemini_composer_timeout_s=4.0, gemini_planner_timeout_s=7.0)).client
+    assert (c.compose_model, c.compose_fallback_model, c.compose_thinking, c.compose_timeout_s) == (
+        LITE_ID, FLASH_ID, "minimal", 4.0)
+    assert (c.model, c.fallback_model, c.plan_thinking, c.plan_timeout_s) == (FLASH_ID, PRO_ID, "low", 7.0)
+
+
+def test_fallback_none_turns_off_every_roles_fallback():
+    c = make_model(settings(gemini_api_key="test-key-not-real", gemini_fallback_model="none",
+                            gemini_composer_model=LITE_ID)).client
+    assert c.fallback_model is None and c.compose_fallback_model is None
+
+
+def test_the_start_up_line_shows_every_roles_model_thinking_timeout_and_fallback(tmp_path):
+    from core.agent.gemini import model_state
+
+    line = model_state(settings(gemini_api_key="test-key-not-real", gemini_composer_model=LITE_ID,
+                                gemini_composer_thinking="minimal", daily_budget=200),
+                       ledger_path=tmp_path / "requests.jsonl", off_switch=tmp_path / "model-off")
+    assert line.startswith("language model: on;")
+    assert f"planner {FLASH_ID} (thinking low, 9 s, fallback {PRO_ID})" in line
+    assert f"composer {LITE_ID} (thinking minimal, 5 s, fallback {FLASH_ID})" in line
+    assert "daily budget 200 requests" in line and "test-key" not in line
+
+
+@pytest.mark.parametrize("name, value", [("GEMINI_COMPOSER_THINKING", "fast"), ("GEMINI_PLANNER_TIMEOUT_S", "0"),
+                                         ("GEMINI_COMPOSER_TIMEOUT_S", "60")])
+def test_a_bad_role_setting_keeps_the_service_on_the_rule_model(monkeypatch, name, value):
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+
+    monkeypatch.setenv(name, value)
+    assert isinstance(make_agent_model(settings(gemini_api_key="test-key-not-real")), RuleModel)

@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { canGoBack, goBack, useUrl } from '../lib/url.ts'
+import { showPersonaButton } from '../lib/hostBridge.ts'
+import { hostStrings } from '../lib/hostStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BottomSheet } from './BottomSheet.tsx'
 
@@ -18,14 +20,17 @@ function longPressMs(): number {
 /**
  * Minimal header inside the host app: back, "Sentti" with a small AI tag, and ⓘ, which opens the
  * AI disclosure (`ai_disclosure`) in a small sheet. No logo and no own navigation.
- * A long press on the header (not on a button) opens the demo persona switch.
+ * A long press on the header (not on a button) opens the demo persona switch. In a plain browser,
+ * where nobody would guess the long press, a visible button in the left cell opens it too, unless
+ * the back chevron takes that cell.
  */
 export function Header({ onLongPress, disclosure }: { onLongPress: () => void; disclosure: string }) {
-  const { t } = useSettings()
+  const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
   useUrl()
   const showBack = canGoBack()
+  const showPersonas = showPersonaButton(undefined, showBack)
   const timer = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
 
@@ -71,8 +76,21 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
               <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+        ) : showPersonas ? (
+          // First screen in a plain browser: nowhere to go back to, so the cell opens the demo personas.
+          <button
+            type="button"
+            onClick={onLongPress}
+            aria-label={hostStrings(lang).personas}
+            className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="8" r="3.5" />
+              <path d="M5 19.5c1.2-3.4 3.9-5 7-5s5.8 1.6 7 5" strokeLinecap="round" />
+            </svg>
+          </button>
         ) : (
-          // First screen in a plain browser: nowhere to go back to. The cell keeps the title centred.
+          // Inside a host with nowhere to go back to (not reached today); the cell keeps the title centred.
           <span aria-hidden="true" />
         )}
         <h1 className="flex items-center justify-center gap-1.5 text-lg font-semibold text-ink">
