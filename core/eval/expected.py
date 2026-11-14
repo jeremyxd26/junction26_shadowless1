@@ -185,6 +185,29 @@ def evaluate(db: Db, cid: str, src: dict):
         grocery = money(Decimal(str(total)) / 6)
         share = int(src.get("share_pct") or RULES.default_share_pct)
         value = getattr(estimate(grocery, share), src["column"])
+    elif src.get("query") == "savings_plan":
+        # The savings plan (#369): the what-if savings of the plan's levers, from 04_what_if.sql with the
+        # tool's settings (config.SAVINGS_PLAN_*): Restaurants at its cut, then the other category with the
+        # largest baseline at the other cut; a lever counts from the threshold; the year is twelve months.
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools import config as tools_config
+
+        def what_if(category: str, pct: int) -> dict | None:
+            rows = db.metric("what_if", cid, {"whatif": f"category:{category}", "whatif_pct": pct})
+            return next((r for r in rows if r.get("customer_id") == cid), None)
+
+        first_cat, first_pct = tools_config.SAVINGS_PLAN_FIRST
+        others = {c: what_if(c, tools_config.SAVINGS_PLAN_OTHER_CUT_PCT) for c in tools_config.SAVINGS_PLAN_OTHER_CATEGORIES}
+        offered = sorted((-Decimal(str(r["baseline_month_eur"])), c) for c, r in others.items()
+                         if r is not None and r["status"] != "not_offered")
+        levers = {"first": what_if(first_cat, first_pct), "other": others[offered[0][1]] if offered else None}
+        savings = {k: Decimal(str(r["saving_month_eur"])) for k, r in levers.items()
+                   if r is not None and r["status"] != "not_offered"
+                   and Decimal(str(r["saving_month_eur"])) >= tools_config.SAVINGS_PLAN_MIN_EUR}
+        month = sum(savings.values(), Decimal("0"))
+        value = {"total_month_eur": month, "total_year_eur": month * 12,
+                 "first_saving_eur": savings.get("first"), "other_saving_eur": savings.get("other")}[src["column"]]
     else:
         raise ValueError(f"unknown source {src}")
     if "multiply" in src and value is not None:

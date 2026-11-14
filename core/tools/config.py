@@ -14,6 +14,7 @@ Sources (also listed in the PR of issue #31):
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 # First day of the dataset. Periods are clamped to [DATA_START, as_of] (agent-core.md section 4).
 DATA_START = date(2024, 10, 1)
@@ -732,3 +733,27 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+
+# ---- the savings plan (#369, metrics.md section 13) ---------------------------------------------------
+# "How could I save more?": a few cuts below the usual pace, from the what-if tool, with one total a month and
+# a year. The two cut levers are always different categories, so nothing is counted twice; small purchases are
+# no lever (in the data they are restaurant visits, which the first lever covers). The S-Bonus estimate is a
+# separate extra line, never part of the total (product owner, #369).
+SAVINGS_PLAN_FIRST = ("Restaurants", 20)             # eating out, cut by 20 %
+SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the flexible everyday categories
+SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
+SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
+SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1"}
+SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Your savings plan", "Säästösuunnitelmasi"),
+    "total_month": ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
+    "total_year": ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
+    "lever": ("{what} {pct}% less", "{what} {pct} % vähemmän"),
+    "bonus": ("Extra, if you shopped at S Group stores (not in the total)",
+              "Lisäksi, jos ostaisit S-ryhmän kaupoista (ei mukana summassa)"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
+                      "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
+    "host_monthly_saving": ("Start saving in S-mobiili", "Aloita säästäminen S-mobiilissa"),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}

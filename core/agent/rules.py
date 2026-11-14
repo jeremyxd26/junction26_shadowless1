@@ -261,8 +261,10 @@ BRIEF = [
     ("peers", PEERS, lambda q, as_of: [("get_peer_benchmark", {"metric": "spend_total"})]),
     ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
 ]
-# "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
-# section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
+# "How could I save more?": the savings plan (#369), which composes the what-if cuts, safe to save and the
+# S-Bonus extra and needs no number from the user. Without that tool, the earlier answer: safe to save and
+# where the money goes (the baskets).
+SAVE_MORE_PLAN = [("get_savings_plan", {})]
 SAVE_MORE_CALLS = [("get_safe_to_save", {}), ("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]
 # The what-if questions back never suggest an amount (review of PR #126): the user says how much.
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
@@ -384,7 +386,10 @@ class RuleModel:
                     return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
                 if kind == "amount":
                     return self._clarify(WHAT_IF_AMOUNT, ((), ()), lang), True
-                planned = SAVE_MORE_CALLS if kind == "save_more" else [("run_what_if", what_if)]
+                if kind == "save_more":
+                    planned = SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS
+                else:
+                    planned = [("run_what_if", what_if)]
             else:
                 planned = build(q, as_of)
             calls = [FunctionCall(name, args) for name, args in planned if name in tools]
