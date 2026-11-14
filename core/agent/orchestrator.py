@@ -470,6 +470,8 @@ class Pipeline:
             planner_fallback |= source == "fallback"
             # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
             template_answer = template_answer or getattr(plan, "template_answer", False)
+            if getattr(plan, "template_answer", False) is True and getattr(plan, "offer_contact", False) is True:
+                a.offer_contact = True   # #806: the budget side of a borrowing question offers the way to the bank
             bonus_received = bonus_received or getattr(plan, "bonus_received", False)   # #639
             model_failed = model_failed or source == "fallback"
             if source == "fallback":

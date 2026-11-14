@@ -2181,6 +2181,11 @@ def _claim(request: PlanInput) -> Claim:
         return Claim(None, reason="other_person")
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
+    if "get_safe_to_spend" in tools and template.borrow_budget_amount(question) is not None:
+        # "Should I borrow €500 for a holiday?" (#806): after every refusal above, the budget side only (the template
+        # says it can't advise on borrowing), with the way to the bank for the credit side
+        return Claim("borrow_budget", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")),
+                     offer_contact=True)
     if re.search(HEALTH, q) and (re.search(HEALTH_NOT_TOTAL, q) or peer_question or re.search(PEERS, q)):
         # an inference, advice, a judgement, a tip or a comparison with people about health spending declines the
         # whole message (#571, R9): "Miten terveyskuluni vertautuvat kaltaisiini?" as "… compared with people like me"
@@ -2320,7 +2325,7 @@ class RuleModel:
         # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
         # the template's answer in both rounds: no composer model
         found = claim(request)
-        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer")
+        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer", "borrow_budget")   # #806 too
         # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
         bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
