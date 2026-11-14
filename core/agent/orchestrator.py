@@ -969,7 +969,7 @@ class Pipeline:
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.follow_ups(message, lang), "lesson": None,
+                      "cited": cited, "follow_ups": template.brief_questions(lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})
