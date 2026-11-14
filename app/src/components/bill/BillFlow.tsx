@@ -94,17 +94,12 @@ export function BillFlow({ onDone }: Props) {
         <div className="flex flex-col gap-3">
           <h2 className="text-card-title font-bold text-brand">{state.reading ? s.confirmTitle : s.typeTitle}</h2>
           {state.notice && <p className="rounded-lg bg-sunken p-3 text-base text-ink-2">{state.notice}</p>}
-          {state.step === 'fields' && state.error && (
-            // A 422 `invalid_bill` is not retryable: its message asks to compare or edit the fields.
-            <ErrorBlock
-              message={state.error.message}
-              onRetry={state.error.retryable && state.failed ? () => dispatch({ type: 'retry_explain' }) : undefined}
-            />
-          )}
           <BillFieldsCard
             key={state.sampleId ?? 'typed'}
             reading={state.reading}
             busy={state.step === 'explaining'}
+            // A 422 `invalid_bill` is not retryable: its message asks to compare or edit the fields.
+            error={state.step === 'fields' ? state.error : null}
             onConfirm={(request) => dispatch({ type: 'confirm', request })}
           />
           {state.step === 'explaining' && (
