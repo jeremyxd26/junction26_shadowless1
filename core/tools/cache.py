@@ -73,7 +73,9 @@ DEFAULT_MAX_DISK_ENTRIES = 5000
 DEFAULT_WAIT_S = 5.0   # a waiter's limit: a little above the slowest tool (03 is about 0.5 s on a busy db)
 DEFAULT_DIR = ROOT / "var" / "cache"
 DB_FILE = "tools.sqlite3"
-SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"))   # not recursive: tests are not code
+# Not recursive: tests are not code. core/config holds rules some tools read at import (the S-Bonus
+# rules file of core/tools/bonus.py), so a changed rule is a new code version, never a stale hit.
+SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"), ("core/config", "*.yaml"))
 RESULT_MODULE_PREFIX = "core.tools."
 
 Connector = Callable[[], AbstractContextManager[Any]]

@@ -237,6 +237,22 @@ def test_only_core_tools_results_go_to_disk(tmp_path):
         assert db.execute("SELECT count(*) FROM tool_cache").fetchone()[0] == 0
 
 
+def test_a_changed_config_file_changes_the_code_version(tmp_path, monkeypatch):
+    """A rules file a tool reads (core/config/s_group_benefits.yaml for the S-Bonus) is part of the code
+    version, so new rules never serve results of the old ones (Codex on #260)."""
+    from core.tools import cache as cache_mod
+
+    for folder, name, text in (("core/tools", "tool.py", "x = 1\n"), ("core/metrics", "01.sql", "SELECT 1;\n"),
+                               ("core/config", "s_group_benefits.yaml", "rate: 1\n")):
+        (tmp_path / folder).mkdir(parents=True)
+        (tmp_path / folder / name).write_text(text, encoding="utf-8")
+    monkeypatch.setattr(cache_mod, "ROOT", tmp_path)
+    before = cache_mod.code_version.__wrapped__()
+    (tmp_path / "core/config/s_group_benefits.yaml").write_text("rate: 2\n", encoding="utf-8")
+    assert cache_mod.code_version.__wrapped__() != before
+    assert ("core/config", "*.yaml") in cache_mod.SOURCES
+
+
 def test_code_version_is_part_of_the_key(mem, tool, monkeypatch):
     mem.run("fake", FakeArgs, tool, ctx_for(), {})
     monkeypatch.setattr(cache_mod, "code_version", lambda: "another-deploy")
