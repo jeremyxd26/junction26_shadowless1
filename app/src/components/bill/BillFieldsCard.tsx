@@ -6,9 +6,17 @@
 // - Typed fallback (no reading, the reader is unavailable): empty inputs without marks.
 // Confirm builds the explain request with lib/billRequest.ts. Nothing here formats a number, and
 // nothing typed leaves this component except in the request handed to the flow.
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { BillExplainRequest, BillReadField, BillReadResponse } from '../../api/billTypes.ts'
-import { buildExplainRequest, FIELD_KEYS, initialInputs, type FieldInputs } from '../../lib/billRequest.ts'
+import {
+  buildExplainRequest,
+  FIELD_KEYS,
+  firstProblemField,
+  initialInputs,
+  problemOnReadField,
+  type FieldInputs,
+  type FieldKey,
+} from '../../lib/billRequest.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CARD_TITLE, CardShell } from '../cards.tsx'
@@ -42,6 +50,8 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
   const [inputs, setInputs] = useState<FieldInputs>(initial)
   const [editingAll, setEditingAll] = useState(reading === null)
   const [attempted, setAttempted] = useState(false)
+  // The field to focus after a confirm that found problems; `at` makes a repeated confirm refocus.
+  const [focusTarget, setFocusTarget] = useState<{ key: FieldKey; at: number } | null>(null)
 
   const result = buildExplainRequest({ customerId, language: lang, reading, inputs })
   const problems = attempted && !result.ok ? result.problems : {}
@@ -49,8 +59,20 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
 
   const confirm = () => {
     setAttempted(true)
-    if (result.ok && !busy) onConfirm(result.request)
+    if (result.ok) {
+      if (!busy) onConfirm(result.request)
+      return
+    }
+    // A read value that fails validation sits on a read-only row: open the fields for editing, so
+    // its problem shows, and move focus to the first field with a problem.
+    if (problemOnReadField(result.problems, reading)) setEditingAll(true)
+    const key = firstProblemField(result.problems)
+    if (key) setFocusTarget({ key, at: Date.now() })
   }
+
+  useEffect(() => {
+    if (focusTarget) document.getElementById(`${id}-${focusTarget.key}`)?.focus()
+  }, [focusTarget, id])
 
   return (
     <div className="flex flex-col gap-3">
