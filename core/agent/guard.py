@@ -56,18 +56,6 @@ def flags(message: str) -> list[str]:
     return [name for name, rx in FLAGS.items() if re.search(rx, message, re.I)]
 
 
-def fold(text: str) -> str:
-    """A question as the rules read it: lower case, without diacritics ("Mitä?" -> "mita?"), so a Finnish
-    question typed without ä and ö matches the same rules (issue #140, dev check of PR #195)."""
-    return _without_dots(text)
-
-
-def fold_pattern(pattern: str) -> str:
-    """A rule pattern without diacritics, its case kept (regex escapes such as \\W stay as they are)."""
-    decomposed = unicodedata.normalize("NFKD", pattern)
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-
-
 def _without_dots(text: str) -> str:
     """Lower case, with diacritics taken off: "Mistä säästää?" -> "mista saastaa?"."""
     decomposed = unicodedata.normalize("NFKD", text.lower())
@@ -98,3 +86,15 @@ def detect_language(text: str) -> str | None:
     if en >= 1:
         return "en"
     return None
+
+
+def fold(text: str) -> str:
+    """A question as the rules read it: lower case, without diacritics ("Mitä?" -> "mita?"), so a Finnish
+    question typed without ä and ö matches the same rules (issue #140, dev check of PR #195)."""
+    return _without_dots(text)
+
+
+def fold_pattern(pattern: str) -> str:
+    """A rule pattern without diacritics, its case kept (regex escapes such as \\W stay as they are)."""
+    decomposed = unicodedata.normalize("NFKD", pattern)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
