@@ -90,11 +90,13 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
         >
           {look.icon}
         </span>
-        <div className="min-w-0">
+        {/* A size container, so the text hyphenates only when the column is narrow in rem (large
+            text); at normal size it is about 16rem and its line breaks stay as they were (#541). */}
+        <div className="@container min-w-0 flex-1">
           <p className={`flex min-h-10 items-center font-semibold ${look.color}`}>
             <span className="min-w-0 break-words hyphens-auto">{basket.label}</span>
           </p>
-          <p className="text-sm text-ink-2">{basket.text}</p>
+          <p className="text-sm text-ink-2 break-words @max-[10rem]:hyphens-auto">{basket.text}</p>
         </div>
       </div>
     </CardShell>
