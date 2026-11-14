@@ -283,6 +283,8 @@ def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict |
         registered.setdefault(d, reg(numbers[d]))
     pace_n, bills_n, balance_n = reg(pace), reg(due.total), registered[today]
     status = status_of(low.balance if low is not None else balance_value, due.total_value)
+    # With no day before payday (payday tomorrow) a negative balance is below zero today.
+    below_date = below.date if below is not None else (today if balance_value < 0 else None)
 
     notes = []
     if pay.salary_status == "no_salary_series":
@@ -290,7 +292,7 @@ def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict |
     elif pay.salary_status == "late":
         notes.append(_t("note_late_salary", lang))
     if status == "below_zero":
-        notes.append(_t("note_below_zero", lang, date=periods.period_label(below.date, below.date, lang)))
+        notes.append(_t("note_below_zero", lang, date=periods.period_label(below_date, below_date, lang)))
     else:
         notes.append(_t(f"note_{status}", lang))
     if any(pay.date in bill_due.due_dates for bill_due in dues):
@@ -302,8 +304,8 @@ def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict |
         balance_now=balance_n, bills_until_payday=bills_n, daily_pace=pace_n,
         lowest=registered[lowest_date], lowest_date=lowest_date,
         day_before_payday=registered[last.date] if last is not None else balance_n,
-        first_below_zero=registered[below.date] if below is not None else None,
-        first_below_zero_date=below.date if below is not None else None,
+        first_below_zero=registered[below_date] if below_date is not None else None,
+        first_below_zero_date=below_date,
         steps=[Step(date=d, kinds=ks, label=label, balance=registered[d]) for d, ks, label in steps],
     )
     evidence.write(ctx.conn, nb.specs)

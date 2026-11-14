@@ -48,6 +48,10 @@ def test_brief_and_spending_questions_map_to_their_tools(question, lang, tools):
     ("Riittääkö rahani palkkaan asti?", "fi"),
     ("Mikä on saldoni ennen palkkapäivää?", "fi"),
     ("Loppuvatko rahani ennen palkkapäivää?", "fi"),
+    ("Do I have enough to last until payday?", "en"),
+    ("Will my money last until my salary arrives?", "en"),
+    ("Pärjäänkö palkkapäivään asti?", "fi"),
+    ("Parjaanko palkkapaivaan asti?", "fi"),
 ])
 def test_balance_forecast_questions(question, lang):
     """#257: the money-lasting and balance-before-payday questions, in English and Finnish."""
@@ -75,6 +79,9 @@ def test_payday_questions_that_are_not_a_forecast_keep_their_tools(question, lan
     ("What was my balance on payday?", "en"),
     ("Mikä oli saldoni palkkapäivänä?", "fi"),
     ("Riittivätkö rahat viime palkkapäivään?", "fi"),
+    ("Lowest point of my spending in August", "en"),              # review of #337: these go elsewhere
+    ("What's my lowest balance this year?", "en"),
+    ("Mikä on saldoni nyt ja milloin palkka tulee?", "fi"),
 ])
 def test_questions_about_the_past_are_not_a_forecast(question, lang):
     assert "get_balance_forecast" not in names(plan(question, language=lang))

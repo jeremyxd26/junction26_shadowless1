@@ -233,6 +233,31 @@ def test_a_whole_run_gives_a_breakdown_card_and_an_answer_the_validator_accepts(
     assert any(str(data.first_below_zero_date.day) in s for s in result.notes)   # the date said plainly
 
 
+def test_payday_tomorrow_with_a_negative_balance_is_below_zero_today(monkeypatch):
+    """Review of #337: no day lies before payday, so the first day below zero is today (no crash)."""
+    from core.tools import labels
+    from core.tools.classify import classify
+    from core.tools.numbers import NumberBuilder
+
+    today = date(2026, 10, 14)                    # salary on the 15th, not yet paid: payday tomorrow
+    history = synthetic_history()
+    probe = ToolContext(customer_id="CUST00849", as_of=today, conn=None)
+    probe._history = history
+    bills_total = recurring.bills_due_numbers(
+        probe, NumberBuilder(probe, classify(history, today, labels.for_context(probe)))).total_value
+    monkeypatch.setattr(forecast, "metric_row", lambda ctx: ({}, {"balance_eur": "-50.00", "bills_due_eur": str(bills_total)}))
+    monkeypatch.setattr(evidence, "write", lambda conn, specs: None)
+    for lang in ("en", "fi"):
+        ctx = ToolContext(customer_id="CUST00849", as_of=today, conn=None, language=lang)
+        ctx._history = history
+        result = forecast.get_balance_forecast(ctx, {})
+        data = result.data
+        assert data.next_payday == date(2026, 10, 15) and data.steps[-1].date == today and len(data.steps) == 1
+        assert data.status == "below_zero" and data.first_below_zero_date == today
+        assert data.lowest.value == data.day_before_payday.value == data.balance_now.value == -50.0
+        assert any(("14 Oct 2026" if lang == "en" else "14.10.2026") in note for note in result.notes)
+
+
 def test_the_lowest_point_recomputed_by_hand(monkeypatch):
     """The synthetic customer's lowest point from its own amounts, without the tool's helpers: rent
     613.93 on 6 Oct, utilities 98.74 a month spread (x 14 / 30.4375), groceries 14 x 40.00 a month
