@@ -5,21 +5,21 @@ import { useSettings } from '../lib/settings.ts'
 const SUPPORTS_INERT = typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype
 
 /**
- * Makes everything beside the sheet unreachable while it is open: `inert` on the sheet's sibling
- * elements (the app, the toast, a sheet below this one), or `aria-hidden` where `inert` is not
- * supported. Returns the undo, which touches only what this sheet changed, so stacked sheets
- * restore each other in order.
+ * Makes everything beside the sheet unreachable while it is open: `inert` on the siblings of the
+ * sheet and of each of its ancestors up to `body` (the app, the toast, a sheet below this one,
+ * anything portalled to `body`), or `aria-hidden` where `inert` is not supported. Returns the undo,
+ * which touches only what this sheet changed, so stacked sheets restore each other in order.
  */
 function hideBackground(sheet: HTMLElement): () => void {
   const changed: HTMLElement[] = []
-  const parent = sheet.parentElement
-  if (!parent) return () => {}
-  for (const node of Array.from(parent.children)) {
-    if (node === sheet || !(node instanceof HTMLElement)) continue
-    if (SUPPORTS_INERT ? node.inert : node.getAttribute('aria-hidden') === 'true') continue
-    if (SUPPORTS_INERT) node.inert = true
-    else node.setAttribute('aria-hidden', 'true')
-    changed.push(node)
+  for (let keep: HTMLElement = sheet; keep.parentElement && keep !== document.body; keep = keep.parentElement) {
+    for (const node of Array.from(keep.parentElement.children)) {
+      if (node === keep || !(node instanceof HTMLElement)) continue
+      if (SUPPORTS_INERT ? node.inert : node.getAttribute('aria-hidden') === 'true') continue
+      if (SUPPORTS_INERT) node.inert = true
+      else node.setAttribute('aria-hidden', 'true')
+      changed.push(node)
+    }
   }
   return () => {
     for (const node of changed) {
