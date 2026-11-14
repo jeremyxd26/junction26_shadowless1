@@ -24,12 +24,12 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport
+from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport, effective_thinking
 from core.agent.model import (
     ComposeInput, ComposeResult, FunctionCall, FunctionResponse, ModelError, PlanInput, PlanResult, Usage,
 )
@@ -51,7 +51,13 @@ LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 DEFAULT_MODEL = "gemini-3.8-flash"
 # When the primary model stays overwhelmed (503 after two retries), one attempt goes to the other one.
 # A fallback the API refuses (401, 403, 404) turns itself off.
-FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash"}
+FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro-preview": "gemini-3.8-flash",
+                   "gemini-3.5-flash-lite": "gemini-3.8-flash"}
+# Per role (#341): today's behaviour unless set. The planner hangs longest, so it gets the longer timeout;
+# the composer's 5 s is short because the template writes the same answer at once.
+DEFAULT_THINKING = "low"
+DEFAULT_PLANNER_TIMEOUT_S = 9.0
+DEFAULT_COMPOSER_TIMEOUT_S = 5.0
 # The team's model account has a daily request limit, and the dev service is public: past this many
 # requests today in the ledger, answers use the template.
 DEFAULT_DAILY_BUDGET = 300
@@ -242,6 +248,10 @@ class GeminiSettings(BaseSettings):
     - GEMINI_FALLBACK_MODEL: default from FALLBACK_MODELS (flash <-> pro); "none" turns it off;
     - GEMINI_PLANNER: rules_first (default: the rule planner, Gemini only for questions it does not
       recognise) or model (Gemini plans every question; used by the eval of the planner);
+    - GEMINI_PLANNER_MODEL, GEMINI_COMPOSER_MODEL: a model per role (default GEMINI_MODEL), for
+      example a fast composer; GEMINI_PLANNER_THINKING, GEMINI_COMPOSER_THINKING: default, minimal,
+      low (default), medium or high, as the model accepts; GEMINI_PLANNER_TIMEOUT_S (default 9),
+      GEMINI_COMPOSER_TIMEOUT_S (default 5): seconds per call, inside the answer's 15 s (#341);
     - GEMINI_CACHE: on (default), off, or replay; GEMINI_CACHE_DIR: default var/gemini-cache;
     - MODEL_DAILY_BUDGET: requests to the Gemini API a UTC day, counted in var/gemini-requests.jsonl
       (cache hits do not count); 0 turns the model off. While the file var/model-off exists, no request
@@ -254,6 +264,12 @@ class GeminiSettings(BaseSettings):
     gemini_model: str = DEFAULT_MODEL
     gemini_fallback_model: str | None = None
     gemini_planner: str = "rules_first"
+    gemini_planner_model: str | None = None
+    gemini_composer_model: str | None = None
+    gemini_planner_thinking: Literal["default", "minimal", "low", "medium", "high"] = DEFAULT_THINKING
+    gemini_composer_thinking: Literal["default", "minimal", "low", "medium", "high"] = DEFAULT_THINKING
+    gemini_planner_timeout_s: float = Field(default=DEFAULT_PLANNER_TIMEOUT_S, gt=0, le=15)
+    gemini_composer_timeout_s: float = Field(default=DEFAULT_COMPOSER_TIMEOUT_S, gt=0, le=15)
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
     daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
@@ -276,14 +292,39 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
         log.warning("GEMINI_MODEL is an alias; pin an exact model id for the demo")
     cache = getattr(s, "gemini_cache", env.gemini_cache)
     cache_dir = getattr(s, "gemini_cache_dir", env.gemini_cache_dir)
-    fallback = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model or FALLBACK_MODELS.get(model)
     budget = getattr(s, "daily_budget", env.daily_budget)
+    roles = role_settings(s, env)
     secret = key.get_secret_value() if isinstance(key, SecretStr) else str(key)
     transport = None if cache == "replay" else SdkTransport(secret)
-    client = GeminiClient(model, transport, fallback_model=None if fallback == "none" else fallback, cache=cache,
-                          cache_dir=None if cache == "off" else Path(cache_dir),
-                          ledger=Ledger(ledger_path, budget, off_switch), **client_options)
+    options = {"plan_thinking": roles["planner"]["thinking"], "compose_thinking": roles["composer"]["thinking"],
+               "plan_timeout_s": roles["planner"]["timeout_s"], "compose_timeout_s": roles["composer"]["timeout_s"],
+               **client_options}
+    client = GeminiClient(roles["planner"]["model"], transport, fallback_model=roles["planner"]["fallback"],
+                          compose_model=roles["composer"]["model"], compose_fallback_model=roles["composer"]["fallback"],
+                          cache=cache, cache_dir=None if cache == "off" else Path(cache_dir),
+                          ledger=Ledger(ledger_path, budget, off_switch), **options)
     return GeminiModel(client)
+
+
+def role_settings(s: Any, env: Any | None = None) -> dict[str, dict[str, Any]]:
+    """Model, fallback, thinking level and timeout of the planner and the composer (#341). A role's model
+    defaults to GEMINI_MODEL; its fallback is GEMINI_FALLBACK_MODEL ("none" turns it off) or the
+    model's usual partner (FALLBACK_MODELS); the rest defaults to today's values."""
+    env = env or GeminiSettings()
+    model = getattr(s, "gemini_model", None) or DEFAULT_MODEL
+    explicit = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model
+    roles = {}
+    for role, timeout in (("planner", DEFAULT_PLANNER_TIMEOUT_S), ("composer", DEFAULT_COMPOSER_TIMEOUT_S)):
+        own = getattr(s, f"gemini_{role}_model", None) or getattr(env, f"gemini_{role}_model", None) or model
+        fallback = explicit or FALLBACK_MODELS.get(own)
+        level = getattr(s, f"gemini_{role}_thinking", None) or getattr(env, f"gemini_{role}_thinking", DEFAULT_THINKING)
+        roles[role] = {
+            "model": own,
+            "fallback": None if fallback in (None, "none") or fallback == own else fallback,
+            "thinking": effective_thinking(own, level),   # what is sent: a level the model rejects becomes low
+            "timeout_s": float(getattr(s, f"gemini_{role}_timeout_s", None) or getattr(env, f"gemini_{role}_timeout_s", timeout)),
+        }
+    return roles
 
 
 def model_state(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGER,
@@ -301,10 +342,12 @@ def model_state(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDG
         return f"language model: off (MODEL_DAILY_BUDGET=0); {model} not called, the templates write"
     if Path(off_switch).exists():
         return f"language model: off (switch file {Path(off_switch).name} present); the templates write"
-    fallback = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model or FALLBACK_MODELS.get(model)
+    roles = role_settings(s, env)
     used = Ledger(ledger_path, budget, off_switch).count()
     state = "off (daily budget used up)" if used >= budget else "on"
-    return (f"language model: {state}; model {model}, fallback {fallback or 'none'}, "
+    parts = [f"{role} {r['model']} (thinking {r['thinking']}, {r['timeout_s']:g} s, fallback {r['fallback'] or 'none'})"
+             for role, r in roles.items()]
+    return (f"language model: {state}; {', '.join(parts)}, "
             f"daily budget {budget} requests, {used} sent in the last 24 h")
 
 
