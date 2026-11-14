@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.tools import config, evidence, labels, metric_sql, periods, recurring
 from core.tools.classify import classify
@@ -34,12 +34,11 @@ METRIC = "safe_to_spend"
 log = logging.getLogger(__name__)
 
 
+# The savings goal (#391) is not an argument (#447): until the app has a control for it, neither the model
+# planner, the rules nor an endpoint can set it. A plan that passes it is rejected as an unknown argument
+# and the default goal holds. The class docstring is part of the planner's declaration, so it stays silent.
 class GetSafeToSpendArgs(Args):
-    """The customer and as_of come from the server-bound context. `savings_goal`: a monthly amount set aside
-    before anything is safe to spend (#391); only when the user states one, else the default goal (safe to
-    save before a spike review's answer, rounded down to 10 euros)."""
-
-    savings_goal: Decimal | None = Field(default=None, ge=0, le=100000, decimal_places=2)
+    """No arguments: the customer and as_of come from the server-bound context."""
 
 
 class Component(BaseModel):
@@ -168,12 +167,15 @@ def weekly_numbers(ctx: ToolContext, nb: NumberBuilder, settings: dict[str, str]
     return out
 
 
-def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
+def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None, *,
+                      savings_goal: Decimal | None = None) -> ToolResult:
+    """`savings_goal`: a monthly goal in place of the default, a Python-level parameter only (tests, a later
+    API field; #447). Its bounds are checked with the typed setting (metric_sql: 0 to 100,000, two decimals)."""
     args = args if isinstance(args, GetSafeToSpendArgs) else GetSafeToSpendArgs.model_validate(args or {})
     lang = ctx.language
     notes: list[str] = []
 
-    settings, row = metric_row(ctx, args.savings_goal)
+    settings, row = metric_row(ctx, savings_goal)
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()

@@ -256,7 +256,7 @@ A. balance limit
 
 B. budget limit, after the savings goal (pay yourself first, #391)
    free_month       = income/month - sweep/month - committed/month - (essentials/day + irregular/day) * 30.4375
-   savings_goal     = app.savings_goal_eur if set (the tool's argument), else
+   savings_goal     = app.savings_goal_eur if set (a Python-level parameter only, #447), else
                       floor10( max(free_month' - everyday/day' * 30.4375, 0) )       never below 0
    budget_limit_7d  = max(free_month - savings_goal, 0) * 7 / 30.4375
 
