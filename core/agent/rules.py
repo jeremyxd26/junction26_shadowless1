@@ -200,7 +200,8 @@ PRESETS = [
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
     (r"last week|viime viikolla", "last_week"),
-    (r"this year|year to date|tänä vuonna", "year_to_date"),
+    # "(viimeisen) vuodenvaihteen jälkeen" (since the New Year) is the year so far, not twelve months (#665)
+    (r"this year|year to date|tänä vuonna|vuodenvaihteen jälkeen", "year_to_date"),
 ]
 # A range of months (#379). Groups: first month (English, Finnish), its year, second month, its year.
 _M = (r"(?:\b(january|february|march|april|may|june|july|august|september|october|november|december|"
@@ -1041,11 +1042,12 @@ def adjacent_pair(named: list[str]) -> str | None:
     return next((later for later, earlier in ADJACENT_PAIRS if set(named) == {later, earlier}), None)
 
 
-def two_periods(q: str, as_of: date) -> bool:
+def two_periods(q: str, as_of: date, comparison: bool = True) -> bool:
     """A folded message that names two or more different periods no rule answers together (#665): the period
-    question back, never one of them chosen by the table's order."""
+    question back, never one of them chosen by the table's order. `comparison`: the route answers an adjacent pair
+    with the spending comparison (the breakdown and the basket contents cannot, so for them a pair is two periods)."""
     named = named_periods(q, as_of)
-    return len(named) >= 2 and adjacent_pair(named) is None
+    return len(named) >= 2 and not (comparison and adjacent_pair(named))
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
@@ -1716,7 +1718,8 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f != "spending"]
         if not found:
             return Claim(None, reason="to_person")
-    if found and set(found) <= {"spending", "where_money_went", "basket_contents"} and two_periods(q, as_of):
+    if found and set(found) <= {"spending", "where_money_went", "basket_contents"} and \
+            two_periods(q, as_of, comparison=set(found) == {"spending"}):
         # "viimeisten 12 kuukauden ja viimeisten 3 kuukauden" (#665): two different periods, so the period question
         # back, never the one the table lists first; "this month and last month" is the comparison (adjacent_pair).
         # Beside another rule's question the message keeps the question of which one is meant, as before.
