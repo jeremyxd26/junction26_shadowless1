@@ -17,7 +17,7 @@ describe('bill flow steps', () => {
   it('runs gallery → reading → fields → explaining → explanation', () => {
     expect(run({ type: 'pick', sampleId: 'sample_2' })).toEqual({ step: 'reading', sampleId: 'sample_2' })
     const fields = run({ type: 'pick', sampleId: 'sample_2' }, { type: 'read_ok', sampleId: 'sample_2', reading })
-    expect(fields).toEqual({ step: 'fields', sampleId: 'sample_2', reading, notice: null, error: null })
+    expect(fields).toEqual({ step: 'fields', sampleId: 'sample_2', reading, notice: null, error: null, failed: null })
     const explaining = flowReducer(fields, { type: 'confirm', request })
     expect(explaining).toMatchObject({ step: 'explaining', request, reading })
     expect(flowReducer(explaining, { type: 'explain_ok', response })).toEqual({ step: 'explanation', request, response })
@@ -26,7 +26,7 @@ describe('bill flow steps', () => {
   it('offers typed fields with the server message when the reader is unavailable', () => {
     const message = 'Reading the bill is not available right now.'
     const state = run({ type: 'pick', sampleId: 'sample_3' }, { type: 'read_unavailable', sampleId: 'sample_3', message })
-    expect(state).toEqual({ step: 'fields', sampleId: 'sample_3', reading: null, notice: message, error: null })
+    expect(state).toEqual({ step: 'fields', sampleId: 'sample_3', reading: null, notice: message, error: null, failed: null })
   })
 
   it('returns to the gallery with the message when reading fails, remembering the sample for a retry', () => {
@@ -48,7 +48,24 @@ describe('bill flow steps', () => {
       { type: 'confirm', request },
       { type: 'explain_failed', error },
     )
-    expect(state).toEqual({ step: 'fields', sampleId: 'sample_2', reading, notice: null, error })
+    expect(state).toEqual({ step: 'fields', sampleId: 'sample_2', reading, notice: null, error, failed: request })
+  })
+
+  it('sends the failed request again on retry, only when the error is retryable', () => {
+    const failed = run(
+      { type: 'pick', sampleId: 'sample_2' },
+      { type: 'read_ok', sampleId: 'sample_2', reading },
+      { type: 'confirm', request },
+      { type: 'explain_failed', error },
+    )
+    expect(flowReducer(failed, { type: 'retry_explain' })).toMatchObject({ step: 'explaining', request })
+    const invalid = run(
+      { type: 'pick', sampleId: 'sample_2' },
+      { type: 'read_ok', sampleId: 'sample_2', reading },
+      { type: 'confirm', request },
+      { type: 'explain_failed', error: { message: 'This barcode does not pass its check.', retryable: false } },
+    )
+    expect(flowReducer(invalid, { type: 'retry_explain' })).toBe(invalid)
   })
 
   it('starts over on back', () => {
