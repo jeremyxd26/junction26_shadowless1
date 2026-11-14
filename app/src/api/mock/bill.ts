@@ -15,6 +15,9 @@
 // - any `fields` → `bill.response_unknown` as an ECHO: the typed payee, IBAN, reference and due
 //   date are copied into `bill` as sent, unformatted and unchecked. Its amount, checks,
 //   sentences and numbers stay the example's, so they do not describe what was typed.
+// - `forecast` (contract 0.3.4): the examples' own when they carry it, else the PROVISIONAL fixture
+//   of billForecast.ts (barcode → covered; fields → outside_forecast; typed bills from
+//   Esimerkki Vesi Oy → not_covered and Esimerkki Energia Oy → tight).
 // Texts of the responses stay English in Finnish, as in the what-if mock.
 import type { BillApi } from '../bill.ts'
 import { BillApiError } from '../bill.ts'
@@ -28,6 +31,7 @@ import type {
   BillSamplesResponse,
 } from '../billTypes.ts'
 import type { Language } from '../types.ts'
+import { FORECASTS } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -226,14 +230,27 @@ function explain(request: BillExplainRequest): BillExplainResponse {
     if (/\D/.test(digits)) throw invalidBill('barcode_chars', lang)
     if (digits.length !== 54) throw invalidBill('barcode_length', lang)
     if (digits !== examples['bill.request'].barcode) throw invalidBill('barcode_check', lang)
-    return { ...clone(examples['bill.response']), language: lang }
+    const response = { ...clone(examples['bill.response']), language: lang }
+    response.forecast = response.forecast ?? clone(FORECASTS.covered)
+    return response
   }
 
   const fields = request.fields!
   const response = clone(examples['bill.response_unknown'])
   response.language = lang
   response.bill = { ...response.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
+  const provisional = PROVISIONAL_FORECAST_BY_PAYEE[fields.payee.trim()]
+  response.forecast = provisional ? clone(provisional) : (response.forecast ?? clone(FORECASTS.outside_forecast))
   return response
+}
+
+/**
+ * PROVISIONAL: typed bills from these fictional payees get a hand-written forecast, so every status
+ * can be seen in the demo (the water bill is the typed fallback sample).
+ */
+const PROVISIONAL_FORECAST_BY_PAYEE: Record<string, BillExplainResponse['forecast']> = {
+  'Esimerkki Vesi Oy': FORECASTS.not_covered,
+  'Esimerkki Energia Oy': FORECASTS.tight,
 }
 
 export function createMockBillApi(): BillApi {

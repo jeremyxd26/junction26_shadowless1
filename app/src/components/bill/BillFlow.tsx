@@ -7,6 +7,7 @@ import { billApi } from '../../api/bill.ts'
 import { ApiError } from '../../api/errors.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { strings } from '../../lib/i18n.ts'
+import { navigate } from '../../lib/url.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CardShell } from '../cards.tsx'
 import { ErrorBlock, LoadingBlock } from '../States.tsx'
@@ -20,6 +21,11 @@ import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
 interface Props {
   /** Called when the user is finished with an explained bill. */
   onDone?: () => void
+  /**
+   * Asks a question in the thread, the path of every ask chip (no history entry). Without it (the
+   * mock-only /cards page has no thread) the question opens the thread with `?q=`.
+   */
+  onAsk?: (question: string) => void
 }
 
 function toFlowError(error: unknown, fallback: string): FlowError {
@@ -27,7 +33,7 @@ function toFlowError(error: unknown, fallback: string): FlowError {
   return { message: fallback, retryable: true }
 }
 
-export function BillFlow({ onDone }: Props) {
+export function BillFlow({ onDone, onAsk }: Props) {
   const { lang, customerId } = useSettings()
   const [state, dispatch] = useReducer(flowReducer, initialFlow)
   const s = billStrings(lang)
@@ -115,7 +121,7 @@ export function BillFlow({ onDone }: Props) {
       return (
         <div className="flex flex-col gap-3">
           <h2 className="text-card-title font-bold text-ink">{state.response.match.text}</h2>
-          <BillExplanationCard response={state.response}>
+          <BillExplanationCard response={state.response} onAsk={onAsk ?? askInThread}>
             <BillSignals signals={state.response.signals} />
             <AddToPayments response={state.response} />
           </BillExplanationCard>
@@ -141,4 +147,9 @@ function BackButton({ label, onClick }: { label: string; onClick: () => void }) 
       {label}
     </button>
   )
+}
+
+/** Outside the thread: open it with the question, like an `ask` action elsewhere in the app. */
+function askInThread(question: string) {
+  navigate('/', { q: question })
 }

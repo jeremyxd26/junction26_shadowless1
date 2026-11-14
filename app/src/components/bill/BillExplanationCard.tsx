@@ -16,6 +16,7 @@ import { useEstimateToggle } from '../../lib/useEstimateToggle.ts'
 import { CARD_TITLE, CardShell } from '../cards.tsx'
 import { EstimateBadge, EstimateNote } from '../EstimateBadge.tsx'
 import { NumberChip } from '../NumberChip.tsx'
+import { BillForecast } from './BillForecast.tsx'
 import { TermSheet } from './TermSheet.tsx'
 
 /** --color-up and --color-down follow brand and warning; an arrow and words, never colour alone. */
@@ -29,15 +30,19 @@ interface Props {
   response: BillExplainResponse
   /** Rendered between safe to spend and the terms: the warning signs and Add to payments (#331). */
   children?: ReactNode
+  /** Asks a question in the thread: the forecast's ask chip (`not_covered`). */
+  onAsk: (question: string) => void
 }
 
-export function BillExplanationCard({ response, children }: Props) {
+export function BillExplanationCard({ response, children, onAsk }: Props) {
   const [term, setTerm] = useState<BillGlossaryEntry | null>(null)
   const closeTerm = useCallback(() => setTerm(null), [])
   return (
     <div className="flex flex-col gap-3">
       <ComparisonCard response={response} />
       {response.safe_to_spend && <SafeToSpendCard safe={response.safe_to_spend} />}
+      {/* Contract 0.3.4: missing or null from an older API, then nothing and no gap. */}
+      {response.forecast && <BillForecast forecast={response.forecast} onAsk={onAsk} />}
       {children}
       <TermsCard response={response} onTerm={setTerm} />
       {term && <TermSheet label={term.label} text={term.text} onClose={closeTerm} />}

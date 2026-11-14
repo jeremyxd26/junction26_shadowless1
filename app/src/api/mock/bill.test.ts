@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BillApiError } from '../bill.ts'
 import type { BillErrorEnvelope, BillExplainRequest, BillExplainResponse, BillReadResponse } from '../billTypes.ts'
 import { createMockBillApi } from './bill.ts'
+import { FORECASTS } from './billForecast.ts'
 import { createMockClient } from './mockClient.ts'
 import contract from './contract-examples.json'
 
@@ -20,10 +21,18 @@ async function rejection(promise: Promise<unknown>): Promise<BillApiError> {
 
 describe('bill mock', () => {
   it('answers the contract requests with the contract responses', async () => {
-    expect(await api.explain(examples['bill.request'] as BillExplainRequest)).toEqual(examples['bill.response'])
-    expect(await api.explain(examples['bill.request_fields'] as BillExplainRequest)).toEqual(
-      examples['bill.response_unknown'] as BillExplainResponse,
-    )
+    // Until `mocks:sync` brings contract 0.3.4, the examples have no `forecast`: the mock adds the
+    // provisional one (see billForecast.ts). After the sync the examples' own forecast is used.
+    const matched = examples['bill.response'] as BillExplainResponse
+    const unknown = examples['bill.response_unknown'] as BillExplainResponse
+    expect(await api.explain(examples['bill.request'] as BillExplainRequest)).toEqual({
+      ...matched,
+      forecast: matched.forecast ?? FORECASTS.covered,
+    })
+    expect(await api.explain(examples['bill.request_fields'] as BillExplainRequest)).toEqual({
+      ...unknown,
+      forecast: unknown.forecast ?? FORECASTS.outside_forecast,
+    })
   })
 
   it('answers another 54-digit barcode with the contract error, reason included', async () => {
@@ -75,6 +84,33 @@ describe('bill mock', () => {
       expect(after.number).toEqual(response.safe_to_spend!.after)
       const change = await client.evidence(response.comparison!.change.evidence_ref!, customer, 'en')
       expect(change.number).toEqual(response.comparison!.change)
+    }
+  })
+
+  it('attaches a forecast for every status: the contract cases and the provisional ones', async () => {
+    const barcode = await api.explain(examples['bill.request'] as BillExplainRequest)
+    expect(barcode.forecast?.status).toBe('covered')
+    const request = examples['bill.request_fields'] as BillExplainRequest
+    const typed = await api.explain(request)
+    expect(typed.forecast).toEqual(FORECASTS.outside_forecast)
+    const water = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Vesi Oy' } })
+    expect(water.forecast?.status).toBe('not_covered')
+    expect(water.forecast?.chip).toEqual({ type: 'ask', label: 'See your balance forecast', prompt: 'Will my money last until payday?' })
+    const energy = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Energia Oy' } })
+    expect(energy.forecast?.status).toBe('tight')
+    expect(energy.forecast?.chip).toBeNull()
+  })
+
+  it('keeps the provisional forecasts within the contract rules', () => {
+    for (const forecast of Object.values(FORECASTS)) {
+      if (forecast.status === 'outside_forecast') {
+        expect([forecast.before, forecast.counted, forecast.after, forecast.shortfall]).toEqual([null, null, null, null])
+        continue
+      }
+      const { before, counted, after } = forecast
+      expect(Math.round((before!.value - counted!.value) * 100) / 100).toBe(after!.value)
+      expect(forecast.chip !== null).toBe(forecast.status === 'not_covered')
+      expect(forecast.shortfall !== null).toBe(forecast.status === 'not_covered')
     }
   })
 })
