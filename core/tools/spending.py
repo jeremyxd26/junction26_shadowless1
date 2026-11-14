@@ -83,36 +83,45 @@ def _base_selection(args: GetSpendingArgs, period: Period, alias_map: aliases.Al
                      merchant_id=merchant_id)
 
 
+def filter_names(categories, mcc_groups, baskets, merchant: str | None, language: str) -> list[str]:
+    """The labels of a filter's parts, each once: categories, groups and baskets in that order, each sorted as the
+    selection sorts them, then a merchant's alias. The parts after the first are lower-cased whole ("home & tech",
+    "electronics and home"); an alias keeps its case (review of #496)."""
+    known = list(dict.fromkeys(
+        [config.label(config.CATEGORY_LABELS[c], language) for c in categories if c in config.CATEGORY_LABELS]
+        + [config.label(config.MCC_GROUP_LABELS[g], language) for g in mcc_groups if g in config.MCC_GROUP_LABELS]
+        + [config.label(config.BASKET_LABELS[b], language) for b in baskets if b in config.BASKET_LABELS]))
+    names = known + ([merchant] if merchant else [])
+    return [n if i == 0 or i >= len(known) else n.lower() for i, n in enumerate(names)]
+
+
+def join_names(names: list[str], language: str) -> str:
+    """"Housing and restaurants", "Housing, restaurants and travel", "Asuminen ja ravintolat"."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + (" ja " if language == "fi" else " and ") + names[-1]
+
+
 def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
     """A filter in words, every part named: "Restaurants", "Housing and restaurants", "Asuminen ja ravintolat"
-    (#399); None without a filter. A filtered sum is never labelled as all spending. The parts after the first
-    are lower-cased (a merchant's alias keeps its case); categories, groups and baskets come in that order, each
-    sorted as the selection sorts them, so the tool and the evidence view name one filter the same way."""
-    known = ([config.label(config.CATEGORY_LABELS[c], language) for c in categories if c in config.CATEGORY_LABELS]
-             + [config.label(config.MCC_GROUP_LABELS[g], language) for g in mcc_groups if g in config.MCC_GROUP_LABELS]
-             + [config.label(config.BASKET_LABELS[b], language) for b in baskets if b in config.BASKET_LABELS])
-    names = known + ([merchant] if merchant else [])
-    if not names:
-        return None
-    words = [n if i == 0 or i >= len(known) else n[:1].lower() + n[1:] for i, n in enumerate(names)]
-    if len(words) == 1:
-        return words[0]
-    return ", ".join(words[:-1]) + (" ja " if language == "fi" else " and ") + words[-1]
+    (#399); None without a filter. A filtered sum is never labelled as all spending. The tool and the evidence view
+    name one filter the same way (filter_names)."""
+    names = filter_names(categories, mcc_groups, baskets, merchant, language)
+    return join_names(names, language) if names else None
 
 
-def filter_parts(args: GetSpendingArgs) -> int:
-    """How many things the filter names (categories, groups, baskets and a merchant)."""
-    f = args.filter or Filter()
-    return len(f.categories or []) + len(f.mcc_groups or []) + len(f.baskets or []) + (f.merchant is not None)
-
-
-def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
+def _filter_names_of(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> list[str]:
     f = args.filter or Filter()
     merchant = (alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
                 if f.merchant is not None else None)
-    named = filter_label(sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
-                         sorted({b.value for b in f.baskets or []}), merchant, language)
-    return named or _text("spending" if args.direction is Direction.OUT else "income", language)
+    return filter_names(sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
+                        sorted({b.value for b in f.baskets or []}), merchant, language)
+
+
+def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
+    names = _filter_names_of(args, alias_map, language)
+    return join_names(names, language) if names else _text("spending" if args.direction is Direction.OUT else "income",
+                                                             language)
 
 
 def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap, language: str) -> tuple[str, str]:
@@ -261,7 +270,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         card=_card(args, data, lang),
         notes=notes,
         evidence=list(nb.specs),
-        model_view=_model_view(data, base.direction, notes, group_counts, filter_parts(args)),
+        model_view=_model_view(data, base.direction, notes, group_counts, _filter_names_of(args, alias_map, lang)),
     )
 
 
@@ -283,7 +292,7 @@ def _card(args: GetSpendingArgs, data: SpendingData, language: str) -> Card:
 
 
 def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None,
-                parts: int = 0) -> dict[str, Any]:
+                filter_names: list[str] | None = None) -> dict[str, Any]:
     """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3).
 
     A group's amount is the total of all its transactions in the period. The view says so, and gives
@@ -305,7 +314,9 @@ def _model_view(data: SpendingData, direction: str, notes: list[str], counts: li
         "period": data.period.label,
         "direction": direction,
         "total": _model_number(data.total),
-        "filter_parts": parts,   # how many things the total's label names (#399): "luokissa" for two or more
+        # what the total's label names (#399): each part once, as the sentence names it ("luokissa" for two or more)
+        "filter_parts": len(filter_names or []),
+        "filter_labels": list(filter_names or []),
         "tx_count": _model_number(data.tx_count),
         "comparison": comparison,
         "groups": [

@@ -675,21 +675,44 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
 
 
-LONG_MESSAGE_CHARS = 200   # a message longer than this is never claimed by the spending rule (#399)
+LONG_MESSAGE_CHARS = 200   # a message longer than this is long (#399)
+# A clause that itself asks about spending (review of #496): "how much did I spend on restaurants in September",
+# "paljonko käytin ...", "did I spend ...". Mentioning categories in a statement ("I pay rent and eat out a lot") is
+# not asking.
+# Only a question about money already spent counts: "how much can I safely spend" / "paljonko voin käyttää" is the
+# safe-to-spend question, not this one.
+ASKED_SPENDING = (r"\bhow much (did|have|had|was|were) (i|we|it)?\b|\bhow much (i|we) (spent|paid)\b|\bhow much on\b|"
+                  r"\bwhat did (i|we) spend\b|\bdid (i|we) (spend|pay|buy)\b|"
+                  r"\b(paljonko|kuinka paljon) (kaytin|kulutin|maksoin|kaytimme|kulutimme|meni|kului|on mennyt|"
+                  r"olen kayttanyt|olen kuluttanut)\b|\bkaytinko\b|\bkulutinko\b|\bmita kaytin\b")
 
 
-def long_message(question: str) -> bool:
-    """A message longer than LONG_MESSAGE_CHARS, or with several question marks (#399)."""
-    return len(question) > LONG_MESSAGE_CHARS or question.count("?") > 1
+def long_message(question: str, clause_topics: list | None = None) -> bool:
+    """Over LONG_MESSAGE_CHARS, or several questions (runs of "?", so "??" is one) whose clauses name different
+    rules (#399, review of #496). Short messages of one kind ("Restaurants? And in August?") are not long."""
+    if len(question) > LONG_MESSAGE_CHARS:
+        return True
+    return len(re.findall(r"\?+", question)) > 1 and len({frozenset(t) for t in clause_topics or []}) > 1
+
+
+def asks_spending(part: str, as_of: date) -> bool:
+    """The clause is itself a spending question (review of #496): an ASKED_SPENDING form with a filter, a period or a
+    money word, or a bare filter or money word ("Restaurants?", "Spend?")."""
+    p = fold(part).strip()
+    if re.search(ASKED_SPENDING, p) and (_filter_of(p) or plan_spending(part, as_of) or re.search(MONEY_WORDS, p)):
+        return True
+    words = re.findall(r"\w+", p)
+    return 0 < len(words) <= 3 and bool(_filter_of(p) or re.search(MONEY_WORDS, p))
 
 
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
-                  long: bool = False) -> Claim:
+                  drop_spending: bool = False) -> Claim:
     q = fold(question)
-    # The spending rule never claims a long message or one with several questions (#399): a sum of the
-    # categories it happens to mention is not its answer. The other rules, or the model, take it.
-    spending = plan_spending(question, as_of) if "get_spending" in tools and not long else None
-    found = [f for f in _matched(q, peer_question, spending) if not (long and f == "spending")]
+    # A long message that asks no spending question never gets the spending rule (#399): a sum of the categories it
+    # happens to mention is not its answer; the other rules, or the model, take it. When a clause does ask about
+    # spending, the spending rule takes part, so the message is competing or unclaimed, never half answered.
+    spending = plan_spending(question, as_of) if "get_spending" in tools and not drop_spending else None
+    found = [f for f in _matched(q, peer_question, spending) if not (drop_spending and f == "spending")]
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)
@@ -846,11 +869,12 @@ def claim(request: PlanInput) -> Claim:
         args = plan_spending(question, as_of)
         if args:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
-    long = long_message(question)
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
+    drop = long_message(question, [topics for _, topics in clauses]) and \
+        not any(asks_spending(part, as_of) for part in re.split(CLAUSE_BREAK, question) if part.strip())
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-        parts = [_claim_clause(part, as_of, tools, lang, peer_question, long) for part, _ in clauses]
+        parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop) for part, _ in clauses]
         declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
         if declined is not None:
             return declined          # a refusal of one part is the answer to the whole message
@@ -862,7 +886,7 @@ def claim(request: PlanInput) -> Claim:
             return Claim(rules[0] if len(rules) == 1 else "+".join(rules), tuple(calls) + (FunctionCall("finish"),))
         competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
         return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-    return _claim_clause(question, as_of, tools, lang, peer_question, long)
+    return _claim_clause(question, as_of, tools, lang, peer_question, drop)
 
 
 class RuleModel:

@@ -186,7 +186,7 @@ The rules that turn a preset into dates (for example where a week starts) are de
 | `compare_store_prices` | Grocery store price levels, and whether switching would save anything | `stores` (`estimate` set) | `store_price_index.index_pct`, `.ci95_low_pct`, `.ci95_high_pct`, `.n_visits`, `.home_spend_month_eur`, `.ticket_gap_pct`, `.est_saving_month_eur` |
 | `down_payment_plan` (optional, post-MVP) | How much could I put aside for a down payment, and how long would it take | `metric` with components (`estimate` set) | `metrics.md` section 11 (no SQL yet) |
 
-Method ids are `<metric>.<output column>@<version>`. `<metric>` is the SQL file in `core/metrics/` without its number, and the output column is the one `metrics.md` lists, so every number points at the exact definition that produced it. `spending.*` and `evidence.row_count` are plain sums and counts over a filter, which `metrics.md` does not need to define. A filtered `spending.total@1` is labelled with every part of its filter ("Housing and restaurants" / "Asuminen ja ravintolat"), in the Number, the card title, the evidence title and the answer; "Spending" / "Total spending" only without a filter (#399). The spending rule never claims a message longer than 200 characters or with several question marks, so such a message is not answered with the sum of the categories it mentions (#399). Values the user typed carry `user_input@1`.
+Method ids are `<metric>.<output column>@<version>`. `<metric>` is the SQL file in `core/metrics/` without its number, and the output column is the one `metrics.md` lists, so every number points at the exact definition that produced it. `spending.*` and `evidence.row_count` are plain sums and counts over a filter, which `metrics.md` does not need to define. A filtered `spending.total@1` is labelled with every part of its filter ("Housing and restaurants" / "Asuminen ja ravintolat"), in the Number, the card title, the evidence title and the answer; "Spending" / "Total spending" only without a filter (#399). The view's `filter_parts` and `filter_labels` name each part once, and the answer's sentence is built from them ("on home & tech and housing", "luokissa Asuminen ja ravintolat"). A long message (over 200 characters, or several questions whose clauses name different rules; "??" is one) that asks no spending question ("how much did I spend…", "paljonko käytin…", a bare "Restaurants?") is never claimed by the spending rule, so it is not answered with the sum of the categories it mentions. When a clause does ask about spending, the spending rule takes part: the message is competing or unclaimed, never half answered (#399, review of #496). Values the user typed carry `user_input@1`.
 
 Typed signatures (`data` is what the tool returns besides the card):
 
@@ -312,6 +312,8 @@ Each function response carries the tool's `model_view`: numbers reduced to `{id,
   "tool": "get_spending",
   "period": "September 2026",
   "total": { "id": "n1", "value": 2315.6, "unit": "eur", "label": "Total spending" },
+  "filter_parts": 0,
+  "filter_labels": [],
   "comparison": {
     "baseline": { "id": "n2", "value": 1948.2, "unit": "eur", "label": "August spending" },
     "change": { "id": "n3", "value": 367.4, "unit": "eur", "label": "Change vs August" },

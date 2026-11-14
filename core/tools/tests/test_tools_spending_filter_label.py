@@ -61,6 +61,31 @@ def test_three_parts_and_mixed_filters():
     assert filter_label([], [], [], None, "en") is None
 
 
+def test_a_later_part_is_lower_cased_whole():
+    """Review of #496, R3: "Home & Tech and housing", "Housing and home & tech" (not "home & Tech")."""
+    assert filter_label(["Home & Tech", "Housing"], [], [], None, "en") == "Home & Tech and housing"
+    assert filter_label(["Housing", "Home & Tech"], [], [], None, "en") == "Housing and home & tech"
+
+
+@pytest.mark.parametrize("args,expected", [
+    ({"filter": {"categories": ["Home & Tech", "Housing"]}}, " on home & tech and housing "),
+    ({"filter": {"mcc_groups": ["electronics_home", "taxi"]}}, " electronics and home and taxi "),   # none: "for …"
+])
+def test_the_sentence_is_built_from_the_parts(args, expected):
+    """Review of #496, R3: a part that itself contains "and" is not split again."""
+    result, _ = run(args)
+    view = result.model_view
+    sentences, _ = answer_sentences.spending(view, "en", lambda s, **kw: True)
+    assert expected in " ".join(sentences), sentences
+
+
+def test_a_duplicate_part_is_counted_once():
+    result, _ = run({"filter": {"categories": ["Housing", "Housing"]}}, "fi")
+    assert result.model_view["filter_parts"] == 1 and result.model_view["filter_labels"] == ["Asuminen"]
+    sentences, _ = answer_sentences.spending(result.model_view, "fi", lambda s, **kw: True)
+    assert "luokassa Asuminen" in " ".join(sentences) and "luokissa" not in " ".join(sentences)
+
+
 @pytest.mark.parametrize("language,label", [("en", "Spending"), ("fi", "Kulutus")])
 def test_without_a_filter_the_total_is_spending(language, label):
     result, store = run({}, language)
