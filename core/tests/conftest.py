@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 SETTINGS_ENV = ("DATABASE_URL", "DEMO_TODAY", "GEMINI_API_KEY", "GEMINI_MODEL", "CORS_ORIGINS",
-                "DEMO_CUSTOMERS")
+                "DEMO_CUSTOMERS", "API_DOCS", "DB_POOL_MAX")
 
 @pytest.fixture(scope="session", autouse=True)
 def spike_reviews_off():
