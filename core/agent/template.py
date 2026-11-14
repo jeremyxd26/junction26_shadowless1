@@ -216,7 +216,8 @@ def made_up_request(question: str) -> bool:
 
 # A health question beyond its plain total (#571: a what-if, a comparison, advice, an inference) keeps the kind
 # `out_of_scope` but gets its own neutral text: what Sentti does show, without a judgement.
-HEALTH_WORDS = fold_pattern(r"\bhealth(care)?\b|tervey\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|"
+HEALTH_WORDS = fold_pattern(r"\bhealth(care)?\b(?![\s-](?:club|food|insurance|conscious|kick|bar|store|shop)s?\b)|"
+                            r"tervey(?!s(?:ruo|kaup|vakuut|baar|klub))\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|"
                             r"lääkär\w*|dentist\w*|hammaslääk\w*|\bchemists?\b|\bmedicines?\b(?! balls?)|"
                             r"\bheadaches?\b|päänsär\w*|\billness\w*|\bsick\b|sairas\w*")
 HEALTH_REFUSAL = {

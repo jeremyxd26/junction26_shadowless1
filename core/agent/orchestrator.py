@@ -198,12 +198,17 @@ class _InCallOrder(NumberRegistry):
         return self._shared.all()
 
 
+HEALTH_MERCHANT = tuple(f"{kind.lower()} " for kind in tool_config.MERCHANT_KIND_BY_CATEGORY["Health"])
+
+
 def _health_spending(call: dict[str, Any] | FunctionCall) -> bool:
-    """A get_spending call filtered on Health or on the health MCC group (#571, #598)."""
+    """A get_spending call filtered on Health, on the health MCC group or on a health merchant's alias ("Health
+    service A", "Terveyspalvelu A") (#571, #598, security review of #607)."""
     name, args = (call.name, call.args) if isinstance(call, FunctionCall) else (call["name"], call.get("args"))
     flt = (args or {}).get("filter") or {}
     return name == "get_spending" and ("Health" in (flt.get("categories") or [])
-                                       or "health" in (flt.get("mcc_groups") or []))
+                                       or "health" in (flt.get("mcc_groups") or [])
+                                       or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
 
 
 def _health_what_if(call: FunctionCall) -> bool:

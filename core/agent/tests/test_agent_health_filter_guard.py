@@ -140,6 +140,21 @@ def test_the_health_mcc_group_is_guarded_too(make_pipeline):
     assert ran == [("get_safe_to_spend", {})] and "“gym”" in done["text"]
 
 
+@pytest.mark.parametrize("merchant", ["Health service A", "Terveyspalvelu B"])
+def test_a_health_merchant_alias_counts_as_health(make_pipeline, merchant):
+    # security review of #607: a total on a health merchant's alias is Health: dropped for a question with no health
+    # word, the template's for one that has it
+    plan = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": {"merchant": merchant}}),
+            FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]
+    done, ran, model, _ = _ask(make_pipeline, ACCEPTANCE, plan, drafts=[LEAK, LEAK])
+    assert ran == [("get_safe_to_spend", {})] and "“gym”" in done["text"] and model.compose_inputs == []
+    plan = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": {"merchant": merchant}}),
+            FunctionCall("finish")]
+    done, ran, model, _ = _ask(make_pipeline, "How much did I spend at the pharmacy last month?", plan,
+                               drafts=[LEAK, LEAK])
+    assert ran == [("get_spending", {"merchant": merchant})] and model.compose_inputs == []
+
+
 @pytest.mark.parametrize("question", [
     "How much did I spend at the pharmacy last month and what can I safely spend this week?",
     "Paljonko käytin apteekkiin viime kuussa ja paljonko voin turvallisesti käyttää tällä viikolla?",

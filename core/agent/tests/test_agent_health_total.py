@@ -94,6 +94,18 @@ STAYS_DECLINED = [
     ("Look at my pharmacy and doctor payments: am I ill? What illness do I have?", "en", "unsafe"),
     ("What if I cut my Health spending by 20%?", "en", "out_of_scope"),
     ("Entä jos vähentäisin terveysmenoja 20 %?", "fi", "out_of_scope"),
+    # QA on #607: a Finnish conditional cut verb with a health word, as the English what-if
+    ("Mitä jos puolittaisin lääkärikäyntini?", "fi", "out_of_scope"),
+    ("Mitä jos vähentäisin lääkkeitä?", "fi", "out_of_scope"),
+    ("Entä jos leikkaisin apteekkikuluja 30 %?", "fi", "out_of_scope"),
+    ("Mitä jos jättäisin hammaslääkärin väliin?", "fi", "out_of_scope"),
+    ("Puolittaisin lääkekulut, paljonko säästäisin?", "fi", "out_of_scope"),
+    ("What if I halved my doctor visits?", "en", "out_of_scope"),
+    ("What if I cut my doctor visits by half?", "en", "out_of_scope"),
+    # a why-question about health spending is an inference (#552's rows)
+    ("why pharmacy spending lower?", "en", "out_of_scope"),
+    ("miksi apteekkikulut ovat pienemmät?", "fi", "out_of_scope"),
+    ("why is my health spending so low?", "en", "out_of_scope"),
 ]
 
 
@@ -132,6 +144,36 @@ def test_not_health_keeps_its_dev_outcome(question, language, expected):
         assert [c.name for c in calls] == [expected]
 
 
+# Security review of #607: "health" before club, food, insurance, conscious, store … names no health spending. Never
+# the Health total and never a health decline: the outcome of the same question without the word, or an unknown thing
+# ("health food" is a food compound as "dog food" is, #534; "the health store" is a thing no category maps).
+NOT_HEALTH = [
+    ("How much did I pay for my health club membership last month?", "How much did I pay for my club membership last month?", "en", "twin"),
+    ("How much did I spend on my health-conscious gym habit last month?", "How much did I spend on my gym habit last month?", "en", "twin"),
+    ("What did the health insurance cost me last month?", "What did the insurance cost me last month?", "en", "twin"),
+    ("Paljonko terveysvakuutus maksoi viime kuussa?", "Paljonko vakuutus maksoi viime kuussa?", "fi", "twin"),
+    ("Paljonko käytin terveyskaupassa viime kuussa?", "Paljonko käytin kaupassa viime kuussa?", "fi", "twin"),
+    ("How much did I spend on health food last month?", "", "en", "unknown"),
+    ("Paljonko käytin terveysruokaan viime kuussa?", "", "fi", "unknown"),
+    ("How much did I spend at the health store last month?", "", "en", "unknown"),
+]
+
+
+@pytest.mark.parametrize("question, twin, language, outcome", NOT_HEALTH)
+def test_health_club_food_insurance_and_store_are_no_health_spending(question, twin, language, outcome):
+    found = decided(question, language)
+    shape = (found.rule, found.reason, [(c.name, c.args) for c in found.calls])
+    assert not any((c.args.get("filter") or {}).get("categories") == ["Health"] for c in found.calls), question
+    assert declined(found) is None, question
+    if outcome == "twin":
+        twin_found = decided(twin, language)
+        assert shape == (twin_found.rule, twin_found.reason, [(c.name, c.args) for c in twin_found.calls])
+    else:
+        assert "unknown_object" in (found.rule, found.reason), (question, shape)
+    assert template.refusal("out_of_scope", language, question)[1]["label"] != \
+        template.pick(template.HEALTH_REFUSAL["label"], language)
+
+
 # A model draft on a Health answer: the total and the period only (the template always writes it; this is the fence).
 HEALTH = Number(id="n1", value=185.3, unit=Unit.EUR,
                 period=Period(start=date(2026, 8, 1), end=date(2026, 8, 31), label="August 2026"),
@@ -153,3 +195,36 @@ def test_the_plain_health_template_passes():
     problems = validator.draft_problems("You spent {{n1}} on health in August 2026, across 3 transactions.",
                                         {"n1": HEALTH}, has_data=True)
     assert not any("Health total" in p for p in problems)
+
+
+GROCERIES = HEALTH.model_copy(update={"id": "n2", "value": 320.1, "label": "Groceries", "evidence_ref": "ev_groc",
+                                      "display": "€320.10"})
+
+
+@pytest.mark.parametrize("text", [
+    # security review of #607: a model draft that cites the Health line of a breakdown or a Health-merchant total
+    "You spent {{n1}} on health in August 2026. Want to see where it went?",
+    "You spent {{n1}} on health in August 2026, up from July.",
+    "Health came to {{n1}} in August 2026, down from the month before.",
+    "You have spent {{n1}} on health since April.",
+    "Health was {{n1}} in August 2026; keep an eye on it.",
+    "Remember that health was {{n1}} in August 2026.",
+    "A notable {{n1}} went to health in August 2026.",
+    "Health was {{n1}} in August 2026. Look after yourself.",
+    "Health was {{n1}} in August 2026. Shall I break it down for you?",
+    "Elokuussa 2026 terveyteen meni {{n1}}. Haluatko nähdä lisää?",
+    "Elokuussa 2026 terveyteen meni {{n1}}, ja se nousi heinäkuusta.",
+    "Elokuussa 2026 terveyteen meni {{n1}}. Muista huolehtia itsestäsi.",
+])
+def test_an_offer_a_trend_or_advice_on_a_health_amount_is_rejected(text):
+    problems = validator.draft_problems(text, {"n1": HEALTH}, has_data=True)
+    assert any("Health total is stated plainly" in p for p in problems), (text, problems)
+
+
+@pytest.mark.parametrize("text", [
+    "In August 2026 your largest categories were groceries at {{n2}} and health at {{n1}}.",
+    "Elokuussa 2026 suurimmat luokkasi olivat Ruoka, {{n2}}, ja Terveys, {{n1}}.",
+])
+def test_a_plain_breakdown_sentence_that_lists_health_passes(text):
+    problems = validator.draft_problems(text, {"n1": HEALTH, "n2": GROCERIES}, has_data=True)
+    assert not any("Health total" in p for p in problems), problems

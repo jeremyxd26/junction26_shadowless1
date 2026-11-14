@@ -410,7 +410,12 @@ PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
 # A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words. A plain
 # health total is answered with the Health filter (Renat, 14 Nov, #571); "laakeri" (a bearing) is no medicine.
-HEALTH = (r"\bhealth(care)?\b|tervey\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
+# "health" before club, food, insurance, conscious, kick, bar, store or shop names no health spending (security
+# review of #607): "my health club membership", "health food", "terveysvakuutus" get what the same question without
+# the word gets.
+HEALTH_NOT_HEALTH = r"(?![\s-](?:club|food|insurance|conscious|kick|bar|store|shop)s?\b)"
+HEALTH = (r"\bhealth(care)?\b" + HEALTH_NOT_HEALTH + r"|tervey(?!s(?:ruo|kaup|vakuut|baar|klub))\w*|"
+          r"lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
           r"hammaslääk\w*|\bchemists?\b|\bantidepressant\w*|\bpregnancy tests?\b|\braskaustest\w*|"
           r"\bmedicines?\b(?! balls?)|"
           r"\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
@@ -421,7 +426,12 @@ HEALTH_NOT_TOTAL = (r"\bsay about me\b|\bsuggests?\b|\bmean for me\b|\bam i (get
                     r"(a lot|much|too much|normal|high)\b|\btips?\b|\badvice\b|\bspend less on\b|\bcut\b|"
                     r"\bkertoo minusta\b|\bolenko (sairas|sairastumassa|raskaana)\b|\bmitä lääkkeitä\b|"
                     r"\bpitäisikö (minun )?(mennä|käydä) lääkärissä\b|\bonko (se|tämä) (paljon|liikaa|normaalia)\b|"
-                    r"\bvink\w*|\bneuvo\w*")
+                    r"\bvink\w*|\bneuvo\w*|"
+                    # a why-question or a scenario about health spending (#552's rows, QA's Finnish what-if on #607):
+                    # "why is my health spending so low?", "Mitä jos puolittaisin lääkärikäyntini?"
+                    r"\bwhy\b|\bmiksi\b|\bso (low|high|little|much)\b|\bwhat if\b|\bmitä jos\b|\bentä jos\b|"
+                    r"\bhalv(e|ed|ing)\b|\bpuolit(a|t)\w*|\bleikkaa\w*|\bleikkaisi\w*|\bleikata\b|\bkarsi\w*|"
+                    r"\bjättäisi\w*|\blopettaisi\w*|\bvähentäisi\w*")
 # A question about what was saved at the pharmacy is no spending total: the next planner reads it (#571).
 HEALTH_SAVED = r"\bsav(e|ed|ing)\b|\bsäästi\w*|\bsäästin\b"
 # The decline rule's medicine words, which a plain health total may hold ("how much did I spend on medicines?").

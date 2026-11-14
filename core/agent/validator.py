@@ -598,9 +598,13 @@ _HEALTH_LABEL = re.compile(r"\bhealth\b|\bterveys|\bterveyteen\b", re.I)
 _HEALTH_EXTRA = re.compile(
     r"\b(a lot|too much|quite|only|little|high|low|higher|lower|more than|less than|usual|unusual|normal|average|"
     r"try|consider|could|should|might|maybe|tip|tips|advice|save|saving|cut|reduce|compare|compared|people like you|"
-    r"worry|healthy|unhealthy|good|bad|great)\b|"
+    r"worry|healthy|unhealthy|good|bad|great|"
+    # an offer, a trend or advice on it (security review of #607): "want to see …", "up from …", "keep an eye"
+    r"want|wants|see|show|up from|down from|since|keep|keeping|remember|notable|notably|look after|take care)\b|"
     r"\b(paljon|vähän|liikaa|korkea|matala|tavallista|tavallinen|normaali|keskimäär\w*|kannattaa|kannattaisi|voisit|"
-    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono)\b", re.I)
+    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono|"
+    r"haluat\w*|näe\w*|näet|nähdä|näytä\w*|näytän|katso\w*|nous\w*|lask(i|ivat|enut)|lähtien|pidä\w*|muista\w*|"
+    r"huomattava\w*|huolehdi\w*|huolehti\w*)\b", re.I)
 
 
 def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
@@ -608,7 +612,9 @@ def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
     if not any(_HEALTH_LABEL.search(numbers[i].label or "") for i in TOKEN.findall(text) if i in numbers):
         return None
     m = _HEALTH_EXTRA.search(TOKEN.sub(" ", text))
-    return m.group(0) if m else None
+    if m:
+        return m.group(0)
+    return "?" if "?" in text else None   # a question back is an offer too
 
 
 # #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
