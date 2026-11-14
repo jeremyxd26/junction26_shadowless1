@@ -46,7 +46,7 @@ def list_samples(lang: Language = Query("en")) -> BillSamplesResponse:
     ])
 
 
-@router.get("/api/bill/samples/{file}", include_in_schema=False)
+@router.api_route("/api/bill/samples/{file}", methods=["GET", "HEAD"], include_in_schema=False)
 def sample_image(file: str = Path(max_length=64), v: str | None = Query(None, max_length=64)) -> FileResponse:
     sample = gallery.image(file)
     if sample is None:

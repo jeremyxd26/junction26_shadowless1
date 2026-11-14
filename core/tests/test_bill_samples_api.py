@@ -47,6 +47,9 @@ def test_an_image_is_served_with_a_long_cache_lifetime(client):
     stale = client.get("/api/bill/samples/sample_1.png?v=000000000000")
     assert stale.status_code == 200 and stale.headers["cache-control"] == "no-cache"   # not the current image
     assert client.get("/api/bill/samples/sample_1.png").headers["cache-control"] == "no-cache"
+    head = client.head(first["image_url"])                       # HEAD: the headers only
+    assert head.status_code == 200 and head.content == b""
+    assert head.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 @pytest.mark.parametrize("path", ["sample_9.png", "samples.json", "sample_1.pdf", "README.md", "..%2Fsamples.json",

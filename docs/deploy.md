@@ -340,12 +340,12 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   | Applies to | Header |
   |---|---|
   | every response | `Strict-Transport-Security: max-age=31536000` (no `preload`: the parent domain is shared), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; the `Server` header is removed, also the core's `server: uvicorn` |
-  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` (#272: answers depend on the customer and the viewer cookie; set at once for Caddy's own errors and again when the response is written, replacing anything the service sends) |
+  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` (#272: answers depend on the customer and the viewer cookie; set at once for Caddy's own errors and again when the response is written, replacing anything the service sends). The one exception is the sample bill images `/api/bill/samples/*.png` (#249): they depend on no customer or viewer, so the service's own `Cache-Control` passes, `public, max-age=31536000, immutable` when the URL carries the image's current hash (`?v=`, as `GET /api/bill/samples` lists it) and `no-cache` otherwise; the listing itself stays `no-store` |
   | the app (`index.html` and the other non-asset paths) | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'` |
 
   The app's policy follows the app owner's needs on #102: the Vite build emits external script and style files, no inline script, and the font is bundled. The app calls `/api` on its own origin. Images come from the app or `data:` URIs, so rendered markdown cannot load an outside image. Only the app's own origin may frame it; the S-mobiili WebView loads the module top-level and is not affected. A demo page on another origin that frames the app needs that origin added to `frame-ancestors`.
 
-  After every deploy `dev.sh` checks the public URL and fails if HSTS or `nosniff` is missing. A deploy of a commit older than #102 therefore ends with that error, although the commit is running. To check by hand:
+  After every deploy `dev.sh` checks the public URL and fails if HSTS or `nosniff` is missing. When the commit has the bill gallery, it also checks that `GET /api/bill/samples` answers `no-store` and that the first image URL it lists answers `public, max-age=31536000, immutable` with `nosniff`. A deploy of a commit older than #102 therefore ends with that error, although the commit is running. To check by hand:
   ```
   curl -sS -D - -o /dev/null https://sentti.jeremyxd.dev/api/personas
   ```

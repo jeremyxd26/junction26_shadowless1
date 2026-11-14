@@ -116,9 +116,9 @@ SAMPLES = [
         "heading": "SÄHKÖLASKU", "iban": iban_for("12345600001002"), "reference": national_for("33004170926"),
         "invoice_date": date(2026, 9, 29), "due_date": date(2026, 10, 13), "invoice_no": "7731-0926",
         "customer_no": "3300417", "terms": "14 päivää netto",
-        "rows": [("Sähköenergia 1.7.–31.8.2026, 1 512 kWh × 13,90 snt", "210.17"),
+        "rows": [("Sähköenergia 1.6.–31.8.2026, 1 512 kWh × 13,90 snt", "210.17"),
                  ("Perusmaksu 3 kk × 4,90 €", "14.70"),
-                 ("Tasaus: arvioitua suurempi kulutus 1.4.–30.6.2026", "87.83")],
+                 ("Tasaus: arvioitua suurempi kulutus 1.3.–31.5.2026", "87.83")],
         "note": "Hinnat sisältävät arvonlisäveron. Tasauslasku: kulutus oli arviota suurempi.",
         "barcode": True,
     },
@@ -352,7 +352,8 @@ def main() -> None:
         })
         print(f"{png.name}  {hashlib.sha256(png.read_bytes()).hexdigest()[:12]}  {s['payee']}  "
               f"{amount:.2f}  {s['due_date']}  {', '.join(s['signals']) or 'no warning sign'}")
-    (OUT / "samples.json").write_text(json.dumps(key, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (OUT / "samples.json").write_text(json.dumps(key, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+                                      newline="\n")   # the same bytes on every system
     print("samples.json written")
 
 
