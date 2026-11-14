@@ -47,7 +47,7 @@ from core.agent import guard, template
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
                                   render, repeated_period, unavailable_claim, validate)
@@ -138,6 +138,19 @@ class _InCallOrder(NumberRegistry):
 
     def all(self):
         return self._shared.all()
+
+
+def _health_what_if(call: FunctionCall) -> bool:
+    """A planned what-if on Health or on a code of the health MCC group, alone or in a list (R9, #510)."""
+    if call.name != "run_what_if":
+        return False
+    sel = (call.args or {}).get("selection") or {}
+    value = str(sel.get("value") or "")
+    if sel.get("kind") == "category":
+        return value.strip().lower() == "health"
+    if sel.get("kind") == "mcc":
+        return bool({c.strip() for c in value.split(",")} & set(tool_config.MCC_GROUPS["health"]))
+    return False
 
 
 class DataUnavailable(RuntimeError):
@@ -362,6 +375,12 @@ class Pipeline:
                 except CallRejected as exc:
                     rejected.append((call, exc))
             controls = {call.name: args for call, kind, args in parsed if kind == "control"}
+            if any(_health_what_if(call) for call in calls):
+                # A what-if on Health or on any health MCC is declined everywhere, whatever the customer's own
+                # history (R9; the coordinator's standing decision, #510): nothing of this turn runs.
+                for call in calls:
+                    turn["calls"].append({"name": call.name, "args": call.args, "status": "not_run: health"})
+                return self._refuse("out_of_scope", lang, emit, a)
 
             if "decline" in controls or "ask_clarifying_question" in controls:
                 # The turn ends at once: no data tool of this turn runs (R6).
@@ -799,14 +818,18 @@ class Pipeline:
 
     def _unknown_object_guard(self, message: str, calls: list[FunctionCall]) -> list[FunctionCall]:
         """A planner may plan the unfiltered total for a thing no category maps ("how much do I spend on the
-        gym?"). Before anything runs, those calls become the customer's category breakdown for the same
-        period, and the turn finishes: no unfiltered card goes out, and the answer is the rule path's (the
-        thing named, the customer's largest categories, their chips; #379 part B, review B3)."""
-        data = [c for c in calls if c.name not in CONTROL]
-        if not data or "get_basket_breakdown" not in self.registry.tools or                 not all(c.name == "get_spending" and not (c.args or {}).get("filter") for c in data) or                 unknown_object(message) is None:
+        gym?"), alone or beside another tool ("...on Netflix and what is safe to spend?"). Before anything runs,
+        the unfiltered totals become one category breakdown for the same period, the other calls stay, and the
+        turn finishes: no unfiltered total goes out as the answer to that thing. Alone, the answer is the rule
+        path's: the thing named, the customer's largest categories, their chips (#379 part B, review B3; #510)."""
+        unfiltered = [c for c in calls if c.name == "get_spending" and not (c.args or {}).get("filter")]
+        if not unfiltered or "get_basket_breakdown" not in self.registry.tools or unknown_object(message) is None:
             return calls
-        period = (data[0].args or {}).get("period") or {"preset": "last_6_months"}
-        return [FunctionCall("get_basket_breakdown", {"period": period}, data[0].id), FunctionCall("finish")]
+        period = (unfiltered[0].args or {}).get("period") or {"preset": "last_6_months"}
+        others = [c for c in calls if c not in unfiltered and c.name != "finish"
+                  and not (c.name == "get_basket_breakdown" and (c.args or {}).get("period") == period)]
+        return [FunctionCall("get_basket_breakdown", {"period": period}, unfiltered[0].id), *others,
+                FunctionCall("finish")]
 
     def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
                  a: _Answer) -> str:

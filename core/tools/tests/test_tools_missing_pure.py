@@ -79,3 +79,14 @@ def test_the_too_few_note_is_about_a_habit_over_months_never_one_month(period, n
     result = get_spending(ctx(), {"period": period, "filter": {"categories": ["Groceries"]}})
     assert result.model_view["tx_count"]["value"] == 2
     assert any("no monthly habit" in n for n in result.model_view["notes"]) is noted
+
+
+@pytest.mark.parametrize("value", ["8021", "5411,8021", "8011", "8099,5812"])
+def test_a_what_if_on_any_health_code_is_refused_whatever_the_customers_history(value):
+    # #510: the customer below has no Health purchase at all; the health group is refused before any SQL
+    from core.tools.what_if import run_what_if
+    no_health = [t for t in history() if t.category != "Health"]
+    customer = ToolContext(customer_id="CUST00042", as_of=TODAY, conn=_FakeStore(), language="en", _history=no_health)
+    assert not any(t.category == "Health" for t in customer.history())
+    with pytest.raises(ValueError, match="R9|health"):
+        run_what_if(customer, {"selection": {"kind": "mcc", "value": value}, "cut_pct": 20})
