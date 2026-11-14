@@ -216,3 +216,35 @@ def test_these_ask_about_senttis_question_and_get_the_why_answer(question, langu
     assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"], question
     assert done["text_rendered"].startswith("I asked because" if language == "en" else "Kysyin, koska")
     assert ("usual purchases in that category" if language == "en" else "tavallisista ostoksistasi") in done["text_rendered"]
+
+
+# ---- #424: the #368 path also answers only a message about that purchase and nothing else -------------------
+
+@pytest.mark.parametrize("question, language", [
+    ("why are you asking me about 1080 euros and also what is my balance", "en"),   # the issue's example
+    ("what was that €1,080 and how much did I spend last month?", "en"),
+    ("what was the 1080 purchase, also show me my bills", "en"),
+    ("what is that 1080 payment and can I afford a new phone?", "en"),
+    ("mikä se 1080 euron ostos oli ja paljonko käytin viime kuussa?", "fi"),
+    ("mikä se 1080 euron maksu oli, entä mitkä laskut ovat tulossa?", "fi"),
+    ("what was that €1,080 on 3 May 2026?", "en"),                                   # another date
+])
+def test_a_purchase_question_with_another_clause_takes_the_normal_path(question, language):
+    from core.agent.rules import RuleModel
+
+    done, events, audit = ask(question, language, model=RuleModel())
+    assert not [e for e, _ in events if e == "card"], question
+    assert "1,080.42" not in done.get("text_rendered", "") and "1 080,42" not in done.get("text_rendered", "")
+    assert not any(t.get("review_amount") for t in audit.records[-1]["planner_turns"])
+
+
+@pytest.mark.parametrize("question, language", [
+    ("what was that €1,080?", "en"), ("what's that 1080 charge?", "en"), ("hey, what was that €1,080 again?", "en"),
+    ("what is that 1080 euro payment?", "en"), ("what was that €1,080 on 28 September 2026?", "en"),  # its own date
+    ("mikä se 1080 euron ostos oli?", "fi"), ("mikä tämä 1080 euron maksu on?", "fi"),
+    ("mikä se 1080 euron ostos taas oli?", "fi"),
+])
+def test_a_purchase_question_and_nothing_else_still_gets_the_purchase_answer(question, language):
+    done, events, audit = ask(question, language)
+    assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"], question
+    assert audit.records[-1]["planner_turns"] == [{"round": 1, "source": "rules", "review_amount": True}]
