@@ -299,8 +299,10 @@ def _head(np: str) -> str | None:
     tokens = np.split()
     while tokens and fold(tokens[0]) in _LEAD:
         tokens = tokens[1:]
-    if any(fold(tok) in ("you", "u", "voit", "voisit", "sina", "sa") for tok in tokens):
-        return None                                   # the coach's "you": "so you spent", "Voit käyttää"
+    if any(re.sub(r"['’](?:d|ll|re|ve)$", "", fold(tok)) in ("you", "u", "voit", "voisit", "sina", "sa") for tok in tokens):
+        return None                                   # the coach's "you" ("what you'd save")
+    if any(fold(tok) in FIRST for tok in tokens):
+        return None                                   # the user in the subject: "i safly spend", "me and my wife"
     tokens = [tok for tok in tokens if tok.lower() not in ADVERBS]     # "can safely spend"
     owned = [i for i, tok in enumerate(tokens) if tok.endswith(("'s", "’s", "'", "’"))]
     if owned:

@@ -149,6 +149,7 @@ def test_someone_elses_question_never_gets_the_users_numbers(question, language)
     "Arjen kulutus", "That cut would save you", "Voit käyttää turvallisesti 180,26", "Taxis this month",
     "a pasted wall of digits is longer than any IBAN or reference",
     "Mitä jos vähentäisin kulutusta luokassa Ravintolat?", "so you spent nothing on travel",
+    "what can i safly spend this wek", "Tell me how much you would cut restaurants by, and I'll show what you'd save.",
 ])
 def test_no_person_in_these(question):
     assert people.classify(question) is None, question
