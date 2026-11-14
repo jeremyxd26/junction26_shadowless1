@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template, validator
+from core.agent import guard, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -526,6 +526,8 @@ class Pipeline:
             if "finish" in controls or data_calls >= MAX_DATA_CALLS or not (ran_data or rejected):
                 break
 
+        if template_answer:   # "why lower" names the review purchase that moved safe to spend (#575)
+            views = [why_review.with_effect(self.data, self.labels, ctx, review, v) for v in views]
         numbers = ctx.numbers.all()
         # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
         # may be named too, exactly as returned (#379 part B, found by r-w5)
