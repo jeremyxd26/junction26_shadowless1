@@ -15,9 +15,10 @@ in core/tests/test_api_contract.py.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Model(BaseModel):
@@ -430,3 +431,111 @@ class LabelResponse(Model):
     message: LabelMessage
     changes: list[Change]
     refetch: list[str]
+
+
+# ---- POST /api/bill/explain (section 11, contract 0.3.0; the endpoint comes with #242) ----------------
+
+BILL_AMOUNT = r"^[0-9]{1,6}(\.[0-9]{1,2})?$"   # euros with at most two decimals, ASCII digits only
+BILL_AMOUNT_MAX = Decimal("100000.00")
+
+
+class BillFieldsRequest(Model):
+    model_config = ConfigDict(extra="forbid")
+
+    payee: str = Field(min_length=1, max_length=70)
+    iban: str = Field(min_length=1, max_length=42)
+    reference: str = Field(min_length=1, max_length=35)
+    amount: str = Field(pattern=BILL_AMOUNT)   # a decimal string: more than 0, at most 100000.00
+    due_date: date
+
+    @field_validator("amount")
+    @classmethod
+    def _amount_in_range(cls, value: str) -> str:
+        if not Decimal(0) < Decimal(value) <= BILL_AMOUNT_MAX:
+            raise ValueError("amount must be more than 0 and at most 100000.00")
+        return value
+
+
+class BillExplainRequest(Model):
+    model_config = ConfigDict(extra="forbid")  # an unknown field is a 400, not silently dropped
+
+    customer_id: str = Field(pattern=r"^CUST[0-9]{5}$")
+    language: Language = "en"
+    # Exactly one of `barcode` and `fields`. Both or neither, or `payee` beside `fields`, is a 422
+    # invalid_bill that the endpoint checks: a validation error here would be a 400.
+    barcode: str | None = Field(default=None, max_length=80)
+    payee: str | None = Field(default=None, min_length=1, max_length=70)  # only beside a barcode
+    fields: BillFieldsRequest | None = None
+
+
+class BillRead(Model):
+    source: Literal["barcode", "fields"]
+    payee: str | None
+    iban: str        # formatted for display
+    reference: str   # formatted for display
+    amount: Number   # bill_barcode@1 or user_input@1, no evidence ref
+    due_date: date
+
+
+class BillChecks(Model):
+    iban: Literal["pass", "fail"]
+    reference: Literal["pass", "fail"]
+    due_date: Literal["pass", "past"]
+
+
+class BillMatch(Model):
+    status: Literal["matched", "not_matched", "no_payee"]
+    bill_id: str | None
+    label: str | None
+    text: str
+
+
+class BillBasket(Model):
+    key: BasketKey
+    label: str
+    text: str
+
+
+class BillSafeToSpend(Model):
+    effect: Literal["after_payday", "excess_only", "full"]
+    next_payday: date
+    before: Number
+    reserved: Number | None
+    after: Number | None
+    change: Number | None
+    text: str
+
+
+class GlossaryEntry(Model):
+    term: Literal["reference_number", "due_date", "virtual_barcode", "late_payment_interest"]
+    label: str
+    text: str
+
+
+class PaymentDraft(Model):
+    payee: str | None
+    iban: str        # normalised, no spaces
+    reference: str   # normalised, no spaces
+    amount: Number
+    due_date: date
+
+
+class AddToPaymentsAction(Model):
+    type: Literal["add_to_payments"]
+    label: str
+    draft: PaymentDraft
+
+
+class BillExplainResponse(Model):
+    customer_id: str
+    as_of: date
+    language: Language
+    bill: BillRead
+    checks: BillChecks
+    match: BillMatch
+    comparison: Comparison | None
+    basket: BillBasket
+    safe_to_spend: BillSafeToSpend | None  # null when safe to spend cannot be computed (as the hero)
+    glossary: list[GlossaryEntry]
+    actions: list[AddToPaymentsAction] = Field(max_length=1)
+    warnings: list[str]
