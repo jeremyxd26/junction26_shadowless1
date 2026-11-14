@@ -1188,6 +1188,22 @@
   [
    "Paljonko me ja lapseni käytimme kesäkuussa?",
    "fi"
+  ],
+  [
+   "How much did I, my wife and our kids spend on holidays?",
+   "en"
+  ],
+  [
+   "How much did I, my husband and the kids spend in June?",
+   "en"
+  ],
+  [
+   "How much did me, my wife and the kids spend in June?",
+   "en"
+  ],
+  [
+   "How much is Netflix's price?",
+   "en"
   ]
  ],
  "declined": [
@@ -1642,6 +1658,38 @@
   [
    "Paljonko lapselleni jäi rahaa kesäkuussa?",
    "fi"
+  ],
+  [
+   "How much does the owner of Zalando earn?",
+   "en"
+  ],
+  [
+   "How much did the owner of the cafe earn in June?",
+   "en"
+  ],
+  [
+   "what did they spend on us in June",
+   "en"
+  ],
+  [
+   "how much did a woman called Anna spend in June?",
+   "en"
+  ],
+  [
+   "Paljonko Zalandon omistaja tienaa?",
+   "fi"
+  ],
+  [
+   "Paljonko he käyttivät meihin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Anna-niminen nainen käytti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Does Marja pay S-Bonus? How much did she get?",
+   "en"
   ]
  ],
  "not_user_data": [
@@ -3218,6 +3266,22 @@
   [
    "Paljonko käytin lapsiini elokuussa?",
    "fi"
+  ],
+  [
+   "Paljonko maksoi vuokra kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi sähkö elokuussa?",
+   "fi"
+  ],
+  [
+   "paljonko maksoi vuokra kesäkuussa",
+   "fi"
+  ],
+  [
+   "paljonko maksoi sähkö elokuussa",
+   "fi"
   ]
  ],
  "unclaimed": [
@@ -3319,6 +3383,30 @@
   ],
   [
    "Paljonko maksoi Kampaaja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Prisma's spending in June",
+   "en"
+  ],
+  [
+   "Helen's spending in June",
+   "en"
+  ],
+  [
+   "Lidl's income",
+   "en"
+  ],
+  [
+   "Netflix's salary",
+   "en"
+  ],
+  [
+   "Paljonko Lidlin tulot olivat kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Mikä on Prisman palkka?",
    "fi"
   ]
  ]
