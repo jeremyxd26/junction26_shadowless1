@@ -5,6 +5,7 @@ import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
+import { lastAskId } from '../lib/thread.ts'
 import { landBelowHeader } from '../lib/threadScroll.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
@@ -62,8 +63,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   const many = turns.length > 1 || Boolean(opening)
   // Follow-ups and the answer's announcement belong to the last ask turn, even when a client turn
   // (#319) came after it while it was still streaming (#332).
-  let lastAskId: number | undefined
-  for (const turn of turns) if (turn.kind === 'ask') lastAskId = turn.id
+  const latestAsk = lastAskId(turns)
   // It lands below the header's measured height, so large text does not hide it under the header (#332).
   useEffect(() => {
     if (lastId === undefined || !many) return
@@ -140,7 +140,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           <div key={turn.id} className={last && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
             <TurnView
               turn={turn}
-              latest={turn.id === lastAskId}
+              latest={turn.id === latestAsk}
               suggestions={suggestions}
               onAsk={send}
               onRetry={() => retry(turn.id, turn.question)}

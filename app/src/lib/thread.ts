@@ -39,6 +39,15 @@ export function isClientTurn(turn: Turn): turn is ClientTurn {
   return turn.kind === 'client'
 }
 
+/**
+ * The turn whose answer counts as the latest one (its follow-ups and its announcement): the last
+ * ask turn, also when a client turn came after it while it was still streaming (#332).
+ */
+export function lastAskId(turns: Turn[]): number | undefined {
+  for (let index = turns.length - 1; index >= 0; index--) if (turns[index].kind === 'ask') return turns[index].id
+  return undefined
+}
+
 /** The client turn with `key`, if the thread has one. */
 export function findClientTurn(turns: Turn[], key: string): ClientTurn | undefined {
   return turns.find((turn): turn is ClientTurn => isClientTurn(turn) && turn.key === key)
