@@ -148,6 +148,11 @@ MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
     "cinemas": ("Cinemas", "Elokuvateatterit"),
     "other": ("Other", "Muut"),
 }
+# An MCC group named like a category keeps only that category's card purchases (an MCC is set only on a card
+# purchase), a smaller sum: it is always written with "(card purchases)", alone or with its category, and the
+# category alone is the plain name (review of #528). Groups with their own names ("Taxi") are unchanged.
+CARD_PURCHASE_GROUPS: frozenset[str] = frozenset(
+    g for g, (en, _) in MCC_GROUP_LABELS.items() if any(en == c_en for c_en, _ in CATEGORY_LABELS.values()))
 
 # Merchant kinds for alias labels ("Grocery store A"). MCC first, then category. No digits.
 MERCHANT_KIND_BY_MCC: dict[str, tuple[str, str]] = {
@@ -173,11 +178,25 @@ MERCHANT_KIND_BY_CATEGORY: dict[str, tuple[str, str]] = {
 }
 MERCHANT_KIND_DEFAULT = ("Merchant", "Kauppias")
 
+FILTER_LABEL_CAP = 5   # parts of one dimension from which a filter label counts them (#501)
 TEXT: dict[str, tuple[str, str]] = {
     "spending": ("Spending", "Kulutus"),
     "income": ("Income", "Tulot"),
     # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
     "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
+    # a filter of FILTER_LABEL_CAP or more parts in one dimension is counted, not listed (#501)
+    "filter_many": ("Spending in {what}", "Kulutus {what}"),
+    "filter_many_categories": ("several categories", "useassa luokassa"),
+    "filter_many_mcc_groups": ("several groups", "useassa ryhmässä"),
+    "filter_many_baskets": ("several baskets", "useassa korissa"),
+    # across dimensions the selection is an intersection (core/tools/selection.py): a basket "within" (English),
+    # the other parts in brackets (Finnish, no agreement to get wrong), a merchant "at" (#501, review of #528)
+    "filter_within": (" within ", ""),
+    "filter_at": (" at ", " kauppiaalla "),
+    "filter_at_unnamed": (" at the chosen merchant", " valitulla kauppiaalla"),   # the evidence view, no alias
+    # a category with the MCC group of the same name: only its purchases with a merchant code, i.e. card purchases
+    # (a purchase without a card has no merchant and no MCC; docs/design/metrics.md section 0; review of #528)
+    "filter_card_purchases": ("card purchases", "korttiostot"),
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),
