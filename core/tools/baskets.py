@@ -83,7 +83,13 @@ def get_basket_breakdown(ctx: ToolContext, args: GetBasketBreakdownArgs | dict) 
     lang = ctx.language
     notes: list[str] = []
 
-    resolved = periods.resolve(args.period, ctx.as_of, lang)
+    try:
+        resolved = periods.resolve(args.period, ctx.as_of, lang)
+    except periods.PeriodOutOfRange as exc:
+        # The answer names the customer's own first month of data, not the dataset's (#379).
+        history = ctx.history()
+        first = history[0].tx_date.isoformat() if history else None
+        raise periods.PeriodOutOfRange(str(exc), reason=exc.reason, first=first, last=ctx.as_of.isoformat()) from None
     period = resolved.period
     if resolved.clamped:
         notes.append(config.label(config.TEXT["note_clamped"], lang).format(label=period.label))
