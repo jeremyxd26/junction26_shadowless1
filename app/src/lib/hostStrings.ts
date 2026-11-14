@@ -11,8 +11,8 @@ const en = {
 type HostStrings = typeof en
 
 const fi: HostStrings = {
-  continuesInBankApp: 'Tämä jatkuu pankin sovelluksessa.',
-  personas: 'Demopersoonat',
+  continuesInBankApp: 'Tämä jatkuu pankkisovelluksessa.',
+  personas: 'Demohenkilöt',
 }
 
 export function hostStrings(lang: Language): HostStrings {

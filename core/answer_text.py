@@ -414,3 +414,80 @@ def display_matches(display: str, value: float, unit: str, language: str, method
         return _same(display or "", formatted(value, unit, language, method))
     except (ValueError, ArithmeticError):
         return False
+
+
+# ---- #417: an amount is never put into the bank's screen or product in one sentence ----------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" reads like personal investment advice. The rule fires on a DESTINATION or ACTION use only (r-coord's
+# decision on the review of #475): an amount in the same sentence as moving, putting, sending, setting, adding,
+# starting, opening or investing into, to or in the bank's screen or product. A plain statement of a figure
+# passes ("Your monthly saving is €184.61.", "In S-mobiili your balance is €5,864.86."). Shared by the
+# pipeline's validator (token text, model drafts only) and the eval runner (rendered text, every answer).
+# A bare "fund" is the bank's product only as a noun with a determiner or in the plural, so "enough to fund
+# the trip" and "an emergency fund" pass.
+_INVESTMENT_EN = r"(?:(?:investment|index|equity|stock|bond|mutual|money[- ]market)\s+funds?\b(?!-)|fund\s+units?\b)"
+_FUND = (r"(?:(?:a|an|the|your|this|that)\s+(?:new\s+)?funds?\b(?!-)|funds\b(?!-)|" + _INVESTMENT_EN
+         + r"|Bonus\s+to\s+fund\b)")
+_PRODUCT_EN = r"(?:S-?mobiili\w*|monthly[\s-]+saving\b(?:\s+screen\b)?|" + _FUND + ")"
+_BANK_DESTINATION_EN = re.compile(
+    r"\b(?:into|to|in|towards?|for|with)\s+(?:the\s+|your\s+|an?\s+)?" + _PRODUCT_EN
+    + r"|\binto\s+(?:your\s+)?monthly\s+savings\b|\bBonus\s+to\s+fund\b", re.I)
+_BANK_OBJECT_EN = re.compile(
+    r"\b(?:open|start|set\s+up|buy|bought)\w*\s+(?:a\s+|an\s+|the\s+|your\s+)?(?:new\s+)?" + _PRODUCT_EN, re.I)
+# Destinations or product uses that need no verb (like the Finnish illative): a bare "into <product>"; "monthly
+# saving of <amount>" together with the app ("Consider monthly saving of €360.00 in S-mobiili."); "a fund with
+# <amount>"; an imperative "Fund your future ..."; and a named investment product (index fund, fund units), never
+# a plain statement since Sentti has no fund data.
+_BANK_ANY_EN = re.compile(
+    r"\binto\s+(?:the\s+|your\s+|an?\s+)?" + _PRODUCT_EN
+    + r"|\bmonthly[\s-]+saving\s+of\b(?=.*\bS-?mobiili)|\bS-?mobiili\w*\b(?=.*\bmonthly[\s-]+saving\s+of\b)"
+    + r"|\b(?:a|an|the|your)\s+(?:new\s+)?funds?\s+with\b|^\W*fund\s+(?:your|the)\b|\b" + _INVESTMENT_EN
+    # #499: "In monthly saving, €360.00 a month is enough."; "Monthly saving in S-mobiili: €360.00 a month would do."
+    + r"|\bin\s+(?:your\s+)?monthly[\s-]+saving\b"
+    + r"|\b(?:monthly[\s-]+saving|kuukausisäästämi\w*|kuukausisäästö\w*)(?:\s+(?:in\s+)?S-?mobiili\w*)?\s*:", re.I)
+_ACTION_EN = re.compile(
+    r"\b(?:mov(?:e|es|ed|ing)|put(?:s|ting)?|send(?:s|ing)?|sent|set(?:s|ting)?|add(?:s|ed|ing)?|start(?:s|ed|ing)?"
+    r"|open(?:s|ed|ing)?|invest(?:s|ed|ing)?|transfer\w*|deposit\w*|sav(?:e|es|ed)|go(?:es)?|going|went"
+    r"|turn(?:s|ed|ing)?|convert\w*|top(?:s|ped|ping)?\s+up|pa(?:y|ys|ying|id)|contribut\w*|allocat\w*"
+    r"|direct(?:s|ed|ing)?(?!\s+debit)|keep(?:s|ing)?|kept|park(?:s|ed|ing)?|leav(?:e|es|ing)|left|stash\w*"
+    r"|grow(?:s|ing|n)?|grew)\b", re.I)
+# The bill's action ("Add €97.46 to your payments in S-mobiili") is not the saving product: with "payments" and
+# no saving product named, the app alone is a place, not a destination.
+_PAYMENTS = re.compile(r"\bpayments?\b|\bbills?\b|\bdue\s+date\b|\bmaksu(?:ihin|t|ja|si)?\b|\blasku\w*|\beräpäiv\w*",
+                       re.I)
+_SAVING_PRODUCT = re.compile(r"\bmonthly[\s-]+saving|" + _FUND + r"|kuukausisäästö|kuukausisäästämi|(?<!puskuri)(?<!hätä)rahasto",
+                             re.I)
+_PRODUCT_FI = re.compile(r"\bS-?mobiili\w*|kuukausisäästämi\w*|kuukausisäästö(?:ön|ihin|ssä|stä|llä)\b"
+                         r"|(?<!puskuri)(?<!hätä)rahasto\w*", re.I)
+# the illative ("into ...") is a destination by itself
+_BANK_DESTINATION_FI = re.compile(
+    r"\bS-?mobiiliin\b|kuukausisäästämiseen\b|kuukausisäästö(?:ön|ihin|ssä)\b|(?<!puskuri)(?<!hätä)rahasto(?:on|ihin)\b",
+    re.I)
+_ACTION_FI = re.compile(
+    r"\b(?:laita|laitta|pane|pann|siirr|siirtä|lähetä|lähett|aseta|asett|lisää|lisät|aloita|aloitta|avaa|avat"
+    r"|sijoit|säästä|talleta|tallett|pidä|pitä|käytä|käyttä|maksa)\w*", re.I)
+# A sentence ends at . ! or ? followed by white space, or at a line break; "€1,080.42" and "360,00 €" stay
+# whole, and a semicolon or a dash does not end a sentence.
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+_EURO_AMOUNT = re.compile(r"€\s?[0-9]|[0-9]\s?€")
+
+
+def bank_action(sentence: str) -> bool:
+    """True when the sentence moves, puts, sends, sets, adds, starts, opens or invests into, to or in the bank's
+    screen or product (English), or names one in the illative or with such a verb (Finnish)."""
+    if _PAYMENTS.search(sentence) and not _SAVING_PRODUCT.search(sentence):
+        return False
+    if _BANK_OBJECT_EN.search(sentence) or _BANK_ANY_EN.search(sentence) or (
+            _ACTION_EN.search(sentence) and _BANK_DESTINATION_EN.search(sentence)):
+        return True
+    return bool(_BANK_DESTINATION_FI.search(sentence)
+                or (_ACTION_FI.search(sentence) and _PRODUCT_FI.search(sentence)))
+
+
+def amount_beside_bank_product(text: str) -> str | None:
+    """Rendered text: the first sentence that has a euro amount and puts something into the bank's screen or
+    product, or None. "Your monthly saving is €184.61." and "an AI money coach inside S-mobiili" pass."""
+    for sentence in SENTENCE_BREAK.split(text):
+        if _EURO_AMOUNT.search(sentence) and bank_action(sentence):
+            return sentence.strip()
+    return None

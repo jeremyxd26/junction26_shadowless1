@@ -15,13 +15,14 @@ total a month and a year computed here; no model adds numbers (rules in docs/des
   total a year twelve times that (composite `scale`). Both are estimates. Each cut share is a rule value
   (`savings_plan.cut_pct@1`), so an answer can cite it as a number instead of bare digits.
 - These are savings from cutting below the usual pace: they add to safe to save, never to safe to spend
-  (r-w6's invariant, #381). Safe to save a month is shown next to the plan as it is today, never added in.
+  (r-w6's invariant, #381). The savings goal set aside first (#391) is named next to the plan, the same
+  Number and ref as the safe-to-spend answer cites, in every review state, never added in (#468).
 - The S-Bonus is never shown with the plan, never part of the total (product owner, #369): no amount on the
   card or in the model view. When its estimate is offered, its own question ("How much S-Bonus could I
   get?") is the answer's first follow-up, answered with its own Number and evidence (coordinator, #411).
 - The card has no digit outside a Number or the period: each row's label says its cut in words.
-- When no lever reaches the threshold, the card is the baskets card (where the money goes), next to safe to
-  save (coordinator, #411). A failure of safe to save or the S-Bonus leaves them out; the plan still stands.
+- When no lever reaches the threshold, the card is the baskets card (where the money goes), next to the
+  savings goal (coordinator, #411). A failure of the goal or the S-Bonus leaves them out; the plan still stands.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from core.tools.bonus import get_bonus_estimate
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
-from core.tools.safe_to_save import get_safe_to_save
+from core.tools.safe_to_spend import get_safe_to_spend
 from core.tools.missing import MissingData
 from core.tools.what_if import WhatIfRefused, run_what_if
 
@@ -67,7 +68,7 @@ class SavingsPlanData(BaseModel):
     levers: list[Lever]
     total_month: Number | None      # None when no lever reaches the threshold
     total_year: Number | None
-    safe_to_save: Number | None     # shown next to the plan, never added in
+    savings_goal: Number | None     # the goal set aside first (#391, #468): named next to the plan, never added in
     follow_up: str | None           # the S-Bonus question, offered when the estimate is (coordinator, #411)
 
 
@@ -114,7 +115,7 @@ def role(category: str) -> str:
 
 
 def _decoration(name: str, fn) -> Any:
-    """An extra beside the plan (safe to save, the S-Bonus, the baskets card of the no-lever answer): any
+    """An extra beside the plan (the savings goal, the S-Bonus, the baskets card of the no-lever answer): any
     failure leaves it out and keeps the plan (#411)."""
     try:
         return fn()
@@ -187,8 +188,11 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
                                  params={"factor_num": 12, "factor_den": 1, "period": evidence.period_param(window)})
         total_month, total_year = reg(month_n), reg(year_n)
 
-    # Safe to save: the safe-to-save tool's own headline (its view's `monthly`), the same Number and ref.
-    safe_to_save = shown(_decoration("safe to save", lambda: get_safe_to_save(private, {}).data.monthly))
+    # The savings goal set aside first (#391): the safe-to-spend answer's own Number (the same ref), the same in
+    # every review state, so the two answers of one conversation name one monthly figure (#468). It is never
+    # added to the plan's total; a goal of 0 is left out.
+    goal = _decoration("savings goal", lambda: get_safe_to_spend(private, {}).data.savings_goal)
+    savings_goal = shown(goal) if goal is not None and goal.value > 0 else None
 
     # The S-Bonus is never shown with the plan: no amount on the card or in the model view, so nothing can put
     # it next to the total. When the estimate is offered, its own question is the answer's first follow-up, and
@@ -200,14 +204,14 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
     card = None
     if levers:
         card = _card(levers, total_month, lang)
-    else:   # no lever: where the money goes, next to safe to save (coordinator, #411)
+    else:   # no lever: where the money goes, next to the savings goal (coordinator, #411, #468)
         baskets = _decoration("baskets", lambda: get_basket_breakdown(private, dict(config.SAVINGS_PLAN_NONE_BASKETS)))
         if baskets is not None and baskets.card is not None:
             card = _shown_card(baskets.card, shown)
             extra_evidence = list(baskets.evidence)
 
     data = SavingsPlanData(levers=levers, total_month=total_month, total_year=total_year,
-                           safe_to_save=safe_to_save, follow_up=follow_up)
+                           savings_goal=savings_goal, follow_up=follow_up)
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(tool=TOOL, data=data, card=card, notes=[], evidence=list(nb.specs) + extra_evidence,
                       model_view=_model_view(data))
@@ -242,6 +246,6 @@ def _model_view(data: SavingsPlanData) -> dict[str, Any]:
                     "saving": model_number(lv.saving)} for lv in data.levers],
         "total_month": model_number(data.total_month),
         "total_year": model_number(data.total_year),
-        "safe_to_save": model_number(data.safe_to_save),
+        "savings_goal": model_number(data.savings_goal),
         "follow_up": data.follow_up,
     }

@@ -186,7 +186,8 @@ def _model_view(data: BillsData, notes: list[str]) -> dict[str, Any]:
         "salary_status": data.salary_status,
         "upcoming_total": model_number(data.upcoming_total),
         "bills": [
-            {"bill_id": b.bill_id, "label": b.label, "status": b.status, "typical_day": b.typical_day,
+            # no bill_id: a hash of the customer id and the merchant, derivable from a small id space (#487)
+            {"label": b.label, "status": b.status, "typical_day": b.typical_day,
              "typical_month": model_number(b.typical_month), "due_until_payday": model_number(b.due_until_payday),
              "next_expected": b.next_expected.isoformat() if b.next_expected else None}
             for b in data.bills
