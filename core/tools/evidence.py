@@ -251,11 +251,14 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
 
         source = spec["source"]
         # A stored spec is data: only the files the tools write metric specs for, and never a setting
-        # that would move the customer range or as_of (run() refuses those as well).
+        # that is reserved (it would move the customer range or as_of) or malformed. The same check as
+        # run() makes, before anything runs; a refusal is 403 evidence_forbidden, not a 500 (#122).
         if source["file"] not in config.METRIC_EVIDENCE_FILES:
             raise EvidenceForbidden(ref)
-        if any(metric_sql.is_reserved_setting(name) for name in source["settings"]):
-            raise EvidenceForbidden(ref)
+        try:
+            metric_sql.check_settings(source["settings"])
+        except ValueError:
+            raise EvidenceForbidden(ref) from None
         row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
