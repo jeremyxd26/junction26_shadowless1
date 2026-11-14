@@ -62,10 +62,10 @@ describe('parseAmount', () => {
     expect(parseAmount('€1,080.42', 'en')).toBe(1080.42)
     expect(parseAmount('-€5.00', 'en')).toBe(-5)
     expect(parseAmount('1 080,42 €', 'fi')).toBe(1080.42)
-    expect(parseAmount('221,58 €', 'fi')).toBe(221.58)
+    expect(parseAmount('138,79 €', 'fi')).toBe(138.79)
   })
   it('returns null for anything else', () => {
-    expect(parseAmount('221,58 €', 'en')).toBeNull()
+    expect(parseAmount('138,79 €', 'en')).toBeNull()
     expect(parseAmount('Loading…', 'en')).toBeNull()
     expect(parseAmount('', 'fi')).toBeNull()
   })
@@ -73,11 +73,11 @@ describe('parseAmount', () => {
 
 describe('downOnly', () => {
   it('passes a count that only goes down', () => {
-    expect(downOnly([221.58, 221.58, 213.22, 199.7, 180.26, 180.26])).toEqual({ ok: true, from: 221.58, to: 180.26, steps: 3, upAt: -1 })
+    expect(downOnly([138.79, 138.79, 130.52, 116.74, 97.46, 97.46])).toEqual({ ok: true, from: 138.79, to: 97.46, steps: 3, upAt: -1 })
   })
   it('fails a count that goes up once, or does not move', () => {
-    expect(downOnly([221.58, 200, 205, 180.26]).ok).toBe(false)
-    expect(downOnly([221.58, 221.58]).ok).toBe(false)
+    expect(downOnly([138.79, 120, 125, 97.46]).ok).toBe(false)
+    expect(downOnly([138.79, 138.79]).ok).toBe(false)
   })
 })
 
