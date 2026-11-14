@@ -19,6 +19,7 @@ type Strings = ReturnType<typeof lessonStrings>
 /** The reveal's first sentence: the verdict (or none) and the right number, per lesson. */
 function verdictOf(lesson: Lesson, picked: string | null, s: Strings): string {
   if (lesson.kind === 'split') return s.two.reveal
+  if (lesson.kind === 'quiz') return `${picked === lesson.right ? s.quiz.right : s.quiz.wrong} ${lesson.reveal}`
   const reveal = revealOf(lesson, picked as PickLesson['right']['source'] | null)
   const display = reveal.right.number.display
   const verdict = reveal.verdict ?? 'plain'
@@ -37,13 +38,14 @@ const THINKING_MS = 500
  * Sentti's reveal follows three typing dots and types in word by word (the answer reveal, #686),
  * and a bar fills as lessons are done. Under reduced motion everything shows at once.
  */
-export function LessonTurn({ onStep }: ClientTurnProps) {
+export function LessonTurn({ onStep, lessons: given }: ClientTurnProps & { lessons?: Lesson[] }) {
   const { lang, t, customerId } = useSettings()
   const s = lessonStrings(lang)
   const opening = useOpening()
   const reduced = usePrefersReducedMotion()
   // Today's lessons are fixed when the turn opens: a background refresh does not change them mid-way.
-  const [lessons] = useState<Lesson[]>(() => lessonsFor(opening?.overview ?? null))
+  // The Learn tab passes a topic's lessons; the thread's turn takes the overview's three.
+  const [lessons] = useState<Lesson[]>(() => given ?? lessonsFor(opening?.overview ?? null))
   // It starts at the first lesson not done yet (the Learn tab's progress), or the first when all are done.
   const [start] = useState(() => startIndex(lessons, readProgress(customerId).done))
   const [index, setIndex] = useState(start)
@@ -70,11 +72,13 @@ export function LessonTurn({ onStep }: ClientTurnProps) {
     ? s.none
     : verdict
       ? [verdict, split, last ? s.done : null].filter(Boolean).join(' ')
-      : lesson.kind === 'split'
-        ? s.two.question
-        : lesson.id === 1
-          ? s.one.question[lesson.span]
-          : s.three.question
+      : lesson.kind === 'quiz'
+        ? lesson.question
+        : lesson.kind === 'split'
+          ? s.two.question
+          : lesson.id === 1
+            ? s.one.question[lesson.span]
+            : s.three.question
   useEffect(() => {
     onStep(title)
   }, [onStep, title])
@@ -91,11 +95,14 @@ export function LessonTurn({ onStep }: ClientTurnProps) {
     )
   }
 
-  const question = lesson.kind === 'split' ? s.two.question : lesson.id === 1 ? s.one.question[lesson.span] : s.three.question
+  const question =
+    lesson.kind === 'quiz' ? lesson.question : lesson.kind === 'split' ? s.two.question : lesson.id === 1 ? s.one.question[lesson.span] : s.three.question
   const answers =
-    lesson.kind === 'split'
-      ? lesson.rows.map((row) => ({ key: row.key, text: row.label, icon: BASKETS[row.key]?.icon }))
-      : lesson.options.map((option) => ({ key: option.source as string, text: option.number.display, icon: undefined }))
+    lesson.kind === 'quiz'
+      ? lesson.options.map((option) => ({ key: option.key, text: option.text, icon: undefined }))
+      : lesson.kind === 'split'
+        ? lesson.rows.map((row) => ({ key: row.key, text: row.label, icon: BASKETS[row.key]?.icon }))
+        : lesson.options.map((option) => ({ key: option.source as string, text: option.number.display, icon: undefined }))
   const chosen = picked === null ? null : (answers.find((answer) => answer.key === picked) ?? null)
   const next = () => {
     const following = lessons[index + 1]
@@ -217,7 +224,9 @@ function LessonReveal({
       </h3>
       {!reveal.revealing && (
         <div className={`flex flex-col gap-2 ${live ? 'card-enter' : ''}`}>
-          {lesson.kind === 'split' ? (
+          {lesson.kind === 'quiz' ? (
+            lesson.example && <p className="rounded-md bg-sunken p-3 text-base text-ink-2">{lesson.example}</p>
+          ) : lesson.kind === 'split' ? (
             <ul className="flex flex-col gap-1 text-base text-ink-2">
               {lesson.rows.map((row) => (
                 <li key={row.key} className="flex flex-wrap items-baseline gap-x-2">
@@ -230,7 +239,9 @@ function LessonReveal({
           ) : (
             <PickReveal lesson={lesson} picked={picked} s={s} hint={hint} />
           )}
-          <p className="text-base text-ink">{lesson.kind === 'split' ? s.two.concept : lesson.id === 1 ? s.one.concept : s.three.concept}</p>
+          <p className="text-base text-ink">
+            {lesson.kind === 'quiz' ? lesson.concept : lesson.kind === 'split' ? s.two.concept : lesson.id === 1 ? s.one.concept : s.three.concept}
+          </p>
           {last ? (
             <p className="text-base text-ink-2">{s.done}</p>
           ) : (

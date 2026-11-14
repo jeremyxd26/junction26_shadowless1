@@ -51,7 +51,7 @@ export const clientTurns: Record<string, ClientTurnEntry> = {
 }
 
 /** The registry keys whose chips the opening shows under its overview row, in this order. */
-export const openingChips: string[] = ['bill', 'lesson']
+export const openingChips: string[] = ['bill']
 
 /** What a tap on `key`'s chip (or the composer's paperclip, #705) pushes: its text, its component, one turn per key. */
 export function clientTurnRequest(key: string, lang: Language): ClientTurnRequest {

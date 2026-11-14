@@ -135,8 +135,8 @@ describe('the lesson turn (#703)', () => {
   })
   afterAll(() => vi.unstubAllGlobals())
 
-  it('is registered as an opening chip, always visible, "Lesson of the day" / "Päivän oppitunti"', () => {
-    expect(openingChips).toContain('lesson')
+  it('is registered as a client turn, "Lesson of the day" / "Päivän oppitunti"; the Learn tab replaced its opening chip', () => {
+    expect(openingChips).not.toContain('lesson')
     expect(clientTurns.lesson.visible()).toBe(true)
     expect(clientTurns.lesson.chip('en')).toBe('Lesson of the day')
     expect(clientTurns.lesson.chip('fi')).toBe('Päivän oppitunti')

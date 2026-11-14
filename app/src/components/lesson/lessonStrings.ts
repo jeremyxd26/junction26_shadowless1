@@ -17,6 +17,8 @@ const en = {
   /** Another option, named by its label. */
   isLabel: (display: string, label: string) => `${display} is ${label}.`,
   none: 'No lesson for this profile today. Ask me anything below.',
+  /** The verdict word of a Learn-tab quiz lesson. */
+  quiz: { right: 'Right.', wrong: 'Not quite.' },
   /** Lesson 1: left to spend this week (the safe-to-spend figure). */
   one: {
     question: { week: 'How much can you safely spend this week?', month: 'How much can you safely spend this month?' } satisfies Record<Span, string>,
@@ -53,6 +55,7 @@ const fi: LessonStrings = {
   done: 'Siinä kaikki tältä päivältä. Kysy minulta mitä tahansa alla.',
   isLabel: (display, label) => `${display} on ${label}.`,
   none: 'Tälle profiilille ei ole tänään oppituntia. Kysy minulta mitä tahansa alla.',
+  quiz: { right: 'Oikein.', wrong: 'Ei aivan.' },
   one: {
     question: { week: 'Paljonko voit turvallisesti käyttää tällä viikolla?', month: 'Paljonko voit turvallisesti käyttää tässä kuussa?' },
     right: { week: (display) => `Oikein: ${display} on käyttövarasi tällä viikolla.`, month: (display) => `Oikein: ${display} on käyttövarasi tässä kuussa.` },

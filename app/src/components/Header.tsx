@@ -33,6 +33,7 @@ export function Header({
   threadEmpty = true,
   tab = 'chat',
   onTab,
+  learnDot = false,
 }: {
   onLongPress: () => void
   disclosure: string
@@ -44,6 +45,8 @@ export function Header({
   /** The thread's two tabs (Chat, Learn), on the first screen only. */
   tab?: 'chat' | 'learn'
   onTab?: (tab: 'chat' | 'learn') => void
+  /** A small dot on the Learn tab while a lesson is under way. */
+  learnDot?: boolean
 }) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
@@ -172,6 +175,12 @@ export function Header({
               }`}
             >
               {key === 'chat' ? learnStrings(lang).tabChat : learnStrings(lang).tabLearn}
+              {key === 'learn' && learnDot && (
+                <>
+                  <span aria-hidden="true" className="ml-1.5 inline-block size-2 rounded-pill bg-brand align-middle" />
+                  <span className="sr-only">, {learnStrings(lang).unfinishedDot}</span>
+                </>
+              )}
             </button>
           ))}
         </div>

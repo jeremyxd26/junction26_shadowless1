@@ -18,13 +18,21 @@ const en = {
   back: 'Back to topics',
   reset: 'Reset progress',
   storageNote: 'Your progress is kept only in this browser: which lessons you finished, nothing else.',
+  unfinishedDot: 'a lesson is under way',
+  glossaryTitle: 'Glossary',
+  glossaryIntro: 'Words you meet in your bank and on your bills, in plain language.',
+  inYourNumbers: 'In your numbers',
   topics: {
     money: 'Where the money goes',
+    bills: 'Your bills',
   } as Record<string, string>,
   lessons: {
     'money-1': 'Left to spend this week',
     'money-2': 'Where your money goes',
     'money-3': 'How much you can set aside',
+    'bills-1': 'The reference number (viitenumero)',
+    'bills-2': 'IBAN and the due date (eräpäivä)',
+    'bills-3': 'E-invoice and direct payment',
   } as Record<string, string>,
 }
 
@@ -46,13 +54,21 @@ const fi: LearnStrings = {
   back: 'Takaisin aiheisiin',
   reset: 'Nollaa edistyminen',
   storageNote: 'Edistymisesi tallentuu vain tähän selaimeen: mitkä oppitunnit teit, ei muuta.',
+  unfinishedDot: 'oppitunti kesken',
+  glossaryTitle: 'Sanasto',
+  glossaryIntro: 'Pankin ja laskujen sanoja selkokielellä.',
+  inYourNumbers: 'Sinun luvuissasi',
   topics: {
     money: 'Mihin raha menee',
+    bills: 'Laskusi',
   },
   lessons: {
     'money-1': 'Käyttövara tällä viikolla',
     'money-2': 'Mihin rahasi menevät',
     'money-3': 'Paljonko voit säästää',
+    'bills-1': 'Viitenumero',
+    'bills-2': 'IBAN ja eräpäivä',
+    'bills-3': 'E-lasku ja suoramaksu',
   },
 }
 

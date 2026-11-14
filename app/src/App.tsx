@@ -18,6 +18,8 @@ import { useLoad } from './lib/useLoad.ts'
 import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 import { Learn } from './screens/Learn.tsx'
+import { topicsFor, unfinished } from './components/learn/topics.ts'
+import { useLearnProgress } from './lib/learnProgress.ts'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
 const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
@@ -61,6 +63,8 @@ export default function App() {
   // review state, the streaming answer and the scroll position live on.
   const tab = path !== '/cards' && path !== '/bill' && params.get('tab') === 'learn' ? 'learn' : 'chat'
   const chatScroll = useRef(0)
+  const learnProgress = useLearnProgress(customerId)
+  const learnDot = unfinished(topicsFor(ready, lang), learnProgress.done)
   const switchTab = useCallback(
     (next: 'chat' | 'learn') => {
       if (next === tab) return
@@ -87,6 +91,7 @@ export default function App() {
           }}
           threadEmpty={chat.turns.length === 0}
           tab={tab}
+          learnDot={learnDot}
           onTab={path === '/cards' || path === '/bill' ? undefined : switchTab}
         />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
