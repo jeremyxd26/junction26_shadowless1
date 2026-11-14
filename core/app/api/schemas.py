@@ -87,8 +87,8 @@ class OpenWhatifAction(Model):
 
 
 class OpenHostScreenAction(Model):
-    """Open a screen of the host app (contract 0.2.3, #267). The app sends `sentti.open_host_screen` with
-    `{target}` only; the target list is closed."""
+    """Open a screen of the host app (contract 0.3.1, #267). The app sends the host message
+    `sentti.openHostScreen` with `{target}` only; the target list is closed."""
     type: Literal["open_host_screen"]
     label: str
     target: Literal["monthly_saving", "bonus_to_fund"]

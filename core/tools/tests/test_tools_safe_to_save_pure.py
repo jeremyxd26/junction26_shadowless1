@@ -303,6 +303,12 @@ def test_the_host_screen_target_list_is_closed():
         Action(type="open_host_screen", label="x")                          # target required
     with pytest.raises(ValidationError):
         Action(type="open_evidence", label="x", evidence_ref="ev_1", target="monthly_saving")  # only here
+    # the destination only: no evidence and no prompt on a host screen action (review of #308)
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x", target="monthly_saving", evidence_ref="ev_1")
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x", target="monthly_saving", prompt="How could I save more?")
+    assert Action(type="open_host_screen", label="x", target="bonus_to_fund").target == "bonus_to_fund"
 
 
 def test_no_row_raises_in_both_lanes_after_one_run(monkeypatch):
