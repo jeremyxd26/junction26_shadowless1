@@ -199,13 +199,22 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     )
 
 
+def _observed(result: WhatIfResult) -> list[Number]:
+    """#380: the baseline the cut applies to. When the what-if is not offered there is nothing to cut and the
+    baseline is 0, so the estimate never claims it observed zero: it lists what the card shows as left out (the
+    one-off purchases, the regular essentials), only those above 0 (review of #520)."""
+    if result.status == "not_offered":
+        return [n for n in (result.one_off_excluded, result.regular_excluded) if n.value]
+    return [result.baseline_per_month]
+
+
 def _card(result: WhatIfResult, cut_pct: int, language: str) -> Card:
     ref = result.saving_per_month.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,
         estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language, pct=cut_pct),
-                          observed=[result.baseline_per_month],   # #380
+                          observed=_observed(result),   # #380
                           assumptions=[assumption("what_if.next_months_like_last", language),   # #503 review
                                        assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],

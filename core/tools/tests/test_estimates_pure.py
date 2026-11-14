@@ -251,3 +251,20 @@ def test_the_plan_observes_the_baselines_and_assumes_each_cut(language):
     assert est.observed and all(n.method == "what_if.baseline_month_eur@1" for n in est.observed)
     assert [a.code for a in est.assumptions] == ["next_months_like_last", "cuts_as_shown", "cuts_as_shown"]
     assert all(a.value is not None and a.value.unit.value == "percent" for a in est.assumptions[1:])
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_a_what_if_not_offered_never_observes_a_baseline_of_zero(language):
+    """Review of #520: Groceries are regular essentials, so the what-if is not offered and its baseline is 0; the
+    estimate lists what the card shows as left out instead, never a zero."""
+    result = what_if.WhatIfResult(
+        scenario=what_if.Scenario(selection={"kind": "category", "value": "Groceries"},
+                                  cut_pct=num("20", Unit.PERCENT, config.USER_INPUT_METHOD, None, "n7", language),
+                                  label="Groceries -20%"),
+        status="not_offered",
+        **{key: num("3773.14" if key == "regular_excluded" else "0.00", Unit(unit), f"what_if.{column}@1",
+                    f"ev_wi_{i:08d}", f"n{i + 1}", language)
+           for i, (key, column, unit) in enumerate(config.WHAT_IF_NUMBERS)},
+        assumptions=["a"], caveats=[])
+    observed = what_if._card(result, 20, language).estimate.observed
+    assert [n.method for n in observed] == ["what_if.regular_excluded_eur@1"] and all(n.value for n in observed)

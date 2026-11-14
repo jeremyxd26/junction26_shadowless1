@@ -75,3 +75,17 @@ def test_every_estimate_resolves_what_it_observed_and_says_what_it_assumed(conn,
     if customer_id == "CUST00860" and os.environ.get("ESTIMATE_CARDS"):
         with open(os.environ["ESTIMATE_CARDS"], "w", encoding="utf-8") as f:
             json.dump(WRITTEN, f, indent=2, ensure_ascii=False)
+
+
+def test_a_what_if_not_offered_lists_what_it_left_out(conn):
+    """Review of #520, on a persona: the Groceries what-if is not offered (regular essentials are not cut), so its
+    estimate observes the regular essentials it left out, which reconcile, and never a baseline of 0."""
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=conn)
+    ctx._labels = {}
+    result = run_what_if(ctx, {"selection": {"kind": "category", "value": "Groceries"}, "cut_pct": 20})
+    assert result.data.status == "not_offered" and result.data.baseline_per_month.value == 0
+    observed = result.card.estimate.observed
+    assert observed and all(n.value > 0 for n in observed)
+    assert [n.evidence_ref for n in observed] == [result.data.regular_excluded.evidence_ref]
+    for n in observed:
+        assert evidence.resolve(conn, n.evidence_ref, "CUST00860", limit=1).reconciles is True
