@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { Language, Persona } from '../api/types.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BottomSheet } from './BottomSheet.tsx'
@@ -12,6 +13,7 @@ interface Props {
 /** Demo controls: which synthetic customer and which language. */
 export function PersonaSheet({ personas, onPick, onLanguage, onClose }: Props) {
   const { t, lang, customerId } = useSettings()
+  const id = useId()
   return (
     <BottomSheet title={t.personaTitle} onClose={onClose}>
       <p className="text-sm text-muted">{t.personaHint}</p>
@@ -20,9 +22,12 @@ export function PersonaSheet({ personas, onPick, onLanguage, onClose }: Props) {
           const selected = persona.customer_id === customerId
           return (
             <li key={persona.customer_id}>
+              {/* Named by the visible name and profile ("Sanna, Big ticket"); the tagline describes it (#557). */}
               <button
                 type="button"
                 aria-pressed={selected}
+                aria-label={`${persona.display_name}, ${persona.profile.label}`}
+                aria-describedby={`${id}-${persona.customer_id}`}
                 onClick={() => onPick(persona.customer_id)}
                 className={`flex min-h-14 w-full flex-col items-start rounded-lg border px-3 py-2 text-left ${
                   selected ? 'border-brand bg-mint-tint' : 'border-line bg-surface hover:border-line-strong'
@@ -32,7 +37,9 @@ export function PersonaSheet({ personas, onPick, onLanguage, onClose }: Props) {
                   <span className="font-semibold text-ink">{persona.display_name}</span>
                   <span className="text-sm text-muted">{persona.profile.label}</span>
                 </span>
-                <span className="text-sm text-ink-2">{persona.tagline}</span>
+                <span id={`${id}-${persona.customer_id}`} className="text-sm text-ink-2">
+                  {persona.tagline}
+                </span>
               </button>
             </li>
           )
