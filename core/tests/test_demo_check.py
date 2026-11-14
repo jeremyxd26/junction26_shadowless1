@@ -41,6 +41,7 @@ class Stub:
         self.undo = undo                  # ok | 500 | drop
         self.reconciles = reconciles
         self.ask_429 = ask_429
+        self.ask_warnings: tuple | list = ()   # warnings of the /api/ask answers (#244)
         self.malformed_whatif = malformed_whatif
         self.state = "pending"
         self.paths: list[str] = []
@@ -101,7 +102,7 @@ class Stub:
         if path == "/api/ask" and method == "POST" and self.ask_429:
             return 429, {"error": {"code": "rate_limited", "message": "Too many requests."}}
         if path == "/api/ask" and method == "POST" and "ask" not in self.off:
-            return 200, {"outcome": "answered", "warnings": [], "cited": ["n1"],
+            return 200, {"outcome": "answered", "warnings": list(self.ask_warnings), "cited": ["n1"],
                          "numbers": {"n1": num(180.26, "ev_000000000008")}}
         return not_found
 
@@ -283,3 +284,20 @@ def test_the_review_stage_does_not_start_without_enough_time(serve, monkeypatch)
 def test_a_label_answer_that_is_not_an_object_says_so(serve):
     code, lines = run(serve(Stub(label_list=True)), "--no-ask")
     assert code == 1 and "not a JSON object" in line(lines, "spike review")
+
+
+
+# ---- #244: --expect-model --------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("warnings, option, passes", [
+    ([], "any", True), (["llm_unavailable"], "any", True),
+    ([], "on", True), (["llm_unavailable"], "on", False),
+    (["llm_unavailable"], "off", True), ([], "off", False),
+])
+def test_the_ask_checks_require_answered_and_the_warning_follows_expect_model(serve, warnings, option, passes):
+    stub = Stub()
+    stub.ask_warnings = warnings
+    code, lines = run(serve(stub), "--expect-model", option)
+    asks = [row for row in lines if row.startswith("ask:")]
+    assert len(asks) == 4 and all((" PASS " in row) == passes for row in asks), "\n".join(lines)
+    assert (code == 0) == passes
