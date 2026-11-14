@@ -41,6 +41,21 @@ The checks do not cover:
 - **Objects that no ref reaches** but that GitHub still serves by SHA, such as a force-pushed commit. There are none as long as nobody force-pushes, which the team rules forbid outside one's own branch.
 - **Forks.** There are none while the repository is private.
 
+## Known false findings of the branch scan
+
+`scripts/scan_diff_secrets.py` (#472) reports these synthetic test values. The rule is not weakened for them.
+
+| Kind | File | What it is |
+|---|---|---|
+| `secret_assignment` | `.gitleaks.toml` | The `FAKE_SECRET` line of the global allowlist |
+| `secret_assignment` | `core/tools/tests/test_tools_pure.py` | The same `FAKE_SECRET` test value |
+| `secret_assignment` | `core/agent/tests/test_gemini_model.py` | The `test-k...` key of the Gemini adapter tests |
+| `secret_assignment_unquoted` | `deploy/remote-deploy.sh` | The fixtures of the deploy script's log mask |
+
+- **A dev to main batch** (`--base origin/main --head origin/dev`) is expected to exit 1 with exactly one line: `secret_assignment in core/agent/tests/test_gemini_model.py`. That was the result on `dev` at 281c6d1. Any other line is a real finding.
+- **New commits on one of these lines.** A finding names only the kind and the file, so a new value in one of these files looks the same. When the commits it names are new, read the line.
+- **Criss-cross merges.** When a branch and its base have more than one merge base, the scan starts at the one git picks. A commit of `dev` can then be attributed to the branch: a false finding, on the safe side. The allowlist is read at that merge base (for `--range A..B`, at `A`).
+
 ## Last result
 
 Run on 2026-11-14 at about 02:00 Helsinki. The PR for #82 quotes the same output.
