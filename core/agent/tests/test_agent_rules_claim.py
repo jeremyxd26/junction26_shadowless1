@@ -601,3 +601,26 @@ def test_what_if_save_more_and_bills_win_over_the_future(question, lang, tools):
 def test_a_future_with_another_period_or_an_unknown_object_with_a_category_is_not_claimed(question):
     assert not plan(question).recognised
     assert not plan("paljonko käytin kuntosaliin ja ravintoloihin viime kuussa?", "fi").recognised
+
+
+
+@pytest.mark.parametrize("question,lang,period", [
+    # review of #443, D1: the month a future cue carries is the future, not another period
+    ("will I be able to afford a 2000 euro holiday in March?", "en",
+     {"preset": "custom", "start": "2027-03-01", "end": "2027-03-31"}),
+    ("how much will I spend in March?", "en", {"preset": "custom", "start": "2027-03-01", "end": "2027-03-31"}),
+    ("how much will I spend in September?", "en", {"preset": "custom", "start": "2027-09-01", "end": "2027-09-30"}),
+    ("how much did I spend in March next year?", "en",
+     {"preset": "custom", "start": "2027-03-01", "end": "2027-03-31"}),
+    # the rest of this month or year is the future: the data ends today
+    ("how much will I spend this month?", "en", {"preset": "custom", "start": "2026-10-01", "end": "2026-10-01"}),
+    ("how much will I spend this year?", "en", {"preset": "custom", "start": "2026-10-01", "end": "2026-12-31"}),
+    ("paljonko olen säästänyt jouluun mennessä?", "fi",
+     {"preset": "custom", "start": "2026-10-01", "end": "2026-12-25"}),
+    # "in / over the last year" is the past 12 months; "last year" is the calendar year
+    ("how much did I spend in the last year?", "en", {"preset": "last_12_months"}),
+    ("how much did I spend over the last year?", "en", {"preset": "last_12_months"}),
+    ("paljonko käytin viimeisen vuoden aikana?", "fi", {"preset": "last_12_months"}),
+])
+def test_the_future_cue_carries_its_own_month_and_the_last_year_is_twelve_months(question, lang, period):
+    assert [args["period"] for name, args in data_calls(plan(question, lang))] == [period]
