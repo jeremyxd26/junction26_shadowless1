@@ -117,7 +117,11 @@ export function answerFigures(card: Card): AnswerFigures | null {
     }
     case 'safe_to_save': {
       const save = card as SafeToSaveCard
-      return figures(save.monthly, [...row(save.weekly, 'weekly'), ...row(save.daily, 'daily'), ...row(save.stock, 'stock')])
+      // When the month is 0 the core sends a reason whose text has no digits: its amount comes first.
+      const reason: FigureRow[] = save.reason
+        ? [{ key: 'reason', label: save.reason.category?.label ?? save.reason.amount.label, number: save.reason.amount }]
+        : []
+      return figures(save.monthly, [...reason, ...row(save.weekly, 'weekly'), ...row(save.daily, 'daily'), ...row(save.stock, 'stock')])
     }
     case 'whatif': {
       const result = (card as WhatIfCard).result
