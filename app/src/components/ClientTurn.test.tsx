@@ -73,13 +73,12 @@ describe('the opening\'s client-turn chips (#319)', () => {
     openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('shows "Show Sentti a bill" (#332) and "Lesson of the day" (#703), apart from the question chips', () => {
-    expect(openingChips).toEqual(['bill', 'lesson'])
+  it('shows "Show Sentti a bill" (#332), apart from the question chips; the Learn tab replaced "Lesson of the day"', () => {
+    expect(openingChips).toEqual(['bill'])
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')
     expect(html).toContain('>Show Sentti a bill</button>')
-    expect(html).toContain('>Lesson of the day</button>')
-    expect(html.indexOf('Show Sentti a bill')).toBeLessThan(html.indexOf('Lesson of the day'))
+    expect(html).not.toContain('>Lesson of the day</button>')
   })
 
   it('says "Näytä Sentille lasku" in Finnish, the wording of the issue', () => {

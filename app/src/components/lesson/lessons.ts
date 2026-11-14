@@ -40,7 +40,22 @@ export interface SplitLesson {
   rows: SplitRow[]
 }
 
-export type Lesson = PickLesson | SplitLesson
+/** A Learn-tab lesson (#764): a question with text answers, one right; the reveal explains, with an example. */
+export interface QuizLesson {
+  kind: 'quiz'
+  /** Its id in the Learn tab's progress, such as "bills-1". */
+  key: string
+  question: string
+  options: { key: string; text: string }[]
+  right: string
+  /** The reveal's sentence after "Right." / "Not quite.". */
+  reveal: string
+  /** An example from a sample bill, or null. */
+  example: string | null
+  concept: string
+}
+
+export type Lesson = PickLesson | SplitLesson | QuizLesson
 
 /** Kept for lesson 1's callers and tests. */
 export type LessonOneSource = PickSource
@@ -122,13 +137,15 @@ export function lessonThree(overview: OverviewResponse | null): PickLesson | nul
 }
 
 /** Today's lessons for this overview, in order; a hidden lesson is left out. */
-export function lessonsFor(overview: OverviewResponse | null): Lesson[] {
-  return [lessonOne(overview), lessonTwo(overview), lessonThree(overview)].filter((lesson): lesson is Lesson => lesson !== null)
+export function lessonsFor(overview: OverviewResponse | null): (PickLesson | SplitLesson)[] {
+  return [lessonOne(overview), lessonTwo(overview), lessonThree(overview)].filter(
+    (lesson): lesson is PickLesson | SplitLesson => lesson !== null,
+  )
 }
 
 /** The lesson's id in the Learn tab's progress ("money-1" …). */
 export function lessonKey(lesson: Lesson): string {
-  return `money-${lesson.id}`
+  return lesson.kind === 'quiz' ? lesson.key : `money-${lesson.id}`
 }
 
 /** The first lesson not done yet, or the first one when all are done (going through again). */

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { learnStrings } from '../components/learn/learnStrings.ts'
-import { nextLesson, topicsFor } from '../components/learn/topics.ts'
+import { glossary } from '../components/learn/glossary.ts'
+import { lessonsOf, nextLesson, topicsFor } from '../components/learn/topics.ts'
 import { LessonTurn } from '../components/lesson/LessonTurn.tsx'
 import { resetProgress, useLearnProgress } from '../lib/learnProgress.ts'
 import { useOpening } from '../lib/openingContext.ts'
@@ -47,7 +48,8 @@ export function Learn() {
   const s = learnStrings(lang)
   const opening = useOpening()
   const progress = useLearnProgress(customerId)
-  const topics = topicsFor(opening?.overview ?? null)
+  const overview = opening?.overview ?? null
+  const topics = topicsFor(overview, lang)
   const all = topics.flatMap((topic) => topic.lessons)
   const doneCount = all.filter((id) => progress.done.includes(id)).length
   const next = nextLesson(topics, progress.done)
@@ -68,7 +70,7 @@ export function Learn() {
           {s.back}
         </button>
         <h2 className="text-xl font-bold text-ink">{s.topics[studying]}</h2>
-        <LessonTurn turnId={0} onStep={noop} onBusy={noop} />
+        <LessonTurn key={studying} turnId={0} onStep={noop} onBusy={noop} lessons={lessonsOf(studying, overview, lang)} />
       </section>
     )
   }
@@ -132,6 +134,33 @@ export function Learn() {
               )
             })}
           </ul>
+
+          <section aria-labelledby="glossary-title" className="flex flex-col gap-2">
+            <h3 id="glossary-title" className="text-xl font-bold text-ink">
+              {s.glossaryTitle}
+            </h3>
+            <p className="text-base text-ink-2">{s.glossaryIntro}</p>
+            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
+              {glossary(overview, lang).map((entry) => (
+                <li key={entry.id}>
+                  <details className="group px-4">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-base font-semibold text-ink [&::-webkit-details-marker]:hidden">
+                      {entry.term}
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </summary>
+                    <p className="pb-2 text-base text-ink-2">{entry.text}</p>
+                    {entry.figure && (
+                      <p className="pb-3 text-sm text-ink-2">
+                        {s.inYourNumbers}: <span className="font-semibold tabular-nums text-ink">{entry.figure}</span>
+                      </p>
+                    )}
+                  </details>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           <div className="flex flex-col items-start gap-1">
             <button
