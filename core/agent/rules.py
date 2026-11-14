@@ -395,8 +395,10 @@ WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND, COMPLETE_WORDS, 
 # Savings and income are never compared with other people (#418): "do people like me save more than me?"
 PEER_NOT_COMPARED = (r"\bsav(e|es|ed|ing|ings)\b|\bincome\b|\bsalary\b|\bearn\w*|\bsäästä\w*|\bsäästö\w*|"
                      r"\btulo\w*|\bpalk\w*|\btienaa?\w*|\bansai\w*")
-WHERE_OTHERS, SPENDER_OTHER, PEER_NOT_COMPARED = (fold_pattern(rx) for rx in (WHERE_OTHERS, SPENDER_OTHER,
-                                                                               PEER_NOT_COMPARED))
+# ... unless the comparison is of spending: "Do I spend more than people like me so I can save?"
+PEER_SPEND_COMPARED = r"\b(spend|spending|spent|kulutan\w*|kulutukse\w*|käytän\w*)\b.{0,12}\b(more|less|enemmän|vähemmän)\b"
+WHERE_OTHERS, SPENDER_OTHER, PEER_NOT_COMPARED, PEER_SPEND_COMPARED = (
+    fold_pattern(rx) for rx in (WHERE_OTHERS, SPENDER_OTHER, PEER_NOT_COMPARED, PEER_SPEND_COMPARED))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -520,7 +522,7 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue  # saving time is no money question
         if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
             continue  # "save more of my income" is the save-more question, not the income (#296)
-        if intent == "peers" and re.search(PEER_NOT_COMPARED, q):
+        if intent == "peers" and re.search(PEER_NOT_COMPARED, q) and not re.search(PEER_SPEND_COMPARED, q):
             continue  # savings and income are not compared with others (#418)
         if intent == "peers" and not peer_question:
             continue  # what others spend, a named person, or no "I": not the peer benchmark

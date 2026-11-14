@@ -25,7 +25,15 @@ def data(vs: float, metric: str = "spend_total") -> peer.PeerBenchmarkData:
         peer_group=peer.PeerGroup(level="age_band", label="Age 35-44", size=None, comparable=True), peer_source="marts")
 
 
-@pytest.mark.parametrize("vs,offered", [(14.6, True), (1.2, True), (1.0, False), (0.0, False), (-40.5, False)])
-def test_a_cut_is_offered_only_above_the_median(vs, offered):
-    card = peer._card(data(vs), {"label": "Estimate", "text": "x"}, "en")
+@pytest.mark.parametrize("vs,metric,offered", [
+    (14.6, "spend_total", True), (1.2, "spend_total", True), (1.04, "spend_total", False), (1.0, "spend_total", False),
+    (0.0, "spend_total", False), (-0.04, "spend_total", False), (-40.5, "spend_total", False),
+    (14.6, "Restaurants", True), (14.6, "Groceries", False), (14.6, "Housing", False)])
+def test_a_cut_is_offered_only_above_the_median_for_spending_that_can_be_cut(vs, metric, offered):
+    card = peer._card(data(vs, metric), {"label": "Estimate", "text": "x"}, "en")
     assert bool(card.actions) is offered
+
+
+def test_a_categorys_offer_is_the_what_if_itself():
+    card = peer._card(data(14.6, "Restaurants"), {"label": "Estimate", "text": "x"}, "en")
+    assert card.actions[0].prompt == "What if I cut total?"   # the label given here is "Total"
