@@ -65,6 +65,18 @@ PLAN = default_registry().tools["get_savings_plan"]
     ("How much do I pay to my savings account in fees?", None),
     ("How much did I transfer to savings in 2025?", "past"),
     ("How much do I transfer to savings each year?", "usual"),
+    # second review of #670: an amount written "200 €" or "€200", and a move or change request with no amount in a
+    # later sentence or clause, are requests too
+    ("Do I have a regular transfer to savings? Also move 200 € to savings", None),
+    ("Do I have a regular transfer to savings? Also move €200 to savings", None),
+    ("Do I have a regular transfer to savings? Also move some money to savings now", None),
+    ("Do I have a regular transfer to savings? Increase it.", None),
+    ("Paljonko siirrän säästöön kuukaudessa? Nosta sitä 50 €.", None),
+    ("Paljonko siirsin säästöön viime kuussa? Laita sinne lisää.", None),
+    ("Paljonko siirrän säästöön kuukaudessa? Voitko nostaa sitä?", None),
+    # ... but a follow-up question in a later sentence is no request
+    ("How much did I transfer to savings last month? And the month before?", "past"),
+    ("Paljonko siirsin säästöön viime kuussa? Entä sitä edellisenä?", "past"),
 ])
 def test_which_questions_are_about_the_users_own_transfers_to_savings(question, kind):
     assert savings_transfer.asks(fold(question)) == kind
@@ -117,6 +129,14 @@ def test_the_rules_claim_them_for_the_savings_plan_and_the_template_writes(quest
     ("Do I have a regular transfer to savings? Also move 200 euros to savings now", "en"),
     ("Do I have a regular transfer to savings scheduled for tomorrow?", "en"),
     ("Can you transfer my salary to savings every month?", "en"), ("Set up a regular transfer to savings", "en"),
+    # second review of #670: "200 €", "€200", "200€", and a later request with no amount (refused on dev, refused here)
+    ("Do I have a regular transfer to savings? Also move 200 € to savings", "en"),
+    ("Do I have a regular transfer to savings? Also move €200 to savings", "en"),
+    ("Do I have a regular transfer to savings? Also move 200€ to savings", "en"),
+    ("Do I have a regular transfer to savings? Also move some money to savings now", "en"),
+    ("Do I have a regular transfer to savings? Increase it.", "en"),
+    ("Do I have a monthly transfer to savings, and can you increase it?", "en"),
+    ("Paljonko siirsin säästöön viime kuussa? Siirrä myös 200 € säästöön.", "fi"),
 ])
 def test_a_request_to_move_money_and_other_refusals_stay_declined(question, language):
     calls = RuleModel().plan(plan_input(question, language)).calls
