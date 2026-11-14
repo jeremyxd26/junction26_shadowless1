@@ -196,9 +196,9 @@ def test_a_refused_fallback_model_is_turned_off_and_the_primary_pauses_only_brie
     assert [m for m, _ in transport.requests][-1] == FLASH
 
 
-@pytest.mark.parametrize("failure", [api_error(400), TimeoutError(), {"candidates": []},
+@pytest.mark.parametrize("failure", [api_error(400), {"candidates": []},
                                      {"candidates": [{"finish_reason": "MAX_TOKENS", "content": {"parts": []}}]}],
-                         ids=["400", "timeout", "empty", "cut"])
+                         ids=["400", "empty", "cut"])
 def test_three_failures_in_a_row_pause_further_requests(failure):
     clock = Clock()
     transport = FakeTransport(failure, failure, failure, call_response())
@@ -211,6 +211,38 @@ def test_three_failures_in_a_row_pause_further_requests(failure):
     assert len(transport.requests) == 3                 # the fourth call sent nothing
     clock.now += gc.FAILURE_STREAK_COOLDOWN_S + 1
     assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 4
+
+
+@pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError()], ids=["timeout", "network"])
+def test_timeouts_and_network_errors_open_only_a_short_breaker(failure):
+    """Three slow questions in a row (from one user or several) must not pause the model for every user
+    for five minutes: they open a breaker of a few seconds, and the model is asked again after it."""
+    clock = Clock()
+    transport = FakeTransport(failure, failure, failure, call_response())
+    c = GeminiClient(FLASH, transport, cache="off", sleep=lambda s: None, clock=clock)
+    for _ in range(3):
+        with pytest.raises(GeminiError):
+            c.plan(*PLAN_ARGS)
+    assert c.unavailable_reason() == "pause"
+    with pytest.raises(GeminiError):
+        c.plan(*PLAN_ARGS)
+    assert len(transport.requests) == 3                 # within the breaker nothing is sent
+    assert gc.TRANSIENT_BREAKER_S <= 10 < gc.FAILURE_STREAK_COOLDOWN_S
+    clock.now += gc.TRANSIENT_BREAKER_S + 0.1
+    assert c.unavailable_reason() is None
+    assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 4
+
+
+def test_one_or_two_timeouts_pause_nothing_and_do_not_feed_the_failure_streak():
+    """400, 400, timeout: two failures and one timeout, no pause; a timeout never completes a streak of
+    other failures, and a lone timeout pauses no one."""
+    transport = FakeTransport(api_error(400), api_error(400), TimeoutError(), TimeoutError(), call_response())
+    c = client(transport)
+    for _ in range(4):
+        with pytest.raises(GeminiError):
+            c.plan(*PLAN_ARGS)
+    assert c.unavailable_reason() is None
+    assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 5
 
 
 def test_a_success_resets_the_failure_streak():

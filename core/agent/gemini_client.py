@@ -20,8 +20,12 @@ request is reserved, bounded and counted:
   primary costs one request per call, not two. When both fail: a pause of OVERLOAD_COOLDOWN_S.
 - 429 (a spending or rate limit): no further request for RATE_LIMIT_COOLDOWN_S. 401, 403 and 404
   (a key or model id the API refuses): the same pause; a refused fallback model only turns itself off.
-- Any other failure (400, a timeout, an empty or cut response, a malformed call, a composer safety
-  block): after FAILURE_STREAK_LIMIT failures in a row, the same pause as for 401/403/404.
+- A timeout or a network error: usually one slow question, not a broken model, so it never starts the
+  long pause for every user. The answer it belongs to stops asking (no second planner request), and
+  only after TRANSIENT_STREAK_LIMIT of them in a row, from any answers, a short breaker of
+  TRANSIENT_BREAKER_S spares the next answers a wait that would most likely time out too.
+- Any other failure (400, an empty or cut response, a malformed call, a composer safety block): after
+  FAILURE_STREAK_LIMIT failures in a row, the same pause as for 401/403/404.
 - Per answer: at most MAX_REQUESTS_PER_ANSWER requests and one deadline of ANSWER_DEADLINE_S for
   every model call of the answer (the model starts an answer with start_answer). Past either, the
   call raises at once and the pipeline answers from the rule planner and the template.
@@ -77,6 +81,9 @@ CONFIG_ERROR_CODES = {401, 403, 404}    # a key or model the API refuses: no ret
 CONFIG_ERROR_COOLDOWN_S = 300.0
 FAILURE_STREAK_LIMIT = 3                # other failures in a row before a pause
 FAILURE_STREAK_COOLDOWN_S = 300.0
+TRANSIENT_CODES = {"timeout", "network"}   # slow or unreachable: no long pause for everyone
+TRANSIENT_STREAK_LIMIT = 3              # timeouts or network errors in a row before the short breaker
+TRANSIENT_BREAKER_S = 10.0
 MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner and composer together
 ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
 MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
@@ -357,6 +364,7 @@ class GeminiClient:
         self._pause_code = "rate_limited"
         self._skip_primary_until = 0.0   # set when the fallback model answered during an outage
         self._failures = 0               # failures in a row
+        self._transient_failures = 0     # timeouts and network errors in a row
         self._answer = threading.local() # per answer (one answer runs in one thread): requests, deadline
 
     # ---- answers ---------------------------------------------------------------------------------
@@ -483,9 +491,22 @@ class GeminiClient:
             with self._lock:
                 self._failures = 0
 
+    def _transient(self, code: str) -> None:
+        """A timeout or a network error. It does not count towards the failure streak: three slow
+        questions from one user must not pause the model for every user for five minutes. Only a run of
+        them, from any answers, opens a breaker of a few seconds."""
+        with self._lock:
+            self._transient_failures += 1
+            streak = self._transient_failures
+        if streak >= TRANSIENT_STREAK_LIMIT:
+            self._pause(TRANSIENT_BREAKER_S, f"{code} ({streak} in a row)")
+            with self._lock:
+                self._transient_failures = 0
+
     def _succeeded(self) -> None:
         with self._lock:
             self._failures = 0
+            self._transient_failures = 0
 
     # ---- one call --------------------------------------------------------------------------------
 
@@ -573,6 +594,8 @@ class GeminiClient:
                 self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
             elif status in CONFIG_ERROR_CODES and not fallback:
                 self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+            elif code in TRANSIENT_CODES:
+                self._transient(code)
             elif status not in SERVER_ERROR_CODES:
                 self._failed(code)
             if code == "timeout" and kind == "plan" and getattr(self._answer, "key", None) is not None:
