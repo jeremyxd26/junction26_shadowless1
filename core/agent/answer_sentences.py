@@ -219,7 +219,11 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     key = ("income_count" if income else "count") if count else ("income" if income else "plain")
     if count and _value(view.get("tx_count")) == 1:
         key += "_one"
-    return [SPENT[key][lang][1 if what else 0].format(**fmt)], _ids(total, count)
+    first = SPENT[key][lang][1 if what else 0].format(**fmt)
+    few = pick(config.TEXT["note_too_few"], language)
+    if few in (view.get("notes") or []):
+        return [first, few], _ids(total, count)   # why no monthly habit is shown (#379, #527)
+    return [first], _ids(total, count)
 
 
 # ---- baskets --------------------------------------------------------------------------------------------
@@ -495,7 +499,8 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return [pick(PEER_SAME[kind], language).format(metric=metric)], []   # within the margin either way
     if value < 0:
         return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
-    offer = config.peer_offers_cut(view.get("metric") or "", value)
+    # the tool's decision when it states it (the what-if's own count included, #379 part B), else the rule
+    offer = bool(view["offers_cut"]) if "offers_cut" in view else config.peer_offers_cut(view.get("metric") or "", value)
     return [pick((PEER if offer else PEER_PLAIN)[kind], language).format(vs=vs, metric=metric)], _ids(vs)
 
 

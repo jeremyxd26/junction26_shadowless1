@@ -21,9 +21,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from core.tools import aliases, config, evidence, labels, metric_sql, periods
+from core.tools.classify import classify
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
+from core.tools.selection import Selection
 from core.tools.formatting import display
-from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import (MERCHANT_ALIAS_PATTERN, Action, Args, Card, Estimate, Number, Period, PeriodArg, ToolResult,
+                               Unit, assumption)
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "run_what_if"
@@ -117,10 +121,31 @@ def _what(sel: WhatIfSelection, alias_label: str | None, language: str) -> str:
     elif sel.kind == "basket":
         text = config.label(config.BASKET_LABELS[sel.value], language)
     elif sel.kind == "mcc":
-        return _t("mcc", language, codes=sel.value.replace(",", ", "))
+        # a known group or everyday word in words ("taxis"), any other code list by its codes (#377)
+        named = config.WHAT_IF_MCC_NAMES.get(tuple(sorted(sel.value.split(","))))
+        return config.label(named, language) if named else _t("mcc", language, codes=sel.value.replace(",", ", "))
     else:
         return alias_label or sel.value
     return text[:1].lower() + text[1:] if language != "fi" else text.lower()
+
+
+def _purchases_of(sel: WhatIfSelection, what: str, language: str) -> str:
+    """What goes before "purchases" in a too-few sentence: the selection's words, or for a code list without a
+    name "MCC 4111", never "purchases with MCC 4111 purchases" (#379, #498)."""
+    if sel.kind == "mcc" and what == _t("mcc", language, codes=sel.value.replace(",", ", ")):
+        return "MCC " + sel.value.replace(",", ", ")
+    return what
+
+
+def cuttable_purchases(rows: list, kind: str, value: str, window: Period) -> list:
+    """The selection's purchases a what-if baseline would average: spending in the window, without one-offs and
+    regular essentials, as 04_what_if.sql counts them (its n_tx). From classified rows (core.tools.classify), so a
+    caller that has them already needs no query (#379, #527)."""
+    codes = set(value.split(","))
+    return [c.tx for c in rows if c.flow == "spend" and window.start <= c.tx.tx_date <= window.end
+            and not c.is_one_off and c.basket != "regular_essentials"
+            and (c.tx.category == value if kind == "category" else c.tx.mcc in codes if kind == "mcc"
+                 else c.basket == value if kind == "basket" else c.tx.merchant_id == value)]
 
 
 def caveats_for(status: str, language: str) -> list[str]:
@@ -133,7 +158,10 @@ def caveats_for(status: str, language: str) -> list[str]:
     return out
 
 
-def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
+def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "raise") -> ToolResult:
+    """too_few: with fewer than config.TOO_FEW_TRANSACTIONS purchases in the window, "raise" MissingData (the
+    chat answers with the purchases), or "not_offered" (POST /api/whatif: the existing status, every saving and
+    the baseline 0, the chat's sentence as the caveat; the coordinator's decision, review of #379 part B)."""
     args = args if isinstance(args, RunWhatIfArgs) else RunWhatIfArgs.model_validate(args)
     lang = ctx.language
     sel = args.selection
@@ -159,16 +187,47 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
         sql_value = merchant_id
         alias_label = alias_map.for_merchant(merchant_id).label(lang)
 
+    # app.whatif_min_tx is left at the SQL's default, config.TOO_FEW_TRANSACTIONS (a test keeps them equal), so
+    # the evidence refs of every other what-if stay as they were (#379)
     settings = {"whatif": f"{sel.kind}:{sql_value}", "whatif_pct": str(args.cut_pct),
                 **labels.metric_settings_for(ctx)}  # #68
     row = metric_sql.run_one(ctx.conn, config.WHAT_IF_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
+        if too_few != "not_offered":
+            # The chat says there is nothing to cut, never "could not be computed" (#498): #379's reason with no
+            # purchases in the window (the metric's window, the last 6 complete months), and no number.
+            window = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of, lang).period
+            raise MissingData("too_few_transactions", what=_purchases_of(sel, _what(sel, alias_label, lang), lang),
+                              period=window.label,
+                              span=periods.span_phrase(window.start, window.end, lang), n=0)
         # contracts/api.md section 8.1: no spending in the window at all -> 422 invalid_scenario
         raise WhatIfRefused("invalid_scenario: the selection has no spending in the last 6 full months")
 
     window = Period(start=row["period_start"], end=row["period_end"],
                     label=periods.period_label(row["period_start"], row["period_end"], lang))
     what = _what(sel, alias_label, lang)
+    few = None
+    if 0 < int(row["n_tx"] or 0) < config.TOO_FEW_TRANSACTIONS:
+        # A purchase or two is no monthly habit (#379): the SQL gives not_offered with every saving 0; the answer
+        # shows the purchases the baseline would have averaged (the selection's cuttable ones, as in the SQL).
+        rows = classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
+        bought = cuttable_purchases(rows, sel.kind, sql_value, window)
+        txb = NumberBuilder(ctx, rows)
+        exact = Selection(direction="out", start=window.start, end=window.end, tx_ids=tuple(t.id for t in bought))
+        total = txb.transactions(exact, config.METHODS["total"], window,
+                                 _t("selection_total", lang, what=what[:1].upper() + what[1:]))[0]
+        count = txb.transactions(exact, config.METHODS["n_tx"], window, _t("purchases", lang))[0]
+        span = periods.span_phrase(window.start, window.end, lang)
+        if too_few != "not_offered":
+            evidence.write(ctx.conn, txb.specs)
+            # the pipeline registers the two Numbers (the tool cache keeps no numbers of a call that raises)
+            raise MissingData("too_few_transactions", numbers={"total": total, "count": count},
+                              what=_purchases_of(sel, what, lang),
+                              period=window.label, span=span, n=len(bought))
+        sentence = _t("too_few_one" if len(bought) == 1 else "too_few_few", lang, span=span,
+                      what=_purchases_of(sel, what, lang),
+                      total=total.display, count=count.display)
+        few = (txb, total, sentence)
     nb = NumberBuilder(ctx, [])
     reg = ctx.numbers.register
     numbers: dict[str, Number] = {}
@@ -187,23 +246,45 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     result = WhatIfResult(
         scenario=Scenario(selection={"kind": sel.kind, "value": sql_value}, cut_pct=cut, label=scenario_label),
         status=row["status"],
-        assumptions=[_t("estimate_text", lang, pct=args.cut_pct), _t("assume_rest", lang)],
-        caveats=caveats_for(row["status"], lang),
+        assumptions=[] if few is not None else [_t("estimate_text", lang, pct=args.cut_pct), _t("assume_rest", lang)],
+        caveats=[few[2]] if few is not None else caveats_for(row["status"], lang),
         **numbers,
     )
     evidence.write(ctx.conn, nb.specs)
+    specs = list(nb.specs)
+    if few is not None:
+        evidence.write(ctx.conn, few[0].specs)
+        specs += list(few[0].specs)
+    # the card's evidence: the purchases themselves when there are too few (the trip, not an empty list)
+    ref = few[1].evidence_ref if few is not None else None
     return ToolResult(
-        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang), notes=[], evidence=list(nb.specs),
+        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang, ref, few[1] if few is not None else None),
+        notes=[], evidence=specs,
         model_view=_model_view(result, sel),
     )
 
 
-def _card(result: WhatIfResult, cut_pct: int, language: str) -> Card:
-    ref = result.saving_per_month.evidence_ref
+def _observed(result: WhatIfResult, selection_total: Number | None = None) -> list[Number]:
+    """#380: the baseline the cut applies to. When the what-if is not offered there is nothing to cut and the
+    baseline is 0, so the estimate never claims it observed zero: it lists what the card shows as left out (the
+    one-off purchases, the regular essentials), only those above 0 (review of #520). With too few purchases
+    (#379) both can be 0: then the purchases themselves, the selection total of the card's caveat (#503)."""
+    if result.status == "not_offered":
+        left_out = [n for n in (result.one_off_excluded, result.regular_excluded) if n.value]
+        return left_out or ([selection_total] if selection_total is not None else [])
+    return [result.baseline_per_month]
+
+
+def _card(result: WhatIfResult, cut_pct: int, language: str, ref: str | None = None,
+          selection_total: Number | None = None) -> Card:
+    ref = ref or result.saving_per_month.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language, pct=cut_pct)},
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language, pct=cut_pct),
+                          observed=_observed(result, selection_total),   # #380, #503
+                          assumptions=[assumption("what_if.next_months_like_last", language),   # #503 review
+                                       assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         result=result.model_dump(mode="json"),
     )

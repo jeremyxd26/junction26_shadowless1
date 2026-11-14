@@ -95,6 +95,23 @@ export interface BillSafeToSpend {
   text: string
 }
 
+/**
+ * The forecast balance on the bill's due date (since contract 0.3.4, #421). Every Number is
+ * `null` for `outside_forecast`; `shortfall` only for `not_covered`; `chip` (an `ask` action) only
+ * for `not_covered`. The status never removes the payment draft.
+ */
+export interface BillForecast {
+  status: 'covered' | 'tight' | 'not_covered' | 'outside_forecast' | string
+  before: Num | null
+  already_counted: Num | null
+  counted: Num | null
+  after: Num | null
+  shortfall: Num | null
+  /** One sentence that embeds the displays it cites; shown as plain text. */
+  text: string
+  chip: { type: 'ask'; label: string; prompt: string } | null
+}
+
 export interface BillGlossaryEntry {
   term: 'reference_number' | 'due_date' | 'virtual_barcode' | 'late_payment_interest' | string
   label: string
@@ -118,6 +135,16 @@ export interface AddToPaymentsAction {
   draft: PaymentDraft
 }
 
+/** `open_host_screen` (since 0.3.3: target `contact_bank` after a failed check or a new payee with another sign). */
+export interface BillHostScreenAction {
+  type: 'open_host_screen'
+  label: string
+  target: string
+}
+
+/** Pick an action by its `type`, never by its index; an unknown type is ignored. */
+export type BillAction = AddToPaymentsAction | BillHostScreenAction | { type: string; label?: string }
+
 export interface BillSignal {
   code: 'iban_check_failed' | 'reference_check_failed' | 'new_payee' | 'amount_above_usual' | 'short_term' | string
   /** One plain sentence (two for a failed check); never a verdict. */
@@ -136,9 +163,14 @@ export interface BillExplainResponse {
   comparison: Comparison | null
   basket: BillBasket
   safe_to_spend: BillSafeToSpend | null
+  /** Since 0.3.4; missing or `null` from an older API, or when the forecast cannot be computed. */
+  forecast?: BillForecast | null
   glossary: BillGlossaryEntry[]
-  /** At most one; empty when a check failed. The app shows the button only when it is here. */
-  actions: AddToPaymentsAction[]
+  /**
+   * At most two: `add_to_payments` (absent when a check failed) and, since 0.3.3, `open_host_screen`
+   * `contact_bank`. The app shows each only when it is here.
+   */
+  actions: BillAction[]
   warnings: string[]
   signals: BillSignal[]
 }

@@ -17,6 +17,13 @@ npm run typecheck
 npm run test         # unit tests (vitest): the /api/ask stream parser on the contract's examples
 ```
 
+### Demo-path check
+
+`npm run demo:check -- <base-url> [--lang en|fi] [--persona CUST00860]` walks the 60-second path of `docs/demo-script.md` in a headless Chromium (`playwright-core`). It prints one PASS, FAIL or SKIP line per step, and exits 0 only when no step fails. It uses a local Chrome or chrome-headless-shell, or the one in `DEMO_CHECK_BROWSER=<path>`, and never downloads a browser. CI does not run it.
+
+- Dev host: `npm run demo:check -- https://sentti.jeremyxd.dev`. Each run asks the coach two questions, so do not loop it.
+- Local mock build: `VITE_API_MODE=mock npm run build && npm run preview`, then `npm run demo:check -- http://localhost:4173`.
+
 ### Mock and live mode
 
 `VITE_API_MODE` picks the API client at build time (see `.env.example`):
