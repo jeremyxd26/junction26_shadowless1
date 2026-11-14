@@ -7,14 +7,15 @@
 --   app.customer_from  first customer_id of the range, inclusive        (default CUST00000)
 --   app.customer_to    end of the customer_id range, exclusive          (default CUST00100)
 --   app.tx_labels      the customer's transaction labels, JSON {"<id>": "<basket>"} (default none)
---   app.small_start    first day of the period        (default: the 1st of the month before today's)
---   app.small_end      last day of the period         (default: the last day of that month)
+--   app.small_start    first day of the period        (default: the start of the last 3 complete months)
+--   app.small_end      last day of the period         (default: their last day; periods.py last_3_months)
 --   app.small_max      the largest amount that counts as small, euros   (default 10.00)
 -- A small purchase is money out (amount_eur < 0) of the spend flow in the basket everyday_spending, in
 -- Restaurants, Entertainment or Lifestyle, of at most app.small_max euros. A refund is never a purchase;
 -- it still lowers everyday spending, as in the baskets.
--- Result: per customer one row with category = 'all' (count, total_eur, avg_eur, share_pct of everyday
--- spending, flexible_total_eur), then one row per category with small purchases (count, total_eur,
+-- Result: per customer one row with category = 'all' (count, total_eur, avg_eur, month_avg_eur when the
+-- period is whole months, share_pct of everyday spending, flexible_total_eur), then one row per category
+-- with small purchases (count, total_eur,
 -- share_pct of the small total), largest first. Money is positive euros, rounded as the tool rounds:
 -- the average and the shares are computed from the totals rounded to cents.
 -- The CTEs from "params" to "cls" are the shared classification block of 02-06; keep the copies identical.
@@ -112,13 +113,20 @@ cls AS (
     ) o ON true
 ),
 -- ---- shared classification block: end --------------------------------------------------------
-small_params AS (
+small_params AS (   -- the default period: the last 3 complete months (core/tools/periods.py last_3_months)
     SELECT COALESCE(NULLIF(current_setting('app.small_start', true), ''),
-                    to_char(date_trunc('month', p.today) - interval '1 month', 'YYYY-MM-DD'))::date AS start_date,
+                    to_char(date_trunc('month', p.today + 1) - interval '3 months', 'YYYY-MM-DD'))::date AS start_date,
            COALESCE(NULLIF(current_setting('app.small_end', true), ''),
-                    to_char(date_trunc('month', p.today) - interval '1 day', 'YYYY-MM-DD'))::date   AS end_date,
-           COALESCE(NULLIF(current_setting('app.small_max', true), ''), '10.00')::numeric          AS max_eur
+                    to_char(date_trunc('month', p.today + 1) - interval '1 day', 'YYYY-MM-DD'))::date    AS end_date,
+           COALESCE(NULLIF(current_setting('app.small_max', true), ''), '10.00')::numeric               AS max_eur
     FROM params p
+),
+small_months AS (   -- whole calendar months in the period, or NULL when it is not made of whole months
+    SELECT CASE WHEN q.start_date = date_trunc('month', q.start_date)::date
+                 AND q.end_date = (date_trunc('month', q.end_date) + interval '1 month' - interval '1 day')::date
+                THEN (12 * (extract(year FROM q.end_date) - extract(year FROM q.start_date))
+                      + extract(month FROM q.end_date) - extract(month FROM q.start_date) + 1)::int END AS months
+    FROM small_params q
 ),
 customers AS (
     SELECT DISTINCT customer_id FROM tx
@@ -154,6 +162,7 @@ SELECT r.customer_id,
        r.n                                                                            AS count,
        r.total                                                                        AS total_eur,
        CASE WHEN r.category = 'all' AND r.n > 0 THEN round(r.total / r.n, 2) END       AS avg_eur,
+       CASE WHEN r.category = 'all' AND m.months > 0 THEN round(r.total / m.months, 2) END AS month_avg_eur,
        CASE WHEN r.category = 'all' THEN round(COALESCE(e.flexible_eur, 0), 2) END     AS flexible_total_eur,
        CASE WHEN r.category = 'all' AND round(COALESCE(e.flexible_eur, 0), 2) > 0
                 THEN round(100 * r.total / round(e.flexible_eur, 2), 1)
@@ -166,4 +175,5 @@ FROM (SELECT * FROM totals UNION ALL SELECT * FROM by_category) r
 JOIN totals t ON t.customer_id = r.customer_id
 LEFT JOIN everyday e ON e.customer_id = r.customer_id
 CROSS JOIN small_params q
+CROSS JOIN small_months m
 ORDER BY r.customer_id, (r.category <> 'all'), r.total DESC, r.category;

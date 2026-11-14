@@ -1,19 +1,24 @@
 """get_small_purchases (#256): the small everyday purchases nobody notices one by one.
 
-"47 purchases of €10 or less last month came to €212": a literacy feature (the gap between how
-spending feels and what it adds up to). Every number has evidence, and the card leads into the what-if.
+"31 small purchases in three months added up to €156, about €52 a month": a literacy feature (the gap
+between how spending feels and what it adds up to). Every number has evidence, and the card leads into
+the what-if.
 
 Definition (metrics.md section 12; the reference SQL is core/metrics/08_small_purchases.sql):
 - A small purchase is money out (`amount_eur < 0`) in the basket `everyday_spending`, as the baskets
   classify it (core.tools.classify with the customer's labels, so bills, subscriptions, transfers and
   saving are out), in one of config.SMALL_PURCHASE_CATEGORIES, of at most `max_amount` euros.
 - A refund is not a purchase and is never counted. It still lowers everyday spending, as in the baskets.
-- The period defaults to the last full calendar month (preset `last_month`, core/tools/periods.py).
+- The period defaults to the last 3 complete months (config.SMALL_PURCHASE_DEFAULT_PERIOD, preset
+  `last_3_months` of core/tools/periods.py): one month holds too few small purchases to say anything
+  (coordinator, #256, after the persona data).
 
 Numbers, each a Number from the one formatter with the method `small_purchases.<column>@1`:
 - `count` and `total_eur`: transactions evidence that lists exactly these purchases (a Selection with
   their ids, as the review card does);
 - `avg_eur`: total / count (composite `mean`), only when there is at least one purchase;
+- `month_avg_eur`: total / the number of months (composite `scale`), only when the period is whole
+  calendar months (the default is);
 - `flexible_total_eur`: everyday spending in the period (transactions evidence, refunds netted);
 - `share_pct`: the total's share of everyday spending (composite), only when that is above zero;
 - per category, largest first: `total_eur` (transactions) and `share_pct` of the small total
@@ -29,6 +34,7 @@ what-if question for the category with the largest total, with no amount: the us
 from __future__ import annotations
 
 import hashlib
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -47,7 +53,8 @@ CENT = Decimal("0.01")
 
 
 class GetSmallPurchasesArgs(Args):
-    period: PeriodArg = Field(default_factory=lambda: PeriodArg(preset=PeriodPreset.LAST_MONTH))
+    period: PeriodArg = Field(
+        default_factory=lambda: PeriodArg(preset=PeriodPreset(config.SMALL_PURCHASE_DEFAULT_PERIOD)))
     # Euros; a float in the declaration so every model reads it as a plain number.
     max_amount: float = Field(default=float(config.SMALL_PURCHASE_MAX_EUR),
                               ge=config.SMALL_PURCHASE_MAX_RANGE[0], le=config.SMALL_PURCHASE_MAX_RANGE[1])
@@ -66,6 +73,7 @@ class SmallPurchasesData(BaseModel):
     count: Number
     total: Number
     average: Number | None
+    month_average: Number | None   # only for a period of whole calendar months
     flexible_total: Number
     share: Number | None
     categories: list[SmallCategory]
@@ -79,6 +87,15 @@ def _t(key: str, language: str, **kw: Any) -> str:
 def limit_of(args: GetSmallPurchasesArgs) -> Decimal:
     """max_amount as euros and cents."""
     return Decimal(str(args.max_amount)).quantize(CENT)
+
+
+def whole_months(period: Period) -> int | None:
+    """The number of calendar months a period covers when it starts on a 1st and ends on a month's last
+    day (as 08_small_purchases.sql `small_months` counts them), else None."""
+    start, end = period.start, period.end
+    if start.day != 1 or (end + timedelta(days=1)).day != 1:
+        return None
+    return 12 * (end.year - start.year) + end.month - start.month + 1
 
 
 def small_purchases(rows: list[CTx], period: Period, limit: Decimal) -> list[CTx]:
@@ -115,10 +132,15 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
     total = nb.transactions(purchases(found), config.METHODS["small_total"], period, _t("total", lang))
     flexible = nb.transactions(Selection(direction="out", start=period.start, end=period.end, baskets=(EVERYDAY,)),
                                config.METHODS["small_flexible"], period, _t("flexible", lang))
-    average = share = None
+    average = share = month_average = None
     if count[1] > 0:
         average = nb.composite(config.METHODS["small_avg"], "mean", {"total": total, "count": count}, Unit.EUR,
                                period, _t("average", lang))
+    months = whole_months(period)
+    if months:
+        month_average = nb.composite(config.METHODS["small_month_avg"], "scale", {"base": total},
+                                     Unit.EUR_PER_MONTH, period, _t("month_average", lang),
+                                     params={"factor_num": 1, "factor_den": months})
     if flexible[1] > 0:
         share = nb.composite(config.METHODS["small_share"], "share_pct", {"part": total, "whole": flexible},
                              Unit.PERCENT, period, _t("share", lang))
@@ -143,7 +165,8 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
 
     data = SmallPurchasesData(
         period=period, max_amount=reg(max_n[0]), count=reg(count[0]), total=reg(total[0]),
-        average=reg(average[0]) if average else None, flexible_total=reg(flexible[0]),
+        average=reg(average[0]) if average else None,
+        month_average=reg(month_average[0]) if month_average else None, flexible_total=reg(flexible[0]),
         share=reg(share[0]) if share else None, categories=items,
         few=count[1] < config.SMALL_PURCHASE_MIN_COUNT,
     )
@@ -180,11 +203,12 @@ def _model_view(data: SmallPurchasesData, notes: list[str]) -> dict[str, Any]:
         "count": model_number(data.count),
         "total": model_number(data.total),
         "average": model_number(data.average),
+        "per_month": model_number(data.month_average),
         "share_of_everyday": model_number(data.share),
         "everyday_total": model_number(data.flexible_total),
         "categories": [{"key": c.key, "label": c.label, "amount": model_number(c.amount),
                         "share": model_number(c.share)} for c in data.categories],
-        "takeaway": {"kind": "few" if data.few else "summary",
+        "takeaway": {"kind": "none" if data.count.value == 0 else "few" if data.few else "summary",
                      "largest_category": data.categories[0].label if data.categories else None},
         "notes": list(notes),
     }

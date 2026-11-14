@@ -85,6 +85,7 @@ METHODS = {
     "small_share": "small_purchases.share_pct@1",
     "small_flexible": "small_purchases.flexible_total_eur@1",
     "small_max": "small_purchases.max_amount_eur@1",
+    "small_month_avg": "small_purchases.month_avg_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -743,11 +744,22 @@ SMALL_PURCHASE_CATEGORIES: tuple[str, ...] = ("Entertainment", "Lifestyle", "Res
 SMALL_PURCHASE_MAX_EUR = "10.00"     # euros, the default of max_amount (and 08's app.small_max)
 SMALL_PURCHASE_MAX_RANGE = (1, 25)   # the allowed max_amount, in euros
 SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (decision 5 of #256)
+# The default period: the last 3 complete months; one month holds too few small purchases for any of the
+# personas (coordinator, #256, after the persona data). 08_small_purchases.sql has the same default.
+SMALL_PURCHASE_DEFAULT_PERIOD = "last_3_months"
+# Where the small purchases of a category happen, as the takeaway sentence names them ("most of them at
+# restaurants and cafés"); a category's label otherwise.
+SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {
+    "Restaurants": ("restaurants and cafés", "ravintoloissa ja kahviloissa"),
+    "Entertainment": ("entertainment", "viihteessä"),
+    "Lifestyle": ("lifestyle shopping", "lifestyle-ostoksissa"),
+}
 SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Small purchases", "Pienet ostokset"),
     "count": ("Small purchases", "Pieniä ostoksia"),
     "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
     "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "month_average": ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
     "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
     "flexible": ("Everyday spending", "Arjen kulutus"),
     "max_amount": ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),

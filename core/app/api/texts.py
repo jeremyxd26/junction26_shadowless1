@@ -236,6 +236,30 @@ for _id, _unit, _name, _summary in [
 ]:
     METHODS[f"bonus_estimate.{_id}@1"] = MethodInfo(_unit, _name, _summary, BONUS_DOC)
 
+# Small purchases (#256): the output columns of 08_small_purchases.sql, metrics.md section 12.
+SMALL_DOC = METRICS_DOC + "#12-small-purchases-256"
+for _id, _unit, _name, _summary in [
+    ("count", Unit.COUNT, ("Small purchases", "Pieniä ostoksia"),
+     ("Purchases in restaurants, entertainment and lifestyle of at most the small amount, in the period.",
+      "Ravintola-, viihde- ja elämäntapaostokset, enintään pienen summan suuruiset, jakson aikana.")),
+    ("total_eur", Unit.EUR, ("Small purchases in total", "Pienet ostokset yhteensä"),
+     ("The sum of those small purchases.", "Näiden pienten ostosten summa.")),
+    ("avg_eur", Unit.EUR, ("Average small purchase", "Pienen ostoksen keskihinta"),
+     ("The total divided by the number of small purchases.", "Summa jaettuna pienten ostosten määrällä.")),
+    ("month_avg_eur", Unit.EUR_PER_MONTH, ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
+     ("The total divided by the number of whole months in the period.",
+      "Summa jaettuna jakson kokonaisten kuukausien määrällä.")),
+    ("share_pct", Unit.PERCENT, ("Share", "Osuus"),
+     ("A part of a total, in percent: the small purchases of everyday spending, or a category of the small "
+      "purchases.", "Osa kokonaisuudesta prosentteina: pienet ostokset arjen kulutuksesta tai luokka pienistä "
+      "ostoksista.")),
+    ("flexible_total_eur", Unit.EUR, ("Everyday spending", "Arjen kulutus"),
+     ("Everyday spending in the period, refunds netted.", "Arjen kulutus jakson aikana, palautukset vähennettyinä.")),
+    ("max_amount_eur", Unit.EUR, ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),
+     ("The limit a purchase must not exceed to count as small.", "Raja, jota pieneksi laskettu ostos ei ylitä.")),
+]:
+    METHODS[f"small_purchases.{_id}@1"] = MethodInfo(_unit, _name, _summary, SMALL_DOC)
+
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {
     "age_band+area3": ("same age group and postal area", "sama ikäryhmä ja postinumeroalue"),

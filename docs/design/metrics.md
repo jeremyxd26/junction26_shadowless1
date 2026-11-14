@@ -650,6 +650,41 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 
 **Illustration** (CUST00001, window 2026-04 … 2026-09; the target is a made-up user input). Monthly keep was 285.98, 590.08, 602.90, −111.54, −133.58 and 569.15 (2 of 6 months negative), so `capacity_month` = 300.50, of which 230.01 is the existing monthly investment deposit. For a 20,000 € target from 0 the result is 67 months. With dining out −20% (+11.37 a month, section 4) it is 65 months. For CUST00002 the capacity is −73.77 a month, so the plan is not reachable at this pace. CUST00006 has a monthly sweep, so the plan is not estimated.
 
+## 12. Small purchases (#256)
+
+"Where do my small purchases go?" The tool is `get_small_purchases` (`core/tools/small_purchases.py`), and the reference SQL is `core/metrics/08_small_purchases.sql`; the two agree for the four personas (a database test). It is a literacy number: the gap between how small spending feels and what it adds up to.
+
+**Definition.** A small purchase is money out (`amount_eur < 0`) of the spend flow in the basket `everyday_spending`, as the baskets classify it (section 1, with the customer's labels), in `Restaurants`, `Entertainment` or `Lifestyle` (`config.SMALL_PURCHASE_CATEGORIES`), of at most `max_amount` euros.
+- So bills, subscriptions, transfers, saving and Travel are out.
+- A refund is never a purchase; it still lowers everyday spending, as in the baskets.
+- **Defaults:** the last 3 complete months (preset `last_3_months`, `config.SMALL_PURCHASE_DEFAULT_PERIOD`) and €10.00 (`config.SMALL_PURCHASE_MAX_EUR`); `max_amount` may be 1 to 25. One month held too few small purchases for any persona (coordinator, #256).
+
+**Numbers** (`small_purchases.<column>@1`, each a Number with evidence):
+
+| Column | Meaning | Evidence |
+|---|---|---|
+| `count`, `total_eur` | The small purchases in the period | `transactions`, listing exactly these purchases |
+| `avg_eur` | `total / count`, when there is at least one | composite `mean` |
+| `month_avg_eur` | `total / months`, when the period is whole calendar months (the default is) | composite `scale` |
+| `flexible_total_eur` | Everyday spending in the period, refunds netted | `transactions` |
+| `share_pct` | The total's share of everyday spending; per category, its share of the small total | composite `share_pct` |
+| `max_amount_eur` | The limit used | composite `rule_value` |
+
+**The answer.** With fewer than 5 small purchases (`config.SMALL_PURCHASE_MIN_COUNT`) the answer is a plain "not much to see here" with the count and the total. With none, it says so. Otherwise one sentence:
+- it gives the count, the limit, the total and the monthly average;
+- it says where most of them happen: "most of them at restaurants and cafés" when the largest category holds more than half of the small total, else "the largest part at …".
+
+The card's second action asks the what-if question for the largest category with no amount ("What if I cut restaurants?"), so the user says how much (#142).
+
+**The personas** (as of 2026-09-30, the last 3 complete months, €10):
+
+| Customer | Count | Total | A month | Answer |
+|---|---|---|---|---|
+| CUST00860 | 4 | 28.73 | 9.58 | few (all at restaurants) |
+| CUST00493 | 31 | 156.04 | 52.01 | summary: restaurants 60.4 %, entertainment 39.6 %; the persona that shows the feature best |
+| CUST00349 | 13 | 94.25 | 31.42 | summary: restaurants 69.2 %, entertainment 30.8 % |
+| CUST00849 | 1 | 8.64 | 2.88 | few (at a restaurant) |
+
 ## Rule references
 
 R1 and R2: every number is a column with its period and an evidence filter (section 0). R5: the DEMO_TODAY bound in every query. R9: Health is summed only, never benchmarked or used in labels (sections 1, 5, 6). R13: safe to spend, what-if, peer benchmark and store index are estimates with a stated method and caveat (sections 3, 4, 6, 7).

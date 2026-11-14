@@ -323,6 +323,63 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
 
 
+# Small purchases as one takeaway sentence (#256), in the voice of the brief: the count, the limit, the total,
+# the monthly average when the period is whole months, and where most of them happen. Words always stand
+# between the count token and a date, so a count never reads as a day of a month. No advice, no judgement.
+SMALL_SENTENCE = {
+    "summary": ("{count} small purchases of {max} or less added up to {total}{month} — {where_part}.",
+                "{count} pientä ostosta (enintään {max}) maksoi yhteensä {total}{month} — {where_part}."),
+    "few": ("Only {count} {noun} of {max} or less, {total} in all — not much to see here.",
+            "Vain {count} {noun} (enintään {max}), yhteensä {total} — tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases of {max} or less.", "Ei yhtään pientä ostosta (enintään {max})."),
+    "month": (", about {month} a month", ", noin {month} kuukaudessa"),
+    "most": ("most of them at {where}", "suurin osa {where}"),
+    "largest": ("the largest part at {where}", "eniten {where}"),
+    "noun_one": ("small purchase", "pieni ostos"),
+    "noun_many": ("small purchases", "pientä ostosta"),
+}
+
+
+def small_purchases_sentence(view: dict[str, Any], language: str, period: str | None) -> tuple[str, list[str]] | None:
+    """The small-purchases takeaway as one sentence, and the ids it cites; None when a number is missing.
+    `period` is the period's label when it may be named (template_draft checks it), else None."""
+    if view.get("tool") != "get_small_purchases":
+        return None
+    nums = {k: view.get(k) for k in ("count", "max_amount", "total", "per_month")}
+
+    def has(key: str) -> bool:
+        return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
+
+    if not (has("count") and has("max_amount") and has("total")):
+        return None
+    token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
+    kind = (view.get("takeaway") or {}).get("kind")
+    s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    if kind == "none":
+        text, ids = s("none").format(max=token["max_amount"]), [nums["max_amount"]["id"]]
+    elif kind == "few":
+        noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
+        text = s("few").format(count=token["count"], noun=noun, max=token["max_amount"], total=token["total"])
+        ids = [nums[k]["id"] for k in ("count", "max_amount", "total")]
+    else:
+        categories = view.get("categories") or []
+        largest = categories[0] if categories else {}
+        key, label = largest.get("key"), largest.get("label") or ""
+        where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
+                 else (label.lower() if language == "en" else label))
+        share = (largest.get("share") or {}).get("value")
+        if re.search(r"\d", where):
+            return None
+        where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
+        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        text = s("summary").format(count=token["count"], max=token["max_amount"], total=token["total"], month=month,
+                                   where_part=where_part)
+        ids = [nums[k]["id"] for k in ("count", "max_amount", "total")] + ([nums["per_month"]["id"]] if month else [])
+    if period:
+        text = f"{period}: {text}"
+    return text[:1].upper() + text[1:], ids
+
+
 PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
 
 
@@ -395,7 +452,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = safe_to_spend_sentence(view, language)
+        custom = (safe_to_spend_sentence(view, language)
+                  or small_purchases_sentence(view, language, period if has_head else None))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])
             cited += custom[1]

@@ -80,6 +80,8 @@ CALLS: tuple[WarmCall, ...] = (
              "GetPeerBenchmarkArgs", {"metric": "spend_total"}),
     WarmCall("How could I save more? (dining out -20%)", "core.tools.what_if", "run_what_if", "RunWhatIfArgs",
              {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}),
+    WarmCall("Where do my small purchases go? (#256)", "core.tools.small_purchases", "get_small_purchases",
+             "GetSmallPurchasesArgs", {}),
 )
 
 # The partner's four questions (the same pairs as SUGGESTED_QUESTIONS in core/app/api/texts.py).
