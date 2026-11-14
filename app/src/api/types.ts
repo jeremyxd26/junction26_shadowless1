@@ -1,4 +1,4 @@
-// Types for the parts of contracts/api.md (0.2.1) the app uses so far:
+// Types for the parts of contracts/api.md (0.3.2) the app uses so far:
 // sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask), 8 (what-if), 9 (evidence)
 // and 10 (labels).
 // The app ignores fields it does not know (contract section 1), so these types list only what it reads.
