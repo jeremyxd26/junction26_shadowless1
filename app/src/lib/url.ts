@@ -157,8 +157,8 @@ function closeTopSheet() {
 }
 
 /**
- * The first screen is the overview (`/`) with no sheet open, however the customer got there:
- * the history state says nothing about it (Chat → overview pushes a `screen` entry too).
+ * The first screen is the thread on `/` (opened by Sentti's opening turn) with no sheet open,
+ * however the customer got there: the history state says nothing about it.
  */
 function onFirstScreen(state: BackState): boolean {
   return window.location.pathname === '/' && !sheetOpen(state)
