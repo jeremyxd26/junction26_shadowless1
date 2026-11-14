@@ -52,8 +52,8 @@ WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
     # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
-    (r"groceries|grocery|food shopping|(?<!fast )\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
-    (r"restaurants?|dining out|eating out|eat out|fast food|ravintol\w*|ulkona syö\w*", "Restaurants"),
+    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"restaurants?|dining out|eating out|eat out|fast[- ]food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
@@ -322,7 +322,7 @@ WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
      config.MCC_GROUPS["public_transport"]),
     (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*|bensii\w*|tankkau\w*", config.MCC_GROUPS["fuel"]),
     (r"parking|pysäköin\w*|parkki\w*", config.MCC_GROUPS["parking"]),
-    (r"take-?aways?|fast food|noutoruo\w*|pikaruo\w*", ("5814",)),
+    (r"take-?aways?|fast[- ]food|noutoruo\w*|pikaruo\w*", ("5814",)),
     (r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*", ("5813",)),
     (r"cinemas?|\bmovies\b|elokuv\w*|leffa\w*|leffoi\w*", ("7832",)),
 ]]
@@ -372,6 +372,11 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
     if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
+        return "save_more", None
+    if categories == {"Groceries"} and selections == 1 and not pct and not half and re.search(template.SAVE_MORE, q) \
+            and not re.search(r"grocer\w*|food shopping|ruoka\w*", rest):
+        # "How could I save on food?": dev's save-more answer; bare "food" with no cut is no cut of Groceries, a
+        # regular essential the what-if leaves out (#551, the coordinator)
         return "save_more", None
     if not selections and re.search(WHOLE_SPENDING, q) and not re.search(SELECTION_CODE, q):
         return "which", None
@@ -1170,8 +1175,17 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if re.search(FOOD_COMPOUND, q) and "what_if" not in found:
-        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534);
-        # a what-if on one keeps the what-if rule, which asks which spending, as on dev
+        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534), but
+        # a thing no category maps, as any unknown thing (#551): a spending question on it alone is answered with
+        # the customer's categories, and the answer quotes the compound whole; never the unfiltered total, never
+        # Groceries. Beside another rule's question it competes (#545). A what-if on one keeps the what-if rule.
+        others = [f for f in found if f != "spending"]
+        if others:
+            return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
+        if "get_basket_breakdown" in tools and _spending_words(q):
+            period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+            return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
+                                            FunctionCall("finish")))
         return Claim(None, reason="food_compound")
     if found and not {"what_if", "small_purchases"} & set(found) and _asks_unknown_spending(q, peer_question):
         # "How much did I spend at Barsa last month? What can I safely spend this week?": the spending question

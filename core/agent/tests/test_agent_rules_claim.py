@@ -844,7 +844,8 @@ def test_a_possessive_before_no_category_is_still_an_unknown_thing():
 
 
 @pytest.mark.parametrize("question,expected", [
-    # review of #534: bare "food" stays food shopping; a noun that changes its meaning leaves it to the model
+    # review of #534: bare "food" stays food shopping; a noun that changes its meaning is a thing no category maps,
+    # answered with the customer's categories as any unknown thing (#551): never the total, never Groceries
     ("how much did I spend on food last month?", {"categories": ["Groceries"]}),
     ("how much did I spend on food shopping last month?", {"categories": ["Groceries"]}),
     ("how much did I spend on fast food last month?", FAST_FOOD),
@@ -861,9 +862,36 @@ def test_a_possessive_before_no_category_is_still_an_unknown_thing():
 def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, expected):
     calls = data_calls(plan(question))
     if expected is None:
-        assert claimed_rule(question) == NOT_CLAIMED and calls == []
+        assert claimed_rule(question) == "unknown_object" and [name for name, _ in calls] == ["get_basket_breakdown"]
+        assert calls[0][1]["period"] == {"preset": "last_month"}
     else:
         assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(expected)
+
+
+@pytest.mark.parametrize("question,expected", [
+    # #551 (the coordinator, after #534 in dev): "fast-food" with a hyphen is "fast food"; saving on bare "food" with
+    # no cut is the save-more question, never a cut of Groceries (a regular essential: a dead end)
+    ("how much did I spend on fast-food last month?", ("get_spending", FAST_FOOD)),
+    ("What if I spent 20% less on fast-food?", ("run_what_if", {"kind": "mcc", "value": "5814"})),
+    ("How could I save on food?", ("save_more", None)),
+    ("How can I save money on food?", ("save_more", None)),
+    ("How could I save on food delivery?", ("save_more", None)),
+])
+def test_fast_food_with_a_hyphen_and_saving_on_food(question, expected):
+    calls = data_calls(plan(question))
+    name, want = expected
+    if name == "save_more":
+        assert claimed_rule(question) == "save_more" and [n for n, _ in calls][:1] == ["get_safe_to_save"]
+    elif name == "get_spending":
+        assert [n for n, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(want)
+    else:
+        assert [n for n, _ in calls] == ["run_what_if"] and calls[0][1]["selection"] == want
+
+
+def test_a_spending_question_on_a_food_compound_beside_another_rules_question_asks_back():
+    result = plan("How much did I spend on food delivery last month and what can I safely spend this week?")
+    assert data_calls(result) == [] and result.calls[0].args["question"] == CLARIFY_WHICH[0]
+    assert template.pick(CANDIDATE_QUESTIONS["safe_to_spend"], "en") in result.calls[0].args["options"]
 
 
 # ---- #545: a spending question about an unknown thing beside another rule's question asks back ------------------
