@@ -347,7 +347,6 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
     const target = document.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
     let cancelled = false
     const animations: Animation[] = []
-    const waits: number[] = []
 
     if (!element || !source || !target) {
       onEvent(run, 'start')
@@ -393,38 +392,21 @@ function FlyingAmount({ flight, onEvent }: { flight: Flight; onEvent: (run: numb
         .catch(() => undefined)
     }
 
-    // On a short screen (375 × 812) the basket rows sit below the fold, or where the toast will
-    // come up. Then the hero counts first, at the top, and only after that the page glides to
-    // the rows and the amount flies.
+    // The flight never moves the page: a question asked meanwhile must stay in view. When the rows
+    // are not on screen (above the header or where the toast comes up), the amount does not fly
+    // and the numbers simply change.
     const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
     const floor = window.innerHeight - TOAST_SPACE
     const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
-    const hidden = rows.some((box) => !box || box.top < header || box.bottom > floor)
-    let stopWaiting = () => {}
-    if (hidden) {
-      waits.push(
-        window.setTimeout(() => {
-          if (cancelled) return
-          let started = false
-          const go = () => {
-            if (started) return
-            started = true
-            window.removeEventListener('scrollend', go)
-            fly()
-          }
-          stopWaiting = () => window.removeEventListener('scrollend', go)
-          window.addEventListener('scrollend', go)
-          waits.push(window.setTimeout(go, 700))
-          target.closest('li')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        }, tokenMs('--duration-money', 900)),
-      )
-    } else {
-      fly()
+    if (rows.some((box) => !box || box.top < header || box.bottom > floor)) {
+      onEvent(run, 'start')
+      onEvent(run, 'land')
+      onEvent(run, 'done')
+      return
     }
+    fly()
     return () => {
       cancelled = true
-      stopWaiting()
-      for (const id of waits) window.clearTimeout(id)
       for (const animation of animations) animation.cancel()
     }
   }, [run, basket, onEvent])
