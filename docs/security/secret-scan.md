@@ -22,6 +22,7 @@ python scripts/scan_env_values.py
 - The first line also fetches the head of every pull request, closed ones included. Those refs become public with the repository, even when their branch was deleted. The script runs the same fetch itself unless it gets `--no-fetch`.
 - Both checks must end clean: `no leaks found`, and `RESULT: clean` with `0 / 0 / 0` for every variable.
 - The script exits 2 and prints `NOT RUN` when it loads no value, for example from an empty or missing `.env`.
+- The data the dev service keeps (audit files, model response cache, journal) is one more step of this list: it is deleted by hand after the event, with the checklist in `docs/security/server-data.md`.
 
 **If anything is found**:
 - the key counts as leaked, even if the repository is still private;
@@ -55,6 +56,7 @@ The checks do not cover:
 - **A dev to main batch** (`--base origin/main --head origin/dev`) is expected to exit 1 with exactly one line: `secret_assignment in core/agent/tests/test_gemini_model.py`. That was the result on `dev` at 281c6d1. Any other line is a real finding.
 - **New commits on one of these lines.** A finding names only the kind and the file, so a new value in one of these files looks the same. When the commits it names are new, read the line.
 - **Criss-cross merges.** When a branch and its base have more than one merge base, the scan starts at the one git picks. A commit of `dev` can then be attributed to the branch: a false finding, on the safe side. The allowlist is read at that merge base (for `--range A..B`, at `A`).
+- **The whole history.** A range from the first commit reads the allowlist there, and the first commit has none. Pass `--gitleaks-config .gitleaks.toml`, or the allowlisted test URLs show up as findings as well.
 
 ## Last result
 

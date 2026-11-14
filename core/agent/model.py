@@ -7,7 +7,7 @@ adapter (issue #66) implements `Model`; change these shapes only together with i
   Mode ANY: it must return at least one FunctionCall (data tool or control function).
 - compose(ComposeInput) -> ComposeResult: the composer, a fresh tool-free call that returns the JSON
   text of an AnswerDraft (validator.py) and cites numbers only as {{nK}} tokens. Of the history it
-  sees only the previous question and answer, numbers masked as [number].
+  sees only the previous question and the previous answer with its numbers masked as [number].
 
 Both inputs hold model views only, never tool data, cards, evidence refs or the customer id (R3, R4).
 A call that fails raises ModelError (or any exception): the pipeline retries once, then falls back.
