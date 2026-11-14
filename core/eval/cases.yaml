@@ -564,6 +564,33 @@ cases:
   forbid:
   - {name: friends_amount_from_the_question, value: 500.0, unit: eur_per_month, tolerance: 0.005, source: {literal: 500}}
 
+- id: eetu-save-more-already-saving
+  persona: CUST00349
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving]
+  numbers:
+  - {name: already_saving_month, value: 242.95, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}}
+  - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  forbid:
+  - {name: plan_plus_already_saving, value: 319.94, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}]}}
+  - {name: savings_goal_beside_the_transfer, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
+
+- id: kaisa-save-more-no-regular-transfer
+  persona: CUST00849
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving, zero_state]
+  numbers:
+  - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, required: false, source: {query: savings_plan, column: total_year_eur}}
+  forbid:
+  - {name: savings_goal_beside_the_neutral_line, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
+
 - id: marja-taxi-this-month-none
   persona: CUST00493
   question: {en: 'How much have I spent on taxis this month?'}
