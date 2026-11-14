@@ -379,9 +379,6 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
                                                displays=[numbers[i].display for i in set(used)],
                                                dates=allowed.dates, periods=allowed.periods)
         errors += [f"rendered text: {p}" for p in rendered if p not in errors]
-        repeated = repeated_period(draft.text, numbers)
-        if repeated:
-            errors.append(f"'{repeated}': the number's display already says how often; write it once")
     return draft, errors
 
 

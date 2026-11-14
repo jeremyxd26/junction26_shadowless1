@@ -50,7 +50,7 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
-                                  render, unavailable_claim, validate)
+                                  render, repeated_period, unavailable_claim, validate)
 from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
@@ -681,6 +681,11 @@ class Pipeline:
                     if inside:
                         # No tool says what a category contains (#395).
                         errors.append(f"'{inside}': name a category only by its label, never what it contains")
+                    repeated = repeated_period(draft.text, numbers)
+                    if repeated:
+                        # "€3,010.59 a month a month": model drafts only. A template that trips it would be
+                        # replaced by the "nothing found" text; templates are checked by tests instead.
+                        errors.append(f"'{repeated}': the number's display already says how often; write it once")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

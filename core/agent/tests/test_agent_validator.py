@@ -263,14 +263,13 @@ MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), U
     ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
     ("Elokuussa 2026 käytit {{n1}} / kk.", "fi"),
 ])
-def test_a_period_after_a_number_that_carries_it_is_rejected(text, lang):
-    numbers = {"n1": MONTHLY if lang == "en" else MONTHLY_FI}
-    _, errors = validate({"language": lang, "text": text, "cited": ["n1"], "lesson_key": None},
-                         language=lang, numbers=numbers, allowed=ALLOWED)
-    assert any("already says how often" in e for e in errors), errors
+def test_a_period_after_a_number_that_carries_it_is_found(text, lang):
+    from core.agent.validator import repeated_period
+
+    assert repeated_period(text, {"n1": MONTHLY if lang == "en" else MONTHLY_FI})
 
 
-def test_the_same_number_without_the_repeated_period_passes():
-    _, errors = validate({"language": "en", "text": "In August 2026 you spent {{n1}} on average.", "cited": ["n1"],
-                          "lesson_key": None}, language="en", numbers={"n1": MONTHLY}, allowed=ALLOWED)
-    assert errors == []
+def test_the_same_number_without_the_repeated_period_is_fine():
+    from core.agent.validator import repeated_period
+
+    assert repeated_period("In August 2026 you spent {{n1}} on average.", {"n1": MONTHLY}) is None
