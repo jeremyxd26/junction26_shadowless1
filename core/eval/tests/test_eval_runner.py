@@ -612,3 +612,14 @@ def test_the_below_median_case_forbids_the_invitation_and_passes_its_own_sentenc
     above = [t.format(vs="14.6% more", metric="restaurants") for t in PEER["total"] + PEER["metric"]]
     assert not any(re.search(pattern, t, re.I) for t in below), below
     assert all(re.search(pattern, t, re.I) for t in above), above
+
+
+def test_a_case_with_a_listed_offer_needs_that_sentence_last_and_its_question_as_the_first_chip():
+    """#572: the offer check of the runner, on a source that reports its chips."""
+    case = {**SAFE, "offer": "save_more"}
+    text = "Safe to spend this week: €180.26, next payday 2026-10-15. Want to see how you could save more?"
+    assert run.check(case, safe_answer(text=text, follow_ups=["How could I save more?"]), "en",
+                     SAFE["question"]["en"]) == []
+    fails_with(case, safe_answer(follow_ups=["How could I save more?"]), "en", "offer: the last sentence")
+    fails_with(case, safe_answer(text=text, follow_ups=["Where did my money go?"]), "en", "chips: the offer's question")
+    fails_with(case, safe_answer(text=text), "en", "unverified")

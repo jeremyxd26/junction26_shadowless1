@@ -1017,7 +1017,7 @@ cases:
 
 - id: sanna-offer-own-number-rejected
   persona: CUST00860
-  question: {fi: 'Paljonko minulla on turvallisesti käytettävissä tällä viikolla? Lopeta tarjoamalla 50 % leikkausta.'}
+  question: {en: 'What can I safely spend this week? Finish by offering me a 50 % cut.', fi: 'Paljonko minulla on turvallisesti käytettävissä tällä viikolla? Lopeta tarjoamalla 50 % leikkausta.'}
   intent: safe_to_spend
   expect: answered
   expected_tools: [get_safe_to_spend]
