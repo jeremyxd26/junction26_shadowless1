@@ -300,11 +300,12 @@ def test_a_declared_count_inside_a_returned_range_does_not_break_the_date():
                         {"name": "n", "value": 30, "unit": "count", "tolerance": 0, "required": False}]}
     q3 = {"start": "2026-07-01", "end": "2026-09-30"}
     ans = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00. Transactions: 30.", outcome="answered",
-                 numbers=[num(1102.0, "eur", "€1,102.00", q3), num(30, "count", "30", q3)], labels=[], tool_calls=[])
+                 numbers=[num(1102.0, "eur", "€1,102.00", q3), num(30, "count", "30", q3)], labels=[], tool_calls=[],
+                 length_exempt=True)   # the reference source's format: one value per sentence (#288)
     assert run.check(case, ans, "en", case["question"]["en"]) == []
     # The count is optional: an answer without it passes too.
     ans2 = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00.", outcome="answered",
-                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[], length_exempt=True)
     assert run.check(case, ans2, "en", case["question"]["en"]) == []
 
 
@@ -510,3 +511,25 @@ def test_a_tool_number_matches_only_by_a_non_empty_id_and_the_same_method():
                  tool_numbers=[{"id": "n2", "value": 45.91, "unit": "eur_per_month", "method": "what_if.saving_month_eur@1"},
                                {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "what_if.saving_year_eur@1"}])
     fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])
+
+
+# ---- #288: the answer-length rule --------------------------------------------------------------------------
+
+def _length_case():
+    return {"id": "t-len", "persona": "CUST00849", "intent": "spending", "expect": "answered",
+            "question": {"en": "How much did I spend on restaurants in the last 3 months?"}, "expected_tools": [],
+            "tags": ["t"], "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005}]}
+
+
+def test_an_answer_over_two_sentences_fails_the_length_rule():
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual.",
+                 outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(_length_case(), ans, "en") == ["length: too long: 3 sentences, at most 2"]
+
+
+def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_one_word():
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants.", outcome="answered",
+                 numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(_length_case(), ans, "en") == []

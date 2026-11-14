@@ -243,6 +243,88 @@ def allowed_from(numbers: Iterable[Number], model_views: Iterable[dict[str, Any]
     return Allowed(frozenset(dates), frozenset(periods))
 
 
+# Markdown a model may write although its prompt asks for plain text (#302). The contract defines no
+# emphasis: if the answer ever needs it, it will be a structured field the app draws, never markdown.
+_MD_LINK_DEFINITION = re.compile(r"(?m)^[ \t]*\[[^\]\n]+\]:[ \t]*\S+[^\n]*\n?")
+_MD_IMAGE = re.compile(r"!\[([^\]\n]*)\]\([^)\n]*\)")
+_MD_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\n]*\)")
+_MD_REFERENCE_LINK = re.compile(r"\[([^\]\n]+)\][ \t]?\[[^\]\n]*\]")
+_MD_HEADING = re.compile(r"(?m)^[ \t]*#{1,6}[ \t]+")
+_MD_BULLET = re.compile(r"(?m)^[ \t]*[-*+\u2022][ \t]+")
+# A numbered list marker, but not a date that starts a line ("15. lokakuuta 2026 on palkkapäiväsi"): it is
+# stripped only when two or more lines carry one and the line does not go on with a month name.
+_MD_NUMBERED = re.compile(r"(?m)^[ \t]*\d{1,2}[.)][ \t]+(?!(?:tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys"
+                          r"|loka|marras|joulu)kuu|(?:january|february|march|april|may|june|july|august|september"
+                          r"|october|november|december)\b)", re.I)
+_MD_EMPHASIS = re.compile(r"\*+|__+|`+")
+
+
+def plain_text(text: str) -> str:
+    """The text without markdown (#302): bold and italic asterisks, double underscores, backticks,
+    heading marks and list bullets at a line start, and links or images (their text stays, the target
+    goes; a link definition line goes entirely). Words and number tokens are left as they are."""
+    text = _MD_LINK_DEFINITION.sub("", text)
+    text = _MD_IMAGE.sub(r"\1", text)
+    text = _MD_LINK.sub(r"\1", text)
+    text = _MD_REFERENCE_LINK.sub(r"\1", text)
+    text = _MD_HEADING.sub("", text)
+    text = _MD_BULLET.sub("", text)
+    if len(_MD_NUMBERED.findall(text)) >= 2:
+        text = _MD_NUMBERED.sub("", text)
+    return _MD_EMPHASIS.sub("", text).strip()
+
+
+# "I do not have a calculated safe-to-spend limit available" next to an overview showing it (#316): when
+# no calculation failed, a draft that says a figure is unavailable describes the plan, not the data, and is
+# rejected. With a failed calculation, saying so is right (the composer prompt asks for it).
+UNAVAILABLE_CLAIM = re.compile(
+    r"\b(?:not|n't)\b[^.!?,;]{0,50}\bavailable\b|\bno\s+(?:data|figure|number|calculation)s?\s+(?:is\s+|are\s+)?available\b"
+    r"|\bunavailable\b|\b(?:could\s*not|couldn't|cannot|can't|can\s+not)\s+(?:be\s+)?(?:calculat|comput|work)\w*"
+    r"|\bcannot\s+be\s+shown\b|\bei\s+ole\s+(?:saatavilla|saatavissa|laskettu\w*)\b|\bei\s+(?:voitu|voida)\s+laskea\b",
+    re.I)
+
+
+# "€185.30 on health, which includes your gym visits" (#395): no tool says what a category contains, so a
+# draft that says so states something no data supports.
+CONTENTS_CLAIM = re.compile(
+    r"\b(?:which|that)\s+(?:includes?|included|covers?|contains?)\b|\bincluding\s+(?:your|the)\b"
+    r"|\b(?:includes|covers|contains)\s+your\b|\bsisältä(?:ä|vät|en)\b|\bpitää\s+sisällään\b", re.I)
+
+
+def _category_labels() -> list[str]:
+    from core.tools import config
+
+    labels = set()
+    for table in (config.CATEGORY_LABELS, config.BASKET_LABELS, config.MCC_GROUP_LABELS):
+        for en, fi in table.values():
+            labels.update({en.lower(), fi.lower()})
+    labels.update(key.lower() for key in config.CATEGORY_LABELS)
+    return sorted(labels, key=len, reverse=True)
+
+
+def contents_claim(text: str) -> str | None:
+    """The words in which a draft says what a CATEGORY contains, or None: the verb ("which includes",
+    "sisältää") must follow a category label closely, and what it introduces is neither a number token nor
+    another category label ("including the {{n7}} for housing" and "your balance, which covers the next
+    week" are fine; "on health, which includes your gym visits" is not)."""
+    labels = _category_labels()
+    for m in CONTENTS_CLAIM.finditer(text):
+        before = text[max(0, m.start() - 40):m.start()].lower()
+        if not any(re.search(r"\b" + re.escape(label) + r"\b", before) for label in labels):
+            continue
+        after = re.sub(r"^\s*(?:your|the|all|kaikki|sinun)?\s*", "", text[m.end():m.end() + 60]).lower()
+        if after.startswith("{{") or any(after.startswith(label) for label in labels):
+            continue
+        return m.group(0)
+    return None
+
+
+def unavailable_claim(text: str) -> str | None:
+    """The words in which a draft says a figure is not available or cannot be calculated, or None."""
+    m = UNAVAILABLE_CLAIM.search(text)
+    return m.group(0) if m else None
+
+
 def check_text(text: str, allowed: Allowed) -> list[str]:
     """Rules 3, 5 and 6 on any text the model wrote (answer text, clarify question or options)."""
     errors = answer_text.leftover_digits(TOKEN.sub(" ", text), dates=allowed.dates, periods=allowed.periods)
@@ -287,6 +369,9 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
         draft = AnswerDraft.model_validate(payload)
     except ValidationError as exc:
         return None, [f"schema: {'.'.join(str(p) for p in e['loc']) or 'draft'}: {e['type']}" for e in exc.errors()]
+    # The service returns plain text (#302): markdown is removed before the checks, so it never reaches
+    # the app and a draft is never rejected only for markup that is dropped anyway.
+    draft = draft.model_copy(update={"text": plain_text(draft.text)})
 
     errors = []
     words = len(draft.text.split())
@@ -324,6 +409,30 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
                                                dates=allowed.dates, periods=allowed.periods)
         errors += [f"rendered text: {p}" for p in rendered if p not in errors]
     return draft, errors
+
+
+# A token whose display carries its period ("€229.56 a month", "229,56 € / kk") followed by a period word
+# again renders as "€3,010.59 a month a month" (live, #288; r-w3 met it in a template, #390).
+_PERIOD_UNITS = {"eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
+_PERIOD_WORDS = re.compile(
+    r"[ \t]*(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"
+    r"|/\s*(?:pv|vk|kk|v)\b|päivässä\b|viikossa\b|kuukaudessa\b|kuussa\b|vuodessa\b|vuosittain\b"
+    r"|kuukausittain\b|viikoittain\b)", re.I)
+_REPEATED_RENDERED = re.compile(
+    r"\b((?:a|per) (?:day|week|month|year))[ \t]+\1\b|(/ ?(?:pv|vk|kk|v))[ \t]*\2\b"
+    r"|\b(päivässä|viikossa|kuukaudessa|kuussa|vuodessa)[ \t]+\3\b", re.I)
+
+
+def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
+    """The period phrase written again after a number whose display already carries it, or None."""
+    for m in TOKEN.finditer(text):
+        number = numbers.get(m.group(0)[2:-2])
+        if number is not None and number.unit.value in _PERIOD_UNITS:
+            after = _PERIOD_WORDS.match(text, m.end())
+            if after:
+                return (number.display + after.group(0)).strip()
+    found = _REPEATED_RENDERED.search(render(text, numbers))
+    return found.group(0) if found else None
 
 
 def render(text: str, numbers: dict[str, Number]) -> str:

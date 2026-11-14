@@ -214,6 +214,46 @@ def parse_number(raw: str, language: str) -> float:
     return float(raw.replace(",", ""))
 
 
+# One main takeaway and at most one more short sentence (Renat's answer-length rule, #288): the rest
+# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and
+# the eval (an answered outcome over it fails). The introduction and the decline texts are exempt.
+MAX_SENTENCES = 2
+MAX_SHORT_WORDS = 35
+MAX_NUMBERS = 3
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# Abbreviations whose dot ends no sentence ("approx. {{n1}}", "esim. ruoka").
+_ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
+
+
+def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
+    """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
+    display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
+    2026" names one thing, so it is one word, and its dots end no sentence)."""
+    plain = re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
+    for d in sorted((d for d in displays if d), key=len, reverse=True):
+        plain = plain.replace(d, "NUM")
+    spans, blanked = find_dates(plain, blank_all=True)
+    if spans:
+        chars = list(blanked)
+        for span in spans:   # one word in the place of each blanked expression
+            at = normalise(plain).find(span.text)
+            if at >= 0:
+                n = min(4, len(span.text))
+                chars[at:at + n] = list("DATE"[:n])
+        plain = "".join(chars)
+    plain = _ABBREVIATION.sub(lambda m: m.group(1).replace(".", ""), plain)
+    problems = []
+    sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
+    if sentences > MAX_SENTENCES:
+        problems.append(f"too long: {sentences} sentences, at most {MAX_SENTENCES}")
+    words = len(plain.split())
+    if words > MAX_SHORT_WORDS:
+        problems.append(f"too long: {words} words, at most {MAX_SHORT_WORDS}")
+    if numbers > MAX_NUMBERS:
+        problems.append(f"too many numbers: {numbers}, at most {MAX_NUMBERS}; the cards show the rest")
+    return problems
+
+
 def scan_numbers(text: str, language: str) -> list[tuple[float, str | None]]:
     """(value, mark) of every number in a free text, for numbers the user typed in a question."""
     _, text = find_dates(text, blank_all=True)

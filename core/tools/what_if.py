@@ -69,6 +69,22 @@ class RunWhatIfArgs(Args):
     cut_pct: int = Field(ge=1, le=100)
 
 
+class ModelWhatIfArgs(RunWhatIfArgs):
+    """The tool's arguments as the model writes them (#346): a merchant-category group may be named
+    ("taxi", "public transport", "fuel", ...) instead of its codes; both models wrote
+    {"kind": "mcc", "value": "taxi"}. /api/whatif keeps RunWhatIfArgs, the contract's codes only."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _group_names(cls, data: Any) -> Any:
+        selection = data.get("selection") if isinstance(data, dict) else None
+        if isinstance(selection, dict) and selection.get("kind") == "mcc" and isinstance(selection.get("value"), str):
+            group = selection["value"].strip().lower().replace(" ", "_")
+            if group in config.MCC_GROUPS:
+                data = {**data, "selection": {**selection, "value": ",".join(config.MCC_GROUPS[group])}}
+        return data
+
+
 class Scenario(BaseModel):
     selection: dict[str, str]   # {kind, value}; for a merchant the value is the merchant id (app only)
     cut_pct: Number

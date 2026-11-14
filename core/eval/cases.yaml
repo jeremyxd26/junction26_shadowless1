@@ -29,8 +29,8 @@ cases:
   tags: [brief, q1_baskets, lead]
   numbers:
   - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
   - {name: regular_essentials_month, value: 1889.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_month, value: 521.15, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_month, value: 600.41, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
@@ -44,11 +44,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, lead, peers]
   numbers:
-  - {name: keep_rate, value: 15.4, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: one_off_share, value: 6.0, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: one_off_share_pct}}
-  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
-  - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
-  - {name: peer_group_size, value: 118, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: keep_rate, value: 15.4, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: one_off_share, value: 6.0, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: one_off_share_pct}}
+  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: big_ticket, source: {metric: spender_profile, column: profile}}
 
@@ -100,9 +101,9 @@ cases:
   expected_tools: [get_bonus_estimate]
   tags: [bonus, lead]
   numbers:
-  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
   - {name: bonus_total_month, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
-  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
+  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, required: false, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
   forbid:
   - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
 
@@ -114,7 +115,7 @@ cases:
   expected_tools: [get_bonus_estimate]
   tags: [bonus, lead]
   numbers:
-  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
   - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
   forbid:
   - {name: bonus_total_month_default, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
@@ -127,9 +128,10 @@ cases:
   expected_tools: [get_peer_benchmark]
   tags: [peers, lead]
   numbers:
-  - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
-  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
-  - {name: peer_group_size, value: 118, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
 
 - id: marja-q1-where-money-went
   persona: CUST00493
@@ -140,8 +142,8 @@ cases:
   tags: [brief, q1_baskets]
   numbers:
   - {name: regular_essentials_share, value: 77.4, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 6.8, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 15.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: unexpected_necessities_share, value: 6.8, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 15.7, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
   - {name: regular_essentials_month, value: 1645.05, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_month, value: 144.6, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_month, value: 334.44, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
@@ -155,11 +157,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, peers]
   numbers:
-  - {name: keep_rate, value: 17.6, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: everyday_share, value: 15.7, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 3567.81, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
-  - {name: peer_percentile_spend, value: 8.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
-  - {name: peer_group_size, value: 121, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: keep_rate, value: 17.6, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: everyday_share, value: 15.7, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
+  - {name: peer_median_spend_month, value: 3567.81, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_percentile_spend, value: 8.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_group_size, value: 121, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: steady, source: {metric: spender_profile, column: profile}}
 
@@ -193,8 +196,8 @@ cases:
   tags: [brief, q1_baskets]
   numbers:
   - {name: regular_essentials_share, value: 58.5, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 11.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: unexpected_necessities_share, value: 11.3, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 30.1, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
   - {name: regular_essentials_month, value: 1431.19, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_month, value: 277.45, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_month, value: 736.87, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
@@ -208,11 +211,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, peers]
   numbers:
-  - {name: keep_rate, value: 22.6, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: everyday_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 1894.55, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
-  - {name: peer_percentile_spend, value: 67.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
-  - {name: peer_group_size, value: 24, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: keep_rate, value: 22.6, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: everyday_share, value: 30.1, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
+  - {name: peer_median_spend_month, value: 1894.55, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_percentile_spend, value: 67.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_group_size, value: 24, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_gap_pct, value: 29.1, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: everyday_heavy, source: {metric: spender_profile, column: profile}}
 
@@ -246,8 +250,8 @@ cases:
   tags: [brief, q1_baskets, young_adult]
   numbers:
   - {name: regular_essentials_share, value: 65.4, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 6.6, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 28.0, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: unexpected_necessities_share, value: 6.6, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 28.0, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
   - {name: regular_essentials_month, value: 1229.97, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_month, value: 124.49, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_month, value: 526.6, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
@@ -261,11 +265,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, young_adult, peers]
   numbers:
-  - {name: keep_rate, value: 9.4, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: everyday_share, value: 28.0, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
-  - {name: peer_median_spend_month, value: 2202.21, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
-  - {name: peer_percentile_spend, value: 31.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
-  - {name: peer_group_size, value: 39, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: keep_rate, value: 9.4, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: everyday_share, value: 28.0, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
+  - {name: peer_median_spend_month, value: 2202.21, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_percentile_spend, value: 31.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_group_size, value: 39, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
+  - {name: peer_gap_pct, value: -14.6, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: steady, source: {metric: spender_profile, column: profile}}
 
@@ -301,7 +306,7 @@ cases:
   tags: [spending, mcc_group, period_last_month]
   numbers:
   - {name: taxi_total, value: 52.84, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: taxi_rides, value: 1, unit: count, tolerance: 0, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: n_tx}}
+  - {name: taxi_rides, value: 1, unit: count, tolerance: 0, required: false, source: {query: spending, mcc_group: taxi, start: '2026-08-01', end: '2026-08-31', column: n_tx}}
 
 - id: sanna-public-transport-last-month
   persona: CUST00860
@@ -323,7 +328,7 @@ cases:
   tags: [spending, mcc_group, period_last_3_months]
   numbers:
   - {name: fuel_total, value: 232.3, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: total_eur}}
-  - {name: fuel_purchases, value: 6, unit: count, tolerance: 0, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: n_tx}}
+  - {name: fuel_purchases, value: 6, unit: count, tolerance: 0, required: false, source: {query: spending, mcc_group: fuel, start: '2026-07-01', end: '2026-09-30', column: n_tx}}
 
 - id: marja-dining-july-category-not-card-only
   persona: CUST00493
@@ -347,7 +352,7 @@ cases:
   tags: [spending, category, period_last_month]
   numbers:
   - {name: groceries_total, value: 125.16, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: groceries_purchases, value: 2, unit: count, tolerance: 0, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
+  - {name: groceries_purchases, value: 2, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Groceries], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
 
 - id: eetu-entertainment-this-month
   persona: CUST00349
@@ -391,7 +396,7 @@ cases:
   tags: [recurring]
   numbers:
   - {name: bills_due_before_payday, value: 1290.78, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
-  - {name: housing_due, value: 1209.05, unit: eur, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
+  - {name: housing_due, value: 1209.05, unit: eur, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
   - {name: housing_typical_month, value: 1209.05, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
   - {name: utilities_typical_month, value: 165.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
   dates:
@@ -470,7 +475,7 @@ cases:
   tags: [recurring, young_adult]
   numbers:
   - {name: housing_typical_month, value: 613.93, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
-  - {name: utilities_typical_month, value: 98.74, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
+  - {name: utilities_typical_month, value: 98.74, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
   dates:
   - {name: housing_next_due, value: '2026-10-06', unit: date, source: {metric: recurring, where: {series_key: housing_payment}, column: next_expected_date}}
 
@@ -483,9 +488,9 @@ cases:
   tags: [comparison, period_this_month, lead]
   numbers:
   - {name: september_total, value: 2932.54, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
-  - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.005, required: false, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: change, value: -1242.63, unit: eur, tolerance: 0.005, required: false, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
-  - {name: change_pct, value: -29.8, unit: percent, tolerance: 0.01, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_pct}}
+  - {name: change_pct, value: -29.8, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_pct}}
   - {name: september_purchases, value: 25, unit: count, tolerance: 0, required: false, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
 - id: eetu-restaurants-august-vs-july
@@ -497,7 +502,7 @@ cases:
   tags: [comparison, category, dining]
   numbers:
   - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
+  - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.005, required: false, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
   - {name: change, value: 227.11, unit: eur, tolerance: 0.005, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
   - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
   - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
@@ -511,7 +516,7 @@ cases:
   tags: [edge, edge_no_transactions_in_period, mcc_group, period_this_month]
   numbers:
   - {name: taxi_total, value: 0.0, unit: eur, tolerance: 0.005, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
-  - {name: taxi_rides, value: 0, unit: count, tolerance: 0, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
+  - {name: taxi_rides, value: 0, unit: count, tolerance: 0, required: false, source: {query: spending, mcc_group: taxi, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
 - id: sanna-future-month
   persona: CUST00860
@@ -530,7 +535,7 @@ cases:
   tags: [edge, edge_category_never_used, r7_own_history, period_custom]
   numbers:
   - {name: invest_deposit_total, value: 0.0, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: total_eur}}
-  - {name: invest_deposits, value: 0, unit: count, tolerance: 0, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: n_tx}}
+  - {name: invest_deposits, value: 0, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: n_tx}}
 
 - id: eetu-before-data-starts
   persona: CUST00349
