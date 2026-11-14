@@ -274,18 +274,20 @@ CARD_HISTORY = [Tx(11, date(2026, 9, 5), datetime(2026, 9, 5), "Restaurants", "p
                 Tx(12, date(2026, 9, 9), datetime(2026, 9, 9), "Restaurants", "purchase", None, None, Decimal("-31.10"))]
 
 
+@pytest.mark.parametrize("filter_", [{"categories": ["Restaurants"], "mcc_groups": ["restaurants"]},
+                                     {"mcc_groups": ["restaurants"]}])          # the group alone, too
 @pytest.mark.parametrize("language,label,sentence", [
     ("en", "Restaurants (card purchases)", " on restaurants (card purchases) "),
     ("fi", "Ravintolat (korttiostot)", "luokassa Ravintolat (korttiostot)"),
 ])
 def test_the_card_purchases_label_is_the_same_on_the_number_the_card_the_evidence_and_the_sentence(
-        language, label, sentence):
+        language, label, sentence, filter_):
     def spend(filter_):
         store = FakeStore()
         ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=store, language=language, _history=CARD_HISTORY)
         return get_spending(ctx, {"period": SEPTEMBER, "filter": filter_}), store
 
-    result, store = spend({"categories": ["Restaurants"], "mcc_groups": ["restaurants"]})
+    result, store = spend(filter_)
     total = result.data.total
     assert total.label == label and result.card.title == label and total.value == 24.4
     assert evidence_api._label_of(store.rows[total.evidence_ref], language) == label
@@ -293,3 +295,42 @@ def test_the_card_purchases_label_is_the_same_on_the_number_the_card_the_evidenc
     assert sentence in " ".join(sentences), sentences
     alone, _ = spend({"categories": ["Restaurants"]})
     assert alone.data.total.value == 55.5 and alone.data.total.label != label
+
+
+@pytest.mark.parametrize("group,category,en,fi", [
+    ("restaurants", "Restaurants", "Restaurants (card purchases)", "Ravintolat (korttiostot)"),
+    ("groceries", "Groceries", "Groceries (card purchases)", "Ruokaostokset (korttiostot)"),
+    ("health", "Health", "Health (card purchases)", "Terveys (korttiostot)"),
+])
+def test_a_group_named_like_a_category_says_card_purchases_also_alone(group, category, en, fi):
+    # one rule: such a group is always written with "(card purchases)", alone or with its category; the category
+    # alone is the plain name (the coordinator, review of #528)
+    assert config.CARD_PURCHASE_GROUPS == {"restaurants", "groceries", "health"}
+    for language, expected in (("en", en), ("fi", fi)):
+        alone = filter_label([], [group], [], None, language)
+        assert alone == expected == filter_label([category], [group], [], None, language)
+        assert alone != filter_label([category], [], [], None, language)
+    assert filter_label([], [group], ["everyday_spending"], None, "fi") == fi[:-1] + ", arjen kulutus)"
+    assert filter_label([], [group], ["everyday_spending"], None, "en") == en + " within everyday spending"
+
+
+def test_groups_with_their_own_names_are_unchanged_and_a_mixed_union_marks_each_part():
+    for group in sorted(set(config.MCC_GROUP_LABELS) - config.CARD_PURCHASE_GROUPS):
+        assert filter_label([], [group], [], None, "en") == config.label(config.MCC_GROUP_LABELS[group], "en")
+    assert filter_label([], ["taxi"], [], None, "fi") == "Taksi"
+    assert filter_label([], ["restaurants", "taxi"], [], None, "en") == "Restaurants (card purchases) and taxi"
+    assert filter_label([], ["restaurants", "taxi"], [], None, "fi") == "Ravintolat (korttiostot) ja taksi"
+    assert filter_label(["Transportation"], ["restaurants", "taxi"], [], None, "en") == \
+        "Restaurants (card purchases) and taxi (Transportation)"
+
+
+@pytest.mark.parametrize("language,label", [("en", "Restaurants (card purchases)"), ("fi", "Ravintolat (korttiostot)")])
+def test_a_breakdown_by_group_names_the_item_as_the_filter_does(language, label):
+    store = FakeStore()
+    ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=store, language=language, _history=CARD_HISTORY)
+    result = get_spending(ctx, {"period": SEPTEMBER, "group_by": "mcc_group"})
+    items = {g.key: g for g in result.data.groups}
+    assert items["restaurants"].label == label == filter_label([], ["restaurants"], [], None, language)
+    assert items["restaurants"].amount.value == 24.4
+    assert evidence_api._label_of(store.rows[items["restaurants"].amount.evidence_ref], language) == label
+

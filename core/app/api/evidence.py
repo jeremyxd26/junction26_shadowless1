@@ -68,11 +68,12 @@ def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = 
     if group.get("by") == "basket" and group.get("key") in config.BASKET_LABELS:
         return config.label(config.BASKET_LABELS[group["key"]], language)
     if group.get("by") == "mcc_group" and group.get("key") in config.MCC_GROUP_LABELS:
-        return config.label(config.MCC_GROUP_LABELS[group["key"]], language)
+        return spending.group_label(group["key"], language)   # as the tool's item (review of #528)
     if len(sel["categories"]) == 1 and sel["categories"][0] in config.CATEGORY_LABELS:
         return config.label(config.CATEGORY_LABELS[sel["categories"][0]], language)
     if len(sel["mcc_groups"]) == 1 and sel["mcc_groups"][0] in config.MCC_GROUP_LABELS:
-        return config.label(config.MCC_GROUP_LABELS[sel["mcc_groups"][0]], language)
+        # "Restaurants (card purchases)", never the category's own label (review of #528)
+        return spending.group_label(sel["mcc_groups"][0], language)
     if len(sel["baskets"]) == 1 and sel["baskets"][0] in config.BASKET_LABELS:
         return config.label(config.BASKET_LABELS[sel["baskets"][0]], language)
     if spec["method"] == config.METHODS["total"]:

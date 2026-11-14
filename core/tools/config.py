@@ -132,6 +132,11 @@ MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
     "electronics_home": ("Electronics and home", "Elektroniikka ja koti"),
     "other": ("Other", "Muut"),
 }
+# An MCC group named like a category keeps only that category's card purchases (an MCC is set only on a card
+# purchase), a smaller sum: it is always written with "(card purchases)", alone or with its category, and the
+# category alone is the plain name (review of #528). Groups with their own names ("Taxi") are unchanged.
+CARD_PURCHASE_GROUPS: frozenset[str] = frozenset(
+    g for g, (en, _) in MCC_GROUP_LABELS.items() if any(en == c_en for c_en, _ in CATEGORY_LABELS.values()))
 
 # Merchant kinds for alias labels ("Grocery store A"). MCC first, then category. No digits.
 MERCHANT_KIND_BY_MCC: dict[str, tuple[str, str]] = {

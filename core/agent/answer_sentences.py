@@ -88,10 +88,12 @@ def _dims_subject(dims: list[dict[str, Any]], language: str) -> str | None:
              if isinstance(d, dict)]
     clean = [(k, ps) for k, ps in clean if k in ("categories", "mcc_groups", "baskets", "merchant") and ps]
     many = [k for k, ps in clean if k != "merchant" and len(ps) >= config.FILTER_LABEL_CAP]
-    if not clean or (len(clean) == 1 and not many and clean[0][0] != "merchant"):
-        return None
     # the label's own renderer in its sentence form (review of #528): the same order, brackets and counts
-    from core.tools.spending import render_filter
+    from core.tools.spending import card_group_names, render_filter
+    # a group named like a category is its card purchases, also alone: "on restaurants (card purchases)" (#528)
+    carded = any(k == "mcc_groups" and set(ps) & card_group_names(language) for k, ps in clean)
+    if not clean or (len(clean) == 1 and not many and clean[0][0] != "merchant" and not carded):
+        return None
     return render_filter(clean, language, sentence=True)
 
 

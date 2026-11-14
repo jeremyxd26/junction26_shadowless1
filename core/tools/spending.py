@@ -128,8 +128,9 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
     Within one dimension the parts are a union ("Housing and restaurants"). Across dimensions the selection is an
     intersection (#501, review of #528):
     - an MCC group with categories is a part of them: the group first, the categories in brackets, "Taxi
-      (Transportation)", "Taksi (Liikenne)"; a group named like its category is the category's card purchases,
-      "Restaurants (card purchases)", "Ravintolat (korttiostot)", never the category's own label;
+      (Transportation)", "Taksi (Liikenne)";
+    - a group named like a category is that category's card purchases, alone or with its category: "Restaurants
+      (card purchases)", "Ravintolat (korttiostot)", never the category's own label (config.CARD_PURCHASE_GROUPS);
     - a basket: "Housing within everyday spending"; in Finnish in the brackets too, "Asuminen (arjen kulutus)";
     - a merchant: "Restaurants at Grocery store A", "Ravintolat kauppiaalla Ruokakauppa A".
     FILTER_LABEL_CAP parts or more of one dimension are counted, with no digit: "Spending in several categories",
@@ -150,16 +151,20 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
 
     cats, groups, bsk, merchant = (named.get(k) for k in ("categories", "mcc_groups", "baskets", "merchant"))
     brackets: list[str] = []
-    if cats and groups and {n.lower() for n in groups} == {n.lower() for n in cats}:
-        # a group named like its category holds only the category's card purchases (an MCC is set only on a card
-        # purchase): a smaller sum than the category's, so never the category's own label (review of #528, R1)
-        lead_kind, lead = "categories", cats
-        brackets.append(text_of("filter_card_purchases"))
-    elif cats and groups:
+    card, carded = text_of("filter_card_purchases"), card_group_names(language)
+    if groups and set(groups) <= carded and (not cats or {n.lower() for n in groups} == {n.lower() for n in cats}):
+        # a group named like a category holds only that category's card purchases (an MCC is set only on a card
+        # purchase): a smaller sum, so never the category's own label, alone or with its category (review of #528)
         lead_kind, lead = "mcc_groups", groups
-        brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
+        brackets.append(card)
+    elif groups:
+        # among other groups, or within other categories, each such group says it itself: "Restaurants (card
+        # purchases) and taxi"
+        lead_kind, lead = "mcc_groups", [f"{n} ({card})" if n in carded else n for n in groups]
+        if cats:
+            brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
     else:
-        lead_kind = next(k for k in ("categories", "mcc_groups", "baskets", "merchant") if k in named)
+        lead_kind = next(k for k in ("categories", "baskets", "merchant") if k in named)
         lead = named[lead_kind]
     counted = lead_kind != "merchant" and len(lead) >= config.FILTER_LABEL_CAP
     if lead_kind == "merchant":
@@ -179,6 +184,18 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
     if merchant and lead_kind != "merchant":
         text += text_of("filter_at") + merchant[0]
     return text
+
+
+def card_group_names(language: str) -> set[str]:
+    """The labels of the MCC groups named like a category (config.CARD_PURCHASE_GROUPS) in the request language."""
+    return {config.label(config.MCC_GROUP_LABELS[g], language) for g in config.CARD_PURCHASE_GROUPS}
+
+
+def group_label(key: str, language: str) -> str:
+    """One MCC group's label, as the filter label writes it: a group named like a category is that category's card
+    purchases, "Restaurants (card purchases)", "Ravintolat (korttiostot)"; the others by name, "Taxi" (#528)."""
+    name = config.label(config.MCC_GROUP_LABELS[key], language)
+    return f"{name} ({_text('filter_card_purchases', language)})" if key in config.CARD_PURCHASE_GROUPS else name
 
 
 def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
@@ -223,7 +240,7 @@ def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap,
     if by == "mcc_group":
         if key == NONE_KEY:
             return "no_mcc_group", _text("no_mcc_group", language)
-        return key, config.label(config.MCC_GROUP_LABELS[key], language)
+        return key, group_label(key, language)   # "Restaurants (card purchases)" beside "Taxi" (#528)
     if by == "month":
         start = date.fromisoformat(key + "-01")
         end = periods.month_end(start)
