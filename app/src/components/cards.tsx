@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
-import type { Count } from '../lib/motion.ts'
+import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
@@ -155,6 +155,65 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
           {card.actions.map((action, index) => (
             <ActionButton key={`${action.type}-${index}`} action={action} onHero />
           ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The opening's one big card (the #310 decision, one thought per screen): safe to spend as the
+ * API's `display`, "safe to spend this week" and a chevron. The card is one button that opens how
+ * the number is made (its evidence: the hero components). The Estimate badge stays its own button.
+ * After a review answer the amount counts to the new value, with "↓ was …" beside it.
+ */
+export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
+  const { t } = useSettings()
+  const primary = card.primary
+  const text = useCountedText(primary, motion?.counts.safe_to_spend, tokenMs('--duration-money', 900))
+  const count = motion?.counts.safe_to_spend
+  const was = motion?.was.safe_to_spend
+  const estimate = useEstimateToggle()
+  const ref = primary.evidence_ref ?? card.evidence_ref
+  const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
+  return (
+    <section data-opening-part="hero" className="relative rounded-xl bg-hero text-on-hero [&_:focus-visible]:outline-mint">
+      <button
+        type="button"
+        disabled={!ref}
+        onClick={() => ref && openEvidence(ref)}
+        aria-label={[`${t.heroCaption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
+        className="block w-full rounded-xl p-4 text-left"
+      >
+        {/* Only the amount row leaves room for the Estimate badge; the caption takes the full width. */}
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pr-28">
+          <span
+            key={count?.seq ?? 'static'}
+            className={`text-[40px] font-bold leading-[44px] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
+          >
+            {text}
+          </span>
+          {hint && (
+            // After a review answer: never red, never grey on the green block (DESIGN.md, #35).
+            <span className="motion-fade inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted">
+              {was ? <Arrow down={was.value > primary.value} /> : <Check />}
+              {hint}
+            </span>
+          )}
+        </span>
+        <span className="mt-1 inline-flex items-center gap-1 text-base font-semibold text-on-hero-muted">
+          {t.heroCaption}
+          <Chevron />
+        </span>
+      </button>
+      {card.estimate && (
+        <div className="absolute right-3 top-2">
+          <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
+        </div>
+      )}
+      {card.estimate && estimate.open && (
+        <div className="px-4 pb-4">
+          <EstimateNote estimate={card.estimate} id={estimate.id} onHero />
         </div>
       )}
     </section>
