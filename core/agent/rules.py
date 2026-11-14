@@ -150,8 +150,10 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     return args
 
 
+# "fewer" and "N % less" (#346): "what if I took 10% fewer taxis?", "what if I used taxis 10% less?".
 WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent half|half as much|less on|"
-           r"säästä\w*|vähentä\w*|vähemmän|puolet")
+           r"\bfewer\b|(?:%|\bpercent|\bper cent)\s+less\b|"
+           r"säästä\w*|säästöön|vähentä\w*|vähemmän|puolet")
 PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
 # A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
@@ -159,6 +161,21 @@ HEALTH = (r"\bhealth(care)?\b|terveys\w*|terveyden\w*|pharmac\w*|apteek\w*|\bdoc
           r"hammaslääk\w*|\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
 # A selection the rules do not map (an MCC, a merchant): never replaced by a category of their own.
 SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
+# Everyday words for a what-if on merchant category codes (#346), resolved without the model. Each code is
+# one that the four personas spend on in the what-if window (1 Apr - 30 Sep 2026, checked on the dataset;
+# PR #346 lists who): taxi 4121, public transport 4111, fuel 5541/5542 and parking 7523 (the MCC groups of
+# core/tools/config.py), fast food and takeaway 5814, bars 5813, cinemas 7832. Cafés, streaming and gyms
+# have no code of their own in the data, so those words stay unmapped and the user is asked back.
+WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
+    (r"tax(i|is)\b|taksi\w*|takse\w*", config.MCC_GROUPS["taxi"]),
+    (r"public transport|joukkoliiken\w*|\bbus(es)?\b|bussi\w*|busse\w*|\btrams?\b|ratikka\w*|raitiovaun\w*",
+     config.MCC_GROUPS["public_transport"]),
+    (r"\bfuel|petrol|gasoline|polttoaine\w*|bensa\w*|bensii\w*|tankkau\w*", config.MCC_GROUPS["fuel"]),
+    (r"parking|pysäköin\w*|parkki\w*", config.MCC_GROUPS["parking"]),
+    (r"take-?aways?|fast food|noutoruo\w*|pikaruo\w*", ("5814",)),
+    (r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*", ("5813",)),
+    (r"cinemas?|\bmovies\b|elokuv\w*|leffa\w*|leffoi\w*", ("7832",)),
+]]
 
 
 def plan_what_if(question: str) -> tuple[str, dict | None]:
@@ -167,20 +184,22 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     - ("health", None): a health selection (R9): the refusal alone, no other scenario;
     - ("save_more", None): "How could I save more?" with no category and no cut: the design's tools
       for it (section 7.5) that need no number from the user, and the answer offers a what-if;
-    - ("unmapped", None): not exactly one what-if category the rules know, or an MCC, merchant or
-      transport group: not recognised, so the next planner, or a clarifying question, takes it;
-    - ("amount", None): one category but no cut, or a cut outside 1..100 % or not whole: ask how much;
-    - ("run", args): run_what_if with that category and the user's own cut ("half" is 50 %)."""
+    - ("unmapped", None): not exactly one selection the rules know (a what-if category, or an everyday
+      word of WHAT_IF_MCC_WORDS), or a code or merchant the user typed: not recognised, so the next
+      planner, or a clarifying question, takes it;
+    - ("amount", None): one selection but no cut, or a cut outside 1..100 % or not whole: ask how much;
+    - ("run", args): run_what_if with that selection and the user's own cut ("half" is 50 %)."""
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
     categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
+    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q)}
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
-    if not categories and not pct and not half and re.search(template.SAVE_MORE, q):
+    if not categories and not codes and not pct and not half and re.search(template.SAVE_MORE, q):
         return "save_more", None
-    if (len(categories) != 1 or re.search(SELECTION_CODE, q)
-            or any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS)):
+    if (len(categories) + len(codes) != 1 or re.search(SELECTION_CODE, q)
+            or (not codes and any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS))):
         return "unmapped", None
     if pct:
         value = float(pct.group(1).replace(",", "."))
@@ -191,7 +210,9 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
         cut = 50
     else:
         return "amount", None
-    return "run", {"selection": {"kind": "category", "value": categories.pop()}, "cut_pct": cut}
+    selection = ({"kind": "mcc", "value": ",".join(sorted(codes.pop()))} if codes
+                 else {"kind": "category", "value": categories.pop()})
+    return "run", {"selection": selection, "cut_pct": cut}
 
 
 # The S-Bonus question (#216): "S-Bonus", "S-Group"/"S-ryhmä", or a bonus in a grocery context; an
@@ -267,10 +288,15 @@ SAVE_MORE_CALLS = [("get_safe_to_save", {}), ("get_basket_breakdown", {"period":
 # The what-if questions back never suggest an amount (review of PR #126): the user says how much.
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
                   "Kuinka paljon haluaisit vähentää? Kerro se prosentteina.")
-WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much?",
-                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon?")
-WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I cut groceries?"),
-                         ("Entä jos vähentäisin ravintoloita?", "Entä jos vähentäisin ruokaostoksia?"))
+# The selection asked back names only spending all four personas have (#346: restaurants, groceries,
+# taxis, fuel and parking, checked on the dataset), so every example leads to a real what-if.
+WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For example restaurants, groceries, "
+                 "taxis, fuel or parking.",
+                 "Mitä kulutusta haluaisit vähentää ja kuinka paljon? Esimerkiksi ravintolat, ruokaostokset, "
+                 "taksit, polttoaine tai pysäköinti.")
+WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I cut groceries?", "What if I took fewer taxis?"),
+                         ("Entä jos vähentäisin ravintoloita?", "Entä jos vähentäisin ruokaostoksia?",
+                          "Entä jos käyttäisin taksia vähemmän?"))
 # A money question the rules cannot map: it asks about the period only when it is about spending.
 MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
