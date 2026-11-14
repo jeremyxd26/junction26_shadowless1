@@ -1718,6 +1718,122 @@
         "How could I save more?"
       ]
     },
+    "whatif.response": {
+      "customer_id": "CUST00042",
+      "as_of": "2026-09-30",
+      "language": "en",
+      "scenario": {
+        "selection": {
+          "kind": "category",
+          "value": "Restaurants"
+        },
+        "cut_pct": {
+          "value": 20,
+          "unit": "percent",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Cut you chose",
+          "display": "20%"
+        },
+        "label": "Spend 20% less on restaurants"
+      },
+      "status": "estimate",
+      "baseline_per_month": {
+        "value": 268.4,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.baseline_month_eur@1",
+        "evidence_ref": "ev_w1y3a5c7e9g1",
+        "label": "Restaurants in a typical month",
+        "display": "€268.40 a month"
+      },
+      "saving_per_month": {
+        "value": 53.68,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.saving_month_eur@1",
+        "evidence_ref": "ev_w3y5a7c9e1g3",
+        "label": "You would save",
+        "display": "€53.68 a month"
+      },
+      "saving_per_week": {
+        "value": 12.35,
+        "unit": "eur_per_week",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.saving_week_eur@1",
+        "evidence_ref": "ev_w5y7a9c1e3g5",
+        "label": "Per week",
+        "display": "€12.35 a week"
+      },
+      "saving_per_year": {
+        "value": 644.16,
+        "unit": "eur_per_year",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.saving_year_eur@1",
+        "evidence_ref": "ev_w4y6a8c0e2g4",
+        "label": "Per year",
+        "display": "€644.16 a year"
+      },
+      "one_off_excluded": {
+        "value": 38.5,
+        "unit": "eur",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.one_off_excluded_eur@1",
+        "evidence_ref": "ev_w6y8a0c2e4g6",
+        "label": "One-off purchases left out",
+        "display": "€38.50"
+      },
+      "regular_excluded": {
+        "value": 0,
+        "unit": "eur",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.regular_excluded_eur@1",
+        "evidence_ref": "ev_w7y9a1c3e5g7",
+        "label": "Regular essentials left out",
+        "display": "€0.00"
+      },
+      "assumptions": [
+        "Average of your last 6 full months (one-off purchases left out), cut by 20%.",
+        "The rest of your spending stays as it is."
+      ],
+      "caveats": [
+        "This is an estimate, not a promise. Prices and habits change."
+      ],
+      "estimate": {
+        "label": "Estimate",
+        "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%."
+      },
+      "evidence_ref": "ev_w3y5a7c9e1g3"
+    },
     "evidence.response": {
       "evidence_ref": "ev_r7t9v1x3z5b7",
       "kind": "transactions",

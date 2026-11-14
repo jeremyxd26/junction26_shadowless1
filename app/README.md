@@ -38,6 +38,7 @@ What mock mode has, and what it does not invent:
 - Overviews: Sanna (pending review) and Aino (CUST00042). Other personas get the contract's `customer_not_found` error.
 - Evidence: the two contract examples; the safe-to-spend parts and the review purchase, built from the overview's own data. Other numbers show their method with a note that the contract has no example for them yet.
 - Review answers (`POST /api/baskets/label`): the contract's label examples. "It was needed", "I chose it", undo, the same answer twice (`changed: false`) and a basket that is not an option (422) all work. The mock remembers the answer until the page reloads: the next overview has the example's `after` numbers, no review card and no waiting row. Undoing "I chose it" has no contract example, so it is that example run backwards. The basket shares in that overview are each basket amount over the total, as the core counts them; the contract has no example of the overview after an answer.
+- What-if: the contract's one example (Restaurants, 20%). The mock scales the contract example for other cuts by the contract's rule (the saving is the cut of the baseline; per week × 7 / 30.4375, per year × 12), so 20% gives the example's numbers exactly, and writes the amounts in the request language like the core (`€53.68 a month` / `53,68 € / kk`). Any other selection answers 422 `invalid_scenario` with the contract's message, in English or Finnish.
 - The examples are English only. With `?lang=fi`, the app's own texts and the review question switch to Finnish; the API texts stay as served.
 
 ### The review card ("Sentti asks", #35)
@@ -51,6 +52,7 @@ Open Sanna (`?persona=CUST00860`, the default in mock mode). Answer one of the t
 | `/` | Overview |
 | `/chat?q=<question>` | Chat (placeholder until the stream issue) |
 | `?evidence=<ref>` | The evidence sheet over the current screen. Back closes it. |
+| `?whatif=<kind>:<value>&cut=<pct>` | The what-if sheet, for example `?whatif=category:Restaurants&cut=20`. `kind` is `category`, `basket`, `mcc` or `merchant`; `cut` is a whole percentage from 1 to 100 (20 if missing). Releasing the slider updates `cut`. Back closes it. |
 | `?persona=<customer_id>` | Demo persona. A long press on the header opens the persona and language switch. |
 | `?lang=en` or `?lang=fi` | Language |
 

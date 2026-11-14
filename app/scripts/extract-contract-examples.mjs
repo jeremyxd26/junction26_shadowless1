@@ -26,6 +26,7 @@ const NEEDED = [
   'card.safe_to_save_aleksi',
   'card.safe_to_save_zero',
   'card.safe_to_save_everyday',
+  'whatif.response',
 ]
 
 const text = readFileSync(contractPath, 'utf8')

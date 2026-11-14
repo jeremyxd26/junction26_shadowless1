@@ -5,6 +5,8 @@ import type {
   Language,
   OverviewResponse,
   PersonasResponse,
+  WhatIfResponse,
+  WhatIfScenarioRequest,
 } from './types.ts'
 import { ApiError, isErrorEnvelope, parseRetryAfter } from './errors.ts'
 import { strings } from '../lib/i18n.ts'
@@ -20,6 +22,8 @@ export interface ApiClient {
   evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
   /** The customer's answer to a review card; `basket: null` undoes it (contract section 10). */
   label(request: LabelRequest): Promise<LabelResponse>
+  /** Contract section 8: the deterministic what-if calculator. Errors come in `lang`. */
+  whatIf(customerId: string, scenario: WhatIfScenarioRequest, lang: Language): Promise<WhatIfResponse>
 }
 
 type Body = Record<string, unknown>
@@ -43,6 +47,15 @@ const isOverview = (body: Body) =>
 const isEvidence = (body: Body) => isRecord(body.number) && isRecord(body.method) && hasArrays(body, 'rows', 'parts')
 const isLabel = (body: Body) =>
   typeof body.review_state === 'string' && isRecord(body.message) && hasArrays(body, 'changes', 'refetch')
+const isWhatIf = (body: Body) =>
+  isRecord(body.scenario) &&
+  isRecord(body.saving_per_month) &&
+  isRecord(body.saving_per_week) &&
+  isRecord(body.saving_per_year) &&
+  isRecord(body.baseline_per_month) &&
+  isRecord(body.one_off_excluded) &&
+  isRecord(body.regular_excluded) &&
+  hasArrays(body, 'assumptions', 'caveats')
 
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
@@ -80,9 +93,10 @@ function createLiveClient(base: string): ApiClient {
     return request<T>(`${base}${path}?${query}`, {}, lang, isShape)
   }
 
-  function post<T>(path: string, body: { language: Language }, isShape: (body: Body) => boolean): Promise<T> {
-    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    return request<T>(`${base}${path}`, init, body.language, isShape)
+  /** POST with a JSON body; the core answers errors in the body's `language`. */
+  function post<T>(path: string, payload: unknown, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+    return request<T>(`${base}${path}`, init, lang, isShape)
   }
 
   return {
@@ -97,7 +111,9 @@ function createLiveClient(base: string): ApiClient {
         lang,
         isEvidence,
       ),
-    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest, isLabel),
+    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest, labelRequest.language, isLabel),
+    whatIf: (customerId, scenario, lang) =>
+      post<WhatIfResponse>('/api/whatif', { customer_id: customerId, scenario, language: lang }, lang, isWhatIf),
   }
 }
 
@@ -110,6 +126,7 @@ function createLazyMockClient(): ApiClient {
     overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
     evidence: (ref, customerId, lang, cursor) => client.then((mock) => mock.evidence(ref, customerId, lang, cursor)),
     label: (labelRequest) => client.then((mock) => mock.label(labelRequest)),
+    whatIf: (customerId, scenario, lang) => client.then((mock) => mock.whatIf(customerId, scenario, lang)),
   }
 }
 

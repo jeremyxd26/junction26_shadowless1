@@ -124,7 +124,9 @@ class FakeEvidenceConnection:
 
         class Result:
             def fetchone(self):
-                return (conn.owner, conn.spec) if sql == evidence.LOAD_SQL else None
+                if sql == evidence.LOAD_SQL:
+                    return conn.owner, conn.spec
+                return (1,) if "FROM customers" in sql else None   # the API's existence check finds the persona
 
         return Result()
 
@@ -147,8 +149,10 @@ def test_resolve_refuses_a_stored_spec_with_a_reserved_or_malformed_setting(sett
     assert conn.calls == [evidence.LOAD_SQL]   # nothing ran after the spec was loaded
 
 
-def test_the_evidence_endpoint_answers_403_for_such_a_spec(monkeypatch):
-    """EvidenceForbidden is the API's 403 evidence_forbidden, not a 500."""
+def test_the_evidence_endpoint_answers_403_for_such_a_spec():
+    """EvidenceForbidden is the API's 403 evidence_forbidden, not a 500. Only the pool is faked, so the
+    endpoint's own customer checks (the persona allowlist of #101, where present, and the existence
+    check) run as in production, for the persona CUST00860."""
     from fastapi.testclient import TestClient
 
     from core.app.main import create_app
@@ -156,12 +160,14 @@ def test_the_evidence_endpoint_answers_403_for_such_a_spec(monkeypatch):
 
     stored = FakeEvidenceConnection("CUST00860", metric_spec({"what-if": "x"}))
 
-    @contextmanager
-    def connection(request):
-        yield stored
+    class Pool:
+        @contextmanager
+        def connection(self, timeout=None):
+            yield stored
 
-    monkeypatch.setattr("core.app.api.evidence.connection", connection)
-    monkeypatch.setattr("core.app.api.evidence.require_customer", lambda conn, customer_id: None)
-    with TestClient(create_app(Settings(_env_file=None)), raise_server_exceptions=False) as client:
+    with TestClient(create_app(Settings(_env_file=None, database_url=None)), raise_server_exceptions=False) as client:
+        client.app.state.pool = Pool()
         response = client.get("/api/evidence/ev_0123456789ab", params={"customer_id": "CUST00860"})
+        client.app.state.pool = None
     assert response.status_code == 403 and response.json()["error"]["code"] == "evidence_forbidden"
+    assert evidence.LOAD_SQL in stored.calls   # the spec was loaded, and then refused

@@ -10,7 +10,7 @@ import { BASKETS } from '../lib/baskets.ts'
 import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
-import { navigate } from '../lib/url.ts'
+import { navigate, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
@@ -319,6 +319,18 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           </ul>
         </section>
       )}
+
+      {/* The what-if screen with the contract's example request (Restaurants, 20%), the demo step.
+          Outside the questions list, so it shows even when the API sends no questions. */}
+      <div>
+        <button
+          type="button"
+          onClick={() => openWhatIf({ selection: { kind: 'category', value: 'Restaurants' }, cut_pct: 20 })}
+          className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 py-2 text-left text-base font-medium text-brand hover:bg-mint-tint"
+        >
+          {t.whatIfEntry}
+        </button>
+      </div>
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">
