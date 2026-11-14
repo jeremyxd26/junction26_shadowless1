@@ -809,3 +809,65 @@ def test_a_paused_role_or_a_role_without_a_model_makes_the_model_unavailable():
     with pytest.raises(GeminiError):
         d.plan(*PLAN_ARGS)
     assert d.unavailable_reason("plan") == "model_refused" and d.unavailable_reason() is None
+
+
+# ---- #250: reading an image (one request, no fallback, no bytes in the cache key) --------------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-bill-image" * 50
+SCHEMA = {"type": "object", "properties": {"iban": {"type": "string"}}, "additionalProperties": False}
+
+
+def test_extract_sends_one_inline_image_with_a_schema_and_no_tools():
+    seen = {}
+
+    def transport(model, contents, config, timeout_s):
+        seen.update(contents=contents, config=config)
+        return text_response('{"iban": "FI2112345600000785"}')
+
+    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None)
+    reply = c.extract("read the bill", "Read this bill.", PNG, "image/png", SCHEMA)
+    assert reply.text == '{"iban": "FI2112345600000785"}'
+    parts = seen["contents"][0]["parts"]
+    assert parts[1]["inline_data"] == {"mime_type": "image/png", "data": PNG}
+    assert "tools" not in seen["config"] and seen["config"]["response_json_schema"] == SCHEMA
+
+
+def test_extract_caches_by_the_image_hash_and_never_stores_the_bytes(tmp_path):
+    transport = FakeTransport(text_response('{"iban": "x"}'))
+    c = client(transport, tmp_path)
+    c.extract("s", "t", PNG, "image/png", SCHEMA)
+    assert c.extract("s", "t", PNG, "image/png", SCHEMA).cached          # the same image: no request
+    c.extract("s", "t", PNG + b"!", "image/png", SCHEMA)                  # another image: a request
+    assert len(transport.requests) == 2
+    for f in (tmp_path / "cache").glob("*.json"):
+        assert b"synthetic-bill-image" not in f.read_bytes()
+
+
+def test_extract_makes_one_request_without_the_fallback_model():
+    transport = FakeTransport(api_error(503), text_response("{}"))
+    c = client(transport, fallback_model=PRO)
+    with pytest.raises(GeminiError) as exc:
+        c.extract("s", "t", PNG, "image/png", SCHEMA)
+    assert exc.value.code == "server" and [m for m, _ in transport.requests] == [FLASH]
+
+
+@pytest.mark.parametrize("image, mime", [(b"", "image/png"), (PNG, "application/pdf"),
+                                         (b"x" * (gc.MAX_INLINE_IMAGE_BYTES + 1), "image/png")])
+def test_an_image_too_large_or_of_another_type_is_refused_before_sending(image, mime):
+    transport = FakeTransport(text_response("{}"))
+    with pytest.raises(GeminiError) as exc:
+        client(transport).extract("s", "t", image, mime, SCHEMA)
+    assert exc.value.code == "image" and transport.requests == []
+
+
+def test_bill_readings_have_their_own_share_of_the_daily_budget(tmp_path):
+    ledger = Ledger(tmp_path / "requests.jsonl", daily_cap=10, kind_caps={"extract": 2})
+    transport = FakeTransport(text_response("{}"))
+    c = client(transport, ledger=ledger)
+    c.extract("s", "t", PNG, "image/png", SCHEMA)
+    c.extract("s", "t", PNG + b"1", "image/png", SCHEMA)
+    with pytest.raises(GeminiError) as exc:
+        c.extract("s", "t", PNG + b"2", "image/png", SCHEMA)
+    assert exc.value.code == "budget"
+    assert client(FakeTransport(call_response()), ledger=ledger).plan(*PLAN_ARGS).calls   # answers still allowed
+    assert ledger.count("extract") == 2 and ledger.count() == 3

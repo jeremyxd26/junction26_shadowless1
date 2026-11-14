@@ -1,12 +1,12 @@
 // Sentti's opening turn: turn 0 of the thread on `/` (DESIGN.md "Thread", "Opening turn").
 // One thought per screen (#310): greeting, the big safe-to-spend card, "Sentti asks" and 2–3
 // questions; no speaker line here, the header carries the AI tag.
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ApiError } from '../api/errors.ts'
 import type { OverviewResponse } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { prefersReducedMotion } from '../lib/motion.ts'
-import { OpeningContext, type Opening } from '../lib/openingContext.ts'
+import { OpeningContext, type AnsweredReview, type Opening, type ShownReview } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Loaded } from '../lib/useLoad.ts'
 import { Overview } from '../screens/Overview.tsx'
@@ -14,8 +14,18 @@ import { ErrorBlock, LoadingBlock } from './States.tsx'
 
 const noop = () => {}
 
-function scrollToReview() {
-  const card = document.querySelector<HTMLElement>('[data-review-card]')
+/** The same card in the same state (and, once answered, the same basket): nothing to re-render. */
+function sameReview(a: ShownReview | null, b: ShownReview | null): boolean {
+  if (!a || !b) return a === b
+  if (a.txRef !== b.txRef || a.phase !== b.phase) return false
+  return a.phase === 'asking' || (b.phase === 'answered' && a.basketKey === b.basketKey && a.basketLabel === b.basketLabel)
+}
+
+/** The review card for `txRef`: the opening's first, else the one a thread turn shows (#450). */
+function scrollToReview(txRef: string) {
+  const selector = `[data-review-card="${CSS.escape(txRef)}"]`
+  const card =
+    document.querySelector<HTMLElement>(`[data-turn="opening"] ${selector}`) ?? document.querySelector<HTMLElement>(selector)
   if (!card) return
   card.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
   card.focus({ preventScroll: true })
@@ -29,7 +39,47 @@ export function OpeningProvider({ overview, children }: { overview: Loaded<Overv
   const data = overview.status === 'ready' ? overview.data : null
   const refresh = overview.status === 'ready' ? overview.refresh : noop
   const reviewTxRef = data?.reviews[0]?.tx_ref ?? null
-  const value = useMemo<Opening>(() => ({ reviewTxRef, refresh, scrollToReview }), [reviewTxRef, refresh])
+  const [shownReview, setShownReview] = useState<ShownReview | null>(null)
+  const [threadReviews, setThreadReviews] = useState<Record<string, string>>({})
+  const reportReview = useCallback(
+    (next: ShownReview | null) => setShownReview((current) => (sameReview(current, next) ? current : next)),
+    [],
+  )
+  const answered = useMemo<AnsweredReview | null>(
+    () =>
+      shownReview?.phase === 'answered'
+        ? { txRef: shownReview.txRef, basketKey: shownReview.basketKey, basketLabel: shownReview.basketLabel }
+        : null,
+    [shownReview],
+  )
+  const claimThreadReview = useCallback(
+    (txRef: string, owner: string) => setThreadReviews((current) => (current[txRef] ? current : { ...current, [txRef]: owner })),
+    [],
+  )
+  const releaseThreadReview = useCallback(
+    (txRef: string, owner: string) =>
+      setThreadReviews((current) => {
+        if (current[txRef] !== owner) return current
+        const next = { ...current }
+        delete next[txRef]
+        return next
+      }),
+    [],
+  )
+  const value = useMemo<Opening>(
+    () => ({
+      reviewTxRef,
+      shownReview,
+      reportReview,
+      answered,
+      threadReviews,
+      claimThreadReview,
+      releaseThreadReview,
+      refresh,
+      scrollToReview,
+    }),
+    [reviewTxRef, shownReview, reportReview, answered, threadReviews, claimThreadReview, releaseThreadReview, refresh],
+  )
   return <OpeningContext.Provider value={value}>{children}</OpeningContext.Provider>
 }
 

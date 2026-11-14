@@ -285,7 +285,7 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
             <li
               key={item.key}
               data-basket-row={item.key}
-              className={`-mx-2 rounded-md border-b border-line px-2 py-2.5 transition-colors duration-500 last:border-b-0 ${
+              className={`@container -mx-2 rounded-md border-b border-line px-2 py-2.5 transition-colors duration-500 last:border-b-0 ${
                 highlighted ? look.tint.split(' ')[0] : ''
               } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
             >
@@ -297,10 +297,11 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 >
                   {look.icon}
                 </span>
-                {/* At least 6rem for the label; when that does not fit beside the amount, the amount moves
-                    under it instead of covering it (#493). */}
-                <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
-                  <p className={`min-w-0 break-words hyphens-auto font-semibold leading-5 ${look.color}`}>{item.label}</p>
+                {/* The label column never shrinks below its longest word, so when that word does not fit
+                    beside the amount, the amount moves under the label instead of covering it, and only
+                    then (#493). Hyphens only in a very narrow row (large text), never at normal size. */}
+                <div className="flex-1 basis-0">
+                  <p className={`break-words font-semibold leading-5 @max-[15rem]:hyphens-auto ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
                 <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">

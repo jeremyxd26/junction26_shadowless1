@@ -208,7 +208,8 @@
    "run_what_if",
    "finish"
   ],
-  "text": "Based on restaurants in a typical month of {{n1}}, cutting by {{n7}} means you would save about {{n2}}.",
-  "text_rendered": "Based on restaurants in a typical month of €229.56 a month, cutting by 10% means you would save about €22.96 a month."
+  "text": "That cut would save you {{n2}}, or {{n4}}. Right now you spend {{n1}} on restaurants.",
+  "text_rendered": "That cut would save you €22.96 a month, or €275.48 a year. Right now you spend €229.56 a month on restaurants.",
+  "note": "#600: the recorded draft says 'in a typical month of {{n1}}' where n1 displays 'a month'; the repeated-period check rejects it, the retry is not in the recording, so the template writes"
  }
 }

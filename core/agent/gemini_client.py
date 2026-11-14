@@ -116,6 +116,7 @@ MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner a
 ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
 MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
 LEDGER_WINDOW = timedelta(hours=24)     # the daily budget is a rolling 24 hours
+EXTRACT_REFUSAL_S = 600.0               # a bill reading's refused model id (400/404): readings wait this long
 MIN_ATTEMPT_S = 1.0                     # an attempt needs at least this much of a deadline left
 # The Gemini API rejects a request whose server deadline (the X-Server-Timeout header, which the SDK
 # fills from the client timeout) is under 10 s with HTTP 400. The client-side timeout stays ours.
@@ -128,6 +129,10 @@ STORED_FIELDS = ("candidates", "prompt_feedback", "usage_metadata", "model_versi
 # on v1beta (v1 answered HTTP 404 for it; v1beta answered on 2026-11-14).
 API_VERSIONS = {"gemini-3.1-pro-preview": "v1beta"}
 CACHE_FORMAT = 1
+# An image read in one request (#250) goes inline. The API takes about 20 MB per request in total and
+# base64 adds a third, so an image is capped far below that; a larger one is refused before sending.
+MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 class GeminiError(RuntimeError):
@@ -222,25 +227,27 @@ class Ledger:
     or deleted ledger cannot reopen the budget. `off_switch`: while this file exists, nothing is sent."""
 
     def __init__(self, path: Path, daily_cap: int | None, off_switch: Path | None = None,
-                 max_in_flight: int = MAX_IN_FLIGHT) -> None:
+                 max_in_flight: int = MAX_IN_FLIGHT, kind_caps: dict[str, int] | None = None) -> None:
         self.path = Path(path)
         self.daily_cap = daily_cap
         self.off_switch = Path(off_switch) if off_switch is not None else None
         self.max_in_flight = max_in_flight
+        self.kind_caps = dict(kind_caps or {})   # a share of the daily budget per call kind (bill readings)
         self._lock = threading.Lock()
-        self._sent: deque[datetime] = deque()   # requests this process sent: the floor of the count
-        self._in_flight = 0
+        self._sent: deque[tuple[datetime, str]] = deque()   # requests this process sent: the floor of the count
+        self._in_flight: dict[str, int] = {}
 
     def disabled(self) -> bool:
         return self.off_switch is not None and self.off_switch.exists()
 
-    def _counted(self, since: datetime) -> int:
+    def _counted(self, since: datetime, kind: str | None = None) -> int:
         n = 0
         try:
             with self.path.open(encoding="utf-8") as f:
                 for line in f:
                     try:
-                        if datetime.fromisoformat(json.loads(line)["ts"]) >= since:
+                        entry = json.loads(line)
+                        if datetime.fromisoformat(entry["ts"]) >= since and (kind is None or entry.get("kind") == kind):
                             n += 1
                     except (ValueError, KeyError, TypeError):
                         continue
@@ -248,25 +255,30 @@ class Ledger:
             pass
         return n
 
-    def count(self) -> int:
-        """Requests sent in the last 24 hours, plus the ones in flight."""
+    def count(self, kind: str | None = None) -> int:
+        """Requests sent in the last 24 hours (of one call kind, or all), plus the ones in flight."""
         since = datetime.now(timezone.utc) - LEDGER_WINDOW
-        while self._sent and self._sent[0] < since:
+        while self._sent and self._sent[0][0] < since:
             self._sent.popleft()
-        return max(self._counted(since), len(self._sent)) + self._in_flight
+        local = sum(1 for _, k in self._sent if kind is None or k == kind)
+        flying = sum(n for k, n in self._in_flight.items() if kind is None or k == kind)
+        return max(self._counted(since, kind), local) + flying
 
     today = count                         # the name the budget had when it was a calendar day
 
-    def reserve(self) -> str | None:
-        """Take a slot for one request. None when granted, else the refusal: disabled, busy or budget."""
+    def reserve(self, kind: str = "") -> str | None:
+        """Take a slot for one request of a call kind. None when granted, else the refusal: disabled,
+        busy or budget (the daily budget, or the kind's share of it)."""
         with self._lock:
             if self.disabled():
                 return "disabled"
-            if self._in_flight >= self.max_in_flight:
+            if sum(self._in_flight.values()) >= self.max_in_flight:
                 return "busy"
             if self.daily_cap is not None and self.count() >= self.daily_cap:
                 return "budget"
-            self._in_flight += 1
+            if kind in self.kind_caps and self.count(kind) >= self.kind_caps[kind]:
+                return "budget"
+            self._in_flight[kind] = self._in_flight.get(kind, 0) + 1
             return None
 
     def allow(self) -> bool:
@@ -279,8 +291,8 @@ class Ledger:
                            "result": result, "latency_ms": latency_ms,
                            "tokens": [usage.prompt_tokens, usage.thought_tokens, usage.output_tokens]})
         with self._lock:
-            self._in_flight = max(0, self._in_flight - 1)
-            self._sent.append(now)
+            self._in_flight[kind] = max(0, self._in_flight.get(kind, 0) - 1)
+            self._sent.append((now, kind))
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8") as f:
@@ -343,6 +355,17 @@ def _for_model(model: str, config: dict[str, Any]) -> dict[str, Any]:
     return {**config, "thinking_config": {**config["thinking_config"], "thinking_level": effective_thinking(model, level)}}
 
 
+def _without_bytes(obj: Any) -> Any:
+    """The request as JSON for the cache key: every bytes value (an image) becomes its SHA-256 and size."""
+    if isinstance(obj, (bytes, bytearray)):
+        return {"sha256": hashlib.sha256(obj).hexdigest(), "bytes": len(obj)}
+    if isinstance(obj, dict):
+        return {k: _without_bytes(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_without_bytes(v) for v in obj]
+    return obj
+
+
 def scrub(raw: dict[str, Any]) -> dict[str, Any]:
     """The parts of a response worth keeping: no HTTP headers, ids or SDK bookkeeping."""
     return {k: raw[k] for k in STORED_FIELDS if k in raw}
@@ -384,9 +407,10 @@ class GeminiClient:
     def __init__(self, model: str, transport: Transport | None, *, fallback_model: str | None = None,
                  compose_model: str | None = None, compose_fallback_model: str | None = None,
                  cache: str = "on", cache_dir: Path | None = None, ledger: Ledger | None = None,
-                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0,
+                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0, extract_timeout_s: float = 15.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
+                 extract_model: str | None = None, extract_thinking: str = "low", extract_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
                  refusal_s: float = REFUSAL_S) -> None:
         if cache not in ("on", "off", "replay"):
@@ -408,10 +432,20 @@ class GeminiClient:
         self.ledger = ledger
         self.plan_timeout_s = plan_timeout_s
         self.compose_timeout_s = compose_timeout_s
+        self.extract_timeout_s = extract_timeout_s
         self.plan_thinking = plan_thinking
         self.compose_thinking = compose_thinking
         self.plan_max_tokens = plan_max_tokens
         self.compose_max_tokens = compose_max_tokens
+        # Bill readings (#250, decision B): their own model, thinking and token cap, so the planner's or the
+        # composer's settings never change a reading's cache key; their own refusal and failure state.
+        self.extract_model = extract_model or model
+        self.extract_thinking = extract_thinking
+        self.extract_max_tokens = extract_max_tokens
+        self._extract_paused_until = 0.0
+        self._extract_pause_code = "error"
+        self._extract_failures = 0
+        self._flights: dict[str, threading.Lock] = {}   # cache key -> its single-flight lock (#511)
         self.sleep = sleep
         self.clock = clock
         self.calls: list[CallRecord] = []
@@ -477,6 +511,48 @@ class GeminiClient:
         }
         return self._call("plan", contents, config, self.plan_timeout_s)
 
+    def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any],
+                accept: Callable[[Reply], bool] | None = None, cache_only: bool = False) -> Reply:
+        """Read an image into JSON constrained by a schema (#250): one inline image part, no tools, no
+        fallback model, one request. The cache key and any recording hold the image's SHA-256, never its
+        bytes. Raises GeminiError("image") for an image that is too large or of another type.
+
+        `accept` is the caller's test of a usable answer: only an accepted answer is cached, and a cached
+        entry it rejects is a miss, so one bad first answer never makes a sample fail for ever (review of
+        #250). A reading is independent of the answer state of the thread it runs on.
+
+        Single flight (#511): concurrent readings of the same image wait for one another, so a cold cache
+        costs one request; the others answer from the cache it wrote. `cache_only` never sends a request:
+        a miss raises GeminiError("cache_miss") (the deploy step's second reading)."""
+        if mime_type not in IMAGE_MIME_TYPES or not image or len(image) > MAX_INLINE_IMAGE_BYTES:
+            raise GeminiError("image")
+        contents = [{"role": "user", "parts": [{"text": text}, {"inline_data": {"mime_type": mime_type, "data": image}}]}]
+        config = {
+            "system_instruction": system,
+            "response_mime_type": "application/json",
+            "response_json_schema": schema,
+            "thinking_config": {"thinking_level": self.extract_thinking},
+            "max_output_tokens": self.extract_max_tokens,
+        }
+        model = self.extract_model
+        key = self.cache_key(model, "extract", contents, _for_model(model, config))
+        if cache_only:
+            entry = self._read_cache(key)
+            reply = self._cached_reply(model, entry, accept) if entry is not None else None
+            if reply is None:
+                self._record("extract", model, 0, CallUsage(), error="cache_miss")
+                raise GeminiError("cache_miss")
+            self._record("extract", model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
+            return reply
+        with self._flight(key):
+            return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False,
+                              accept=accept)
+
+    def _flight(self, key: str) -> threading.Lock:
+        """The lock of one cache key, shared by concurrent readings of the same image (#511)."""
+        with self._lock:
+            return self._flights.setdefault(key, threading.Lock())
+
     def compose(self, system: str, user_text: str, schema: dict[str, Any]) -> Reply:
         contents = [{"role": "user", "parts": [{"text": user_text}]}]
         config = {
@@ -494,7 +570,8 @@ class GeminiClient:
     # ---- cache -----------------------------------------------------------------------------------
 
     def cache_key(self, model: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any]) -> str:
-        request = {"format": CACHE_FORMAT, "model": model, "kind": kind, "contents": contents, "config": config}
+        request = {"format": CACHE_FORMAT, "model": model, "kind": kind, "contents": _without_bytes(contents),
+                   "config": config}
         canonical = json.dumps(request, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -506,12 +583,16 @@ class GeminiClient:
         if self.cache == "off":
             return None
         try:
-            return json.loads(self._cache_path(key).read_text(encoding="utf-8"))
+            entry = json.loads(self._cache_path(key).read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
         except (OSError, ValueError):
             log.warning("gemini cache entry unreadable; calling the model")
             return None
+        if not isinstance(entry, dict) or not isinstance(entry.get("response"), dict):
+            log.warning("gemini cache entry of another shape; calling the model")   # review of #250
+            return None
+        return entry
 
     def _write_cache(self, key: str, model: str, kind: str, raw: dict[str, Any], latency_ms: int) -> None:
         if self.cache != "on":
@@ -578,7 +659,7 @@ class GeminiClient:
 
     def _give_up(self, kind: str, code: str) -> None:
         """After a timeout, a network error or a 5xx, this answer sends no second request of the kind."""
-        if code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
+        if kind != "extract" and code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
             self._answer.given_up[kind] = code
 
     def _succeeded(self, kind: str) -> None:
@@ -589,7 +670,9 @@ class GeminiClient:
 
     def models_for(self, kind: str) -> tuple[str, str | None]:
         """(model, fallback model) of a call kind: the composer's own pair, else the planner's. A model the API
-        refused (404) gives way to the fallback (#383)."""
+        refused (404) gives way to the fallback (#383). A bill reading has its own model and no fallback (#250)."""
+        if kind == "extract":
+            return self.extract_model, None
         primary, fallback = (self.compose_model, self.compose_fallback_model) if kind == "compose" \
             else (self.model, self.fallback_model)
         if self._is_refused(fallback):
@@ -598,15 +681,18 @@ class GeminiClient:
             return fallback, None
         return primary, fallback
 
-    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float) -> Reply:
+    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float,
+              allow_fallback: bool = True, accept: Callable[[Reply], bool] | None = None) -> Reply:
         primary, fallback = self.models_for(kind)
+        if not allow_fallback:
+            fallback = None   # a bill reading: one request on one model (#250)
         skip_primary = fallback is not None and self.clock() < self._skip_primary_until.get(primary, 0.0)
         model = fallback if skip_primary else primary
         config = _for_model(model, config)
         key = self.cache_key(model, kind, contents, config)
         entry = self._read_cache(key)
-        if entry is not None:
-            reply = parse(model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
+        reply = self._cached_reply(model, entry, accept) if entry is not None else None
+        if reply is not None:
             self._record(kind, model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
             return reply
         if self.cache == "replay":
@@ -614,7 +700,7 @@ class GeminiClient:
             raise GeminiError("cache_miss")
 
         deadline = self.clock() + timeout_s
-        given_up = getattr(self._answer, "given_up", {}).get(kind)
+        given_up = None if kind == "extract" else getattr(self._answer, "given_up", {}).get(kind)
         if given_up is not None:
             # A call of this kind already timed out or failed in this answer (the model thinks long on
             # this question, or it is unreachable): a second one would most likely fail too and spend
@@ -622,7 +708,8 @@ class GeminiClient:
             self._record(kind, model, 0, CallUsage(), error=f"{given_up} (not retried)")
             raise GeminiError(given_up)
         try:
-            return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary)
+            return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary,
+                                 accept=accept)
         except GeminiError as exc:
             if skip_primary and getattr(exc, "sent", False) and exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
                 # The fallback serving the skip window is refused: drop it, so the next call goes back to the
@@ -661,13 +748,13 @@ class GeminiClient:
             self.compose_fallback_model = None
 
     def _attempt(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
-                 deadline: float, fallback: bool = False) -> Reply:
+                 deadline: float, fallback: bool = False, accept: Callable[[Reply], bool] | None = None) -> Reply:
         """One request, after every check: pause, per-answer requests and deadline, ledger slot."""
         assert self.transport is not None
         with self._lock:
             paused, pause_code = self.clock() < self._paused_until, self._pause_code
             role_paused = self.clock() < self._role_paused_until.get(kind, 0.0)
-            refused = self._is_refused(model)
+            refused = kind != "extract" and self._is_refused(model)   # a reading: its own state
         if paused:
             self._record(kind, model, 0, CallUsage(), error=f"{pause_code} (paused)")
             raise GeminiError(pause_code.split(" ")[0])
@@ -677,7 +764,14 @@ class GeminiClient:
         if refused:
             self._record(kind, model, 0, CallUsage(), error="http_404 (refused id)")
             raise GeminiError("http_404")
-        requests_left, answer_left = self._answer_left()
+        if kind == "extract":
+            with self._lock:
+                extract_paused, extract_code = self.clock() < self._extract_paused_until, self._extract_pause_code
+            if extract_paused:
+                self._record(kind, model, 0, CallUsage(), error=f"{extract_code} (readings paused)")
+                raise GeminiError(extract_code.split(" ")[0])
+        # A bill reading is no part of an answer: the thread's answer state neither limits nor counts it.
+        requests_left, answer_left = (None, None) if kind == "extract" else self._answer_left()
         if requests_left is not None and requests_left <= 0:
             self._record(kind, model, 0, CallUsage(), error="answer_budget")
             raise GeminiError("answer_budget")
@@ -688,7 +782,7 @@ class GeminiClient:
             self._record(kind, model, 0, CallUsage(), error="deadline")
             raise GeminiError("deadline")
         if self.ledger is not None:
-            refused = self.ledger.reserve()
+            refused = self.ledger.reserve(kind)
             if refused is not None:
                 self._record(kind, model, 0, CallUsage(), error=refused)
                 if refused == "budget":
@@ -704,6 +798,9 @@ class GeminiClient:
         except Exception as exc:  # noqa: BLE001 - only a short code leaves this function
             code, status = _error_code(exc)
             self._record(kind, model, int((self.clock() - t) * 1000), CallUsage(), error=code, network=True)
+            if kind == "extract":
+                self._extract_failed(code, status)
+                raise GeminiError(code) from None
             if status == 429:
                 self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")   # the account's limit: every role
             elif status == 404:
@@ -724,10 +821,62 @@ class GeminiClient:
             finish = str((raw.get("candidates") or [{}])[0].get("finish_reason") or "")
             self._record(kind, model, latency_ms, _usage(model, raw.get("usage_metadata")), finish=finish,
                          error=exc.code, network=True)
-            self._failed(exc.code, kind)
+            if kind == "extract":
+                self._extract_failed(exc.code, None)
+            else:
+                self._failed(exc.code, kind)
             raise
-        self._write_cache(key, model, kind, raw, latency_ms)
+        usable = accept is None or accept(reply)
+        if usable:
+            self._write_cache(key, model, kind, raw, latency_ms)
         self._record(kind, model, latency_ms, reply.usage, finish=reply.finish_reason, network=True)
-        if not reply.blocked:
+        if kind == "extract":
+            if usable:
+                with self._lock:
+                    self._extract_failures = 0
+            else:
+                self._extract_failed("unusable", None)
+        elif not reply.blocked:
             self._succeeded(kind)
         return reply
+
+    def _cached_reply(self, model: str, entry: dict[str, Any], accept: Callable[[Reply], bool] | None) -> Reply | None:
+        """A cache entry as a reply, or None when it cannot be parsed or its caller rejects it (a miss)."""
+        try:
+            reply = parse(model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
+        except Exception as exc:  # noqa: BLE001 - the class name only
+            log.warning("gemini cache entry unusable (%s); calling the model", type(exc).__name__)
+            return None
+        if accept is not None and not accept(reply):
+            log.warning("gemini cache entry rejected by its caller; calling the model")
+            return None
+        return reply
+
+    def _extract_failed(self, code: str, status: int | None) -> None:
+        """A bill reading's failure touches the readings only (#250, decision B). What belongs to the key and
+        its quota still pauses every call kind: a 429 and a refused key (401, 403). A refused model id (400,
+        404) pauses readings for EXTRACT_REFUSAL_S; a timeout, a network error or a 5xx fails this reading
+        only; other failures in a row pause readings briefly."""
+        if status == 429:
+            self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
+        elif status in (401, 403):
+            self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+        elif status in (400, 404):
+            self._extract_pause(EXTRACT_REFUSAL_S, code)
+        elif code in TRANSIENT_CODES or status in SERVER_ERROR_CODES:
+            pass
+        else:
+            with self._lock:
+                self._extract_failures += 1
+                streak = self._extract_failures
+            if streak >= FAILURE_STREAK_LIMIT:
+                self._extract_pause(FAILURE_STREAK_COOLDOWN_S, f"{code} ({streak} failures in a row)")
+                with self._lock:
+                    self._extract_failures = 0
+
+    def _extract_pause(self, seconds: float, code: str) -> None:
+        with self._lock:
+            self._extract_paused_until = max(self._extract_paused_until, self.clock() + seconds)
+            self._extract_pause_code = code
+        ops_log.error("gemini %s: bill readings paused for %d s; a reading in the cache is still served", code,
+                      seconds)
