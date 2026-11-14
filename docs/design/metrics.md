@@ -499,7 +499,7 @@ Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<
 
 **Evidence.** Rows of the selection in the window with `is_one_off = false` and a basket other than `regular_essentials`.
 
-**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. Fewer than 3 purchases of the selection in the window (`TOO_FEW_TRANSACTIONS`, #379): the tool derives no monthly figure and reports `too_few_transactions` with the purchases' total and count; the SQL still returns its row. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
+**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. Fewer than 3 cuttable purchases in the window (`app.whatif_min_tx`, default 3 = `TOO_FEW_TRANSACTIONS`, #379): `not_offered`, the baseline and every saving 0; the chat answers with the purchases' total and count (`too_few_transactions`), and `POST /api/whatif` carries the same sentence as its caveat. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
 
 **Worked numbers** (dining out −20%):
 

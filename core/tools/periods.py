@@ -152,6 +152,15 @@ def period_label(start: date, end: date, language: str = "en") -> str:
     return f"{start.day} {s_mon} {start.year} – {end.day} {e_mon} {end.year}"
 
 
+def span_phrase(start: date, end: date, language: str = "en") -> str:
+    """The opening of a sentence about a span: "Between 1 Apr and 30 Sep 2026", "Jaksolla 1.4.–30.9.2026"."""
+    if language == "fi":
+        return f"Jaksolla {period_label(start, end, 'fi')}"
+    s_mon, e_mon = MONTHS_EN_SHORT[start.month - 1], MONTHS_EN_SHORT[end.month - 1]
+    first = f"{start.day} {s_mon}" if start.year == end.year else f"{start.day} {s_mon} {start.year}"
+    return f"Between {first} and {end.day} {e_mon} {end.year}"
+
+
 def month_key(d: date) -> str:
     return f"{d.year:04d}-{d.month:02d}"
 

@@ -50,3 +50,13 @@ def test_too_few_purchases_are_shown_and_marked():
 def test_the_top_categories_leave_health_out():
     rows = classify(history(), TODAY, None)
     assert "Health" not in [c["key"] for c in top_categories(rows, "en")]
+
+
+def test_the_what_if_sql_default_for_too_few_purchases_is_the_setting():
+    import re
+    from pathlib import Path
+
+    from core.tools import config
+    sql = (Path(__file__).resolve().parents[2] / "metrics" / "04_what_if.sql").read_text(encoding="utf-8")
+    m = re.search(r"app\.whatif_min_tx', true\), ''\), '(\d+)'\)", sql)
+    assert m and int(m.group(1)) == config.TOO_FEW_TRANSACTIONS

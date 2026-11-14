@@ -120,7 +120,10 @@ def caveats_for(status: str, language: str) -> list[str]:
     return out
 
 
-def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
+def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "raise") -> ToolResult:
+    """too_few: with fewer than config.TOO_FEW_TRANSACTIONS purchases in the window, "raise" MissingData (the
+    chat answers with the purchases), or "not_offered" (POST /api/whatif: the existing status, every saving and
+    the baseline 0, the chat's sentence as the caveat; the coordinator's decision, review of #379 part B)."""
     args = args if isinstance(args, RunWhatIfArgs) else RunWhatIfArgs.model_validate(args)
     lang = ctx.language
     sel = args.selection
@@ -146,6 +149,8 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
         sql_value = merchant_id
         alias_label = alias_map.for_merchant(merchant_id).label(lang)
 
+    # app.whatif_min_tx is left at the SQL's default, config.TOO_FEW_TRANSACTIONS (a test keeps them equal), so
+    # the evidence refs of every other what-if stay as they were (#379)
     settings = {"whatif": f"{sel.kind}:{sql_value}", "whatif_pct": str(args.cut_pct),
                 **labels.metric_settings_for(ctx)}  # #68
     row = metric_sql.run_one(ctx.conn, config.WHAT_IF_FILE, ctx.customer_id, ctx.as_of, settings)
@@ -156,20 +161,31 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     window = Period(start=row["period_start"], end=row["period_end"],
                     label=periods.period_label(row["period_start"], row["period_end"], lang))
     what = _what(sel, alias_label, lang)
-    bought = [t for t in ctx.history() if window.start <= t.tx_date <= window.end and t.amount_eur < 0
-              and (t.category == sql_value if sel.kind == "category" else t.mcc in set(sql_value.split(","))
-                   if sel.kind == "mcc" else t.merchant_id == sql_value)]
-    if 0 < len(bought) < config.TOO_FEW_TRANSACTIONS:
-        # A purchase or two is no monthly habit (#379): the purchases as they are, no monthly figure or saving.
-        txb = NumberBuilder(ctx, classify(ctx.history(), ctx.as_of, labels.for_context(ctx)))
+    few = None
+    if 0 < int(row["n_tx"] or 0) < config.TOO_FEW_TRANSACTIONS:
+        # A purchase or two is no monthly habit (#379): the SQL gives not_offered with every saving 0; the answer
+        # shows the purchases the baseline would have averaged (the selection's cuttable ones, as in the SQL).
+        rows = classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
+        codes = set(sql_value.split(","))
+        bought = [c.tx for c in rows if c.flow == "spend" and window.start <= c.tx.tx_date <= window.end
+                  and not c.is_one_off and c.basket != "regular_essentials"
+                  and (c.tx.category == sql_value if sel.kind == "category" else c.tx.mcc in codes
+                       if sel.kind == "mcc" else c.basket == sql_value if sel.kind == "basket"
+                       else c.tx.merchant_id == sql_value)]
+        txb = NumberBuilder(ctx, rows)
         exact = Selection(direction="out", start=window.start, end=window.end, tx_ids=tuple(t.id for t in bought))
         total = txb.transactions(exact, config.METHODS["total"], window,
                                  _t("selection_total", lang, what=what[:1].upper() + what[1:]))[0]
         count = txb.transactions(exact, config.METHODS["n_tx"], window, _t("purchases", lang))[0]
-        evidence.write(ctx.conn, txb.specs)
-        # the pipeline registers the two Numbers (the tool cache keeps no numbers of a call that raises)
-        raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what=what,
-                          period=window.label, n=len(bought))
+        span = periods.span_phrase(window.start, window.end, lang)
+        if too_few != "not_offered":
+            evidence.write(ctx.conn, txb.specs)
+            # the pipeline registers the two Numbers (the tool cache keeps no numbers of a call that raises)
+            raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what=what,
+                              period=window.label, span=span, n=len(bought))
+        sentence = _t("too_few_one" if len(bought) == 1 else "too_few_few", lang, span=span, what=what,
+                      total=total.display, count=count.display)
+        few = (txb, total, sentence)
     nb = NumberBuilder(ctx, [])
     reg = ctx.numbers.register
     numbers: dict[str, Number] = {}
@@ -188,19 +204,25 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
     result = WhatIfResult(
         scenario=Scenario(selection={"kind": sel.kind, "value": sql_value}, cut_pct=cut, label=scenario_label),
         status=row["status"],
-        assumptions=[_t("estimate_text", lang, pct=args.cut_pct), _t("assume_rest", lang)],
-        caveats=caveats_for(row["status"], lang),
+        assumptions=[] if few is not None else [_t("estimate_text", lang, pct=args.cut_pct), _t("assume_rest", lang)],
+        caveats=[few[2]] if few is not None else caveats_for(row["status"], lang),
         **numbers,
     )
     evidence.write(ctx.conn, nb.specs)
+    specs = list(nb.specs)
+    if few is not None:
+        evidence.write(ctx.conn, few[0].specs)
+        specs += list(few[0].specs)
+    # the card's evidence: the purchases themselves when there are too few (the trip, not an empty list)
+    ref = few[1].evidence_ref if few is not None else None
     return ToolResult(
-        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang), notes=[], evidence=list(nb.specs),
+        tool=TOOL, data=result, card=_card(result, args.cut_pct, lang, ref), notes=[], evidence=specs,
         model_view=_model_view(result, sel),
     )
 
 
-def _card(result: WhatIfResult, cut_pct: int, language: str) -> Card:
-    ref = result.saving_per_month.evidence_ref
+def _card(result: WhatIfResult, cut_pct: int, language: str, ref: str | None = None) -> Card:
+    ref = ref or result.saving_per_month.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,

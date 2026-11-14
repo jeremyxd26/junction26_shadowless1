@@ -187,13 +187,15 @@ def too_few_tool(n: int):
         count = Number(value=n, unit=Unit.COUNT, period=span, method="spending.n_tx@1",
                        evidence_ref="ev_aaaaaaaaaaa2", label="Purchases", display=str(n))
         raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what="travel",
-                          period=span.label, n=n)
+                          period=span.label, span="Between 1 Apr and 30 Sep 2026", n=n)
     return ToolSpec("fake_what_if", "A what-if on too few purchases.", FakeArgs, tool, ("Looking", "Katson"))
 
 
 @pytest.mark.parametrize("n,text", [
-    (1, "In 1 Apr – 30 Sep 2026 you made a single travel purchase of €203.95, so there is no monthly habit to cut."),
-    (2, "In 1 Apr – 30 Sep 2026 you made 2 travel purchases, €203.95 in all: too few to show a monthly habit to cut."),
+    (1, "Between 1 Apr and 30 Sep 2026 you made a single travel purchase of €203.95, so there is no monthly habit "
+        "to cut."),
+    (2, "Between 1 Apr and 30 Sep 2026 you made 2 travel purchases, €203.95 in all: too few to show a monthly habit "
+        "to cut."),
 ])
 @pytest.mark.parametrize("cache", ["off", "memory"])
 def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure(make_pipeline, n, text, cache,
@@ -238,3 +240,91 @@ def test_the_future_text_names_the_last_day_the_tool_reports():
     errors = [{"reason": "period_in_future", "details": {"last": "2027-01-01"}}]
     assert template.missing_data_answer([], errors, "en", AS_OF)[0].startswith("My data ends on 30 September 2026,")
 
+
+
+# ---- review of part B, B3: the model path gets the rule path's answer for an unknown object -------------
+
+class PeriodArgs(FakeArgs):
+    period: dict | None = None
+
+
+def test_a_planned_unfiltered_total_for_an_unknown_object_becomes_the_breakdown(make_pipeline):
+    from core.tools.models import Card, ToolResult
+
+    ran: list[str] = []
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        card = Card(card_id="card_baskets001", type="breakdown", title="Where your money went",
+                    subtitle="1 Apr – 30 Sep 2026", evidence_ref="ev_aaaaaaaaaaa3")
+        return ToolResult(tool="get_basket_breakdown", data={}, card=card, evidence=[], model_view=basket_view())
+
+    spending_spec = ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson"))
+    baskets_spec = ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson"))
+    # a planner that plans the unfiltered total for "the gym": the total never runs, and no card shows it
+    model = ScriptedModel(plans=[[FunctionCall("get_spending", {"period": {"preset": "last_month"}}),
+                                  FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(spending_spec, baskets_spec)), "how much do I spend on the gym?",
+                 language="en")
+    done = dict(events)["done"]
+    assert ran == ["get_basket_breakdown"] and model.compose_inputs == []
+    assert [p["card"]["card_id"] for e, p in events if e == "card"] == ["card_baskets001"]
+    assert done["outcome"] == "answered" and "\u201cgym\u201d" in done["text"] and "restaurants" in done["text"]
+    assert done["follow_ups"][0] == "How much did I spend on restaurants last month?"
+
+
+def test_the_guard_leaves_a_filtered_plan_and_a_question_without_an_unknown_object_alone(make_pipeline):
+    from core.tools.models import ToolResult
+
+    ran: list[str] = []
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        return ToolResult(tool="get_basket_breakdown", data={}, card=None, evidence=[], model_view=basket_view())
+
+    draft = {"language": "en", "text": "In August 2026 you spent {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    specs = (ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson")),
+             ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson")))
+    for question in ("How much did I spend last month?", "how much did I spend on the whole of 2025?"):
+        ran.clear()
+        model = ScriptedModel(plans=[[FunctionCall("get_spending", {"period": {"preset": "last_month"}}),
+                                      FunctionCall("finish")]], drafts=[draft])
+        run(make_pipeline(model, registry(*specs)), question, language="en")
+        assert ran == ["get_spending"], question
+
+
+@pytest.mark.parametrize("start,end,lang,text", [
+    (date(2026, 4, 1), date(2026, 9, 30), "en", "Between 1 Apr and 30 Sep 2026"),
+    (date(2025, 10, 1), date(2026, 3, 31), "en", "Between 1 Oct 2025 and 31 Mar 2026"),
+    (date(2026, 4, 1), date(2026, 9, 30), "fi", "Jaksolla 1.4.–30.9.2026"),
+])
+def test_the_span_a_too_few_sentence_starts_with(start, end, lang, text):
+    from core.tools.periods import span_phrase
+    assert span_phrase(start, end, lang) == text
+
+
+@pytest.mark.parametrize("text,ok", [
+    # the Finnish label of a period across years is a returned period like the English one (review of part B)
+    ("1.10.2024\u201331.1.2025: Kulutus: {{n1}}.", True),
+    ("1 Oct 2024 \u2013 31 Jan 2025: Spending: {{n1}}.", True),
+    ("1.10.2024\u201328.2.2025: Kulutus: {{n1}}.", False),   # not the returned period
+])
+def test_a_finnish_period_across_years_is_a_returned_period(text, ok):
+    allowed = Allowed(frozenset({AS_OF}), frozenset({(date(2024, 10, 1), date(2025, 1, 31))}))
+    assert (check_text(text, allowed) == []) is ok
+
+
+
+def test_a_name_in_the_users_spelling_is_quoted_whole():
+    text, chips = template.missing_data_answer([basket_view()], [], "en", AS_OF, unknown="Caf\u00e9 M\u00fcller")
+    assert text.startswith("I can't see \u201cCaf\u00e9 M\u00fcller\u201d on its own") and len(chips) == 3
+    # never more than a short name of letters
+    assert template.missing_data_answer([basket_view()], [], "en", AS_OF, unknown="a" * 41) is None

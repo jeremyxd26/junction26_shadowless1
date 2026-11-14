@@ -482,8 +482,8 @@ FUTURE_PERIOD = (r"\bnext (month|year|week)\b|\bby (christmas|new year|the end o
 # "how much will I spend this week?" is the safe-to-spend question (the next seven days), not the future
 FUTURE_THIS_WEEK = r"\bthis week\b|\btällä viikolla\b|\btämän viikon\b"
 # "next month's rent / bills" is the bills rule in every form (the coordinator, #379 part B)
-NEXT_BILL = (r"\bnext month(?:'|\u2019)?s (rent|bills?)\b|\b(rent|bills?) (for |due )?next month\b|"
-             r"\bensi kuun (vuokra\w*|lasku\w*)|\b(vuokra\w*|lasku\w*) ensi kuussa\b")
+NEXT_BILL = (r"\bnext month(?:'|\u2019)?s (rent|bills?)\b|\b(rent|bills?)(?:\s+\w+){0,2}\s+next month\b|"
+             r"\bensi kuun (vuokra\w*|lasku\w*)|\b(vuokra\w*|lasku\w*)(?:\s+\w+){0,2}\s+ensi kuussa\b")
 THIS_PERIOD = (r"\bthis (month|year|week)\b|\btässä kuussa\b|\btämän kuun\b|\btähän kuuhun\b|\btätä kuuta\b|"
                r"\btänä vuonna\b|\btämän vuoden\b|\btähän vuoteen\b|\btätä vuotta\b|\btällä viikolla\b|"
                r"\btämän viikon\b")
@@ -514,6 +514,28 @@ OBJECT_STOP = frozenset({
     "muihin", "muuhun", "kaikkeen", "muille",
     "for", "on", "at", "in", "to", "the", "my", "how", "what", "did", "then", "so",
 })
+# A period, quantity or filler word where an object stands ("on the whole of 2025", "for today", "on Mondays",
+# "on small things", "on one day in August"): no thing, so never the category-absent answer; as the first
+# object the message stays unclaimed, as in part A (the model or the general question); listed second it is
+# skipped (review of part B, B2).
+NOT_A_THING = frozenset({
+    "whole", "today", "tonight", "yesterday", "tomorrow", "same", "typical", "usual", "normal", "regular",
+    "one", "two", "three", "four", "five", "single", "small", "big", "large", "first", "second", "third", "fourth",
+    "fifth", "final", "during", "period", "periods", "daily", "weekly", "monthly", "yearly", "annually", "morning",
+    "mornings", "evening", "evenings", "night", "nights", "certain", "specific", "particular", "an", "a", "any",
+    "some", "several", "many", "couple",
+})
+WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
+
+
+def _is_thing(word: str) -> bool:
+    return word not in NOT_A_THING and not re.fullmatch(WEEKDAY, word)
+_MONTH_NAME = (r"(january|february|march|april|may|june|july|august|september|october|november|december|"
+               r"jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)")
+DAY_OF_MONTH = (r"\b\d{1,2}(st|nd|rd|th)\b|\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+                r"\d{1,2}(st|nd|rd|th)?) of (the month|" + _MONTH_NAME + r")\b|\b" + _MONTH_NAME +
+                r"\.? \d{1,2}\b(?!\d)(?! ?(-|–|to|and))|\b\d{1,2}\.? " + _MONTH_NAME + r"\b|"
+                r"\b\d{1,2}\. (tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuuta\b")
 INTENTS = [
     ("where_money_went", WHERE),
     ("safe_to_spend", SAFE),
@@ -663,11 +685,13 @@ def _unknown_object(q: str) -> str | None:
     rest = m.end(1)
     starts = [m.start(1)] + sorted({rest + n.start(1) for rx in (OBJECT_MORE_EN, OBJECT_MORE_BARE, OBJECT_MORE_FI)
                                     for n in re.finditer(rx, q[rest:])})
-    for start in starts:
+    for i, start in enumerate(starts):
         word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
         if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
                 any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
             continue
+        if i and not _is_thing(word):
+            continue   # "on restaurants and the whole of August": the period is no second object
         return word
     return None
 
@@ -690,8 +714,24 @@ def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
 
 
 def unknown_object(question: str) -> str | None:
-    """The thing a spending question names that no category maps (for the pipeline's answer, #379)."""
-    return _unknown_object(fold(question))
+    """The thing a spending question names that no category maps (for the pipeline's answer, #379), in the
+    user's own spelling: "Café Müller", not "cafe" (a name's capitalised words that follow it come along)."""
+    q = fold(question)
+    word = _unknown_object(q)
+    if word is None or not _is_thing(word):
+        return None    # "on the whole of 2025": no thing to name
+    if len(q) != len(question):
+        return word
+    m = re.search(r"\b" + re.escape(word) + r"\b", q)
+    if not m:
+        return word
+    original, end = question[m.start():m.end()], m.end()
+    while len(original.split()) < 4:
+        nxt = re.match(r"\s+([^\W\d_][\w'-]+)", question[end:])
+        if not nxt or not nxt.group(1)[:1].isupper() or re.fullmatch(_M, fold(nxt.group(1))):
+            break
+        original, end = original + nxt.group(0), end + nxt.end()
+    return original
 
 
 def _future_period(question: str, q: str, as_of: date) -> dict:
@@ -903,7 +943,8 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
             # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health
             # is never singled out, R9), and the answer says the thing is not one of them (#379)
             period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
-            if "get_basket_breakdown" in tools and not _filter_of(q):   # "gym and restaurants": not claimed
+            if "get_basket_breakdown" in tools and not _filter_of(q) and _is_thing(_unknown_object(q)):
+                # "gym and restaurants" is not claimed; nor is "on the whole of 2025" (no thing, B2)
                 return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
                                                 FunctionCall("finish")))
             return Claim(None, reason="unknown_object")
@@ -911,6 +952,9 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     winner, competing = _resolve(found, q, spending)
     if winner is None:
         return Claim(None, candidates=competing, reason="competing")
+    if winner in ("spending", "where_money_went") and re.search(fold_pattern(DAY_OF_MONTH), q) and \
+            not re.search(r"between (\d{1,2}) and (\d{1,2}) " + MONTH_RX, q):
+        return Claim(None, reason="day")   # "the 5th of May": a day, never the whole month (review of part B)
     return _plan_intent(winner, question, q, as_of, tools, lang, spending)
 
 

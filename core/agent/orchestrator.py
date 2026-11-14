@@ -47,7 +47,7 @@ from core.agent import guard, template
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CallRejected, Registry
+from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent, unknown_object
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.answer_text import scan_numbers
@@ -315,7 +315,7 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            calls = plan.calls
+            calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
             model_failed = model_failed or source == "fallback"
@@ -323,6 +323,8 @@ class Pipeline:
                 a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
+            if calls is not plan.calls:
+                turn["guard"] = "unknown_object"   # the planned unfiltered total became the breakdown (B3)
             a.planner_turns.append(turn)
 
             parsed, rejected = [], []
@@ -702,6 +704,17 @@ class Pipeline:
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
+
+    def _unknown_object_guard(self, message: str, calls: list[FunctionCall]) -> list[FunctionCall]:
+        """A planner may plan the unfiltered total for a thing no category maps ("how much do I spend on the
+        gym?"). Before anything runs, those calls become the customer's category breakdown for the same
+        period, and the turn finishes: no unfiltered card goes out, and the answer is the rule path's (the
+        thing named, the customer's largest categories, their chips; #379 part B, review B3)."""
+        data = [c for c in calls if c.name not in CONTROL]
+        if not data or "get_basket_breakdown" not in self.registry.tools or                 not all(c.name == "get_spending" and not (c.args or {}).get("filter") for c in data) or                 unknown_object(message) is None:
+            return calls
+        period = (data[0].args or {}).get("period") or {"preset": "last_6_months"}
+        return [FunctionCall("get_basket_breakdown", {"period": period}, data[0].id), FunctionCall("finish")]
 
     def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
                  a: _Answer) -> str:

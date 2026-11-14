@@ -754,3 +754,48 @@ def test_a_clause_that_sets_a_limit_aside_is_not_claimed(question, lang):
 ])
 def test_a_limit_or_show_all_without_setting_it_aside_keeps_its_rule(question, lang, tools):
     assert [name for name, _ in data_calls(plan(question, lang))] == tools
+
+
+
+@pytest.mark.parametrize("question", [
+    # review of part B, B2: a period, weekday, ordinal, quantity or filler word where an object stands is no
+    # thing: never the category-absent answer, and the message stays unclaimed as in part A
+    "how much did I spend on the whole of 2025?",
+    "how much did I spend for today?",
+    "how much did I spend on the same month last year?",
+    "how much did I spend on a typical month?",
+    "how much did I spend on one day in August?",
+    "how much did I spend on Mondays?",
+    "how much did I spend on small things last month?",
+    "how much did I spend on yesterday?",
+    "how much did I spend on the first of the month?",
+    "what did I spend on during the week",
+    "Spending for a period.",
+    # a day is no month: back to part A's decision
+    "how much did I spend on the 5th of May?",
+    "what did I spend on May 5th?",
+])
+def test_a_period_or_quantity_word_is_no_object_and_stays_unclaimed(question):
+    from core.agent.rules import unknown_object
+    assert claimed_rule(question) == NOT_CLAIMED and data_calls(plan(question)) == []
+    assert unknown_object(question) is None   # the pipeline never names it as a missing thing
+
+
+@pytest.mark.parametrize("question,word", [
+    ("how much did I spend at Caf\u00e9 M\u00fcller last month?", "Caf\u00e9 M\u00fcller"),
+    ("How much do I spend on the gym?", "gym"),
+    ("how much did I spend on Netflix I mean last month", "Netflix"),
+    ("paljonko k\u00e4ytin kuntosaliin?", "kuntosaliin"),
+])
+def test_the_thing_is_quoted_in_the_users_own_spelling(question, word):
+    from core.agent.rules import unknown_object
+    assert unknown_object(question) == word
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("what will my rent be next month?", "en"),
+    ("what will my bills cost next month?", "en"),
+    ("paljonko vuokrani on ensi kuussa?", "fi"),
+])
+def test_rent_or_bills_next_month_is_the_bills_rule(question, lang):
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]

@@ -236,30 +236,21 @@ def test_what_if_statuses_equal_04(conn, scenario, status):
     assert len(result.data.caveats) == (1 if status == "estimate" else 2)
 
 
-def _restaurant_with_a_habit(conn):
-    """The first customer (samples, then personas) and the restaurant they bought from most in the window,
-    with 3 purchases at least: a what-if on fewer derives no monthly figure (#379)."""
-    for customer_id in EVERYONE:
-        history = ctx_for(conn, customer_id).history()
-        in_window = [t.merchant_id for t in history if date(2026, 4, 1) <= t.tx_date <= AS_OF
-                     and t.category == "Restaurants" and t.merchant_id and t.amount_eur < 0]
-        if in_window:
-            restaurant = max(sorted(set(in_window)), key=in_window.count)
-            if in_window.count(restaurant) >= config.TOO_FEW_TRANSACTIONS:
-                return customer_id, restaurant
-    pytest.fail("no customer has 3 purchases at one restaurant in the window")
-
-
 def test_what_if_merchant_alias_maps_to_the_merchant_and_never_reaches_the_model(conn):
-    customer_id, restaurant = _restaurant_with_a_habit(conn)
-    ctx = ctx_for(conn, customer_id)
-    alias = aliases.build(ctx.history(), AS_OF).for_merchant(restaurant).key
-    result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50})
-    row = sql_row(conn, "04_what_if.sql", customer_id, {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
-    assert dec(result.data.saving_per_month) == row["saving_month_eur"]
+    ctx = ctx_for(conn, "CUST00001")
+    history = ctx.history()
+    alias_map = aliases.build(history, AS_OF)
+    restaurant = next(t.merchant_id for t in sorted(history, key=lambda t: t.tx_date, reverse=True)
+                      if t.category == "Restaurants" and t.merchant_id)
+    alias = alias_map.for_merchant(restaurant).key
+    # the endpoint's mode: a merchant with fewer than 3 purchases is not_offered, as the SQL says (#379)
+    result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50},
+                         too_few="not_offered")
+    row = sql_row(conn, "04_what_if.sql", "CUST00001", {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
+    assert dec(result.data.saving_per_month) == row["saving_month_eur"] and result.data.status == row["status"]
     assert result.data.scenario.selection == {"kind": "merchant", "value": restaurant}   # app side
     assert result.model_view["selection"] == {"kind": "merchant", "value": alias}        # model side
-    assert_model_view_clean(result.model_view, customer_id)
+    assert_model_view_clean(result.model_view, "CUST00001")
 
 
 def test_what_if_rejects_a_health_merchant(conn):
@@ -375,3 +366,23 @@ def test_what_if_on_fewer_than_three_purchases_shows_them_and_derives_no_monthly
     assert (dec(total), count.value) == (D(row[0]), row[1]) and row[1] == d["n"]
     assert {total.method, count.method} == {"spending.total@1", "spending.n_tx@1"}
     assert_reconciles(conn, "CUST00849", [total.evidence_ref, count.evidence_ref])
+
+
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+def test_the_endpoint_mode_answers_too_few_purchases_as_not_offered_with_the_reason(conn, customer_id):
+    # review of #379 part B, B1: the SQL says not_offered with every saving 0; the caveat is the chat's sentence
+    ctx = ctx_for(conn, customer_id)
+    result = run_what_if(ctx, {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20},
+                         too_few="not_offered")
+    row = sql_row(conn, "04_what_if.sql", customer_id, {"whatif": "category:Travel", "whatif_pct": "20"})[0]
+    d = result.data
+    assert (d.status, row["status"]) == ("not_offered", "not_offered")
+    assert 0 < row["n_tx"] < config.TOO_FEW_TRANSACTIONS
+    assert all(dec(getattr(d, k)) == 0 for k in ("baseline_per_month", "saving_per_month", "saving_per_week",
+                                                  "saving_per_year"))
+    assert len(d.caveats) == 1 and ("no monthly habit" in d.caveats[0] or "too few" in d.caveats[0])
+    assert d.assumptions == []
+    refs = [getattr(d, k).evidence_ref for k, _, _ in config.WHAT_IF_NUMBERS] + [result.card.evidence_ref]
+    assert_reconciles(conn, customer_id, refs)
+    # the card opens the purchases themselves
+    assert evidence.resolve(conn, result.card.evidence_ref, customer_id).row_count == row["n_tx"]

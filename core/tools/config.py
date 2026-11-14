@@ -805,6 +805,13 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
     "cut": ("Cut you chose", "Valitsemasi leikkaus"),
     "selection_total": ("{what} in the period", "{what} jaksolla"),   # too few purchases (#379)
+    # Too few purchases for a monthly habit (#379): the chat's answer and the what-if screen's caveat.
+    "too_few_one": ("{span} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
+                    "{span} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "too_few_few": ("{span} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to "
+                    "cut.",
+                    "{span} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
+                    "ei ole."),
     "purchases": ("Purchases", "Ostoksia"),
     "baseline_per_month": ("{what} in a typical month", "{what} tavallisena kuukautena"),
     "saving_per_month": ("You would save", "Säästäisit"),

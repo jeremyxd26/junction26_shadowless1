@@ -116,13 +116,7 @@ UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they
            "largest are {categories}.",
            "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat ovat "
            "{categories}.")
-TOO_FEW = {
-    "one": ("In {period} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
-            "Jaksolla {period} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
-    "few": ("In {period} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to cut.",
-            "Jaksolla {period} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
-            "ei ole."),
-}
+TOO_FEW = {"one": tools_config.WHAT_IF_TEXT["too_few_one"], "few": tools_config.WHAT_IF_TEXT["too_few_few"]}
 CATEGORY_CHIP = ("How much did I spend on {category} last month?", "Paljonko käytin luokkaan {category} viime kuussa?")
 # The categories the rules map from words (rules.CATEGORY_WORDS): a chip must be a question they answer.
 CHIP_CATEGORIES = ("Groceries", "Restaurants", "Entertainment", "Housing", "Utilities", "Travel", "Lifestyle",
@@ -244,6 +238,11 @@ def _iso_day(raw: Any) -> date | None:
         return None
 
 
+def _quotable(word: str) -> bool:
+    """A thing the user named, safe to quote back: up to four words of letters ("Café Müller", "gym")."""
+    return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
+
+
 def _first_month(details: dict[str, Any]) -> date:
     """The customer's own first day of data from the tool's error (#379), else the dataset's first day."""
     first = _iso_day(details.get("first"))
@@ -261,13 +260,13 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
                         if c.get("key") != "Health"),
                        key=lambda c: -float(((c.get("amount") or {}).get("value")) or 0))
         labels = _chip_categories(found, language)
-        word = unknown if re.fullmatch(r"[^\W\d_][\w'-]{1,23}", unknown) else None
+        word = unknown if _quotable(unknown) else None
         if labels and word:
             return pick(UNKNOWN, language).format(word=word, categories=_listed(labels, language)), \
                 _category_chips(labels, language)
         return None
     if unknown and views and not errors and unfiltered_spending and \
-            re.fullmatch(r"[^\W\d_][\w'-]{1,23}", unknown):
+            _quotable(unknown):
         # the model planned the unfiltered total for it: the thing is named, the total is not given
         return pick(UNKNOWN_PLAIN, language).format(word=unknown), list(brief_questions(language)[:2])
     if views or not errors or not all(e.get("reason") in (*MISSING, "category_absent", "too_few_transactions")
@@ -280,7 +279,8 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
         what = str(d.get("what") or "")
         if re.search(r"\d", what + str(d.get("period") or "x")) and not d.get("period"):
             return None
-        text = pick(TOO_FEW[kind], language).format(period=d.get("period"), what=what,
+        span = d.get("span") or (("Jaksolla " if language == "fi" else "In ") + str(d.get("period")))
+        text = pick(TOO_FEW[kind], language).format(span=span, what=what,
                                                    total="{{" + str(d.get("total")) + "}}",
                                                    count="{{" + str(d.get("count")) + "}}")
         return text, list(brief_questions(language)[:2])
