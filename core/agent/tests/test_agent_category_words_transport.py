@@ -66,3 +66,22 @@ def test_public_transport_stays_its_group(lang, question, group):
 @pytest.mark.parametrize("question", ["Paljonko liikennevakuutus maksoi?", "Paljonko maksoin liikennesakkoja?"])
 def test_a_traffic_compound_is_no_transport_spending(question):
     assert not any(args.get("filter", {}).get("categories") == ["Transportation"] for _, args in calls(question, "fi"))
+
+
+@pytest.mark.parametrize("lang,question", [
+    ("en", "How much did I spend on transport insurance last month?"),
+    ("en", "How much did I spend on transportation insurance last month?"),
+    ("fi", "Paljonko maksoin liikenteen vakuutuksesta viime kuussa?"),
+])
+def test_a_transport_insurance_is_the_unknown_thing_breakdown_never_the_transportation_total(lang, question):
+    # review of #672: insurance is no Transportation spending; both twins get dev's breakdown of "transport insurance"
+    assert calls(question, lang) == [("get_basket_breakdown", {"period": {"preset": "last_month"}})]
+
+
+@pytest.mark.parametrize("lang,question", [
+    ("en", "How much did I pay in transport fines?"), ("en", "How much did I pay in transportation fines last year?"),
+    ("fi", "Paljonko maksoin liikennesakkoja viime vuonna?"),
+])
+def test_a_transport_fine_asks_back_never_a_total(lang, question):
+    # review of #672: a fine is a thing no filter maps (like "parking fines"); dev gave the Finnish one the total
+    assert [name for name, _ in calls(question, lang)] == ["ask_clarifying_question"]
