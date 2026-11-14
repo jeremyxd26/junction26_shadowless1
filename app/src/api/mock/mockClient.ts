@@ -17,6 +17,8 @@
 //   no waiting row. Undoing "I chose it" has no example: it is the "I chose it" example run backwards.
 //   The basket shares of that overview are the basket amounts over the total, as the core counts
 //   them (metrics.md, baskets.share_pct); the contract has no post-answer overview example.
+// - Chat answers (mockAsk.ts) take their safe-to-spend and safe-to-save cards from the overview
+//   served now (`overviewNow`), so an answer shows the numbers on screen at that moment (#714).
 import type { ApiClient } from '../client.ts'
 import { ApiError } from '../errors.ts'
 import { applyChanges, isBasketsCard } from '../../lib/changes.ts'
@@ -256,7 +258,8 @@ function withShares(overview: OverviewResponse): OverviewResponse {
  */
 function noHero(customerId: string): OverviewResponse | undefined {
   const example = examples['overview.response_no_hero']
-  const asked = new URLSearchParams(window.location.search).get('mock') === 'no_hero'
+  // The mock's chat answers read the overview too, and their tests run without a page (#714).
+  const asked = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mock') === 'no_hero'
   return asked && example.customer_id === customerId ? example : undefined
 }
 
@@ -265,7 +268,9 @@ function noHero(customerId: string): OverviewResponse | undefined {
  * day or the parts they are made of, so the answered overview would keep the old ones next to the
  * new month: "€184.61 a month" over "€83.78 a week" and "€963.49 − €599.18" (#712). The contract's
  * card example (`card.safe_to_save`) is that after-state: when the month is its month (the same
- * evidence), its week, day, parts and sentence come with it. No figure is computed here.
+ * evidence), its week, day, parts and sentence come with it, and so do its estimate (what the month
+ * is based on: €783.79, not €963.49) and its evidence ref and actions ("How is this calculated?"
+ * opens the €184.61 month, #714). No figure is computed here.
  */
 function withSafeToSaveAfter(overview: OverviewResponse): OverviewResponse {
   const card = overview.safe_to_save
@@ -277,20 +282,45 @@ function withSafeToSaveAfter(overview: OverviewResponse): OverviewResponse {
     safe_to_save: {
       ...card,
       subtitle: after.subtitle,
+      evidence_ref: after.evidence_ref,
+      estimate: after.estimate,
       weekly: keep(card.weekly, after.weekly),
       daily: keep(card.daily, after.daily),
       monthly_components: after.monthly_components,
       stock_components: after.stock_components,
+      actions: after.actions,
     },
   }
 }
 
-/** The overview as the core would serve it now: pending, or with the answer applied. */
-function currentOverview(customerId: string): OverviewResponse | undefined {
+/**
+ * The hero's other figures (`secondary`: free until payday, what the balance and the monthly budget
+ * allow, the goal) after an answer that moved safe to spend. The answer's `changes[]` has no key
+ * for them and the contract has no answered hero, so they would stay the pending ones under the new
+ * number: "€97.46" over "Your monthly budget allows €138.79" in the safe-to-spend answer (#714).
+ * A figure the contract's after-state card (`card.safe_to_save`, see above) carries under the same
+ * method comes from it (free until payday, €12,567.56); the others are left out. No figure is
+ * computed here.
+ */
+function withHeroAfter(overview: OverviewResponse, changes: LabelChange[]): OverviewResponse {
+  const hero = overview.hero
+  const moved = changes.find((change) => change.key === 'safe_to_spend')
+  if (!hero || !moved || moved.before.value === moved.after.value) return overview
+  const after = examples['card.safe_to_save']
+  const known = overview.safe_to_save?.monthly.evidence_ref === after.monthly.evidence_ref ? collectNumbers(after) : []
+  const secondary = hero.secondary.flatMap((number) => {
+    const next = known.find((candidate) => candidate.method === number.method)
+    return next ? [{ ...next, label: number.label }] : []
+  })
+  return { ...overview, hero: { ...hero, secondary } }
+}
+
+/** The overview with `basket` as the review answer, as the core would serve it; the pending one without. */
+function overviewWith(customerId: string, basket: BasketKey | undefined): OverviewResponse | undefined {
   const base = noHero(customerId) ?? OVERVIEWS[customerId]
-  const basket = answers[customerId]
   if (!base || !basket) return base
-  const answered = withSafeToSaveAfter(applyChanges(clone(base), answerExample(basket).changes))
+  const changes = answerExample(basket).changes
+  const answered = withHeroAfter(withSafeToSaveAfter(applyChanges(clone(base), changes)), changes)
   return withShares({
     ...answered,
     reviews: [],
@@ -298,6 +328,21 @@ function currentOverview(customerId: string): OverviewResponse | undefined {
       isBasketsCard(card) ? { ...card, items: card.items.filter((item) => item.key !== 'unclassified') } : card,
     ),
   })
+}
+
+/** The overview as the core would serve it now: pending, or with the answer applied. */
+function currentOverview(customerId: string): OverviewResponse | undefined {
+  return overviewWith(customerId, answers[customerId])
+}
+
+/**
+ * The overview the mock serves this customer now, for the mock's chat answers (mockAsk.ts, #714):
+ * an answer's card is this overview's own card, so its numbers are the ones on screen, before the
+ * review answer, after it and after Undo. Undefined for a customer without a mock overview.
+ */
+export function overviewNow(customerId: string): OverviewResponse | undefined {
+  const overview = currentOverview(customerId)
+  return overview && clone(overview)
 }
 
 /**
@@ -352,7 +397,9 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   const computedByBill = billNumbers.find((candidate) => candidate.method.startsWith('bill.'))
   if (computedByBill) return placeholderEvidence(computedByBill)
   // The overview as served now first, then the pending one: refs from before an answer stay valid.
-  const overviews = [currentOverview(customerId), OVERVIEWS[customerId]]
+  // Then each answered one: an older chat answer keeps the refs of its moment after Undo (#714).
+  const options = OVERVIEWS[customerId]?.reviews[0]?.options ?? []
+  const overviews = [currentOverview(customerId), OVERVIEWS[customerId], ...options.map((option) => overviewWith(customerId, option.basket))]
   for (const overview of overviews) {
     if (!overview) continue
     if (overview.hero && (overview.hero.primary.evidence_ref === ref || overview.hero.evidence_ref === ref)) {
