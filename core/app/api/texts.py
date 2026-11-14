@@ -31,6 +31,8 @@ ERRORS: dict[str, Pair] = {
     "data_unavailable": ("Your data is not available right now. Please try again.",
                          "Tietosi eivät ole juuri nyt saatavilla. Yritä uudelleen."),
     "llm_unavailable": ("Explanations are not available right now.", "Selitykset eivät ole juuri nyt saatavilla."),
+    "model_unavailable": ("The bill cannot be read right now. You can type its details instead.",
+                          "Laskua ei voi lukea juuri nyt. Voit kirjoittaa sen tiedot itse."),
     "internal": ("Something went wrong. Please try again.", "Jokin meni vikaan. Yritä uudelleen."),
     "not_found": ("There is nothing at this address.", "Tästä osoitteesta ei löydy mitään."),
 }
