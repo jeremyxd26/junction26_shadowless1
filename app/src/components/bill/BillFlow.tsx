@@ -1,7 +1,9 @@
 // The bill flow (Lasku): one container that runs the steps and makes the calls.
 // gallery → reading (POST /api/bill/read) → fields → explaining (POST /api/bill/explain) → explanation.
 // The `fields` step is the fields card (#329); the `explanation` step is the explanation (#330),
-// headed by the response's match sentence.
+// headed by the response's match sentence. In the thread it runs as a client turn (#332): each step
+// reports its title (`onStep`) and the element marked `data-step-heading` takes the focus; the
+// reading and explaining steps report `onBusy(true)` while they wait for the API.
 import { useEffect, useReducer } from 'react'
 import { billApi } from '../../api/bill.ts'
 import { ApiError } from '../../api/errors.ts'
@@ -16,7 +18,7 @@ import { BillExplanationCard } from './BillExplanationCard.tsx'
 import { BillFieldsCard } from './BillFieldsCard.tsx'
 import { BillGallery } from './BillGallery.tsx'
 import { BillSignals } from './BillSignals.tsx'
-import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
+import { flowReducer, flowStep, initialFlow, toFlowError } from './billFlowState.ts'
 
 interface Props {
   /** Called when the user is finished with an explained bill. */
@@ -26,18 +28,21 @@ interface Props {
    * `askInThread` opens the thread with the question and replaces the history entry (no new one).
    */
   onAsk?: (question: string) => void
+  /** The client turn's step report (#332): the shown step's title, once per step. */
+  onStep?: (title: string) => void
+  /** The client turn's busy report (#332): true while reading or explaining. */
+  onBusy?: (busy: boolean) => void
 }
 
-function toFlowError(error: unknown, fallback: string): FlowError {
-  if (error instanceof ApiError) return { message: error.message, retryable: error.retryable }
-  return { message: fallback, retryable: true }
-}
-
-export function BillFlow({ onDone, onAsk }: Props) {
+export function BillFlow({ onDone, onAsk, onStep, onBusy }: Props) {
   const { lang, customerId } = useSettings()
   const [state, dispatch] = useReducer(flowReducer, initialFlow)
   const s = billStrings(lang)
   const t = strings(lang)
+
+  const { title: stepTitle, waiting } = flowStep(state, s)
+  useEffect(() => onStep?.(stepTitle), [stepTitle, onStep])
+  useEffect(() => onBusy?.(waiting), [waiting, onBusy])
 
   const readingId = state.step === 'reading' ? state.sampleId : null
   useEffect(() => {
@@ -80,6 +85,7 @@ export function BillFlow({ onDone, onAsk }: Props) {
             <ErrorBlock
               message={state.error.message}
               onRetry={state.error.retryable && retrySample ? () => dispatch({ type: 'pick', sampleId: retrySample }) : undefined}
+              until={state.error.until ?? null}
             />
           )}
           <BillGallery onPick={(sampleId) => dispatch({ type: 'pick', sampleId })} />
@@ -89,8 +95,10 @@ export function BillFlow({ onDone, onAsk }: Props) {
     case 'reading':
       return (
         <CardShell>
-          <p className="mb-3 text-base text-ink-2">{s.reading}</p>
-          <LoadingBlock lines={5} />
+          <p data-step-heading tabIndex={-1} className="mb-3 text-base text-ink-2">
+            {s.reading}
+          </p>
+          <LoadingBlock lines={5} announce={!onStep} />
         </CardShell>
       )
     case 'fields':
@@ -98,7 +106,13 @@ export function BillFlow({ onDone, onAsk }: Props) {
       // One element for both steps, so the user's edits survive a failed explanation.
       return (
         <div className="flex flex-col gap-3">
-          <h2 className="text-card-title font-bold text-brand">{state.reading ? s.confirmTitle : s.typeTitle}</h2>
+          <h2
+            data-step-heading={state.step === 'fields' ? true : undefined}
+            tabIndex={-1}
+            className="text-card-title font-bold text-brand"
+          >
+            {state.reading ? s.confirmTitle : s.typeTitle}
+          </h2>
           {state.notice && <p className="rounded-lg bg-sunken p-3 text-base text-ink-2">{state.notice}</p>}
           <BillFieldsCard
             key={state.sampleId ?? 'typed'}
@@ -110,8 +124,10 @@ export function BillFlow({ onDone, onAsk }: Props) {
           />
           {state.step === 'explaining' && (
             <CardShell>
-              <p className="mb-3 text-base text-ink-2">{s.explaining}</p>
-              <LoadingBlock lines={5} />
+              <p data-step-heading tabIndex={-1} className="mb-3 text-base text-ink-2">
+                {s.explaining}
+              </p>
+              <LoadingBlock lines={5} announce={!onStep} />
             </CardShell>
           )}
           <BackButton label={s.backToSamples} onClick={back} />
@@ -120,7 +136,9 @@ export function BillFlow({ onDone, onAsk }: Props) {
     case 'explanation':
       return (
         <div className="flex flex-col gap-3">
-          <h2 className="text-card-title font-bold text-ink">{state.response.match.text}</h2>
+          <h2 data-step-heading tabIndex={-1} className="text-card-title font-bold text-ink">
+            {state.response.match.text}
+          </h2>
           <BillExplanationCard response={state.response} onAsk={onAsk ?? askInThread}>
             <BillSignals signals={state.response.signals} />
             <AddToPayments response={state.response} />

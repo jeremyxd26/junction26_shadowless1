@@ -260,12 +260,37 @@ function noHero(customerId: string): OverviewResponse | undefined {
   return asked && example.customer_id === customerId ? example : undefined
 }
 
+/**
+ * The answer's `changes[]` moves the safe-to-save month and stock but has no key for the week, the
+ * day or the parts they are made of, so the answered overview would keep the old ones next to the
+ * new month: "€184.61 a month" over "€83.78 a week" and "€963.49 − €599.18" (#712). The contract's
+ * card example (`card.safe_to_save`) is that after-state: when the month is its month (the same
+ * evidence), its week, day, parts and sentence come with it. No figure is computed here.
+ */
+function withSafeToSaveAfter(overview: OverviewResponse): OverviewResponse {
+  const card = overview.safe_to_save
+  const after = examples['card.safe_to_save']
+  if (!card || card.monthly.evidence_ref !== after.monthly.evidence_ref) return overview
+  const keep = (current: Num | undefined, next: Num | undefined) => (next ? { ...next, label: current?.label ?? next.label } : current)
+  return {
+    ...overview,
+    safe_to_save: {
+      ...card,
+      subtitle: after.subtitle,
+      weekly: keep(card.weekly, after.weekly),
+      daily: keep(card.daily, after.daily),
+      monthly_components: after.monthly_components,
+      stock_components: after.stock_components,
+    },
+  }
+}
+
 /** The overview as the core would serve it now: pending, or with the answer applied. */
 function currentOverview(customerId: string): OverviewResponse | undefined {
   const base = noHero(customerId) ?? OVERVIEWS[customerId]
   const basket = answers[customerId]
   if (!base || !basket) return base
-  const answered = applyChanges(clone(base), answerExample(basket).changes)
+  const answered = withSafeToSaveAfter(applyChanges(clone(base), answerExample(basket).changes))
   return withShares({
     ...answered,
     reviews: [],
@@ -370,6 +395,20 @@ function withDisplay(number: Num, value: number, lang: Language): Num {
   return { ...number, value, display: money(value, number.unit, lang) }
 }
 
+/**
+ * The review question's amount in the request's language, as the core sends it (#463). The
+ * contract's example has the English display ("€1,080.42"), while its Finnish question reads
+ * "1 080,42 € …"; with the English display the chip cannot find its amount in the Finnish text and
+ * the amount shows twice. The example's other numbers stay English, as elsewhere in the mock.
+ */
+function reviewsInLanguage(overview: OverviewResponse, lang: Language): OverviewResponse {
+  if (lang === 'en') return overview
+  return {
+    ...overview,
+    reviews: overview.reviews.map((review) => ({ ...review, amount: withDisplay(review.amount, review.amount.value, lang) })),
+  }
+}
+
 /** The contract's `whatif.error` (0.2.2), in the request's language like the core. */
 const WHATIF_ERROR = {
   en: 'This scenario cannot be calculated.',
@@ -420,11 +459,11 @@ export function createMockClient(): ApiClient {
         response.personas = [SANNA, ...response.personas]
         return response
       }),
-    overview: (customerId: string) =>
+    overview: (customerId: string, lang: Language) =>
       later(() => {
         const overview = currentOverview(customerId)
         if (!overview) throw new ApiError(404, examples['error.response'].error)
-        return clone(overview)
+        return clone(reviewsInLanguage(overview, lang))
       }),
     evidence: (ref: string, customerId: string, _lang, cursor?: string) =>
       later(() => {

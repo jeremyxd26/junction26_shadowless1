@@ -19,6 +19,7 @@ import pytest
 from core.tools import evidence, label_answer, labels, review_card, reviews
 from core.tools.context import ToolContext
 from core.tools.db import load_transactions
+from core.tools.formatting import DATE_SPACE
 
 LEAD = "CUST00860"
 SPIKE = 606016
@@ -70,7 +71,9 @@ def test_pending_needed_wanted_undo(tx):
     assert card["tx_ref"] == pending.tx_ref and card["amount"]["value"] == 1080.42
     assert card["current_basket"] == {"key": "unclassified", "label": "Waiting for your answer"}
     assert card["merchant"]["alias"].startswith("store_") and str(SPIKE) not in str(card)
-    assert card["question"]["en"] == "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?"
+    # the date is joined with no-break spaces (#662)
+    assert card["question"]["en"] == (f"€1,080.42 at Home & Tech on 28{DATE_SPACE}September{DATE_SPACE}2026 — needed, "
+                                      "or your choice?")
     assert [o["label"]["en"] for o in card["options"]] == ["Needed", "My choice"]
     pending_refs = [n.evidence_ref for _, n in before.values()] + [card["amount"]["evidence_ref"]]
 

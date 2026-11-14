@@ -217,7 +217,7 @@ Sum: 28 + 12 + 100 + 12 + 204 + 12 + 148 = 516, so the last chip ends at 576: 16
 
 **The #35 moment in this layout:** after "It was needed":
 1. The question card collapses to one line (a check, the chosen label).
-2. The big card counts from `changes[].before` to `after` (for example €221.58 → €180.26).
+2. The big card counts from `changes[].before` to `after` (for example €138.79 → €97.46).
 3. Sentti answers right under the question with a short turn: a **mini basket row** where the amount (€1,080.42) flies from "Waiting for your answer" into the chosen basket, and under it `effect.text` with its tokens as chips. On a core without `effect`, a client sentence without a number comes first instead ("Moved to 🔧 Unexpected necessities", the basket label from the API).
 4. With `effect` there is no toast: Undo is on the answered card (see "Toast" in "Shell"). Without `effect`, the toast with Undo appears above the composer.
 
@@ -250,25 +250,54 @@ The big card, the mini basket row and the reply's text are on screen together at
 - **Tap:** opens a short bottom sheet (at most about 46 % of the screen) with the definition and, when the glossary entry has one, the customer's own number as a number chip.
 
 ### Takeaway line
-`--text-xl`, 700, `--color-ink`: one per answer. An answer never shows more than 3 emphasised spans.
+The answer's first sentence: `--text-lg` in the normal weight (400), `--color-ink`, 32 px line height (#684). It is a little larger than the rest, not large bold. One per answer. An answer never shows more than 3 emphasised spans. Only a clarifying question keeps large bold (`--text-xl`, 700), because it is the whole answer.
 
 ### Fact vs estimate
 - **Estimate:** a dashed, neutral `--color-estimate` pill on `--color-estimate-tint` with a "≈" glyph and `estimate.label`. On the green hero block it is drawn in `--color-on-hero` with a dashed `--color-on-hero-muted` border. It is a button that reveals `estimate.text`.
 - **Fact:** no badge, or a quiet "From your transactions" in `--color-muted`.
 
 ### Answer card
-- A flat white card with a 12 px radius (`--radius-lg`), a 1 px `--color-line` border, no shadow and 16 px padding: the title (`--text-card-title`, bold `--color-brand`), the subtitle (xs, muted), and the estimate or fact marker top right.
-- `metric`, `breakdown` and `whatif` share this frame.
-- At most 2 card `actions`, shown as action chips under the explanation.
+A card inside a chat answer is part of one answer that is read once (#684, #696). The question is in the bubble above and the takeaway is the sentence before the card, so the card repeats neither.
+- **Frame:** a flat white card with a 12 px radius (`--radius-lg`), a 1 px `--color-line` border, no shadow and 16 px padding.
+- **No bold title.** The card title restates the question, so it is not drawn. A name that is itself the result (the spender profile, the peer comparison, a what-if that is not offered) is shown in the normal weight (`--text-lg`, `--color-ink`).
+- **Caption:** the period, once (`period.label` of the main number, xs, muted). A later card of the same answer drops it when it is the same period.
+- **Estimate marker:** top right, on the caption's line. A fact has no marker.
+- **One main number** per answer: the first card's main number, large, as plain text, never a green pill (`size lg`, `tone plain`). A later card turns its main number into its first row.
+- **"Label — value" rows** under it: the label in small muted text on the left, the value in normal ink on the right. With large text the value moves under its label. Changes read "▲ €91.70 more", with an arrow and a word, never colour alone.
+- **The parts that make up the main number are never cut** (every basket, "Waiting for your answer" included, and every bill): a hidden part would make the rows not add up to the total. **Other figures are capped at 3 rows.**
+- **What each type shows** (`lib/answerFigures.ts`, chosen by card type, never by matching texts):
+
+  | Card type | Main number | Rows |
+  |---|---|---|
+  | `metric` | `primary` | comparison, then `secondary` |
+  | `breakdown` | `total` | comparison, then the items |
+  | baskets breakdown | `total` | every basket (all parts), then the comparison |
+  | `bills` | `total` | every bill's amount due before payday (all parts) |
+  | `safe_to_save` | `monthly` | the reason, weekly, daily, stock |
+  | `whatif` | saving a month | a week, a year, the baseline |
+  | `profile` | the deciding feature | the other features |
+  | `peer` | you | the median, the gap, the percentile |
+
+- **What-if caveats:** shown as sent, in a `--color-warning-tint` box, when the status is not a plain `estimate` (`estimate_with_caveat`, `not_offered`), as in the what-if sheet.
+- Numbers are tappable text when they have an evidence ref, and plain text without one.
+- Card `actions` are not drawn on the card: the answer offers at most one next step (below).
+- **The review card** is the exception. Inside an answer it points to the "Sentti asks" card in the opening, or, when nothing shows that question, it is that card with its answer buttons (#318, #450), in the answer card's white frame. It has no large main number: the question text from the API already carries the amount, shown once as a number in the text, so nothing is repeated.
 
 ### Answer order
-1. Takeaway (bold).
-2. Card.
-3. One to three sentences.
-4. Action chips (outline).
-5. Follow-up chips (mint).
+1. Takeaway: the first sentence, `--text-lg`, normal weight.
+2. Cards, each in the shape above; only the first has a large number.
+3. The rest of the text: `--text-base`, `--color-ink-2`.
+4. A quiet note when the template answered without the AI model.
+5. The `lesson` in a `--color-sunken` box.
+6. **One next step**, a link-like button (brand, underlined, at least 44 px), chosen from what the response carries (`lib/nextStep.ts`). Nothing is invented: when the response carries nothing, there is no next step.
+   - A refusal: only the way to a human ("Contact S-Pankki"), or nothing when the response does not carry it.
+   - A "nothing found" fallback: the first follow-up question; "Contact S-Pankki" only when there is none (Maxim's decision, #696).
+   - The "I can't answer that one yet" answer (a clarification that carries the way to a human): its `clarify.options` are its follow-up questions, shown as chips. "Contact S-Pankki" shows only when it has no options.
+   - Any other answer, in this order: the answer's own action; then a card action that leads somewhere (the what-if, the bank's own screen, a question); then the first follow-up question; then a card's "how is this calculated".
+   - A follow-up question, and a clarification's options, show only on the latest answer. On an older fallback or "not yet" answer, where they are hidden, the step falls back to "Contact S-Pankki".
+   - A general clarifying question offers its options as chips instead.
 
-The `lesson` sits in a `--color-sunken` box before the chips. The stream never autoscrolls: the view stays pinned to the start of the answer.
+The AI disclosure is not repeated in the answer. It sits behind the header's AI badge and ⓘ (#685). The stream never autoscrolls: the view stays pinned to the start of the answer.
 
 ### Chips
 - **Suggested question / follow-up:** `--color-mint-tint` with a `--color-mint-line` border and ink text.
@@ -337,7 +366,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
 - **The one exception: counter frames.** When a number changes after a review answer (#35), it counts from one API `display` to the next. The frames in between are computed by `src/lib/motion.ts` (#157); the first and the last frame are the API's `display` strings. The frames are `aria-hidden`, and the accessible text is the final `display`. The chip cannot be tapped while it counts. With reduced motion there are no frames: the number cross-fades to the new `display`.
 - **Evidence rows** are no exception: each row of `GET /api/evidence/{ref}` carries `display`, its amount written by the server in the request language with the bank sign (`-€24.50`, FI `-24,50 €`; contract section 9), and the app shows it as sent. The row's `amount` stays the exact decimal string and is never formatted by the app.
-- **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
+- **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €138.79", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 
 ## 5. Accessibility and WebView

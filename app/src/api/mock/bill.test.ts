@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BillApiError } from '../bill.ts'
 import type { BillErrorEnvelope, BillExplainRequest, BillExplainResponse, BillReadResponse } from '../billTypes.ts'
-import { createMockBillApi } from './bill.ts'
+import { READS_PER_MINUTE, createMockBillApi, createReadWindow } from './bill.ts'
 import { TIGHT_FORECAST } from './billForecast.ts'
 import { createMockClient } from './mockClient.ts'
 import contract from './contract-examples.json'
@@ -110,5 +110,39 @@ describe('bill mock', () => {
     expect(counted!.evidence_ref).toBeNull()
     expect(shortfall).toBeNull()
     expect(chip).toBeNull()
+  })
+})
+
+describe('bill mock: the readings window (contract 0.3.7, section 11.4)', () => {
+  it('answers a 7th reading within a minute with 429 rate_limited and Retry-After', () => {
+    let now = 1_000_000
+    const admit = createReadWindow(() => now)
+    for (let index = 0; index < READS_PER_MINUTE; index++) {
+      admit('en')
+      now += 1000
+    }
+    let refused: unknown = null
+    try {
+      admit('fi')
+    } catch (error) {
+      refused = error
+    }
+    expect(refused).toBeInstanceOf(BillApiError)
+    const error = refused as BillApiError
+    expect([error.status, error.code, error.retryable]).toEqual([429, 'rate_limited', true])
+    // The oldest reading was 6 s ago, so it leaves the window in 54 s.
+    expect(error.retryAfter).toBe(54)
+    expect(error.message).toMatch(/^Liian monta/)
+    // Once the oldest reading has left the window, the next one is admitted.
+    now += 54_000
+    expect(() => admit('en')).not.toThrow()
+  })
+
+  it('keeps IBAN and reference as the only checked fields of the contract reading', async () => {
+    const reading = await createMockBillApi().read({ customer_id: 'CUST00860', language: 'fi', sample_id: 'sample_2' })
+    const checked = Object.entries(reading.fields)
+      .filter(([, field]) => field?.status === 'checked')
+      .map(([key]) => key)
+    expect(checked).toEqual(['iban', 'reference'])
   })
 })

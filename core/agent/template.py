@@ -18,7 +18,7 @@ from typing import Any
 
 from core import answer_text
 from core.tools import config as tools_config
-from core.agent import answer_sentences
+from core.agent import answer_sentences, savings_transfer
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -336,6 +336,11 @@ def _quotable(word: str) -> bool:
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
 
 
+# #639: a question about the S-Bonus received gets the estimate after this line; the Bonus received is no data here
+BONUS_RECEIVED_LEAD = ("I can't see the S-Bonus you have received so far in this account's data, so here is an estimate "
+                       "instead.",
+                       "En näe tämän tilin tiedoista, paljonko S-Bonusta olet saanut tähän mennessä, joten tässä on "
+                       "arvio.")
 UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
                    "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
 
@@ -1006,6 +1011,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
                   or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
+                  # "How much did I transfer to savings last month?" (#658): what already goes to savings, not the plan
+                  or savings_transfer.sentence(view, language, q, PLAN_SENTENCE)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])

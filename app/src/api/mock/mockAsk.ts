@@ -11,6 +11,10 @@
 //   stream's meta and status, the card `card.safe_to_save` (with its "See monthly saving in
 //   S-mobiili" action), the card's own `estimate.text` as the one sentence (it has no number), and
 //   the full stream's `done` with that text (#495);
+// - "What can I safely spend this week?", "What if I spend 20% less on restaurants?" and "What kind
+//   of spender am I?" (the overview's suggested questions and the full stream's follow-ups): built
+//   the same way, with the overview's safe-to-spend card (`overview.response.hero`), `card.whatif`,
+//   or `card.profile` and `card.peer`, and one sentence the card already carries (#684);
 // - anything else: the full stream `ask.sse.stream`, unchanged.
 // `?mock=error` in the page URL plays `ask.sse.stream_error`. The contract has no examples for
 // the two model-off cases (section 7.2, PR #261), so they are built from the full stream's meta,
@@ -19,7 +23,8 @@
 //   "Here is what I found for September." (section 7.5), `outcome: "answered"` and the
 //   `llm_unavailable` warning;
 // - `?mock=fallback`: even the template failed the answer check: the fixed short text
-//   "I could not find data for that question.", `outcome: "fallback"`, no warning.
+//   "I could not find data for that question.", `outcome: "fallback"`, no warning, the
+//   `contact_bank` action every fallback carries, and the full stream's follow-ups.
 // `?mock=slow` makes every delay four times longer, to watch the waiting stages.
 import { ApiError } from '../errors.ts'
 import type { AskDone, AskRequest, Card, ErrorEnvelope, Num, SafeToSaveCard } from '../types.ts'
@@ -47,6 +52,10 @@ const examples = contract.examples as unknown as {
   'card.safe_to_save': SafeToSaveCard
   'error.response': ErrorEnvelope
   'card.review': Card
+  'card.whatif': Card
+  'card.profile': Card & { profile: { description: string } }
+  'card.peer': Card
+  'overview.response': { hero: Card | null }
 }
 
 /** Customers with mock data; others get the contract's customer_not_found before the stream. */
@@ -125,8 +134,8 @@ const TEMPLATE_TEXT = 'Here is what I found for September.'
 /** The core's fixed short text when even the template failed the answer check (section 7.2). */
 const FALLBACK_TEXT = 'I could not find data for that question.'
 
-/** The full stream's cards, then `text` as the only delta and a `done` with `outcome` and `warnings`. */
-function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskDone['warnings']): string[] {
+/** The full stream's cards, then `text` as the only delta and a `done` with `outcome`, `warnings` and `actions`. */
+function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskDone['warnings'], actions: AskDone['actions'] = []): string[] {
   const full = blocksOf(examples['ask.sse.stream'])
   const upToCards = full.filter((part) => /^event: (meta|status|card)$/m.test(part))
   const done: AskDone = {
@@ -137,14 +146,19 @@ function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskD
     cited: [],
     lesson: null,
     warnings,
+    actions,
   }
   return [...upToCards, block('delta', { text }), block('done', done)]
 }
 
 /** The AI model was not used: the template answered (`answered` with `llm_unavailable`). */
 const templateStream = () => cardsWithText(TEMPLATE_TEXT, 'answered', ['llm_unavailable'])
-/** Even the template failed the answer check: the fixed short text (`fallback`). */
-const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [])
+/**
+ * Even the template failed the answer check: the fixed short text (`fallback`). Like every fallback
+ * it carries the way to a human (contract 0.3.3), taken from the refusal example, and the full
+ * stream's follow-ups, so the next step shows the follow-up first (#696).
+ */
+const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [], examples['ask.json.response_refusal'].actions ?? [])
 
 /** `?mock=review`: the full stream with the contract's `card.review` after its card (#450). */
 function reviewStream(): string[] {
@@ -178,14 +192,62 @@ function saveStream(): string[] {
   return [...opening, block('card', { card }), block('delta', { text }), block('done', done)]
 }
 
+/**
+ * The other route answers of the demo, built like `saveStream` from examples only: the full
+ * stream's meta and status, the example card(s), one sentence the first card already carries, and
+ * the full stream's `done` without the asked question in its follow-ups (#684).
+ */
+function routeStream(asked: string, cards: Card[], text: string): string[] {
+  const opening = blocksOf(examples['ask.sse.stream']).filter((part) => /^event: (meta|status)$/m.test(part))
+  const done: AskDone = {
+    ...examples['ask.sse.done'],
+    outcome: 'answered',
+    text,
+    text_rendered: text,
+    cited: [],
+    follow_ups: examples['ask.sse.done'].follow_ups.filter((question) => normalise(question) !== normalise(asked)),
+    lesson: null,
+    warnings: [],
+    actions: [],
+  }
+  return [...opening, ...cards.map((card) => block('card', { card })), block('delta', { text }), block('done', done)]
+}
+
+/** Question → its cards and the sentence they carry (an estimate's text or the profile's description). */
+const ROUTES: Record<string, () => { cards: Card[]; text: string }> = {
+  'What can I safely spend this week?': () => {
+    const hero = examples['overview.response'].hero!
+    return { cards: [hero], text: hero.estimate?.text ?? hero.title }
+  },
+  'What if I spend 20% less on restaurants?': () => {
+    const card = examples['card.whatif']
+    return { cards: [card], text: card.estimate?.text ?? card.title }
+  },
+  'What kind of spender am I?': () => {
+    const profile = examples['card.profile']
+    return { cards: [profile, examples['card.peer']], text: profile.profile.description }
+  },
+}
+
+function routeOf(message: string): string[] | null {
+  const asked = Object.keys(ROUTES).find((question) => normalise(question) === normalise(message))
+  if (!asked) return null
+  const { cards, text } = ROUTES[asked]()
+  return routeStream(asked, cards, text)
+}
+
 function normalise(message: string): string {
   return message.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
 
 const sameQuestion = (message: string, request: AskRequest) => normalise(message) === normalise(request.message)
 
-/** The stream that answers `message` (exported for the mock's tests). */
-export function pickStream(message: string, scenario: string | null, first = true): string[] {
+/**
+ * The stream that answers `message` (exported for the mock's tests). `language` is the request's:
+ * a Finnish question without an example of its own gets the contract's Finnish answer, so its text
+ * and its follow-up chips are Finnish (#374); the contract has no other Finnish answer.
+ */
+export function pickStream(message: string, scenario: string | null, first = true, language?: string): string[] {
   if (scenario === 'error') return blocksOf(examples['ask.sse.stream_error'])
   if (scenario === 'template') return templateStream()
   if (scenario === 'fallback') return fallbackStream()
@@ -196,9 +258,12 @@ export function pickStream(message: string, scenario: string | null, first = tru
   }
   if (sameQuestion(message, examples['ask.json.request_clarify'])) return streamOfJson(examples['ask.json.response_clarify'])
   if (sameQuestion(message, examples['ask.json.request_fi'])) return streamOfJson(examples['ask.json.response_fi'])
+  const route = routeOf(message)
+  if (route) return route
   if (SAVE_QUESTIONS.some((question) => normalise(question) === normalise(message))) return saveStream()
   // `?mock=refusal`: the refusal with the contact_bank chip, whatever the question.
   if (scenario === 'refusal') return streamOfJson(examples[first ? 'ask.json.response_refusal_first' : 'ask.json.response_refusal'])
+  if (language === 'fi') return streamOfJson(examples['ask.json.response_fi'])
   return blocksOf(examples['ask.sse.stream'])
 }
 
@@ -283,5 +348,9 @@ export async function mockAsk(request: AskRequest, signal?: AbortSignal): Promis
   if (!KNOWN_CUSTOMERS.has(request.customer_id)) throw new ApiError(404, examples['error.response'].error)
   const scenario = scenarioFromUrl()
   const first = !request.conversation_id
-  return wireStream(onlyFirstDiscloses(pickStream(request.message, scenario, first), first), scenario === 'slow' ? 4 : 1, signal)
+  return wireStream(
+    onlyFirstDiscloses(pickStream(request.message, scenario, first, request.language), first),
+    scenario === 'slow' ? 4 : 1,
+    signal,
+  )
 }

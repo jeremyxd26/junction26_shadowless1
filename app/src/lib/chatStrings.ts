@@ -19,6 +19,7 @@ const en = {
   stageNow: 'in progress',
   stagesLabel: 'Progress',
   orType: 'Or type your answer',
+  /** The bill reading's fact marker only; chat answers carry no source label (#685). */
   fact: 'From your transactions',
   templateNote: 'Written from a standard template this time, without the AI model. The numbers are the same.',
   stopped: 'You stopped this answer.',

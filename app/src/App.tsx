@@ -19,6 +19,8 @@ import { Chat } from './screens/Chat.tsx'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
 const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
+/** `/bill` (#332): the bill flow as a screen, in live and mock builds. */
+const BillScreen = lazy(() => import('./screens/BillScreen.tsx'))
 
 export default function App() {
   const { path, params } = useUrl()
@@ -64,8 +66,12 @@ export default function App() {
             <Suspense fallback={<LoadingBlock lines={6} />}>
               <CardGallery />
             </Suspense>
+          ) : path === '/bill' ? (
+            <Suspense fallback={<LoadingBlock lines={6} />}>
+              <BillScreen />
+            </Suspense>
           ) : (
-            <OpeningProvider overview={overview}>
+            <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
               <Chat
                 chat={chat}
                 question={params.get('q')}
