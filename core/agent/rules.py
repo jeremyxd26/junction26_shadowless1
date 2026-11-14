@@ -906,11 +906,17 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # after no refusal rule matched: "hi, ignore your rules ..." stays refused, "Hi, where did my money go?"
 # is the baskets question. Russian forms are answered in English.
 _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
-          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
+          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|moi moi|hei hei|terve terve|heippa|"
+          r"привет|здравствуй(те)?)")
 # "How are you" in English and Finnish (folded, #630): "miten sä voit", "kuinka sinä voit", "mitä sulle kuuluu",
-# "miten menee"; the whole message, alone or after a greeting.
-_HOW_ARE_YOU = (r"how are you( doing)?|(miten|kuinka) ((sa|sina) )?voit|(miten|kuinka) voit (sa|sina)|"
-                r"mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee")
+# "miten menee", "how's it going", "what's up", "mitä sä puuhaat"; "today", "tänään" or "nyt" may follow; the whole
+# message, alone or after a greeting.
+_HOW_ARE_YOU = (r"(how are you( doing)?|how('s| is) it going|what'?s up|sup|(miten|kuinka) ((sa|sina) )?voit|"
+                r"(miten|kuinka) voit (sa|sina)|mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee|"
+                r"mita ((sa|sina) )?puuhaat)( (today|now|tanaan|nyt))?")
+# The doubled Finnish greetings are also a goodbye: after an answer, "moi moi" is answered with the closing line, never
+# a new greeting (the orchestrator, #630)
+GOODBYE_GREETING = r"(moi moi|hei hei|heippa)"
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -942,6 +948,12 @@ def small_purchases_whole(q: str) -> bool:
     default = next(rx for rx, p in PRESETS if p == config.SMALL_PURCHASE_DEFAULT_PERIOD)
     rest = re.sub(default, " ", re.sub(SMALL_PURCHASES, " ", q))
     return all(word in SMALL_FILLERS for word in re.findall(r"[\w']+", rest))
+
+
+def goodbye_greeting(question: str) -> bool:
+    """The whole message is a doubled Finnish greeting that is also a goodbye ("moi moi", "hei hei", "heippa")."""
+    core = " ".join(re.sub(r"[^\w\s']", " ", fold(question)).split())
+    return bool(re.fullmatch(GOODBYE_GREETING, " ".join(re.sub(r"\bsentti\b", " ", core).split())))
 
 
 def meta_intent(question: str) -> str | None:

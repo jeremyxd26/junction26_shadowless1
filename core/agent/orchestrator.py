@@ -49,7 +49,7 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
-from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
+from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import find_dates, length_problems, scan_numbers
@@ -406,6 +406,8 @@ class Pipeline:
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
+        if meta == "greeting" and conv.turns and goodbye_greeting(message):
+            meta = "thanks"   # "moi moi" after an answer is a goodbye: the closing line, never a new greeting (#630)
         foreign = bool(CYRILLIC.search(message))
         if meta is not None:
             return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
