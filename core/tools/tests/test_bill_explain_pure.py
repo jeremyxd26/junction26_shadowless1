@@ -306,7 +306,7 @@ SENTENCE_END = re.compile(r"[.!?](?=\s|$)")   # a decimal point or a Finnish dat
 @pytest.mark.parametrize("lang", ["en", "fi"])
 @pytest.mark.parametrize("case", ["budget", "moves", "negative", "covered", "after_payday", "full_unmatched"])
 def test_the_safe_to_spend_text_is_at_most_two_sentences(fake, lang, case):
-    """contracts/api.md 11.2 (r-coord: no more than two sentences, shorter on a phone)."""
+    """contracts/api.md 11.2 (no more than two sentences, shorter on a phone)."""
     housing = be.read_barcode(barcode(euros="000886", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy")
     bills = {
         "budget": (housing, None, {"free_until_payday_eur": Decimal("12517.56"), "balance_limit_7d_eur": Decimal("5841.53")}),

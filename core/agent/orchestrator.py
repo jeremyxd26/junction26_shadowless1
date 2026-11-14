@@ -481,7 +481,7 @@ class Pipeline:
                     clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
-                # question is the normal answer (#341, r-coord's decision).
+                # question is the normal answer (#341).
                 a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 

@@ -1,6 +1,6 @@
 """explain_bill on the shared database (#242), for the lead persona CUST00860 only. Skipped without
 DATABASE_URL. Read only, except the evidence specs that every tool writes; SPIKE_REVIEWS is off (conftest),
-so no label is read. The bills are r-w1's sample bills 2 and 3 (#249): a utilities bill clearly higher than
+so no label is read. The bills are sample bills 2 and 3 (#249): a utilities bill clearly higher than
 usual, due before payday, and a bill from a payee that is not a regular bill, due in two days."""
 
 from __future__ import annotations

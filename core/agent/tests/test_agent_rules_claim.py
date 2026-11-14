@@ -49,7 +49,7 @@ def without_dots(text):
 
 
 # message -> the rule that claims it, or "not claimed". Every phrase QA reported for these issues is here:
-# #316 (the safe-to-spend paraphrases), r-qa's #340 table (the four brief questions, 47 phrasings), #357
+# #316 (the safe-to-spend paraphrases), the QA table of #340 (the four brief questions, 47 phrasings), #357
 # (the S-Bonus and the income), and the period words of #281 ("this month", "last month", "lately").
 TABLE = [
     # Q1 Where did my money go?
