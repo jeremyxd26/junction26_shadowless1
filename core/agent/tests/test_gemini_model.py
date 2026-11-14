@@ -51,7 +51,7 @@ def test_round_two_replays_the_model_turn_and_answers_every_call_in_order():
     responses = [FunctionResponse("get_spending", {"error": "invalid_arguments"}, "b"),   # rejected ones come first
                  FunctionResponse("get_spending", {"tool": "get_spending", "total": {"id": "n1"}}, "a")]
     contents = plan_contents(plan_input(responses=responses, model_turns=[turn], round=2))
-    assert [c["role"] for c in contents] == ["user", "model", "tool"]
+    assert [c["role"] for c in contents] == ["user", "model", "user"]   # never "tool": flash-lite rejects it (#388)
     assert contents[1] is turn                         # verbatim, thought signature included
     parts = [p["function_response"] for p in contents[2]["parts"]]
     assert [(p["name"], p.get("id")) for p in parts] == [("get_spending", "a"), ("get_spending", "b"),

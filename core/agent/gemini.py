@@ -141,7 +141,9 @@ def plan_contents(request: PlanInput) -> list[dict[str, Any]]:
         pending = list(request.responses)
         for turn in turns:
             contents.append(turn)
-            contents.append({"role": "tool", "parts": _answer_calls(turn, pending)})
+            # Function responses go in a user turn: gemini-3.5-flash-lite rejects role "tool" with HTTP 400
+            # (3.8-flash accepted it) (#388).
+            contents.append({"role": "user", "parts": _answer_calls(turn, pending)})
     return contents
 
 
