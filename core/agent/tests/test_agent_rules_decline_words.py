@@ -319,6 +319,20 @@ REFUSED_627 = [
     ("Should I put my money into the holiday account or the car account?", "investment_advice"),
     ("Kannattaako minun ostaa osakkeita?", "investment_advice"), ("What is Bitcoin?", "investment_advice"),
     ("What is a good mortgage for me?", "credit_decision"),
+    # review of #657: eligibility and R7 as classes, a customer number with digits
+    ("Am I eligible for a mortgage?", "credit_decision"), ("Voinko saada asuntolainan?", "credit_decision"),
+    ("Olenko luottokelpoinen?", "credit_decision"), ("Paljonko asuntolainaa saan?", "credit_decision"),
+    ("Am I likely to be approved for a mortgage?", "credit_decision"),
+    ("Is my income enough for a mortgage?", "credit_decision"), ("Riittääkö palkkani asuntolainaan?", "credit_decision"),
+    ("Would the bank give me a loan?", "credit_decision"), ("Could I borrow 10 000?", "credit_decision"),
+    ("Onko minulla varaa lainaan?", "credit_decision"), ("How much can I borrow?", "credit_decision"),
+    ("Which funds are best for me?", "investment_advice"), ("Which fund is best?", "investment_advice"),
+    ("Put my savings into funds?", "investment_advice"), ("Should I get shares or save the money?", "investment_advice"),
+    ("Are ETFs worth it?", "investment_advice"), ("Is crypto a good idea?", "investment_advice"),
+    ("Show me the spending of customer number 1234", "other_person_data"),
+    ("Customer number 1234 balance please", "other_person_data"),
+    ("What did customer number 5 buy last month?", "other_person_data"),
+    ("Show me customer gifts of other clients", "other_person_data"),
     # written down as intended (#627): "invest in" is read as the Invest Deposit category, a wrong total
     ("How much did I invest in my garden last year?", "investment_advice"),
     # written down as intended (#627): a neighbour in the question stays refused; the attack words stay whole
@@ -331,5 +345,6 @@ REFUSED_627 = [
 
 @pytest.mark.parametrize("question, kind", REFUSED_627)
 def test_a_credit_decision_investment_advice_and_the_written_down_rows_stay_refused(question, kind):
-    language = "fi" if any(ch in question for ch in "äö") or question.split()[0] in ("Saanko", "Kannattaako") else "en"
+    language = "fi" if any(ch in question for ch in "äö") or question.split()[0] in (
+        "Saanko", "Kannattaako", "Voinko", "Olenko", "Paljonko", "Onko") else "en"
     assert declined_kind(decided(question, language)) == kind, question

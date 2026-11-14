@@ -48,10 +48,12 @@ DECLINE_RULES = [
     # The entries below are whole words or listed word forms (#539): "selection", "promo code", "vaalia" (to cherish),
     # "laakeri" (a bearing), "weatherproof" or "toisen kuukauden" (the second month) are ordinary words.
     ("other_person_data", r"\bCUST\d+|\bcustomer\b(?!\s+(service|support|care|portal|experience|satisfaction|loyalty|"
-                          r"club|desk|hotline|feedback|centre|center|parking|gifts?|number|area|magazine)\b(?!\s+(agent|representative|rep|worker|"
+                          # a customer number with digits is another customer's (review of #657); "customer gifts of …"
+                          r"club|desk|hotline|feedback|centre|center|parking|gifts?(?!\s+(of|from|to)\b)|"
+                          r"number(?!\s*\d)|area|magazine)\b(?!\s+(agent|representative|rep|worker|"
                           r"employee|person)))|\bneighbou?r(s|'s|s')?\b|"
                           r"\bnaapur(i|in|ia|ille|illa|ilta|ista|issa|iin|it|eiden|eitten|eita|eille|eilla|eilta|eista|"
-                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers)\b|"
+                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers|clients)\b|"
                           r"\bmuiden (ihmisten|asiakkaiden|käyttäjien|henkilöiden|tapahtum\w*|tilit\w*|"
                           r"tili(llä|lle|ltä|ä|n|en)|tiedot|tietoja|"
                           r"saldo\w*|kulutus|kulutusta|kulut|kuluja|menot|menoja|rahat|rahoja|tulot|tuloja|palkat|palkkoja)\b|"
@@ -69,13 +71,33 @@ DECLINE_RULES = [
                         r"\b(my|our|what is my|whats my) credit ?scores?\b(?![\s-]+(reports?|checks?|services?|fees?)\b)|"
                         r"\bcredit ?scores?\b(?=\s*\?)|\b(am|are) (i|we) creditworthy\b|\bcreditworthiness\b|"
                         r"\bmyöntääkö\b|\bsaa(nko|mmeko|isinko) (asunto)?lain\w*|\bluottokelpoisuute(ni|si|mme)\b|"
-                        r"\bonko (minulla |meillä )?luottokelpoisuu\w*|\blainapäätös\w*"),
+                        r"\bonko (minulla |meillä )?luottokelpoisuu\w*|\blainapäätös\w*|"
+                        # eligibility as a class (review of #657): eligible / likely / qualify, can I get or borrow,
+                        # how much can I borrow, is my income enough, in English and Finnish
+                        r"\b(eligible|likely|qualif\w*|pre-?approved)\b.*\b(mortgage|loan)s?\b|"
+                        r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|borrow|"
+                        r"afford) (a |an |the )?(new |bigger |car |home )?(mortgage|loan)\b|"
+                        r"\b(can|could) (i|we) borrow\b|\bhow much (can|could|would) (i|we) borrow\b|"
+                        r"\b(income|salary|earnings|pay) (is |are )?(enough|sufficient|high enough) for\b.*\b(mortgage|loan)\b|"
+                        r"\bwould (the |a |my )?(bank|lender) (give|lend|approve|accept)\b|"
+                        r"\b(voinko|voimmeko|saisinko|pääsenkö|pääsisinkö) (saada |ottaa )?(asunto|auto|kulutus)?lain\w*|"
+                        r"\bpaljonko (minä )?(asunto|auto)?lainaa (saan|saisin|voin saada)\b|\bpaljonko voin lainata\b|"
+                        r"\briittää(kö)?\b.*\b(asunto|auto)?lain\w*|\bonko (minulla|meillä) varaa (asunto|auto)?lain\w*|"
+                        r"\bluottokelpoi(?!suusselvity|suusraport|suustarkist)\w*"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(buy|buying|sell|selling|invest|investing|hold|own|pick)\b"
                           r".*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b|"
                           r"\b(should|which|what|best)\b.*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b.*"
                           r"\b(buy|sell|invest|hold|own|pick)\b|"
                           r"\b(best|good|top|safest) (stocks?|shares|funds?|etfs?|crypto\w*)\b|"
                           r"\b(which|what) (stocks?|shares|etfs?|crypto\w*|bitcoin)\b|"
+                          # R7 as a class (review of #657): which or what fund is best, savings into a security, a
+                          # security or saving, an opinion on one, is it worth it
+                          r"\b(which|what) funds? (is|are) (the )?(best|good|right|safest)\b|\bbest funds?\b|"
+                          r"\bput (my|our|the) (money|savings) into (funds?|stocks?|shares|etfs?|crypto\w*|bitcoin|gold)\b|"
+                          r"\bshould (i|we) (get|buy)\b.*\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b.*\bor (save|saving|keep)\b|"
+                          r"\b(think|opinion) (about|of|on) (bitcoin|crypto\w*|stocks?|shares|funds?|etfs?)\b|"
+                          r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
                           r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
                           r"\b(should|could|would|can|shall) (i|we) (invest|start investing)\b|\bwhere (should|could|can) (i|we) "
                           r"invest\b|"
