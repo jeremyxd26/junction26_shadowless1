@@ -169,7 +169,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           placeholder={s.placeholder}
           enterKeyHint="send"
           autoComplete="off"
-          className="h-12 min-w-0 flex-1 rounded-pill border border-line-strong bg-surface px-5 text-base text-ellipsis text-ink-2 placeholder:text-muted"
+          className="h-12 min-w-0 flex-1 rounded-pill border border-line-strong bg-surface px-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted"
         />
         {busy ? (
           <button
