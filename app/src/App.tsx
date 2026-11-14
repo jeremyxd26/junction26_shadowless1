@@ -12,6 +12,7 @@ import { LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
 import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
+import { stopSpeaking } from './lib/speech.ts'
 import { useChat } from './lib/useChat.ts'
 import { useLoad } from './lib/useLoad.ts'
 import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
@@ -59,7 +60,17 @@ export default function App() {
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
-        <Header onLongPress={() => setPersonaSheet(true)} disclosure={ready?.ai_disclosure || t.disclosure} overviewReady={ready !== null} />
+        <Header
+          onLongPress={() => setPersonaSheet(true)}
+          disclosure={ready?.ai_disclosure || t.disclosure}
+          overviewReady={ready !== null}
+          onNewChat={() => {
+            stopSpeaking()
+            chat.clear()
+            window.scrollTo({ top: 0 })
+          }}
+          threadEmpty={chat.turns.length === 0}
+        />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
         <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
           {path === '/cards' && CardGallery ? (

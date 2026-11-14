@@ -41,7 +41,7 @@ export function ScrollToLatest({ thinking, enabled }: { thinking: boolean; enabl
 
   if (!enabled || !away) return null
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 mx-auto flex max-w-[480px] justify-end px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 mx-auto flex max-w-[480px] justify-center px-4">
       <button
         type="button"
         aria-label={s.toLatest}

@@ -4022,8 +4022,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4206,8 +4206,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
         }
       }
     ],
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
+    "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4251,8 +4251,8 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
     "numbers": {
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
@@ -4359,8 +4359,8 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
         }
       }
     ],
-    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
     "numbers": {
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
@@ -4392,8 +4392,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
   "review_state": "pending",
   "changed": true,
   "message": {
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",
@@ -4576,8 +4576,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
         }
       }
     ],
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
+    "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",

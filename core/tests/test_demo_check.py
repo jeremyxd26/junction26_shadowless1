@@ -104,7 +104,7 @@ class Stub:
                 body["effect"] = None
             elif self.effect != "absent":
                 after = 999.0 if self.effect == "mismatch" else 97.46
-                text = "" if self.effect == "no_text" else "Your safe to spend this week goes from €138.79 to €97.46."
+                text = "" if self.effect == "no_text" else "Left to spend this week goes from €138.79 to €97.46."
                 body["effect"] = {"items": [{"key": "safe_to_spend", "before": num(138.79), "after": num(after)}],
                                   "text": text, "text_rendered": text, "numbers": {}}
             return 200, body

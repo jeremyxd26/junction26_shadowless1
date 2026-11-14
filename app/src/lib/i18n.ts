@@ -54,6 +54,10 @@ const en = {
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
+  /** The header's pencil button: empties the thread (asks first when there is something in it). */
+  newChat: 'New chat',
+  newChatConfirm: 'This clears the conversation and the lesson progress.',
+  cancel: 'Cancel',
   mockBadge: 'Mock data',
   heroPendingTitle: 'Left to spend this week',
   heroPending: 'Left to spend is still being calculated. Check back soon.',
@@ -121,6 +125,9 @@ const fi: Strings = {
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
+  newChat: 'Uusi keskustelu',
+  newChatConfirm: 'Tämä tyhjentää keskustelun ja oppituntien edistymisen.',
+  cancel: 'Peruuta',
   mockBadge: 'Testidata',
   heroPendingTitle: 'Käyttövara tällä viikolla',
   heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',
