@@ -665,8 +665,8 @@ class Pipeline:
                 if joined:
                     # #417, model drafts only: an amount next to the bank's screen or product reads as
                     # advice to put it there. The retry gets the reason; the template writes after it.
-                    errors = [f"'{joined}': never name an amount and the bank's screen or product (S-mobiili, "
-                              "monthly saving, a fund) in one sentence; state the amount alone, the card's "
+                    errors = [f"'{joined}': never tell the user to put an amount into the bank's screen or "
+                              "product (S-mobiili, monthly saving, a fund); state the amount alone, the card's "
                               "button opens the screen"]
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
