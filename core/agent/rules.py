@@ -1395,6 +1395,12 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         spending = _asked_filter(spending, asked)
     found = [f for f in _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
              if not (drop_spending and f == "spending")]
+    if "spending" in found and not (spending or {}).get("filter") and people.to_person(question):
+        # "How much did I give my husband?", "Mitä ostin vaimolleni?": the user's own money, but no category or filter
+        # maps the person, so never the unfiltered total; the planner reads it, as an unknown thing (#542, #379)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="to_person")
     dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
