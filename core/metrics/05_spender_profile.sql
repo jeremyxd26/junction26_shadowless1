@@ -132,6 +132,7 @@ f AS (
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'transfer'), 0) / m.n_months         AS sweep_month,
            count(DISTINCT date_trunc('month', w.tx_date)) FILTER (WHERE w.flow = 'transfer')   AS sweep_months,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend'), 0) / m.n_months            AS spend_month,
+           COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'spend'), 0)                         AS spend_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.flow = 'saving'), 0) / m.n_months           AS saving_month,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'regular_essentials'), 0)          AS regular_eur,
            COALESCE(sum(w.out_eur) FILTER (WHERE w.basket = 'unexpected_necessities'), 0)      AS unexpected_eur,
@@ -148,7 +149,10 @@ f AS (
 g AS (
     SELECT f.*,
            f.income_month - f.sweep_month                                         AS net_income_month,
-           f.regular_eur + f.unexpected_eur + f.everyday_eur                      AS spend_total,
+           -- Shares are of all spending, as on the basket card (#235): a purchase whose spike review is
+           -- pending (`unclassified`, #68) stays in the total, so the shares and the one-off share use
+           -- one denominator and the profile does not change while a question waits.
+           f.spend_eur                                                            AS spend_total,
            (SELECT count(*) FROM monthly mo WHERE mo.customer_id = f.customer_id
               AND mo.out_total > COALESCE(mo.net_in, 0))                          AS months_out_over_in
     FROM f

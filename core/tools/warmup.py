@@ -14,6 +14,11 @@ and prints the time and the source (computed or already cached) of every call. A
 evidence rows are gone from coach_evidence (a reset database) is treated as a miss and computed again:
 one query per persona checks the refs.
 
+Viewers (#144): the warm-up runs without a viewer, so it warms the shared label state. That is the
+state every new viewer starts with (a viewer without answers sees the shared state). The warm-up first
+finds or creates the pending spike review, as the overview does (#240), so a new viewer's first overview
+is a hit; a viewer who answered gets entries of their own label set.
+
 Limits: only the customers of core/config/personas.yaml, never more; one database connection with the
 tools' 60 s statement timeout; the tools write their evidence specs, as on any request.
 
@@ -37,7 +42,7 @@ from typing import Any
 
 import yaml
 
-from core.tools import config
+from core.tools import config, reviews
 from core.tools.cache import ToolCache, setting
 from core.tools.context import ToolContext
 
@@ -67,6 +72,8 @@ CALLS: tuple[WarmCall, ...] = (
     WarmCall("bills question", "core.tools.bills", "get_recurring_bills", "GetRecurringBillsArgs", {}),
     WarmCall("overview hero; What can I safely spend this week?", "core.tools.safe_to_spend",
              "get_safe_to_spend", "GetSafeToSpendArgs", {}),
+    WarmCall("overview safe-to-save card (#165)", "core.tools.safe_to_save",
+             "get_safe_to_save", "GetSafeToSaveArgs", {}),
     WarmCall("What kind of spender am I? (profile)", "core.tools.profile", "get_spender_profile",
              "GetSpenderProfileArgs", {}),
     WarmCall("What kind of spender am I? (peers)", "core.tools.peer", "get_peer_benchmark",
@@ -152,11 +159,23 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
         return prepared
 
     for customer_id in customers:
-        history, labels_key = None, None   # one transactions read and one label read per customer
+        # One transactions read and one label read per customer: the label set and the key made from it
+        # travel together into every language, so no language reads the labels again.
+        history, labels_by_tx, labels_key = None, None, None
+        first = True
         hits = []                          # cached results of this persona, checked against coach_evidence
         for lang in languages:
             ctx = ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=lang)
-            ctx._history, ctx.labels_key = history, labels_key
+            ctx._history, ctx._labels, ctx.labels_key = history, labels_by_tx, labels_key
+            if first:
+                # As the overview does before its tools: find or create the pending spike review (#68), so
+                # the label set (and the key made from it) is the one the first overview will have. A
+                # failure only means the labels are taken as they are.
+                try:
+                    reviews.ensure_pending_for(ctx)
+                except Exception as exc:  # noqa: BLE001
+                    out(f"{customer_id}  pending review check failed ({type(exc).__name__}); labels as they are")
+                first = False
             cache.ensure_labels_key(ctx)
             for call, fn, args_model in tools:
                 if fn is None:
@@ -165,9 +184,13 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
                 prepared = prepare(ctx, call, fn, args_model)
                 if prepared is not None and prepared.hit:
                     hits.append((ctx, call, fn, args_model, prepared))
-            history, labels_key = ctx._history, ctx.labels_key
+            history, labels_by_tx, labels_key = ctx._history, ctx._labels, ctx.labels_key
         refs = {ref for *_, p in hits for ref in p.entry.result.evidence}
-        gone = missing_evidence(conn, customer_id, refs)
+        try:
+            gone = missing_evidence(conn, customer_id, refs)
+        except Exception as exc:  # noqa: BLE001 - one persona's failed check never stops the others
+            out(f"{customer_id}  evidence check failed ({type(exc).__name__}); cached results kept")
+            gone = set()
         for ctx, call, fn, args_model, p in hits:
             if gone & set(p.entry.result.evidence):   # evidence row gone: a miss, computed again
                 cache.drop(p.key)

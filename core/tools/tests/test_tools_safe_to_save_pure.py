@@ -218,3 +218,54 @@ def test_no_row_is_no_transactions(monkeypatch):
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=FakeStore())
     with pytest.raises(safe_to_spend.NoTransactions):
         get_safe_to_save(ctx, {})
+
+
+# ---- #217: parallel lanes on copies of one context run the metric file once ---------------------------
+
+def _two_lanes(monkeypatch, result):
+    """metric_row in two threads on copies of one context (as the answer pipeline's lanes), with a slow
+    run_one; returns the number of runs and what each lane got (a row or the exception)."""
+    import dataclasses
+    import threading
+    import time
+
+    runs = []
+    started = threading.Barrier(2)
+
+    def slow_run_one(conn, file, customer_id, as_of, settings):
+        runs.append(file)
+        time.sleep(0.2)
+        return result
+
+    monkeypatch.setattr(metric_sql, "run_one", slow_run_one)
+    base = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=FakeStore())
+    base._labels = {}
+    lanes = [dataclasses.replace(base), dataclasses.replace(base)]   # copies that share `shared`
+    assert lanes[0].shared is lanes[1].shared
+    got: list = [None, None]
+
+    def lane(i):
+        started.wait()
+        try:
+            got[i] = safe_to_spend.metric_row(lanes[i])[1]
+        except Exception as exc:  # noqa: BLE001 - the lane's outcome is the test's subject
+            got[i] = exc
+
+    threads = [threading.Thread(target=lane, args=(i,)) for i in (0, 1)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    return runs, got
+
+
+def test_two_parallel_lanes_run_the_metric_file_once(monkeypatch):
+    runs, got = _two_lanes(monkeypatch, row())
+    assert runs == ["03_safe_to_spend.sql"]
+    assert got[0] is got[1] and got[0]["safe_to_save_monthly_eur"] == Decimal("184.61")
+
+
+def test_no_row_raises_in_both_lanes_after_one_run(monkeypatch):
+    runs, got = _two_lanes(monkeypatch, None)
+    assert runs == ["03_safe_to_spend.sql"]
+    assert all(isinstance(g, safe_to_spend.NoTransactions) for g in got)

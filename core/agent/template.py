@@ -40,8 +40,9 @@ REFUSAL: dict[str, dict[str, Any]] = {
     },
     "out_of_scope": {
         "label": ("This is outside what I can help with", "Tämä ei kuulu siihen, missä voin auttaa"),
-        "text": ("I can only help with questions about your own money, such as your spending, bills and savings.",
-                 "Voin auttaa vain omiin raha-asioihisi liittyvissä kysymyksissä, kuten kulutuksessa, laskuissa ja säästämisessä."),
+        # The warmer generic decline (#287, the product owner's text); the four brief questions follow as chips.
+        "text": ("That's outside my lane — I'm your money coach. I can help with things like:",
+                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi näissä:"),
     },
     "unsafe": {
         "label": ("I can't help with that request", "En voi auttaa tässä pyynnössä"),
@@ -62,7 +63,13 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
-             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän|"
+             # the everyday ways of asking it (#340); the rules read the same words (rules.plan_what_if)
+             r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
+             r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
+             r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
+             r"\b(how much|amount) (could|can|would) i save\b|\bput (more |some )?(money )?aside\b|"
+             r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
 # One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
 WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
                  "Kerro, kuinka paljon vähentäisit luokassa {category}, niin näytän säästön.")
@@ -131,6 +138,27 @@ def refusal(kind: str, language: str) -> tuple[str, dict[str, str]]:
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
 
 
+# Sentti introduces itself (#287): greeting, identity, capabilities and help get the introduction, thanks
+# gets one short sentence; both are followed by the four brief questions as chips (done.follow_ups).
+# The product owner's texts, word for word; no digits and no number words.
+INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your own transactions and explain where "
+         "your money goes, what's safe to spend this week and how you could save more. Every number comes from your "
+         "transactions — tap it to see them. Sometimes I'll ask you a question too.",
+         "Hei, olen Sentti — tekoälyvalmentaja S-mobiilissa. Katson omia tilitapahtumiasi ja kerron, mihin rahasi "
+         "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
+         "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
+THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+
+
+def meta_text(intent: str, language: str) -> str:
+    return pick(THANKS if intent == "thanks" else INTRO, language)
+
+
+def brief_questions(language: str) -> list[str]:
+    """All four brief questions, the chips of an introduction and of the generic decline (#287)."""
+    return [pick(q, language) for q in BRIEF_QUESTIONS]
+
+
 def follow_ups(question: str, language: str, refused: bool = False) -> list[str]:
     """The partner's four questions minus the one just asked (agent-core.md section 7.6)."""
     asked = question.strip().lower()
@@ -173,7 +201,7 @@ NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
 BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
-BILL_WORDS = r"\bbills?\b|\blasku\w*"
+BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"

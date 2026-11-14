@@ -41,6 +41,7 @@ class Answer:
     # The numbers the answer's tool calls returned (from the audit's model views): a declared number
     # outside a case's list passes only if it is one of these. None = unknown.
     tool_numbers: list[dict] | None = None
+    follow_ups: list[str] | None = None  # the chips the answer offers (done.follow_ups); None = unknown
 
 
 # ---- reference source ------------------------------------------------------------------------------
@@ -112,6 +113,11 @@ class ReferenceSource:
         if case is None:  # the reference only knows the eval questions
             return Answer(text=REFUSAL["other"][language], outcome="refused", refusal_kind="out_of_scope",
                           labels=[], tool_calls=[])
+        if case["expect"] == "meta":  # Sentti introduces itself (#287): the template text and the four chips
+            from core.agent import template
+            lang = language if language in ("en", "fi") else "en"
+            return Answer(text=template.meta_text(case["intent"], lang), outcome="answered", labels=[],
+                          tool_calls=[], follow_ups=template.brief_questions(lang))
         if case["expect"] == "refused":
             kind = case["refusal_kinds"][0]
             text = REFUSAL.get(kind, REFUSAL["other"])[language]
@@ -191,7 +197,8 @@ class ApiSource:
 
     def _ask(self, customer_id: str, question: str, language: str) -> Answer:
         body = json.dumps({"customer_id": customer_id, "conversation_id": None, "message": question,
-                           "language": language}).encode("utf-8")
+                           # a question in another language (Russian, #287) lets the service detect it
+                           "language": language if language in ("en", "fi") else "auto"}).encode("utf-8")
         resp = self._get_json(urllib.request.Request(
             f"{self.base}/api/ask", data=body, method="POST",
             headers={"Content-Type": "application/json", "Accept": "application/json"}))
@@ -215,6 +222,7 @@ class ApiSource:
                             if isinstance(v, dict) and {"id", "value", "unit"} <= v.keys()]
         return Answer(text=resp.get("text_rendered") or resp.get("text") or "", outcome=resp.get("outcome"),
                       refusal_kind=(resp.get("refusal") or {}).get("kind"), numbers=numbers, dates=sorted(dates),
+                      follow_ups=resp.get("follow_ups"),
                       labels=[x for x in labels if x], tool_calls=tool_calls, tool_numbers=tool_numbers)
 
     def _audit(self, answer_id: str | None) -> dict | None:

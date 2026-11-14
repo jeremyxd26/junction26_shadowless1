@@ -1,8 +1,15 @@
 """The answer pipeline, steps 1 to 7 of agent-core.md section 7.1 (step 0 is in api.py).
 
 1  meta: answer id, conversation (bound to one customer), language.   1a  input guard.
-2  plan: the model chooses functions (mode ANY). Planner errors: retry once, then the keyword
-   planner (rules.py) and a template answer with outcome "fallback".
+2  plan: the model chooses functions (mode ANY); the service's model plans with the rules first
+   (gemini.RulesFirstModel). Planner errors: retry once, then the keyword planner (rules.py).
+   Whether the language model may be used at all is decided once, before planning, by
+   _model_unavailable (#244): a used-up ask window (#232), the switch file, the daily budget, a pause.
+   When it may not, the rules plan and the template of the question writes, with no model request.
+   Outcome (#244): "answered" whenever a plan was made, the tools ran and the text passed the
+   validator, whoever wrote the text; the warning `llm_unavailable` when the model would have been
+   used and was not. A question the rules do not recognise, with the model unavailable, gets the
+   rules' general clarifying question (outcome "clarify").
 3  tools: arguments are validated by the registry; a customer key at any depth, an unknown function
    or bad arguments go back to the model as {"error": code}. Valid calls run with a database
    connection held only for the tool, two at a time when a second connection is free at once (else
@@ -21,6 +28,7 @@ A failure inside the stream becomes one `error` event; exception text never leav
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import re
 import threading
@@ -40,9 +48,10 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel
+from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.app.api import texts as api_texts
+from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
@@ -55,12 +64,18 @@ MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool c
 # A second lane runs only on a connection that is free at once, so one answer never queues for a
 # second connection that another request needs (core/app/db.py holds a small pool).
 SPARE_WAIT_S = 0.05
+# The pending review's card joins an answer whose tools touched the spike's basket or category
+# (contracts/api.md section 7.2): any basket or safe-to-spend answer, or a category filter naming it.
+SPIKE_TOOLS = frozenset({"get_basket_breakdown", "get_safe_to_spend"})
+CATEGORY_TOOLS = frozenset({"get_spending", "run_what_if"})
+UNCLASSIFIED = "unclassified"   # the basket of a purchase whose review is pending (core.tools.reviews)
 
 # The `error` event's texts are the API's catalogue (core/app/api/texts.py), so a failure reads the same
 # before the stream (503) and inside it.
 ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -114,12 +129,36 @@ def error_envelope(code: str, language: str) -> dict[str, Any]:
     return {"code": code, "message": template.pick(texts, language), "retryable": retryable}
 
 
+@dataclass(frozen=True)
+class LabelSteps:
+    """The server's own label steps of an answer (#68, #196): the functions the overview uses.
+
+    - `establish(ctx)` runs at a fixed point of every answer, before the model plans anything, so the
+      model's plan cannot decide whether a review is created (R6). It finds or creates the pending spike
+      review (core.tools.reviews.ensure_pending_for) and fills ctx._labels, which every tool call of the
+      answer then shares: no tool call reads the labels again.
+    - `card(ctx, review)` builds the pending review's card (core.tools.review_card.build).
+    - `enabled()` says whether spike reviews are on (for the audit record).
+    No model tool can write a label; only the app's label endpoint does (contract section 10)."""
+
+    establish: Callable[[ToolContext], Any]
+    card: Callable[[ToolContext, Any], dict[str, Any] | None]
+    enabled: Callable[[], bool]
+
+
 @dataclass
 class AskRequest:
     customer_id: str
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
+    # The viewer session key (#144, #253): a hash of the viewer cookie, from known_viewer(request). The
+    # answer's labels are this viewer's answers; None reads the shared state. Never logged, never in a
+    # model view or the audit record.
+    viewer: str | None = None
+    # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
+    # with the `llm_unavailable` warning, and no model request is made.
+    model_allowed: bool = True
 
 
 @dataclass
@@ -146,6 +185,13 @@ class _Answer:
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
+    label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
+    ok_calls: list[dict[str, Any]] = field(default_factory=list)  # the data calls that returned a result
+    # Why the language model was not used although it would have been (#244): "model_window" (#232),
+    # "no_model" (no key), "off", "budget", "pause" (decided before planning by
+    # Pipeline._model_unavailable), or "error" (it was asked and failed).
+    model_unavailable: str | None = None
+    template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -162,8 +208,10 @@ class _Answer:
 class Pipeline:
     def __init__(self, registry: Registry, model: Model, data: DataAccess, *, as_of: date,
                  store: ConversationStore | None = None, audit: AuditLog | None = None,
-                 fallback: Model | None = None, clock: Callable[[], float] = time.perf_counter) -> None:
+                 fallback: Model | None = None, clock: Callable[[], float] = time.perf_counter,
+                 labels: LabelSteps | None = None) -> None:
         self.registry = registry
+        self.labels = labels  # None: no label step (tests without a database)
         self.model = model
         self.data = data
         self.as_of = as_of
@@ -214,10 +262,19 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message)
+        # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
+        # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
+        meta = meta_intent(message)
+        if meta is not None:
+            return self._introduce(meta, "en" if CYRILLIC.search(message) else lang, emit, a)
 
         # The customer is bound here, from the request, and never from model output (R4).
+        # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
+        # every tool call's copy of ctx keeps it.
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
-                          numbers=LockedNumberRegistry())
+                          numbers=LockedNumberRegistry(), viewer=req.viewer)
+        # The label state, as the overview establishes it (#196): before the model plans, once per answer.
+        review = self._establish_labels(ctx, a)  # `pending` below is the round's list of calls
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -225,6 +282,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        a.model_unavailable = self._model_unavailable(req)
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -235,6 +293,8 @@ class Pipeline:
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            if source == "fallback":
+                a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
             a.planner_turns.append(turn)
@@ -253,6 +313,10 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
+                # The rules answered in the model's place: after a planner error, or for a question
+                # they do not recognise while the model may not be used (#244).
+                if source == "fallback" or (a.model_unavailable is not None and not getattr(plan, "recognised", True)):
+                    self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -277,6 +341,7 @@ class Pipeline:
             for (call, args), record in zip(pending, records):
                 a.calls.append({"name": call.name, "args": call.args})
                 if "view" in record:
+                    a.ok_calls.append({"name": call.name, "args": call.args})
                     views.append(record.pop("view"))
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
@@ -288,15 +353,25 @@ class Pipeline:
 
         numbers = ctx.numbers.all()
         allowed = allowed_from(numbers.values(), views, self.as_of)
+        if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
+            self._attach_review(ctx, review, emit, a)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=planner_fallback, a=a)
+        draft, used_template = self._compose(compose_in, numbers, allowed,
+                                             skip_model=planner_fallback
+                                             or a.model_unavailable not in (None, "no_model"), a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
-        if a.outcome == "fallback":
-            a.warnings.append("llm_unavailable")
+        # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
+        # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
+        # template in the model's place carries the warning (#244).
+        a.outcome = "fallback" if a.template_failed else "answered"
+        if used_template:
+            a.model_unavailable = a.model_unavailable or "error"
+            self._warn_llm_unavailable(a)
+        elif a.model_unavailable == "no_model":
+            self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
@@ -310,7 +385,100 @@ class Pipeline:
                                    "answer": TOKEN.sub("[number]", text)})
         return lang
 
+    def _establish_labels(self, ctx: ToolContext, a: _Answer) -> Any:
+        """The pending review (or None) and the answer's labels on ctx, with one connection."""
+        if self.labels is None:
+            return None
+        try:
+            with self.data.connection() as conn:
+                ctx.conn = conn
+                try:
+                    pending = self.labels.establish(ctx)
+                finally:
+                    ctx.conn = None
+        except (psycopg.OperationalError, PoolTimeout):
+            raise DataUnavailable() from None
+        if ctx._labels is not None:
+            # The tool cache (#86) keys results by the label state and would read the labels again for
+            # every call whose context has no key; the answer's labels give it the same key at once.
+            from core.tools.cache import labels_key_of
+
+            ctx.labels_key = labels_key_of(ctx._labels)
+        values = list((ctx._labels or {}).values())
+        a.label_state = {"spike_reviews": "on" if self.labels.enabled() else "off",
+                         "labels": sum(v != UNCLASSIFIED for v in values),
+                         "pending": sum(v == UNCLASSIFIED for v in values)}
+        return pending
+
+    def _attach_review(self, ctx: ToolContext, pending: Any, emit: Emit, a: _Answer) -> None:
+        """Add the pending review's card when the answer's tools touched the spike's basket or category
+        (contract section 7.2). It counts towards the three cards; it is the server's, never the model's."""
+        # Only calls that returned a result count (review of #231): a failed call touched nothing.
+        names = {c["name"] for c in a.ok_calls}
+        filtered = [c for c in a.ok_calls if c["name"] in CATEGORY_TOOLS]
+        if len(a.cards) >= MAX_CARDS or not (names & SPIKE_TOOLS or filtered):
+            return
+        def names_category(category: Any) -> bool:
+            return any(json.dumps(category) in json.dumps(c["args"]) for c in filtered)
+
+        category = None
+        if not names & SPIKE_TOOLS:
+            # The spike's category from the history the tools already loaded, so a card that would not be
+            # sent takes no connection and writes no evidence. The history is often not loaded (a what-if
+            # by category runs metric SQL only; the label step reads it only when it creates a review):
+            # then the card is built and its own category decides, below.
+            category = next((t.category for t in ctx._history or [] if t.id == getattr(pending, "tx_id", None)), None)
+            if category is not None and not names_category(category):
+                return
+        try:
+            with self.data.connection() as conn:
+                ctx.conn = conn
+                try:
+                    card = self.labels.card(ctx, pending)
+                finally:
+                    ctx.conn = None
+        except (DataUnavailable, psycopg.OperationalError, PoolTimeout):
+            log.warning("review card not added (data unavailable)")  # the answer itself stands
+            return
+        if card is None:
+            return
+        if not names & SPIKE_TOOLS and category is None and not names_category(card.get("category")):
+            return
+        a.cards.append(card["card_id"])
+        emit("card", {"card": card})
+
+    def _model_unavailable(self, req: AskRequest) -> str | None:
+        """Why the language model may not be used for this answer, or None when it may. The one place
+        that decides it, before planning (#244); the planner, the composer, the outcome and the warning
+        follow from a.model_unavailable:
+        - "model_window": the request's model window is used up (AskRequest.model_allowed, #232);
+        - "no_model": the service runs the rule model alone (no key); the rule model's own template
+          writes, and the answer carries llm_unavailable like any template answer (#244, decision a);
+        - the model's own state (Model.unavailable_reason): "off" (switch file), "budget" (daily budget
+          0 or used up), "pause" (after a 429, a refused key or model, or failures in a row).
+        Another model without unavailable_reason (a scripted model in tests) is always available."""
+        if not getattr(req, "model_allowed", True):
+            return "model_window"
+        if isinstance(self.model, RuleModel):
+            return "no_model"   # no language model configured (no key): the rules plan, the template writes
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe()
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
+            return "error"
+
+    @staticmethod
+    def _warn_llm_unavailable(a: _Answer) -> None:
+        if "llm_unavailable" not in a.warnings:
+            a.warnings.append("llm_unavailable")
+
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
+        if a.model_unavailable is not None and a.model_unavailable != "no_model":
+            # The model may not be used: the rules plan, with no model request (#244).
+            return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:
@@ -333,7 +501,14 @@ class Pipeline:
         MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S
         (DataAccess.connection_if_free), so the calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
         a call that waits for the one before it (ids, cards and audit keys follow the call order) then
-        always waits on a call that holds a connection and can finish."""
+        always waits on a call that holds a connection and can finish.
+        Tool results go through the tool cache (#86): the customer's label state is read once per answer
+        before the lanes start, and a cached result runs no SQL."""
+        if pending and TOOL_CACHE.enabled:
+            try:
+                TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)   # copied into every call's context
+            except (psycopg.OperationalError, PoolTimeout):
+                raise DataUnavailable() from None
         records: list[dict[str, Any] | None] = [None] * len(pending)
         done = [threading.Event() for _ in pending]
         queue = deque(range(len(pending)))
@@ -409,7 +584,9 @@ class Pipeline:
         t = self.clock()
         record: dict[str, Any] = {"name": call.name, "args": call.args}
         try:
-            result = spec.fn(ctx, args)
+            # Through the tool cache (#86), on the lane's connection: a cached result runs no SQL, and its
+            # numbers are registered in call order like a fresh call's.
+            result = TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, ctx, args)
         except DataUnavailable:
             raise
         except (psycopg.OperationalError, PoolTimeout):
@@ -462,15 +639,30 @@ class Pipeline:
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
+            a.template_failed = True
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
+
+    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
+        """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
+        which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        text = self._deliver(template.meta_text(intent, lang), {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
+                      "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
         text, refusal = template.refusal(kind, lang)
         text = self._deliver(text, {}, emit)
         a.outcome, a.refusal, a.text, a.text_rendered = "refused", refusal, text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "refused", "text": text, "text_rendered": text, "cited": [],
-                      "follow_ups": template.follow_ups(a.question, lang, refused=True), "lesson": None,
+                      # The generic decline offers the four brief questions as chips (#287).
+                      "follow_ups": template.brief_questions(lang) if kind == "out_of_scope"
+                      else template.follow_ups(a.question, lang, refused=True), "lesson": None,
                       "refusal": refusal, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
@@ -536,6 +728,8 @@ class Pipeline:
             "warnings": a.warnings,
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
+            "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
+            "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

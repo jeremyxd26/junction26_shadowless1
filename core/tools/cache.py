@@ -2,9 +2,10 @@
 
 Tool results are deterministic for (customer, tool, validated arguments, as_of, language, label state)
 and the code that computes them (agent-core.md section 6.1). The key holds all of these:
-- the label state is `labels_key`: a hash of the customer's basket labels (core/tools/labels.py). It is
-  read once per request and kept on the ToolContext, so every tool call of the request shares it and
-  a label write changes the key at once;
+- the label state is `labels_key`: a hash of the customer's basket labels as the request's viewer sees
+  them (core/tools/labels.py, #144), never of the viewer itself. It is read once per request and kept
+  on the ToolContext, so every tool call of the request shares it and a label write changes the key at
+  once;
 - the code version is a hash of core/tools/*.py and core/metrics/*.sql, so a deploy never serves a
   result of older code.
 - the database identity is a hash of the database's host, port and name (never the URL), so a changed
@@ -17,7 +18,9 @@ a stale entry is never served, whichever process wrote it. `invalidate_customer`
 Layers: an LRU in memory (bounded by entries) and, in mode `disk`, a small sqlite file under var/cache
 that the warm-up command (core/tools/warmup.py) fills and the service reads. Setting `TOOL_CACHE` is
 `off`, `memory` or `disk` (default); `TOOL_CACHE_MAX_ENTRIES` and `TOOL_CACHE_DIR` tune it. Settings
-come from the environment, else from the repository's .env. In the service container the repository
+come from the environment, else from the repository's .env. `TOOL_CACHE_WAIT_S` (default 5) limits how
+long a caller waits for another caller's computation of the same key (single-flight) before it computes
+itself. In the service container the repository
 root is /srv and /srv/var is the persistent bind mount (#78), so the default directory is the right
 one there; the warm-up runs inside that container, so both processes share one sqlite file. If the
 directory cannot be written, the disk layer logs a warning and the memory layer still works.
@@ -46,7 +49,8 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -66,9 +70,12 @@ MODES = ("off", "memory", "disk")
 DEFAULT_MODE = "disk"
 DEFAULT_MAX_ENTRIES = 512
 DEFAULT_MAX_DISK_ENTRIES = 5000
+DEFAULT_WAIT_S = 5.0   # a waiter's limit: a little above the slowest tool (03 is about 0.5 s on a busy db)
 DEFAULT_DIR = ROOT / "var" / "cache"
 DB_FILE = "tools.sqlite3"
-SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"))   # not recursive: tests are not code
+# Not recursive: tests are not code. core/config holds rules some tools read at import (the S-Bonus
+# rules file of core/tools/bonus.py), so a changed rule is a new code version, never a stale hit.
+SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"), ("core/config", "*.yaml"))
 RESULT_MODULE_PREFIX = "core.tools."
 
 Connector = Callable[[], AbstractContextManager[Any]]
@@ -121,16 +128,13 @@ def database_identity() -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def label_set(basket_labels: dict[int, str]) -> list[list[Any]]:
-    """Sorted [tx_id, basket] pairs: labels.label_set when it exists (#68), else the same form here."""
-    own = getattr(labels, "label_set", None)
-    if own is not None:
-        return own(basket_labels)
-    return sorted([int(tx_id), basket] for tx_id, basket in basket_labels.items())
+def label_set(labels_by_tx: dict[int, str]) -> list[list[Any]]:
+    """Sorted [tx_id, basket] pairs, the canonical form the evidence specs store (labels.label_set)."""
+    return labels.label_set(labels_by_tx)
 
 
-def labels_key_of(basket_labels: dict[int, str]) -> str:
-    text = json.dumps(label_set(basket_labels), separators=(",", ":"), ensure_ascii=False)
+def labels_key_of(labels_by_tx: dict[int, str]) -> str:
+    text = json.dumps(label_set(labels_by_tx), separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
@@ -138,6 +142,16 @@ def args_json(args_model: type[BaseModel], args: Any) -> tuple[BaseModel, str]:
     """Validate the arguments (invalid ones raise before anything runs) and give their canonical JSON."""
     parsed = args if isinstance(args, args_model) else args_model.model_validate({} if args is None else args)
     return parsed, json.dumps(parsed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+
+
+# Results that must not be stored, by tool: they depend on a state outside the key that is about to
+# change. The peer benchmark reads the marts only when their build for as_of is complete and otherwise
+# falls back to the customer's range (no group, "not shown"); such a result is served but never cached,
+# so a warm-up during a mart build cannot pin "not shown" until the next deploy. A rebuild of complete
+# marts with other data for the same as_of is a data reload, which the cache-reset runbook covers.
+DO_NOT_STORE: dict[str, Callable[[ToolResult], bool]] = {
+    "get_peer_benchmark": lambda result: getattr(result.data, "peer_source", "marts") != "marts",
+}
 
 
 # ---- entries --------------------------------------------------------------------------------------------
@@ -152,11 +166,20 @@ class Entry:
     registered: tuple[tuple[str, Number], ...]
 
 
+class _OwnerFailed:
+    """What a failed owner hands the callers waiting for its key, in place of a result. Never the owner's
+    own exception: a cancelled request's BaseException (or a KeyboardInterrupt) belongs to that request
+    alone. A waiter that receives this computes itself."""
+
+
+OWNER_FAILED = _OwnerFailed()
+
+
 @dataclass(frozen=True)
 class Prepared:
     entry: Entry
     hit: bool          # served from memory or disk
-    source: str        # "memory", "disk", "tool" or "off"
+    source: str        # "memory", "disk", "inflight" (another caller's computation), "tool" or "off"
     seconds: float
     key: str | None = None
 
@@ -174,7 +197,9 @@ def _remap(obj: Any, ids: dict[str, str], seen: set[int] | None = None) -> None:
         seen.add(id(obj))
     if isinstance(obj, Number):
         if obj.id is not None:
-            obj.id = ids[obj.id]   # every id of the result came from the private registry
+            # An id the tool registered is remapped; one it set by hand (never registered) stays as a
+            # fresh call would return it.
+            obj.id = ids.get(obj.id, obj.id)
         return
     if isinstance(obj, BaseModel):
         for name in type(obj).model_fields:
@@ -237,6 +262,7 @@ class Stats:
     hits: int = 0
     misses: int = 0
     disk_hits: int = 0
+    waits: int = 0        # served by another caller's computation of the same key (single-flight)
 
 
 @dataclass
@@ -245,9 +271,11 @@ class ToolCache:
     max_entries: int = DEFAULT_MAX_ENTRIES
     directory: Path = DEFAULT_DIR
     max_disk_entries: int = DEFAULT_MAX_DISK_ENTRIES
+    wait_s: float = DEFAULT_WAIT_S
     stats: Stats = field(default_factory=Stats)
     _memory: OrderedDict[str, Entry] = field(default_factory=OrderedDict, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _inflight: dict[str, Future] = field(default_factory=dict, repr=False)
     _disk_ready: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -272,7 +300,13 @@ class ToolCache:
         path = Path(directory) if directory else DEFAULT_DIR
         if not path.is_absolute():
             path = ROOT / path
-        return cls(mode=mode, max_entries=max_entries, directory=path)
+        raw_wait = setting("TOOL_CACHE_WAIT_S", environ)
+        try:
+            wait_s = max(0.0, float(raw_wait)) if raw_wait else DEFAULT_WAIT_S
+        except ValueError:      # never fail the service's import over a typo
+            log.error("TOOL_CACHE_WAIT_S must be a number of seconds; using %.1f", DEFAULT_WAIT_S)
+            wait_s = DEFAULT_WAIT_S
+        return cls(mode=mode, max_entries=max_entries, directory=path, wait_s=wait_s)
 
     @property
     def enabled(self) -> bool:
@@ -280,16 +314,22 @@ class ToolCache:
 
     # ---- keys ----
 
-    @staticmethod
-    def labels_key(conn: Any, customer_id: str, as_of) -> str:
-        """Read the customer's label state (one small query once #68 lands) and hash it."""
-        return labels_key_of(labels.basket_labels(conn, customer_id, as_of))
-
     def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
-        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`)."""
-        if ctx.labels_key is None:
+        """ctx.labels_key: the hash of `labels.for_context(ctx)`, the very label set the tools use, read
+        once per request (with ctx.conn, or a connection from `connection`; the overview fills it from
+        its one reviews read). With per-viewer answers (#144) the set is the viewer's, so two viewers
+        with different answers get different keys and viewers in the same state share entries. The
+        viewer itself is never part of a key, an entry or a log.
+
+        The key is always made from the label set on the context (ctx._labels), the set the tools will
+        use, and never taken from a preset value: a key without its set would let the tools read the
+        labels again, and a label write in between would store a value under the key of other labels.
+        Without a set on the context, it is read here once (for the context's viewer, #144).
+        """
+        if ctx._labels is None:
             with _connected(ctx, connection):
-                ctx.labels_key = self.labels_key(ctx.conn, ctx.customer_id, ctx.as_of)
+                ctx._labels = labels.for_context(ctx)        # reads the set once and keeps it on ctx
+        ctx.labels_key = labels_key_of(ctx._labels)          # hashing the set needs no read
         return ctx.labels_key
 
     @staticmethod
@@ -315,41 +355,90 @@ class ToolCache:
         then applied in a fixed order. A hit needs no connection once ctx.labels_key is known."""
         t0 = time.perf_counter()
         parsed, canonical = args_json(args_model, args)
-        private = replace(ctx, numbers=NumberRegistry())
         if not self.enabled:
+            private = replace(ctx, numbers=NumberRegistry())
             with _connected(private, connection):
                 result = fn(private, parsed)
             entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
             return Prepared(entry, False, "off", time.perf_counter() - t0)
 
+        # The labels first: the private context below is a copy of ctx (its _labels included), so the
+        # tool sees the very label set the key was made from.
         self.ensure_labels_key(ctx, connection)
-        private.labels_key = ctx.labels_key
+        private = replace(ctx, numbers=NumberRegistry())
         key = self.key(ctx, tool, canonical)
         found = self.get(key, ctx.customer_id)
         if found is not None:
             entry, source = found
             return Prepared(entry, True, source, time.perf_counter() - t0, key)
 
-        with _connected(private, connection):
-            result = fn(private, parsed)
-        if ctx._history is None and private._history is not None:
-            ctx._history = private._history   # the transactions read by this call serve the next one
-        entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
-        self.put(key, entry)
+        # Single-flight: of the callers that miss the same key at once, the first computes and the others
+        # wait for its result (ten cold overviews run the metric SQL once). A waiter whose owner fails or
+        # takes longer than wait_s computes itself. No deadlock: a caller waits only here, before it owns
+        # anything, and an owner computes without waiting on another key; every wait is also bounded.
+        # The owner stores its result before it leaves _inflight, so a caller that missed above while an
+        # owner was finishing finds the result in memory here and does not compute it again.
         with self._lock:
-            self.stats.misses += 1
+            stored = self._memory.get(key)
+            if stored is not None and stored.customer_id == ctx.customer_id:
+                self._memory.move_to_end(key)
+                self.stats.hits += 1
+                return Prepared(stored, True, "memory", time.perf_counter() - t0, key)
+            flight = self._inflight.get(key)
+            owner = flight is None
+            if owner:
+                flight = self._inflight[key] = Future()
+        if not owner:
+            try:
+                entry = flight.result(timeout=self.wait_s)
+            except (FutureTimeout, CancelledError):   # the owner is slow: compute here instead
+                entry = None
+            # Only these two: the owner never sets an exception, and the waiter's own interrupt must
+            # reach it. OWNER_FAILED (the owner raised) also makes the waiter compute.
+            if isinstance(entry, Entry) and entry.customer_id == ctx.customer_id:   # checked anyway
+                with self._lock:
+                    self.stats.hits += 1
+                    self.stats.waits += 1
+                return Prepared(entry, True, "inflight", time.perf_counter() - t0, key)
+
+        try:
+            # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
+            # which the key was made. A label write during the call cannot slip a result of other labels
+            # under this key; the next request reads the new labels and gets a new key.
+            with _connected(private, connection):
+                result = fn(private, parsed)
+            if ctx._history is None and private._history is not None:
+                ctx._history = private._history   # the transactions read by this call serve the next one
+            entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
+            skip = DO_NOT_STORE.get(tool)
+            if skip is None or not skip(result):
+                self.put(key, entry)
+            with self._lock:
+                self.stats.misses += 1
+        except BaseException:
+            if owner:
+                flight.set_result(OWNER_FAILED)   # never the exception itself: it is this caller's alone
+            raise
+        finally:
+            if owner:
+                with self._lock:
+                    self._inflight.pop(key, None)
+        if owner:
+            flight.set_result(entry)
         return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
-                     extra_connection: Connector | None = None) -> list[Prepared]:
+                     extra_connection: Connector | None = None) -> list[Prepared | Exception]:
         """Prepare several independent calls of one request; apply the results in list order.
 
         Hits are served at once. Misses run on ctx.conn, and when there are two or more and
         `extra_connection` gives a second connection, half of them run on that one in parallel
         (the pool's limit is two connections). If the second connection is not available at once,
         everything runs on ctx.conn. The customer's transactions are read once and shared.
+        A call that fails gives its exception in its place, so one card can fail alone; the caller
+        decides what to show.
         """
-        out: list[Prepared | None] = [None] * len(calls)
+        out: list[Prepared | Exception | None] = [None] * len(calls)
         if self.enabled:
             self.ensure_labels_key(ctx)
             for i, (name, args_model, _, args) in enumerate(calls):
@@ -359,7 +448,10 @@ class ToolCache:
         def run(lane: list[int], connection: Connector | None) -> None:
             for i in lane:
                 name, args_model, fn, args = calls[i]
-                out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                try:
+                    out[i] = self.prepare(name, args_model, fn, ctx, args, connection)
+                except Exception as exc:  # noqa: BLE001 - this call fails alone
+                    out[i] = exc
 
         if len(misses) < 2 or extra_connection is None:
             run(misses, None)
@@ -374,6 +466,10 @@ class ToolCache:
                 log.info("tool cache: no second connection (%s); calls run one after another", type(exc).__name__)
                 run(misses, None)
                 return out  # type: ignore[return-value]
+            if conn is ctx.conn:   # the same connection twice (a one-connection pool): never use it from two threads
+                stack.close()
+                run(misses, None)
+                return out  # type: ignore[return-value]
             with ThreadPoolExecutor(max_workers=2) as pool:
                 futures = [pool.submit(run, own, None), pool.submit(run, other, lambda: nullcontext(conn))]
                 for future in futures:
@@ -381,9 +477,11 @@ class ToolCache:
         return out  # type: ignore[return-value]
 
     def lookup(self, tool: str, args_model: type[BaseModel], ctx: ToolContext, args: Any = None) -> Prepared | None:
-        """The cached entry for this call, or None; never runs the tool. ctx.labels_key must be set."""
-        if not self.enabled or ctx.labels_key is None:
+        """The cached entry for this call, or None; never runs and never reads anything. Without the
+        context's label set (ctx._labels) there is no key to look under, so it is None."""
+        if not self.enabled or ctx._labels is None:
             return None
+        self.ensure_labels_key(ctx)                          # from the set on the context: no read
         t0 = time.perf_counter()
         _, canonical = args_json(args_model, args)
         key = self.key(ctx, tool, canonical)

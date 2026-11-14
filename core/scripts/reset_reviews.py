@@ -1,8 +1,11 @@
 """Demo reset for spike reviews (#68): delete the named customers' rows from `spike_reviews`.
 
-Labels live only in that table, so a reset returns these customers to the published numbers, and the
-next overview asks about their spike again (the weekly limit counts only rows that exist). It refuses
-to run without explicit customer ids, and it touches nothing else.
+Labels live only in that table and in every viewer's answers to it (`spike_review_answers`, #144),
+which go with it (ON DELETE CASCADE). A reset therefore returns these customers to the published
+numbers for every viewer, and the next overview asks about their spike again (the weekly limit counts
+only rows that exist). It refuses to run without explicit customer ids, and it touches nothing else.
+One presenter alone gets a fresh state without this script: open /api/viewer/reset or a new private
+window.
 
 Usage (from the repository root; DATABASE_URL from the environment or .env):
     python core/scripts/reset_reviews.py CUST00860
@@ -53,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         for customer_id in ids:
             states = Counter(r.state(now) for r in reviews.load_reviews(conn, customer_id))
             shown = ", ".join(f"{n} {s}" for s, n in sorted(states.items())) or "no reviews"
-            print(f"{customer_id}: {shown}")
+            print(f"{customer_id}: {shown}; {reviews.count_answers(conn, [customer_id])} viewer answers")
         if args.dry_run:
             print("dry run: nothing deleted")
             return 0
