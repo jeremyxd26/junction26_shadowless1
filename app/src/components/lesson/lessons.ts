@@ -82,7 +82,7 @@ function pickOptions(order: PickSource[], sources: Partial<Record<PickSource, Nu
 }
 
 /**
- * Lesson 1, "How much can you safely spend this week?". The options are the `display` of
+ * Lesson 1, "How much is left for you to spend this week?". The options are the `display` of
  * `hero.primary` (the right one), `safe_to_save.weekly` and the regular-essentials amount of the
  * overview's baskets card (the source of the opening's basket row). Null (the lesson is hidden)
  * without a hero, or when there is nothing free (`nothing_free`).

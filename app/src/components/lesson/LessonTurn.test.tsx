@@ -111,8 +111,9 @@ describe('lesson 1: the reveal', () => {
     expect(en.one.right.week('€138.79')).toBe("Right: €138.79 is what's left to spend this week.")
     expect(revealOf(lesson, 'weekly').verdict).toBe('close')
     expect(en.one.close.week('€138.79')).toBe("Close. €138.79 is what's left to spend this week.")
-    const others = revealOf(lesson, 'essentials').others.map((option) => en.isLabel(option.number.display, inSentence(option.number.label)))
-    expect(others).toEqual(['€83.78 a week is typically left each week.', '€1,889.04 a month is regular essentials.'])
+    // The other options as "{Label}: {display}" rows, the API's label as it is (#727).
+    const others = revealOf(lesson, 'essentials').others.map((option) => en.optionRow(option.number.label, option.number.display))
+    expect(others).toEqual(['Typically left each week: €83.78 a week', 'Regular essentials: €1,889.04 a month'])
     expect(en.one.concept).toBe('Left to spend is the money that stays yours after your regular bills and your saving are taken care of.')
   })
 
@@ -144,7 +145,7 @@ describe('the lesson turn (#703)', () => {
 
   it('asks with a focusable step heading and a named group of 44 px answer buttons', () => {
     const html = render(sanna)
-    expect(html).toMatch(/<h3 id="[^"]+" data-step-heading="" tabindex="-1"[^>]*>How much can you safely spend this week\?<\/h3>/)
+    expect(html).toMatch(/<h3 id="[^"]+" data-step-heading="" tabindex="-1"[^>]*>How much is left for you to spend this week\?<\/h3>/)
     expect(html).toContain('role="group" aria-label="Your answer"')
     for (const display of ['€83.78 a week', '€138.79', '€1,889.04 a month']) {
       expect(html).toMatch(new RegExp(`<button type="button" class="min-h-11[^"]*">${display.replace(/[.$]/g, '\\$&')}</button>`))
@@ -155,7 +156,7 @@ describe('the lesson turn (#703)', () => {
 
   it('in Finnish', () => {
     const html = render(sanna, 'fi')
-    expect(html).toContain('Paljonko voit turvallisesti käyttää tällä viikolla?')
+    expect(html).toContain('Paljonko sinulla on käyttövaraa tällä viikolla?')
     expect(html).toContain('aria-label="Vastauksesi"')
   })
 
