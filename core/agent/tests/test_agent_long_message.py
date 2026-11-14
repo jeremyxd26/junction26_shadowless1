@@ -166,6 +166,11 @@ def assert_by_construction(question, lang):
     spending, and the decision plans no spending. So no message is answered by another rule alone where the short
     decision asked back."""
     found, short = ask(question, lang), short_decision(question, lang)
+    q = rules.fold(question)
+    if (rules.named_object(question) or rules._mixed_filter(q)) and rules._spending_words(q) and found.rule:
+        # a spending question the rules drop (a named place, a mixed filter, a compound) never leaves another rule
+        # to answer alone (#496 with #514)
+        assert "spending" in found.rule.split("+"), (question, found)
     if narrowed_from(found, short):
         return
     assert "spending" in (short.rule or "").split("+"), (question, found, short)
@@ -329,7 +334,41 @@ def test_which_clauses_ask_about_spending(clause, asks):
     assert bool(asking_clauses(clause, rules.date(2026, 9, 30))) == asks, clause
 
 
-BY_CONSTRUCTION = ([(q, lang) for q, lang, _ in COMPOSED] + R2_ROWS + PASS3_ROWS + D1_ROWS + [
+DROPPED_NEXT_TO_ANOTHER = [   # #496 with #514: a spending question the rules drop, next to another rule's question
+    "How much did I spend on bars and groceries last month? What can I safely spend this week?",   # mixed filter
+    "How much did I spend on bars and groceries last month and what kind of spender am I?",
+    "How much did I spend at Barsa last month? What can I safely spend this week?",                # named place
+    "How much did I spend at Barsa last month and what kind of spender am I?",
+    "How much did I spend on parking fines last month? What can I safely spend this week?",        # compound
+    "How much did I spend on parking fines last month and what kind of spender am I?",
+]
+
+
+@pytest.mark.parametrize("question", DROPPED_NEXT_TO_ANOTHER + [q + FILL for q in DROPPED_NEXT_TO_ANOTHER])
+def test_a_dropped_spending_question_never_leaves_the_other_rule_alone(question):
+    """Dev and #488 ask back for all of them; #514 alone answered only the other rule."""
+    found = ask(question)
+    assert (found.rule, found.reason) == (None, "competing") and "spending" in found.candidates, (question, found)
+
+
+@pytest.mark.parametrize("question,reason", [   # alone, the dropped question keeps its own reason
+    ("How much did I spend on bars and groceries last month", "mixed_filter"),
+    ("How much did I spend at Barsa last month", "named_object"),
+    ("How much did I spend on parking fines last month", "named_object"),
+])
+def test_a_dropped_spending_question_alone_keeps_its_reason(question, reason):
+    found = ask(question)
+    assert (found.rule, found.reason, found.calls) == (None, reason, ()), (question, found)
+
+
+def test_a_parking_fine_told_beside_a_bills_question_keeps_the_bills():
+    """The fine sentence asks nothing (no question, no request), so nothing is dropped and the bills answer it."""
+    found = ask("I got a parking fine. Which bills are coming up?")
+    assert [c.name for c in found.calls] == ["get_recurring_bills", "finish"], found
+
+
+BY_CONSTRUCTION = ([(q, lang) for q, lang, _ in COMPOSED] + R2_ROWS + PASS3_ROWS + D1_ROWS
+                   + [(q + FILL, "en") for q in DROPPED_NEXT_TO_ANOTHER] + [
     (LONG, "en"), (LONG_FI, "fi"), ("How much on restaurants in August? And on groceries?" + FILL, "en"),
     ("I pay rent and eat out a lot and bought a laptop in September. Where does most of my money go? "
      "What one change would help me save the most?", "en"),

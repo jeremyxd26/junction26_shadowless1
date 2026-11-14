@@ -984,6 +984,10 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     if "what_if" in found and plan_what_if(q)[0] == "health" and \
             not ("spending" in found and not re.search(PERCENT + "|" + HALF, q)):
         return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if dropped:
+        # a question the rules leave unanswered (a named place, a mixed filter, a parking fine as a bill) next to
+        # another rule's: the message competes, never answered by the other rule alone (#496 with #514)
+        return Claim(None, candidates=tuple(dict.fromkeys(found + dropped)), reason="competing")
     if not found:
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
     winner, competing = _resolve(found, q, spending)
