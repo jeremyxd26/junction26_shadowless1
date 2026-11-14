@@ -1,5 +1,39 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { FOCUSABLE, trapTarget } from '../lib/focusTrap.ts'
 import { useSettings } from '../lib/settings.ts'
+
+const SUPPORTS_INERT = typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype
+
+/**
+ * Makes everything beside the sheet unreachable while it is open: `inert` on the sheet's sibling
+ * elements (the app, the toast, a sheet below this one), or `aria-hidden` where `inert` is not
+ * supported. Returns the undo, which touches only what this sheet changed, so stacked sheets
+ * restore each other in order.
+ */
+function hideBackground(sheet: HTMLElement): () => void {
+  const changed: HTMLElement[] = []
+  const parent = sheet.parentElement
+  if (!parent) return () => {}
+  for (const node of Array.from(parent.children)) {
+    if (node === sheet || !(node instanceof HTMLElement)) continue
+    if (SUPPORTS_INERT ? node.inert : node.getAttribute('aria-hidden') === 'true') continue
+    if (SUPPORTS_INERT) node.inert = true
+    else node.setAttribute('aria-hidden', 'true')
+    changed.push(node)
+  }
+  return () => {
+    for (const node of changed) {
+      if (SUPPORTS_INERT) node.inert = false
+      else node.removeAttribute('aria-hidden')
+    }
+  }
+}
+
+function focusableIn(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (element) => element.getClientRects().length > 0 && !element.closest('[inert]'),
+  )
+}
 
 interface Props {
   title: string
@@ -7,14 +41,20 @@ interface Props {
   children: ReactNode
 }
 
-/** Details open as a bottom sheet over the current screen, never as a new page. */
+/**
+ * Details open as a bottom sheet over the current screen, never as a new page. While it is open,
+ * the keyboard stays inside it (#440): the rest of the page is inert, Tab and Shift+Tab cycle
+ * through the sheet, Escape closes it, and the focus returns to the element that opened it.
+ */
 export function BottomSheet({ title, onClose, children }: Props) {
   const { t } = useSettings()
   const titleId = useId()
+  const root = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
+    const showBackground = root.current ? hideBackground(root.current) : () => {}
     panel.current?.focus()
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -28,12 +68,23 @@ export function BottomSheet({ title, onClose, children }: Props) {
     return () => {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
+      // The background must be focusable again before the focus can go back to it.
+      showBackground()
       previous?.focus?.()
     }
   }, [onClose])
 
+  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !panel.current) return
+    const target = trapTarget(focusableIn(panel.current), document.activeElement as HTMLElement | null, event.shiftKey, panel.current)
+    if (target) {
+      event.preventDefault()
+      target.focus()
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div ref={root} className="fixed inset-0 z-50 flex items-end justify-center">
       <button
         type="button"
         aria-label={t.close}
@@ -47,6 +98,7 @@ export function BottomSheet({ title, onClose, children }: Props) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
+        onKeyDown={onPanelKeyDown}
         className="sheet-panel relative flex max-h-[88dvh] w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none"
       >
         <div className="flex items-start gap-2 px-4 pt-2">
