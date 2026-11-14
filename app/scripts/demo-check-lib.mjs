@@ -3,6 +3,33 @@ import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+/** The UI texts each step looks for, per `--lang`. */
+export const TEXT = {
+  en: {
+    asks: 'Sentti asks',
+    needed: /Needed/,
+    undo: /^(Undo)$/,
+    firstQuestion: 'Where did my money go?',
+    saveQuestion: 'How could I save more?',
+    saveAction: /monthly saving/i,
+    hostScreen: /Monthly saving/,
+    startOver: 'Start over',
+    mockBadge: 'Mock data',
+  },
+  fi: {
+    asks: 'Sentti kysyy',
+    needed: /Välttämätön|Needed/,
+    undo: /^(Peru|Kumoa)$/,
+    firstQuestion: 'Mihin rahani menivät?',
+    saveQuestion: 'Miten voisin säästää enemmän?',
+    // The core's label is "Katso kuukausisäästäminen S-mobiilissa"; the stem also covers "kuukausisäästö".
+    saveAction: /kuukausisääst|monthly saving/i,
+    hostScreen: /Kuukausisäästö/,
+    startOver: 'Aloita alusta',
+    mockBadge: 'Testidata',
+  },
+}
+
 export const USAGE = 'Usage: npm run demo:check -- <base-url> [--lang en|fi] [--persona CUST00860]'
 
 /** `<base-url> [--lang en|fi] [--persona ID]` → { base, lang, persona } or { error }. */

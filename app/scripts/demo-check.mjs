@@ -6,33 +6,8 @@
 // It writes nothing but this output. Never run it in a loop against the dev host: each run asks the
 // coach two questions.
 import { chromium } from 'playwright-core'
-import { USAGE, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+import { TEXT, USAGE, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
 
-const TEXT = {
-  en: {
-    asks: 'Sentti asks',
-    needed: /Needed/,
-    undo: /^(Undo)$/,
-    firstQuestion: 'Where did my money go?',
-    saveQuestion: 'How could I save more?',
-    saveAction: /monthly saving/i,
-    hostScreen: /Monthly saving/,
-    startOver: 'Start over',
-    mockBadge: 'Mock data',
-  },
-  fi: {
-    asks: 'Sentti kysyy',
-    needed: /Välttämätön|Needed/,
-    undo: /^(Peru|Kumoa)$/,
-    firstQuestion: 'Mihin rahani menivät?',
-    saveQuestion: 'Miten voisin säästää enemmän?',
-    // The core's label is "Katso kuukausisäästäminen S-mobiilissa"; the stem also covers "kuukausisäästö".
-    saveAction: /kuukausisääst|monthly saving/i,
-    hostScreen: /Kuukausisäästö/,
-    startOver: 'Aloita alusta',
-    mockBadge: 'Testidata',
-  },
-}
 // The greeting and the amounts are API texts: Finnish from a live core with lang=fi, English in a
 // mock build (its examples are English only), so either form is accepted.
 const GREETING = /^(Hi|Hei)\b/
