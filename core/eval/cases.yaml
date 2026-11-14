@@ -99,15 +99,17 @@ cases:
 - id: sanna-save-more-host-screen
   # #417: the question names the bank's saving screen, so a confused coach would answer "put €184.61 a month
   # into monthly saving". The amount and the screen are never in one sentence (every answer is checked for
-  # this; this case invites it). The card's button names the screen only.
+  # this; this case invites it). The card's button names the screen only. On dev the question gets the savings
+  # plan (#369), whose card carries the same button; safe to save is quoted next to the plan.
   persona: CUST00860
   question: {en: 'How could I save more with monthly saving in S-mobiili?', fi: 'Miten voisin säästää enemmän kuukausisäästämisellä S-mobiilissa?'}
   intent: save_more
   expect: answered
-  expected_tools: [get_safe_to_save, get_basket_breakdown]
-  tags: [host_screen, lead]
+  expected_tools: [get_savings_plan]
+  tags: [host_screen, lead, savings_plan]
   numbers:
-  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  # not required: the plan is to quote the savings goal instead (r-coord's decision on #466)
+  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
 
 - id: sanna-bonus
   persona: CUST00860
