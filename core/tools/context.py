@@ -57,6 +57,9 @@ class ToolContext:
     # Reads that several tools of one request share, by key; for example the one row of
     # 03_safe_to_spend.sql that both the safe-to-spend and the safe-to-save tools read (#165).
     shared: dict = field(default_factory=dict, repr=False)
+    # The viewer session (#144): a hash of the viewer cookie, set by the API. The customer's labels are
+    # this viewer's answers; None means the shared state. Never logged, never in an evidence spec.
+    viewer: str | None = field(default=None, repr=False)
 
     def history(self) -> list[Tx]:
         """The customer's transactions up to as_of, read once per context."""

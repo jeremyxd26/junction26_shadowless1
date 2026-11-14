@@ -32,6 +32,10 @@ Settings:
 - `DB_POOL_MAX` (default `10`, 1 to 20): the most database connections the service's pool opens. Every local run and every database-backed test that starts the service opens up to this many.
 - `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
+- `VIEWER_COOKIE_SECURE` (default `true`): the viewer cookie is sent over https only. Set it to `false` only for local development over http.
+- `LABEL_RATE_LIMIT_PER_MIN` (default 120), `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` (default 60) and `LABEL_RATE_LIMIT_VIEWER_PER_MIN` (default 10): limits on `POST /api/baskets/label` per minute. They apply per client address, per (address, customer) and per viewer; no limit is shared by everyone. A venue's Wi-Fi is one client address, so the address limits are sized for a room.
+- `LABEL_NEW_SESSIONS_PER_HOUR` (default 1000): new viewer sessions per client address per hour.
+- `0` turns any of these limits off.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
@@ -84,7 +88,23 @@ The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` 
 
 The first `GET /api/overview/{customer_id}` of a customer with a qualifying spike creates a pending review in the `spike_reviews` table. The service creates that table if it is missing. While the review is pending, the purchase is "Waiting for your answer" (`unclassified`). `POST /api/baskets/label` stores the answer. Design: `docs/design/agent-core.md` section 7.8; contract: `contracts/api.md` sections 6 and 10.
 
-The answers live only in `spike_reviews`, on the shared database that the dev environment also uses. To start the demo again, delete the personas' reviews from any checkout whose `.env` points at that database. The script refuses to run without explicit customer ids:
+**Every viewer answers in their own copy** (#144). The first overview response sets a viewer cookie: a random value with no personal data, `HttpOnly`, `SameSite=Lax`, `Secure`, `Path=/`, valid for 2 hours. The question is shared: one pending review per customer, which the first overview creates. The answers are kept per viewer, in `spike_review_answers`, keyed by a SHA-256 of the cookie. One viewer's "Needed" therefore never changes what another viewer sees.
+- A request without the cookie sees the pending state, as before. That covers the eval set, the tests and API clients without cookies.
+- A viewer's answers last 2 hours. Each label write also renews the cookie for 2 hours, so an answer never outlives its cookie.
+- At most 10,000 viewers keep answers at a time. That is a storage bound: when it is reached, the least recently active viewer's answers are dropped, and that viewer sees the pending card again.
+- `POST /api/baskets/label` is rate-limited per minute, and no limit is shared by everyone:
+  - 120 per client address;
+  - 60 per client address and customer;
+  - 10 per viewer.
+
+  A venue's Wi-Fi is one client address, so the address limits are sized for a room; the per-viewer limit and the cap are what protect. When a limit is reached the endpoint returns 429 `rate_limited` with `Retry-After`.
+- One client address can start at most 1000 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored. The 10,000-viewer cap with least-recently-active eviction is the real bound on storage.
+
+On a shared network, one person can block label writes for the others on that network for a while. Nobody's numbers change. The presenter uses their own network, not the venue Wi-Fi.
+
+For a fresh state of your own, open `/api/viewer/reset`, which only issues a new cookie, or use a new private window.
+
+The answers live only in `spike_reviews` and `spike_review_answers`, on the shared database that the dev environment also uses. To start the demo again for everyone, delete the personas' reviews from any checkout whose `.env` points at that database; the viewers' answers go with them. The script refuses to run without explicit customer ids:
 
 ```
 python core/scripts/reset_reviews.py CUST00860                                  # Sanna
@@ -95,6 +115,12 @@ python core/scripts/reset_reviews.py --dry-run CUST00860                        
 Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
 
 **Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
+
+**Demo runbook.**
+1. Run `reset_reviews.py` for the personas right before the demo.
+2. The presenter opens the app and taps "Needed" and then "Undo" once. Their session now has an answer and is active.
+3. **Do not run the reset during the demo.** It deletes every viewer's answers, the presenter's included, by design.
+4. **The presenter uses a network of their own** (a phone hotspot), not the venue Wi-Fi. Then their address limits are theirs alone.
 
 The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 

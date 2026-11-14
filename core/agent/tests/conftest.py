@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -17,6 +18,20 @@ if HERE not in sys.path:
 from agent_fakes import AS_OF, FakeData, Pipeline, registry  # noqa: E402
 
 from core.agent.audit import AuditLog  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def spike_reviews_off():
+    """As in core/tests and core/tools/tests: no answer-pipeline test reads a label or creates a review,
+    whatever the demo answered on the shared database. Session-scoped, so it is set before any fixture
+    builds a pipeline (#144)."""
+    previous = os.environ.get("SPIKE_REVIEWS")
+    os.environ["SPIKE_REVIEWS"] = "off"
+    yield
+    if previous is None:
+        os.environ.pop("SPIKE_REVIEWS", None)
+    else:
+        os.environ["SPIKE_REVIEWS"] = previous
 
 
 @pytest.fixture
