@@ -184,12 +184,23 @@ def plan_spending(question: str, as_of: date) -> dict | None:
 # "fewer" and "N % less" (#346, from PR #376): "what if I took 10% fewer taxis?", "what if I used taxis 10% less?".
 WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent half|half as much|less on|"
            r"\bfewer\b|(?:%|\bpercent|\bper cent)\s+less\b|"
-           r"säästä\w*|säästöön|vähentä\w*|\bvähenn\w*|vähemmän|puolet")   # "vähennän", not "verovähennys" (#483)
+           # the verb "vähennän", "vähennä", "vähennetään" (#483), never the noun "vähennys" or "verovähennys" (R6)
+           r"säästä\w*|säästöön|vähentä\w*|\bvähenn(?:ä|et)\w*|vähemmän|puolet")
 # A what-if is a scenario. A question about what one did ("did I spend 10% less on taxis last month?", PAST)
 # is not one unless it is said as a scenario: "what if", "if I", "would", "could", "jos", a Finnish
 # conditional verb ("vähentäisin") (review of PR #376).
-HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we)\b|\bwould\b|\bcould\b|\bsuppose\b|\bimagine\b|"
-                r"\bhow (can|could|do|should) (i|we)\b|\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
+HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we)\b|\bwould\b|\bcould\b|\bshould\b|\bsuppose\b|\bimagine\b|"
+                r"\bcan (i|we)\b|\bhow (can|could|do|should) (i|we)\b|\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
+# Past verbs beyond PAST (review of #488, R1/R2): "I used / took / went / ate / cut / reduced", "have I cut",
+# "I have taken", "was", "were"; Finnish "kävin", "söin", "vähensin", "olen vähentänyt". A bare "cut" is the
+# imperative of a scenario ("Cut restaurants by 20%"): only "I cut" / "we cut" is past.
+PAST_VERB = (r"\b(i|we)\s+(used|took|went|ate|cut|reduced|lowered)\b|\b(used|took|went|ate|reduced|lowered)\b|"
+             r"\b(have|has|had)\s+(i\s+|we\s+)?(\w+ed|taken|gone|eaten|spent|cut|paid|bought)\b|\b(was|were)\b|"
+             r"\b(kävin|kävimme|söin|söimme|vähensin|vähensimme|käytimme|kulutimme)\b|"
+             r"\b(olen|olin|olemme|olimme|on|oli)\s+\w+(nyt|nut|neet)\b")
+# A past period without a month name (a named month is read by _months_mentioned, which knows "may" the verb).
+PAST_PERIOD = (r"\b(last|previous) (week|month|year)\b|\byesterday\b|\bviime (viikolla|kuussa|vuonna)\b|"
+               r"\beilen\b|\bedellis\w* (viiko\w*|kuu\w*)")
 # Everyday words for a what-if on merchant category codes (#346, from PR #376), resolved without the model. Each
 # code is one that the four personas spend on in the what-if window (checked on the dataset in PR #376): taxi
 # 4121, public transport 4111, fuel 5541/5542 and parking 7523 (the MCC groups of core/tools/config.py), fast food
@@ -509,6 +520,7 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
+PAST_VERB, PAST_PERIOD = (fold_pattern(rx) for rx in (PAST_VERB, PAST_PERIOD))
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_CONTENTS_BASKETS]
 
@@ -628,7 +640,7 @@ def _spending_words(q: str) -> bool:
     return bool(re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q) or _filter_of(q))
 
 
-def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
+def _matched(q: str, peer_question: bool, spending: dict | None, past: bool = False) -> list[str]:
     """Every rule whose own pattern matches the clause."""
     found = []
     for intent, rx in INTENTS:
@@ -636,8 +648,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue
         if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
             continue  # saving time is no money question
-        if intent == "what_if" and re.search(PAST, q) and not re.search(HYPOTHETICAL, q):
-            continue  # what one did ("did I spend 10% less on taxis last month?"), not a scenario (#376 review)
+        if intent == "what_if" and past:
+            continue  # what one did ("I took 10% fewer taxis in August"), not a scenario (review of #488)
         if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
             continue  # "save more of my income" is the save-more question, not the income (#296)
         if intent == "peers" and re.search(PEER_NOT_COMPARED, q) and not re.search(PEER_SPEND_COMPARED, q):
@@ -754,10 +766,20 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
 
 
+def said_in_the_past(question: str, q: str, as_of: date) -> bool:
+    """A message about what one did, not a scenario (review of #488, R1/R2): a past verb (PAST, PAST_VERB) or a
+    past period (PAST_PERIOD, a named month), and no scenario marker (HYPOTHETICAL). "If I had taken 20% fewer
+    taxis last month, how much would I have saved?" is a scenario; "I took 10% fewer taxis in August" is not."""
+    if re.search(HYPOTHETICAL, q):
+        return False
+    return bool(re.search(PAST, q) or re.search(PAST_VERB, q) or re.search(PAST_PERIOD, q)
+                or _months_mentioned(question, as_of))
+
+
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool) -> Claim:
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
-    found = _matched(q, peer_question, spending)
+    found = _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)

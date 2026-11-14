@@ -120,6 +120,61 @@ def test_a_scenario_in_the_past_tense_is_still_a_what_if(question, lang):
                                                               "cut_pct": 10}
 
 
+# ---- review of #488, R1/R2: past verbs and past periods are no what-if -------------------------------------
+
+@pytest.mark.parametrize("question,lang,filt,preset", [   # the spending question again, as on dev
+    ("I used taxis 10% less last month", "en", {"mcc_groups": ["taxi"]}, "last_month"),
+    ("I took 10% fewer taxis in August", "en", {"mcc_groups": ["taxi"]}, "last_month"),
+    ("last month I used the bus 20% less", "en", {"mcc_groups": ["public_transport"]}, "last_month"),
+    ("restaurants 20% less in August?", "en", {"categories": ["Restaurants"]}, "last_month"),
+    ("I have taken 10% fewer taxis this month", "en", {"mcc_groups": ["taxi"]}, "this_month"),
+])
+def test_a_past_fact_with_a_filter_is_the_spending_question_again(question, lang, filt, preset):
+    found = ask(question, lang)
+    assert found.rule == "spending" and first(found).args["filter"] == filt, (question, found)
+    assert first(found).args["period"] == {"preset": preset}
+
+
+@pytest.mark.parametrize("question,lang", [   # never a what-if; never worse than dev (asked back or unclaimed)
+    ("I cut taxis by 20% last month", "en"),
+    ("I reduced takeaway by 15% last month, right?", "en"),
+    ("I went to the cinema 50% less in July", "en"),
+    ("was my takeaway 15% less last month", "en"),
+    ("I used 20% less restaurants", "en"),
+    ("have I cut takeaway by 15%", "en"),
+    ("kävin elokuvissa 50 % vähemmän heinäkuussa", "fi"),
+    ("olen vähentänyt noutoruokaa 20 % tässä kuussa", "fi"),
+])
+def test_a_past_fact_is_never_a_what_if(question, lang):
+    found = ask(question, lang)
+    assert found.rule != "what_if" and "run_what_if" not in [c.name for c in found.calls], (question, found)
+
+
+@pytest.mark.parametrize("question,lang,selection,cut", [   # still a scenario
+    ("if I had taken 20% fewer taxis last month, how much would I have saved?", "en", {"kind": "mcc", "value": "4121"}, 20),
+    ("What if I cut taxis by 30%?", "en", {"kind": "mcc", "value": "4121"}, 30),
+    ("Can I cut restaurants by 20%?", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("Cut restaurants by 20%", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("Entä jos vähennän matkailua 20 %?", "fi", {"kind": "category", "value": "Travel"}, 20),
+])
+def test_a_scenario_keeps_working(question, lang, selection, cut):
+    found = ask(question, lang)
+    assert found.rule == "what_if" and first(found).args == {"selection": selection, "cut_pct": cut}, (question, found)
+
+
+# ---- review of #488, R6: the noun "vähennys" is no what-if -----------------------------------------------------
+
+@pytest.mark.parametrize("question", ["onko vähennys oikein", "vähennys palkasta"])
+def test_the_noun_vahennys_is_not_claimed(question):
+    found = ask(question, "fi")
+    assert found.rule is None and not found.calls, (question, found)
+
+
+def test_a_tax_deduction_stays_as_it_was():
+    assert ask("Paljonko sain verovähennystä viime kuussa?", "fi").rule == "spending"
+    assert ask("Paljonko kotitalousvähennys on?", "fi").rule is None
+
+
 # ---- #370: the Finnish weather is a whole word ---------------------------------------------------------
 
 def test_a_word_ending_in_saa_is_not_the_weather():
