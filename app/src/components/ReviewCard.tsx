@@ -103,14 +103,15 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       data-review-card=""
       className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
-      <div className="flex items-center gap-3">
+      {/* With large text "Not sure" moves to the next line instead of running past the card (#493). */}
+      <div className="flex flex-wrap items-center gap-x-3">
         <span
           aria-hidden="true"
           className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-lg font-bold text-ink"
         >
           ?
         </span>
-        <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
+        <h2 id={titleId} className="min-w-[min(6rem,100%)] flex-1 basis-0 text-base font-semibold text-on-deep">
           {t.reviewAsks}
         </h2>
         {/* Client only: closes the card; the purchase keeps waiting for an answer. */}
@@ -118,7 +119,7 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
           type="button"
           onClick={onNotSure}
           disabled={busy !== null}
-          className="-mr-1 min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
+          className="-mr-1 ml-auto min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
         >
           {t.reviewNotSure}
         </button>

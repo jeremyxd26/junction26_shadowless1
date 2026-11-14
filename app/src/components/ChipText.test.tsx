@@ -28,6 +28,6 @@ describe('number chip wrapping (#493)', () => {
 
   it('never wraps a chip in running text; a standalone chip wraps only past its max width', () => {
     expect(chipWrapping(true)).toBe('whitespace-nowrap')
-    expect(chipWrapping(false)).toBe('shrink-0 max-w-[calc(100%+8px)] text-center')
+    expect(chipWrapping(false)).toBe('shrink-0 max-w-full text-center')
   })
 })
