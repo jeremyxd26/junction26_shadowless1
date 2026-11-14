@@ -143,8 +143,9 @@ class AskRequest:
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
-    # SEAM (#144, PR #199): the viewer session key (a hash of the viewer cookie), set by api.py with
-    # core.app.api.viewer.viewer_of(request, response). Never logged, never in a model view or the audit.
+    # The viewer session key (#144, #253): a hash of the viewer cookie, from known_viewer(request). The
+    # answer's labels are this viewer's answers; None reads the shared state. Never logged, never in a
+    # model view or the audit record.
     viewer: str | None = None
     # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
     # with the `llm_unavailable` warning, and no model request is made.
@@ -253,10 +254,10 @@ class Pipeline:
         a.flags = guard.flags(message)
 
         # The customer is bound here, from the request, and never from model output (R4).
-        # SEAM (#144, PR #199): pass viewer=req.viewer here once ToolContext has the field. The label
-        # state below is then this viewer's, and every tool call's copy of ctx keeps it.
+        # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
+        # every tool call's copy of ctx keeps it.
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
-                          numbers=LockedNumberRegistry())
+                          numbers=LockedNumberRegistry(), viewer=req.viewer)
         # The label state, as the overview establishes it (#196): before the model plans, once per answer.
         review = self._establish_labels(ctx, a)  # `pending` below is the round's list of calls
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
@@ -426,6 +427,7 @@ class Pipeline:
             return
         a.cards.append(card["card_id"])
         emit("card", {"card": card})
+
     @staticmethod
     def _model_unavailable(req: AskRequest) -> str | None:
         """The one place that decides whether the model may be used for this answer (#232; #244 adds the
