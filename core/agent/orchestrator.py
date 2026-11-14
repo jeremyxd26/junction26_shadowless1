@@ -77,10 +77,15 @@ UNCLASSIFIED = "unclassified"   # the basket of a purchase whose review is pendi
 ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
-CYRILLIC = re.compile(r"[\u0400-\u04FF]")
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
 # A what-if or a cut names an amount too, but it is not a question about one purchase (#341).
 WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bif i\b|\bcut\b|\breduc|\bjos\b|vähent|leikk", re.I)
-REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42  # a message in Russian gets the English introduction (#287)
+# The question must point at a purchase ("what was that €1,080?", "mikä se 1080 euron ostos oli?"), not
+# only contain the amount ("is 1080 a lot?", "can I afford €1080 rent?" take the normal path).
+PURCHASE_REFERENCE = re.compile(
+    r"\bwhat\s+(?:was|is|were)\b|\bwhat'?s\b|\bthat\b|\bpurchase\w*|\bpayment\b|\bcharge\b|\bbought\b"
+    r"|\bostos\w*|\bmaksu\w*|\bmikä\s+(?:se|oli|tämä|tuo)\b|\bmitä\s+(?:se|oli)\b|\bostin\b", re.I)
+REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -291,6 +296,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
 
         for rnd in range(1, MAX_ROUNDS + 1):
@@ -305,11 +311,13 @@ class Pipeline:
                 # introduce Sentti, with no number and no card. The rules plan it instead, and a
                 # question they do not recognise gets their general clarifying question.
                 a.planner_turns.append({"round": rnd, "source": "model", "error": "no data call",
-                                        "latency_ms": self._ms(t_plan)})
+                                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
+                model_failed = True
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
@@ -338,8 +346,10 @@ class Pipeline:
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
-                # The clarifying question then says plainly that the question was not worked out (#341).
-                return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=in_place)
+                # The clarifying question says plainly that the question was not worked out, but only when
+                # the model was asked and failed: with the model off or over budget the rules' clarifying
+                # question is the normal answer (#341, r-coord's decision).
+                return self._clarify(controls["ask_clarifying_question"], lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
                 responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
@@ -720,7 +730,14 @@ class Pipeline:
         pending review's purchase: the purchase's category, date and amount, why Sentti asks, and the
         review card. False (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
-        if not asked or WHAT_IF_WORDS.search(message):
+        if not asked or WHAT_IF_WORDS.search(message) or not PURCHASE_REFERENCE.search(message) or a.flags:
+            return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
+        # A refusal rule always wins, as for the introduction (#287): "should I invest €1,080 in bitcoin?"
+        # or "will the bank approve my €1,080 loan?" is refused on the normal path.
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
+        rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        if any(c.name == "decline" for c in rules.calls):
             return False
         # A probe on a private registry first, so a question with another amount registers no number.
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)

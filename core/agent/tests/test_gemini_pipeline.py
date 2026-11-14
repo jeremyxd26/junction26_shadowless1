@@ -333,7 +333,7 @@ def test_an_unrecognised_question_with_the_model_off_gets_the_general_clarifying
     done = ask(p, "Tell me something useful about my groceries")
     assert done["outcome"] == "clarify" and done["clarify"] is not None
     assert "llm_unavailable" in done["warnings"] and transport.requests == []
-    assert done["clarify"]["question"].startswith("I could not work that out right now.")   # #341
+    assert not done["clarify"]["question"].startswith("I could not")   # the model is off, not failed (#341)
 
 
 def test_a_rules_refusal_needs_no_warning_when_the_model_is_off(tmp_path):
@@ -387,6 +387,7 @@ def test_a_model_plan_with_no_data_call_is_planned_by_the_rules_instead():
     assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
     turns = audit.records[-1]["planner_turns"]
     assert turns[0]["error"] == "no data call" and turns[1]["source"] == "rules"
+    assert turns[0]["tokens"]["prompt_tokens"] > 0       # the replaced plan's usage stays in the audit
     assert "llm_unavailable" not in done["warnings"]
 
 
@@ -395,7 +396,7 @@ def test_a_question_the_rules_do_not_recognise_then_gets_their_general_clarifyin
     p, _ = pipeline(transport)
     done = ask(p, "Tell me something useful about my groceries")
     assert done["outcome"] == "clarify" and transport.compose.requests == []
-    assert not done["clarify"]["question"].startswith("I could not")    # the model answered; nothing failed
+    assert done["clarify"]["question"].startswith("I could not work that out right now.")   # an empty plan
 
 
 def test_after_a_planner_failure_the_clarifying_question_says_it_was_not_worked_out():
