@@ -373,3 +373,18 @@ def test_saying_a_failed_part_could_not_be_calculated_is_fine(make_pipeline):
     pipe = make_pipeline(model, registry(ToolSpec("broken_tool", "Fails.", FakeArgs, failing_tool, ("x", "x"))))
     done = dict(run(pipe))["done"]
     assert done["text"] == draft["text"] and "tool_failed" in done["warnings"]
+
+
+# ---- #395: no claim about what a category contains ----------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "In August 2026 you spent {{n1}} on health, which includes your gym visits.",   # the stand, #395
+    "August 2026 cost {{n1}}, including your gym membership.",
+])
+def test_a_draft_saying_what_a_category_contains_is_rejected(make_pipeline, text):
+    bad = {"language": "en", "text": text, "cited": ["n1"], "lesson_key": None}
+    good = {"language": "en", "text": "August 2026 cost {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == good["text"]
+    assert "never what it contains" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
