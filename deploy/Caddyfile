@@ -33,6 +33,11 @@ __SITE__ {
 	@core path /api/* /healthz /readyz
 	handle @core {
 		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		# The largest legitimate body is a question of 500 characters in a small JSON envelope; anything
+		# over 64 KB is refused here with 413 and never reaches the service.
+		request_body {
+			max_size 64KB
+		}
 		reverse_proxy 127.0.0.1:8000
 	}
 
