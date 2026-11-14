@@ -183,6 +183,41 @@ def test_a_modal_a_plan_or_an_action_with_a_month_is_still_a_scenario(question, 
     assert found.rule == "what_if" and first(found).args == {"selection": selection, "cut_pct": cut}, (question, found)
 
 
+@pytest.mark.parametrize("question", [   # last review of #488: a period start with a past verb is the past
+    "the taxi I took from August cost 20% less",
+    "from May to July I used taxis 10% less",
+    "I used taxis 10% less from May to July",
+    "I took 10% fewer taxis starting in August",
+])
+def test_a_period_start_with_a_past_verb_is_the_spending_question_as_on_dev(question):
+    found = ask(question)
+    assert found.rule == "spending" and first(found).args["filter"] == {"mcc_groups": ["taxi"]}, (question, found)
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("did I cut taxis by 10% from August", "en"),
+    ("viime kuusta alkaen käytin 10 % vähemmän takseihin", "fi"),
+    ("toukokuusta alkaen olen käyttänyt 10 % vähemmän takseihin", "fi"),
+    ("kävin elokuvissa 50 % vähemmän heinäkuusta alkaen", "fi"),
+])
+def test_a_past_question_with_a_period_start_is_never_a_what_if(question, lang):
+    found = ask(question, lang)
+    assert found.rule != "what_if" and "run_what_if" not in [c.name for c in found.calls], (question, found)
+
+
+@pytest.mark.parametrize("question,lang,selection,cut", [   # a plan from a month on stays a scenario
+    ("from August I will cut taxis by 20%", "en", {"kind": "mcc", "value": "4121"}, 20),
+    ("from August I cut taxis by 20%", "en", {"kind": "mcc", "value": "4121"}, 20),
+    ("from May I will spend 10% less on taxis", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("Aion vähentää taksia 10 % toukokuusta alkaen", "fi", {"kind": "mcc", "value": "4121"}, 10),
+    ("vähennän taksia 10 % heinäkuusta alkaen", "fi", {"kind": "mcc", "value": "4121"}, 10),
+    ("reduce restaurants by 20% from May", "en", {"kind": "category", "value": "Restaurants"}, 20),
+])
+def test_a_plan_from_a_month_on_is_a_scenario(question, lang, selection, cut):
+    found = ask(question, lang)
+    assert found.rule == "what_if" and first(found).args == {"selection": selection, "cut_pct": cut}, (question, found)
+
+
 def test_a_card_prompt_with_a_month_and_no_cut_stays_the_spending_question():
     found = ask("What if I cut restaurants in August?")
     assert found.rule == "spending" and first(found).args["filter"] == {"categories": ["Restaurants"]}
