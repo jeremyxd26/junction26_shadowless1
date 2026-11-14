@@ -398,3 +398,41 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
                       "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
 }
+# ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
+# The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
+# Nothing here names a store or says where the customer shops.
+BONUS_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("S-Bonus estimate", "S-Bonus-arvio"),
+    "scenario": ("If {share} of your grocery spending went to S-Group stores",
+                 "Jos {share} ruokaostoksistasi tehtäisiin S-ryhmän kaupoissa"),
+    "grocery_month": ("Your grocery spending a month", "Ruokaostoksesi kuukaudessa"),
+    "share_typed": ("Share at S-Group stores", "Osuus S-ryhmän kaupoissa"),
+    "share_default": ("Assumed share at S-Group stores", "Oletettu osuus S-ryhmän kaupoissa"),
+    "level_base": ("Purchases that set the Bonus level", "Bonustason määräävät ostot"),
+    "bonus_percent": ("Bonus level", "Bonustaso"),
+    "bonus_month": ("Bonus a month", "Bonus kuukaudessa"),
+    "payment_benefit_month": ("Payment benefit a month", "Maksutapaetu kuukaudessa"),
+    "total_month": ("Bonus and payment benefit a month", "Bonus ja maksutapaetu kuukaudessa"),
+    "total_year": ("Bonus and payment benefit a year", "Bonus ja maksutapaetu vuodessa"),
+    "lowest_level": ("Lowest Bonus level", "Alin Bonustaso"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "A what-if on your own grocery spending, not a statement about where you shop.",
+        "Laskelma omista ruokaostoksistasi, ei tieto siitä, missä asioit.",
+    ),
+    # Every assumption reads as one: nothing says the customer is a co-op member or shops anywhere.
+    "assume_household": ("Assumes you are the only shopper in a co-op household.",
+                         "Oletus: olisit osuuskaupan talouden ainoa ostaja."),
+    "assume_table": ("Assumes the default Bonus table, not the KPO or Koillismaa table.",
+                     "Oletus: tavallinen Bonustaulukko, ei KPO:n tai Koillismaan taulukko."),
+    "assume_card": ("Assumes payment with an S-Etukortti Visa, which adds the payment benefit.",
+                    "Oletus: maksu S-Etukortti Visalla, joka tuo maksutapaedun."),
+    "assume_goods": ("Assumes none of it is alcohol, tobacco or lottery, which earn no Bonus.",
+                     "Oletus: ostoksissa ei ole alkoholia, tupakkaa eikä arpoja, joista ei saa Bonusta."),
+    "assume_share": ("Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop.",
+                     "Oletus: osuus S-ryhmän kaupoissa on laskelma, ei tieto siitä, missä asioit."),
+    "reason_below_lowest": ("These purchases stay below the lowest Bonus level, so no Bonus would be paid.",
+                            "Nämä ostot jäävät alimman Bonustason alle, joten Bonusta ei maksettaisi."),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}
+BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
