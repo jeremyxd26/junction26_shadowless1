@@ -59,15 +59,19 @@ def test_below_the_lowest_row_is_not_offered_but_the_payment_benefit_stays():
     assert bonus.estimate(D("50"), 100).status == "estimate"          # the lowest row itself counts
 
 
-@pytest.mark.parametrize("grocery, share, percent, bonus_month, payment, status", [
-    ("399.99", 50, "1.0", "2.00", "1.00", "estimate"),    # 199.995: the 1.0 % row, never rounded up to 200
-    ("99.99", 50, "0", "0.00", "0.25", "not_offered"),    # 49.995: below the lowest row
-    ("400.00", 50, "1.5", "3.00", "1.00", "estimate"),    # exactly 200: the 1.5 % row
+@pytest.mark.parametrize("grocery, share, base, percent, bonus_month, payment, status", [
+    ("399.99", 50, "199.99", "1.0", "2.00", "1.00", "estimate"),    # 199.995: the 1.0 % row; shown 199.99
+    ("99.99", 50, "49.99", "0", "0.00", "0.25", "not_offered"),     # 49.995: below the lowest row
+    ("400.00", 50, "200.00", "1.5", "3.00", "1.00", "estimate"),    # exactly 200: the 1.5 % row
 ])
-def test_the_level_is_decided_on_the_unrounded_base(grocery, share, percent, bonus_month, payment, status):
+def test_the_level_is_decided_on_the_unrounded_base(grocery, share, base, percent, bonus_month, payment, status):
     e = bonus.estimate(D(grocery), share)
-    assert (e.bonus_percent, e.bonus_month, e.payment_benefit_month, e.status) == (
-        D(percent), D(bonus_month), D(payment), status)
+    assert (e.level_base, e.bonus_percent, e.bonus_month, e.payment_benefit_month, e.status) == (
+        D(base), D(percent), D(bonus_month), D(payment), status)
+    # the shown base never reads as a level the unrounded base did not reach
+    reached = [m for m, _ in bonus.RULES.levels if m <= e.level_base]
+    assert (max(reached) if reached else None) == next(
+        (m for m, p in reversed(bonus.RULES.levels) if p == e.bonus_percent), None)
 
 
 def test_the_rules_come_from_the_yaml_file():
@@ -221,6 +225,10 @@ def test_below_the_lowest_level_the_card_says_why():
     card = result.card.model_dump()
     assert card["estimate"]["text"].startswith(d.reason)               # the card itself says why
     assert d.lowest_level.evidence_ref in [n["evidence_ref"] for n in card["secondary"]]
+    # the number ids follow the order the card shows them
+    shown = [d.share, card["primary"], *card["secondary"], *[c["amount"] for c in card["components"]]]
+    ids = [n.id if hasattr(n, "id") else n["id"] for n in shown]
+    assert ids == [f"n{i}" for i in range(1, len(ids) + 1)]
 
 
 def test_card_and_model_view_carry_the_assumptions_and_name_no_merchant():

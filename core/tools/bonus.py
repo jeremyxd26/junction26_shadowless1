@@ -183,7 +183,8 @@ def estimate(grocery_month: Decimal, share_pct: int, rules: BonusRules = RULES) 
     """Section 4 of the document, computed exactly as the evidence formulas re-compute it: the level and
     the amounts on the unrounded s x G, each rounded once."""
     g = {"base": grocery_month}
-    base = money(grocery_month * share_pct / 100)                                       # shown, rounded
+    # shown rounded DOWN to cents, so it never reads as a threshold the unrounded base did not reach
+    base = evidence.compute_formula("scale", g, {"factor_num": share_pct, "factor_den": 100, "rounding": "down"})
     percent = evidence.compute_formula("bonus_level", g, rules.level_params(share_pct))
     bonus = evidence.compute_formula("percent_of", {"percent": percent, **g}, {"share_num": share_pct,
                                                                                "share_den": 100})
@@ -251,7 +252,8 @@ def get_bonus_estimate(ctx: ToolContext, args: GetBonusEstimateArgs | dict | Non
                              params=RULES.share_params())[0]
 
     level_base = nb.composite(M["level_base_eur"], "scale", {"base": grocery}, Unit.EUR_PER_MONTH, period,
-                              _t("level_base", lang), params={"factor_num": share_pct, "factor_den": 100})
+                              _t("level_base", lang),
+                              params={"factor_num": share_pct, "factor_den": 100, "rounding": "down"})
     percent = nb.composite(M["bonus_percent"], "bonus_level", {"base": grocery}, Unit.PERCENT, period,
                            _t("bonus_percent", lang), params=RULES.level_params(share_pct))
     bonus = nb.composite(M["bonus_month_eur"], "percent_of", {"percent": percent, "base": grocery},
@@ -272,24 +274,22 @@ def get_bonus_estimate(ctx: ToolContext, args: GetBonusEstimateArgs | dict | Non
     lowest = None
     reason = None
     if check.status == "not_offered":
-        lowest = reg(nb.composite(M["lowest_level_eur"], "rule_value", {}, Unit.EUR_PER_MONTH, period,
-                                  _t("lowest_level", lang), params=RULES.lowest_params())[0])
+        lowest = nb.composite(M["lowest_level_eur"], "rule_value", {}, Unit.EUR_PER_MONTH, period,
+                              _t("lowest_level", lang), params=RULES.lowest_params())[0]
         reason = _t("reason_below_lowest", lang)
 
+    # Number ids (n1, n2, ...) follow the order the card shows them: the share in the subtitle, the
+    # total, the secondary numbers (the lowest level after the Bonus level), then the two components.
+    shown = {"share": share, "total_month": total[0], "bonus_percent": percent[0], "lowest_level": lowest,
+             "total_year": year[0], "level_base": level_base[0], "grocery_month": grocery[0],
+             "bonus_month": bonus[0], "payment_benefit_month": payment[0]}
+    registered = {key: reg(n) if n is not None else None for key, n in shown.items()}
     data = BonusEstimateData(
         status=check.status,
         scenario=_t("scenario", lang, share=share.display),
-        share=reg(share),
-        grocery_month=reg(grocery[0]),
-        level_base=reg(level_base[0]),
-        bonus_percent=reg(percent[0]),
-        bonus_month=reg(bonus[0]),
-        payment_benefit_month=reg(payment[0]),
-        total_month=reg(total[0]),
-        total_year=reg(year[0]),
-        lowest_level=lowest,
         reason=reason,
         assumptions=[_t(key, lang) for key in config.BONUS_ASSUMPTIONS],
+        **registered,
     )
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(tool=TOOL, data=data, card=_card(data, lang), notes=[], evidence=list(nb.specs),

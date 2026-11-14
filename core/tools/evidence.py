@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
 import psycopg
@@ -73,7 +73,7 @@ FORMULAS = {
     "difference": ("current", "baseline"),     # current - baseline, cents
     "pct_change": ("current", "baseline"),     # (current - baseline) / baseline * 100, 1 decimal
     "share_pct": ("part", "whole"),            # part / whole * 100, 1 decimal
-    "scale": ("base",),                        # base * factor_num / factor_den, cents
+    "scale": ("base",),                        # base * factor_num / factor_den, cents (params rounding: down)
     "sum": None,                               # sum of all parts, cents
     "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
     # S-Bonus estimate (#158). The rule's values and its source travel in params, so a ref names the
@@ -103,7 +103,10 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return pct(values["part"] / values["whole"] * 100)
     if formula == "scale":
         p = params or {}
-        return money(values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"])))
+        scaled = values["base"] * Decimal(str(p["factor_num"])) / Decimal(str(p["factor_den"]))
+        if p.get("rounding") == "down":  # #158: a shown base that never passes a threshold it did not reach
+            return scaled.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        return money(scaled)
     if formula == "sum":
         return money(sum(values.values(), Decimal("0")))
     if formula == "minimum":
