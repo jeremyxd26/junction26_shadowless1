@@ -273,3 +273,27 @@ def test_one_finnish_data_unavailable_text_before_and_inside_the_stream(client):
     r = client.post("/api/ask", json={**BODY, "language": "fi"})
     assert r.status_code == 503
     assert r.json()["error"]["message"] == error_envelope("data_unavailable", "fi")["message"]
+
+
+def test_a_recognised_question_past_the_model_window_is_an_answer_with_the_warning(client):
+    # The rule agreed for #232 and #244: the rules planned, the tools ran, the template wrote -> "answered",
+    # with `llm_unavailable`, and no model request; a rules decline stays a refusal without the warning.
+    from agent_fakes import fake_spending
+
+    from core.agent.registry import ToolSpec
+    from core.tools.models import Args
+
+    class NoArgs(Args):
+        pass
+
+    agent = client.install(plans=[SPEND], drafts=[GOOD], per_minute=1)
+    agent.pipeline.registry.register(ToolSpec("get_safe_to_spend", "safe to spend", NoArgs,
+                                              lambda ctx, args: fake_spending(ctx, args), ("x", "x")))
+    assert client.post("/api/ask", json=BODY).json()["outcome"] == "answered"       # the model's window
+    calls = list(agent.pipeline.model.calls)
+    r = client.post("/api/ask", json={**BODY, "message": "What can I safely spend this week?"})
+    body = r.json()
+    assert r.status_code == 200 and body["outcome"] == "answered" and "llm_unavailable" in body["warnings"]
+    assert agent.pipeline.model.calls == calls
+    refused = client.post("/api/ask", json={**BODY, "message": "Should I put my savings into tech stocks?"}).json()
+    assert refused["outcome"] == "refused" and "llm_unavailable" not in refused["warnings"]
