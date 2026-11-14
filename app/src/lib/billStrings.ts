@@ -55,6 +55,8 @@ const en = {
   typedDetails: 'Not used: you confirmed the details',
   latePayment: 'Late-payment interest',
   latePaymentHint: 'If a bill is paid after its due date',
+  warningSigns: 'Warning signs',
+  paymentNote: 'Sentti doesn’t pay. Your bank app shows the payment for you to check and confirm.',
 }
 
 type BillStrings = typeof en
@@ -112,6 +114,8 @@ const fi: BillStrings = {
   typedDetails: 'Ei käytetty: vahvistit tiedot itse',
   latePayment: 'Viivästyskorko',
   latePaymentHint: 'Jos lasku maksetaan eräpäivän jälkeen',
+  warningSigns: 'Varoitusmerkit',
+  paymentNote: 'Sentti ei maksa. Pankkisovelluksesi näyttää maksun, ja sinä tarkistat ja vahvistat sen.',
 }
 
 export function billStrings(lang: Language): BillStrings {

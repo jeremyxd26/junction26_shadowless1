@@ -10,9 +10,11 @@ import { strings } from '../../lib/i18n.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CardShell } from '../cards.tsx'
 import { ErrorBlock, LoadingBlock } from '../States.tsx'
+import { AddToPayments } from './AddToPayments.tsx'
 import { BillExplanationCard } from './BillExplanationCard.tsx'
 import { BillFieldsCard } from './BillFieldsCard.tsx'
 import { BillGallery } from './BillGallery.tsx'
+import { BillSignals } from './BillSignals.tsx'
 import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
 
 interface Props {
@@ -113,7 +115,10 @@ export function BillFlow({ onDone }: Props) {
       return (
         <div className="flex flex-col gap-3">
           <h2 className="text-card-title font-bold text-ink">{state.response.match.text}</h2>
-          <BillExplanationCard response={state.response} />
+          <BillExplanationCard response={state.response}>
+            <BillSignals signals={state.response.signals} />
+            <AddToPayments response={state.response} />
+          </BillExplanationCard>
           <BackButton
             label={s.done}
             onClick={() => {
