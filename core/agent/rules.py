@@ -110,7 +110,10 @@ PRESETS = [
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
     (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
-    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)", "last_12_months"),
+    # the plural genitive and the number in words are the same period (#543): "viimeisten 12 kuukauden aikana",
+    # "viimeisen kahdentoista kuukauden" (the answers' own wording)
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)|"
+     r"viimeis(en|ten) (12|kahdentoista) kuukau", "last_12_months"),
     (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),

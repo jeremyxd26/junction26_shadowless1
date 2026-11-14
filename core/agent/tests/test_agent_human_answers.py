@@ -33,6 +33,7 @@ JUL = (date(2026, 7, 1), date(2026, 7, 31))
 WINDOW = (date(2026, 4, 1), date(2026, 9, 30))
 WEEK = (date(2026, 9, 21), date(2026, 9, 27))
 PAYDAY = (date(2026, 10, 1), date(2026, 10, 15))
+YEAR = (date(2025, 10, 1), date(2026, 9, 30))
 
 
 class Views:
@@ -216,13 +217,17 @@ CASES = {
                        lambda v, lang: what_if(v, lang, "estimate_with_caveat")),
     "what_if_not_offered": ("What if I cut my housing by 20%?", lambda v, lang: what_if(v, lang, "not_offered")),
     "save_more_zero": ("How could I save more?", safe_to_save_zero),
+    "twelve_months": ("How much did I spend on rent in the last 12 months?",
+                      lambda v, lang: spending(v, lang, label=fi(lang, "Housing", "Asuminen"), count=12,
+                                               total=10205.56, span=YEAR)),
 }
 FI_QUESTIONS = {"baskets": "Mihin rahani menivät?", "save_more": "Miten voisin säästää enemmän?",
                 "save_more_zero": "Miten voisin säästää enemmän?", "bills_due": "Mitä laskuja on tulossa ennen palkkapäivää?",
                 "bills_due_notes": "Mitä laskuja on tulossa ennen palkkapäivää?",
                 "payday_two_incomes": "Milloin on seuraava palkkapäiväni?",
                 "bills_regular": "Mitkä ovat säännölliset kuukausittaiset laskuni?",
-                "payday": "Milloin on seuraava palkkapäiväni?"}
+                "payday": "Milloin on seuraava palkkapäiväni?",
+                "twelve_months": "Paljonko käytin vuokraan viimeisten 12 kuukauden aikana?"}
 
 # Cardinals, ordinals and fractions, English and Finnish in their case forms (review of #365).
 NUMBER_WORDS = re.compile(
@@ -293,6 +298,17 @@ def test_a_count_of_one_is_singular_and_notes_stay_on_the_card():
                                                      "for housing and €91.86 for utilities.")
     two, v, _, _ = answer("payday_two_incomes", "fi")
     assert render(two["text"], v.numbers) == "Palkkasi on tavallisesti 3 187,25 € / kk, ja seuraava palkkapäiväsi on 15.10.2026."
+
+
+def test_one_category_over_twelve_months_is_one_sentence_in_both_languages():
+    """#543: the Finnish answer names the category, the total and the tool's own period like the English one, never
+    the per-tool "Asuminen: …; Tapahtumat: …" form."""
+    en, v, _, _ = answer("twelve_months", "en")
+    assert render(en["text"], v.numbers) == ("You spent €10,205.56 on housing during 1 Oct 2025 – 30 Sep 2026, "
+                                             "across 12 transactions.")
+    fi_, v, _, _ = answer("twelve_months", "fi")
+    assert render(fi_["text"], v.numbers) == ("Jaksolla 1.10.2025–30.9.2026 käytit 10 205,56 € luokassa Asuminen ja "
+                                              "tapahtumien määrä oli 12.")
 
 
 def test_the_takeaway_comes_first():

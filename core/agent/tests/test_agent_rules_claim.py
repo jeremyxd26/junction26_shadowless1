@@ -665,6 +665,21 @@ def test_the_future_cue_carries_its_own_month_and_the_last_year_is_twelve_months
     assert [args["period"] for name, args in data_calls(plan(question, lang))] == [period]
 
 
+# #543: the Finnish twelve months in their forms, the plural genitive and the number in words, plan the last 12 months
+# like "viimeisen 12 kuukauden" (before: the period question). The English question is unchanged.
+@pytest.mark.parametrize("question, lang", [
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden?", "fi"),
+    ("Paljonko käytin asumiseen viimeisen 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisen kahdentoista kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten kahdentoista kuukauden aikana?", "fi"),
+    ("How much did I spend on rent in the last 12 months?", "en"),
+])
+def test_the_finnish_twelve_months_in_their_forms_plan_the_last_12_months(question, lang):
+    assert data_calls(plan(question, lang)) == [
+        ("get_spending", {"filter": {"categories": ["Housing"]}, "period": {"preset": "last_12_months"}})]
+
+
 # ---- #379 part B: periods counted back, next week, this week, next month's rent, another script ------------
 
 def custom(start, end):
