@@ -26,8 +26,13 @@ export function ClientTurnView({ turn, label }: { turn: ClientTurn; label: React
   const { arm } = useTurnHold(article)
 
   // The thread lands a new turn below the header; hold it there while an answer above still grows.
+  // Only the turn being landed takes the hold: the thread's last turn (the one just pushed, or the
+  // last one when the thread comes back from /cards or /bill). An older client turn that mounts
+  // again never does, so it cannot pull the page off the last answer.
   useEffect(() => {
-    if (article.current) arm(article.current, landingTop(), true)
+    const node = article.current
+    const turns = node?.parentElement?.parentElement?.querySelectorAll('article[data-turn]')
+    if (node && turns && turns[turns.length - 1] === node) arm(node, landingTop(), true)
   }, [arm])
 
   const onStep = useCallback((title: string) => setStep((current) => ({ title, count: (current?.count ?? 0) + 1 })), [])
@@ -61,7 +66,10 @@ export function ClientTurnView({ turn, label }: { turn: ClientTurn; label: React
       data-turn={turn.id}
       data-client-turn={turn.render}
       aria-busy={busy}
-      className="flex scroll-mt-16 flex-col gap-3"
+      // Never the browser's scroll anchor: its steps replace each other (a loading block becomes the
+      // sample gallery when the thread comes back from /cards), and an anchor inside them would be
+      // lost, pushing a later answer down. A later turn anchors instead; above this turn the hold works.
+      className="flex flex-col gap-3 [overflow-anchor:none]"
     >
       {/* The same bubble as an ask turn's question (AnswerView). */}
       <p className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
@@ -70,8 +78,12 @@ export function ClientTurnView({ turn, label }: { turn: ClientTurn; label: React
       <div className="flex min-h-11 items-center">{label}</div>
       <div ref={body} className="flex flex-col gap-3">
         {Component && (
-          <ClientTurnBoundary lang={lang} screen={entry.screen ? { path: entry.screen, label: entry.chip(lang) } : undefined}>
-            <Suspense fallback={<LoadingBlock lines={3} />}>
+          <ClientTurnBoundary
+            lang={lang}
+            screen={entry.screen ? { path: entry.screen, label: entry.chip(lang) } : undefined}
+            onFailed={() => setBusy(false)}
+          >
+            <Suspense fallback={<Pending onBusy={setBusy} />}>
               <Component turnId={turn.id} onStep={onStep} onBusy={setBusy} />
             </Suspense>
           </ClientTurnBoundary>
@@ -82,4 +94,10 @@ export function ClientTurnView({ turn, label }: { turn: ClientTurn; label: React
       </p>
     </article>
   )
+}
+
+/** While the component's code loads, the turn is busy; the component reports its own state once it runs. */
+function Pending({ onBusy }: { onBusy: (busy: boolean) => void }) {
+  useEffect(() => onBusy(true), [onBusy])
+  return <LoadingBlock lines={3} />
 }

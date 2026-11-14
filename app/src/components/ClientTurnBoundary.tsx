@@ -10,6 +10,8 @@ interface Props {
   lang: Language
   /** The same content as a screen of its own (for example `/bill`), and the link's text. */
   screen?: { path: string; label: string }
+  /** Called once the turn shows the failure (the turn is no longer busy). */
+  onFailed?: () => void
   children: ReactNode
 }
 
@@ -28,6 +30,7 @@ export class ClientTurnBoundary extends Component<Props, { failed: boolean }> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error('Sentti client turn failed', error, info.componentStack)
+    this.props.onFailed?.()
   }
 
   render() {
