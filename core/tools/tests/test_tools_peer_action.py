@@ -109,3 +109,9 @@ def test_the_sentence_says_the_offer_only_when_the_card_makes_it(offers_cut, wha
     sentences, _ = answer_sentences.peer(view, "en", lambda text: True)
     assert ("what-if" in sentences[0]) is what_if
 
+
+
+def test_a_health_metric_is_never_offered_even_with_purchases():
+    # review of #534: a health what-if is never offered anywhere, also by the helper alone (R9)
+    rows = _rows([(IN, "Health", "unexpected_necessities", False)] * 4)
+    assert peer.what_if_offered(_ctx(), "Health", rows) is False

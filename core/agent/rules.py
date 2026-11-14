@@ -548,6 +548,11 @@ NOT_A_THING = frozenset({
     "some", "several", "many", "couple",
 })
 WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
+# Bare "food" is food shopping (Groceries, as Finnish "ruoka"); with a noun that changes its meaning it is not:
+# eating out ("food delivery", "a food court", "food trucks and stalls", "street food") or pet and baby food
+# ("pet food", "my dog's food"). Such a message is claimed by no rule (the coordinator, review of #534).
+FOOD_COMPOUND = (r"\bfood (deliver\w*|courts?|trucks?|stalls?)\b|\b(pet|pets|dog|dogs|cat|cats|baby|babies|street)"
+                 r"('s|s'|')? food\b")
 
 
 def _is_thing(word: str) -> bool:
@@ -1003,6 +1008,9 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # "How much did I spend on the pharmacy?" is never answered with the unfiltered total: the same
         # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if re.search(FOOD_COMPOUND, q):
+        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534)
+        return Claim(None, reason="food_compound")
     if not found:
         if _unknown_object(q):
             # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health

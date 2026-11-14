@@ -71,3 +71,11 @@ def test_a_too_few_sentence_names_a_code_list_once(kind, value, lang, expected):
     from core.tools.what_if import WhatIfSelection, _purchases_of, _what
     sel = WhatIfSelection(kind=kind, value=value)
     assert _purchases_of(sel, _what(sel, None, lang), lang) == expected
+
+
+@pytest.mark.parametrize("period,noted", [({"preset": "last_month"}, False), ({"preset": "last_6_months"}, True)])
+def test_the_too_few_note_is_about_a_habit_over_months_never_one_month(period, noted):
+    # review of #534: two grocery purchases in August are no "habit" question; over six months they are
+    result = get_spending(ctx(), {"period": period, "filter": {"categories": ["Groceries"]}})
+    assert result.model_view["tx_count"]["value"] == 2
+    assert any("no monthly habit" in n for n in result.model_view["notes"]) is noted

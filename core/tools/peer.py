@@ -207,6 +207,8 @@ def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> 
     that answers "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is
     "How could I save more?", no what-if. From the rows the peer tool has classified already: no second query and no
     evidence row (#527). Any failure only drops the offer, never the card."""
+    if metric in config.SENSITIVE_CATEGORIES or metric in config.PEER_SENSITIVE:
+        return False   # a health what-if is never offered (R9; the coordinator, review of #534)
     if metric == "spend_total":
         return True
     try:

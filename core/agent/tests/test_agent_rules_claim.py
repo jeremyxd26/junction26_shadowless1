@@ -825,3 +825,26 @@ def test_a_possessive_keeps_the_category_and_food_is_groceries(question, lang, f
 def test_a_possessive_before_no_category_is_still_an_unknown_thing():
     from core.agent.rules import unknown_object
     assert unknown_object("how much did I spend on my wife's birthday gift?") == "wife's"
+
+
+@pytest.mark.parametrize("question,expected", [
+    # review of #534: bare "food" stays food shopping; a noun that changes its meaning leaves it to the model
+    ("how much did I spend on food last month?", {"categories": ["Groceries"]}),
+    ("how much did I spend on food shopping last month?", {"categories": ["Groceries"]}),
+    ("how much did I spend on fast food last month?", {"categories": ["Restaurants"]}),
+    ("how much did I spend on food delivery last month?", None),
+    ("how much did I spend at a food court last month?", None),
+    ("how much did I spend at the food truck last month?", None),
+    ("how much did I spend at food stalls last month?", None),
+    ("how much did I spend on pet food last month?", None),
+    ("how much did I spend on my dog food last month?", None),
+    ("how much did I spend on my dog's food last month?", None),
+    ("how much did I spend on baby food last month?", None),
+    ("how much did I spend on street food last month?", None),
+])
+def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, expected):
+    calls = data_calls(plan(question))
+    if expected is None:
+        assert claimed_rule(question) == NOT_CLAIMED and calls == []
+    else:
+        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == expected
