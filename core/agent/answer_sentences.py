@@ -98,8 +98,11 @@ SPENT = {
                       "Your income {period} was {total} from {what}, across {count} payments."),
                      ("{Period} tuloja tuli {total} ja maksuja oli {count}.",
                       "{Period} tuloja tuli {total} {what} ja maksuja oli {count}.")),
-    "none": (("You have no transactions {period}.", "You have no transactions for {what} {period}."),
-             ("{Period} ei ole tapahtumia.", "{Period} ei ole tapahtumia {what}.")),
+    # Nothing in the period: the count and the total are still stated (the eval and the card show them).
+    "none": (("There were {count} transactions {period}, so you spent {total}.",
+              "There were {count} transactions for {what} {period}, so you spent {total}."),
+             ("{Period} tapahtumia oli {count}, joten käytit {total}.",
+              "{Period} tapahtumia oli {count} {what}, joten käytit {total}.")),
 }
 COMPARED = {
     "more": ("That is more than {period} ({baseline}).", "Se on enemmän kuin {period} ({baseline})."),
@@ -134,7 +137,7 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     comparison = view.get("comparison") or {}
 
     if _value(view.get("tx_count")) == 0 and _value(view.get("total")) == 0:
-        return [SPENT["none"][lang][1 if what else 0].format(**fmt)], []
+        return [SPENT["none"][lang][1 if what else 0].format(**fmt)], _ids(count, total)
 
     if comparison:
         baseline, change, pct = (_tok(comparison.get(k)) for k in ("baseline", "change", "change_pct"))

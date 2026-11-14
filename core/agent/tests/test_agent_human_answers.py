@@ -256,11 +256,12 @@ def test_the_takeaway_comes_first():
         assert draft["text"].startswith(start), (key, draft["text"])
 
 
-def test_no_data_has_no_number_and_no_repeated_note():
-    draft, *_ = answer("empty", "en")
-    assert draft["text"] == "You have no transactions for travel during 21–27 Sep 2026."
-    draft, *_ = answer("empty", "fi")
-    assert draft["text"] == "Jaksolla 21.–27.9.2026 ei ole tapahtumia luokassa Matkailu."
+def test_an_empty_period_states_its_zeros_once_and_no_repeated_note():
+    draft, v, _, _ = answer("empty", "en")
+    assert render(draft["text"], v.numbers) == "There were 0 transactions for travel during 21–27 Sep 2026, so you spent €0.00."
+    draft, v, _, _ = answer("empty", "fi")
+    assert render(draft["text"], v.numbers) == ("Jaksolla 21.–27.9.2026 tapahtumia oli 0 luokassa Matkailu, joten käytit "
+                                                "0,00 €.")
 
 
 def test_lead_persona_texts():
