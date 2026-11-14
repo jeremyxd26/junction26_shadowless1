@@ -799,3 +799,33 @@ def test_the_thing_is_quoted_in_the_users_own_spelling(question, word):
 ])
 def test_rent_or_bills_next_month_is_the_bills_rule(question, lang):
     assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
+
+
+
+@pytest.mark.parametrize("question,lang", [
+    # #510: a frequency, a determiner, a holiday's eve, a first week, a shop in general: no thing
+    ("how much did I spend on twice a month?", "en"),
+    ("how much did I spend on both months?", "en"),
+    ("how much did I spend on Christmas Eve?", "en"),
+    ("paljonko käytin ensimmäiseen viikkoon?", "fi"),
+    ("paljonko käytin viikonloppuisin kauppaan?", "fi"),
+])
+def test_period_and_frequency_words_are_never_named_as_things(question, lang):
+    from core.agent.rules import unknown_object
+    assert unknown_object(question) is None
+    assert all(not (name == "get_spending" and not args.get("filter")) or args.get("period")
+               for name, args in data_calls(plan(question, lang)))
+
+
+@pytest.mark.parametrize("question,word", [
+    ("how much do I spend on the gym?", "gym"), ("how much did I spend on Netflix last month?", "Netflix"),
+    ("how much did I spend at the barber?", "barber"), ("how much did I spend on Black Friday?", "Black Friday"),
+    ("how much did I spend on my dog?", "dog"), ("how much did I spend on yoga classes?", "yoga"),
+    ("how much did I spend at Lidl in May?", "Lidl"), ("how much did I spend on Spotify?", "Spotify"),
+    ("how much did I spend at Caf\u00e9 M\u00fcller?", "Caf\u00e9 M\u00fcller"),
+    ("how much did I spend on <b>Lidl</b>", "Lidl"),   # markup is read as the bare name
+])
+def test_real_things_keep_their_decision(question, word):
+    from core.agent.rules import unknown_object
+    assert unknown_object(question) == word
+    assert not [args for name, args in data_calls(plan(question)) if name == "get_spending" and not args.get("filter")]

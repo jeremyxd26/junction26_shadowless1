@@ -408,6 +408,8 @@ def _post_whatif(monkeypatch, body, tool):
 @pytest.mark.parametrize("selection", [
     {"kind": "category", "value": "Health"},                                     # R9
     {"kind": "mcc", "value": sorted(config.MCC_GROUPS["health"])[0]},             # R9
+    {"kind": "mcc", "value": "8021"},                                            # R9, whatever the history (#510)
+    {"kind": "mcc", "value": "5411,8021"},                                       # R9 inside a list
     {"kind": "category", "value": "Salary"},                                     # not spending
     {"kind": "basket", "value": "luxuries"},
     {"kind": "mcc", "value": "taxi"},
