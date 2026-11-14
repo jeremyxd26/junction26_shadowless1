@@ -20,13 +20,22 @@ python scripts/scan_diff_secrets.py --base origin/dev         # the current bran
 python scripts/scan_diff_secrets.py --range A..B              # what a range of commits added
 ```
 
-It reports:
-- common key shapes;
-- database URLs with a password that the allowlist in `.gitleaks.toml` does not cover (path and value together);
-- literal values of the local `.env`;
-- added `.env` files.
+What it reads:
+- by default, every commit from the merge base to the head, and the final diff. A secret that one commit adds and a later one removes is still found: a merge commit brings that history into `dev` and `main`;
+- a merge commit as its diff against its first parent, which also shows lines written while resolving it;
+- `--net-only`: the final diff alone;
+- added lines only, binary files read as text.
 
-It prints the kind and the file, never a value. It exits 1 on a finding, 0 when clean and 2 when it cannot run.
+What it reports:
+- common key shapes, and values assigned to a key, secret, password or token name, quoted or not (`export API_TOKEN=...`, `password: ...`);
+- database URLs with a password that the allowlist does not cover (path and value together). The allowlist is the base's copy of `.gitleaks.toml`, so a branch cannot allowlist its own value; a branch that edits `.gitleaks.toml` or `.gitleaksignore` gets a note;
+- literal values of the local `.env`;
+- added env files: `.env`, `.env.*`, `*.env`, except `*.example`.
+
+Output: one line per kind and file, with the commits it was seen in. Never a value. Exit codes:
+- 1 on a finding;
+- 0 when clean;
+- 2 when it cannot run: a missing ref (named, with the fetch command), an unreadable `.env` or `.gitleaks.toml`, or no git. It then prints `NOT RUN:` and the reason.
 
 It does not replace gitleaks, which has many more rules and reads the whole history in CI. The history, pull request heads and GitHub texts are covered by `scan_env_values.py` below.
 
