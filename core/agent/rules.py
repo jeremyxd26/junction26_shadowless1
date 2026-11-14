@@ -427,9 +427,9 @@ HEALTH_NOT_TOTAL = (r"\bsay about me\b|\bsuggests?\b|\bmean for me\b|\bam i (get
                     r"\bkertoo minusta\b|\bolenko (sairas|sairastumassa|raskaana)\b|\bmitä lääkkeitä\b|"
                     r"\bpitäisikö (minun )?(mennä|käydä) lääkärissä\b|\bonko (se|tämä) (paljon|liikaa|normaalia)\b|"
                     r"\bvink\w*|\bneuvo\w*|"
-                    # a why-question or a scenario about health spending (#552's rows, QA's Finnish what-if on #607):
-                    # "why is my health spending so low?", "Mitä jos puolittaisin lääkärikäyntini?"
-                    r"\bwhy\b|\bmiksi\b|\bso (low|high|little|much)\b|\bwhat if\b|\bmitä jos\b|\bentä jos\b|"
+                    # a scenario about health spending (QA's Finnish what-if on #607): "Mitä jos puolittaisin
+                    # lääkärikäyntini?" (a why-question is no plain total: it keeps dev's outcome, #574's rows)
+                    r"\bwhat if\b|\bmitä jos\b|\bentä jos\b|"
                     r"\bhalv(e|ed|ing)\b|\bpuolit(a|t)\w*|\bleikkaa\w*|\bleikkaisi\w*|\bleikata\b|\bkarsi\w*|"
                     r"\bjättäisi\w*|\blopettaisi\w*|\bvähentäisi\w*")
 # The decline rule's medicine words, which a plain health total may hold ("how much did I spend on medicines?").
