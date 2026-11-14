@@ -33,7 +33,9 @@ Settings:
 - `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 - `VIEWER_COOKIE_SECURE` (default `true`): the viewer cookie is sent over https only. Set it to `false` only for local development over http.
-- `LABEL_RATE_LIMIT_PER_MIN` (default 10, per client address) and `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` (default 30, per customer): limits on `POST /api/baskets/label`. `0` turns a limit off.
+- `LABEL_RATE_LIMIT_PER_MIN`, `LABEL_RATE_LIMIT_CUSTOMER_PER_MIN` and `LABEL_RATE_LIMIT_VIEWER_PER_MIN`: limits on `POST /api/baskets/label`, each 10 a minute by default. They apply per client address, per (address, customer) and per viewer; no limit is shared by everyone.
+- `LABEL_NEW_SESSIONS_PER_HOUR` (default 10): new viewer sessions per client address per hour.
+- `0` turns any of these limits off.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
