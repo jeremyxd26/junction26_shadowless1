@@ -76,9 +76,9 @@ def test_a_health_what_if_is_declined_without_a_data_tool(question):
     assert declined(result) and not data_calls(result), [(c.name, c.args) for c in result.calls]
 
 
-@pytest.mark.xfail(strict=True, reason="a health what-if gets the generic off-topic text (ans_g28h0uoo); issue #347")
 @pytest.mark.parametrize("question", HEALTH_WHAT_IFS)
 def test_a_health_what_if_decline_is_not_the_off_topic_text(question):
+    # fixed by #571: a health decline has its own text (template.HEALTH_REFUSAL), never the off-topic one
     result = plan(question)
     text, _ = template.refusal(result.calls[0].args["kind"], "en", question)
     assert text != generic_decline_text("en"), text

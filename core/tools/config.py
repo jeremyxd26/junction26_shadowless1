@@ -92,6 +92,8 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # Statistics Finland's household budget survey beside the peer comparison (#569): a cited table value
+    "national_month": "national_context.monthly_eur@1",
     # get_balance_forecast (#257, metrics.md section 3.3)
     "daily_pace": "balance_forecast.daily_pace_eur@1",
     "bills_to_date": "balance_forecast.bills_to_date_eur@1",
@@ -662,6 +664,17 @@ CITY_LABELS: dict[str, tuple[str, str]] = {   # metrics.md section 6: first two 
     "01": ("Vantaa", "Vantaa"),
     "02": ("Espoo and Kauniainen", "Espoo ja Kauniainen"),
 }
+# The national context line (#569): what the survey's category holds, in the words of the line. Context, never a
+# verdict: no comparison word between the customer's amount and the survey's.
+NATIONAL_WHAT: dict[str, tuple[str, str]] = {
+    "Groceries": ("food and non-alcoholic drinks", "elintarvikkeisiin ja alkoholittomiin juomiin"),
+    "Transportation": ("transport without buying a vehicle", "liikenteeseen ilman ajoneuvon ostoa"),
+}
+# the same, short, for an answer whose comparison sentence leaves no room for the long form (the length rule)
+NATIONAL_WHAT_SHORT: dict[str, tuple[str, str]] = {
+    "Groceries": ("food", "ruokaan"),
+    "Transportation": ("transport", "liikenteeseen"),
+}
 PEER_TEXT: dict[str, tuple[str, str]] = {
     "title": ("{what}: you and people like you", "{what}: sinä ja kaltaisesi"),
     "subtitle": ("Monthly average, {label}", "Kuukausikeskiarvo, {label}"),
@@ -697,6 +710,10 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
         "Compared with at least 20 other customers. Only group statistics are shown.",
         "Verrattu vähintään 20 muuhun asiakkaaseen. Vain ryhmän tunnusluvut näytetään.",
     ),
+    # #569: the label of the national context Number; no digits (a composed text may copy a label), so the
+    # table's age group is named in the evidence and the data file, not here
+    "national_label": ("Households of your age group, per consumption unit",
+                       "Ikäryhmäsi kotitaloudet, kulutusyksikköä kohti"),
     "note": (
         "Only group statistics are shown, never another customer's transactions.",
         "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
@@ -1122,17 +1139,16 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                  "{amount} {category}, {date} — välttämätön hankinta vai oma valinta?"),
     "option_unexpected_necessities": ("Needed", "Välttämätön"),
     "option_everyday_spending": ("My choice", "Oma valinta"),
+    # The options' effect before the answer (#416): only where the purchase goes and that the numbers are
+    # recalculated, never a promise about safe to spend or safe to save; the real effect comes with the answer
+    # (label_answer.effect_text, #382). The basket words are the effect's own ("now counts as …").
     "effect_unexpected_necessities": (
-        "It counts as an unexpected necessity. {product} keeps a bigger reserve for surprises like this, so "
-        "your safe to spend goes down.",
-        "Se lasketaan välttämättömäksi yllätysmenoksi. {product} varaa jatkossa enemmän rahaa tällaisiin "
-        "yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee.",
+        "It will count as an unexpected necessity. {product} then recalculates your numbers with it.",
+        "Se lasketaan odottamattomaksi välttämättömäksi menoksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "effect_everyday_spending": (
-        "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this "
-        "month is higher than usual.",
-        "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta "
-        "arkikulutuksesi on tässä kuussa tavallista suurempi.",
+        "It will count as everyday spending. {product} then recalculates your numbers with it.",
+        "Se lasketaan arjen kulutukseksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "why": (
         # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to

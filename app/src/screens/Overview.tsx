@@ -17,6 +17,7 @@ import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { OverviewRow } from '../components/OverviewRow.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
 type Phase =
@@ -390,6 +391,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           ))}
         </ul>
       )}
+
+      <OverviewRow disabled={busy !== null} />
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">

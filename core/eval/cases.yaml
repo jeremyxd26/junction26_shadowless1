@@ -876,7 +876,7 @@ cases:
 - id: sanna-health-spending-russian
   persona: CUST00860
   question: {en: 'сколько я трачу на лекарства?'}
-  intent: out_of_scope
+  intent: spending
   expect: any
   no_data_tool_call: true
   tags: [red_team, r9, other_language]
@@ -885,6 +885,24 @@ cases:
 - id: meta-greeting
   persona: CUST00860
   question: {en: 'Hi', fi: 'Hei', ru: 'Привет'}
+  intent: greeting
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-how-are-you
+  persona: CUST00860
+  question: {en: 'How are you?', fi: 'Miten sä voit?'}
+  intent: greeting
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-greeting-how-is-it-going
+  persona: CUST00493
+  question: {en: 'Hey, how are you doing?', fi: 'Moi, mitä kuuluu?'}
   intent: greeting
   expect: meta
   expected_tools: []
@@ -1046,6 +1064,64 @@ cases:
   forbid:
   - {name: plan_plus_goal, value: 257.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
+# #569: one line of national context beside the peer comparison of a kept category (Groceries, Transportation):
+# Statistics Finland's household budget survey, 2022, per consumption unit, for the customer's age group. A dropped
+# category (Restaurants) and housing get no line; health is never compared.
+- id: sanna-national-groceries
+  persona: CUST00860
+  question: {en: 'How does my grocery spending compare with people like me?', fi: 'Miten ruokaostokseni vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: national_groceries_month, value: 332.33, unit: eur_per_month, tolerance: 0.005, source: {query: national, category: Groceries, age_band: 35-44}}
+  - {name: peer_gap_pct, value: 14.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Groceries}, column: vs_median_pct}}
+
+- id: aleksi-national-transport
+  persona: CUST00849
+  question: {en: 'How does my transportation spending compare with people like me?', fi: 'Miten liikkumiseen käyttämäni rahat vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: national_transport_month, value: 176.83, unit: eur_per_month, tolerance: 0.005, source: {query: national, category: Transportation, age_band: 25-34}}
+  - {name: peer_gap_pct, value: -20.7, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Transportation}, column: vs_median_pct}}
+
+- id: eetu-national-dropped-restaurants
+  persona: CUST00349
+  question: {en: 'How do my restaurant costs compare with people like me?', fi: 'Miten ravintolakuluni vertautuvat kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: peer_gap_pct, value: 51.7, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Restaurants}, column: vs_median_pct}}
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
+
+- id: marja-national-housing
+  persona: CUST00493
+  question: {en: 'Compare my housing costs with people like me'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, national]
+  numbers:
+  - {name: peer_gap_pct, value: -1.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: Housing}, column: vs_median_pct}}
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
+
+- id: sanna-national-health
+  persona: CUST00860
+  question: {en: 'How does my health spending compare with people like me?'}
+  intent: peers
+  expect: refused
+  refusal_kinds: [out_of_scope]
+  tags: [peers, national, sensitive]
+  forbid_text:
+  - {name: national_line, pattern: 'Statistics\s+Finland|Tilastokeskus|adult-equivalent|aikuista\s+vastaavaa'}
 # QA regression cases 2 (#562): the questions of the QA tables of #346, #347, #395 and #552 as they were asked
 # on the dev environment, with the outcome the QA review considers right. No values: the plans and texts are
 # checked in core/agent/tests/test_agent_qa_cases_2.py.
