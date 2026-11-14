@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
+import { ComposerMicButton } from '../components/ComposerMicButton.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
+import { withSpoken } from '../lib/stt.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -146,6 +148,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         onSubmit={submit}
         className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] items-center gap-3 border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
       >
+        <ComposerMicButton onText={(text) => setDraft((current) => withSpoken(current, text))} />
         <label htmlFor="chat-input" className="sr-only">
           {s.inputLabel}
         </label>

@@ -19,7 +19,7 @@ from core.agent.api import router as ask_router
 from core.agent.gemini import model_state
 
 from . import api, health, secret_mask
-from .api import bill_read, bill_samples
+from .api import bill_read, bill_samples, stt
 from .db import MALFORMED, NOT_SET, create_pool, valid_database_url
 from .settings import Settings
 
@@ -87,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bill_samples.router)  # GET /api/bill/samples and its images (#249)
     app.include_router(bill_read.router)  # POST /api/bill/read: a sample bill read by the model (#250)
     app.include_router(ask_router)  # POST /api/ask (core/agent)
+    app.include_router(stt.router)  # POST /api/stt: a spoken question as text, nothing stored (#735)
     if audit_api_enabled():  # GET /api/audit/{id} exists only for local eval runs (#189)
         app.include_router(audit_router)
     return app
