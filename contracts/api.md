@@ -321,7 +321,7 @@ The balance forecast's `estimate` for Sanna (the `breakdown` card of `get_balanc
 }
 ```
 
-The savings plan's `estimate` for Sanna (the `breakdown` card of `get_savings_plan`, #369): `observed` are the levers' savings a month, each a what-if whose evidence opens its baseline.
+The savings plan's `estimate` for Sanna (the `breakdown` card of `get_savings_plan`, #369): `observed` are the levers' baselines (`what_if.baseline_month_eur@1`), the spending each cut applies to; each lever's cut share is the value of a `cuts_as_shown` assumption.
 
 <!-- example: estimate.savings_plan -->
 ```json
@@ -330,37 +330,71 @@ The savings plan's `estimate` for Sanna (the `breakdown` card of `get_savings_pl
   "text": "About, if you cut these as shown and the rest of your spending stays as it is.",
   "observed": [
     {
-      "value": 45.91,
+      "value": 229.56,
       "unit": "eur_per_month",
       "period": {
         "start": "2026-04-01",
         "end": "2026-09-30",
         "label": "1 Apr – 30 Sep 2026"
       },
-      "method": "what_if.saving_month_eur@1",
-      "evidence_ref": "ev_df30384b2201",
-      "label": "You would save",
-      "display": "€45.91 a month"
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_1833132fc943",
+      "label": "Restaurants in a typical month",
+      "display": "€229.56 a month"
     },
     {
-      "value": 17.26,
+      "value": 172.58,
       "unit": "eur_per_month",
       "period": {
         "start": "2026-04-01",
         "end": "2026-09-30",
         "label": "1 Apr – 30 Sep 2026"
       },
-      "method": "what_if.saving_month_eur@1",
-      "evidence_ref": "ev_00d10c84071b",
-      "label": "You would save",
-      "display": "€17.26 a month"
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_7b6c78c00ec6",
+      "label": "Lifestyle in a typical month",
+      "display": "€172.58 a month"
     }
   ],
   "assumptions": [
     {
-      "code": "cuts_as_shown",
-      "text": "You cut these as shown and the rest of your spending stays as it is.",
+      "code": "next_months_like_last",
+      "text": "The coming months are like the average of your last six full months.",
       "value": null
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 20.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_de73cb569d75",
+        "label": "Cut in Restaurants",
+        "display": "20.0%"
+      }
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 10.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_8ff96819e08c",
+        "label": "Cut in Lifestyle",
+        "display": "10.0%"
+      }
     }
   ]
 }
@@ -4952,4 +4986,4 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
 | 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
 | 0.3.5 | Safe to save at three scales, and the amount kept apart from the bank's screen (#417).<br><br>New:<br>- `weekly` and `daily` (Numbers) on the `safe_to_save` card: the headline `monthly` a week (`monthly` × 7 / 30.4375, method `safe_to_save.week_eur@1`) and a day (`monthly` / 30.4375, method `safe_to_save.day_eur@1`). Both are composites whose evidence opens `monthly`, so they reconcile with it to the cent.<br>- Rule: no answer text puts an amount into the bank's screen or product (S-mobiili, monthly saving, a fund) in one sentence: moving, putting, sending, setting, adding, starting, opening or investing into, to or in it. A plain statement of a figure passes. The `open_host_screen` labels name the screen only: one label per target, no digit, no currency sign, no action verb such as "start saving", "put", "move" or "invest".<br><br>Changed examples: every `safe_to_save` card gains `weekly` and `daily`: `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, and the cards in `overview.response`, `overview.response_no_hero` and `overview.response_pending`. No label text changes. |
-| 0.3.6 | Estimates separate what was observed from what is assumed (#380).<br><br>New:<br>- `estimate` gains `observed` (Number[]: the Numbers the estimate is built from, Numbers the tool already computed, with their evidence refs) and `assumptions` (`{code, text, value}`[]: what it assumes; `text` is one plain sentence without digits, `value` a Number or `null`). Section 3, Estimates.<br>- A closed list of assumption codes in one table (section 3, Estimates): `spending_as_usual`, `reserve_for_unexpected`, `cushion`, `savings_goal_first`, `next_months_like_last`, `cut_share`, `bonus_all_at_s_group`, `bonus_share`, `bonus_level`, `bills_pro_rata`, `peer_group`, `bills_on_usual_days`, `no_income_before_payday`, `cuts_as_shown`. The app ignores a code it does not know.<br>- Every card that sets `estimate` has at least one assumption (the safe-to-spend, S-Bonus and balance-forecast cards, `safe_to_save`, `bills`, `peer`, `whatif`, the savings plan), except `stores`, which no tool builds yet. The `POST /api/whatif` response's `estimate` carries the same fields.<br>- Nothing is computed differently: the hero and its evidence refs are unchanged.<br><br>Changed examples: every example with an `estimate` gains the two fields: `card.peer`, `card.stores`, `card.whatif`, `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response` (hero, safe to save, bills), `overview.response_no_hero`, `overview.response_pending` and `whatif.response`. New examples for the kinds without a card example: `estimate.bonus`, `estimate.forecast` and `estimate.savings_plan`. |
+| 0.3.6 | Estimates separate what was observed from what is assumed (#380).<br><br>New:<br>- `estimate` gains `observed` (Number[]: the Numbers the estimate is built from, Numbers the tool already computed, with their evidence refs) and `assumptions` (`{code, text, value}`[]: what it assumes; `text` is one plain sentence without digits, `value` a Number or `null`). The Numbers inside an estimate are complete objects: the app reads them from the estimate, never by id from the answer's `numbers` map. Section 3, Estimates.<br>- A closed list of assumption codes in one table (section 3, Estimates): `spending_as_usual`, `reserve_for_unexpected`, `cushion`, `savings_goal_first`, `budget_from_usual_month`, `bills_on_usual_days`, `next_months_like_last`, `cut_share`, `bonus_all_at_s_group`, `bonus_share`, `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods`, `bonus_level`, `bills_pro_rata`, `peer_group`, `no_income_before_payday`, `cuts_as_shown`. The app ignores a code it does not know.<br>- Every card that sets `estimate` has at least one assumption: the safe-to-spend card (both limbs: the balance and the bills, and the budget limit of a typical month), the S-Bonus card (every fixed assumption), the balance forecast, `safe_to_save`, `bills`, `peer`, `whatif` and the savings plan. The `POST /api/whatif` response's `estimate` carries the same fields. The `stores` example has `estimate: null` until a tool builds that card.<br>- Nothing is computed differently: the hero's Numbers and evidence refs are unchanged.<br><br>Changed examples: every example with an `estimate` gains the two fields: `card.peer`, `card.whatif`, `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response` (hero, safe to save, bills), `overview.response_no_hero`, `overview.response_pending` and `whatif.response`; `card.stores` has `estimate: null`. New examples for the kinds without a card example: `estimate.bonus`, `estimate.forecast` and `estimate.savings_plan`. |
