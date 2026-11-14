@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # Viewer sessions (#144): the cookie that keeps one viewer's review answers apart from everyone
     # else's. Secure is on by default; set VIEWER_COOKIE_SECURE=false only for local development over http.
     viewer_cookie_secure: bool = True
-    # POST /api/baskets/label, sliding one-minute windows; 0 turns a limit off (#144).
+    # POST /api/baskets/label, sliding windows; 0 turns a limit off (#144). No window is shared by all
+    # viewers of a customer: answers are per viewer, so such a window would protect nothing and would let
+    # anyone block the presenter's tap (review of #144).
     label_rate_limit_per_min: int = Field(default=10, ge=0)            # per client address
-    label_rate_limit_customer_per_min: int = Field(default=30, ge=0)   # per customer, all viewers together
+    label_rate_limit_customer_per_min: int = Field(default=10, ge=0)   # per client address and customer
+    label_rate_limit_viewer_per_min: int = Field(default=10, ge=0)     # per viewer session
+    label_new_sessions_per_hour: int = Field(default=10, ge=0)         # new viewer sessions per client address

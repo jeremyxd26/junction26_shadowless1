@@ -80,12 +80,16 @@ CREATE TABLE IF NOT EXISTS spike_review_answers (
     basket       text CHECK (basket IN ('unexpected_necessities', 'everyday_spending')),
     answered_at  timestamptz,
     created_at   timestamptz NOT NULL DEFAULT now(),
+    last_active  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (session_key, customer_id, tx_id),
     FOREIGN KEY (customer_id, tx_id) REFERENCES spike_reviews (customer_id, tx_id) ON DELETE CASCADE
 )
 """
 SESSION_TTL = timedelta(hours=2)
-MAX_SESSIONS = 500
+# A storage bound, not a security boundary (review of #144): with at most 20 rows each the table stays
+# small. New sessions per address are limited in the API, so filling it costs hundreds of address-hours,
+# and the least recently active viewer is the one dropped (`last_active`, refreshed on every write).
+MAX_SESSIONS = 10_000
 MAX_ANSWERS_PER_SESSION = 20
 SESSION_KEY = re.compile(r"^[0-9a-f]{64}$")
 
@@ -359,7 +363,24 @@ def ensure_pending_for(ctx: Any, now: datetime | None = None) -> Review | None:
 def lock_customer(conn: psycopg.Connection, customer_id: str) -> None:
     """The per-customer lock (transaction-level) that review creation and every label write take, so
     the "one open review" rule cannot race with an answer or an undo."""
-    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_reviews:' || %s, 0))", (customer_id,))
+    _lock(conn, "spike_reviews", f"customer:{customer_id}")
+
+
+def _lock(conn: psycopg.Connection, table: str, key: str) -> None:
+    """A transaction-level advisory lock named after the table it guards, by its OID, and a key. A
+    test's private copies of the tables (private_tables) have other OIDs, so a test never waits for, or
+    holds up, the dev service's locks on the shared tables."""
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended("
+                 "COALESCE(to_regclass(%s)::oid::text, 'none') || ':' || %s, 0))", (table, key))
+
+
+def private_tables(conn: psycopg.Connection) -> None:
+    """Tests only: session-private (temporary) copies of both tables, dropped at the end of the current
+    transaction. PostgreSQL looks up the temporary schema first, so every query of this module in that
+    transaction uses them, and a rolled-back test takes no lock on the shared tables the dev service
+    serves from (a test that deleted the persona's live row held up the live service, review of #144)."""
+    for ddl in (DDL, ANSWERS_DDL):
+        conn.execute(ddl.replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE").strip() + " ON COMMIT DROP")
 
 
 def _ensure_table_once(conn: psycopg.Connection) -> None:
@@ -429,8 +450,7 @@ def save(conn: psycopg.Connection, review: Review) -> None:
 
 def lock_viewer(conn: psycopg.Connection, viewer: str, customer_id: str) -> None:
     """Serialise one viewer's label writes for one customer (transaction-level advisory lock)."""
-    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_review_answers:' || %s || ':' || %s, 0))",
-                 (viewer, customer_id))
+    _lock(conn, "spike_review_answers", f"viewer:{viewer}:{customer_id}")
 
 
 def save_answer(conn: psycopg.Connection, viewer: str, review: Review, now: datetime) -> None:
@@ -455,21 +475,34 @@ def save_answer(conn: psycopg.Connection, viewer: str, review: Review, now: date
     elif not has_row and n_rows >= MAX_ANSWERS_PER_SESSION:
         raise TooManyAnswers()
     conn.execute(
-        "INSERT INTO spike_review_answers (session_key, customer_id, tx_id, basket, answered_at, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (session_key, customer_id, tx_id) "
-        "DO UPDATE SET basket = EXCLUDED.basket, answered_at = EXCLUDED.answered_at",
-        (viewer, review.customer_id, review.tx_id, review.basket, review.answered_at, now))
+        "INSERT INTO spike_review_answers (session_key, customer_id, tx_id, basket, answered_at, created_at, "
+        "last_active) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (session_key, customer_id, tx_id) "
+        "DO UPDATE SET basket = EXCLUDED.basket, answered_at = EXCLUDED.answered_at, "
+        "last_active = EXCLUDED.last_active",
+        (viewer, review.customer_id, review.tx_id, review.basket, review.answered_at, now, now))
+    # every write is activity of the whole session, so none of its rows looks idle
+    conn.execute("UPDATE spike_review_answers SET last_active = %s WHERE session_key = %s", (now, viewer))
 
 
 def _admit_session(conn: psycopg.Connection, now: datetime) -> None:
-    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('spike_review_answers', 0))")
+    """Room for one more viewer: expired answers go, then, at MAX_SESSIONS, the least recently active."""
+    _lock(conn, "spike_review_answers", "admit")
     conn.execute("DELETE FROM spike_review_answers WHERE created_at <= %s", (now - SESSION_TTL,))
     n = conn.execute("SELECT count(DISTINCT session_key) FROM spike_review_answers").fetchone()[0]
     if n >= MAX_SESSIONS:
         conn.execute(
             "DELETE FROM spike_review_answers WHERE session_key IN ("
             " SELECT session_key FROM spike_review_answers GROUP BY session_key"
-            " ORDER BY max(created_at), session_key LIMIT %s)", (n - MAX_SESSIONS + 1,))
+            " ORDER BY max(last_active), session_key LIMIT %s)", (n - MAX_SESSIONS + 1,))
+
+
+def viewer_established(conn: psycopg.Connection, viewer: str, now: datetime | None = None) -> bool:
+    """Whether this viewer already has a live answer row (so its next answer admits no new session)."""
+    if not tables_exist(conn)[1]:
+        return False
+    row = conn.execute("SELECT 1 FROM spike_review_answers WHERE session_key = %s AND created_at > %s LIMIT 1",
+                       (viewer, (now or utcnow()) - SESSION_TTL)).fetchone()
+    return row is not None
 
 
 def count_answers(conn: psycopg.Connection, customer_ids: list[str]) -> int:

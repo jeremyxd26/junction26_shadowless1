@@ -83,8 +83,15 @@ The first `GET /api/overview/{customer_id}` of a customer with a qualifying spik
 
 **Every viewer answers in their own copy** (#144). The first overview response sets a viewer cookie: a random value with no personal data, `HttpOnly`, `SameSite=Lax`, `Secure`, `Path=/`, valid for 2 hours. The question is shared: one pending review per customer, which the first overview creates. The answers are kept per viewer, in `spike_review_answers`, keyed by a SHA-256 of the cookie. One viewer's "Needed" therefore never changes what another viewer sees.
 - A request without the cookie sees the pending state, as before. That covers the eval set, the tests and API clients without cookies.
-- A viewer's answers last 2 hours. At most 500 viewers have answers at a time; when that limit is reached, the oldest viewer's answers are dropped, and that viewer sees the pending card again.
-- `POST /api/baskets/label` is rate-limited per client address and per customer. When a limit is reached it returns 429 `rate_limited` with `Retry-After`.
+- A viewer's answers last 2 hours. Each label write also renews the cookie for 2 hours, so an answer never outlives its cookie.
+- At most 10,000 viewers keep answers at a time. That is a storage bound: when it is reached, the least recently active viewer's answers are dropped, and that viewer sees the pending card again.
+- `POST /api/baskets/label` is rate-limited, and no limit is shared by everyone. Each window is 10 a minute:
+  - per client address;
+  - per client address and customer;
+  - per viewer.
+
+  When a limit is reached it returns 429 `rate_limited` with `Retry-After`.
+- One client address can start at most 10 new viewer sessions an hour. Only a session whose first answer was stored counts, and no address is stored.
 
 For a fresh state of your own, open `/api/viewer/reset`, which only issues a new cookie, or use a new private window.
 
@@ -99,6 +106,11 @@ python core/scripts/reset_reviews.py --dry-run CUST00860                        
 Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
 
 **Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
+
+**Demo runbook.**
+1. Run `reset_reviews.py` for the personas right before the demo.
+2. The presenter opens the app and taps "Needed" and then "Undo" once. Their session now has an answer and is active.
+3. **Do not run the reset during the demo.** It deletes every viewer's answers, the presenter's included, by design.
 
 The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 

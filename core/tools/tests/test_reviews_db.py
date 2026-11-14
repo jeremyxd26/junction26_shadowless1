@@ -30,8 +30,7 @@ def tx(conn, monkeypatch):
     """A rolled-back transaction with SPIKE_REVIEWS on and no review rows for Sanna."""
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     with conn.transaction(force_rollback=True):
-        reviews.ensure_table(conn)
-        reviews.reset(conn, [LEAD])
+        reviews.private_tables(conn)  # no lock on the shared tables
         yield conn
 
 
@@ -167,6 +166,15 @@ def test_warm_overview_reads_the_reviews_once(tx):
         assert labels.for_context(ctx) == {SPIKE: "unclassified"}
     assert labels.metric_settings_for(ctx) == {"tx_labels": '{"606016":"unclassified"}'}
     assert counting.statements == 2 and ctx._history is None
+
+
+def test_the_tests_use_private_tables_and_lock_nothing_shared(tx):
+    """The fixture's tables are temporary copies, so a test never locks the live rows the dev service uses."""
+    conn = tx
+    for table in ("spike_reviews", "spike_review_answers"):
+        schema = conn.execute("SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                              "WHERE c.oid = to_regclass(%s)", (table,)).fetchone()[0]
+        assert schema.startswith("pg_temp"), (table, schema)
 
 
 def test_get_pending_never_creates(tx):

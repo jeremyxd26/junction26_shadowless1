@@ -99,8 +99,18 @@ def label(c, customer="CUST00860", **headers):
                         "basket": "unexpected_necessities", "language": "fi"})
 
 
+OFF = {"label_rate_limit_per_min": 0, "label_rate_limit_customer_per_min": 0, "label_rate_limit_viewer_per_min": 0}
+
+
+@pytest.fixture
+def proxied(monkeypatch):
+    """The test client is the trusted proxy, so X-Forwarded-For names the client's address (as behind
+    Caddy); this is how other addresses are simulated."""
+    monkeypatch.setenv("TRUSTED_PROXIES", "testclient")
+
+
 def test_label_writes_are_limited_per_address_with_the_contract_envelope():
-    with client(label_rate_limit_per_min=2, label_rate_limit_customer_per_min=0) as c:
+    with client(**{**OFF, "label_rate_limit_per_min": 2}) as c:
         first = [label(c).status_code for _ in range(2)]               # admitted (no database: 503)
         third = label(c)
         other_customer = label(c, customer="CUST00493")
@@ -112,11 +122,42 @@ def test_label_writes_are_limited_per_address_with_the_contract_envelope():
     assert other_customer.status_code == 429                           # the address limit holds
 
 
-def test_label_writes_are_limited_per_customer():
-    with client(label_rate_limit_per_min=0, label_rate_limit_customer_per_min=1) as c:
+def test_the_customer_window_is_per_address(proxied):
+    """No window is shared by all viewers of a customer: one address cannot block another (review of #144)."""
+    with client(**{**OFF, "label_rate_limit_customer_per_min": 1}) as c:
+        assert label(c, **{"X-Forwarded-For": "198.51.100.1"}).status_code == 503
+        assert label(c, **{"X-Forwarded-For": "198.51.100.1"}).status_code == 429
+        assert label(c, "CUST00493", **{"X-Forwarded-For": "198.51.100.1"}).status_code == 503
+        assert label(c, **{"X-Forwarded-For": "198.51.100.2"}).status_code == 503   # another address
+
+
+def test_a_flood_from_other_addresses_never_blocks_a_fresh_presenter(proxied):
+    with client() as c:                                                 # the default limits
+        for n in range(1, 4):                                           # three addresses, junk refs
+            for _ in range(30):
+                label(c, **{"X-Forwarded-For": f"203.0.113.{n}"})
+        presenter = label(c, **{"X-Forwarded-For": "192.0.2.10"})
+    assert presenter.status_code == 503                                 # reached the database step, not 429
+
+
+def test_label_writes_are_limited_per_viewer():
+    value = viewer.new_value()
+    with client(**{**OFF, "label_rate_limit_viewer_per_min": 1}) as c:
+        c.cookies.set(viewer.COOKIE, value, domain="testserver.local")
         assert label(c).status_code == 503
-        assert label(c).status_code == 429
-        assert label(c, customer="CUST00493").status_code == 503
+        assert label(c).status_code == 429                              # the same viewer
+        c.cookies.clear()
+        assert label(c).status_code == 503                              # another viewer
+
+
+def test_a_subset_of_limits_and_check_then_record():
+    clock = Clock()
+    lim = SlidingWindowLimiter({"address": 1, "viewer": 1}, window_s=60, clock=clock)
+    assert lim.allow({"viewer": "v1"}) == (True, 0)                     # the address limit is not named
+    assert lim.allow({"address": "a"}) == (True, 0)
+    assert lim.check({"address": "b"}) == (True, 0) and lim.check({"address": "b"}) == (True, 0)  # no count
+    lim.record({"address": "b"})
+    assert lim.check({"address": "b"})[0] is False
 
 
 class FakeRequest:
