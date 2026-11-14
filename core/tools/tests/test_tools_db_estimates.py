@@ -55,6 +55,9 @@ def test_every_estimate_resolves_what_it_observed_and_says_what_it_assumed(conn,
                 where = (customer_id, state, language, name)
                 est = card.estimate
                 assert est.assumptions and est.observed, where
+                # decision 4: each listed Number is one of the answer's, with its id
+                assert all(n.id for n in est.observed), where
+                assert all(a.value.id for a in est.assumptions if a.value is not None), where
                 refs = [n.evidence_ref for n in est.observed]
                 refs += [a.value.evidence_ref for a in est.assumptions if a.value is not None and a.value.evidence_ref]
                 for ref in refs:
@@ -63,6 +66,8 @@ def test_every_estimate_resolves_what_it_observed_and_says_what_it_assumed(conn,
                 if customer_id == "CUST00860" and language == "en" and state == "none":
                     WRITTEN[name] = card.model_dump(mode="json")["estimate"]
     assert checked >= 5, (customer_id, checked)                   # most tools give an estimate card
+    if customer_id == "CUST00860":
+        assert set(WRITTEN) == set(TOOLS), set(TOOLS) - set(WRITTEN)   # the lead persona: every tool's estimate
     if customer_id == "CUST00860" and os.environ.get("ESTIMATE_CARDS"):
         with open(os.environ["ESTIMATE_CARDS"], "w", encoding="utf-8") as f:
             json.dump(WRITTEN, f, indent=2, ensure_ascii=False)

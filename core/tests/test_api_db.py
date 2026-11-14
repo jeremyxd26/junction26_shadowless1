@@ -362,3 +362,14 @@ def test_refused_selections_are_422(client):
     unknown = client.post("/api/whatif", json={"customer_id": "CUST99999", "scenario": {
         "selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}})
     assert unknown.status_code == 404 and unknown.json()["error"]["code"] == "customer_not_found"
+
+
+def test_the_overview_hero_says_what_it_observed_and_what_it_assumes(lead_overview):
+    """#380 on the wire: the hero's estimate lists the balance and the bills as observed and the four assumptions,
+    each value the same Number as on the card (same ref)."""
+    est = lead_overview["hero"]["estimate"]
+    assert [a["code"] for a in est["assumptions"]] == ["spending_as_usual", "reserve_for_unexpected", "cushion",
+                                                       "savings_goal_first"]
+    components = {c["key"]: c["amount"]["evidence_ref"] for c in lead_overview["hero"]["components"]}
+    assert [n["evidence_ref"] for n in est["observed"]] == [components["balance"], components["bills_due"]]
+    assert est["assumptions"][3]["value"]["evidence_ref"] == lead_overview["hero"]["secondary"][3]["evidence_ref"]
