@@ -40,7 +40,7 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel
+from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.app.api import texts as api_texts
 from core.tools.context import NumberRegistry, ToolContext
@@ -61,6 +61,7 @@ SPARE_WAIT_S = 0.05
 ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -221,6 +222,11 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message)
+        # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
+        # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
+        meta = meta_intent(message)
+        if meta is not None:
+            return self._introduce(meta, "en" if CYRILLIC.search(message) else lang, emit, a)
 
         # The customer is bound here, from the request, and never from model output (R4).
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
@@ -493,12 +499,26 @@ class Pipeline:
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
 
+    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
+        """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
+        which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        text = self._deliver(template.meta_text(intent, lang), {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
+                      "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
         text, refusal = template.refusal(kind, lang)
         text = self._deliver(text, {}, emit)
         a.outcome, a.refusal, a.text, a.text_rendered = "refused", refusal, text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "refused", "text": text, "text_rendered": text, "cited": [],
-                      "follow_ups": template.follow_ups(a.question, lang, refused=True), "lesson": None,
+                      # The generic decline offers the four brief questions as chips (#287).
+                      "follow_ups": template.brief_questions(lang) if kind == "out_of_scope"
+                      else template.follow_ups(a.question, lang, refused=True), "lesson": None,
                       "refusal": refusal, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
