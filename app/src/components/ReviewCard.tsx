@@ -100,6 +100,7 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       tabIndex={-1}
       aria-labelledby={titleId}
       aria-busy={busy !== null}
+      data-review-card=""
       className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
       <div className="flex items-center gap-3">
@@ -197,7 +198,7 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
   return (
-    <section ref={ref} tabIndex={-1} aria-labelledby={titleId} className={`${SURFACE} card-enter`}>
+    <section ref={ref} tabIndex={-1} aria-labelledby={titleId} data-review-card="" className={`${SURFACE} card-enter`}>
       <div className="flex items-center gap-3">
         <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
           <Check className="size-5" />

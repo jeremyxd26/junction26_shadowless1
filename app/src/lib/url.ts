@@ -1,6 +1,6 @@
-// A tiny router on the History API. Screens are paths (`/`, `/chat`); overlays and demo
-// settings are query parameters (`?evidence=`, `?persona=`, `?lang=`), so the WebView back
-// button closes a sheet the same way it leaves a screen.
+// A tiny router on the History API. The first screen is one thread on `/` (`/chat` redirects to
+// it); overlays and demo settings are query parameters (`?evidence=`, `?persona=`, `?lang=`), so
+// the WebView back button closes a sheet the same way it leaves a screen.
 import { useSyncExternalStore } from 'react'
 import { hostPlatform, sendToHost } from './hostBridge.ts'
 import type { WhatIfScenarioRequest, WhatIfSelection } from '../api/types.ts'
@@ -60,6 +60,24 @@ export function navigate(path: string, params: Record<string, string> = {}) {
   }
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value)
   go(url, 'push', { screen: true })
+}
+
+/**
+ * Asks a question in the thread on `/`: it becomes `?q=`, which the thread sends and then drops.
+ * The URL is replaced, not pushed, so asking adds no history entry and Back never re-asks.
+ */
+export function askInThread(question: string) {
+  const url = new URL(window.location.href)
+  url.pathname = '/'
+  url.searchParams.set('q', question)
+  go(url, 'replace')
+}
+
+/** `/chat` (an old link) shows the thread on `/`, replacing the entry so Back never returns to it. */
+export function redirectChatToThread() {
+  const url = new URL(window.location.href)
+  url.pathname = '/'
+  go(url, 'replace')
 }
 
 /** Opens the evidence sheet as a history entry, so Back closes it. */
