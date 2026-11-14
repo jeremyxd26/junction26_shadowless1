@@ -39,11 +39,20 @@ export function PeerCard({ card, header }: { card: PeerData; header: ReactNode }
       {group.comparable && (
         <>
           <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
-            <div className="flex flex-col items-start gap-1">
+            <div className="flex max-w-full flex-col items-start gap-1">
               <span className="text-sm font-semibold text-ink">{card.you.label}</span>
-              <NumberChip number={card.you} size="lg" />
+              {/* The large chip needs about 265 px for "€1,180.21 a month"; below 360 px the medium one fits. */}
+              <span className="hidden min-[360px]:inline-flex">
+                <NumberChip number={card.you} size="lg" />
+              </span>
+              <span className="inline-flex min-[360px]:hidden">
+                <NumberChip number={card.you} />
+              </span>
             </div>
-            <NumberChip number={card.vs_median} size="inline" tone="neutral" />
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span className="text-sm text-muted">{card.vs_median.label}</span>
+              <NumberChip number={card.vs_median} size="inline" tone="neutral" />
+            </span>
           </div>
           <ul className="mt-3 flex flex-col">
             <Row number={card.peer_median} strong />

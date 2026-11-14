@@ -75,4 +75,29 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).toContain('Where you shop')
     expect(html).not.toContain(profile.profile.description)
   })
+
+  it('peer: the gap has its visible label, and the large chip has a medium twin for narrow screens', () => {
+    const html = render(peer)
+    expect(html).toContain(`>${peer.vs_median.label}</span>`)
+    expect(html).toContain('hidden min-[360px]:inline-flex')
+    expect(html).toContain('inline-flex min-[360px]:hidden')
+  })
+
+  it('a number without an evidence ref is a plain chip, not a button', () => {
+    const html = render({ ...peer, vs_median: { ...peer.vs_median, evidence_ref: null } } as PeerData)
+    expect(html).toContain(`<span class="inline-flex min-w-11`)
+    expect(html).toMatch(new RegExp(`<span class="inline-flex min-w-11[^"]*">${peer.vs_median.display}</span>`))
+    expect(html).not.toMatch(new RegExp(`<button[^>]*>${peer.vs_median.display}</button>`))
+    // With a ref it opens the evidence: a button with the label in its accessible name.
+    expect(render(peer)).toMatch(new RegExp(`<button[^>]*aria-label="${peer.vs_median.label}: ${peer.vs_median.display}`))
+  })
+
+  it('bills and safe to save in an answer draw no action of their own (the chat shows them as chips)', () => {
+    const billsAction = (bills.actions[0] as { label: string }).label
+    expect(render(bills)).not.toContain(billsAction)
+    const safeToSave = examples['card.safe_to_save'] as Card
+    expect(safeToSave.actions.length).toBeGreaterThan(0)
+    const html = render(safeToSave)
+    for (const action of safeToSave.actions) expect(html).not.toContain(`>${action.label}<`)
+  })
 })

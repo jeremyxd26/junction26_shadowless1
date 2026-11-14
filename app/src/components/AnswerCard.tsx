@@ -148,13 +148,14 @@ function CardBody({ card }: { card: Card }) {
       return isBasketsBreakdown(breakdown) ? <BasketsCard card={breakdown} /> : <BreakdownAnswer card={breakdown} />
     }
     case 'safe_to_save':
-      return <SafeToSaveCard card={card as SafeToSaveData} />
+      // Card actions show as chips under the answer (AnswerView), so the card itself draws none.
+      return <SafeToSaveCard card={{ ...(card as SafeToSaveData), actions: [] }} />
     case 'profile':
       return <ProfileCard card={card as ProfileData} header={<CardHeader card={card} />} />
     case 'peer':
       return <PeerCard card={card as PeerData} header={<CardHeader card={card} />} />
     case 'bills':
-      return <BillsCards cards={[card]} />
+      return <BillsCards cards={[{ ...card, actions: [] }]} />
     // Any other type gets the generic card, `review` included: it is answered in "Sentti asks" (#35).
     default:
       return <GenericAnswer card={card} />
