@@ -32,6 +32,8 @@ For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only o
 
 **Window.** Averages use the **last 6 complete calendar months**: a month counts if its last day is on or before today. For today = 2026-09-30 that is 2026-04-01 … 2026-09-30; for today = 2026-09-14 it is 2026-03-01 … 2026-08-31. A "month average" is the window total divided by `n_months`, the number of window months the customer has history in (1 to 6; it is 6 for every sample customer). Daily rates divide by the window's days (183 for Apr–Sep).
 
+**Periods a question names (#379).** "The past N months" and "over the last N years" mean the last N (or N × 12) complete calendar months, by the same rule; "last month" stays the previous calendar month. For today = 2026-09-30, "the past month" is September 2026 and "last month" is August 2026; for today = 2026-09-14 both are August 2026. "Over the last 5 years" is clamped to the data's first day (1 Oct 2024 – 30 Sep 2026), and the answer names that period. "The year before last" and "two years ago" are calendar year 2024, "a year ago" is 2025, and three or more years ago falls before the data.
+
 **Units.** Spend is positive euros (`out_eur = -amount_eur`), rounded to 2 decimals at the end only. Percentages have 1 decimal. Ties in "last" rows break on `tx_at DESC, id DESC`. Every output has `period_start` and `period_end` (the `period` of the number object).
 
 **Flows.** Category decides what a transaction is; `tx_type` (the bank's "economic purpose") maps 1:1 to category in this data and is used for bills:
@@ -521,7 +523,7 @@ Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<
 
 **Evidence.** Rows of the selection in the window with `is_one_off = false` and a basket other than `regular_essentials`.
 
-**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
+**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. Fewer than 3 cuttable purchases in the window (`app.whatif_min_tx`, default 3 = `TOO_FEW_TRANSACTIONS`, #379): `not_offered`, the baseline and every saving 0; the chat answers with the purchases' total and count (`too_few_transactions`), and `POST /api/whatif` carries the same sentence as its caveat. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
 
 **Worked numbers** (dining out −20%):
 
