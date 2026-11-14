@@ -7,7 +7,7 @@ import { clientTurnRequest, clientTurns, openingChips, prefetchClientTurns } fro
 
 /** A chip: 36 px, its ::after keeps the 44 px target inside the row's vertical padding. */
 const CHIP =
-  "relative min-h-9 whitespace-nowrap rounded-md border border-line bg-surface px-3 py-1.5 text-[15px] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
+  "relative min-h-9 whitespace-nowrap rounded-md border border-line bg-surface px-3 py-1.5 text-[0.9375rem] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
 
 interface Item {
   id: string
