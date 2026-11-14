@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Language } from '../api/types.ts'
 import { useSettings } from '../lib/settings.ts'
-import { TTS_LIVE, speakAnswer, stopSpeaking, useSpeakingId, useVoice } from '../lib/speech.ts'
+import { TTS_LIVE, prefetchVoice, speakAnswer, stopSpeaking, usePreparingId, useSpeakingId, useVoice } from '../lib/speech.ts'
 import { speechStrings } from '../lib/speechStrings.ts'
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
   language: Language
   /** `done.answer_id`: in a live build the core reads this answer with the Gemini voice (#730). */
   answerId?: string
+  /** The latest answer: its voice is fetched ahead once, so a tap plays at once. */
+  prefetch?: boolean
 }
 
 /**
@@ -23,14 +25,18 @@ interface Props {
  * with the device voice as the fallback, so the button shows even without a local voice. Otherwise,
  * without speech support or without a local voice for the language, nothing is rendered.
  */
-export function SpeakButton({ id, text, language, answerId }: Props) {
+export function SpeakButton({ id, text, language, answerId, prefetch = false }: Props) {
   const { lang, customerId } = useSettings()
   const s = speechStrings(lang)
   const voice = useVoice(language)
   const speakingId = useSpeakingId()
   const speaking = speakingId === id
+  const preparing = usePreparingId() === id
 
   useEffect(() => () => stopSpeaking(id), [id])
+  useEffect(() => {
+    if (prefetch && TTS_LIVE && answerId && customerId) prefetchVoice({ customerId, answerId, language })
+  }, [prefetch, answerId, customerId, language])
 
   const remote = TTS_LIVE && answerId && customerId ? { customerId, answerId, language } : null
 
@@ -41,13 +47,19 @@ export function SpeakButton({ id, text, language, answerId }: Props) {
       type="button"
       // One name, "Read aloud"; aria-pressed says whether it is reading now (#582).
       aria-pressed={speaking}
-      aria-label={s.read}
+      aria-label={preparing ? s.preparing : s.read}
       onClick={() => (speaking ? stopSpeaking(id) : speakAnswer(id, text, voice, remote))}
       className={`inline-flex size-11 shrink-0 items-center justify-center rounded-pill border transition-colors duration-(--duration-fast) ${
         speaking ? 'border-brand bg-mint-tint text-brand' : 'border-transparent text-brand hover:bg-sunken'
       }`}
     >
-      {speaking ? (
+      {preparing ? (
+        // At once on the tap, while the voice is prepared: a turning ring (a still ring under reduced motion).
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6 motion-safe:animate-spin" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="12" cy="12" r="8" strokeOpacity="0.25" />
+          <path d="M20 12a8 8 0 0 0-8-8" strokeLinecap="round" />
+        </svg>
+      ) : speaking ? (
         // Stop square while speaking, so the state is visible, not only announced.
         <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="currentColor">
           <rect x="7" y="7" width="10" height="10" rx="1.5" />
