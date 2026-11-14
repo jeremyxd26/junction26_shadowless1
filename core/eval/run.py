@@ -140,9 +140,11 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             if ans.tool_numbers is None:
                 fails.append(f"unverified: {what}: the source did not report what its tools returned")
                 continue
-            if not any(t.get("id") == x.get("id") and t.get("unit") == x["unit"]
-                       and answer_text.same_value(t["value"], x["value"], x["unit"], x.get("method"))
-                       for t in ans.tool_numbers):
+            # The same number: a non-empty id, the same unit and method, and the same value as shown.
+            if not x.get("id") or not any(
+                    t.get("id") == x["id"] and t.get("unit") == x["unit"] and t.get("method") == x.get("method")
+                    and answer_text.same_value(t["value"], x["value"], x["unit"], x.get("method"))
+                    for t in ans.tool_numbers):
                 fails.append(f"R1: {what} was not returned by a tool of this answer")
                 continue
             problem = deriver.problem(case, x) if deriver is not None else None
@@ -214,11 +216,11 @@ def main() -> None:
                 continue
             try:
                 ans = source(case["persona"], question, lang)
+                fails = check(case, ans, lang, question, deriver)  # the SQL check queries too
             except psycopg.errors.QueryCanceled:
                 sys.exit(f"stopped at {case['id']}: a statement hit statement_timeout (60s)")
             except psycopg.Error as e:  # the driver text is not printed (it can repeat parts of DATABASE_URL)
                 sys.exit(f"stopped at {case['id']}: {type(e).__name__} (details hidden)")
-            fails = check(case, ans, lang, question, deriver)
             rows.append((case["id"], lang, fails))
             for tag in case["tags"] + [f"lang_{lang}"]:
                 per_tag[tag][0] += not fails

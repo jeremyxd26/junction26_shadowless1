@@ -55,11 +55,14 @@ BRIEF_QUESTIONS = (
 )
 
 MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
-# "How could I save more?" without a category or a cut: the answer shows the baskets and the bills and
-# ends by offering a what-if, never with a cut the user did not give (issue #142, R1).
+# "How could I save more?" without a category or a cut: the answer shows the basket shares and the bills
+# due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
+# coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = r"save more|saving more|säästää enemmän|säästäisin enemmän|säästämään enemmän|säästöä enemmän"
-WHAT_IF_OFFER = ("Want to see what a cut would save? Ask, for example: what if I cut restaurants by half?",
-                 "Haluatko nähdä, paljonko vähennys säästäisi? Kysy esimerkiksi: entä jos vähentäisin ravintoloita puoleen?")
+WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
+                 "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
+WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
+                     "Haluatko nähdä, mitä vähentäminen tekisi? Kerro luokka ja kuinka paljon.")
 NO_DATA = ("There are no transactions for that period in your data.",
            "Tältä jaksolta ei ole tapahtumia aineistossasi.")
 TOOL_FAILED = ("Some of the data could not be computed right now.",
@@ -150,7 +153,10 @@ def _numbers_in(view: Any, label: str = "") -> list[tuple[str, str]]:
 TAKEAWAY_SIZE = 4  # the main number and at most three supporting ones (issue #112); the rest stay in the cards
 NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
 BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
-BILL_PAYDAY = r"payday|pay day|salary|income|palkka|palkkapäivä|tulo"
+# A bills question is a bills question even when it names payday ("Which bills are due before payday?",
+# "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
+BILL_WORDS = r"\bbills?\b|\blasku\w*"
+BILL_PAYDAY = r"\b(payday|pay day|salary|income|palkka\w*|palkkapäiv\w*|tulo|tulot|tuloni|tuloja)\b"
 
 
 def _num(node: Any, label: str | None = None) -> tuple[str, str] | None:
@@ -176,7 +182,8 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
             picks.append(_num(view.get("tx_count")))
             picks += [_num(g.get("amount"), g.get("label")) for g in view.get("groups") or []]
     elif tool == "get_basket_breakdown":
-        picks.append(_num(view.get("total")))
+        if not re.search(SAVE_MORE, q):  # "save more": the three shares, the rest stays in the card
+            picks.append(_num(view.get("total")))
         picks += [_num(b.get("share"), b.get("label")) for b in view.get("baskets") or []]
     elif tool == "get_safe_to_spend":
         picks += [_num(view.get(k)) for k in ("safe_to_spend", "balance_limit", "budget_limit")]
@@ -184,7 +191,9 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         # The cut is the user's own number and stays out of the text.
         picks += [_num(view.get(k)) for k in ("saving_per_month", "baseline_per_month", "saving_per_year")]
     elif tool == "get_recurring_bills":
-        if re.search(BILL_PAYDAY, q):
+        if re.search(SAVE_MORE, q):  # "save more": the bills due before payday, one number
+            picks.append(_num(view.get("upcoming_total")))
+        elif re.search(BILL_PAYDAY, q) and not re.search(BILL_WORDS, q):
             picks += [_num(i.get("typical_month"), i.get("label")) for i in view.get("income") or []]
             if isinstance(view.get("next_payday"), str):
                 extra.append(f"{pick(NEXT_PAYDAY, language)}: {_date(view['next_payday'], language)}.")
@@ -197,6 +206,29 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         picks = list(_numbers_in(view))
     out = [p for p in picks if p is not None][:TAKEAWAY_SIZE]
     return out, extra
+
+
+def save_more_plan(views: list[dict[str, Any]], question: str) -> bool:
+    """The save-more plan ran: the baskets answered "How could I save more?", and no what-if did."""
+    tools = {v.get("tool") for v in views}
+    return bool(re.search(SAVE_MORE, question.lower())) and "get_basket_breakdown" in tools and "run_what_if" not in tools
+
+
+def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
+    """The offered next question: a cut of the largest everyday category, with no amount (R1)."""
+    largest = None
+    for view in views:
+        for basket in view.get("baskets") or [] if view.get("tool") == "get_basket_breakdown" else []:
+            if basket.get("key") != "everyday_spending":
+                continue
+            for c in basket.get("categories") or []:
+                amount = (c.get("amount") or {}).get("value")
+                if isinstance(amount, (int, float)) and c.get("label") and (largest is None or amount > largest[0]):
+                    largest = (amount, c["label"])
+    if largest is None or re.search(r"\d", largest[1]):
+        return pick(WHAT_IF_OFFER_ANY, language)
+    category = largest[1].lower() if language == "en" else largest[1]
+    return pick(WHAT_IF_OFFER, language).format(category=category)
 
 
 def _date(iso: str, language: str) -> str:
@@ -252,8 +284,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)
-    if sentences and re.search(SAVE_MORE, question.lower()):
-        sentences.append(pick(WHAT_IF_OFFER, language))
+    if sentences and save_more_plan(views, question):
+        sentences.append(what_if_offer(views, language))
     if errors:
         if not views and all(e.get("error") == "period_out_of_range" for e in errors):
             sentences.append(pick(NO_DATA, language))

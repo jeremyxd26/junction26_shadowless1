@@ -346,7 +346,7 @@ cases:
 
 - id: marja-upcoming-bills
   persona: CUST00493
-  question: {en: 'Which bills are coming up next?'}
+  question: {en: 'Which bills are coming up next?', fi: 'Mitkä laskut ovat tulossa seuraavaksi?'}
   intent: recurring_bills
   expect: answered
   expected_tools: [get_recurring_bills]

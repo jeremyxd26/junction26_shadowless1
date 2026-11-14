@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent.template import TAKEAWAY_SIZE, takeaway, template_draft
 
 
@@ -74,13 +76,47 @@ def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
     assert kept["text"].startswith("August 2026: ")
 
 
-def test_save_more_ends_with_a_what_if_offer_and_no_cut_of_its_own():
-    # Issue #142: "How could I save more?" shows the baskets and the bills, then offers a what-if.
-    baskets = {**BASKETS, "total": n(40, 3010.59, "eur_per_month", "Total spending")}
-    for question, lang, offer in [("How could I save more?", "en", "what if I cut restaurants by half?"),
-                                  ("Miten voisin säästää enemmän?", "fi", "entä jos vähentäisin ravintoloita puoleen?")]:
-        draft = template_draft([baskets, BILLS], [], lang, None, question)
+EVERYDAY = {"tool": "get_basket_breakdown", "period": "1 Apr – 30 Sep 2026", "monthly_average": True,
+            "total": n(40, 3010.59, "eur_per_month", "Total spending"),
+            "baskets": [{"key": "regular_essentials", "label": "Regular essentials", "share": n(41, 62.7, "percent", "Share"),
+                         "categories": [{"key": "Housing", "label": "Housing", "amount": n(46, 1209.05, "eur_per_month")}]},
+                        {"key": "unexpected_necessities", "label": "Unexpected necessities",
+                         "share": n(42, 17.3, "percent", "Share"), "categories": []},
+                        {"key": "everyday_spending", "label": "Everyday spending", "share": n(43, 19.9, "percent", "Share"),
+                         "categories": [{"key": "Groceries", "label": "Groceries", "amount": n(44, 150.0, "eur_per_month")},
+                                        {"key": "Restaurants", "label": "Restaurants",
+                                         "amount": n(45, 229.56, "eur_per_month")}]}]}
+
+
+def test_save_more_cites_four_numbers_and_offers_a_cut_without_an_amount():
+    # Review of PR #126: the three basket shares and the bills due; the offer names the largest everyday
+    # category and asks by how much, never suggesting an amount.
+    for question, lang, offer in [
+            ("How could I save more?", "en", "Want to see what cutting restaurants would do? Tell me by how much."),
+            ("Miten voisin säästää enemmän?", "fi",
+             "Haluatko nähdä, mitä vähentäminen luokassa Restaurants tekisi? Kerro, kuinka paljon.")]:
+        draft = template_draft([EVERYDAY, BILLS], [], lang, None, question)
+        assert draft["cited"] == ["n41", "n42", "n43", "n5"]
         assert draft["text"].endswith(offer)
-        offer_sentence = draft["text"].rsplit(". ", 1)[-1]
-        assert not any(c in offer_sentence for c in "0123456789%")  # no cut the user did not give
-    assert not template_draft([BILLS], [], "en", None, "Which bills are coming up next?")["text"].endswith("half?")
+        assert not any(w in draft["text"] for w in ("half", "puoleen", "%"))
+
+
+def test_the_offer_only_follows_the_save_more_plan():
+    after_what_if = template_draft([WHAT_IF], [], "en", None, "How could I save more by cutting restaurants 20%?")
+    assert "Want to see" not in after_what_if["text"]
+    assert "Want to see" not in template_draft([BILLS], [], "en", None, "Which bills are coming up next?")["text"]
+    no_categories = template_draft([BASKETS, BILLS], [], "en", None, "How could I save more?")["text"]
+    assert no_categories.endswith("Name a category and tell me by how much.")
+
+
+@pytest.mark.parametrize("question", ["Which bills are due before payday?", "Which bills are coming up next?",
+                                      "Mitkä laskut ovat tulossa seuraavaksi?",
+                                      "Mitä laskuja on tulossa ennen palkkapäivää?"])
+def test_a_bills_question_gets_the_bills_due_even_when_it_names_payday(question):
+    assert ids(BILLS, question) == ["n5", "n2", "n4"]
+
+
+@pytest.mark.parametrize("question", ["When is my next payday?", "Milloin on seuraava palkkapäivä?",
+                                      "Paljonko tuloni ovat kuukaudessa?"])
+def test_a_payday_question_without_bills_gets_the_income(question):
+    assert ids(BILLS, question) == ["n6"]

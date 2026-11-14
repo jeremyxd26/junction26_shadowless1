@@ -206,7 +206,10 @@ class ApiSource:
         tool_calls = tool_numbers = None
         if record is not None:
             tool_calls = [c.get("name") for turn in record.get("planner_turns") or [] for c in turn.get("calls") or []]
-            tool_numbers = [v for _, v in _walk(record.get("tool_outputs") or {})
+            # Model views carry no method; the record's cited numbers do, so a cited tool number gets its
+            # method from there (an uncited one keeps none and can match no declared number).
+            methods = {k: (v or {}).get("method") for k, v in (record.get("numbers") or {}).items()}
+            tool_numbers = [{**v, "method": methods.get(v["id"])} for _, v in _walk(record.get("tool_outputs") or {})
                             if isinstance(v, dict) and {"id", "value", "unit"} <= v.keys()]
         return Answer(text=resp.get("text_rendered") or resp.get("text") or "", outcome=resp.get("outcome"),
                       refusal_kind=(resp.get("refusal") or {}).get("kind"), numbers=numbers, dates=sorted(dates),

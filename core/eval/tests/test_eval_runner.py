@@ -468,7 +468,8 @@ class FakeDeriver:
 def cut_answer(text, extra):
     numbers = [dict(num(45.91, "eur_per_month", "€45.91 a month", method="what_if.saving_month_eur@1"), id="n2"), extra]
     return Answer(text=text, outcome="answered", labels=[], tool_calls=[], numbers=numbers,
-                  tool_numbers=[{"id": n["id"], "value": n["value"], "unit": n["unit"]} for n in numbers])
+                  tool_numbers=[{"id": n["id"], "value": n["value"], "unit": n["unit"], "method": n.get("method")}
+                                for n in numbers])
 
 
 def test_a_verified_tool_number_beyond_the_case_passes():
@@ -489,5 +490,23 @@ def test_the_yearly_figure_where_the_monthly_one_is_asked_fails():
     requires the monthly saving, so an answer that gives only the yearly one fails as "missing"."""
     year = dict(num(550.95, "eur_per_year", "€550.95 a year", method="what_if.saving_year_eur@1"), id="n4")
     ans = Answer(text="Cutting dining out saves €550.95 a year.", outcome="answered", labels=[], tool_calls=[],
-                 numbers=[year], tool_numbers=[{"id": "n4", "value": 550.95, "unit": "eur_per_year"}])
+                 numbers=[year], tool_numbers=[{"id": "n4", "value": 550.95, "unit": "eur_per_year",
+                                                "method": "what_if.saving_year_eur@1"}])
     fails_with(CUT, ans, "en", "missing saving", CUT["question"]["en"])
+
+
+def test_a_tool_number_matches_only_by_a_non_empty_id_and_the_same_method():
+    """Review of PR #126: the same value under another method, or a declared number without an id,
+    was not returned by a tool of this answer."""
+    year = dict(num(550.95, "eur_per_year", "€550.95 a year", method="what_if.saving_year_eur@1"), id="n4")
+    other = {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "spending.total@1"}
+    ans = cut_answer("Cutting dining out saves €45.91 a month, €550.95 a year.", year)
+    ans.tool_numbers = [t for t in ans.tool_numbers if t["id"] != "n4"] + [other]
+    fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])
+    no_id = {k: v for k, v in year.items() if k != "id"}
+    month = dict(num(45.91, "eur_per_month", "€45.91 a month", method="what_if.saving_month_eur@1"), id="n2")
+    ans = Answer(text="Cutting dining out saves €45.91 a month, €550.95 a year.", outcome="answered", labels=[],
+                 tool_calls=[], numbers=[month, no_id],
+                 tool_numbers=[{"id": "n2", "value": 45.91, "unit": "eur_per_month", "method": "what_if.saving_month_eur@1"},
+                               {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "what_if.saving_year_eur@1"}])
+    fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])
