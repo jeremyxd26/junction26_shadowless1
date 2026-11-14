@@ -3,6 +3,7 @@ request; a question with another amount, or a what-if, takes the normal path. No
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from datetime import date
 from types import SimpleNamespace
@@ -79,7 +80,7 @@ def test_the_pending_reviews_amount_is_answered_from_its_card_without_the_model(
     assert len(done["cited"]) == 1 and "{{" + done["cited"][0] + "}}" in done["text"]
     assert ("€1,080.42" if language == "en" else "1 080,42 €") in done["text_rendered"]
     assert day in done["text_rendered"]
-    assert config.label(config.REVIEW_TEXT["why"], language) in done["text_rendered"]
+    assert "was it needed, or your choice?" in done["text_rendered"] or "oma valinta?" in done["text_rendered"]
     assert audit.records[-1]["planner_turns"] == [{"round": 1, "source": "rules", "review_amount": True}]
 
 
@@ -145,3 +146,50 @@ def test_a_question_about_senttis_question_with_another_amount_takes_the_normal_
 
     done, events, _ = ask(question, "en" if question.startswith("why") else "fi", model=RuleModel())
     assert not [e for e, _ in events if e == "card"] and "1,080.42" not in done.get("text_rendered", "")
+
+
+# ---- review of #402: only a message that asks about Sentti's question, nothing else ------------------------
+
+@pytest.mark.parametrize("question", [
+    "why do you ask, will the bank give me a 1080 euro loan?",
+    "why do you ask, can I get a loan?",
+    "miksi kysyt, saanko lainaa?",
+    "why are you asking, show me all my transactions",
+    "why are you asking? what is my balance",
+    "why do you ask? what is my salary this month",
+    "miksi kysyt kuinka paljon palkkani on",
+    "why are you asking about my salary",
+    "why are you asking about 1080 euros in cash",
+    "why are you asking for my password",
+    "why are you asking about my bank account number",
+    "why did you ask me to log in",
+    "why do you ask so many questions",      # decided: the normal path ("so many questions" is not filler)
+    "why do you ask about it?",               # no amount and no anchor: the normal path
+])
+def test_a_message_asking_something_else_takes_the_normal_path(question):
+    from core.agent.rules import RuleModel
+
+    done, events, _ = ask(question, "fi" if question.startswith("miksi") else "en", model=RuleModel())
+    assert not [e for e, _ in events if e == "card"] and "1,080.42" not in done.get("text_rendered", "")
+    assert "1 080,42" not in done.get("text_rendered", "")
+
+
+@pytest.mark.parametrize("question, language", [
+    ("why are you asking me about 1080 euros?", "en"), ("why do you ask?", "en"), ("miksi kysyt?", "fi"),
+    ("miksi kysyt tätä?", "fi"), ("why are you asking me this?", "en"),
+])
+def test_the_why_answer_opens_with_the_why_in_two_sentences(question, language):
+    done, events, _ = ask(question, language)
+    assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"]
+    assert done["text_rendered"].startswith("I asked because" if language == "en" else "Kysyin, koska")
+    assert sentences(done["text"]) == 2 and len(done["cited"]) == 1
+
+
+def sentences(text: str) -> int:
+    """Sentences as the answer-length rule counts them (core/answer_text.length_problems, #288), dates aside."""
+    return len([s for s in re.split(r"[.!?](?=\s|$)", re.sub(r"\d+\.\d+\.\d{4}", "D", text)) if s.strip()])
+
+
+def test_the_what_was_answer_is_two_sentences():
+    done, _, _ = ask("what was that €1,080?", "en")
+    assert done["text_rendered"].startswith("That was your") and sentences(done["text"]) == 2

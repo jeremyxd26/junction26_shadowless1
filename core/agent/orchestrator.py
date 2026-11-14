@@ -92,6 +92,15 @@ SENTTI_QUESTION = re.compile(
     r"|\bwhat\s+is\s+(?:this|that|the|your)\s+question\b|\bwhat\s+are\s+you\s+asking\b"
     r"|\bmiksi\s+kysy(?:t|tte|it|tit)\b|\bmiksi\s+(?:tämä|tuo|se)\s+kysymys\b"
     r"|\b(?:mitä|mistä)\s+(?:tämä|tuo|se)\s+kysymys\b|\bmitä\s+kysyt\b", re.I)
+# After the question phrase and the amount, only these may be left, or the message asks something else
+# ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
+REVIEW_FILLER = re.compile(
+    r"(?:about|me|this|that|the|it|purchase|question|euros?|eur|siitä|tästä|tuosta|sitä|tätä|minulta"
+    r"|osto\w*|kysym\w*|euro\w*)", re.I)
+# A question about Sentti's question without an amount needs one of these, or nothing left at all.
+REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
+REVIEW_BARE = re.compile(r"(?:me|this|that|sitä|tätä|minulta)", re.I)
+_AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
 
@@ -731,6 +740,19 @@ class Pipeline:
         except (DataUnavailable, psycopg.OperationalError, PoolTimeout):
             return None
 
+    @staticmethod
+    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> bool:
+        """The message asks only about Sentti's question: after the question phrase and the amount, nothing is
+        left but filler words and punctuation (a confident full match, as the other rules). Without an amount
+        it also needs an anchor (a purchase word, "this question") or nothing left ("why do you ask?")."""
+        rest = _AMOUNT_TEXT.sub(" ", message[:phrase.start()] + " " + message[phrase.end():])
+        words = re.findall(r"[\w']+", rest)
+        if any(not REVIEW_FILLER.fullmatch(w) for w in words):
+            return False
+        if has_amount:
+            return True
+        return any(REVIEW_ANCHOR.fullmatch(w) for w in words) or all(REVIEW_BARE.fullmatch(w) for w in words)
+
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
         """Answer "what was that €1,080?" (#341) when an amount in the question is within a euro of the
@@ -739,7 +761,8 @@ class Pipeline:
         with none: the purchase's category, date and amount, why Sentti asks, and the review card. False
         (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
-        about_question = bool(SENTTI_QUESTION.search(message))
+        phrase = SENTTI_QUESTION.search(message)
+        about_question = phrase is not None and self._only_about_the_review(message, phrase, bool(asked))
         if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
@@ -768,8 +791,8 @@ class Pipeline:
         when = (f"{purchase_day.day}.{purchase_day.month}.{purchase_day.year}" if lang == "fi"
                 else f"{purchase_day.day} {MONTHS_EN[purchase_day.month - 1]} {purchase_day.year}")
         category = tool_config.label(tool_config.CATEGORY_LABELS.get(card["category"], (card["category"],) * 2), lang)
-        text = template.pick(template.REVIEW_PURCHASE, lang).format(
-            category=category, date=when, amount="{{" + number_id + "}}", why=card["why"])
+        text = template.pick(template.REVIEW_WHY if about_question else template.REVIEW_PURCHASE, lang).format(
+            category=category, date=when, amount="{{" + number_id + "}}")
         draft, errors = validate({"language": lang, "text": text, "cited": [number_id], "lesson_key": None},
                                  language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
         if errors or draft is None:
