@@ -5,7 +5,9 @@ The rules never pass it either. No database."""
 
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 
 import pytest
 from agent_fakes import FakeData, audit_records, fake_spending, run
@@ -16,7 +18,7 @@ from core.agent.rules import RuleModel
 from core.agent.toolset import default_registry
 from core.tools.safe_to_spend import GetSafeToSpendArgs
 
-GOAL_TOOLS = ("get_safe_to_spend", "get_safe_to_save", "get_balance_forecast", "explain_bill")
+GOAL_TOOLS = ("get_safe_to_spend", "get_safe_to_save", "get_balance_forecast")   # the bill explanation is no planner tool
 
 
 def test_no_tool_declaration_offers_a_savings_goal():
@@ -66,3 +68,25 @@ def test_the_rules_never_pass_a_goal(question):
     plan = RuleModel().plan(PlanInput(question=question, language="auto", as_of="2026-09-30",
                                       tools=default_registry().schemas(), history=[]))
     assert all("savings_goal" not in (c.args or {}) for c in plan.calls)
+
+
+def test_one_goal_everywhere_no_production_path_passes_a_custom_goal():
+    """The hero, safe to save, the overview, the forecast and the bill explanation's "after" all read 03 with
+    the default goal: outside get_safe_to_spend's own parameter, no production call passes a goal, so one
+    answer can never mix a custom goal with the default (#447)."""
+    core = Path(__file__).resolve().parents[2]
+    found = []
+    for path in core.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+            if name not in ("get_safe_to_spend", "metric_row", "settings_for"):
+                continue
+            if any(k.arg == "savings_goal" for k in node.keywords) or len(node.args) > {"get_safe_to_spend": 2}.get(name, 1):
+                found.append((path.relative_to(core).as_posix(), name))
+    # the only ones: get_safe_to_spend hands its own Python-level parameter to metric_row, and metric_row to
+    # settings_for
+    assert sorted(found) == [("tools/safe_to_spend.py", "metric_row"), ("tools/safe_to_spend.py", "settings_for")]
