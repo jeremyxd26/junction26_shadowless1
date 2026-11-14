@@ -297,6 +297,9 @@ export interface AskStatus {
 
 export type AskOutcome = 'answered' | 'clarify' | 'refused' | 'fallback'
 
+/** The `done.warnings` codes of contract section 7.2; the app ignores any other code. */
+export type AskWarning = 'llm_unavailable' | 'tool_failed' | 'period_clamped' | 'conversation_reset'
+
 export interface AskDone {
   answer_id: string
   outcome: AskOutcome | string
@@ -309,7 +312,8 @@ export interface AskDone {
   lesson: { key: string; title: string; text: string } | null
   refusal: { kind: string; label: string } | null
   clarify: { question: string; options: string[] } | null
-  warnings: string[]
+  /** Known codes are `AskWarning`; unknown codes may arrive and are ignored. */
+  warnings: (AskWarning | (string & {}))[]
 }
 
 /** One validated event of the /api/ask stream (contract section 7.2). */

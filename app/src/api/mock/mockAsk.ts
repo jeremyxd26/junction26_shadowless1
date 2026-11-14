@@ -7,10 +7,14 @@
 // - the contract's clarify question ("How much did I spend?"): `ask.json.response_clarify`;
 // - the contract's Finnish question: `ask.json.response_fi`;
 // - anything else: the full stream `ask.sse.stream`, unchanged.
-// `?mock=error` in the page URL plays `ask.sse.stream_error`, and `?mock=fallback` plays a
-// fallback answer. The contract has no fallback example, so that one is built from the full
-// stream: the same meta, status and card, the contract's template line "Here is what I found
-// for September." (section 7.5), `outcome: "fallback"` and the `llm_unavailable` warning.
+// `?mock=error` in the page URL plays `ask.sse.stream_error`. The contract has no examples for
+// the two model-off cases (section 7.2, PR #261), so they are built from the full stream's meta,
+// status and card:
+// - `?mock=template`: the AI model was not used, so the template answered: the template line
+//   "Here is what I found for September." (section 7.5), `outcome: "answered"` and the
+//   `llm_unavailable` warning;
+// - `?mock=fallback`: even the template failed the answer check: the fixed short text
+//   "I could not find data for that question.", `outcome: "fallback"`, no warning.
 // `?mock=slow` makes every delay four times longer, to watch the waiting stages.
 import { ApiError } from '../errors.ts'
 import type { AskDone, AskRequest, Card, ErrorEnvelope, Num } from '../types.ts'
@@ -106,22 +110,31 @@ function streamOfJson(response: AskJsonResponse): string[] {
   return blocks
 }
 
-const FALLBACK_TEXT = 'Here is what I found for September.'
+/** The question's template line when the AI model is not used (contract section 7.5). */
+const TEMPLATE_TEXT = 'Here is what I found for September.'
+/** The core's fixed short text when even the template failed the answer check (section 7.2). */
+const FALLBACK_TEXT = 'I could not find data for that question.'
 
-function fallbackStream(): string[] {
+/** The full stream's cards, then `text` as the only delta and a `done` with `outcome` and `warnings`. */
+function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskDone['warnings']): string[] {
   const full = blocksOf(examples['ask.sse.stream'])
   const upToCards = full.filter((part) => /^event: (meta|status|card)$/m.test(part))
   const done: AskDone = {
     ...examples['ask.sse.done'],
-    outcome: 'fallback',
-    text: FALLBACK_TEXT,
-    text_rendered: FALLBACK_TEXT,
+    outcome,
+    text,
+    text_rendered: text,
     cited: [],
     lesson: null,
-    warnings: ['llm_unavailable'],
+    warnings,
   }
-  return [...upToCards, block('delta', { text: FALLBACK_TEXT }), block('done', done)]
+  return [...upToCards, block('delta', { text }), block('done', done)]
 }
+
+/** The AI model was not used: the template answered (`answered` with `llm_unavailable`). */
+const templateStream = () => cardsWithText(TEMPLATE_TEXT, 'answered', ['llm_unavailable'])
+/** Even the template failed the answer check: the fixed short text (`fallback`). */
+const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [])
 
 function normalise(message: string): string {
   return message.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
@@ -131,6 +144,7 @@ const sameQuestion = (message: string, request: AskRequest) => normalise(message
 
 function pickStream(message: string, scenario: string | null): string[] {
   if (scenario === 'error') return blocksOf(examples['ask.sse.stream_error'])
+  if (scenario === 'template') return templateStream()
   if (scenario === 'fallback') return fallbackStream()
   if (sameQuestion(message, examples['ask.json.request_refusal']) || /\b(stock|stocks|shares|invest\w*|osak\w*|sijoit\w*)\b/.test(normalise(message))) {
     return streamOfJson(examples['ask.json.response_refusal'])

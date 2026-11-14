@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readAskStream } from '../api/askStream.ts'
 import contract from '../api/mock/contract-examples.json'
 import { mockAsk } from '../api/mock/mockAsk.ts'
 import type { AskEvent } from '../api/types.ts'
-import { EMPTY_ANSWER, actionsOf, applyAskEvent, splitTakeaway, withoutPartialToken, type Answer } from './answer.ts'
+import {
+  EMPTY_ANSWER,
+  actionsOf,
+  applyAskEvent,
+  splitTakeaway,
+  withoutPartialToken,
+  writtenByTemplate,
+  type Answer,
+} from './answer.ts'
 
 const examples = contract.examples as unknown as Record<string, unknown>
 
@@ -129,4 +137,41 @@ describe('mock /api/ask', () => {
       code: 'customer_not_found',
     })
   })
+})
+
+describe('the template note (#282): warning llm_unavailable, whatever the outcome', () => {
+  const request = { customer_id: 'CUST00042', conversation_id: null, language: 'en' as const, message: 'Where did my money go?' }
+  const withMock = (mock: string) => vi.stubGlobal('window', { location: { search: `?mock=${mock}` } })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const done = (outcome: string, warnings: string[]) =>
+    ({ ...(examples['ask.sse.done'] as object), outcome, warnings }) as Answer['done']
+
+  it('shows for llm_unavailable on any outcome, and never for fallback alone', () => {
+    expect(writtenByTemplate(done('answered', ['llm_unavailable']))).toBe(true)
+    expect(writtenByTemplate(done('clarify', ['llm_unavailable']))).toBe(true)
+    expect(writtenByTemplate(done('fallback', ['llm_unavailable']))).toBe(true)
+    expect(writtenByTemplate(done('fallback', []))).toBe(false)
+    expect(writtenByTemplate(done('answered', ['period_clamped', 'something_new']))).toBe(false)
+    expect(writtenByTemplate(null)).toBe(false)
+  })
+
+  it('mock ?mock=template: answered by the template, with the warning and the card', async () => {
+    withMock('template')
+    const answer = (await events(await mockAsk(request))).reduce(applyAskEvent, EMPTY_ANSWER)
+    expect(answer.done?.outcome).toBe('answered')
+    expect(answer.done?.warnings).toEqual(['llm_unavailable'])
+    expect(answer.text).toBe('Here is what I found for September.')
+    expect(answer.cards.length).toBeGreaterThan(0)
+    expect(writtenByTemplate(answer.done)).toBe(true)
+  }, 15000)
+
+  it("mock ?mock=fallback: the core's fixed short text with the card, and no template note", async () => {
+    withMock('fallback')
+    const answer = (await events(await mockAsk(request))).reduce(applyAskEvent, EMPTY_ANSWER)
+    expect(answer.done?.outcome).toBe('fallback')
+    expect(answer.text).toBe('I could not find data for that question.')
+    expect(answer.cards.length).toBeGreaterThan(0)
+    expect(writtenByTemplate(answer.done)).toBe(false)
+  }, 15000)
 })
