@@ -165,8 +165,9 @@ def test_what_if_cut_without_a_percentage_asks_how_much():
 def test_what_if_mcc_is_not_replaced_by_a_category():
     result = plan("What if I cut MCC 5411 by 30%?")
     assert not result.recognised and "run_what_if" not in names(result)
+    # #346: taxis are the taxi MCC group now, never a category of the rules' own
     result = plan("What if I cut taxis by 30%?")
-    assert not result.recognised and "run_what_if" not in names(result)
+    assert result.recognised and result.calls[0].args == {"selection": {"kind": "mcc", "value": "4121"}, "cut_pct": 30}
     result = plan("What if I cut my investments by 20%?")
     assert not result.recognised and "run_what_if" not in names(result)
 
@@ -404,3 +405,91 @@ def test_more_bonus_spellings(question, lang):
                                            ("Paljonko bonusta saan työpaikalta?", "fi")])
 def test_another_bonus_with_these_spellings_is_still_not_the_s_bonus(question, lang):
     assert "get_bonus_estimate" not in names(plan(question, language=lang))
+
+
+# ---- #346: everyday words for a what-if selection, without the model ---------------------------------
+
+TAXI_10 = {"selection": {"kind": "mcc", "value": "4121"}, "cut_pct": 10}
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("what if I took 10% fewer taxis?", "en"),          # the QA finding (#346)
+    ("what if I cut taxis by 10%?", "en"),
+    ("what if I spent 10% less on taxis?", "en"),
+    ("what if I used taxis 10% less?", "en"),
+    ("What if I took 10 percent fewer taxi rides?", "en"),
+    ("Entä jos vähentäisin taksimatkoja 10 %?", "fi"),
+    ("jos vähentäisin taksia 10 %", "fi"),
+    ("Entä jos käyttäisin takseja 10 % vähemmän?", "fi"),
+])
+def test_a_taxi_what_if_plans_the_taxi_mcc_group(question, lang):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["run_what_if", "finish"], names(result)
+    assert result.calls[0].args == TAXI_10
+
+
+@pytest.mark.parametrize("question,lang,codes,cut", [
+    ("What if I spent 20% less on public transport?", "en", "4111", 20),
+    ("Entä jos vähentäisin bussimatkoja 20 %?", "fi", "4111", 20),
+    ("What if I cut fuel by 15%?", "en", "5541,5542", 15),
+    ("Entä jos vähentäisin polttoainetta 15 %?", "fi", "5541,5542", 15),
+    ("Entä jos vähentäisin bensiiniä 15 %?", "fi", "5541,5542", 15),
+    ("What if I spent half as much on parking?", "en", "7523", 50),
+    ("Entä jos vähentäisin pysäköintiä puoleen?", "fi", "7523", 50),
+    ("What if I cut takeaway by 25%?", "en", "5814", 25),
+    ("What if I ate 25% less fast food?", "en", "5814", 25),
+    ("Entä jos vähentäisin noutoruokaa 25 %?", "fi", "5814", 25),
+    ("What if I cut bars by 30%?", "en", "5813", 30),
+    ("What if I went to the cinema 50% less?", "en", "7832", 50),
+    ("Entä jos vähentäisin elokuvia 50 %?", "fi", "7832", 50),
+])
+def test_everyday_words_plan_their_mcc_codes(question, lang, codes, cut):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["run_what_if", "finish"], names(result)
+    assert result.calls[0].args == {"selection": {"kind": "mcc", "value": codes}, "cut_pct": cut}
+
+
+@pytest.mark.parametrize("question,lang", [("What if I took fewer taxis?", "en"),
+                                           ("Entä jos käyttäisin taksia vähemmän?", "fi")])
+def test_a_taxi_what_if_without_a_cut_asks_how_much(question, lang):
+    result = plan(question, language=lang)
+    assert result.recognised and "run_what_if" not in names(result)
+    assert clarify_text(result)["question"].startswith(("By how much", "Kuinka paljon"))
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("What if I cut coffee by 10%?", "en"),              # cafés have no code of their own in the data
+    ("What if I spent 10% less on streaming?", "en"),
+    ("What if I cut the gym by 20%?", "en"),
+    ("Entä jos vähentäisin kahvia 10 %?", "fi"),
+    ("What if I cut taxis and restaurants by 10%?", "en"),  # two selections: not one scenario
+    ("What if I cut MCC 4121 by 10%?", "en"),            # a code the user typed stays the model's
+])
+def test_an_unknown_or_double_selection_asks_back_with_spending_every_persona_has(question, lang):
+    result = plan(question, language=lang)
+    assert not result.recognised and "run_what_if" not in names(result)
+    args = clarify_text(result)
+    assert any(w in args["question"] for w in ("taxis", "taksit"))
+    assert len(args["options"]) == 3
+
+
+def test_the_selection_question_back_fits_the_clarify_limits():
+    from core.agent.registry import ClarifyArgs
+    from core.agent.rules import WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS
+
+    for i in (0, 1):
+        ClarifyArgs(question=WHAT_IF_WHICH[i], options=list(WHAT_IF_WHICH_OPTIONS[i]))
+    # every option is itself a what-if the rules recognise (it asks how much: no amount is suggested)
+    for i, lang in ((0, "en"), (1, "fi")):
+        for option in WHAT_IF_WHICH_OPTIONS[i]:
+            result = plan(option, language=lang)
+            assert result.recognised and clarify_text(result)["question"].startswith(("By how much", "Kuinka paljon"))
+
+
+def test_every_everyday_word_maps_to_codes_the_what_if_tool_accepts():
+    from core.agent.rules import WHAT_IF_MCC_WORDS
+    from core.tools.what_if import WhatIfSelection
+
+    for _, codes in WHAT_IF_MCC_WORDS:
+        sel = WhatIfSelection(kind="mcc", value=",".join(codes))   # no health code, 4 digits each
+        assert sel.value == ",".join(sorted(codes))

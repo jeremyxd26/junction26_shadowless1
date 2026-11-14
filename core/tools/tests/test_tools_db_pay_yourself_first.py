@@ -88,3 +88,37 @@ def test_the_lead_personas_safe_to_save_subtitle(conn, basket, subtitle):
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=conn)
     ctx._labels = {606016: basket}
     assert get_safe_to_save(ctx, {}).card.subtitle == subtitle
+
+
+# ---- #459: the goal is the same in every label state, also with a second review -----------------------------
+U, N, M = "unclassified", "unexpected_necessities", "everyday_spending"
+
+
+def multi_label_states(c1: int, c2: int) -> dict[str, dict[int, str]]:
+    """The states a customer with two spike candidates can reach over the weeks: the first review expired
+    unanswered (no label) or answered, and a later review about the second purchase pending or answered."""
+    return {"c1 closed, c2 pending": {c2: U}, "c1 closed, c2 Needed": {c2: N}, "c1 closed, c2 My choice": {c2: M},
+            "c1 Needed, c2 pending": {c1: N, c2: U}, "c1 My choice, c2 Needed": {c1: M, c2: N},
+            "c1 Needed, c2 My choice": {c1: N, c2: M}}
+
+
+@pytest.mark.parametrize("customer_id", sorted(GOALS))
+def test_the_goal_with_any_labels_equals_the_goal_without_labels(conn, customer_id):
+    """#459: 03 computes the goal as with no labels (every row in its rules' basket, only the first review's
+    purchase left out), so the first review expiring, or a second review a week later, does not move it.
+    CUST00349 has two candidates; for a persona with fewer, the state list is shorter."""
+    probe = ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn)
+    found = [f.tx.id for f in reviews.candidates(classify(probe.history(), AS_OF), AS_OF, set())]
+    states = {"none": {}}
+    if found:
+        states |= {"c1 pending": {found[0]: U}, "c1 Needed": {found[0]: N}, "c1 My choice": {found[0]: M}}
+    if len(found) > 1:
+        states |= multi_label_states(found[0], found[1])
+    for state, labels in states.items():
+        ctx = ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn)
+        ctx._labels = dict(labels)
+        hero = get_safe_to_spend(ctx, {}).data
+        assert d(hero.savings_goal) == GOALS[customer_id], (customer_id, state)
+        assert evidence.resolve(conn, hero.savings_goal.evidence_ref, customer_id, limit=1).reconciles is True, state
+    if customer_id == "CUST00349":
+        assert len(states) == 10                                      # the case of the issue is exercised
