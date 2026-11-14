@@ -312,6 +312,75 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     ),
 }
 
+# ---- get_safe_to_save (#165, metrics.md section 3.1) ----------------------------------------------
+# Read from the same row of 03_safe_to_spend.sql as get_safe_to_spend (one run per request). Monthly
+# figures describe a typical month of the last 6 complete months; the stock describes today + 1 to payday.
+SAFE_TO_SAVE_NUMBERS = (  # (key, output column, unit value)
+    ("monthly", "safe_to_save_monthly_eur", "eur_per_month"),
+    ("free_month", "free_month_eur", "eur_per_month"),
+    ("everyday_month", "everyday_month_eur", "eur_per_month"),
+    ("essentials_shortfall", "essentials_shortfall_month_eur", "eur_per_month"),
+    ("stock", "safe_to_save_eur", "eur"),
+    ("free_until_payday", "free_until_payday_eur", "eur"),
+    ("everyday_until_payday", "everyday_until_payday_eur", "eur"),
+    ("reason", "save_reason_month_eur", "eur_per_month"),   # only when a typical month leaves nothing
+)
+SENSITIVE_CATEGORIES = frozenset({"Health"})   # never named by the safe-to-save reason (R9)
+
+SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Safe to save", "Turvallisesti säästettävissä"),
+    "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
+    "estimate_text": (
+        "A typical month of your last six: income minus bills, saving you set up, usual essentials, a "
+        "reserve for unexpected costs and your usual everyday spending.",
+        "Tavallinen kuukausi kuuden viimeisen joukosta: tulot miinus laskut, sopimasi säästöt, tavalliset "
+        "välttämättömät menot, varaus yllättäviin menoihin ja tavallinen arkikulutuksesi.",
+    ),
+    # Number labels
+    "monthly": ("Typically left each month", "Tavallisesti jää kuukaudessa"),
+    "free_month": ("Free in a typical month", "Vapaana tavallisessa kuukaudessa"),
+    "everyday_month": ("Everyday spending in a typical month", "Arkikulutus tavallisessa kuukaudessa"),
+    "essentials_shortfall": ("Bills, essentials and the reserve above income",
+                             "Laskut, välttämättömät menot ja varaus ylittävät tulot"),
+    "stock": ("In your account beyond what you need until payday",
+              "Tililläsi yli sen, mitä tarvitset palkkapäivään asti"),
+    "free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
+    "everyday_until_payday": ("Everyday spending until payday", "Arkikulutus palkkapäivään asti"),
+    # component labels
+    "c_free_month": ("Left after bills, essentials and the reserve",
+                     "Jää laskujen, välttämättömien menojen ja varauksen jälkeen"),
+    "c_everyday_month": ("Usual everyday spending", "Tavallinen arkikulutus"),
+    "c_essentials_shortfall": ("Short before any everyday spending", "Vajaa jo ennen arkikulutusta"),
+    "c_free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
+    "c_everyday_until_payday": ("Usual everyday spending until payday", "Tavallinen arkikulutus palkkapäivään asti"),
+    # one sentence, never a call to action, no digits (R7)
+    "stock_explanation": (
+        "Money in your account beyond what you need until payday, after bills, reserves, a small cushion "
+        "and your usual everyday spending.",
+        "Tililläsi oleva raha yli sen, mitä tarvitset palkkapäivään asti, kun laskut, varaukset, pieni "
+        "puskuri ja tavallinen arkikulutuksesi on otettu huomioon.",
+    ),
+    # the reason when a typical month leaves nothing; no digits (the app shows the amount next to it)
+    "reason_essentials_exceed_income": (
+        "Nothing is left in a typical month: your bills, the saving you set up, usual essentials and the "
+        "reserve for unexpected costs already come to more than your income.",
+        "Tavallisesta kuukaudesta ei jää mitään: laskusi, sopimasi säästöt, tavalliset välttämättömät menot "
+        "ja varaus yllättäviin menoihin ovat jo yhteensä enemmän kuin tulosi.",
+    ),
+    "reason_largest_everyday_category": (
+        "Nothing is left in a typical month. Your largest everyday spending category is {category}.",
+        "Tavallisesta kuukaudesta ei jää mitään. Suurin arkikulutuksesi luokka on {category}.",
+    ),
+    "reason_everyday_uses_it_up": (   # the category would be sensitive (R9): it is not named
+        "Nothing is left in a typical month after your usual everyday spending.",
+        "Tavallisesta kuukaudesta ei jää mitään tavallisen arkikulutuksesi jälkeen.",
+    ),
+    "reason_amount_shortfall": ("Short each month", "Vajaa kuukaudessa"),
+    "reason_amount_category": ("{category} in a typical month", "{category} tavallisessa kuukaudessa"),
+    "reason_amount_everyday": ("Largest everyday category in a typical month",
+                               "Suurin arkikulutuksen luokka tavallisessa kuukaudessa"),
+}
+
 WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
