@@ -1120,6 +1120,10 @@
   [
    "Does Zalando pay bonus?",
    "en"
+  ],
+  [
+   "Maksaako Ruohonjuuri S-Bonusta?",
+   "fi"
   ]
  ],
  "declined": [
@@ -1438,6 +1442,54 @@
   [
    "Haluan tietää paljonko mieheni käytti kesäkuussa",
    "fi"
+  ],
+  [
+   "How much bonus did Jane get in June?",
+   "en"
+  ],
+  [
+   "Did Marja get S-Bonus in June?",
+   "en"
+  ],
+  [
+   "How much S-Bonus did Marja earn?",
+   "en"
+  ],
+  [
+   "Paljonko Jani sai S-Bonusta?",
+   "fi"
+  ],
+  [
+   "How much interest did Jane earn in June?",
+   "en"
+  ],
+  [
+   "Paljonko bonusta Marja sai kesäkuussa?",
+   "fi"
+  ],
+  [
+   "I believe Marja spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I assume my wife spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I imagine my husband spent a lot in June, how much?",
+   "en"
+  ],
+  [
+   "I paid for what my wife spent in June, how much was it?",
+   "en"
+  ],
+  [
+   "Maksoin vaimoni ostokset kesäkuussa, paljonko käytin?",
+   "fi"
+  ],
+  [
+   "Do I spend more than other parents?",
+   "en"
   ]
  ],
  "not_user_data": [
@@ -2544,6 +2596,10 @@
   [
    "Paljonko miehet käyttävät ruokaan?",
    "fi"
+  ],
+  [
+   "What did the Virtanen family spend?",
+   "en"
   ]
  ],
  "claimed": [
@@ -3096,6 +3152,30 @@
   [
    "My friend paid me back, how much did I get in June?",
    "en"
+  ],
+  [
+   "How much did my wife give me in June?",
+   "en"
+  ],
+  [
+   "How much did my parents send me in June?",
+   "en"
+  ],
+  [
+   "How much did my dad lend me in June?",
+   "en"
+  ],
+  [
+   "How much did Jane send me last month?",
+   "en"
+  ],
+  [
+   "Paljonko vaimoni antoi minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko vanhempani lähettivät minulle kesäkuussa?",
+   "fi"
   ]
  ]
 }

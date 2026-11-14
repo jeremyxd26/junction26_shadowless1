@@ -114,17 +114,21 @@ MONEY_EN_WEAK = r"groceries|food|shopping|clothes|rent|card"
 COMPANY_CONTEXT = r"bills?|invoices?|payments?|fees?|prices?|subscriptions?|charges?|plan"
 VERB_PERSON = r"spend|spent|spends|earn|earned|earns|save|saved|saves|buy|bought|buys|shop|shops|shopped"
 VERB_ANY = (VERB_PERSON + r"|pay|paid|pays|make|made|makes|owe|owes|get|got|gets|cost|costs|cut|cuts|have|has|"
-            r"own|owns|compare|compares")
+            r"own|owns|compare|compares|give|gave|gives|send|sent|sends|lend|lent|lends|transfer|transferred|"
+            r"transfers|return|returned|returns|gift|gifted|gifts|receive|received|receives")
 VERB_PAST = r"spent|spends|earned|earns|paid|pays|bought|buys|saved|saves|owes|makes|made|cut|cuts"
 FI_VERB = (r"kaytti|kayttaa|kayttavat|kayttivat|kulutti|kuluttaa|kuluttavat|kuluttivat|maksoi|maksaa|maksavat|"
+           r"sai|saa|saavat|saivat|antoi|antaa|antoivat|lahetti|lahettivat|lainasi|lainasivat|siirsi|siirsivat|"
+           r"palautti|palauttivat|lahjoitti|lahjoittivat|"
            r"osti|ostaa|ostavat|tienaa|tienasi|tienaavat|ansaitsi|ansaitsee|saasti|saastaa|"
            r"on (?:tienannut|kayttanyt|kuluttanut|maksanut|saastanyt|ostanut|ansainnut)")
-FI_QUESTION_VERB = r"kuluttaako|kayttaako|maksaako|tienaako|ostaako|saastaako|ansaitseeko"
+FI_QUESTION_VERB = r"kuluttaako|kayttaako|maksaako|tienaako|ostaako|saastaako|ansaitseeko|antaako|tarjoaako|saako"
 FI_WHAT_IF_VERB = r"vahentaisi|leikkaisi|kayttaisi|kuluttaisi|saastaisi"
 FI_MONEY = r"kulutu\w*|palk(?!kapaiv)\w*|tulo\w*|tili\b|tilin\b|tilil\w*|saldo\w*|meno\w*|ostok\w*|tilitapahtum\w*|raho\w*"
 FI_COMPANY = r"\w*(?:lasku|maksu|hinta|hinna)\w*"
 
 FI_VERB_PERSON = re.compile(r"kaytti|kayttaa|kayttavat|kayttivat|kulutti|kuluttaa|kuluttavat|kuluttivat|osti|ostaa|"
+                            r"sai|saa|saavat|saivat|"
                             r"ostavat|tienaa|tienasi|tienaavat|ansaitsi|ansaitsee|saasti|saastaa|"
                             r"on (?:tienannut|kayttanyt|kuluttanut|saastanyt|ostanut|ansainnut)", re.I)
 _CALENDAR_RX = "|".join(sorted(CALENDAR_EN))
@@ -142,14 +146,12 @@ PATTERNS = {
     "aux_subject": re.compile(rf"\b(?:{_AUX}) {_NP2} (?P<verb>{VERB_ANY})\b", re.I),
     "subject": re.compile(rf"{_NP1} (?P<verb>{VERB_PAST})\b", re.I),
     "what_if": re.compile(rf"\bwhat if {_NP1} (?P<verb>{VERB_ANY}|reduced|reduces|stopped)\b", re.I),
-    "perceive": re.compile(rf"\b(?:see|saw|seen|watch|watched|know|knew|hear|heard|think|thought|guess|wonder|"
-                           rf"wondering|notice|noticed|curious|want to know|wanted to know|tell me)\b"
-                           rf"(?: (?:that|how much|what|if|whether))? {_NP1} (?P<verb>{VERB_ANY})\b", re.I),
+    "subject_base": re.compile(rf"{_NP1} (?P<verb>spend|spends|earn|earns|buy|buys|save|saves|shop|shops)\b", re.I),
     "group_of": re.compile(rf"\b(?:one|some|any|both|all|each|most|none|two|three|several) of "
                            rf"(?P<np>(?:my|our|the|his|her|their) {_TOKEN})(?: (?P<verb>{VERB_ANY}))?", re.I),
     "is_spending": re.compile(rf"\b(?:is|are|was|were) {_NP1} (?P<verb>spending|earning|saving)\b", re.I),
     "fi_subject": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}(?: (?:ja|tai) {_TOKEN})?) (?P<verb>{FI_VERB})\b", re.I),
-    "fi_question": re.compile(rf"\b(?:{FI_QUESTION_VERB}) (?P<np>{_TOKEN})\b", re.I),
+    "fi_question": re.compile(rf"\b(?P<verb>{FI_QUESTION_VERB}) (?P<np>{_TOKEN})\b", re.I),
     "fi_onko": re.compile(rf"\bonko (?P<np>{_TOKEN}) (?P<verb>kuluttanut|kayttanyt|tienannut|saastanyt|ostanut|"
                           rf"ansainnut)\b", re.I),
     "fi_lead": re.compile(rf"^(?P<np>{_TOKEN}) (?P<verb>{FI_VERB_PERSON.pattern})\b"),
@@ -179,8 +181,13 @@ PATTERNS = {
 STRONG_OWNER_NOUN = re.compile(rf"^(?:{MONEY_EN_STRONG}|{FI_MONEY})$", re.I)
 # A bonus, interest or points question is about a company, whatever its name ("Does Ruohonjuuri pay S-Bonus?").
 COMPANY_TALK = re.compile(r"\b(?:s-?bonus\w*|bonus\w*|interest|points?|cashback|rewards?|korko\w*|pistei\w*)\b", re.I)
-PAY_TO_ME = re.compile(r"pay|paid|pays|give|gave|gives|send|sent|transfer|transferred|lend|lent|refund|refunded|owe|"
-                       r"owes|maksoi|maksaa|antoi|lahetti|siirsi|lainasi", re.I)
+PAY_TO_ME = re.compile(r"pay|paid|pays|give|gave|gives|send|sent|sends|transfer|transferred|transfers|lend|lent|lends|"
+                       r"refund|refunded|owe|owes|return|returned|returns|gift|gifted|gifts|maksoi|maksaa|maksoivat|"
+                       r"antoi|antaa|antoivat|lahetti|lahettivat|siirsi|siirsivat|lainasi|lainasivat|palautti|"
+                       r"palauttivat|lahjoitti|lahjoittivat", re.I)
+# A: a bonus, interest or points question makes a name a company only when it pays, gives or offers
+PAYS_OUT = re.compile(r"pay|pays|paid|give|gives|gave|offer|offers|offered|maksaa|maksaako|maksoi|antaa|antaako|"
+                      r"tarjoaa|tarjoaako", re.I)
 COMPANY_NOUN = re.compile(rf"^(?:{COMPANY_CONTEXT}|{FI_COMPANY})$", re.I)
 NOT_FIRST = re.compile(r"\b(show|tell|give|let|help|send) me\b|\bnayta minulle\b|\bkerro minulle\b|"
                        r"\b(than|kuin) (me|i|us|we|mina|me)\b|\blike (me|us)\b|\bkaltaisi\w*", re.I)
@@ -201,7 +208,9 @@ _TO_ME_VERB = (r"cost|costs|pay|paid|pays|give|gave|gives|owe|owes|earn|earned|e
                r"charged|charges|send|sent|lend|lent|refund|refunded|transfer|transferred")
 # "did I spend", "I paid", "we bought"; "cost me", "pay me back", "from me". A perception or cognition verb in front
 # ("I know my wife spent", "I heard Jane spent") is no first person: the money clause is someone else's.
-FIRST_SUBJECT = re.compile(rf"\b(?:i|we)\b(?: \w+){{0,2}}? (?:{_MONEY_VERB})\b", re.I)
+_FILLER = (r"do|did|does|have|had|has|will|would|can|could|should|also|just|really|actually|usually|probably|"
+           r"always|never|still|ever|not|already|even|only|all|both|each|recently|mostly|often")
+FIRST_SUBJECT = re.compile(rf"\b(?:i|we)\b(?: (?:{_FILLER}))* (?:{_MONEY_VERB})\b", re.I)
 FIRST_OBJECT = re.compile(rf"\b(?:{_TO_ME_VERB})(?: \w+){{0,2}}? (?:me|us)\b|\bfrom (?:me|us)\b", re.I)
 FI_FIRST = re.compile(r"\b(?:minulle|minulta|meille|meilta|vahentaisin|kayttaisin|kuluttaisin|saastaisin|leikkaisin|"
                       r"ostaisin|maksaisin|lopettaisin|jattaisin|siirtaisin)\b|"
@@ -210,7 +219,12 @@ FI_FIRST = re.compile(r"\b(?:minulle|minulta|meille|meilta|vahentaisin|kayttaisi
                       re.I)
 
 
-def _first_person(plain: str) -> bool:
+APPOSITION = re.compile(rf"\b(?:I|[Ww]e), [A-Z]\w+, (?:\w+ )?(?:{_MONEY_VERB})\b")
+
+
+def _first_person(plain: str, question: str = "") -> bool:
+    if APPOSITION.search(question):
+        return True
     low = NOT_FIRST.sub(" ", plain.lower())
     return bool(FIRST_SUBJECT.search(low) or FIRST_OBJECT.search(low) or FIRST_MONEY.search(low)
                 or FI_FIRST.search(low))
@@ -233,10 +247,17 @@ def kind_of(np: str) -> str:
     words = [re.sub(r"['’]s?$", "", fold(t).strip(".")) for t in tokens]
     words = [w if w in PERSON_FI else re.sub(r"(?<=\w\w\w)ll(?:a|ani)$", "", w) for w in words]
     content = [(t, w) for t, w in zip(tokens, words) if w not in DETERMINER]
-    if content and all(w in FIRST for _, w in content):
-        return "first"
-    if any(w in HOUSEHOLD for _, w in content):
+    if content and (all(w in FIRST for _, w in content) or content[-1][1] in FIRST):
+        return "first"                               # "I", "help me (save)": the user
+    if {"store", "stores", "shop", "shops", "bank", "banks", "company", "companies", "business", "businesses",
+            "brand", "brands", "merchant", "merchants", "chain", "chains"} & set(words):
+        return "thing"                               # "our partner stores": companies
+    if any(w in HOUSEHOLD for _, w in content) and not {"the", "his", "her", "their"} & set(words) and not any(
+            t[:1].isupper() and not _known(t) and w not in HOUSEHOLD for t, w in content):
         return "first"                               # "our household", "perheemme": the user's own
+    content = [(t, w) for t, w in content if w not in HOUSEHOLD]   # "the Virtanen family": the Virtanens
+    if not content:
+        return "thing"
     if any(w in FIRST for _, w in content) and {"and", "ja", "&"} & set(words):
         return "first"                               # "my wife and I", "me and my husband": the user's own
     content = [(t, w) for t, w in content if w not in FIRST]
@@ -269,7 +290,8 @@ ADVERBS = {"safely", "really", "actually", "usually", "probably", "roughly", "ap
 _LEAD = {"how", "much", "many", "what", "which", "show", "tell", "can", "could", "check", "see", "so", "then",
          "and", "but", "also", "just", "paljonko",
          "kuinka", "paljon", "mita", "mihin", "nayta", "kerro"}
-_BE = {"was", "were", "is", "are", "been", "be", "being", "olivat", "oli", "on", "ovat", "to"}   # "safe to spend"
+_BE = {"was", "were", "is", "are", "been", "be", "being", "olivat", "oli", "on", "ovat", "to", "would", "will",
+       "can", "could", "should", "did", "does", "do", "may", "might", "must"}   # "safe to spend"
 
 
 def _head(np: str) -> str | None:
@@ -291,11 +313,11 @@ def _head(np: str) -> str | None:
 def classify(question: str, peer_question: bool = False) -> str | None:
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
     plain = " ".join(plain.split())
-    first = _first_person(plain)
+    first = _first_person(plain, _plain(question))
     verdicts: list[str] = []
 
     def judge(np: str | None, *, unclaim: bool, spends: bool = False, subject: bool = False,
-              person_verb: bool = False) -> None:
+              person_verb: bool = False, verb: str = "") -> None:
         """A person declines; a crowd or (with `unclaim`) an unknown word leaves the message unclaimed. With
         `spends` (the subject of spend, earn, save or buy), a capitalised calendar word is a name ("What did
         June spend?") and any other known thing leaves the message unclaimed."""
@@ -303,8 +325,8 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             return
         kind = kind_of(np)
         if kind == "name":
-            if COMPANY_TALK.search(plain):
-                return                                # "Does Zalando pay bonus?": a company
+            if COMPANY_TALK.search(plain) and (not verb or PAYS_OUT.fullmatch(verb)):
+                return                                # "Does Zalando pay bonus?": a company; "did Jane get" is not
             kind = "person"
         if kind == "person" and subject and not person_verb and not re.search(
                 r"[A-Z]", np) and {fold(w) for w in np.split()} <= PRONOUN | DETERMINER:
@@ -346,7 +368,7 @@ def classify(question: str, peer_question: bool = False) -> str | None:
         judge(m.group("np"), unclaim=not first)
 
     # Subjects: only when the user is not the subject, or a question clause asks about someone else.
-    for name in ("aux_subject", "subject", "what_if", "is_spending", "perceive", "group_of", "fi_subject",
+    for name in ("aux_subject", "subject", "subject_base", "what_if", "is_spending", "group_of", "fi_subject",
                  "fi_question", "fi_what_if", "fi_onko", "fi_lead"):
         for m in PATTERNS[name].finditer(plain):
             if ME_AFTER_VERB.match(plain[m.end():]):
@@ -354,9 +376,11 @@ def classify(question: str, peer_question: bool = False) -> str | None:
                 if PAY_TO_ME.fullmatch(verb) and kind_of(_head(m.group("np")) or "") in ("person", "name"):
                     verdicts.append(UNCLAIMED)        # money paid TO the user by a person: not get_spending
                 continue                              # "did Prisma pay me bonus": the user's own
+            if re.search(r"\b(?:i|me|we|us|mina|me) (?:and|ja) $", plain[:m.start()], re.I):
+                continue                              # "me and my wife spend": the user's own
             if name == "group_of" and first:
                 continue                              # "I spent on one of my friends"
-            if first and name in ("aux_subject", "subject", "fi_subject"):
+            if first and name in ("aux_subject", "subject", "subject_base", "fi_subject"):
                 before = plain[:m.start()].lower().strip()
                 np_lead = m.group("np").split()[0].lower()
                 if not (re.search(rf"\b(?:{_QUESTION})$", before) or fold(np_lead) in _LEAD):
@@ -365,7 +389,7 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             person_verb = (bool(re.fullmatch(VERB_PERSON, verb, re.I)) if not name.startswith("fi")
                            else bool(FI_VERB_PERSON.fullmatch(verb)) if verb else True)
             judge(_head(m.group("np")), unclaim=person_verb and not first, spends=person_verb and not first,
-                  subject=True, person_verb=person_verb)
+                  subject=True, person_verb=person_verb, verb=verb)
     if not first:
         m = PATTERNS["lead_name"].match(plain)
         if m and kind_of(m.group("np") or m.group("np2")) in ("person", "name"):
