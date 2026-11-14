@@ -290,10 +290,11 @@ A card inside a chat answer is part of one answer that is read once (#684, #696)
 4. A quiet note when the template answered without the AI model.
 5. The `lesson` in a `--color-sunken` box.
 6. **One next step**, a link-like button (brand, underlined, at least 44 px), chosen from what the response carries (`lib/nextStep.ts`). Nothing is invented: when the response carries nothing, there is no next step.
-   - A refusal: only the way to a human ("Contact S-Pankki").
-   - A "nothing found" fallback, or the "I can't answer that one yet" answer: the first follow-up question; "Contact S-Pankki" only when there is none (Maxim's decision, #696).
+   - A refusal: only the way to a human ("Contact S-Pankki"), or nothing when the response does not carry it.
+   - A "nothing found" fallback: the first follow-up question; "Contact S-Pankki" only when there is none (Maxim's decision, #696).
+   - The "I can't answer that one yet" answer (a clarification that carries the way to a human): its `clarify.options` are its follow-up questions, shown as chips. "Contact S-Pankki" shows only when it has no options.
    - Any other answer, in this order: the answer's own action; then a card action that leads somewhere (the what-if, the bank's own screen, a question); then the first follow-up question; then a card's "how is this calculated".
-   - A follow-up question shows only on the latest answer.
+   - A follow-up question, and a clarification's options, show only on the latest answer. On an older fallback or "not yet" answer, where they are hidden, the step falls back to "Contact S-Pankki".
    - A general clarifying question offers its options as chips instead.
 
 The AI disclosure is not repeated in the answer. It sits behind the header's AI badge and ⓘ (#685). The stream never autoscrolls: the view stays pinned to the start of the answer.

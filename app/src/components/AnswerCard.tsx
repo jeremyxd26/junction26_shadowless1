@@ -105,8 +105,8 @@ function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) 
       {/* A what-if's caveats, as the what-if sheet shows them (#696). */}
       {caveats.length > 0 && (
         <div data-answer-caveats="" className="mt-2 rounded-md bg-warning-tint p-3 text-base text-ink">
-          {caveats.map((caveat) => (
-            <p key={caveat}>{caveat}</p>
+          {caveats.map((caveat, index) => (
+            <p key={index}>{caveat}</p>
           ))}
         </div>
       )}
