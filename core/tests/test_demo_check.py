@@ -32,7 +32,9 @@ class Stub:
     """The service's demo path, with switches for the failure cases."""
 
     def __init__(self, saving=45.91, off=(), hero_after_needed=180.26, undo="ok", reconciles=True, ask_429=False,
-                 malformed_whatif=False):
+                 malformed_whatif=False, needed_delay=0.0, label_list=False):
+        self.needed_delay = needed_delay   # a slow "Needed", applied after the delay (maybe after the undo)
+        self.label_list = label_list
         self.saving = saving
         self.off = set(off)
         self.hero_after_needed = hero_after_needed
@@ -88,6 +90,11 @@ class Stub:
                     return "drop", None
                 self.state = "pending"
                 return 200, {"review_state": "pending", "changes": []}
+            if self.label_list:
+                return 200, ["not", "an", "object"]
+            if self.needed_delay:
+                import time
+                time.sleep(self.needed_delay)
             self.state = "answered"
             return 200, {"review_state": "answered",
                          "changes": [{"key": "safe_to_spend", "before": num(221.58), "after": num(180.26)}]}
@@ -250,3 +257,29 @@ def test_not_deployed_lines_name_the_route_and_status(serve):
 def test_the_time_limit_ends_the_run(serve):
     code, lines = run(serve(Stub()), "--no-ask", "--time-limit", "0")
     assert code == 1 and "time limit" in line(lines, "health and readiness")
+
+
+def test_a_late_needed_after_the_undo_is_caught(serve, monkeypatch):
+    # Second review of PR #180: "Needed" times out on this side, the undo answers 200 pending, and the
+    # server applies "Needed" afterwards. The re-check after the undo sees the card gone and is loud.
+    monkeypatch.setattr(demo_check, "TIMEOUT_S", 0.5)
+    monkeypatch.setattr(demo_check, "RECHECK_WAIT_S", 1.5)
+    stub = Stub(needed_delay=1.2)
+    code, lines = run(serve(stub), "--no-ask")
+    assert code == 1
+    loud = next(row for row in lines if row.startswith("UNDO FAILED"))
+    assert TX_REF in loud and "not back" in loud
+    assert "python core/scripts/reset_reviews.py CUST00860" in "\n".join(lines)
+
+
+def test_the_review_stage_does_not_start_without_enough_time(serve, monkeypatch):
+    monkeypatch.setattr(demo_check, "REVIEW_MIN_LEFT_S", 3600)
+    stub = Stub()
+    code, lines = run(serve(stub), "--no-ask")
+    assert code == 1 and "not started" in line(lines, "spike review")
+    assert "POST /api/baskets/label" not in stub.paths and stub.state == "pending"
+
+
+def test_a_label_answer_that_is_not_an_object_says_so(serve):
+    code, lines = run(serve(Stub(label_list=True)), "--no-ask")
+    assert code == 1 and "not a JSON object" in line(lines, "spike review")

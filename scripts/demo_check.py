@@ -58,6 +58,8 @@ TOLERANCE = 0.005
 TIMEOUT_S = 15
 ASK_TIMEOUT_S = 45
 TIME_LIMIT_S = 60
+REVIEW_MIN_LEFT_S = 15   # the review stage starts only with this much of the time limit left
+RECHECK_WAIT_S = 2.0     # after a "Needed" without a response: look again after this long
 REPAIR_SCRIPT = f"python core/scripts/reset_reviews.py {LEAD}"
 
 
@@ -153,8 +155,10 @@ def expect(what: str, expected: Any, got: Any) -> None:
 def ok_json(r: Response, what: str, status: int = 200) -> Any:
     if not_deployed(r):
         raise NotDeployed(f"{r.route} -> {r.status}")
-    if r.status != status or not isinstance(r.body, dict):
+    if r.status != status:
         raise StageFailed(f"{what} status", status, f"{r.status} {error_code(r) or ''}".strip())
+    if not isinstance(r.body, dict):
+        raise StageFailed(f"{what} body", "a JSON object", "not a JSON object")
     return r.body
 
 
@@ -222,7 +226,8 @@ class Check:
         except RateLimited as e:
             status, note = "FAIL", str(e)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            status, note = "FAIL", f"request failed ({type(e).__name__})"
+            cut = self.c.left() <= 0  # the request's timeout was shortened to what was left of the limit
+            status, note = "FAIL", "time limit reached (a request was cut short)" if cut else f"request failed ({type(e).__name__})"
         except Exception as e:  # noqa: BLE001 - a malformed response fails this stage, not the run
             status, note = "FAIL", f"unexpected response ({type(e).__name__})"
         self.line(Result(name, status, int((time.perf_counter() - t) * 1000), note))
@@ -314,13 +319,24 @@ class Check:
             raise StageFailed("a pending review card for the lead persona", "present",
                               f"none (repair: {REPAIR_SCRIPT})")
         tx_ref = review["tx_ref"]
+        if self.c.left() < REVIEW_MIN_LEFT_S:  # never start a write that the time limit could cut short
+            raise StageFailed("time left for the review stage", f">= {REVIEW_MIN_LEFT_S} s",
+                              f"{max(0, self.c.left()):.0f} s (not started; the persona is untouched)")
         label = {"customer_id": LEAD, "tx_ref": tx_ref, "language": "en"}
         failure: Exception | None = None
         sent = False
+        no_response = False
         try:
             sent = True  # from here on an answer may have been written, so the undo must run
-            res = ok_json(self.c.call("POST", "/api/baskets/label", {**label, "basket": "unexpected_necessities"}),
-                          "label Needed")
+            try:
+                # Exempt from the time limit, like the undo: a "Needed" cut short on this side could
+                # still be applied by the server after the undo.
+                needed = self.c.call("POST", "/api/baskets/label", {**label, "basket": "unexpected_necessities"},
+                                     timeout=TIMEOUT_S, exempt=True)
+            except (urllib.error.URLError, TimeoutError, OSError):
+                no_response = True
+                raise
+            res = ok_json(needed, "label Needed")
             expect("review_state after Needed", "answered", res.get("review_state"))
             changes = {c.get("key"): c for c in res.get("changes") or []}
             expect("safe_to_spend change after Needed", ref("safe_to_spend"),
@@ -335,6 +351,10 @@ class Check:
             failure = e
         finally:
             undo_ok, undo_detail = self.undo(label) if sent else (True, "")
+        if undo_ok and no_response and not self.card_back(tx_ref):
+            # "Needed" got no response: the server may apply it after the undo. The card must be back
+            # now and still be back a moment later.
+            undo_ok, undo_detail = False, "the review card is not back after the undo (a late \"Needed\"?)"
         if not undo_ok:
             self.undo_failed = True
             self.out(f"UNDO FAILED - {LEAD} may be left answered (tx_ref {tx_ref}, {undo_detail})")
@@ -352,10 +372,23 @@ class Check:
             expect("hero after undo", ref("safe_to_spend_pending"), value(back["hero"].get("primary")))
         return "Needed then undo; left pending"
 
+    def card_back(self, tx_ref: str) -> bool:
+        """The review card is back now and still RECHECK_WAIT_S later (exempt requests)."""
+        for attempt in range(2):
+            if attempt:
+                time.sleep(RECHECK_WAIT_S)
+            try:
+                r = self.c.call("GET", f"/api/overview/{LEAD}", timeout=TIMEOUT_S, exempt=True)
+            except Exception:  # noqa: BLE001 - not knowing counts as not back
+                return False
+            if not isinstance(r.body, dict) or (pending_review(r.body) or {}).get("tx_ref") != tx_ref:
+                return False
+        return True
+
     def undo(self, label: dict) -> tuple[bool, str]:
         """Send the undo (exempt from the time limit) and judge it; never raises."""
         try:
-            r = self.c.call("POST", "/api/baskets/label", {**label, "basket": None}, exempt=True)
+            r = self.c.call("POST", "/api/baskets/label", {**label, "basket": None}, timeout=TIMEOUT_S, exempt=True)
         except Exception as e:  # noqa: BLE001 - a dropped connection is a failed undo, reported loudly
             return False, f"request failed ({type(e).__name__})"
         state = r.body.get("review_state") if isinstance(r.body, dict) else None
