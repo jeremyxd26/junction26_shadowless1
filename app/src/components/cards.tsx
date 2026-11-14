@@ -229,6 +229,8 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
           </div>
         )}
       </div>
+      {/* What the figure has already taken out: the words of metrics.md section 3, no numbers. */}
+      <p className="mt-1 text-xs leading-4 text-on-hero-muted">{t.heroAfter}</p>
       {card.estimate && estimate.open && (
         <div className="relative z-10">
           <EstimateNote estimate={card.estimate} id={estimate.id} onHero />

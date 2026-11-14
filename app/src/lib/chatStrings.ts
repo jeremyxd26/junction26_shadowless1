@@ -10,6 +10,8 @@ const en = {
   inputLabel: 'Your question',
   send: 'Send',
   stop: 'Stop the answer',
+  /** The round button above the composer while the customer is scrolled up. */
+  toLatest: 'Go to the latest message',
   stages: {
     understanding: 'Reading your question',
     tool: 'Checking your transactions',
@@ -51,6 +53,7 @@ const fi: ChatStrings = {
   inputLabel: 'Kysymyksesi',
   send: 'Lähetä',
   stop: 'Pysäytä vastaus',
+  toLatest: 'Siirry uusimpaan viestiin',
   stages: {
     understanding: 'Luen kysymystäsi',
     tool: 'Tarkistan tilitapahtumasi',

@@ -39,10 +39,12 @@ const en = {
   // The opening turn (#310 decision: one thought per screen). Captions stay under 8 words.
   // By `hero.status`, no numbers in the words (#408 review).
   heroCaption: {
-    ok: 'safe to spend this week',
+    ok: 'left to spend this week',
     below_usual: 'less room than usual this week',
     nothing_free: 'nothing free to spend this week',
   } as Record<string, string>,
+  /** Under the hero's caption: what the weekly figure has already taken out (metrics.md section 3). */
+  heroAfter: 'After bills, essentials, a surprise reserve and savings',
   movedTo: 'Moved to',
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
@@ -53,8 +55,8 @@ const en = {
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
   mockBadge: 'Mock data',
-  heroPendingTitle: 'Safe to spend this week',
-  heroPending: 'Safe to spend is still being calculated. Check back soon.',
+  heroPendingTitle: 'Left to spend this week',
+  heroPending: 'Left to spend is still being calculated. Check back soon.',
   showMore: 'Show more',
   crash: 'Something went wrong on this screen.',
   reload: 'Reload',
@@ -107,10 +109,11 @@ const fi: Strings = {
   was: (display: string) => `aiemmin ${display}`,
   staysSame: 'pysyy ennallaan',
   heroCaption: {
-    ok: 'turvallisesti käytettävissä tällä viikolla',
+    ok: 'käyttövara tällä viikolla',
     below_usual: 'tällä viikolla tavallista vähemmän',
     nothing_free: 'tällä viikolla ei vapaata käytettävää',
   },
+  heroAfter: 'Laskujen, perusmenojen, yllätysvarauksen ja säästön jälkeen',
   movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',

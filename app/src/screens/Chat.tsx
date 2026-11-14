@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
+import { ScrollToLatest } from '../components/ScrollToLatest.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
@@ -167,6 +168,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         )
       })}
 
+      <ScrollToLatest thinking={busy} enabled={turns.length > 0} />
       <form
         onSubmit={submit}
         // The icon buttons and their gaps keep their pixel size at any text size, so the input keeps
