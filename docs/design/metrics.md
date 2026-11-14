@@ -545,6 +545,8 @@ saving_year    = saving_month * 12
 
 Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<key>` or `merchant:<id>`; default `category:Restaurants`. Cut `app.whatif_pct`, default 20. Examples: dining out −20% = `category:Restaurants`; taxis −50% = `mcc:4121` with 50; all everyday spending −10% = `basket:everyday_spending` with 10.
 
+**Everyday words and names (#346, #377).** The rules plan everyday words without the model (`core/agent/rules.py` `WHAT_IF_MCC_WORDS`): taxi 4121, public transport 4111, fuel 5541/5542, parking 7523, takeaway and fast food 5814, bars 5813, cinemas 7832. An MCC selection whose codes are exactly one of these is named in words on the card and in the label ("Spend 10% less on taxis" / "Käytä 10 % vähemmän: taksit", `config.WHAT_IF_MCC_NAMES`); any other code list keeps "purchases with MCC …". In the dataset, fuel, parking, public transport and groceries are regular essentials for all four personas, so their what-if is `not_offered`. When the rules ask which spending to cut, they suggest only restaurants, entertainment, taxis and takeaway, which give an estimate for each persona (a database test).
+
 **Output** (`04_what_if.sql`, one row per customer with spending in the selection): `selection`, `cut_pct`, `status` (`estimate`, `estimate_with_caveat`, `not_offered`), `baseline_month_eur`, `saving_month_eur`, `saving_week_eur`, `saving_year_eur`, `n_tx`, `one_off_excluded_eur`, `n_one_off`, `regular_excluded_eur`, `n_months`, `period_start`, `period_end`. Method text for the card: "Average of your last 6 full months (one-off purchases left out), cut by p%".
 
 **Evidence.** Rows of the selection in the window with `is_one_off = false` and a basket other than `regular_essentials`.
