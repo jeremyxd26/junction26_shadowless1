@@ -159,6 +159,8 @@ interface Props {
   turn: Turn
   /** Only the latest turn offers follow-ups, clarify options and announces itself. */
   latest: boolean
+  /** The first answer of the thread shows the "Sentti" label; later ones keep it for screen readers only. */
+  firstAnswer?: boolean
   suggestions: string[]
   onAsk: (question: string) => void
   onRetry: () => void
@@ -177,7 +179,7 @@ function CardFade({ waitMs, skipped, children }: { waitMs: number; skipped: bool
   )
 }
 
-export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
+export function TurnView({ turn, latest, suggestions, onAsk, onRetry, firstAnswer = true }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
   // The typing reveal (#686): only an answer that was still streaming when its turn mounted types in;
@@ -279,7 +281,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
 
       {(hasContent || streaming || done) && (
         <div className="card-enter flex min-h-11 items-center justify-between gap-2">
-          <SenttiLabel s={s} />
+          {firstAnswer ? <SenttiLabel s={s} /> : <span className="sr-only">{s.sentti}</span>}
           {done && (
             <SpeakButton
               id={String(turn.id)}
