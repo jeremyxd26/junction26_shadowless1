@@ -22,9 +22,21 @@ const en = {
   glossaryTitle: 'Glossary',
   glossaryIntro: 'Words you meet in your bank and on your bills, in plain language.',
   inYourNumbers: 'In your numbers',
+  takeTest: 'Mini-test',
+  testScore: (score: number, total: number) => `Mini-test: ${score} of ${total}`,
+  testProgress: (n: number, total: number) => `Question ${n} of ${total}`,
+  testAnswers: 'Your answer',
+  testRight: 'Right!',
+  testWrong: 'Not quite.',
+  testNext: 'Next question',
+  testFinish: 'See my score',
+  testResult: (score: number, total: number) => `You got ${score} of ${total}.`,
+  testAll: 'All right. Nicely done.',
+  testKind: 'Every answer teaches something. You can take it again any time.',
   topics: {
     money: 'Where the money goes',
     bills: 'Your bills',
+    saving: 'Saving and a buffer',
   } as Record<string, string>,
   lessons: {
     'money-1': 'Left to spend this week',
@@ -33,6 +45,8 @@ const en = {
     'bills-1': 'The reference number (viitenumero)',
     'bills-2': 'IBAN and the due date (eräpäivä)',
     'bills-3': 'E-invoice and direct payment',
+    'saving-1': 'Pay yourself first',
+    'saving-2': 'A buffer for surprises',
   } as Record<string, string>,
 }
 
@@ -58,9 +72,21 @@ const fi: LearnStrings = {
   glossaryTitle: 'Sanasto',
   glossaryIntro: 'Pankin ja laskujen sanoja selkokielellä.',
   inYourNumbers: 'Sinun luvuissasi',
+  takeTest: 'Minitesti',
+  testScore: (score, total) => `Minitesti: ${score}/${total}`,
+  testProgress: (n, total) => `Kysymys ${n}/${total}`,
+  testAnswers: 'Vastauksesi',
+  testRight: 'Oikein!',
+  testWrong: 'Ei aivan.',
+  testNext: 'Seuraava kysymys',
+  testFinish: 'Näytä tulos',
+  testResult: (score, total) => `Sait ${score}/${total} oikein.`,
+  testAll: 'Kaikki oikein. Hienoa!',
+  testKind: 'Jokainen vastaus opettaa jotain. Voit tehdä testin uudelleen milloin vain.',
   topics: {
     money: 'Mihin raha menee',
     bills: 'Laskusi',
+    saving: 'Säästäminen ja puskuri',
   },
   lessons: {
     'money-1': 'Käyttövara tällä viikolla',
@@ -69,6 +95,8 @@ const fi: LearnStrings = {
     'bills-1': 'Viitenumero',
     'bills-2': 'IBAN ja eräpäivä',
     'bills-3': 'E-lasku ja suoramaksu',
+    'saving-1': 'Maksa ensin itsellesi',
+    'saving-2': 'Puskuri yllätyksiä varten',
   },
 }
 

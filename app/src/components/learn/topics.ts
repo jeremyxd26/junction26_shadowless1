@@ -1,6 +1,7 @@
 import type { Language, OverviewResponse } from '../../api/types.ts'
 import { lessonKey, lessonsFor, type Lesson } from '../lesson/lessons.ts'
 import { billLessons } from './billLessons.ts'
+import { savingLessons } from './savingLessons.ts'
 
 // The Learn tab's topics, each a few lessons in the lesson turn's format. Only lessons the persona's
 // overview can fill are listed, so a topic never offers an empty lesson.
@@ -13,6 +14,7 @@ export interface Topic {
 /** A topic's lessons, as the lesson turn takes them. */
 export function lessonsOf(topic: string, overview: OverviewResponse | null, lang: Language): Lesson[] {
   if (topic === 'bills') return billLessons(lang)
+  if (topic === 'saving') return savingLessons(overview, lang)
   return lessonsFor(overview)
 }
 
@@ -21,6 +23,7 @@ export function topicsFor(overview: OverviewResponse | null, lang: Language = 'e
   const money = lessonsOf('money', overview, lang).map(lessonKey)
   if (money.length > 0) topics.push({ id: 'money', lessons: money })
   topics.push({ id: 'bills', lessons: lessonsOf('bills', overview, lang).map(lessonKey) })
+  topics.push({ id: 'saving', lessons: lessonsOf('saving', overview, lang).map(lessonKey) })
   return topics
 }
 

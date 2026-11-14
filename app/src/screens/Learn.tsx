@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { learnStrings } from '../components/learn/learnStrings.ts'
 import { glossary } from '../components/learn/glossary.ts'
+import { MiniTest } from '../components/learn/MiniTest.tsx'
 import { lessonsOf, nextLesson, topicsFor } from '../components/learn/topics.ts'
 import { LessonTurn } from '../components/lesson/LessonTurn.tsx'
 import { resetProgress, useLearnProgress } from '../lib/learnProgress.ts'
@@ -55,6 +56,19 @@ export function Learn() {
   const next = nextLesson(topics, progress.done)
   // The topic being studied (the lesson turn in place), or null for the topic list.
   const [studying, setStudying] = useState<string | null>(null)
+  // The topic whose mini-test is open, or null.
+  const [testing, setTesting] = useState<string | null>(null)
+
+  if (testing) {
+    return (
+      <section aria-label={`${s.topics[testing] ?? s.title}: ${s.takeTest}`} className="flex flex-col gap-4">
+        <h2 className="text-xl font-bold text-ink">
+          {s.topics[testing]}: {s.takeTest}
+        </h2>
+        <MiniTest key={testing} topic={testing} onDone={() => setTesting(null)} />
+      </section>
+    )
+  }
 
   if (studying) {
     return (
@@ -123,13 +137,25 @@ export function Learn() {
                       )
                     })}
                   </ul>
-                  <button
-                    type="button"
-                    onClick={() => setStudying(topic.id)}
-                    className="min-h-11 self-start rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
-                  >
-                    {done < topic.lessons.length ? s.continue : s.again}
-                  </button>
+                  {progress.scores[topic.id] !== undefined && (
+                    <p className="text-sm text-ink-2">{s.testScore(progress.scores[topic.id], 3)}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStudying(topic.id)}
+                      className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
+                    >
+                      {done < topic.lessons.length ? s.continue : s.again}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTesting(topic.id)}
+                      className="min-h-11 rounded-pill border border-line-strong bg-surface px-4 text-base font-semibold text-ink hover:bg-sunken"
+                    >
+                      {s.takeTest}
+                    </button>
+                  </div>
                 </li>
               )
             })}
