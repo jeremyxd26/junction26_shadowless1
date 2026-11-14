@@ -30,7 +30,7 @@ The rules plan; the model writes. The answers are every answered case of `core/e
   - Flash: one "promise".
   - Flash-Lite: one unknown number id, in a Finnish draft.
   - Nemotron: 21 of 49 first drafts rejected. A draft can have several problems: 18 had digits that do not come from a tool, 9 had two number tokens side by side, 1 a malformed token, 1 a date that was not returned, and 1 a cited list that differs from the tokens.
-- **Every answer reached its model.** In a first Nemotron run, the ledger cap (60) was reached before the last 6 answers, and the pipeline answered those from the template without a model call. They were then run with the cap at 72, and every earlier response came from the cache, so the line above covers all 49.
+- **Every answer reached its model.** In a first Nemotron run, the ledger cap (60) was reached before the last 6 answers, and the pipeline answered those from the template without a model call. They were then run with the cap at 72, and every earlier response came from the cache, so the line above covers all 49. Its 70 composer calls are the 69 requests plus one cache hit, the probe's response for the same answer.
 - **Nemotron's settings:**
   - reasoning off: a `/no_think` system line and `chat_template_kwargs.enable_thinking=false`;
   - the composer's JSON Schema as `response_format` (`json_schema`).

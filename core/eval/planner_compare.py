@@ -28,10 +28,10 @@ import yaml  # noqa: E402
 
 from core.agent import guard  # noqa: E402
 from core.agent.gemini import make_model  # noqa: E402
-from core.agent.gemini_client import OVERLOAD_COOLDOWN_S  # noqa: E402
 from core.agent.model import ModelError, PlanInput  # noqa: E402
 from core.agent.toolset import default_registry  # noqa: E402
 
+SERVER_ERROR_WAIT_S = 31.0   # longer than the adapter's short pause after a 5xx (30 s on main and on dev)
 Q1, Q2, Q3, Q4 = (["get_basket_breakdown"], ["get_spender_profile"], ["get_safe_to_spend"],
                   ["get_safe_to_save", "get_basket_breakdown"])
 # (phrasing, language, intent, any of these tools is right, also typed without diacritics)
@@ -178,9 +178,10 @@ def main() -> None:
                 print("stopping: " + error, flush=True)
                 break
             if error == "server" and line["network"]:
-                # A 5xx pauses the adapter (OVERLOAD_COOLDOWN_S, no fallback here); wait it out, so the
-                # next questions are asked instead of being refused by the pause. Never a retry.
-                time.sleep(OVERLOAD_COOLDOWN_S + 1)
+                # A 5xx may pause the adapter for a short while (its overload or failure-streak pause, whose
+                # name differs between versions); wait it out, so the next questions are asked instead of
+                # being refused by the pause. Never a retry.
+                time.sleep(SERVER_ERROR_WAIT_S)
 
 
 if __name__ == "__main__":
