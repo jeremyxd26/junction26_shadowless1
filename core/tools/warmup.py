@@ -67,7 +67,7 @@ CALLS: tuple[WarmCall, ...] = (
     WarmCall("bills question", "core.tools.bills", "get_recurring_bills", "GetRecurringBillsArgs", {}),
     WarmCall("overview hero; What can I safely spend this week?", "core.tools.safe_to_spend",
              "get_safe_to_spend", "GetSafeToSpendArgs", {}),
-    WarmCall("overview safe-to-save card (#165; skipped until merged)", "core.tools.safe_to_save",
+    WarmCall("overview safe-to-save card (#165)", "core.tools.safe_to_save",
              "get_safe_to_save", "GetSafeToSaveArgs", {}),
     WarmCall("What kind of spender am I? (profile)", "core.tools.profile", "get_spender_profile",
              "GetSpenderProfileArgs", {}),
