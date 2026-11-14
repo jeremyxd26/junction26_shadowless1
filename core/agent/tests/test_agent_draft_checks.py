@@ -47,6 +47,10 @@ def has(text, needle):
     "Voisit vähentää asumiskuluja.",
     "Kokeile leikata vuokraa.",
     "Why not cut your rent a little?",
+    "Maybe trim your insurance a little.",
+    "Try to bring down your rent.",
+    "By cutting your rent you would save {{n3}}.",
+    "Tinkimällä vuokrasta säästäisit {{n3}}.",
 ])
 def test_a_suggestion_to_cut_a_regular_essential_is_rejected(text):
     assert has(text, "never suggest cutting"), problems(text)
@@ -111,6 +115,8 @@ def test_a_token_cited_twice_is_rejected():
     "You spend {{n5}} than the median. You beat most people.",
     "Kulutat {{n5}} kuin kaltaisesi, parempi kuin useimmat.",
     "Kulutat {{n5}} kuin kaltaisesi, joten olet kärjessä.",
+    "You spend {{n5}} than the median. You're the best saver in your group.",
+    "You spend {{n5}} than the median, among the best of people like you.",
 ])
 def test_ranking_words_next_to_a_peer_number_are_rejected(text):
     assert has(text, "no ranking words"), problems(text)
@@ -120,6 +126,8 @@ def test_ranking_words_next_to_a_peer_number_are_rejected(text):
     "You spend {{n5}} than the median of people like you; the top category is restaurants.",
     "You spend {{n5}} than the median of people like you; restaurants are in the top category.",
     "Kulutat parhaillaan {{n5}} kuin kaltaisesi.",
+    "You spend {{n5}} than the median of people like you; the best way to see why is a what-if.",
+    "Kulutat {{n5}} kuin kaltaisesi; paras tapa nähdä syy on laskelma.",
     "You spend {{n5}} than the median of people like you, and a what-if can show what a cut would save.",
 ])
 def test_a_peer_comparison_without_ranking_words_passes(text):
@@ -144,6 +152,14 @@ def test_a_peer_comparison_without_ranking_words_passes(text):
     "Don't hesitate to use your credit card.",
     "It's not a bad idea to take a loan.",
     "Miksi et ottaisi lainaa?",
+    "You can't go wrong if you take a loan.",
+    "I don't see why you wouldn't take a loan.",
+    "I would suggest an overdraft.",
+    "No need to wait: take out a small loan.",
+    "If you do not have enough, consider a loan.",
+    "Instead of waiting, take out a loan.",
+    "Älä odota, ota lainaa.",
+    "Sinun ei tarvitse säästää, ota lainaa.",
 ])
 def test_a_borrowing_suggestion_is_found(text):
     assert borrowing_suggestion(text) is not None, text
@@ -160,6 +176,14 @@ def test_a_borrowing_suggestion_is_found(text):
     "Your pay later purchases cost {{n1}}.",
     "I can't predict whether a loan or mortgage would be approved, and I don't rate creditworthiness.",
     "En voi ennustaa, myönnetäänkö laina tai asuntolaina, enkä arvioi luottokelpoisuutta.",
+    "You asked whether to take a loan; I can't advise on that.",
+    "You asked whether you should use a credit card; I can't recommend one.",
+    "You asked about taking a loan, which I can't recommend.",
+    "Whether to take a loan is a decision I can't help with.",
+    "Taking a loan is not something I suggest.",
+    "Kysyit, kannattaako ottaa lainaa; en voi neuvoa siinä.",
+    "En voi neuvoa, kannattaako ottaa lainaa.",
+    "I wouldn't take a loan for this.",
 ])
 def test_a_negation_or_a_data_statement_is_not_a_borrowing_suggestion(text):
     assert borrowing_suggestion(text) is None, (text, borrowing_suggestion(text))
