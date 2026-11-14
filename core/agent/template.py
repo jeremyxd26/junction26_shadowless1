@@ -367,6 +367,7 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     sentences: list[str] = []
     cited: list[str] = []
     q = fold(question)
+    all_own = bool(views)    # every view written by answer_sentences: the answer is capped at two sentences
     for view in views:
         # One sentence per tool: "<period>: <label>: {{n1}}; <label>: {{n2}}." Items are joined with
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
@@ -386,11 +387,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         own = answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
                                         asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
         if own and not set(own[1]) & set(cited) and len(cited) + len(own[1]) <= MAX_TEMPLATE_NUMBERS:
-            sentences += own[0]
+            sentences += own[0]   # the tool's notes stay on its card (Renat's length rule)
             cited += own[1]
-            sentences += [n for n in view.get("notes") or []
-                          if isinstance(n, str) and ok(n, is_note=True) and n not in answer_sentences.SAID_BY_SENTENCE]
             continue
+        all_own = False
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
@@ -413,6 +413,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
                 sentences.append(note)
     if sentences and save_more_plan(views, question):
         sentences.append(what_if_offer(views, language))
+    if all_own:
+        sentences = sentences[:2]   # #342: two sentences for the whole answer, the rest on the cards
     if errors:
         if not views and all(e.get("error") == "period_out_of_range" for e in errors):
             sentences.append(pick(NO_DATA, language))

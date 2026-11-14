@@ -18,6 +18,7 @@ import pytest
 
 from core.agent import template
 from core.agent.validator import allowed_from, render, validate
+from core.tools import config
 from core.tools.formatting import display
 from core.tools.models import Number, Period, Unit
 from core.tools.periods import period_label
@@ -107,8 +108,8 @@ def spending(v: Views, lang: str, *, label=None, count=46, total=4175.17, span=A
     return [view]
 
 
-def bills(v: Views, lang: str) -> list[dict]:
-    return [{
+def bills(v: Views, lang: str, notes: bool = False, second_income: bool = False) -> list[dict]:
+    view = {
         "tool": "get_recurring_bills", "window": v.label(*WINDOW), "next_payday": "2026-10-15",
         "upcoming_total": v.n(928.5, "eur", PAYDAY, "safe_to_spend.bills_due_eur@1",
                               fi(lang, "Bills before payday", "Laskut ennen palkkapäivää")),
@@ -126,7 +127,15 @@ def bills(v: Views, lang: str) -> list[dict]:
         "income": [{"key": "salary", "label": fi(lang, "Salary", "Palkka"), "next_expected": "2026-10-15",
                     "typical_month": v.n(3187.25, "eur_per_month", WINDOW, "recurring.typical_month_eur@1",
                                          fi(lang, "Usual amount", "Tavallinen summa"))}],
-        "notes": []}]
+        "notes": []}
+    if notes:   # the tool's own notes stay on the card: the answer is still two sentences (review of #365)
+        view["notes"] = [config.label(config.BILLS_TEXT[k], lang) for k in ("note_sweep", "note_after_payday")]
+    if second_income:
+        view["income"].append({"key": "other_income", "label": fi(lang, "Other income", "Muut tulot"),
+                               "next_expected": None,
+                               "typical_month": v.n(412.0, "eur_per_month", WINDOW, "recurring.typical_month_eur@1",
+                                                    fi(lang, "Usual amount", "Tavallinen summa"))})
+    return [view]
 
 
 def what_if(v: Views, lang: str, status: str = "estimate") -> list[dict]:
@@ -190,6 +199,13 @@ CASES = {
                lambda v, lang: spending(v, lang, label=fi(lang, "Income", "Tulot"), count=2, total=3187.25,
                                         direction="in")),
     "bills_due": ("Which bills are due before payday?", bills),
+    "bills_due_notes": ("Which bills are due before payday?", lambda v, lang: bills(v, lang, notes=True)),
+    "payday_two_incomes": ("When is my next payday?", lambda v, lang: bills(v, lang, second_income=True)),
+    "count_one": ("How much did I spend on taxis last month?",
+                  lambda v, lang: spending(v, lang, label=fi(lang, "Taxi", "Taksi"), count=1, total=52.84)),
+    "income_one": ("How much income did I get last month?",
+                   lambda v, lang: spending(v, lang, label=fi(lang, "Income", "Tulot"), count=1, total=3187.25,
+                                            direction="in")),
     "bills_regular": ("What are my regular monthly bills?", bills),
     "payday": ("When is my next payday?", bills),
     "what_if": ("What if I cut restaurants by 20%?", what_if),
@@ -200,12 +216,18 @@ CASES = {
 }
 FI_QUESTIONS = {"baskets": "Mihin rahani menivät?", "save_more": "Miten voisin säästää enemmän?",
                 "save_more_zero": "Miten voisin säästää enemmän?", "bills_due": "Mitä laskuja on tulossa ennen palkkapäivää?",
+                "bills_due_notes": "Mitä laskuja on tulossa ennen palkkapäivää?",
+                "payday_two_incomes": "Milloin on seuraava palkkapäiväni?",
                 "bills_regular": "Mitkä ovat säännölliset kuukausittaiset laskuni?",
                 "payday": "Milloin on seuraava palkkapäiväni?"}
 
-NUMBER_WORDS = re.compile(r"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty|hundred|thousand|"
-                          r"million|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|sata|"
-                          r"tuhat|miljoona)\b", re.I)
+# Cardinals, ordinals and fractions, English and Finnish in their case forms (review of #365).
+NUMBER_WORDS = re.compile(
+    r"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|hundred|thousand|million|"
+    r"first|second|third|fourth|fifth|half|halves|quarter|twice|"
+    r"yksi|yhde\w*|yhtä|kaksi|kahde\w*|kahta|kahte\w*|kolm\w*|nelj\w*|viisi|viide\w*|viitt\w*|viite\w*|kuusi|kuude\w*|"
+    r"kuutt\w*|seitsem\w*|kahdeks\w*|yhdeks\w*|kymmen\w*|sata\w*|sado\w*|tuha\w*|miljoon\w*|ensimmäi\w*|toinen|"
+    r"toise\w*|puol\w*|neljännes\w*)\b", re.I)
 JUDGEMENT = re.compile(r"too much|too many|\bbad\b|\bwaste|overspend|liikaa|huono|tuhla", re.I)
 CHAIN = re.compile(r"[^.;:!?]+: \{\{n\d+\}\}\s*;")      # "label: {{n1}};"
 LABEL_BEFORE_TOKEN = re.compile(r"([A-ZÄÖÅa-zäöå][^.;:!?]*?): \{\{n\d+\}\}")
@@ -244,13 +266,30 @@ def test_every_rule_answer_reads_like_a_person_and_passes_the_validator(key, lan
 
 def test_a_change_is_said_in_words_with_the_old_number_once():
     up, v, _, _ = answer("compare_up", "en")
-    assert render(up["text"], v.numbers) == ("You spent €224.21 on restaurants in September 2026, more than in "
-                                             "August 2026 (€138.94). That is a change of 61.4%.")
-    down, v, _, _ = answer("compare_down", "fi")
-    assert render(down["text"], v.numbers) == ("Syyskuussa 2026 käytit 2 932,54 €, vähemmän kuin elokuussa 2026 "
-                                               "(4 175,17 €). Muutos on -29,8 %.")
+    assert render(up["text"], v.numbers) == ("You spent €224.21 on restaurants in September 2026, up from €138.94 "
+                                             "in August 2026 (61.4%).")
+    down, v, _, _ = answer("compare_down", "en")
+    assert render(down["text"], v.numbers) == ("You spent €2,932.54 in September 2026, down from €4,175.17 in "
+                                               "August 2026 (-29.8%).")
+    down_fi, v, _, _ = answer("compare_down", "fi")
+    assert render(down_fi["text"], v.numbers) == ("Syyskuussa 2026 käytit 2 932,54 €, vähemmän kuin elokuussa 2026 "
+                                                  "(4 175,17 €, muutos -29,8 %).")
     no_pct, v, _, _ = answer("compare_no_pct", "en")
-    assert no_pct["text"].endswith("The difference is {{n4}}.")                   # the amount when there is no %
+    assert render(no_pct["text"], v.numbers) == "You spent €10.00 in August 2026, up from €0.00 in July 2026."
+
+
+def test_a_count_of_one_is_singular_and_notes_stay_on_the_card():
+    one, v, _, _ = answer("count_one", "en")
+    assert render(one["text"], v.numbers) == "You spent €52.84 on taxi in August 2026, in 1 transaction."
+    one_fi, v, _, _ = answer("count_one", "fi")
+    assert render(one_fi["text"], v.numbers) == "Elokuussa 2026 käytit 52,84 € luokassa Taksi ja tapahtumien määrä oli 1."
+    pay, v, _, _ = answer("income_one", "en")
+    assert render(pay["text"], v.numbers).endswith(", in 1 payment.")
+    with_notes, v, _, _ = answer("bills_due_notes", "en")
+    assert render(with_notes["text"], v.numbers) == ("Bills of €928.50 are due before your payday, including €836.65 "
+                                                     "for housing and €91.86 for utilities.")
+    two, v, _, _ = answer("payday_two_incomes", "fi")
+    assert render(two["text"], v.numbers) == "Palkkasi on tavallisesti 3 187,25 € / kk, ja seuraava palkkapäiväsi on 15.10.2026."
 
 
 def test_the_takeaway_comes_first():
@@ -264,8 +303,8 @@ def test_an_empty_period_states_its_zeros_once_and_no_repeated_note():
     draft, v, _, _ = answer("empty", "en")
     assert render(draft["text"], v.numbers) == "There were 0 transactions for travel during 21–27 Sep 2026, so you spent €0.00."
     draft, v, _, _ = answer("empty", "fi")
-    assert render(draft["text"], v.numbers) == ("Jaksolla 21.–27.9.2026 tapahtumia oli 0 luokassa Matkailu, joten käytit "
-                                                "0,00 €.")
+    assert render(draft["text"], v.numbers) == ("Jaksolla 21.–27.9.2026 luokassa Matkailu oli 0 tapahtumaa, joten "
+                                                "käytit 0,00 €.")
 
 
 def test_lead_persona_texts():
@@ -273,8 +312,10 @@ def test_lead_persona_texts():
     expected = {
         ("baskets", "en"): "Most of your spending, 62.7%, went to regular essentials. Everyday spending took 19.9% and "
                            "unexpected necessities 17.3%.",
-        ("compare_down", "en"): "You spent €2,932.54 in September 2026, less than in August 2026 (€4,175.17). "
-                                "That is a change of -29.8%.",
+        ("compare_down", "en"): "You spent €2,932.54 in September 2026, down from €4,175.17 in August 2026 (-29.8%).",
+        ("bills_due", "en"): "Bills of €928.50 are due before your payday, including €836.65 for housing and €91.86 for "
+                             "utilities.",
+        ("payday", "en"): "Your salary is usually €3,187.25 a month, and your next payday is 15 October 2026.",
         ("save_more", "en"): "You can typically put aside €184.61 a month. Tell me how much you would cut restaurants by, "
                              "and I'll show what you'd save.",
         ("save_more_zero", "fi"): "Tavallisesta kuukaudesta ei jää mitään: laskut ja välttämättömät menot ylittävät "
@@ -283,7 +324,7 @@ def test_lead_persona_texts():
                                   "necessities: needed costs that can only sometimes be reduced.",
         ("what_if", "fi"): "Tämä leikkaus säästäisi sinulle 45,91 € / kk eli 550,95 € / v. "
                            "Nyt käytät 229,56 € / kk luokassa Ravintolat.",
-        ("payday", "fi"): "Palkkasi on tavallisesti 3 187,25 € / kk. Seuraava palkkapäiväsi on 15.10.2026.",
+        ("payday", "fi"): "Palkkasi on tavallisesti 3 187,25 € / kk, ja seuraava palkkapäiväsi on 15.10.2026.",
     }
     for (key, lang), text in expected.items():
         draft, v, _, _ = answer(key, lang)

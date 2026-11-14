@@ -91,28 +91,34 @@ SPENT = {
               ("{Period} käytit {total}.", "{Period} käytit {total} {what}.")),
     "count": (("You spent {total} {period}, across {count} transactions.",
                "You spent {total} on {what} {period}, across {count} transactions."),
-              ("{Period} käytit {total} ja tapahtumia oli {count}.",
-               "{Period} käytit {total} {what} ja tapahtumia oli {count}.")),
+              ("{Period} käytit {total} ja tapahtumien määrä oli {count}.",
+               "{Period} käytit {total} {what} ja tapahtumien määrä oli {count}.")),
+    "count_one": (("You spent {total} {period}, in {count} transaction.",
+                   "You spent {total} on {what} {period}, in {count} transaction."),
+                  ("{Period} käytit {total} ja tapahtumien määrä oli {count}.",
+                   "{Period} käytit {total} {what} ja tapahtumien määrä oli {count}.")),
     "income": (("Your income {period} was {total}.", "Your income {period} was {total}, from {what}."),
                ("{Period} tuloja tuli {total}.", "{Period} tuloja tuli {total} {what}.")),
     "income_count": (("Your income {period} was {total}, across {count} payments.",
                       "Your income {period} was {total} from {what}, across {count} payments."),
-                     ("{Period} tuloja tuli {total} ja maksuja oli {count}.",
-                      "{Period} tuloja tuli {total} {what} ja maksuja oli {count}.")),
+                     ("{Period} tuloja tuli {total} ja maksujen määrä oli {count}.",
+                      "{Period} tuloja tuli {total} {what} ja maksujen määrä oli {count}.")),
+    "income_count_one": (("Your income {period} was {total}, in {count} payment.",
+                          "Your income {period} was {total} from {what}, in {count} payment."),
+                         ("{Period} tuloja tuli {total} ja maksujen määrä oli {count}.",
+                          "{Period} tuloja tuli {total} {what} ja maksujen määrä oli {count}.")),
     # Nothing in the period: the count and the total are still stated (the eval and the card show them).
     "none": (("There were {count} transactions {period}, so you spent {total}.",
               "There were {count} transactions for {what} {period}, so you spent {total}."),
-             ("{Period} tapahtumia oli {count}, joten käytit {total}.",
-              "{Period} tapahtumia oli {count} {what}, joten käytit {total}.")),
+             ("{Period} oli {count} tapahtumaa, joten käytit {total}.",
+              "{Period} {what} oli {count} tapahtumaa, joten käytit {total}.")),
 }
-COMPARED = {   # appended to the first sentence: ", less than in August 2026 (€4,175.17)."
-    "more": (", more than {period} ({baseline}).", ", enemmän kuin {period} ({baseline})."),
-    "less": (", less than {period} ({baseline}).", ", vähemmän kuin {period} ({baseline})."),
+COMPARED = {   # appended to the first sentence: ", down from €4,175.17 in August 2026 (-29.8%)."
+    "more": (", up from {baseline} {period} ({pct}).", ", enemmän kuin {period} ({baseline}, muutos {pct})."),
+    "less": (", down from {baseline} {period} ({pct}).", ", vähemmän kuin {period} ({baseline}, muutos {pct})."),
+    "more_no_pct": (", up from {baseline} {period}.", ", enemmän kuin {period} ({baseline})."),
+    "less_no_pct": (", down from {baseline} {period}.", ", vähemmän kuin {period} ({baseline})."),
     "same": (", the same as {period} ({baseline}).", ", saman verran kuin {period} ({baseline})."),
-}
-DIFFERENCE = {   # the change once: the percentage when there is one, else the amount
-    "pct": ("That is a change of {pct}.", "Muutos on {pct}."),
-    "amount": ("The difference is {change}.", "Ero on {change}."),
 }
 LARGEST_GROUPS = ("The largest parts were {items}.", "Suurimmat osat olivat {items}.")
 TIME_GROUPS = ("By period: {items}.", "Jaksoittain: {items}.")
@@ -148,12 +154,10 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         first = SPENT["income" if income else "plain"][lang][1 if what else 0].format(**fmt)
         delta = _value(comparison.get("change")) or 0
         direction = "more" if delta > 0 else "less" if delta < 0 else "same"
-        first = first[:-1] + pick(COMPARED[direction], language).format(period=in_period(b_label, language),
-                                                                        baseline=baseline)
-        if direction == "same":
-            return [first], _ids(total, baseline)
-        second = pick(DIFFERENCE["pct" if pct else "amount"], language).format(change=change, pct=pct)
-        return [first, second], _ids(total, baseline, pct if pct else change)
+        key = direction if direction == "same" or pct else f"{direction}_no_pct"
+        first = first[:-1] + pick(COMPARED[key], language).format(period=in_period(b_label, language),
+                                                                  baseline=baseline, pct=pct)
+        return [first], _ids(total, baseline, pct if direction != "same" else None)
 
     groups = [(g.get("label"), _tok(g.get("amount")), g.get("key")) for g in view.get("groups") or []]
     groups = [(lab, t, k) for lab, t, k in groups if isinstance(lab, str) and t and ok(lab)][:2]
@@ -170,6 +174,8 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return [first, second], _ids(total, *(t for _, t, _ in groups))
 
     key = ("income_count" if income else "count") if count else ("income" if income else "plain")
+    if count and _value(view.get("tx_count")) == 1:
+        key += "_one"
     return [SPENT[key][lang][1 if what else 0].format(**fmt)], _ids(total, count)
 
 
@@ -221,15 +227,17 @@ def baskets(view: dict[str, Any], language: str, ok: Ok, save_more: bool) -> Sen
 # ---- bills, income and payday ---------------------------------------------------------------------------
 
 BILLS_DUE = {
-    "items": ("Bills of {total} are due before your payday, of which {items}.",
+    "items": ("Bills of {total} are due before your payday, including {items}.",
               "Ennen palkkapäivää erääntyy laskuja {total}, joista {items}."),
     "total": ("Bills of {total} are due before your payday.", "Ennen palkkapäivää erääntyy laskuja {total}."),
 }
-BILL_ITEM = ("{bill} is {amount}", "{bill} {amount}")
+BILL_ITEM = ("{amount} for {bill}", "{bill} {amount}")
 BILLS_TYPICAL = ("Your regular bills are {items}.", "Säännölliset laskusi ovat {items}.")
 BILL_TYPICAL_ITEM = ("{bill} at {amount}", "{bill}, tavallisesti {amount}")
-SALARY = ("Your salary is usually {amount}.", "Palkkasi on tavallisesti {amount}.")
-OTHER_INCOME = ("{Income} usually brings {amount}.", "{Income} tuo tavallisesti {amount}.")
+# One sentence: the first income row and, when known, the next payday (review of #365).
+SALARY = ("Your salary is usually {amount}", "Palkkasi on tavallisesti {amount}")
+OTHER_INCOME = ("Your usual {income} is {amount}", "Tavallinen tulosi ({income}) on {amount}")
+AND_PAYDAY = (", and your next payday is {date}.", ", ja seuraava palkkapäiväsi on {date}.")
 NEXT_PAYDAY = ("Your next payday is {date}.", "Seuraava palkkapäiväsi on {date}.")
 
 
@@ -249,22 +257,23 @@ def bills(view: dict[str, Any], language: str, ok: Ok, mode: str) -> Sentences |
     """mode: "due" (bills before payday), "typical" (the regular bills), "income" (salary and payday),
     "save_more" (only the bills due before payday)."""
     if mode == "income":
-        sentences, cited = [], []
-        for item in (view.get("income") or [])[:2]:
+        when = _date(view.get("next_payday"), language) if isinstance(view.get("next_payday"), str) else None
+        first = None
+        for item in view.get("income") or []:      # the first row that can be named; the rest stay on the card
             amount = _tok(item.get("typical_month"))
             if not amount:
                 continue
             if item.get("key") == "salary":
-                sentences.append(pick(SALARY, language).format(amount=amount))
+                first = (pick(SALARY, language).format(amount=amount), amount)
             elif isinstance(item.get("label"), str) and ok(item["label"]):
-                sentences.append(pick(OTHER_INCOME, language).format(Income=item["label"], amount=amount))
-            else:
-                continue
-            cited.append(amount)
-        when = _date(view.get("next_payday"), language) if isinstance(view.get("next_payday"), str) else None
-        if when:
-            sentences.append(pick(NEXT_PAYDAY, language).format(date=when))
-        return (sentences, _ids(*cited)) if sentences else None
+                name = item["label"][:1].lower() + item["label"][1:]
+                first = (pick(OTHER_INCOME, language).format(income=name, amount=amount), amount)
+            if first:
+                break
+        if first:
+            end = pick(AND_PAYDAY, language).format(date=when) if when else "."
+            return [first[0] + end], _ids(first[1])
+        return ([pick(NEXT_PAYDAY, language).format(date=when)], []) if when else None
 
     if mode == "typical":
         items, cited = [], []

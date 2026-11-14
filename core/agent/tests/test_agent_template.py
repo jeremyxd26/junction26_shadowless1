@@ -74,7 +74,7 @@ def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
     draft = template_draft([view], [], "en", None, "What can I safely spend this week?")
     assert "7" not in draft["text"] and draft["cited"] == ["n6", "n8", "n9"]
     kept = template_draft([{**SPENDING}], [], "en", None, "How much on taxis last month?")
-    assert kept["text"] == "You spent {{n1}} on taxi in August 2026, across {{n2}} transactions."   # #342
+    assert kept["text"] == "You spent {{n1}} on taxi in August 2026, in {{n2}} transaction."   # #342: a count of 1
 
 
 EVERYDAY = {"tool": "get_basket_breakdown", "period": "1 Apr – 30 Sep 2026", "monthly_average": True,
