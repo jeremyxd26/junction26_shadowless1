@@ -747,16 +747,23 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
 # would help (#419), only what spending that amount would do to what is left to spend, with the way to the bank for
 # the credit side (contact_bank). Claimed only for an advice question with a borrowing verb, an amount with a euro mark
 # and a purpose, in one sentence; the rules' refusals run first, so "Can I borrow €500?" stays the credit decision.
-BORROW_BUDGET_ASK = fold_pattern(
-    r"\b(should|shall) (i|we) (borrow|take (out )?(a |an )?(\S+ )?loan|get (a |an )?(\S+ )?loan)\b|"
-    r"\b(is it|would it be) (ok|okay|wise|smart|sensible|a good idea) (for (me|us) )?to "
-    r"(borrow|take (out )?(a |an )?(\S+ )?loan)\b|"
-    r"\b(pitäisikö|kannattaako|kannattaisiko) (minun |meidän )?(lainata|ottaa (\S+ )?lainaa)\b")
+BORROW_BUDGET_ASK = {
+    "en": fold_pattern(r"\b(should|shall) (i|we) (borrow|take (out )?(a |an )?(\S+ )?loan|get (a |an )?(\S+ )?loan)\b|"
+                       r"\b(is it|would it be) (ok|okay|wise|smart|sensible|a good idea) (for (me|us) )?to "
+                       r"(borrow|take (out )?(a |an )?(\S+ )?loan)\b"),
+    "fi": fold_pattern(r"\b(pitäisikö|kannattaako|kannattaisiko) (minun |meidän )?(lainata|ottaa (\S+ )?lainaa)\b")}
 BORROW_BUDGET_AMOUNT = r"€\s?(\d[\d\s.,]*\d|\d)|(\d[\d\s.,]*\d|\d)\s?(€|euros?(?!\w)|euroa(?!\w)|eur(?!\w))"
-# A purpose: "for"/"to" in English; in Finnish an illative or allative word ("lomaan", "matkalle"), "varten", or an
-# infinitive of buying or paying. A person's -lle/-lta form with a possessive ("kaverilleni") is lending, never this.
-BORROW_BUDGET_PURPOSE = fold_pattern(r"\b(for|to)\b|\b\w+(aan|ään|een|iin|oon|öön|uun|yyn|seen|lle)\b|\bvarten\b|"
-                                     r"\b(ostaa|ostaakseni|maksaa|maksaakseni)\b")
+# A purpose in the verb's own language: "for"/"to" in English; in Finnish an illative word ("lomaan", "uuteen
+# puhelimeen"), never a pronoun's, "varten", or an infinitive of buying or paying. An allative ("kaverille", "sinulle")
+# is lending to someone, never a purpose.
+BORROW_BUDGET_PURPOSE = {
+    "en": r"\b(for|to)\b",
+    "fi": fold_pattern(r"\b(?!(minuun|sinuun|häneen|meihin|teihin|heihin)\b)\w+(aan|ään|een|iin|oon|öön|uun|yyn|seen"
+                       r"|hin)\b|\bvarten\b|\b(ostaa|ostaakseni|ostamiseen|maksaa|maksaakseni)\b")}
+# A second question in the same sentence ("… for a holiday and how much did I spend last month?") keeps today's path.
+BORROW_BUDGET_SECOND = fold_pattern(
+    r"\b(and|or|but|also)\s+(how|what|when|where|why|which|who|can|could|do|does|did|is|are|was|will|would|should|"
+    r"show|tell)\b|\b(ja|tai|mutta|entä)\s+(paljonko|mitä|miten|kuinka|mikä|mihin|milloin|onko|voinko|näytä|kerro)\b")
 BORROW_BUDGET_NOT = fold_pattern(
     r"\b\w+(lle|lta|ltä)(ni|si|mme|nne|nsa|nsä)\b|"
     # an investment, a debt, a bill or a bank decision keeps today's path (a refusal or the model's)
@@ -764,26 +771,25 @@ BORROW_BUDGET_NOT = fold_pattern(
     r"\brahasto\w*|\bkrypto\w*|\bdebts?\b|\b(pay|repay)\w* (it |them |this |that )?(off|back|down)\b|"
     r"\bcredit cards?\b|\bmortgage\w*|\brent\b|\bbills?\b|\boverdraft\w*|\bvelk\w*|\bluottokort\w*|\bvuokra\w*|"
     r"\blasku\w*|\basuntolain\w*|\bapprov\w*|\bqualif\w*|\bbank\b|\blender\b|\bpankki\w*|\bmyön\w*")
-BORROW_BUDGET_LEAD = ("I can't advise on borrowing. Here is what spending that amount would do to what's left to spend.",
-                      "En voi neuvoa lainaamisessa. Tässä on, mitä tuon summan käyttäminen tekisi siihen, mitä sinulla on "
-                      "jäljellä käytettäväksi.")
+# Two sentences, within the template length rule. The user's amount is never repeated: a number in the text must be a
+# tool's token, so the second sentence says "that amount" and compares it with the two figures.
+BORROW_BUDGET_LEAD = ("I can't advise on borrowing.", "En voi neuvoa lainaamisessa.")
 BORROW_BUDGET_EFFECT = {
-    (True, True): ("It is more than the {safe} left to spend in the coming week and more than the {free} free until "
-                   "your next payday.",
-                   "Se on enemmän kuin tulevalle viikolle jäljellä oleva {safe} ja enemmän kuin seuraavaan palkkapäivään "
-                   "asti vapaana oleva {free}."),
-    (True, False): ("It is more than the {safe} left to spend in the coming week and would leave less of the {free} "
-                    "free until your next payday.",
-                    "Se on enemmän kuin tulevalle viikolle jäljellä oleva {safe}, ja se pienentäisi seuraavaan "
+    (True, True): ("That amount is more than the {safe} left for the coming week and the {free} free until payday.",
+                   "Summa on enemmän kuin tulevalle viikolle jäljellä oleva {safe} ja palkkapäivään asti vapaana oleva "
+                   "{free}."),
+    (True, False): ("That amount is more than the {safe} left for the coming week, and spending it would leave less of "
+                    "the {free} free until payday.",
+                    "Summa on enemmän kuin tulevalle viikolle jäljellä oleva {safe}, ja sen käyttäminen pienentäisi "
                     "palkkapäivään asti vapaana olevaa summaa {free}."),
-    (False, True): ("It would leave less of the {safe} left to spend in the coming week and is more than the {free} "
-                    "free until your next payday.",
-                    "Se pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe} ja on enemmän kuin seuraavaan "
-                    "palkkapäivään asti vapaana oleva {free}."),
-    (False, False): ("It would leave less of the {safe} left to spend in the coming week and of the {free} free until "
-                     "your next payday.",
-                     "Se pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe} ja seuraavaan palkkapäivään asti "
-                     "vapaana olevaa summaa {free}."),
+    (False, True): ("Spending that amount would leave less of the {safe} left for the coming week, and it is more than "
+                    "the {free} free until payday.",
+                    "Summan käyttäminen pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe}, ja summa on "
+                    "enemmän kuin palkkapäivään asti vapaana oleva {free}."),
+    (False, False): ("Spending that amount would leave less of the {safe} left for the coming week and of the {free} "
+                     "free until payday.",
+                     "Summan käyttäminen pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe} ja palkkapäivään "
+                     "asti vapaana olevaa summaa {free}."),
 }
 
 
@@ -804,15 +810,17 @@ def _euro_value(raw: str) -> Decimal | None:
 
 def borrow_budget_amount(question: str) -> Decimal | None:
     """The amount of an advice question about borrowing it for a purchase or spending (#806), or None: one sentence,
-    an advice verb, an amount with a euro mark after it, and a purpose after the amount or the verb."""
+    an advice verb, an amount with a euro mark after it, and a purpose after the verb in the verb's own language."""
     q = fold(question).strip()
-    if len([s for s in re.split(r"[?!;]|\.(?!\d)", q) if s.strip()]) != 1 or re.search(BORROW_BUDGET_NOT, q):
+    if len([s for s in re.split(r"[?!;]|\.(?!\d)", q) if s.strip()]) != 1 or re.search(BORROW_BUDGET_NOT, q) or \
+            re.search(BORROW_BUDGET_SECOND, q):
         return None
-    ask = re.search(BORROW_BUDGET_ASK, q)
-    if not ask:
+    found = [(lang, m) for lang, rx in BORROW_BUDGET_ASK.items() for m in [re.search(rx, q)] if m]
+    if len(found) != 1:
         return None
+    lang, ask = found[0]
     amount = re.search(BORROW_BUDGET_AMOUNT, q[ask.start():])
-    if not amount or not re.search(BORROW_BUDGET_PURPOSE, q[ask.end():]):
+    if not amount or not re.search(BORROW_BUDGET_PURPOSE[lang], q[ask.end():]):
         return None
     value = _euro_value(amount.group(1) or amount.group(2))
     return value if value is not None and value > 0 else None

@@ -94,7 +94,9 @@ def test_borrowing_to_invest_keeps_the_investment_refusal(question, lang):
     ("Pitäisikö minun lainata 500 € osakkeisiin?", "fi"), ("Should I borrow €500 to pay off my credit card?", "en"),
     ("Should I take a loan of €3000 to pay my rent?", "en"), ("Should I borrow €500 for a holiday? And what is my "
                                                              "balance?", "en"),
-    ("Pitäisikö minun lainata 500 € kaverilleni?", "fi"),
+    ("Pitäisikö minun lainata 500 € kaverilleni?", "fi"), ("Pitäisikö minun lainata 500 € kaverille?", "fi"),
+    ("Pitäisikö minun lainata 500 € sinulle?", "fi"), ("Should I borrow €500 soon?", "en"),
+    ("Should I borrow €500 this afternoon?", "en"),
 ])
 def test_an_investment_a_debt_a_second_question_or_lending_is_never_the_budget_side(question, lang):
     assert ask(question, lang).rule != "borrow_budget" and template.borrow_budget_amount(question) is None, question
@@ -111,6 +113,14 @@ def test_another_persons_borrowing_stays_declined_or_unclaimed(question, lang):
     assert found.rule != "borrow_budget", (question, found)
     assert found.rule is None or [(c.name, c.args) for c in found.calls] == [
         ("decline", {"kind": "other_person_data"})], (question, found)
+
+
+def test_a_second_question_in_the_same_sentence_keeps_its_answer():
+    """As on dev: the spending question is answered, never dropped for the borrowing template."""
+    question = "Should I borrow €500 for a holiday and how much did I spend last month?"
+    found = ask(question)
+    assert template.borrow_budget_amount(question) is None
+    assert found.rule == "spending" and found.calls[0].name == "get_spending", found
 
 
 @pytest.mark.parametrize("question,lang", [("Should I borrow €500 for my health care?", "en"),
@@ -172,6 +182,7 @@ def test_the_answer_states_the_spending_effect_and_passes_the_validator_and_the_
         safe="{{n6}}", free="{{n7}}")
     assert cited == ["n6", "n7"]
     assert answer_text.borrowing_suggestion(text) is None
+    assert answer_text.length_problems(text, 2, kind="template") == []   # templates skip it at runtime
     period = Period(start="2026-10-01", end="2026-10-07", label="Next 7 days")
     numbers = {i: Number(id=i, value=val, unit=Unit.EUR, period=period, method="safe_to_spend.x@1",
                          evidence_ref="ev_x0000000000", label="x", display=f"€{val:,.2f}")
