@@ -1,9 +1,9 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import { glossary } from '../components/learn/glossary.ts'
 import { learnStrings } from '../components/learn/learnStrings.ts'
-import { MiniTest } from '../components/learn/MiniTest.tsx'
+import { MiniTest, PASS_SCORE } from '../components/learn/MiniTest.tsx'
 import { miniTest } from '../components/learn/miniTests.ts'
-import { lessonsOf, nextLesson, topicsFor, type Topic } from '../components/learn/topics.ts'
+import { lessonsOf, topicsFor, type Topic } from '../components/learn/topics.ts'
 import { LessonTurn } from '../components/lesson/LessonTurn.tsx'
 import { resetProgress, useLearnProgress } from '../lib/learnProgress.ts'
 import { useOpening } from '../lib/openingContext.ts'
@@ -77,8 +77,43 @@ function BackButton({ label, onBack }: { label: string; onBack: () => void }) {
   )
 }
 
-function stateOf(done: number, total: number, s: Strings): string {
-  return done === 0 ? s.stateStart : done < total ? s.stateProgress : s.stateDone
+/** Three states kept apart: lessons done, quiz taken, quiz passed (at least two of three). */
+interface TopicState {
+  done: number
+  total: number
+  lessonsDone: boolean
+  score: number | undefined
+  passed: boolean
+  /** Lessons done and the quiz passed. */
+  complete: boolean
+  /** The quiz was taken and not passed. */
+  retry: boolean
+}
+
+function topicState(topic: Topic, done: string[], scores: Record<string, number>): TopicState {
+  const count = topic.lessons.filter((id) => done.includes(id)).length
+  const score = scores[topic.id]
+  const passed = score !== undefined && score >= PASS_SCORE
+  const lessonsDone = count === topic.lessons.length
+  return { done: count, total: topic.lessons.length, lessonsDone, score, passed, complete: lessonsDone && passed, retry: score !== undefined && !passed }
+}
+
+function stateLabel(state: TopicState, quizLength: number, s: Strings): string {
+  if (state.complete) return s.stateDone
+  if (state.retry) return s.quizRetry(state.score ?? 0, quizLength)
+  return state.done === 0 && state.score === undefined ? s.stateStart : s.stateProgress
+}
+
+/** The next step: the first lesson not done, else the first quiz not passed, else nothing (all done). */
+function nextStep(topics: Topic[], done: string[], scores: Record<string, number>): View | null {
+  for (const topic of topics) {
+    const lesson = topic.lessons.find((id) => !done.includes(id))
+    if (lesson) return { kind: 'lesson', topic: topic.id, lesson }
+  }
+  for (const topic of topics) {
+    if (!topicState(topic, done, scores).passed && miniTest(topic.id, 'en').length > 0) return { kind: 'quiz', topic: topic.id }
+  }
+  return null
 }
 
 /**
@@ -96,7 +131,11 @@ export function Learn() {
   const topics = topicsFor(overview, lang)
   const [section, setSection] = useState<'lessons' | 'glossary'>('lessons')
   const [view, setView] = useState<View>({ kind: 'home' })
-  const doneIn = (topic: Topic) => topic.lessons.filter((id) => progress.done.includes(id)).length
+  const quizLength = (topic: string) => miniTest(topic, 'en').length
+  const nextTopicAfter = (topic: string) => {
+    const at = topics.findIndex((item) => item.id === topic)
+    return at >= 0 && at < topics.length - 1 ? topics[at + 1].id : null
+  }
 
   if (view.kind === 'lesson') {
     return (
@@ -110,6 +149,10 @@ export function Learn() {
           lessons={lessonsOf(view.topic, overview, lang)}
           startAt={view.lesson}
           doneText={s.lessonDoneText}
+          onFinish={[
+            ...(quizLength(view.topic) > 0 ? [{ label: s.takeQuiz, act: () => setView({ kind: 'quiz', topic: view.topic }) }] : []),
+            { label: s.backToTopic, act: () => setView({ kind: 'topic', topic: view.topic }) },
+          ]}
         />
       </section>
     )
@@ -119,7 +162,15 @@ export function Learn() {
     return (
       <section aria-label={`${s.topics[view.topic] ?? s.title}: ${s.takeTest}`} className="flex flex-col gap-4">
         <BackButton label={s.topics[view.topic] ?? s.back} onBack={() => setView({ kind: 'topic', topic: view.topic })} />
-        <MiniTest key={view.topic} topic={view.topic} onDone={() => setView({ kind: 'topic', topic: view.topic })} />
+        <MiniTest
+          key={view.topic}
+          topic={view.topic}
+          onDone={() => setView({ kind: 'home' })}
+          onNextTopic={(() => {
+            const next = nextTopicAfter(view.topic)
+            return next ? () => setView({ kind: 'topic', topic: next }) : undefined
+          })()}
+        />
       </section>
     )
   }
@@ -127,7 +178,7 @@ export function Learn() {
   if (view.kind === 'topic') {
     const topic = topics.find((item) => item.id === view.topic)
     if (topic) {
-      return <TopicScreen topic={topic} s={s} done={progress.done} score={progress.scores[topic.id]} onBack={() => setView({ kind: 'home' })} onOpen={setView} />
+      return <TopicScreen topic={topic} s={s} state={topicState(topic, progress.done, progress.scores)} done={progress.done} onBack={() => setView({ kind: 'home' })} onOpen={setView} />
     }
   }
 
@@ -157,28 +208,38 @@ export function Learn() {
         <Glossary s={s} />
       ) : (
         <>
-          <ContinueCard topics={topics} done={progress.done} s={s} onOpen={setView} />
+          <ContinueCard topics={topics} next={nextStep(topics, progress.done, progress.scores)} done={progress.done} s={s} onOpen={setView} />
           <ul className="flex flex-col gap-2">
             {topics.map((topic) => {
-              const done = doneIn(topic)
-              const total = topic.lessons.length
+              const state = topicState(topic, progress.done, progress.scores)
               return (
-                <li key={topic.id}>
+                <li key={topic.id} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
                   <button
                     type="button"
                     onClick={() => setView({ kind: 'topic', topic: topic.id })}
-                    className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-line bg-surface p-3 text-left hover:bg-sunken"
+                    className="flex min-h-11 w-full items-center gap-3 rounded-md text-left hover:bg-sunken"
                   >
                     <TopicIcon topic={topic.id} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="flex items-baseline justify-between gap-2">
                         <span className="text-base font-semibold text-ink">{s.topics[topic.id]}</span>
-                        <span className={`shrink-0 text-sm font-semibold ${done === total ? 'text-brand' : 'text-muted'}`}>{stateOf(done, total, s)}</span>
+                        <span className={`shrink-0 text-right text-sm font-semibold ${state.complete ? 'text-brand' : 'text-muted'}`}>
+                          {stateLabel(state, quizLength(topic.id), s)}
+                        </span>
                       </span>
-                      <span className="text-sm text-ink-2">{s.lessonCount(done, total)}</span>
-                      <Bar done={done} total={total} />
+                      <span className="text-sm text-ink-2">{s.lessonCount(state.done, state.total)}</span>
+                      <Bar done={state.done} total={state.total} />
                     </span>
                   </button>
+                  {state.retry && (
+                    <button
+                      type="button"
+                      onClick={() => setView({ kind: 'quiz', topic: topic.id })}
+                      className="min-h-11 self-start rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
+                    >
+                      {s.retry}
+                    </button>
+                  )}
                 </li>
               )
             })}
@@ -200,9 +261,8 @@ export function Learn() {
 }
 
 /** The one "Continue learning" card: the next lesson and the only Continue; all done: review a topic. */
-function ContinueCard({ topics, done, s, onOpen }: { topics: Topic[]; done: string[]; s: Strings; onOpen: (view: View) => void }) {
-  const next = nextLesson(topics, done)
-  const topic = topics.find((item) => item.id === next?.topic) ?? null
+function ContinueCard({ topics, next, done, s, onOpen }: { topics: Topic[]; next: View | null; done: string[]; s: Strings; onOpen: (view: View) => void }) {
+  const topic = next && next.kind !== 'home' ? (topics.find((item) => item.id === next.topic) ?? null) : null
   if (topics.length === 0) return <p className="rounded-lg border border-line bg-surface p-4 text-base text-ink-2">{s.noLessons}</p>
   if (!next || !topic) {
     return (
@@ -225,15 +285,15 @@ function ContinueCard({ topics, done, s, onOpen }: { topics: Topic[]; done: stri
       <p className="text-sm font-semibold text-on-deep-muted">
         {s.continueTitle} · {s.topics[topic.id]}
       </p>
-      <p className="text-lg font-semibold">{s.lessons[next.lesson]}</p>
+      <p className="text-lg font-semibold">{next.kind === 'lesson' ? s.lessons[next.lesson] : s.quizStep(miniTest(topic.id, 'en').length)}</p>
       <Bar done={doneHere} total={topic.lessons.length} label={`${s.topics[topic.id]}: ${count}`} onDeep />
       <p className="text-sm text-on-deep-muted">{count}</p>
       <button
         type="button"
-        onClick={() => onOpen({ kind: 'lesson', topic: topic.id, lesson: next.lesson })}
+        onClick={() => onOpen(next)}
         className="mt-1 inline-flex min-h-11 items-center justify-center self-start rounded-pill bg-mint px-5 text-base font-semibold text-ink hover:bg-mint-tint"
       >
-        {s.continue}
+        {next.kind === 'quiz' ? s.quizNext : s.continue}
       </button>
     </div>
   )
@@ -243,20 +303,21 @@ function ContinueCard({ topics, done, s, onOpen }: { topics: Topic[]; done: stri
 function TopicScreen({
   topic,
   s,
+  state,
   done,
-  score,
   onBack,
   onOpen,
 }: {
   topic: Topic
   s: Strings
+  state: TopicState
   done: string[]
-  score: number | undefined
   onBack: () => void
   onOpen: (view: View) => void
 }) {
-  const doneHere = topic.lessons.filter((id) => done.includes(id)).length
-  const allDone = doneHere === topic.lessons.length
+  const doneHere = state.done
+  const allDone = state.lessonsDone
+  const score = state.score
   const current = topic.lessons.find((id) => !done.includes(id)) ?? null
   const quizLength = miniTest(topic.id, 'en').length
   return (
@@ -271,7 +332,7 @@ function TopicScreen({
           <p className="text-sm text-ink-2">{s.lessonCount(doneHere, topic.lessons.length)}</p>
         </div>
       </div>
-      {allDone && (
+      {state.complete && (
         <p className="flex items-center gap-2 text-base font-semibold text-brand" role="status">
           <span aria-hidden="true" className="check-pop inline-flex size-7 items-center justify-center rounded-pill bg-mint text-ink">
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -298,10 +359,10 @@ function TopicScreen({
         })}
         {quizLength > 0 && (
           <PathStep
-            mark={score !== undefined ? 'done' : allDone ? 'current' : 'upcoming'}
+            mark={state.passed ? 'done' : allDone || state.retry ? 'current' : 'upcoming'}
             label={s.quizStep(quizLength)}
-            state={score !== undefined ? s.testScore(score, quizLength) : allDone ? s.stepCurrent : s.stepUpcoming}
-            detail={score !== undefined ? s.testScore(score, quizLength) : undefined}
+            state={state.retry ? s.quizRetry(score ?? 0, quizLength) : score !== undefined ? s.testScore(score, quizLength) : allDone ? s.stepCurrent : s.stepUpcoming}
+            detail={state.retry ? `${s.quizRetry(score ?? 0, quizLength)} · ${s.retry}` : score !== undefined ? s.testScore(score, quizLength) : undefined}
             line={false}
             onOpen={() => onOpen({ kind: 'quiz', topic: topic.id })}
           />
