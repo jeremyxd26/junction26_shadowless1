@@ -3,8 +3,10 @@
 import type { Language } from '../api/types.ts'
 
 const en = {
-  /** The `/bill` screen's title and the opening's link to it (#332). */
+  /** The `/bill` screen's title (#332). */
   screenTitle: 'Show Sentti a bill',
+  /** The opening's chip that runs the bill flow in the thread (#332); the wording of the issue. */
+  chip: 'Show Sentti a bill',
   galleryTitle: 'Pick a sample bill',
   galleryHint: 'Sentti reads the bill, then you check what it found.',
   sampleLanguage: { en: 'Bill in English', fi: 'Bill in Finnish' } as Record<Language, string>,
@@ -67,6 +69,7 @@ type BillStrings = typeof en
 
 const fi: BillStrings = {
   screenTitle: 'Näytä Senttille lasku',
+  chip: 'Näytä Sentille lasku',
   galleryTitle: 'Valitse esimerkkilasku',
   galleryHint: 'Sentti lukee laskun, ja sinä tarkistat, mitä se löysi.',
   sampleLanguage: { en: 'Englanninkielinen lasku', fi: 'Suomenkielinen lasku' },

@@ -5,6 +5,8 @@ import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
+import { lastAskId } from '../lib/thread.ts'
+import { landBelowHeader } from '../lib/threadScroll.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -59,10 +61,15 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // the view (DESIGN.md: no autoscroll while streaming). Under an opening even the first one is.
   const lastId = turns.at(-1)?.id
   const many = turns.length > 1 || Boolean(opening)
+  // Follow-ups and the answer's announcement belong to the last ask turn, even when a client turn
+  // (#319) came after it while it was still streaming (#332).
+  const latestAsk = lastAskId(turns)
+  // It lands below the header's measured height, so large text does not hide it under the header (#332).
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    document.querySelector(`[data-turn="${lastId}"]`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+    const turn = document.querySelector(`[data-turn="${lastId}"]`)
+    if (turn) landBelowHeader(turn, !reduce)
   }, [lastId, many])
 
   // Every new question stops an answer that is being read aloud, the latest one or an older one.
@@ -128,12 +135,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
       )}
 
       {turns.map((turn, index) => {
-        const latest = index === turns.length - 1
+        const last = index === turns.length - 1
         return (
-          <div key={turn.id} className={latest && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
+          <div key={turn.id} className={last && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
             <TurnView
               turn={turn}
-              latest={latest}
+              latest={turn.id === latestAsk}
               suggestions={suggestions}
               onAsk={send}
               onRetry={() => retry(turn.id, turn.question)}

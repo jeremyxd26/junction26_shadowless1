@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { BillExplainRequest, BillExplainResponse, BillReadResponse } from '../../api/billTypes.ts'
 import contract from '../../api/mock/contract-examples.json'
 import { ApiError } from '../../api/errors.ts'
-import { flowReducer, initialFlow, toFlowError, type FlowState } from './billFlowState.ts'
+import { billStrings } from '../../lib/billStrings.ts'
+import { flowReducer, flowStep, initialFlow, toFlowError, type FlowState } from './billFlowState.ts'
 
 const examples = contract.examples as unknown as Record<string, unknown>
 const reading = examples['bill.read_response'] as BillReadResponse
@@ -80,5 +81,28 @@ describe('toFlowError', () => {
     const plain = new ApiError(500, { code: 'internal', message: 'Something went wrong.', retryable: true })
     expect(toFlowError(plain, 'fallback', now).until).toBeNull()
     expect(toFlowError(new Error('x'), 'fallback', now)).toEqual({ message: 'fallback', retryable: true, until: null })
+  })
+})
+
+describe('the bill flow as a client turn (#332)', () => {
+  const s = billStrings('fi')
+  const step = (...events: Parameters<typeof flowReducer>[1][]) => flowStep(run(...events), s)
+  const pick = { type: 'pick', sampleId: 'sample_2' } as const
+  const readOk = { type: 'read_ok', sampleId: 'sample_2', reading } as const
+
+  it('reports each step title, busy only while it waits for the API', () => {
+    expect(step()).toEqual({ title: s.galleryTitle, waiting: false })
+    expect(step(pick)).toEqual({ title: s.reading, waiting: true })
+    expect(step(pick, readOk)).toEqual({ title: s.confirmTitle, waiting: false })
+    expect(step(pick, readOk, { type: 'confirm', request })).toEqual({ title: s.explaining, waiting: true })
+    expect(step(pick, readOk, { type: 'confirm', request }, { type: 'explain_ok', response })).toEqual({
+      title: response.match.text,
+      waiting: false,
+    })
+  })
+
+  it('titles the typed fields when the reading is unavailable, and the gallery again after a failed read', () => {
+    expect(step(pick, { type: 'read_unavailable', sampleId: 'sample_2', message: 'x' })).toEqual({ title: s.typeTitle, waiting: false })
+    expect(step(pick, { type: 'read_failed', sampleId: 'sample_2', error })).toEqual({ title: s.galleryTitle, waiting: false })
   })
 })

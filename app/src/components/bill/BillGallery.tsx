@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { billApi } from '../../api/bill.ts'
-import type { BillSample } from '../../api/billTypes.ts'
+import type { BillSample, BillSamplesResponse } from '../../api/billTypes.ts'
+import type { Language } from '../../api/types.ts'
 import { ApiError } from '../../api/errors.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { useSettings } from '../../lib/settings.ts'
@@ -11,17 +12,33 @@ interface Props {
   onPick: (sampleId: string) => void
 }
 
+/**
+ * The sample bills per language, kept for the session once loaded (#332): when the thread comes
+ * back from /cards, a bill turn shows its gallery at full height at once, so the browser restores
+ * the page to the same place instead of a shorter one.
+ */
+const loadedSamples = new Map<Language, BillSamplesResponse>()
+
 /** The sample bills (contract 11.4, `GET /api/bill/samples`) as a two-column grid of tiles. */
 export function BillGallery({ onPick }: Props) {
   const { lang } = useSettings()
   const s = billStrings(lang)
-  const load = useCallback(() => billApi.samples(lang), [lang])
-  const result = useLoad(`bill-samples|${lang}`, load)
+  const kept = loadedSamples.get(lang)
+  const load = useCallback(
+    () =>
+      billApi.samples(lang).then((data) => {
+        loadedSamples.set(lang, data)
+        return data
+      }),
+    [lang],
+  )
+  const loaded = useLoad(kept ? null : `bill-samples|${lang}`, load)
+  const result: typeof loaded = kept ? { status: 'ready', data: kept, refresh: () => {} } : loaded
 
   return (
     <section aria-labelledby="bill-gallery-title" className="flex flex-col gap-3">
       <div>
-        <h2 id="bill-gallery-title" className="text-card-title font-bold text-brand">
+        <h2 id="bill-gallery-title" data-step-heading tabIndex={-1} className="text-card-title font-bold text-brand">
           {s.galleryTitle}
         </h2>
         <p className="mt-0.5 text-sm text-muted">{s.galleryHint}</p>
