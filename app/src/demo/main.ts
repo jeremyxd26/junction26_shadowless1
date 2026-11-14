@@ -3,6 +3,7 @@
 // the module, so the app's CSP (`frame-ancestors 'self'`, scripts and styles from 'self') allows it:
 // no inline script or style; sizes are set through the CSSOM.
 import './demo.css'
+import { api } from '../api/client.ts'
 import { moduleHref, safePath } from './path.ts'
 
 type Lang = 'en' | 'fi'
@@ -477,22 +478,23 @@ function render() {
   if (first) first.textContent = t.defaultPersona
 }
 
-/** The personas the API serves; in a mock build there is no API, so only "Default" is offered. */
+/**
+ * The personas from the module's own API client (#440): in a live build `GET /api/personas`, in a
+ * mock build the mock client's list, with no request at all. Without a list, only "Default".
+ */
 async function loadPersonas() {
   const fallback = el('option', undefined, TEXT[state.lang].defaultPersona)
   fallback.value = ''
   personaSelect.append(fallback)
   try {
-    const response = await fetch(`/api/personas?lang=${state.lang}`, { headers: { Accept: 'application/json' } })
-    const body: unknown = response.ok ? await response.json() : null
-    const list = (body as { personas?: { customer_id: string; display_name: string }[] } | null)?.personas
-    for (const persona of Array.isArray(list) ? list : []) {
+    const { personas } = await api.personas(state.lang)
+    for (const persona of personas) {
       const option = el('option', undefined, `${persona.display_name} (${persona.customer_id})`)
       option.value = persona.customer_id
       personaSelect.append(option)
     }
   } catch {
-    // No API (mock build or offline): the module picks its own default persona.
+    // No API (the deployment is down, or offline): the module picks its own default persona.
   }
   if (state.persona && ![...personaSelect.options].some((option) => option.value === state.persona)) {
     const option = el('option', undefined, state.persona)
