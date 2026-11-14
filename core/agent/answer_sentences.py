@@ -168,7 +168,7 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
             items = [f"{t} {in_period(lab, language)}" for lab, t, _ in groups]   # "€3,500.00 in July 2026"
             second = pick(TIME_GROUPS, language).format(items=_join(items, language))
         else:
-            names = [(lab.lower() if language == "en" and lab in _KNOWN_LABELS else lab) for lab, _, _ in groups]
+            names = [(lab.lower() if lab in _KNOWN_LABELS else lab) for lab, _, _ in groups]   # a known label
             items = [f"{n} ({t})" for n, (_, t, _) in zip(names, groups)]
             second = pick(LARGEST_GROUPS, language).format(items=_join(items, language))
         return [first, second], _ids(total, *(t for _, t, _ in groups))

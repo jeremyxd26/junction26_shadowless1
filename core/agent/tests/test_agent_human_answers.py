@@ -328,6 +328,8 @@ def test_lead_persona_texts():
         ("what_if", "fi"): "Tämä leikkaus säästäisi sinulle 45,91 € / kk eli 550,95 € / v. "
                            "Nyt käytät 229,56 € / kk luokassa Ravintolat.",
         ("payday", "fi"): "Palkkasi on tavallisesti 3 187,25 € / kk, ja seuraava palkkapäiväsi on 15.10.2026.",
+        ("by_category", "fi"): "Elokuussa 2026 käytit 4 175,17 €. Suurimmat osat olivat asuminen (836,65 €) ja "
+                               "ruokaostokset (612,30 €).",
     }
     for (key, lang), text in expected.items():
         draft, v, _, _ = answer(key, lang)
