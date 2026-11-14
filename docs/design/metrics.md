@@ -773,6 +773,52 @@ The card's second action asks the what-if question for the largest category with
 | CUST00349 | 13 | 94.25 | 31.42 | summary: restaurants 69.2 %, entertainment 30.8 % |
 | CUST00849 | 1 | 8.64 | 2.88 | few (at a restaurant) |
 
+## 13. Savings plan (#369)
+
+"How could I save more?" The tool is `get_savings_plan` (`core/tools/savings_plan.py`). It composes existing tools and adds no formula of its own.
+
+**The levers**, in this order. Each counts only when the what-if offers the cut (status not `not_offered`) and saves at least €5.00 a month (`config.SAVINGS_PLAN_MIN_EUR`):
+1. **Eating out:** `Restaurants` cut by 20% (`config.SAVINGS_PLAN_FIRST`).
+2. **The largest other flexible everyday category:** among `Entertainment`, `Lifestyle` and `Travel` (`config.SAVINGS_PLAN_OTHER_CATEGORIES`), the one with the highest monthly baseline (ties by name), cut by 10% (`config.SAVINGS_PLAN_OTHER_CUT_PCT`).
+
+**Each lever is the what-if tool itself** (section 4, `run_what_if`): the same window and baseline, so the plan's first row and an answer to "What if I cut restaurants by 20%?" are the same number to the cent (a database test).
+
+**Nothing is counted twice:** the two cut levers are always different categories. The tool itself skips the first lever's category when it picks the second, whatever the settings list (review of #411). A category's what-if saving counts only that category. Small purchases are no lever: in the data they are restaurant visits, which the first lever covers.
+
+**The numbers** (`savings_plan.<name>@1`; the totals are estimates):
+
+| Method | Formula | Evidence |
+|---|---|---|
+| `savings_plan.total_month_eur@1` | the sum of the levers' monthly savings | composite `sum` whose parts are the levers' own refs, one role per category (`restaurants`, `lifestyle`) |
+| `savings_plan.total_year_eur@1` | twelve times the monthly total | composite `scale` |
+| `savings_plan.cut_pct@1` | a lever's cut share, a setting (20, 10) | composite `rule_value`, so an answer cites it as a number, never as bare digits |
+
+**These are savings from spending below the usual pace.** They add to what can be set aside, never to safe to spend. Next to the plan:
+- safe to save a month (section 3.1) is shown as it is today, never added in. It is the safe-to-save tool's own headline (its `monthly`), the same Number and ref;
+- the S-Bonus is never shown with the plan: no amount on the card, in the model view or in the answer, so nothing can put it next to the total (coordinator, #411). When the estimate is offered, the answer's first follow-up is its own question, "How much S-Bonus could I get?" ("Paljonko S-Bonusta voisin saada?"), which the bonus rule answers with its own Number and evidence. The view's `follow_up` carries it, and `template.follow_ups` puts it first;
+- nothing in the plan quotes safe to spend;
+- a failure of safe to save or the S-Bonus leaves that extra out; the plan still stands.
+
+**The answer**, at most two sentences and three numbers, the plan's total a month first (review of #411):
+- "These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and spending a tenth less on lifestyle."
+- "You could already set aside about €184.61 a month."
+- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then safe to save's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
+- **The card:** the levers' own amounts are its rows, each keyed by its category and labelled in words ("Restaurants, a fifth less"; "Lifestyle, less than usual" for a share without words). The estimate text is the assumption in words. The card has no digit outside a Number or the period.
+- **No lever:** "None of the usual cuts would add much here; you could already set aside about €184.61 a month." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
+- **The bank button:** the card's action is `open_host_screen` with `monthly_saving`, labelled "See monthly saving in S-mobiili", the one label of #267. No amount is joined to the bank screen.
+- **The model view** gives every number as a Number: each lever's cut share as a Number and, for the shares above, in words. No label carries digits.
+
+**The personas** (as of 2026-09-30, the what-if window 2026-04 to 2026-09):
+
+| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Safe to save a month |
+|---|---|---|---|---|---|
+| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 184.61 |
+| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 429.16 |
+| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 546.87 |
+| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 199.95 |
+
+**Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.
+
 ## Rule references
 
 R1 and R2: every number is a column with its period and an evidence filter (section 0). R5: the DEMO_TODAY bound in every query. R9: Health is summed only, never benchmarked or used in labels (sections 1, 5, 6). R13: safe to spend, what-if, peer benchmark and store index are estimates with a stated method and caveat (sections 3, 4, 6, 7).
