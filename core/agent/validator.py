@@ -592,6 +592,31 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# A Health total is stated plainly (#571, R9): the total, the period and the count, nothing more. A draft that
+# cites a Health Number never adds a tip, an offer, a comparison or a judgement, in any language the answer uses.
+_HEALTH_LABEL = re.compile(r"\bhealth\b|\bterveys|\bterveyteen\b", re.I)
+_HEALTH_EXTRA = re.compile(
+    r"\b(a lot|too much|quite|only|little|high|low|higher|lower|more than|less than|usual|unusual|normal|average|"
+    r"try|consider|could|should|might|maybe|tip|tips|advice|save|saving|cut|reduce|compare|compared|people like you|"
+    r"worry|healthy|unhealthy|good|bad|great|"
+    # an offer, a trend or advice on it (security review of #607): "want to see …", "up from …", "keep an eye"
+    r"want|wants|see|show|up from|down from|since|keep|keeping|remember|notable|notably|look after|take care)\b|"
+    r"\b(paljon|vähän|liikaa|korkea|matala|tavallista|tavallinen|normaali|keskimäär\w*|kannattaa|kannattaisi|voisit|"
+    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono|"
+    r"haluat\w*|näe\w*|näet|nähdä|näytä\w*|näytän|katso\w*|nous\w*|lask(i|ivat|enut)|lähtien|pidä\w*|muista\w*|"
+    r"huomattava\w*|huolehdi\w*|huolehti\w*)\b", re.I)
+
+
+def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first tip, offer, comparison or judgement word in a draft that cites a Health Number, or None."""
+    if not any(_HEALTH_LABEL.search(numbers[i].label or "") for i in TOKEN.findall(text) if i in numbers):
+        return None
+    m = _HEALTH_EXTRA.search(TOKEN.sub(" ", text))
+    if m:
+        return m.group(0)
+    return "?" if "?" in text else None   # a question back is an offer too
+
+
 # #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
 # is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
 # payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
@@ -640,6 +665,9 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
+    extra = health_extra(text, numbers)
+    if extra:
+        problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
     meta = meta_text(text)
     if meta:
         problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")

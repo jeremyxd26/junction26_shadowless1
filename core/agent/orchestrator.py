@@ -48,6 +48,7 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -200,13 +201,14 @@ class _InCallOrder(NumberRegistry):
 HEALTH_MERCHANT = tuple(f"{kind.lower()} " for kind in tool_config.MERCHANT_KIND_BY_CATEGORY["Health"])
 
 
-def _health_spending(call: FunctionCall) -> bool:
+def _health_spending(call: dict[str, Any] | FunctionCall) -> bool:
     """A get_spending call filtered on Health, on the health MCC group or on a health merchant's alias ("Health
-    service A", "Terveyspalvelu A") (#598)."""
-    flt = (call.args or {}).get("filter") or {}
-    return call.name == "get_spending" and ("Health" in (flt.get("categories") or [])
-                                            or "health" in (flt.get("mcc_groups") or [])
-                                            or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
+    service A", "Terveyspalvelu A") (#598); a planned call or a call record of the answer (#571)."""
+    name, args = (call.name, call.args) if isinstance(call, FunctionCall) else (call["name"], call.get("args"))
+    flt = (args or {}).get("filter") or {}
+    return name == "get_spending" and ("Health" in (flt.get("categories") or [])
+                                       or "health" in (flt.get("mcc_groups") or [])
+                                       or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
 
 
 def _health_what_if(call: FunctionCall) -> bool:
@@ -569,12 +571,14 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         # #598: the model planned a Health total, which was dropped before it ran: the template says the thing can't be
-        # seen on its own, then answers the other question; the composer never writes such an answer
-        guarded = a.health_dropped is not None
+        # seen on its own, then answers the other question; the composer never writes such an answer. A Health total
+        # that ran is the per-tool template too, never a model draft (#571, R9), and so is the other tool's sentence.
+        guarded = a.health_dropped is not None or any(_health_spending(c) for c in a.calls)
         draft, used_template = self._compose(compose_in, numbers, allowed,
                                              skip_model=planner_fallback or template_answer or guarded
                                              or a.composer_unavailable is not None, a=a,
-                                             lead=template.unknown_lead(a.health_dropped, lang) if guarded else None)
+                                             lead=template.unknown_lead(a.health_dropped, lang)
+                                             if a.health_dropped is not None else None)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -590,7 +594,8 @@ class Pipeline:
         designed = (template_answer or guarded) and not a.template_failed
         if designed:
             a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template",
-                                    "designed": "rule_template" if template_answer else "health_filter_dropped"})
+                                    "designed": "rule_template" if template_answer else
+                                    "health_filter_dropped" if a.health_dropped is not None else "health"})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
@@ -978,13 +983,13 @@ class Pipeline:
 
     def _health_filter_guard(self, message: str, calls: list[FunctionCall], source: str,
                              a: _Answer) -> list[FunctionCall]:
-        """#598: a Health total the model planned never runs, whatever the question (health stays declined as the rules
-        decline it; "the gym", "yoga", "a massage" are no health spending). The call is dropped before anything runs
-        and the thing is answered as the rules answer an unknown thing: beside another question, the other calls
-        still run and the template says Sentti can't see the thing on its own; alone, the call becomes the category
-        breakdown of the same period, the rule path's answer. Never a Health card from the model's plan."""
+        """#598: a Health total the model planned runs only when the question itself names health (the rules' HEALTH
+        words, #571); "the gym", "yoga", "a massage" are no health spending. Otherwise the call is dropped before
+        anything runs and the thing is answered as the rules answer an unknown thing: beside another question, the
+        other calls still run and the template says Sentti can't see the thing on its own; alone, the call becomes the
+        category breakdown of the same period, the rule path's answer. Never a Health card for such a word."""
         health = [c for c in calls if _health_spending(c)]
-        if source != "model" or not health:
+        if source != "model" or not health or re.search(RULE_HEALTH, guard.fold(message)):
             return calls
         a.health_dropped = unknown_object(message) or ""
         others = [c for c in calls if c not in health]
