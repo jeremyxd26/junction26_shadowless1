@@ -39,6 +39,7 @@ const examples = contract.examples as unknown as {
   'ask.json.request_clarify': AskRequest
   'ask.json.response_clarify': AskJsonResponse
   'error.response': ErrorEnvelope
+  'card.review': Card
 }
 
 /** Customers with mock data; others get the contract's customer_not_found before the stream. */
@@ -136,6 +137,13 @@ const templateStream = () => cardsWithText(TEMPLATE_TEXT, 'answered', ['llm_unav
 /** Even the template failed the answer check: the fixed short text (`fallback`). */
 const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [])
 
+/** `?mock=review`: the full stream with the contract's `card.review` after its card (#450). */
+function reviewStream(): string[] {
+  const full = blocksOf(examples['ask.sse.stream'])
+  const at = full.findIndex((part) => /^event: card$/m.test(part)) + 1
+  return [...full.slice(0, at), block('card', { card: examples['card.review'] }), ...full.slice(at)]
+}
+
 function normalise(message: string): string {
   return message.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
@@ -146,6 +154,7 @@ function pickStream(message: string, scenario: string | null): string[] {
   if (scenario === 'error') return blocksOf(examples['ask.sse.stream_error'])
   if (scenario === 'template') return templateStream()
   if (scenario === 'fallback') return fallbackStream()
+  if (scenario === 'review') return reviewStream()
   if (sameQuestion(message, examples['ask.json.request_refusal']) || /\b(stock|stocks|shares|invest\w*|osak\w*|sijoit\w*)\b/.test(normalise(message))) {
     return streamOfJson(examples['ask.json.response_refusal'])
   }

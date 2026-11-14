@@ -84,9 +84,14 @@ def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
         for attempt in ("first", "second"):
             before = sent()
             try:
-                result = read_bill(client, image, "image/png", "en")
+                # The second reading only reads the cache (#511): with an unwritable cache folder a sample
+                # costs one request, not two.
+                result = read_bill(client, image, "image/png", "en", cache_only=attempt == "second")
             except BillReadUnavailable as exc:
-                parts.append(f"{attempt} reading: model unavailable ({exc.reason})")
+                if exc.reason == "cache_miss":
+                    parts.append(f"{attempt} reading: not in the cache (the cache folder may not be writable)")
+                else:
+                    parts.append(f"{attempt} reading: model unavailable ({exc.reason})")
                 break
             except Exception as exc:  # noqa: BLE001 - the class name only; a deploy never fails here
                 parts.append(f"{attempt} reading failed ({type(exc).__name__})")

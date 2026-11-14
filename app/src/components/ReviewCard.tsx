@@ -179,7 +179,7 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       tabIndex={-1}
       aria-labelledby={titleId}
       aria-busy={busy !== null}
-      data-review-card=""
+      data-review-card={card.tx_ref}
       data-opening-part="review"
       className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
@@ -272,7 +272,7 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       ref={ref}
       tabIndex={-1}
       aria-labelledby={titleId}
-      data-review-card=""
+      data-review-card={card.tx_ref}
       data-opening-part="review"
       className={`${SURFACE} card-enter`}
     >

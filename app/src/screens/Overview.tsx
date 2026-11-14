@@ -9,6 +9,7 @@ import { Toast } from '../components/Toast.tsx'
 import { BASKETS } from '../lib/baskets.ts'
 import { applyChanges } from '../lib/changes.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
+import { useOpening } from '../lib/openingContext.ts'
 import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
@@ -61,6 +62,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   // overview no longer lists it) and comes back if the answer is undone while the review is open.
   const [card] = useState<ReviewCard | null>(() => overview.reviews[0] ?? null)
   const [phase, setPhase] = useState<Phase>({ kind: 'asking' })
+  // Tell the thread which review card the opening shows (#450): answers point to it only then.
+  const reportReview = useOpening()?.reportReview
+  useEffect(() => {
+    if (!reportReview) return
+    const shown = card && (phase.kind === 'asking' || phase.kind === 'answered') ? { txRef: card.tx_ref, phase: phase.kind } : null
+    reportReview(shown)
+    return () => reportReview(null)
+  }, [reportReview, card, phase.kind])
   const [closing, setClosing] = useState(false)
   const [busy, setBusy] = useState<BasketKey | 'undo' | null>(null)
   const [error, setError] = useState<ReviewError | null>(null)

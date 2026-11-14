@@ -210,3 +210,39 @@ def test_a_bad_bill_setting_is_the_default_with_one_log_line_and_the_model_stays
         assert getattr(gemini.GeminiSettings(_env_file=None), attr) == default
     assert sum(name in r.getMessage() for r in caplog.records) == 1
     assert not isinstance(make_agent_model(settings()), RuleModel)
+
+
+# ---- #511: single flight for a cold miss; cache-only readings ------------------------------------------------
+
+def test_concurrent_cold_readings_of_one_image_send_one_request(tmp_path):
+    import threading
+
+    started, release, sent = threading.Event(), threading.Event(), []
+
+    def slow(model, contents, config, timeout_s):
+        sent.append(model)
+        started.set()
+        release.wait(5)
+        return GOOD
+
+    c = make(slow, tmp_path)
+    replies = []
+    threads = [threading.Thread(target=lambda: replies.append(c.extract(*EXTRACT, accept=usable))) for _ in range(5)]
+    for t in threads:
+        t.start()
+    assert started.wait(5)
+    release.set()
+    for t in threads:
+        t.join(10)
+    assert len(sent) == 1 and len(replies) == 5 and all(usable(r) for r in replies)
+    assert sum(r.cached for r in replies) == 4               # the others answered from the cache it wrote
+
+
+def test_a_cache_only_reading_never_sends_a_request(tmp_path):
+    none = FakeTransport(GOOD)
+    c = make(none, tmp_path)
+    with pytest.raises(GeminiError) as exc:
+        c.extract(*EXTRACT, accept=usable, cache_only=True)
+    assert exc.value.code == "cache_miss" and none.requests == []
+    c.extract(*EXTRACT, accept=usable)
+    assert c.extract(*EXTRACT, accept=usable, cache_only=True).cached and len(none.requests) == 1
