@@ -17,7 +17,8 @@ import pytest
 
 from core.agent.gemini_client import GeminiClient, GeminiError
 from core.agent.tests.test_gemini_client import FakeTransport, api_error, text_response
-from core.bills.read import BillReadUnavailable, check_fields, model_fields, parse_amount, read_bill
+from core.bills.read import (BillReadUnavailable, check_fields, model_fields, parse_amount, parse_due_date,
+                             read_bill)
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"sample-bill" * 40
 IBAN = "FI2112345600000785"                          # the contract's example account (valid mod 97)
@@ -211,6 +212,9 @@ def test_a_reading_refused_by_the_budget_or_the_switch_sends_nothing(code):
     ("amount", "-812,40"),
     ("due_date", "31.2.2026"),                   # not a real day
     ("due_date", "next Friday"),
+    ("due_date", "31 February 2026"),            # not a real day
+    ("due_date", "20 Octobre 2026"),             # not an English month
+    ("due_date", "October 20, 2026"),            # another order
     ("payee", "Pay at https://pay.example"),
 ])
 def test_a_field_that_fails_its_format_is_dropped(field, value):
@@ -222,6 +226,12 @@ def test_a_field_that_fails_its_format_is_dropped(field, value):
                                          ("1,234.56", "1234.56"), ("812", "812.00"), ("EUR 60,00", "60.00")])
 def test_printed_amounts_in_both_locales(text, value):
     assert f"{parse_amount(text):.2f}" == value
+
+
+@pytest.mark.parametrize("text", ["20.10.2026", "2026-10-20", "20 October 2026", "20 Oct 2026", "20 october 2026"])
+def test_printed_due_dates_in_both_locales(text):
+    """The English bill's own form counts too (the accuracy run of #250: sample 4 prints "20 October 2026")."""
+    assert parse_due_date(text) == date(2026, 10, 20)
 
 
 # ---- injection: text in the image tells the model to report another account -------------------------

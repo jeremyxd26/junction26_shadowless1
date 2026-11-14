@@ -56,6 +56,11 @@ _BARCODE_SHAPE = re.compile(r"[0-9]{54}")
 _AMOUNT = re.compile(r"(?:€|EUR)?\s*([0-9][0-9  .,]*?)\s*(?:€|EUR|eur|e)?")
 _DATE_FI = re.compile(r"([0-9]{1,2})\.([0-9]{1,2})\.([0-9]{4})")
 _DATE_ISO = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+# An English bill prints its dates with the month's name ("20 October 2026", "20 Oct 2026"): found by the
+# accuracy run of #250, where the model copied sample 4's due date exactly and the check dropped it.
+_DATE_EN = re.compile(r"([0-9]{1,2}) ([A-Za-z]{3,9}) ([0-9]{4})")
+_MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+                "november", "december")
 _PAYEE = re.compile(r"[^\W_][\w .,&'’()/+\-]*", re.UNICODE)
 MONTHS_EN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 NOTES = {
@@ -144,11 +149,19 @@ def parse_amount(text: str) -> Decimal | None:
 
 
 def parse_due_date(text: str) -> date | None:
-    """A printed due date ("1.10.2026", "01.10.2026", "2026-10-01") as a date, or None (not a real day)."""
+    """A printed due date ("1.10.2026", "01.10.2026", "2026-10-01", "1 October 2026", "1 Oct 2026") as a
+    date, or None (not a real day, or another form)."""
     text = text.strip()
     m = _DATE_FI.fullmatch(text)
+    en = _DATE_EN.fullmatch(text)
     if m:
         d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    elif en:
+        name = en.group(2).lower()
+        months = [i for i, full in enumerate(_MONTH_NAMES, start=1) if name in (full, full[:3])]
+        if not months:
+            return None
+        d, mo, y = int(en.group(1)), months[0], int(en.group(3))
     else:
         m = _DATE_ISO.fullmatch(text)
         if not m:
