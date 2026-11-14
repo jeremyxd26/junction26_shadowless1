@@ -840,7 +840,7 @@ def test_a_possessive_keeps_the_category_and_food_is_groceries(question, lang, f
 
 def test_a_possessive_before_no_category_is_still_an_unknown_thing():
     from core.agent.rules import unknown_object
-    assert unknown_object("how much did I spend on my wife's birthday gift?") == "wife's"
+    assert unknown_object("how much did I spend on my wife's birthday gift?") == "wife's birthday gift"   # whole (#623)
 
 
 @pytest.mark.parametrize("question,expected", [
@@ -1013,7 +1013,7 @@ def test_period_and_frequency_words_are_never_named_as_things(question, lang):
 @pytest.mark.parametrize("question,word", [
     ("how much do I spend on the gym?", "gym"), ("how much did I spend on Netflix last month?", "Netflix"),
     ("how much did I spend at the barber?", "barber"), ("how much did I spend on Black Friday?", "Black Friday"),
-    ("how much did I spend on my dog?", "dog"), ("how much did I spend on yoga classes?", "yoga"),
+    ("how much did I spend on my dog?", "dog"), ("how much did I spend on yoga classes?", "yoga classes"),
     ("how much did I spend at Lidl in May?", "Lidl"), ("how much did I spend on Spotify?", "Spotify"),
     ("how much did I spend at Caf\u00e9 M\u00fcller?", "Caf\u00e9 M\u00fcller"),
     ("how much did I spend on <b>Lidl</b>", "Lidl"),   # markup is read as the bare name
@@ -1088,3 +1088,65 @@ def test_the_finnish_long_form_answers_both_questions_as_its_short_form_does():
 def test_an_object_in_a_later_sentence_counts_only_when_that_sentence_asks(question, thing):
     from core.agent.rules import _unknown_object
     assert _unknown_object(fold(question)) == thing
+
+
+# ---- #623: "What did <thing> cost me?": the thing as the subject of cost is never the unfiltered total -----------
+
+@pytest.mark.parametrize("lang,question,word", [
+    ("en", "What did the gym cost me last month?", "gym"),
+    ("en", "How much did the gym cost me last month?", "gym"),
+    ("en", "How much did Netflix cost last month?", "Netflix"),
+    ("en", "What does the gym cost me a month?", "gym"),
+    ("fi", "Paljonko kuntosali maksoi minulle viime kuussa?", "kuntosali"),
+    ("fi", "Mitä kuntosali maksoi viime kuussa?", "kuntosali"),
+    ("fi", "Paljonko maksoin kuntosalin jäsenyyden viime kuussa?", "kuntosalin jäsenyyden"),
+])
+def test_a_thing_as_the_subject_of_cost_gets_the_unknown_thing_breakdown(lang, question, word):
+    from core.agent.rules import unknown_object
+    assert claimed_rule(question, lang) == "unknown_object"
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_basket_breakdown"]
+    assert unknown_object(question) == word
+
+
+@pytest.mark.parametrize("lang,question", [
+    ("en", "What did my insurance cost me last month?"),
+    ("en", "What did the car insurance cost me last month?"),
+    ("en", "What did my phone plan cost me last month?"),
+    ("fi", "Paljonko vakuutus maksoi viime kuussa?"),
+    ("fi", "Paljonko maksoin vakuutuksen viime kuussa?"),
+])
+def test_a_bill_as_the_subject_of_cost_gets_what_the_bill_rules_give(lang, question):
+    # what "How much is my insurance bill?" gives today: the bills tool (#623, decided in the PR)
+    assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
+
+
+@pytest.mark.parametrize("lang,question,flt", [
+    ("en", "What did restaurants cost me last month?", {"categories": ["Restaurants"]}),
+    ("en", "What did taxis cost me last month?", {"mcc_groups": ["taxi"]}),
+    ("fi", "Paljonko ravintolat maksoivat minulle viime kuussa?", {"categories": ["Restaurants"]}),
+    ("fi", "Paljonko maksoin vuokraa viime kuussa?", {"categories": ["Housing"]}),
+    ("en", "What did everything cost me last month?", None),
+    ("en", "What did it all cost last month?", None),
+    ("en", "How much did last month cost me?", None),
+])
+def test_a_category_subject_is_its_total_and_the_whole_is_the_total(lang, question, flt):
+    calls = data_calls(plan(question, lang))
+    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1].get("filter") == flt
+
+
+def test_a_cost_question_beside_another_rules_question_asks_back_and_an_employers_bonus_is_no_thing():
+    result = plan("What did the gym cost me last month, and what can I safely spend this week?")
+    assert data_calls(result) == [] and result.calls[0].args["question"] == CLARIFY_WHICH[0]
+    assert claimed_rule("Paljonko bonusta työnantaja maksoi?", "fi") != "unknown_object"
+
+
+@pytest.mark.parametrize("question,word", [
+    ("How much did I spend on the yoga club last month?", "yoga club"),
+    ("What did the car insurance cost me last month?", "car insurance"),
+    ("How much did I spend on coffee machines and the gym?", "coffee machines"),
+    ("How much did I spend at Café Müller in May?", "Café Müller"),
+    ("How much do I spend on the gym?", "gym"),
+])
+def test_the_quoted_thing_is_the_whole_compound(question, word):
+    from core.agent.rules import unknown_object
+    assert unknown_object(question) == word
