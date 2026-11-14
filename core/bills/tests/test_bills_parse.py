@@ -219,6 +219,20 @@ def test_changing_any_single_digit_invalidates():
         assert not any(valid_reference(m) for m in mutations(text)), text
 
 
+def test_length_rules_hold_even_when_the_checksum_passes():
+    """Built with correct check digits, so only the length rules can reject them."""
+    for bban in (random_digits(13), random_digits(15), "A" + random_digits(13), random_digits(10) + "AB12"):
+        iban = iban_of("FI", bban)
+        assert mod97(iban[4:] + iban[:4]) == 1 and not valid_iban(iban), iban   # FI is 2 + 2 + 14 digits
+    assert valid_iban(iban_of("EE", random_digits(13))) and valid_iban(iban_of("GB", "NWBK" + random_digits(14)))
+    assert not valid_iban(iban_of("DE", random_digits(31)))                    # 35 characters: over 34
+    twenty = national_of("1" + random_digits(18))                              # 19 digits + check digit
+    twenty_one = national_of("1" + twenty[:-1])                                # 20 digits + check digit
+    assert len(twenty) == 20 and valid_reference(twenty)                       # the maximum
+    assert len(twenty_one) == 21 and not valid_reference(twenty_one)           # one digit more
+    assert not valid_reference(rf_of("1" * 22)) and valid_reference(rf_of("1" * 21))   # RF body: 21 at most
+
+
 def test_check_digits_outside_02_to_98_are_rejected():
     """98 minus a remainder is 02..98: 00, 01 and 99 pass the bare modulo test for some numbers, never the check."""
     found = {}
