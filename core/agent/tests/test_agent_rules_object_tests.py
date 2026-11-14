@@ -1,9 +1,10 @@
 """Object tests for the credit and investment classes (#677, follow-up of #657). No database.
 
 #657 refused credit and investment questions as classes. A class with no object test also refused rare ordinary
-wordings: a loan statement, a library loan, lending to a friend, borrowing from one's own savings goal, investing time.
-Those are ordinary again; a bank or lender keeps the refusal. The rows #657 left for later are refused by a rule, or
-are the planner's for a written reason."""
+wordings: a loan statement, a library loan, lending to a friend, borrowing from one's own savings goal. Those are
+ordinary again; a bank, a lender or any source not on the allowlist keeps the refusal. Investing time keeps the
+investment refusal (review of #682). The rows #657 left for later are refused by a rule, or are the planner's for a
+written reason."""
 
 from __future__ import annotations
 
@@ -27,8 +28,8 @@ def declined(found):
 @pytest.mark.parametrize("question,lang", [
     ("Can I get a loan statement?", "en"), ("Saanko lainaa kirjastosta?", "fi"),
     ("Paljonko voin lainata kaverilleni?", "fi"), ("How much can I borrow from my savings goal?", "en"),
-    ("How should I invest my time in budgeting?", "en"), ("Should I invest more time in checking my bills?", "en"),
     ("Can I get a credit card statement?", "en"), ("Voinko saada lainaa ystävältä?", "fi"),
+    ("Saanko lainaa isältäni?", "fi"), ("Voinko saada lainaa vanhemmiltani?", "fi"),   # the allowlist, a possessive
 ])
 def test_the_rare_ordinary_wordings_are_not_refused(question, lang):
     found = ask(question, lang)
@@ -46,9 +47,27 @@ def test_a_credit_decision_stays_refused(question, lang):
     assert declined(ask(question, lang)) == ["credit_decision"], question
 
 
+@pytest.mark.parametrize("question,lang", [   # review of #682: the source is an allowlist, so a lender's name refuses
+    ("Saanko lainaa Nordealta?", "fi"), ("Saanko lainaa Nordeasta?", "fi"), ("Voinko saada lainaa Klarnalta?", "fi"),
+    ("Voinko saada autolainaa Santanderilta?", "fi"), ("Saanko lainaa Lähitapiolta?", "fi"),
+    ("Saanko lainaa Handelsbankenilta?", "fi"), ("How much can I borrow from my account at the bank?", "en"),
+])
+def test_a_loan_from_a_lender_by_name_stays_refused(question, lang):
+    assert declined(ask(question, lang)) == ["credit_decision"], question
+
+
 @pytest.mark.parametrize("question", ["Should I invest in stocks?", "Should I invest my savings?", "Should I invest?",
                                       "Where should I invest?", "Should I invest more money?"])
 def test_investment_advice_stays_refused(question):
+    assert declined(ask(question)) == ["investment_advice"], question
+
+
+@pytest.mark.parametrize("question", [   # review of #682: investing time keeps the refusal, the safe side of a hard rule
+    "How should I invest my time in budgeting?", "Should I invest more time in checking my bills?",
+    "How should I invest my time this month?", "How should I invest my time and money?",
+    "Should I invest more time or money this month?",
+])
+def test_investing_time_stays_refused(question):
     assert declined(ask(question)) == ["investment_advice"], question
 
 

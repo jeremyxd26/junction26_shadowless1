@@ -40,18 +40,19 @@ AMOUNT_EN = r"(€\s?)?(\d[\d\s.,]*|" + _NUMBER_EN + r")\s?(€|euros?|eur|bucks
 AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|"
              r"\w+kymmentä|sata|satanen|satasen|tuhat|tonni|tonnin)\s?(€|euroa?|e)?\b")
 
-# Object tests for the credit and investment classes (#677), so a rare ordinary wording is not refused: a loan's own
-# papers ("Can I get a loan statement?"), a loan from no lender ("Saanko lainaa kirjastosta?"), lending to someone
-# ("Paljonko voin lainata kaverilleni?" is guarded in place), borrowing from one's own money ("How much can I borrow from
-# my savings goal?") and time or effort ("How should I invest my time in budgeting?"). A bank or lender keeps the refusal.
+# Object tests for the credit class (#677), so a rare ordinary wording is not refused: a loan's own papers ("Can I get
+# a loan statement?"), a loan from a listed source that lends no money ("Saanko lainaa kirjastosta?"), lending to
+# someone ("Paljonko voin lainata kaverilleni?" is guarded in place) and borrowing from one's own money ("How much can I
+# borrow from my savings goal?"). On a hard rule the refusing side is the safe side: the source is an allowlist, so a
+# bank or any other name ("Saanko lainaa Nordealta?") keeps the refusal, as does an account at the bank. Investing time
+# keeps the investment refusal (review of #682): a time object with a period would read "invest" as a category total.
 LOAN_OBJECT = (r"(?!\s+(statements?|documents?|papers?|numbers?|accounts?|receipts?|letters?|calculators?|overviews?"
                r"|details|balances?|summar\w*|history|interest|payments?|repayments?|terms|agreements?|contracts?"
                r"|bills?|limits? (statements?|letters?))\b)")
-LOAN_SOURCE = r"(?!\s+(?!pank|rahoitus|luotto|lainanantaj|laina)\w+(sta|stä|lta|ltä)\b)"
+LOAN_SOURCE = (r"(?!\s+(kirjasto|ystäv|(työ)?kaver|naapur|(iso)?isä|(iso)?äi[dt]|(iso)?vanhemm|sisko|sisar|velj|mumm"
+               r"|pap(p)?a|ukki|puoliso|vaimo|mieh)\w*(sta|stä|lta|ltä)(ni|si|mme|nne|nsa|nsä)?\b)")
 OWN_MONEY_SOURCE = (r"(?!\s+from\s+(my|our)\s+(own\s+)?(savings( goal)?|buffer|goal|account|pot|reserve|money"
-                    r"|emergency fund)\b)")
-TIME_OBJECT = (r"(?!\s+(more\s+|less\s+|some\s+|a\s+bit\s+of\s+|a\s+little\s+)?(my\s+|our\s+|the\s+|your\s+)?(own\s+)?"
-               r"(time|effort|energy|attention|hours?|minutes?|weekends?|evenings?)\b)")
+                    r"|emergency fund)\b(?!\s+(at|with|in|from)\s+(the|a|my|our)\s+(banks?|lenders?)\b))")
 
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
@@ -125,8 +126,7 @@ DECLINE_RULES = [
                           r"\b(think|opinion) (about|of|on) (bitcoin|crypto\w*|stocks?|shares|funds?|etfs?)\b|"
                           r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
                           r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
-                          # "should" and "where": the #650 forms below; time or effort is no investment (#677)
-                          r"\b(could|would|can|shall) (i|we) (invest|start investing)\b" + TIME_OBJECT + r"|"
+                          r"\b(could|would|can|shall) (i|we) (invest|start investing)\b|"   # "should" and "where": the #650 forms below
                           # R7 as a class, the rows #657 left for later (#677): a good time to buy, a recommendation,
                           # a pick, "better than", "smart to buy gold", which fund (Finnish)
                           r"\b(good|right|best|bad) time to (buy|sell|invest)\b|"
@@ -145,11 +145,10 @@ DECLINE_RULES = [
                           r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*|"
                           # whether or how to invest, with any tail ("Should I invest like the average Finn?"), before
                           # the peer rule (#650; R7)
-                          # "invest", "investing", "investments", never "investigate" (review of #655); time or effort
-                          # is no investment ("How should I invest my time in budgeting?", #677)
-                          r"\bshould (i|we) (\w+ ){0,2}invest(ing|ments?)?\b" + TIME_OBJECT +
-                          r"|\b(how|where|what) (should|would|could|can|do) (i|we) (\w+ )?invest(ing|ments?)?\b"
-                          + TIME_OBJECT + r"|\bis it (smart|wise|worth it|a good idea) to (\w+ )?invest(ing|ments?)?\b|"
+                          # "invest", "investing", "investments", never "investigate" (review of #655)
+                          r"\bshould (i|we) (\w+ ){0,2}invest(ing|ments?)?\b|\b(how|where|what) (should|would|could|can|"
+                          r"do) (i|we) (\w+ )?invest(ing|ments?)?\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?"
+                          r"invest(ing|ments?)?\b|"
                           r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
                           r"\b(miten|kuinka|mihin) (\w+ )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
                           r"(\w+ )?sijoittaa\b"),
