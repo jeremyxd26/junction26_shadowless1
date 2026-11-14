@@ -1,4 +1,4 @@
-"""Rule answers as short human sentences (#342): one takeaway first, then at most two more sentences.
+"""Rule answers as short human sentences (#342): one takeaway first, then at most one more sentence.
 
 template_draft (template.py) asks `for_view` for each tool's model view. It returns the sentences and
 the number ids they cite, or None for a tool written elsewhere: the safe-to-spend sentence, the spender
@@ -6,9 +6,10 @@ profile, the peer benchmark and the S-Bonus estimate keep their own texts (PR #2
 tool keeps the old "label: number" form.
 
 Rules for every text here (coordinator, #342):
-- one to three short sentences in plain words, English and Finnish, the takeaway first;
+- at most two short sentences and about 35 words, in plain words, English and Finnish, the takeaway
+  first, and at most three numbers; the rest stay on the card (Renat's length rule);
 - a change is said in words ("less than in August"), never two lines with the same label;
-- no repeated label, no "label: number; label: number" list, at most four numbers;
+- no repeated label, no "label: number; label: number" list;
 - no judgement words, no advice beyond the existing what-if offer, no exclamation marks;
 - numbers only as {{nK}} tokens of the view's own numbers, never a digit or a number word of our own,
   never a unit word next to a token (its display carries the unit), and always a word between two
@@ -104,13 +105,13 @@ SPENT = {
              ("{Period} tapahtumia oli {count}, joten käytit {total}.",
               "{Period} tapahtumia oli {count} {what}, joten käytit {total}.")),
 }
-COMPARED = {
-    "more": ("That is more than {period} ({baseline}).", "Se on enemmän kuin {period} ({baseline})."),
-    "less": ("That is less than {period} ({baseline}).", "Se on vähemmän kuin {period} ({baseline})."),
-    "same": ("That is the same as {period} ({baseline}).", "Se on saman verran kuin {period} ({baseline})."),
+COMPARED = {   # appended to the first sentence: ", less than in August 2026 (€4,175.17)."
+    "more": (", more than {period} ({baseline}).", ", enemmän kuin {period} ({baseline})."),
+    "less": (", less than {period} ({baseline}).", ", vähemmän kuin {period} ({baseline})."),
+    "same": (", the same as {period} ({baseline}).", ", saman verran kuin {period} ({baseline})."),
 }
-DIFFERENCE = {
-    "both": ("The difference is {change}, or {pct}.", "Ero on {change} eli {pct}."),
+DIFFERENCE = {   # the change once: the percentage when there is one, else the amount
+    "pct": ("That is a change of {pct}.", "Muutos on {pct}."),
     "amount": ("The difference is {change}.", "Ero on {change}."),
 }
 LARGEST_GROUPS = ("The largest parts were {items}.", "Suurimmat osat olivat {items}.")
@@ -147,12 +148,15 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         first = SPENT["income" if income else "plain"][lang][1 if what else 0].format(**fmt)
         delta = _value(comparison.get("change")) or 0
         direction = "more" if delta > 0 else "less" if delta < 0 else "same"
-        second = pick(COMPARED[direction], language).format(period=in_period(b_label, language), baseline=baseline)
-        third = pick(DIFFERENCE["both" if pct else "amount"], language).format(change=change, pct=pct)
-        return [first, second, third], _ids(total, baseline, change, pct)
+        first = first[:-1] + pick(COMPARED[direction], language).format(period=in_period(b_label, language),
+                                                                        baseline=baseline)
+        if direction == "same":
+            return [first], _ids(total, baseline)
+        second = pick(DIFFERENCE["pct" if pct else "amount"], language).format(change=change, pct=pct)
+        return [first, second], _ids(total, baseline, pct if pct else change)
 
     groups = [(g.get("label"), _tok(g.get("amount")), g.get("key")) for g in view.get("groups") or []]
-    groups = [(lab, t, k) for lab, t, k in groups if isinstance(lab, str) and t and ok(lab)][:3]
+    groups = [(lab, t, k) for lab, t, k in groups if isinstance(lab, str) and t and ok(lab)][:2]
     if groups:
         first = SPENT["income" if income else "plain"][lang][1 if what else 0].format(**fmt)
         time_like = all(isinstance(k, str) and re.match(r"^\d{4}-\d{2}", k) for _, _, k in groups)
@@ -186,10 +190,13 @@ BASKET_LEAD = {
 }
 BASKET_REST = ("{Basket} took {share} and {basket2} {share2}.", "{Basket} meni {share} ja {basket2} {share2}.")
 BASKET_REST_ONE = ("{Basket} took {share}.", "{Basket} meni {share}.")
-BASKET_TOTAL = ("On average you spent {total} {period}.", "{Period} kulutit keskimäärin {total}.")
 
 
-def baskets(view: dict[str, Any], language: str, ok: Ok, with_total: bool) -> Sentences | None:
+def baskets(view: dict[str, Any], language: str, ok: Ok, save_more: bool) -> Sentences | None:
+    """The three shares in two sentences; the monthly total stays on the card. In the save-more answer
+    the baskets stay on their card: the text is the safe-to-save figure and the what-if offer."""
+    if save_more:
+        return [], []
     rows = [(b.get("key"), _tok(b.get("share")), _value(b.get("share"))) for b in view.get("baskets") or []]
     rows = [(k, t, v) for k, t, v in rows if k in BASKET_PHRASES and t and v is not None]
     if not rows:
@@ -208,11 +215,6 @@ def baskets(view: dict[str, Any], language: str, ok: Ok, with_total: bool) -> Se
     elif rest:
         sentences.append(pick(BASKET_REST_ONE, language).format(Basket=_cap(name(rest[0][0])), share=rest[0][1]))
         cited.append(rest[0][1])
-    total, period = _tok(view.get("total")), view.get("period")
-    if with_total and total and isinstance(period, str) and ok(period):
-        phrase = in_period(period, language)
-        sentences.append(pick(BASKET_TOTAL, language).format(total=total, period=phrase, Period=_cap(phrase)))
-        cited.append(total)
     return sentences, _ids(*cited)
 
 
@@ -266,7 +268,7 @@ def bills(view: dict[str, Any], language: str, ok: Ok, mode: str) -> Sentences |
 
     if mode == "typical":
         items, cited = [], []
-        for b in (view.get("bills") or [])[:4]:
+        for b in (view.get("bills") or [])[:3]:
             amount = _tok(b.get("typical_month"))
             if amount and isinstance(b.get("label"), str) and ok(b["label"]):
                 items.append(pick(BILL_TYPICAL_ITEM, language).format(bill=_bill_name(b["label"], language),
@@ -280,7 +282,7 @@ def bills(view: dict[str, Any], language: str, ok: Ok, mode: str) -> Sentences |
     if mode == "save_more":
         return [pick(BILLS_DUE["total"], language).format(total=total)], _ids(total)
     items, cited = [], [total]
-    for b in (view.get("bills") or [])[:3]:
+    for b in (view.get("bills") or [])[:2]:
         amount = _tok(b.get("due_until_payday"))
         if amount and _value(b.get("due_until_payday")) and isinstance(b.get("label"), str) and ok(b["label"]):
             items.append(pick(BILL_ITEM, language).format(bill=_bill_name(b["label"], language), amount=amount))
@@ -321,15 +323,14 @@ def what_if(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return None
     sentences = [pick(WHAT_IF if year else WHAT_IF_MONTH, language).format(month=month, year=year)]
     cited = [month, year]
-    if base:
+    caveats = [c for c in view.get("caveats") or [] if isinstance(c, str) and not re.search(r"\d", c)]
+    if view.get("status") == "estimate_with_caveat" and len(caveats) > 1:
+        sentences.append(caveats[1])     # the caveat matters more than the current amount
+    elif base:
         what = _what_if_subject(view.get("selection"), language)
         sentences.append(pick(WHAT_IF_BASE["named" if what else "plain"], language).format(baseline=base,
                                                                                           what=what or ""))
         cited.append(base)
-    if view.get("status") == "estimate_with_caveat":
-        caveats = [c for c in view.get("caveats") or [] if isinstance(c, str) and not re.search(r"\d", c)]
-        if len(caveats) > 1:
-            sentences.append(caveats[1])
     return sentences, _ids(*cited)
 
 
@@ -344,8 +345,9 @@ def safe_to_save(view: dict[str, Any], language: str, save_more: bool) -> Senten
         return None
     reason = (view.get("reason") or {}).get("text")
     if _value(view.get("monthly")) == 0 and isinstance(reason, str) and not re.search(r"\d", reason):
-        sentences = [pick(SAFE_TO_SAVE, language).format(monthly=monthly), reason]
-        return sentences, _ids(monthly)
+        if save_more:                      # the reason, then the what-if offer: two sentences
+            return [reason], []
+        return [pick(SAFE_TO_SAVE, language).format(monthly=monthly), reason], _ids(monthly)
     sentences, cited = [pick(SAFE_TO_SAVE, language).format(monthly=monthly)], [monthly]
     if stock and not save_more:
         sentences.append(pick(STOCK, language).format(stock=stock))
@@ -362,7 +364,7 @@ def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, as
     if tool == "get_spending":
         return spending(view, language, ok)
     if tool == "get_basket_breakdown":
-        return baskets(view, language, ok, with_total=not save_more)
+        return baskets(view, language, ok, save_more)
     if tool == "get_recurring_bills":
         mode = "save_more" if save_more else "income" if asks_income else "typical" if bill_typical else "due"
         return bills(view, language, ok, mode)

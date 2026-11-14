@@ -63,10 +63,11 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
              r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
-WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
-                 "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
-WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
-                     "Haluatko nähdä, mitä vähentäminen tekisi? Kerro luokka ja kuinka paljon.")
+# One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
+WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
+                 "Kerro, kuinka paljon vähentäisit luokassa {category}, niin näytän säästön.")
+WHAT_IF_OFFER_ANY = ("Name a category and how much you would cut it by, and I'll show what you'd save.",
+                     "Kerro luokka ja kuinka paljon vähentäisit, niin näytän säästön.")
 # The peer benchmark's reasons for showing nothing (#216): the reason only, never a number.
 PEER_REASON = {
     "group_too_small": ("There are too few people like you in the data to compare with.",

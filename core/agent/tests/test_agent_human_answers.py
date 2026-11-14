@@ -1,7 +1,8 @@
 """The rule answers read like a person wrote them (#342): every template answer of the tools that
 core/agent/answer_sentences.py writes, in English and Finnish, passes the validator, and fails this test
-on a repeated label, a "label: number; label: number" chain, more than four numbers, more than three
-sentences, a number written in words, a judgement word or an exclamation mark.
+on a repeated label, a "label: number; label: number" chain, more than two sentences, more than 35 words
+(a number token counts as one word), more than three numbers, a number written in words, a judgement
+word or an exclamation mark (Renat's length rule on #342).
 
 The views are built here like the tools build them (Number objects from the one formatter, the tools'
 own period labels), with Sanna's values of 2026-09-30, so no database is needed.
@@ -235,18 +236,21 @@ def test_every_rule_answer_reads_like_a_person_and_passes_the_validator(key, lan
     assert len(labels) == len(set(labels)), text                         # no label twice
     assert len(set(sentences)) == len(sentences), text                    # no sentence twice
     assert "!" not in text and not NUMBER_WORDS.search(text) and not JUDGEMENT.search(text), text
-    offer = 1 if key == "save_more" else 0                                # the what-if offer is its own sentence
-    per_tool = 3 * len(views) + offer
-    assert 1 <= len(sentences) <= per_tool, text
-    assert len(tokens) <= 4 * len(views) and len(set(tokens)) == len(tokens), text
+    assert 1 <= len(sentences) <= 2, text                                 # the whole answer
+    assert len(re.sub(r"\{\{n\d+\}\}", "N", text).split()) <= 35, text      # a token is one word
+    assert len(tokens) <= 3 and len(set(tokens)) == len(tokens), text
     assert "; " not in render(text, v.numbers).replace("(", "").replace(")", ""), text   # no semicolon lists
 
 
 def test_a_change_is_said_in_words_with_the_old_number_once():
-    up, _, _, _ = answer("compare_up", "en")
-    down, _, _, _ = answer("compare_down", "fi")
-    assert "more than in August 2026" in up["text"] and up["text"].count("Change vs") == 0
-    assert "vähemmän kuin elokuussa 2026" in down["text"] and "Muutos verrattuna" not in down["text"]
+    up, v, _, _ = answer("compare_up", "en")
+    assert render(up["text"], v.numbers) == ("You spent €224.21 on restaurants in September 2026, more than in "
+                                             "August 2026 (€138.94). That is a change of 61.4%.")
+    down, v, _, _ = answer("compare_down", "fi")
+    assert render(down["text"], v.numbers) == ("Syyskuussa 2026 käytit 2 932,54 €, vähemmän kuin elokuussa 2026 "
+                                               "(4 175,17 €). Muutos on -29,8 %.")
+    no_pct, v, _, _ = answer("compare_no_pct", "en")
+    assert no_pct["text"].endswith("The difference is {{n4}}.")                   # the amount when there is no %
 
 
 def test_the_takeaway_comes_first():
@@ -268,9 +272,15 @@ def test_lead_persona_texts():
     """The texts the PR table shows for CUST00860, rendered."""
     expected = {
         ("baskets", "en"): "Most of your spending, 62.7%, went to regular essentials. Everyday spending took 19.9% and "
-                           "unexpected necessities 17.3%. On average you spent €3,010.59 a month during 1 Apr – 30 Sep 2026.",
-        ("compare_down", "en"): "You spent €2,932.54 in September 2026. That is less than in August 2026 (€4,175.17). "
-                                "The difference is -€1,242.63, or -29.8%.",
+                           "unexpected necessities 17.3%.",
+        ("compare_down", "en"): "You spent €2,932.54 in September 2026, less than in August 2026 (€4,175.17). "
+                                "That is a change of -29.8%.",
+        ("save_more", "en"): "You can typically put aside €184.61 a month. Tell me how much you would cut restaurants by, "
+                             "and I'll show what you'd save.",
+        ("save_more_zero", "fi"): "Tavallisesta kuukaudesta ei jää mitään: laskut ja välttämättömät menot ylittävät "
+                                  "tulosi.",
+        ("what_if_caveat", "en"): "That cut would save you €45.91 a month, or €550.95 a year. Part of this is unexpected "
+                                  "necessities: needed costs that can only sometimes be reduced.",
         ("what_if", "fi"): "Tämä leikkaus säästäisi sinulle 45,91 € / kk eli 550,95 € / v. "
                            "Nyt käytät 229,56 € / kk luokassa Ravintolat.",
         ("payday", "fi"): "Palkkasi on tavallisesti 3 187,25 € / kk. Seuraava palkkapäiväsi on 15.10.2026.",
