@@ -70,5 +70,13 @@ class NumberBuilder:
         values = {role: v for role, (_, v) in parts.items()}
         value = evidence.compute_formula(formula, values, params)
         spec = evidence.composite_spec(self.ctx.customer_id, self.ctx.as_of, method, formula,
-                                       {role: n.evidence_ref for role, (n, _) in parts.items()}, value, params)
+                                       {role: _part(n, v) for role, (n, v) in parts.items()}, value, params)
         return self.number(value, unit, period, method, spec, label), value
+
+
+def _part(n: Number, value: Decimal) -> str | dict[str, Any]:
+    """A composite part: the number's ref, or, for a value the user gave (no ref, #242), the value inline."""
+    if n.evidence_ref is not None:
+        return n.evidence_ref
+    return {"method": n.method, "value": str(value),
+            "period": {"start": n.period.start.isoformat(), "end": n.period.end.isoformat()}}

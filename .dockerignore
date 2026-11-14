@@ -8,6 +8,7 @@
 !core/app/
 !core/tools/
 !core/agent/
+!core/bills/
 !core/answer_text.py
 !core/metrics/*.sql
 !core/config/*.yaml

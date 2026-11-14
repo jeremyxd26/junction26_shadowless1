@@ -14,6 +14,7 @@ Sources (also listed in the PR of issue #31):
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 # First day of the dataset. Periods are clamped to [DATA_START, as_of] (agent-core.md section 4).
 DATA_START = date(2024, 10, 1)
@@ -187,6 +188,125 @@ SERIES_LABELS: dict[str, tuple[str, str]] = {
     "salary": ("Salary", "Palkka"),
     "other_income": ("Other income", "Muut tulot"),
     "salary_sweep": ("Salary sweep", "Palkan siirto"),
+}
+
+# ---- the bill explanation (#242, contracts/api.md section 11) ----------------------------------------
+# Known payee names of each kind of recurring bill, matched exactly after normalisation (case, spaces and
+# punctuation ignored), like the bills' labels. A real bank knows the counterparty of earlier payments;
+# the synthetic dataset has none, so this table stands in for that history in the demo. Fictional
+# companies only; the sample bills (#249) use the same strings.
+PAYEE_ALIASES: dict[str, tuple[str, ...]] = {
+    "housing_payment": ("Esimerkki Asunnot Oy",),
+    "utilities_payment": ("Esimerkki Energia Oy", "Esimerkki Vesi Oy"),
+}
+BILL_AMOUNT_MAX = Decimal("100000.00")
+BILL_ABOVE_USUAL_RATIO = Decimal("1.5")    # a matched bill at least 150% of its typical month (decision 10)
+BILL_ABOVE_LARGEST_RATIO = Decimal("1")    # any other bill above the largest typical month of the regular bills
+BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (and not before it)
+
+BILL_TEXT: dict[str, tuple[str, str]] = {
+    "amount": ("Amount due", "Maksettava summa"),
+    "match_matched": ("This is your regular {label} bill.", "Tämä on tavallinen laskusi: {label}."),
+    "match_not_matched": ("This payee is not one of your regular bills.",
+                          "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
+    "match_no_payee": ("Add the payee's name to compare this bill with your regular bills.",
+                       "Lisää maksunsaajan nimi, niin laskua verrataan tavallisiin laskuihisi."),
+    "comparison": ("vs your usual {label} bill", "verrattuna tavalliseen laskuusi: {label}"),
+    "change": ("Difference from the usual amount", "Ero tavalliseen summaan"),
+    "basket_regular": ("It counts as regular essentials, like your other {label} payments.",
+                       "Se kuuluu säännöllisiin välttämättömiin menoihin, kuten muutkin laskusi: {label}."),
+    "basket_other": ("It is not one of your regular bills, so it would count as an unexpected necessity. "
+                     "Nothing is saved.",
+                     "Se ei ole tavallisten laskujesi joukossa, joten se olisi odottamaton välttämätön meno. "
+                     "Mitään ei tallenneta."),
+    "counted": ("Added to the bills before payday", "Lisätään laskuihin ennen palkkapäivää"),
+    "free_after": ("Free until payday after this bill", "Vapaana palkkapäivään asti tämän laskun jälkeen"),
+    "balance_after": ("Your balance allows, after this bill", "Saldosi sallii tämän laskun jälkeen"),
+    "after": ("Safe to spend after this bill", "Turvallisesti käytettävissä tämän laskun jälkeen"),
+    "effect_after_payday": ("Due on {due}, after your payday on {payday}, so it changes nothing before then.",
+                            "Eräpäivä on {due}, palkkapäiväsi {payday} jälkeen, joten se ei muuta mitään "
+                            "ennen sitä."),
+    "effect_excess": ("Due before your payday on {payday}. {reserved} is already counted for your {label} bill, "
+                      "so only the extra {counted} is added: free until payday goes from {free_before} to "
+                      "{free_after}.",
+                      "Eräpäivä on ennen palkkapäivääsi {payday}. Laskullesi {label} on jo varattu {reserved}, "
+                      "joten vain ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+                      "(ennen laskua {free_before})."),
+    "effect_covered": ("Due before your payday on {payday}. {reserved} is already counted for your {label} bill, "
+                       "which covers this one, so nothing changes.",
+                       "Eräpäivä on ennen palkkapäivääsi {payday}. Laskullesi {label} on jo varattu {reserved}, "
+                       "mikä kattaa tämän laskun, joten mikään ei muutu."),
+    "effect_full": ("Due before your payday on {payday}. It is added to the bills before payday: free until "
+                    "payday goes from {free_before} to {free_after}.",
+                    "Eräpäivä on ennen palkkapäivääsi {payday}. Lasku lisätään laskuihin ennen palkkapäivää: "
+                    "palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
+    "sts_moves": ("Your weekly safe to spend goes from {before} to {after}.",
+                  "Viikon turvallisesti käytettävissä oleva summasi on {after} (ennen laskua {before})."),
+    "sts_budget": ("Your weekly safe to spend stays {before}: your monthly budget limits it, not your balance.",
+                   "Viikon turvallisesti käytettävissä oleva summasi pysyy ennallaan, {before}: sitä rajaa "
+                   "kuukausibudjettisi, ei saldosi."),
+    "free_negative": ("This bill takes more than is free until payday.",
+                      "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana."),
+    # warnings: a small note that never repeats a signal (contracts/api.md 11.2); today only a past due date
+    "warn_past": ("The due date has passed. The payee may charge late-payment interest, so pay it soon.",
+                  "Eräpäivä on mennyt. Maksunsaaja voi periä viivästyskorkoa, joten maksa lasku pian."),
+    # signals: the warning signs, never a verdict (#242 decision 10); a failed check says what to do
+    "sig_iban_check_failed": ("This account number does not pass its check. Compare it with the paper bill "
+                              "before paying.",
+                              "Tilinumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun ennen maksamista."),
+    "sig_reference_check_failed": ("This reference number does not pass its check. Compare it with the paper bill "
+                                   "before paying.",
+                                   "Viitenumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun ennen maksamista."),
+    "sig_new_payee": ("This payee is not one of your regular bills.",
+                      "Tämä maksunsaaja ei ole tavallisten laskujesi joukossa."),
+    "sig_above_usual": ("This bill is {amount}, at least half as much again as usual ({typical}).",
+                        "Tämä lasku on {amount}, vähintään puolitoista kertaa tavallinen ({typical})."),
+    "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
+                          "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
+    "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
+    "action": ("Add to payments", "Lisää maksuihin"),
+}
+# The message of a 422 invalid_bill, by reason (contracts/api.md section 11.1).
+BILL_REFUSAL_TEXT: dict[str, tuple[str, str]] = {
+    "one_of_barcode_or_fields": ("Send the barcode or the bill's details, one of the two.",
+                                 "Lähetä viivakoodi tai laskun tiedot, toinen niistä."),
+    "payee_with_fields": ("Put the payee's name inside the bill's details.",
+                          "Kirjoita maksunsaajan nimi laskun tietoihin."),
+    "barcode_length": ("This barcode cannot be read. Check it, or type the details from the bill.",
+                       "Viivakoodia ei voi lukea. Tarkista se tai kirjoita laskun tiedot."),
+    "barcode_check": ("This barcode does not pass its check. Compare it with the paper bill, or type the fields.",
+                      "Viivakoodi ei läpäise tarkistusta. Vertaa sitä paperilaskuun tai kirjoita tiedot."),
+    "amount_missing": ("This barcode has no amount. Type the details from the bill.",
+                       "Viivakoodissa ei ole summaa. Kirjoita laskun tiedot."),
+    "due_date_missing": ("This barcode has no due date. Type the details from the bill.",
+                         "Viivakoodissa ei ole eräpäivää. Kirjoita laskun tiedot."),
+    "amount_too_large": ("This bill is over the largest amount this service explains.",
+                         "Lasku on suurempi kuin suurin summa, jonka tämä palvelu selittää."),
+}
+for _reason in ("barcode_version", "barcode_chars", "due_date"):   # read like a wrong length
+    BILL_REFUSAL_TEXT[_reason] = BILL_REFUSAL_TEXT["barcode_length"]
+# The four fixed glossary entries of a bill explanation: term -> ((label en, fi), (text en, fi)).
+BILL_GLOSSARY: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {
+    "reference_number": (
+        ("Reference number (viitenumero)", "Viitenumero"),
+        ("The number that tells the payee which bill a payment is for; its last digit is a check digit, so "
+         "most typing errors are caught.",
+         "Numero, josta maksunsaaja tietää, mitä laskua maksu koskee; sen viimeinen numero on tarkiste, joten "
+         "useimmat kirjoitusvirheet huomataan.")),
+    "due_date": (
+        ("Due date (eräpäivä)", "Eräpäivä"),
+        ("The last day to pay the bill without a late-payment charge.",
+         "Viimeinen päivä, jona lasku maksetaan ilman viivästysmaksua.")),
+    "virtual_barcode": (
+        ("Virtual barcode (virtuaaliviivakoodi)", "Virtuaaliviivakoodi"),
+        ("A 54-digit code that holds the account, amount, reference number and due date, so the bill can be "
+         "paid without typing them.",
+         "54-numeroinen koodi, jossa ovat tili, summa, viitenumero ja eräpäivä, joten laskun voi maksaa "
+         "kirjoittamatta niitä.")),
+    "late_payment_interest": (
+        ("Late-payment interest (viivästyskorko)", "Viivästyskorko"),
+        ("Interest the payee may charge for each day a bill is paid after its due date.",
+         "Korko, jonka maksunsaaja voi periä jokaiselta päivältä, jonka lasku maksetaan eräpäivän jälkeen.")),
 }
 
 COUNT_WORDS: dict[int, tuple[str, str]] = {
