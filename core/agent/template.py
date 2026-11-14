@@ -18,7 +18,7 @@ from typing import Any
 
 from core import answer_text
 from core.tools import config as tools_config
-from core.agent import answer_sentences
+from core.agent import answer_sentences, savings_transfer
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -1011,6 +1011,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
                   or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
+                  # "How much did I transfer to savings last month?" (#658): what already goes to savings, not the plan
+                  or savings_transfer.sentence(view, language, q, PLAN_SENTENCE)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])

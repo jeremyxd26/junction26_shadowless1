@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
-from core.agent import people, template
+from core.agent import people, savings_transfer, template
 from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
 from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
@@ -1063,7 +1063,11 @@ DECLINED_BEFORE_539 = fold_pattern(DECLINED_BEFORE_539)
 
 
 def _declines(rx: str, q: str) -> bool:
-    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539)."""
+    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539), nor a
+    message that is only the question whether the user has a regular transfer to savings, which the rules claim (#658;
+    any other message keeps the refusal, review of #670)."""
+    if savings_transfer.have_transfer(q):
+        return False
     return bool(re.search(rx, re.sub(OWN_TRANSFERS, " ", q, flags=re.I), re.I))
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -2044,8 +2048,16 @@ def _claim(request: PlanInput) -> Claim:
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
+    if "get_savings_plan" in tools and savings_transfer.have_transfer(q):
+        # "Do I have a regular transfer to savings?" (#658) is exempted from the move-money refusal only to be claimed,
+        # so it is claimed before the follow-up rule too, never a question back (review of #670)
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    if "get_savings_plan" in tools and savings_transfer.asks(q):
+        # "How much did I transfer to savings last month?" (#658): what already goes to savings (#560), the template's
+        # answer in any model state; never a spending category or the unfiltered total
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
     cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
     if cost is not None:
         category, per = cost
@@ -2157,9 +2169,10 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
+        # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
+        # the template's answer in both rounds: no composer model
         found = claim(request)
-        template_answer = found.rule == "safe_to_spend_why"
+        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer")
         # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
         bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
