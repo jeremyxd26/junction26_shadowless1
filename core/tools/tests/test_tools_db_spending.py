@@ -240,3 +240,18 @@ def test_basket_classification_matches_metrics_worked_numbers(conn, customer_id)
     got = {g.key: str((as_dec(g.amount) / 6).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
            for g in res.data.groups}
     assert got == BASKET_MONTH_AVG[customer_id]
+
+
+@pytest.mark.parametrize("question,start,end,label", [
+    ("how much did I spend over the last 5 years?", date(2024, 10, 1), date(2026, 9, 30), "1 Oct 2024 – 30 Sep 2026"),
+    ("how much did I spend the year before last?", date(2024, 10, 1), date(2024, 12, 31), "1 Oct – 31 Dec 2024"),
+])
+def test_a_period_partly_before_the_data_shows_the_period_answered_not_the_one_asked(conn, question, start, end,
+                                                                                     label):
+    # #379 part B (the coordinator): until the partly-outside sentence follows, the card and the note name
+    # the real period, from the data's first day, never 2021 or 1 January 2024
+    from core.agent.rules import plan_spending
+    res = get_spending(ctx_for(conn, "CUST00860"), plan_spending(question, AS_OF))
+    assert (res.data.period.start, res.data.period.end, res.data.period.label) == (start, end, label)
+    assert res.card.subtitle == label and any(label in n for n in res.notes)
+    assert "2021" not in json.dumps(res.model_view, default=str) and "1 Jan 2024" not in json.dumps(res.model_view, default=str)

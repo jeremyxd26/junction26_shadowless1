@@ -1,4 +1,4 @@
-"""#447 (r-sec): the savings goal (#391) is not something a plan can set. Until the app has a control for
+"""#447 (security review): the savings goal (#391) is not something a plan can set. Until the app has a control for
 the goal, no tool declaration offers `savings_goal`, a model plan that passes it is rejected as an invalid
 argument (the error goes back to the model, never the value), and the tool then runs with the default goal.
 The rules never pass it either. No database."""

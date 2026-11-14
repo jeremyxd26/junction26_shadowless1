@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -411,3 +412,76 @@ def test_a_model_draft_repeating_a_period_is_retried(make_pipeline):
     done = dict(run(pipe))["done"]
     assert done["text"] == good["text"]
     assert "already says how often" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
+
+
+# ---- #398: the stand's composer defects, as rejected model drafts ---------------------------------------------
+
+@pytest.mark.parametrize("text, reason", [
+    ("I am Sentti, your AI money coach. August 2026 cost {{n1}}.", "do not introduce yourself"),       # rows 2, 3
+    ("August 2026 cost {{n1}} across {{n2}}.", "a count keeps its noun"),                               # row 2
+    ("That figure is {{n1}} combined with your bills in August 2026.", "sum or combination"),          # row 1
+    ("In August 2026 you spent {{n1}}, which is {{n2}} and {{n1}} compared to usual.", "comparison"),  # row 4
+    ("Salgosi on {{n1}} elokuussa 2026.", "a wrong word"),                                               # row 5
+    ("August 2026 cost {{n1}}. This is mainly because your budget allows {{n1}}.", "cite each number once"),  # row 6
+    ("August 2026 cost {{n1}}. Want to see what cutting housing would do?", "never suggest cutting"),  # row 9
+    ("Luokittelemattomat kulut olivat {{n1}} elokuussa 2026.", "a wrong word"),                         # row 8
+])
+def test_a_draft_with_a_stand_defect_is_retried_with_its_reason(make_pipeline, text, reason):
+    lang = "fi" if text[0] in "SL" else "en"
+    bad = {"language": lang, "text": text, "cited": sorted(set(re.findall(r"\{\{(n\d+)\}\}", text))), "lesson_key": None}
+    good_text = "Elokuussa 2026 käytit {{n1}}." if lang == "fi" else "August 2026 cost {{n1}}."
+    good = {"language": lang, "text": good_text, "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe, language=lang))["done"]
+    first = audit_records(pipe)[-1]["composer_attempts"][0]["validation"]
+    assert first != "ok" and any(reason in e for e in first), first
+    assert done["text"] == good_text
+
+
+def test_a_count_with_its_noun_and_a_comparison_with_its_direction_pass(make_pipeline):
+    good = {"language": "en", "text": "August 2026 cost {{n1}} over {{n2}} visits, more than usual.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[good]))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == good["text"] and audit_records(pipe)[-1]["composer_attempts"][0]["validation"] == "ok"
+
+
+# ---- #419: Sentti never suggests borrowing ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "August 2026 cost {{n1}}. You could take out a small loan to cover the repair.",
+    "August 2026 cost {{n1}}. Consider using your credit card and pay it later.",
+    "August 2026 cost {{n1}}. You could pay in instalments.",
+    "Elokuussa 2026 käytit {{n1}}. Voit ottaa lainaa korjaukseen.",
+    "Elokuussa 2026 käytit {{n1}}. Maksa se osamaksulla.",
+])
+def test_a_draft_suggesting_borrowing_is_retried(make_pipeline, text):
+    lang = "fi" if text.startswith("Elokuussa") else "en"
+    bad = {"language": lang, "text": text, "cited": ["n1"], "lesson_key": None}
+    good_text = "Elokuussa 2026 käytit {{n1}}." if lang == "fi" else "August 2026 cost {{n1}}."
+    good = {"language": lang, "text": good_text, "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe, language=lang))["done"]
+    assert done["text"] == good_text
+    assert any("never suggest borrowing" in e for e in audit_records(pipe)[-1]["composer_attempts"][0]["validation"])
+
+
+@pytest.mark.parametrize("text, labels", [
+    ("Your Loan repayment bill is {{n1}} this month.", ["Loan repayment"]),     # the user's own bill keeps its label
+    ("Luottamus on tärkeää.", []),                                              # trust, not credit
+    ("I can't predict whether a loan or mortgage would be approved, and I don't rate creditworthiness.", []),
+])
+def test_naming_a_loan_or_credit_is_not_suggesting_it(text, labels):
+    from core.answer_text import borrowing_suggestion
+
+    assert borrowing_suggestion(text, labels) is None
+
+
+def test_no_refusal_or_clarify_template_suggests_borrowing():
+    from core.agent import template
+    from core.answer_text import borrowing_suggestion
+
+    texts = [t for kind in template.REFUSAL.values() for t in kind["text"]]
+    texts += list(template.CLARIFY_GENERAL["question"]) + list(template.CLARIFY["question"])
+    texts += list(template.REVIEW_PURCHASE) + list(getattr(template, "REVIEW_WHY", ()))
+    assert texts and all(borrowing_suggestion(t) is None for t in texts)

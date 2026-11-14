@@ -78,7 +78,7 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused", "meta")
+EXPECTS = ("answered", "no_data", "refused", "meta", "any")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 
@@ -284,6 +284,14 @@ def validate(doc: dict) -> list[str]:
                     errors.append(f"{cid}: {item.get('name')}: no tolerance")
             if kind == "dates" and item.get("unit") != "date":
                 errors.append(f"{cid}: {item.get('name')}: dates need unit date")
+        for item in c.get("forbid_text") or []:
+            if not item.get("name") or not item.get("pattern"):
+                errors.append(f"{cid}: forbid_text item needs a name and a pattern")
+                continue
+            try:
+                re.compile(item["pattern"])
+            except re.error:
+                errors.append(f"{cid}: forbid_text {item['name']}: the pattern does not compile")
     return errors
 
 

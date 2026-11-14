@@ -15,9 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from core.tools import aliases, evidence
+from core.tools import aliases, config, evidence
 from core.tools.bills import get_recurring_bills
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
 from core.tools.safe_to_spend import binding_limit, get_safe_to_spend, status_of
 from core.tools.what_if import run_what_if
 
@@ -250,9 +251,11 @@ def test_what_if_merchant_alias_maps_to_the_merchant_and_never_reaches_the_model
     restaurant = next(t.merchant_id for t in sorted(history, key=lambda t: t.tx_date, reverse=True)
                       if t.category == "Restaurants" and t.merchant_id)
     alias = alias_map.for_merchant(restaurant).key
-    result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50})
+    # the endpoint's mode: a merchant with fewer than 3 purchases is not_offered, as the SQL says (#379)
+    result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50},
+                         too_few="not_offered")
     row = sql_row(conn, "04_what_if.sql", "CUST00860", {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
-    assert dec(result.data.saving_per_month) == row["saving_month_eur"]
+    assert dec(result.data.saving_per_month) == row["saving_month_eur"] and result.data.status == row["status"]
     assert result.data.scenario.selection == {"kind": "merchant", "value": restaurant}   # app side
     assert result.model_view["selection"] == {"kind": "merchant", "value": alias}        # model side
     assert_model_view_clean(result.model_view, "CUST00860")
@@ -271,8 +274,9 @@ def test_what_if_rejects_a_health_merchant(conn):
 def test_what_if_without_spending_is_an_invalid_scenario(conn):
     # CUST00002 has no Travel in the window (metrics.md section 6 worked numbers: 0.00 a month)
     assert sql_row(conn, "04_what_if.sql", "CUST00002", {"whatif": "category:Travel", "whatif_pct": "20"}) == []
-    with pytest.raises(ValueError, match="invalid_scenario"):
-        run_what_if(ctx_for(conn, "CUST00002"), {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
+    with pytest.raises(ValueError, match="invalid_scenario"):   # the endpoint's mode: 422 (contracts section 8.1)
+        run_what_if(ctx_for(conn, "CUST00002"), {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20},
+                    too_few="not_offered")
 
 
 @pytest.mark.parametrize("customer_id", SAMPLE_CASES + ["CUST00860"])
@@ -354,3 +358,53 @@ def test_safe_to_spend_refuses_a_bills_total_that_differs_from_03(conn, monkeypa
     monkeypatch.setattr(safe_to_spend.recurring, "bills_due_numbers", off_by_a_cent)
     with pytest.raises(safe_to_spend.BillsDueMismatch):
         get_safe_to_spend(ctx_for(conn, "CUST00860"))
+
+
+def test_what_if_on_fewer_than_three_purchases_shows_them_and_derives_no_monthly_figure(conn):
+    # #395 row 15 (#379): one trip in six months is no monthly habit; the purchases as they are, no saving
+    ctx = ctx_for(conn, "CUST00849")
+    with pytest.raises(MissingData) as raised:
+        run_what_if(ctx, {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
+    d = raised.value.details
+    assert raised.value.reason == "too_few_transactions" and 0 < d["n"] < config.TOO_FEW_TRANSACTIONS
+    total, count = raised.value.numbers["total"], raised.value.numbers["count"]
+    row = conn.execute(
+        """SELECT COALESCE(sum(-amount_eur), 0), count(*) FROM transactions
+           WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s
+             AND category = 'Travel' AND amount_eur < 0""",
+        ("CUST00849", AS_OF, total.period.start, total.period.end)).fetchone()
+    assert (dec(total), count.value) == (D(row[0]), row[1]) and row[1] == d["n"]
+    assert {total.method, count.method} == {"spending.total@1", "spending.n_tx@1"}
+    assert_reconciles(conn, "CUST00849", [total.evidence_ref, count.evidence_ref])
+
+
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+def test_the_endpoint_mode_answers_too_few_purchases_as_not_offered_with_the_reason(conn, customer_id):
+    # review of #379 part B, B1: the SQL says not_offered with every saving 0; the caveat is the chat's sentence
+    ctx = ctx_for(conn, customer_id)
+    result = run_what_if(ctx, {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20},
+                         too_few="not_offered")
+    row = sql_row(conn, "04_what_if.sql", customer_id, {"whatif": "category:Travel", "whatif_pct": "20"})[0]
+    d = result.data
+    assert (d.status, row["status"]) == ("not_offered", "not_offered")
+    assert 0 < row["n_tx"] < config.TOO_FEW_TRANSACTIONS
+    assert all(dec(getattr(d, k)) == 0 for k in ("baseline_per_month", "saving_per_month", "saving_per_week",
+                                                  "saving_per_year"))
+    assert len(d.caveats) == 1 and ("no monthly habit" in d.caveats[0] or "too few" in d.caveats[0])
+    assert d.assumptions == []
+    refs = [getattr(d, k).evidence_ref for k, _, _ in config.WHAT_IF_NUMBERS] + [result.card.evidence_ref]
+    assert_reconciles(conn, customer_id, refs)
+    # the card opens the purchases themselves
+    assert evidence.resolve(conn, result.card.evidence_ref, customer_id).row_count == row["n_tx"]
+
+
+def test_a_what_if_on_a_selection_never_bought_in_the_window_says_there_is_nothing_to_cut(conn):
+    # #498: CUST00493 has no public transport (MCC 4111) in the window; the chat's tool says so, with no number
+    assert sql_row(conn, "04_what_if.sql", "CUST00493", {"whatif": "mcc:4111", "whatif_pct": "20"}) == []
+    ctx = ctx_for(conn, "CUST00493")
+    with pytest.raises(MissingData) as raised:
+        run_what_if(ctx, {"selection": {"kind": "mcc", "value": "4111"}, "cut_pct": 20})
+    d = raised.value.details
+    assert raised.value.reason == "too_few_transactions" and d["n"] == 0 and raised.value.numbers == {}
+    assert d["span"] == "Between 1 Apr and 30 Sep 2026" and ctx.numbers.all() == {}
+    assert "purchases" not in d["what"]   # "public transport" (with #488's names) or "MCC 4111", never doubled
