@@ -104,6 +104,12 @@ python core/agent/gemini_eval.py "What if I cut it a little?"     # free-form qu
 ```
 Every request counts against the team's daily model budget. Keep the cache on, and run each pass once. A repeated run is served from the cache. The offline tests replay recorded exchanges from `core/agent/tests/recordings/` and need no key and no network.
 
+To re-make a recording after a prompt change, record with the tool cache off, so every tool really runs and is written into the recording, and with the models the service runs, for example:
+```
+TOOL_CACHE=off GEMINI_PLANNER_MODEL=gemini-3.5-flash-lite GEMINI_PLANNER_THINKING=minimal GEMINI_COMPOSER_MODEL=gemini-3.5-flash-lite GEMINI_COMPOSER_THINKING=minimal python core/agent/gemini_eval.py "Where did my money go?" --record var/recordings
+```
+Add `GEMINI_PLANNER=model` for a question the rules would plan. Then copy the file from `var/recordings/` into `core/agent/tests/recordings/` under a descriptive name.
+
 ## Dev environment
 
 The `dev` branch runs at **https://sentti.jeremyxd.dev** (`/healthz`, `/readyz`, later `/api/*`), on one Verda CPU instance in Finland at about 0.062 USD/h.
