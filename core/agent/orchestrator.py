@@ -525,7 +525,7 @@ class Pipeline:
 
         numbers = ctx.numbers.all()
         # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
-        # may be named too, exactly as returned (#379 part B, found by r-w5)
+        # may be named too, exactly as returned (#379 part B)
         allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
                                self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite

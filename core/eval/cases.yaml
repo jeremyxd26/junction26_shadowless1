@@ -109,7 +109,7 @@ cases:
   expected_tools: [get_savings_plan]
   tags: [host_screen, lead, savings_plan]
   numbers:
-  # not required: the plan is to quote the savings goal instead (r-coord's decision on #466)
+  # not required: the plan is to quote the savings goal instead (decided on #466)
   - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
 
 - id: sanna-bonus
