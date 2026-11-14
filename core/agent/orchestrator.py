@@ -1284,7 +1284,10 @@ class Pipeline:
         message clearly about S-Bank that matches no entry gets "I don't know that one; the bank can tell you."
         No plan, no tool, no number, no model request. False (the normal path answers) when sbank_kb leaves the
         message (the customer's own figures, a recommendation), a guard flag is set, or the rule model declines
-        it or claims it for one of its own answers (a data rule, a decline, "I can't answer that one yet")."""
+        it or claims it for one of its own answers (a data rule, a decline, "I can't answer that one yet").
+        Exception (#808): an e-invoice how-to entry answers before the bills rule alone or the rules' "I can't
+        answer that one yet" ("Miten tilaan e-laskun?").
+        The answer is in the question's language (sbank_kb.answer_language), also when the app asked in the other."""
         if a.flags:
             return False
         kb = sbank_kb.answer_for(message, lang)
@@ -1293,21 +1296,30 @@ class Pipeline:
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
         rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                              tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-        if rules.recognised or any(c.name == "decline" for c in rules.calls):
+        if any(c.name == "decline" for c in rules.calls):
             return False
+        data = {c.name for c in rules.calls if c.name not in ("finish", "ask_clarifying_question")}
+        if rules.recognised and not (kb.entry_id in sbank_kb.OVER_BILLS_RULE and data <= {"get_recurring_bills"}):
+            return False
+        lang = kb.lang
         numbers = ctx.numbers.all()
         # The validator checks the entry's text. The source line after it is fixed here from the file's
-        # source_url (an s-pankki.fi help page, held by the tests); the no-URL rule is for model drafts.
-        draft, errors = validate({"language": lang, "text": kb.body, "cited": [], "lesson_key": None},
+        # source_url (an s-pankki.fi help page, held by the tests); the no-URL rule is for model drafts. An
+        # entry marked `digits` (the published contact numbers and hours, step numbers) is checked without
+        # its digits, which the tests pin to that entry's published ones.
+        body = re.sub(r"\d", "", kb.body) if kb.digits else kb.body
+        draft, errors = validate({"language": lang, "text": body, "cited": [], "lesson_key": None},
                                  language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
         if errors or draft is None:
             log.warning("knowledge-base answer %s failed the validator (%d problems)", kb.entry_id, len(errors))
             return False
+        if lang != a.language.get("resolved"):   # the contact button's label follows the answer's language
+            a.language = {**a.language, "resolved": lang}
         a.offer_contact = True   # the way to the bank: open_host_screen contact_bank (#420)
         a.planner_turns.append({"round": 1, "source": "rules", "sbank_kb": kb.entry_id or "unknown", "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        text = self._deliver(f"{draft.text} {kb.source}".strip(), numbers, emit)
+        text = self._deliver(kb.text if kb.digits else f"{draft.text} {kb.source}".strip(), numbers, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,

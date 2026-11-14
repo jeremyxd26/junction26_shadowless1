@@ -3,14 +3,15 @@
 # the bank. No prices, rates or other numbers, and no advice. The raw pages are not in the repository.
 #
 # Fields: id, topic, questions_en / questions_fi (question variants), answer_en / answer_fi, source_url,
-# retrieved_at (ISO date), and keywords (en / fi phrases the keyword matcher looks for, optional).
+# retrieved_at (ISO date), keywords (en / fi phrases the keyword matcher looks for, optional), and digits (true
+# only where the text carries published phone numbers, hours or step numbers; every other text has no digit).
 # core/agent/sbank_kb.py reads this file; find_bank_entry() is the one lookup.
 
 entries:
   - id: e_invoice
     topic: payments
-    questions_en: ["How do e-invoices work at S-Bank?", "How do I start getting e-invoices in S-mobiili?"]
-    questions_fi: ["Miten e-lasku toimii S-Pankissa?", "Miten tilaan e-laskun S-mobiiliin?"]
+    questions_en: ["How do e-invoices work at S-Bank?", "How does an e-invoice work?"]
+    questions_fi: ["Miten e-lasku toimii S-Pankissa?", "Miten e-lasku toimii?"]
     answer_en: "An e-invoice is an electronic bill that arrives in the S-Bank online bank or in S-mobiili with the payment details already filled in, so it only needs checking and approving. S-Bank's help pages say e-invoices can be ordered from billers that send them, in the online bank or in S-mobiili after paying one of their bills."
     answer_fi: "E-lasku on sähköinen lasku, joka tulee S-Pankin verkkopankkiin tai S-mobiiliin maksutiedot valmiiksi täytettyinä, joten se vain tarkistetaan ja hyväksytään. S-Pankin ohjeiden mukaan e-laskun voi tilata sitä tarjoavalta laskuttajalta verkkopankissa tai S-mobiilissa laskun maksamisen jälkeen."
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-e-lasku/"
@@ -66,6 +67,19 @@ entries:
     keywords:
       en: ["sepa"]
       fi: ["sepa"]
+
+  - id: e_invoice_order
+    topic: payments
+    questions_en: ["How do I order an e-invoice in S-mobiili?", "How do I start getting e-invoices in S-mobiili?", "How do I order an e-invoice?"]
+    questions_fi: ["Miten tilaan e-laskun?", "Miten tilaan e-laskun S-mobiiliin?", "Miten otan e-laskun käyttöön S-mobiilissa?"]
+    answer_en: "S-Bank's help pages give these steps for ordering an e-invoice in S-mobiili: 1. Choose Bank, then Payments and e-invoices. 2. Choose Order e-invoices. 3. Find the biller in the list and fill in the details asked. 4. Read the terms and confirm the order."
+    answer_fi: "S-Pankin ohjeiden mukaan e-lasku tilataan S-mobiilissa näin: 1. Valitse Pankki ja sitten Maksut ja e-laskut. 2. Valitse Tilaa e-laskuja. 3. Etsi laskuttaja listalta ja täytä pyydetyt tiedot. 4. Tutustu ehtoihin ja vahvista tilaus."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/kuinka-voin-siirtaa-e-laskutilaukset-ja-toistuvat-maksut-s-pankkiin/"
+    retrieved_at: "2026-11-15"
+    digits: true   # the step numbers
+    keywords:
+      en: ["order an e-invoice", "order e-invoice", "order e-invoices", "order an e-bill", "get an e-invoice", "set up an e-invoice", "set up e-invoice", "start an e-invoice", "subscribe to e-invoice", "sign up for e-invoice"]
+      fi: ["tilaan e-lask", "tilata e-lask", "tilaa e-lask", "tilaan uuden e-lask", "e-laskun tilau", "e-laskun tilaami", "otan e-laskun kayttoon", "ottaa e-laskun kayttoon", "e-laskun kayttoonot"]
 
   - id: e_invoice_edit
     topic: payments
@@ -280,8 +294,8 @@ entries:
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/korttini-voimassaoloaika-on-paattymassa.-pitaako-minun-itse-tilata-uusi-kortti"
     retrieved_at: "2026-11-15"
     keywords:
-      en: ["card expires", "card is expiring", "card expiring", "card is about to expire", "card expiry", "card expiration", "renew my card", "card renewal", "get a new card"]
-      fi: ["voimassaolo", "kortti vanhenee", "korttini vanhenee", "uuden kortin", "uusi kortti", "kortin uusimi"]
+      en: ["card expires", "card is expiring", "card expiring", "card is about to expire", "card expiry", "card expiration", "renew my card", "card renewal"]
+      fi: ["voimassaolo", "kortti vanhenee", "korttini vanhenee", "kortin uusimi"]
 
   - id: contactless
     topic: cards
@@ -426,6 +440,19 @@ entries:
     keywords:
       en: ["customer-owner", "customer owner", "co-op member", "coop member", "co-operative member", "without being a member"]
       fi: ["asiakasomistaj"]
+
+  - id: contact
+    topic: customer
+    questions_en: ["How do I contact S-Bank?", "How can I reach S-Bank customer service?", "What is S-Bank's phone number?"]
+    questions_fi: ["Miten otan yhteyttä S-Pankkiin?", "Miten tavoitan S-Pankin asiakaspalvelun?", "Mikä on S-Pankin puhelinnumero?"]
+    answer_en: "S-Bank's customer service page lists a chat with Aulis, S-Bank's virtual assistant, which answers at once, and links for booking an appointment or an online meeting. The blocking services are open around the clock: banking codes 09 6964 6820 and cards 020 333 (local network or mobile call charges). The postal address is S-Pankki Oyj, PL 77, 00088 S-RYHMÄ."
+    answer_fi: "S-Pankin asiakaspalvelusivulla on chat, jossa S-Pankin virtuaaliavustaja Aulis vastaa heti, sekä linkit ajanvaraukseen ja verkkotapaamiseen. Sulkupalvelut palvelevat ympäri vuorokauden: pankkitunnusten sulkupalvelu 09 6964 6820 ja korttien sulkupalvelu 020 333 (pvm/mpm). Postiosoite on S-Pankki Oyj, PL 77, 00088 S-RYHMÄ."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/"
+    retrieved_at: "2026-11-15"
+    digits: true   # the published phone numbers and the postal address
+    keywords:
+      en: ["contact s-bank", "contact the bank", "reach s-bank", "call s-bank", "phone s-bank", "s-bank's phone number", "phone number of s-bank", "s-bank phone number", "customer service phone", "customer service number", "chat with s-bank", "s-bank chat", "s-bank's address", "address of s-bank"]
+      fi: ["yhteytta s-pank", "yhteyden s-pank", "yhteytta pankkiin", "yhteyden pankkiin", "s-pankin yhteystied", "tavoitan s-pank", "tavoittaa s-pank", "soitan s-pank", "soittaa s-pank", "s-pankin puhelinnumer", "s-pankin numer", "asiakaspalvelun numer", "asiakaspalvelun puhelin", "s-pankin chat", "s-pankin postiosoit", "s-pankin osoite"]
 
   - id: service_point
     topic: customer
