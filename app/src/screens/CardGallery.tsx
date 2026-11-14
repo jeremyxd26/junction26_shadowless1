@@ -4,6 +4,7 @@
 import type { Card, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
 import { BillsCards } from '../components/BillsCard.tsx'
+import { BillFlow } from '../components/bill/BillFlow.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
@@ -33,6 +34,10 @@ export default function CardGallery() {
       <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
+      </section>
+      <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">bill flow (section 11, mock)</p>
+        <BillFlow />
       </section>
     </div>
   )

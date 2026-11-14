@@ -43,6 +43,14 @@ const NEEDED = [
   'card.safe_to_save_zero',
   'card.safe_to_save_everyday',
   'whatif.response',
+  // POST /api/bill/explain and the sample-bill reading (section 11)
+  'bill.request',
+  'bill.request_fields',
+  'bill.error',
+  'bill.response',
+  'bill.response_unknown',
+  'bill.read_response',
+  'host.payment_draft',
 ]
 
 const text = readFileSync(contractPath, 'utf8')
