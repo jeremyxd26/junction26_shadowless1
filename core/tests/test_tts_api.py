@@ -196,3 +196,17 @@ def test_retry_after_follows_the_oldest_request(tmp_path):
     (tmp_path / "tts-requests.jsonl").write_text(json.dumps({"ts": old.isoformat(timespec="seconds"),
                                                              "kind": "tts"}) + "\n", encoding="utf-8")
     assert 3000 <= s.retry_after() <= 3700
+
+
+def test_budget_header_says_low_under_fifty_left(app, tmp_path):
+    """`X-Tts-Budget`: ok with room, low under 50 left (the app then stops fetching ahead), low on a 429."""
+    app.state.tts_service = service(tmp_path, FakeTransport(), budget=100)
+    r = post(app)
+    assert r.status_code == 200 and r.headers["x-tts-budget"] == "ok"
+    app.state.tts_service = service(tmp_path / "low", FakeTransport(), budget=50)
+    r = post(app)
+    assert r.status_code == 200 and r.headers["x-tts-budget"] == "low"
+    app.state.tts_service = service(tmp_path / "none", FakeTransport(), budget=1)
+    assert post(app).status_code == 200
+    r = post(app, "ans_bbbb2222")
+    assert r.status_code == 429 and r.headers["x-tts-budget"] == "low"

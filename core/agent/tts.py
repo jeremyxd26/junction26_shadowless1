@@ -168,6 +168,11 @@ class TtsService:
             return 3600
         return max(60, int((oldest + LEDGER_WINDOW - datetime.now(timezone.utc)).total_seconds()) + 1)
 
+    def remaining(self) -> int | None:
+        """Voice requests left in the rolling 24 hours (in flight counted), or None without a cap."""
+        cap = self.ledger.daily_cap
+        return None if cap is None else max(0, cap - self.ledger.count("tts"))
+
     def speak(self, text: str, language: str) -> tuple[bytes, bool]:
         """(WAV bytes, cached). Raises TtsError when there is no audio to give."""
         text = text.strip()

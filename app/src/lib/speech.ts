@@ -140,9 +140,72 @@ let pending: AbortController | null = null
 let source: AudioBufferSourceNode | null = null
 let audioContext: AudioContext | null = null
 
+// The answer whose voice is being prepared (the request is in flight): its button shows a spinner at once.
+let preparingId: string | null = null
+const preparingListeners = new Set<() => void>()
+
+function setPreparing(id: string | null) {
+  if (preparingId === id) return
+  preparingId = id
+  for (const listener of preparingListeners) listener()
+}
+
+function subscribePreparing(onChange: () => void) {
+  preparingListeners.add(onChange)
+  return () => preparingListeners.delete(onChange)
+}
+
+const preparingNow = () => preparingId
+
+/** The id of the answer whose voice is being prepared, or null. */
+export function usePreparingId(): string | null {
+  return useSyncExternalStore(subscribePreparing, preparingNow, preparingNow)
+}
+
+// The latest answer's voice, fetched ahead once and kept in memory only (one answer), so a tap plays at
+// once. The core says `X-Tts-Budget: low` when fewer than 50 voice requests are left (or the budget is
+// used up): from then on nothing is fetched ahead, an answer is read only on a tap.
+let ahead: { answerId: string; data: Promise<ArrayBuffer> } | null = null
+let budgetLow = false
+
+function requestVoice(remote: RemoteAnswer, signal?: AbortSignal): Promise<ArrayBuffer> {
+  return fetch(`${TTS_BASE}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+    body: JSON.stringify({ customer_id: remote.customerId, answer_id: remote.answerId, language: remote.language }),
+    signal,
+  }).then((response) => {
+    if (response.headers?.get?.('X-Tts-Budget') === 'low' || response.status === 429) budgetLow = true
+    if (!response.ok) throw new Error(`tts ${response.status}`)
+    return response.arrayBuffer()
+  })
+}
+
+/** Data saving on (the browser's Save-Data): nothing is fetched ahead. */
+function savingData(): boolean {
+  return typeof navigator !== 'undefined' && (navigator as { connection?: { saveData?: boolean } }).connection?.saveData === true
+}
+
+/** Fetches the latest answer's voice ahead (once), unless the budget is low or data saving is on. */
+export function prefetchVoice(remote: RemoteAnswer) {
+  if (!TTS_LIVE || budgetLow || savingData()) return
+  if (ahead?.answerId === remote.answerId) return
+  const data = requestVoice(remote)
+  ahead = { answerId: remote.answerId, data }
+  data.catch(() => {
+    if (ahead?.data === data) ahead = null
+  })
+}
+
+/** Rejects when `signal` aborts (a stop, another answer, the time limit), so a fetched-ahead voice can lose too. */
+function untilAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
+}
+
 function stopAudio() {
   pending?.abort()
   pending = null
+  setPreparing(null)
   const node = source
   source = null
   if (node) {
@@ -185,22 +248,18 @@ export function speakAnswer(id: string, text: string, voice: SpeechSynthesisVoic
   const controller = new AbortController()
   pending = controller
   setSpeaking(id)
+  // The button shows "Preparing the voice…" at once; a voice fetched ahead plays without a wait.
+  setPreparing(id)
   const timer = setTimeout(() => controller.abort(), TTS_TIMEOUT_MS)
-  fetch(`${TTS_BASE}/api/tts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
-    body: JSON.stringify({ customer_id: remote.customerId, answer_id: remote.answerId, language: remote.language }),
-    signal: controller.signal,
-  })
-    .then((response) => {
-      if (!response.ok) throw new Error(`tts ${response.status}`)
-      return response.arrayBuffer()
-    })
-    .then((data) => ctx.decodeAudioData(data))
+  const fetched = ahead?.answerId === remote.answerId ? ahead.data : requestVoice(remote, controller.signal)
+  Promise.race([fetched, untilAbort(controller.signal)])
+    // A copy: decoding detaches the buffer, and the fetched-ahead voice may play again.
+    .then((data) => ctx.decodeAudioData(data.slice(0)))
     .then((buffer) => {
       clearTimeout(timer)
       if (pending !== controller) return
       pending = null
+      setPreparing(null)
       const node = ctx.createBufferSource()
       node.buffer = buffer
       node.connect(ctx.destination)
@@ -216,6 +275,7 @@ export function speakAnswer(id: string, text: string, voice: SpeechSynthesisVoic
       clearTimeout(timer)
       if (pending !== controller) return
       pending = null
+      setPreparing(null)
       if (voice) speak(id, text, voice)
       else setSpeaking(null)
     })

@@ -2,9 +2,9 @@
 import type { Language } from '../api/types.ts'
 
 // One name for the speaker button in both states; `aria-pressed` says whether it is reading (#582).
-const STRINGS: Record<Language, { read: string }> = {
-  en: { read: 'Read aloud' },
-  fi: { read: 'Lue ääneen' },
+const STRINGS: Record<Language, { read: string; preparing: string }> = {
+  en: { read: 'Read aloud', preparing: 'Preparing the voice…' },
+  fi: { read: 'Lue ääneen', preparing: 'Valmistellaan ääntä…' },
 }
 
 export function speechStrings(lang: Language) {
