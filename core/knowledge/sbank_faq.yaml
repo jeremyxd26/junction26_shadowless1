@@ -40,7 +40,7 @@ entries:
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-iban-tilinumero-ja-mista-sen-loytaa/"
     retrieved_at: "2026-11-15"
     keywords:
-      en: ["iban", "account number"]
+      en: ["iban", "find my account number", "where is my account number", "international account number"]
       fi: ["iban", "tilinumeroni", "tilinumeron"]
 
   - id: bic
@@ -220,8 +220,8 @@ entries:
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/miten-voin-muuttaa-kortin-turvarajoja/"
     retrieved_at: "2026-11-15"
     keywords:
-      en: ["card limit", "card's limit", "limits on my card", "limit on my card", "limit of my card", "security limit", "purchase limit", "online payment limit", "withdrawal limit"]
-      fi: ["turvaraj", "ostoraj", "kortin raj", "kortin kayttoraj", "verkkomaksuraj", "nostoraj"]
+      en: ["change my card limit", "change the card limit", "change card limit", "change my card's limit", "change the limits on my card", "security limit", "purchase limit", "online payment limit", "withdrawal limit"]
+      fi: ["turvaraj", "ostoraj", "muutan kortin raj", "muuttaa kortin raj", "kortin rajojen muut", "verkkomaksuraj", "nostoraj"]
 
   - id: card_region
     topic: cards
@@ -342,6 +342,18 @@ entries:
     keywords:
       en: ["what can i do in s-mobiili", "what can i do with s-mobiili", "what does s-mobiili do", "s-mobiili features", "s-bank section", "bank section of s-mobiili"]
       fi: ["mita voin tehda s-mobiili", "mita s-mobiililla voi tehda", "mita s-mobiilissa voi tehda", "s-pankki-osio", "s-pankki osio", "pankkiosio"]
+
+  - id: bonus_in_smobiili
+    topic: s-mobiili
+    questions_en: ["Where can I see my bonus in S-mobiili?", "Where does S-mobiili show my Bonus?"]
+    questions_fi: ["Mistä näen minulle kertyneen Bonuksen?", "Missä S-mobiili näyttää Bonukseni?"]
+    answer_en: "S-Bank's help pages say a co-op customer-owner sees their Bonus in the Oma kauppa section of S-mobiili, where they can follow how it builds up and see the benefits offered to them. The section also keeps warranty receipts and electronic receipts of S-Group purchases, once that service is taken into use in S-mobiili."
+    answer_fi: "S-Pankin ohjeiden mukaan osuuskaupan asiakasomistaja näkee Bonuksensa S-mobiilin Oma kauppa -osiossa, jossa voi seurata Bonuksen kertymistä ja katsoa tarjottuja etuja. Osioon tallentuvat myös takuukuitit ja S-ryhmän ostosten sähköiset kuitit, kun palvelu on otettu S-mobiilissa käyttöön."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/mista-naen-minulle-kertyneen-bonuksen/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["see my bonus", "bonus in s-mobiili", "oma kauppa", "electronic receipts", "warranty receipts"]
+      fi: ["nae bonuks", "naen bonuks", "kertyneen bonuks", "nayttaa bonuks", "oma kauppa", "sahkoiset kuit", "takuukuit"]
 
   - id: smobiili_provider
     topic: s-mobiili

@@ -79,13 +79,13 @@ BANK_NAME = r"(?<![\w-])s[- ]?(?:bank's|bank|pankin|pankki)\s+"
 # The customer's own figures: a data question, never a knowledge-base answer.
 OWN_FIGURES = (r"\d|€|\beur(?:o|os)?\b|\bhow (?:much|many)\b|\bbalance\b|\b(?:did|have|had) (?:i|we) "
                r"(?:spend|spent|pay|paid|buy|bought|earn|earned|get|got|receive|received|save|saved)\b|"
-               r"\bi (?:spent|paid|bought|earned|saved)\b|\bmy (?:spending|income|salary|budget|savings|"
+               r"\bwhy (?:is|are|was|were|did|does|do|has|have) my\b|\bi (?:spent|paid|bought|earned|saved)\b|\bmy (?:spending|income|salary|budget|savings|"
                r"expenses|bills|purchases|transactions)\b|"
                r"\bpaljonko\b|\bkuinka (?:paljon|monta)\b|\bmontako\b|\bsaldo\w*|\bkaytin\b|\bkulutin\b|"
                r"\bmaksoin\b|\bostin\b|\bsaastin\b|\bkulutukse\w*|\btuloni\b|\bmenoni\b|\bostokseni\b|"
                r"\btapahtumani\b|\brahani (?:menivat|meni|riittavat|riittaa)\b")
 # Loans, credit, investments and insurance: the refusals and the model decide these, never this route.
-OUT_OF_SCOPE = (r"\bloan\w*|\bborrow\w*|\bmortgage\w*|\bcredit (?:limit|decision|score)\w*|\binvest\w*|\bfunds?\b|"
+OUT_OF_SCOPE = (r"\bloan\w*|\bborrow\w*|\bmortgage\w*|\bcredit (?:card )?(?:limit|decision|score)\w*|\binvest\w*|\bfunds?\b|"
                 r"\bstocks?\b|\bshares?\b|\binsurance\w*|\blain\w*|\bluot\w*|\bsijoit\w*|\brahasto\w*|\bosake\w*|"
                 r"\bvakuutu\w*")
 # A recommendation or a comparison: out of scope (the mentor rule), never a knowledge-base answer.
