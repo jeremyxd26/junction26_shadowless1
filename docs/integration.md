@@ -82,7 +82,7 @@ The amount in a handoff is a Number object of the API contract (`contracts/api.m
 
 - The host shows its own screen, with its own figures and terms; the customer decides everything there. Sentti recommends nothing there, says nothing about returns and moves no money.
 - **The host ignores a target it does not know**, so a newer module never makes an older host fail. No answer from the host is defined.
-- The message uses the envelope above, which the app adopts in PR #175 (not yet merged). The API's action type stays `open_host_screen`; the host message name is camelCase like `sentti.openTransaction`.
+- The message uses the envelope above, which the app adopted in PR #175. The API's action type stays `open_host_screen`; the host message name is camelCase like `sentti.openTransaction`.
 
 ## 4. Language and theme from the host
 
