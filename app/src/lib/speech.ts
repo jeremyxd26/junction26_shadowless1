@@ -3,6 +3,10 @@
 // a voice with `localService: false` (Chrome's "Google …" voices, Edge's "… Online (Natural)")
 // sends the text to a cloud service, so it is never picked. One answer speaks at a time; starting
 // another stops the first. The text is the answer's `text_rendered` exactly as the API sent it.
+//
+// Gemini voice (#730): in a live build the core reads the answer aloud (POST /api/tts names our own
+// answer by its id, never a text) and the WAV plays through the Web Audio API, because the page's CSP
+// allows no blob: media. Any error, a wait over TTS_TIMEOUT_MS or no answer id: the device voice.
 import { useSyncExternalStore } from 'react'
 import type { Language } from '../api/types.ts'
 
@@ -89,6 +93,7 @@ export function useSpeakingId(): string | null {
 export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
   const s = synth()
   if (!s) return
+  stopAudio()
   // Cleared first: the cancel may end the previous utterance at once or later, and either way
   // that end belongs to an utterance that no longer speaks.
   current = null
@@ -111,8 +116,101 @@ export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
 /** Stops speech; with `id`, only when that answer is the one speaking. */
 export function stopSpeaking(id?: string) {
   if (id !== undefined && speakingId !== id) return
-  if (speakingId === null && current === null) return
+  if (speakingId === null && current === null && pending === null && source === null) return
   current = null
+  stopAudio()
   synth()?.cancel()
   setSpeaking(null)
+}
+
+/** Live builds fetch the Gemini voice from the core; a mock build keeps the device voice. */
+export const TTS_LIVE = import.meta.env.VITE_API_MODE === 'live'
+const TTS_BASE: string = import.meta.env.VITE_API_BASE ?? ''
+const TTS_TIMEOUT_MS = 8000
+
+// The voice request in flight and the audio that plays: a stop or another answer aborts or stops them,
+// and a late response of an aborted request never plays.
+let pending: AbortController | null = null
+let source: AudioBufferSourceNode | null = null
+let audioContext: AudioContext | null = null
+
+function stopAudio() {
+  pending?.abort()
+  pending = null
+  const node = source
+  source = null
+  if (node) {
+    try {
+      node.stop()
+    } catch {
+      // already ended
+    }
+  }
+}
+
+function audio(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!Ctor) return null
+  audioContext ??= new Ctor()
+  return audioContext
+}
+
+/** The answer the core reads aloud: our own answer by its id (`done.answer_id`) for this customer. */
+export interface RemoteAnswer {
+  customerId: string
+  answerId: string
+  language: Language
+}
+
+/**
+ * Reads the answer `id` aloud: with the Gemini voice from the core when `remote` is given in a live
+ * build, else (and on any failure of it) with the device `voice`. Call it from the tap itself: the
+ * audio context is resumed inside the gesture, as iOS Safari requires.
+ */
+export function speakAnswer(id: string, text: string, voice: SpeechSynthesisVoice | null, remote: RemoteAnswer | null) {
+  const ctx = TTS_LIVE && remote ? audio() : null
+  if (!ctx || !remote) {
+    if (voice) speak(id, text, voice)
+    return
+  }
+  stopSpeaking()
+  ctx.resume().catch(() => {})
+  const controller = new AbortController()
+  pending = controller
+  setSpeaking(id)
+  const timer = setTimeout(() => controller.abort(), TTS_TIMEOUT_MS)
+  fetch(`${TTS_BASE}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+    body: JSON.stringify({ customer_id: remote.customerId, answer_id: remote.answerId, language: remote.language }),
+    signal: controller.signal,
+  })
+    .then((response) => {
+      if (!response.ok) throw new Error(`tts ${response.status}`)
+      return response.arrayBuffer()
+    })
+    .then((data) => ctx.decodeAudioData(data))
+    .then((buffer) => {
+      clearTimeout(timer)
+      if (pending !== controller) return
+      pending = null
+      const node = ctx.createBufferSource()
+      node.buffer = buffer
+      node.connect(ctx.destination)
+      node.onended = () => {
+        if (source !== node) return
+        source = null
+        setSpeaking(null)
+      }
+      source = node
+      node.start()
+    })
+    .catch(() => {
+      clearTimeout(timer)
+      if (pending !== controller) return
+      pending = null
+      if (voice) speak(id, text, voice)
+      else setSpeaking(null)
+    })
 }

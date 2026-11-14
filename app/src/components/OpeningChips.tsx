@@ -12,7 +12,7 @@ export function OpeningChips() {
   const shown = openingChips.filter((key) => clientTurns[key]?.visible())
   if (!opening || shown.length === 0) return null
   return (
-    <ul data-opening-part="client-chips" className="flex flex-col items-start gap-2">
+    <ul data-opening-part="client-chips" className="flex flex-wrap gap-2">
       {shown.map((key) => {
         const request = clientTurnRequest(key, lang)
         return (
@@ -20,7 +20,7 @@ export function OpeningChips() {
             <button
               type="button"
               onClick={() => opening.pushClientTurn(request)}
-              className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
+              className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-3 py-1.5 text-left text-[15px] font-medium leading-5 text-ink hover:bg-mint"
             >
               {request.question}
             </button>

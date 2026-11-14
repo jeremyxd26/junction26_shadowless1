@@ -188,6 +188,8 @@ The core writes its own data under `var/` at the repository root, which is `/srv
 |---|---|---|
 | `/var/lib/shadowless1/var` | `/srv/var` | uid 10001 (the container user `app`), `700` |
 
+The voice of `POST /api/tts` (#730) caches one WAV file per answer text in `/srv/var/tts-cache` (keyed by the SHA-256 of model, voice, language and text) and counts its requests in `/srv/var/tts-requests.jsonl`. It reads the answer's text from the audit log, so the audit log must stay on. To pre-warm an answer, ask its question in the app (or `POST /api/ask`), then `POST /api/tts` with `{"customer_id": ..., "answer_id": ...}` from that answer; a later answer with the same rendered text is then a cache hit.
+
 The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
 
 ### The tool cache (#86)
@@ -315,6 +317,9 @@ The service reads `/etc/shadowless1/core.env` every time it starts. The file is 
 | `CORS_ORIGINS` | comma-separated; empty means the local dev servers. Add the app's origin here when it has a URL. |
 | `DB_POOL_MAX` | the pool's most connections, 1 to 20; unset means 10 (the shared database allows 100) |
 | `API_DOCS` | leave unset: the interactive API docs stay off on the dev host (`1` is for local development) |
+| `TTS_DAILY_BUDGET` | answers read aloud (`POST /api/tts`, #730): Gemini TTS requests in any rolling 24 hours; unset means 100, `0` turns new voice requests off (cached audio is still served). Counted in `/srv/var/tts-requests.jsonl`, apart from the chat's `gemini-requests.jsonl`; `var/model-off` and a missing `GEMINI_API_KEY` stop them too |
+| `TTS_MODEL`, `TTS_VOICE` | unset: `gemini-3.8-flash-tts` with the prebuilt voice `Sulafat` |
+| `TTS_TIMEOUT_S` | seconds per voice request; unset means 25 (at most 60), so a slow first request still fills the cache after the app fell back to the device voice at about 8 s |
 
 Set now: `DATABASE_URL`, `DEMO_TODAY` and `GEMINI_API_KEY`. `GEMINI_MODEL` and `CORS_ORIGINS` are unset, so they take their defaults. They were written over SSH stdin, never on a command line, with quotes stripped; on the instance only the URL's shape was checked.
 
