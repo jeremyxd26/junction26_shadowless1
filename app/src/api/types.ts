@@ -1,5 +1,5 @@
 // Types for the parts of contracts/api.md (0.2.1) the app uses so far:
-// sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask) and 9 (evidence).
+// sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask), 8 (what-if) and 9 (evidence).
 // The app ignores fields it does not know (contract section 1), so these types list only what it reads.
 
 export type Language = 'en' | 'fi'
@@ -266,3 +266,35 @@ export type AskEvent =
   | { event: 'delta'; data: { text: string } }
   | { event: 'done'; data: AskDone }
   | { event: 'error'; data: ErrorEnvelope }
+/** Contract section 8.1: what the what-if screen sends. `cut_pct` is a whole number, 1 to 100. */
+export interface WhatIfSelection {
+  kind: 'category' | 'basket' | 'mcc' | 'merchant'
+  value: string
+}
+
+export interface WhatIfScenarioRequest {
+  selection: WhatIfSelection
+  cut_pct: number
+}
+
+/** Contract section 8.2 (and the `result` of a `whatif` card). */
+export interface WhatIfResult {
+  scenario: { selection: WhatIfSelection; cut_pct: Num; label: string }
+  status: 'estimate' | 'estimate_with_caveat' | 'not_offered' | string
+  baseline_per_month: Num
+  saving_per_month: Num
+  saving_per_week: Num
+  saving_per_year: Num
+  one_off_excluded: Num
+  regular_excluded: Num
+  assumptions: string[]
+  caveats: string[]
+}
+
+export interface WhatIfResponse extends WhatIfResult {
+  customer_id: string
+  as_of: string
+  language: Language
+  estimate: Estimate | null
+  evidence_ref: string | null
+}

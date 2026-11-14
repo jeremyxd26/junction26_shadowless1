@@ -3,6 +3,7 @@ import { api } from './api/client.ts'
 import { ApiError } from './api/errors.ts'
 import type { Language } from './api/types.ts'
 import { EvidenceSheet } from './components/EvidenceSheet.tsx'
+import { WhatIfSheet } from './components/WhatIfSheet.tsx'
 import { Header } from './components/Header.tsx'
 import { PersonaSheet } from './components/PersonaSheet.tsx'
 import { ErrorBlock, LoadingBlock } from './components/States.tsx'
@@ -11,7 +12,7 @@ import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
 import { useChat } from './lib/useChat.ts'
 import { useLoad, type Loaded } from './lib/useLoad.ts'
-import { setParams, useUrl } from './lib/url.ts'
+import { setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 import { Overview } from './screens/Overview.tsx'
 
@@ -23,6 +24,7 @@ export default function App() {
   const lang = parseLanguage(params.get('lang'))
   const personaParam = params.get('persona')
   const evidenceRef = params.get('evidence')
+  const whatIf = whatIfFromParams(params)
   const [personaSheet, setPersonaSheet] = useState(false)
 
   const loadPersonas = useCallback(() => api.personas(lang), [lang])
@@ -89,6 +91,10 @@ export default function App() {
         </main>
       </div>
 
+      {/* Before the evidence sheet, so evidence opened from a what-if number stacks on top. */}
+      {whatIf && customerId && (
+        <WhatIfSheet key={`${whatIf.selection.kind}:${whatIf.selection.value}`} scenario={whatIf} />
+      )}
       {evidenceRef && customerId && <EvidenceSheet evidenceRef={evidenceRef} />}
       {personaSheet && personas.status === 'ready' && (
         <PersonaSheet

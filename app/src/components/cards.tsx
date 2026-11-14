@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Action, BreakdownCard, Insight, MetricCard, Num, ReviewCard, SafeToSpendStatus } from '../api/types.ts'
-import { navigate, openEvidence } from '../lib/url.ts'
+import { navigate, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
 import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
@@ -44,6 +44,13 @@ export function ActionButton({ action, onHero = false }: { action: Action; onHer
   if (action.type === 'ask') {
     return (
       <button type="button" className={className} onClick={() => navigate('/chat', { q: action.prompt })}>
+        {label}
+      </button>
+    )
+  }
+  if (action.type === 'open_whatif') {
+    return (
+      <button type="button" className={className} onClick={() => openWhatIf(action.scenario)}>
         {label}
       </button>
     )

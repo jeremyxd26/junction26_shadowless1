@@ -37,6 +37,13 @@ const en = {
   errorRetry: 'Something went wrong. Try again.',
   errorOffline: 'No connection. Try again.',
   saveSeparate: 'Safe to save is separate from safe to spend and is never added to it.',
+  whatIfTitle: 'What if',
+  whatIfEntry: 'What if I spent 20% less on restaurants?',
+  whatIfCut: 'Spend less by',
+  whatIfCutValue: (pct: number) => `${pct}% less`,
+  whatIfUpdating: 'Updating…',
+  whatIfBaseline: 'Now',
+  whatIfAssumptions: 'Assumptions',
 }
 
 type Strings = typeof en
@@ -76,6 +83,13 @@ const fi: Strings = {
   errorRetry: 'Jokin meni vikaan. Yritä uudelleen.',
   errorOffline: 'Ei yhteyttä. Yritä uudelleen.',
   saveSeparate: 'Säästövara on eri asia kuin käyttövara, eikä niitä lasketa yhteen.',
+  whatIfTitle: 'Entä jos',
+  whatIfEntry: 'Entä jos käyttäisin 20 % vähemmän ravintoloihin?',
+  whatIfCut: 'Käytä vähemmän',
+  whatIfCutValue: (pct: number) => `${pct} % vähemmän`,
+  whatIfUpdating: 'Päivitetään…',
+  whatIfBaseline: 'Nyt',
+  whatIfAssumptions: 'Oletukset',
 }
 
 export function strings(lang: Language): Strings {
