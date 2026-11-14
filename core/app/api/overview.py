@@ -26,7 +26,7 @@ from core.tools.models import ToolResult
 from core.tools.safe_to_spend import BillsDueMismatch, NoTransactions, get_safe_to_spend
 
 from . import texts
-from .deps import CUSTOMER_ID_PATTERN, connection, require_customer
+from .deps import CUSTOMER_ID_PATTERN, customer_connection
 from .personas import persona_by_id
 from .schemas import Language, MetricCard, OverviewResponse
 
@@ -88,8 +88,7 @@ def get_overview(
     customer_id: str = Path(pattern=CUSTOMER_ID_PATTERN),
     lang: Language = Query("en"),
 ) -> OverviewResponse:
-    with connection(request) as conn:
-        require_customer(conn, customer_id)
+    with customer_connection(request, customer_id) as conn:   # allowlist first, no database (#101)
         ctx = ToolContext(customer_id=customer_id, as_of=request.app.state.settings.demo_today, conn=conn,
                           language=lang)
         return build(ctx, HERO_TOOL)

@@ -1,8 +1,9 @@
 """POST /api/ask (contracts/api.md section 7) and the internal GET /api/audit/{answer_id}.
 
 Step 0 runs before any stream is opened, and its failures are plain HTTP errors with the error
-envelope: 400 invalid_request (bad body, message empty or over 500 characters), 429 rate_limited,
-404 customer_not_found, 503 data_unavailable. After that the answer is either a server-sent event
+envelope: 400 invalid_request (bad body, message empty or over 500 characters), 404
+customer_not_found (a customer the service does not serve, #101, checked first and without the
+database; or an unknown one), 429 rate_limited, 503 data_unavailable. After that the answer is either a server-sent event
 stream (Accept: text/event-stream; a `: ping` comment every 10 seconds while the pipeline works) or
 one JSON object (section 7.4). Inside the stream a failure is one `error` event.
 """
@@ -28,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from core.agent.audit import AuditLog
+from core.app.api import deps
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import make_agent_model
 from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
@@ -260,6 +262,7 @@ async def ask(request: Request):
     message = body.message.strip()
     if not message or len(body.message) > MAX_MESSAGE:
         return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
+    deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
     allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
     if not allowed:
         return _error(429, "rate_limited", ERROR_TEXT["rate_limited"], True, {"Retry-After": str(retry_after)})

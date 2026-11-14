@@ -22,7 +22,7 @@ from core.tools.models import Unit
 from core.tools.selection import Selection
 
 from . import texts
-from .deps import CUSTOMER_ID_PATTERN, EVIDENCE_REF_PATTERN, connection, require_customer
+from .deps import CUSTOMER_ID_PATTERN, EVIDENCE_REF_PATTERN, customer_connection
 from .errors import ApiError
 from .schemas import EvidenceResponse, Language
 
@@ -193,8 +193,7 @@ def get_evidence(
     limit: int = Query(evidence.DEFAULT_LIMIT, ge=1, le=evidence.MAX_LIMIT),
     cursor: str | None = Query(None, pattern=r"^cur_[0-9]{1,6}$"),  # offsets up to 999999
 ) -> EvidenceResponse:
-    with connection(request) as conn:
-        require_customer(conn, customer_id)
+    with customer_connection(request, customer_id) as conn:   # allowlist first, no database (#101)
         try:
             res = evidence.resolve(conn, ref, customer_id, limit=limit, cursor=cursor, language=lang)
         except evidence.EvidenceNotFound:

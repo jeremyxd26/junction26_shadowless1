@@ -21,6 +21,7 @@ pytest core -q                                            # run the tests
 Settings:
 - `DATABASE_URL`
 - `DEMO_TODAY` (default `2026-09-30`)
+- `DEMO_CUSTOMERS`: `personas` (default) serves only the demo personas of `core/config/personas.yaml`; `all` serves every customer of the data, for local eval runs only.
 - `GEMINI_API_KEY`: optional. Without it the coach answers from the rule planner and the templates.
 - `GEMINI_MODEL`: leave it out of `.env` (see below).
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
