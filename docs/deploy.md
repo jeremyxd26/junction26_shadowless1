@@ -194,6 +194,13 @@ A cached number's evidence ref points into `coach_evidence` in the database.
 
 **The sample bills (#250).** After the tool warm-up, `remote-deploy.sh` reads the four sample bills (`docker exec shadowless1-core timeout 130 python -m core.bills.warmup`, at most 150 s, never fatal). Each sample is read once with the model (one request the first time; a reading already in the model cache costs nothing) and once more from the cache. It prints one line per sample with counts only: fields that match the answer key, fields checked by code, and the requests each reading sent. Without a key it prints that it skipped. It always reads with the Gemini reader: the Nemotron reader (#573) is used only with `python -m core.bills.warmup --reader nemotron`, run by hand, never by the deploy.
 
+**Warming the Nemotron reader (#637).** `--reader nemotron` reads with Nemotron and falls back to Gemini, so every Nemotron timeout there also costs one Gemini request. `--reader nemotron-only` reads with Nemotron alone: a timeout prints as `model unavailable (timeout)`, and only the Nemotron cache is filled. A cold Nemotron endpoint is slow:
+- it answered its first text request in 58 s;
+- it finished no image reading within 240 s;
+- its image readings were fast (6.5–24.5 s) about ten minutes later (the real check on #616).
+
+So warm it by hand at least 15 minutes before it must answer, with `docker exec shadowless1-core timeout 200 python -m core.bills.warmup --reader nemotron-only`. Each timeout line is one request. A line with `first reading 0 request(s); second reading 0 request(s) (cache)` is a sample already in the Nemotron cache: the service then serves it with no request. `NEMOTRON_TIMEOUT_S` (default 30 s, at most 30) is the deadline of the whole reading. No part of the answer is read after it; a network wait already under way ends by the same timeout.
+
 **After a database reset or a data reload:**
 1. Stop the service.
 2. Delete the cache file: `rm /var/lib/shadowless1/var/cache/tools.sqlite3*`.
