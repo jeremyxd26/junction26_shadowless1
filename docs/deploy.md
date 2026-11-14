@@ -318,7 +318,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   | Applies to | Header |
   |---|---|
   | every response | `Strict-Transport-Security: max-age=31536000` (no `preload`: the parent domain is shared), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; the `Server` header is removed, also the core's `server: uvicorn` |
-  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` |
+  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` (#272: answers depend on the customer and the viewer cookie; set at once for Caddy's own errors and again when the response is written, replacing anything the service sends) |
   | the app (`index.html` and the other non-asset paths) | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'` |
 
   The app's policy follows the app owner's needs on #102: the Vite build emits external script and style files, no inline script, and the font is bundled. The app calls `/api` on its own origin. Images come from the app or `data:` URIs, so rendered markdown cannot load an outside image. Only the app's own origin may frame it; the S-mobiili WebView loads the module top-level and is not affected. A demo page on another origin that frames the app needs that origin added to `frame-ancestors`.
