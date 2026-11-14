@@ -2,7 +2,7 @@
 // settings are query parameters (`?evidence=`, `?persona=`, `?lang=`), so the WebView back
 // button closes a sheet the same way it leaves a screen.
 import { useSyncExternalStore } from 'react'
-import { sendToHost } from './hostBridge.ts'
+import { hostPlatform, sendToHost } from './hostBridge.ts'
 
 const CHANGE = 'sentti:navigate'
 
@@ -76,6 +76,17 @@ export function closeEvidence() {
   const state = window.history.state as { sheet?: boolean } | null
   if (state?.sheet) window.history.back()
   else setParams({ evidence: null })
+}
+
+/**
+ * Whether the back button has somewhere to go: an inner screen or an open sheet, or a host app
+ * to hand control to. On the first screen in a plain browser it has none, so it is not shown.
+ */
+export function canGoBack(): boolean {
+  const state = window.history.state as { screen?: boolean; sheet?: boolean } | null
+  if (state?.screen || state?.sheet) return true
+  if (hostPlatform() !== null) return true
+  return window.location.pathname !== '/'
 }
 
 /**

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { envelope, hostPlatform, sendToHost, type HostScope } from './hostBridge.ts'
-import { goBack } from './url.ts'
+import { canGoBack, goBack } from './url.ts'
 
 const CLOSE = { type: 'sentti.close', v: 1, payload: {} }
 
@@ -87,5 +87,36 @@ describe('goBack on the first screen', () => {
     const back = firstScreen({})
     goBack()
     expect(back).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('canGoBack: whether the header shows the back button', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function at(pathname: string, state: Record<string, unknown> | null, extra: Record<string, unknown> = {}) {
+    vi.stubGlobal('window', { history: { state, back: vi.fn() }, location: { pathname }, ...extra })
+  }
+
+  it('hides it on the first screen of a plain browser', () => {
+    at('/', null)
+    expect(canGoBack()).toBe(false)
+  })
+
+  it('shows it on the first screen inside the iOS or the Android host', () => {
+    at('/', null, iosHost().scope as Record<string, unknown>)
+    expect(canGoBack()).toBe(true)
+    at('/', null, androidHost().scope as Record<string, unknown>)
+    expect(canGoBack()).toBe(true)
+  })
+
+  it('shows it on inner screens and over sheets, with or without a host', () => {
+    at('/chat', { screen: true })
+    expect(canGoBack()).toBe(true)
+    at('/', { sheet: true })
+    expect(canGoBack()).toBe(true)
+    at('/chat', null)
+    expect(canGoBack()).toBe(true)
   })
 })
