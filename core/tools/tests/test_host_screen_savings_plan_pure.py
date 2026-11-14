@@ -6,7 +6,7 @@ no database."""
 from __future__ import annotations
 
 import pytest
-from test_host_screen_labels_pure import host_label_entries
+from test_host_screen_labels_pure import host_label_entries, strings_of
 from test_tools_savings_plan_pure import AS_OF, SANNA, fake, plan, what_if  # noqa: F401  (fake is a fixture)
 
 from core.agent import template
@@ -26,6 +26,8 @@ def test_the_plan_keeps_the_amount_apart_from_the_bank(fake, levers, language, q
     text = draft["text"] if isinstance(draft, dict) else draft
     assert amount_with_bank_product(text, numbers) is None, text
     assert amount_beside_bank_product(render(text, numbers)) is None, text
+    for string in strings_of(result.card.model_dump(mode="json")):    # nothing on the card joins them either
+        assert amount_beside_bank_product(string) is None, string
     if levers:
         labels = {t: v for t, _, v in host_label_entries()}
         host = [a for a in result.card.actions if a.type == "open_host_screen"]
