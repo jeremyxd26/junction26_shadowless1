@@ -6,6 +6,7 @@ import { BILL_LIVE } from '../api/bill.ts'
 import { api } from '../api/client.ts'
 import type { Language } from '../api/types.ts'
 import { billStrings } from '../lib/billStrings.ts'
+import type { ClientTurnRequest } from '../lib/thread.ts'
 import { LessonTurn } from './lesson/LessonTurn.tsx'
 import { lessonStrings } from './lesson/lessonStrings.ts'
 
@@ -51,3 +52,8 @@ export const clientTurns: Record<string, ClientTurnEntry> = {
 
 /** The registry keys whose chips the opening shows under its overview row, in this order. */
 export const openingChips: string[] = ['bill', 'lesson']
+
+/** What a tap on `key`'s chip (or the composer's paperclip, #705) pushes: its text, its component, one turn per key. */
+export function clientTurnRequest(key: string, lang: Language): ClientTurnRequest {
+  return { question: clientTurns[key].chip(lang), render: key, id: key }
+}

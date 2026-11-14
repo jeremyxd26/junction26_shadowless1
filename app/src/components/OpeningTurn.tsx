@@ -10,6 +10,7 @@ import { OpeningContext, type AnsweredReview, type Opening, type ShownReview } f
 import { useSettings } from '../lib/settings.ts'
 import type { ClientTurnRequest } from '../lib/thread.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
+import { landBelowHeader } from '../lib/threadScroll.ts'
 import type { ChatSession } from '../lib/useChat.ts'
 import type { Loaded } from '../lib/useLoad.ts'
 import { Overview } from '../screens/Overview.tsx'
@@ -36,9 +37,9 @@ function scrollToReview(txRef: string) {
 
 /** A turn already in the thread, brought back to the top (a second tap on a client turn's chip). */
 function scrollToTurn(turnId: number) {
-  document
-    .querySelector(`[data-turn="${turnId}"]`)
-    ?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  // Below the header's measured height, as the thread lands every new turn (#332, #705).
+  const turn = document.querySelector(`[data-turn="${turnId}"]`)
+  if (turn) landBelowHeader(turn, !prefersReducedMotion())
 }
 
 interface ProviderProps {
