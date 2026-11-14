@@ -68,7 +68,9 @@ CROWD = {"everyone", "everybody", "others", "people", "person", "average", "most
          "ihmiset", "keskiverto", "suomalaiset"}
 FIRST = {"i", "me", "we", "us", "myself", "ourselves", "mina", "minun", "minulle", "minulta", "minua", "minulla",
          "meidan", "meille", "meilta", "meita", "meilla", "voin", "voinko", "voisin", "voisinko", "haluan",
-         "haluaisin", "saanko", "olen", "olenko", "olisin", "tarvitsen", "tarvitsisin", "pystyn", "pystyisin"}
+         "haluaisin", "saanko", "olen", "olenko", "olisin", "tarvitsen", "tarvitsisin", "pystyn", "pystyisin",
+         "vahentaisin", "kayttaisin", "kuluttaisin", "saastaisin", "leikkaisin", "ostaisin", "maksaisin",
+         "lopettaisin", "jattaisin", "siirtaisin"}
 DETERMINER = {"my", "our", "the", "his", "her", "their", "your", "a", "an", "minun", "meidan", "and", "or", "ja",
               "tai"}
 # Known non-persons. English words match exactly (with "'s"); shop, bank and Finnish stems also take a
@@ -93,6 +95,14 @@ STEMS = ("s-market", "s-mark", "prisma", "alepa", "sale", "lidl", "k-market", "k
 _ENDING = r"(?:n|in|an|en|un|yn|on|ssa|sta|lla|lta|lle|ksi|a|ta|na|t|ja|ihin|iin|seen|lle|kin)?"
 _LABELS = {fold(lab) for table in (config.CATEGORY_LABELS, config.BASKET_LABELS, config.MCC_GROUP_LABELS)
            for pair in table.values() for lab in pair}
+_LABELS |= {w for lab in list(_LABELS) for w in lab.replace("&", " ").split() if len(w) > 2}
+# Capitalised only because a sentence starts with them, or the coach's "you": never a name.
+NOT_A_NAME = {"that", "this", "these", "those", "it", "there", "here", "what", "who", "how", "which",
+              "when", "where", "why", "the", "a", "an", "and", "but", "or", "so", "then", "your", "my",
+              "our", "you", "u", "any", "some", "every", "each", "all", "no", "not", "also", "just",
+              "voit", "voisit", "haluat", "olet", "saat", "sina", "sa", "te", "teidan", "se", "tama",
+              "tuo", "ne", "nama", "arki", "arjen", "iban", "eur", "mcc", "sepa", "pin", "atm", "vat",
+              "alv", "taxis", "cafes", "bars", "flights", "hotels", "subscriptions", "parking"}
 _PAYEES = {fold(p) for names in config.PAYEE_ALIASES.values() for name in names for p in name.split()}
 
 MONEY_EN_STRONG = (r"spending|spend|purchases?|transactions?|money|salary|salaries|income|budget|accounts?|balance|"
@@ -207,6 +217,9 @@ def kind_of(np: str) -> str:
         return "crowd"
     if any(_known(t) for t, _ in content):
         return "thing"
+    content = [(t, w) for t, w in content if w not in NOT_A_NAME]
+    if not content:
+        return "thing"
     if any(re.search(r"[^\x00-\x7f]", t) and not re.search(r"[a-zA-Z]", _plain(t)) for t, _ in content):
         return "person"                              # a non-Latin name ("Олег")
     if any(t[:1].isupper() for t, _ in content):
@@ -218,7 +231,8 @@ def kind_of(np: str) -> str:
 FI_STOP = {"miten", "kuinka", "paljonko", "milloin", "mihin", "mista", "missa", "mika", "mita", "ennen",
            "on", "kun", "niin", "jos", "nyt", "sen", "taman", "tan", "sinun", "kaiken", "koko", "jokaisen", "oman",
            "minun", "meidan", "kuin"}
-_LEAD = {"how", "much", "many", "what", "which", "show", "tell", "can", "could", "you", "check", "see", "paljonko",
+_LEAD = {"how", "much", "many", "what", "which", "show", "tell", "can", "could", "check", "see", "so", "then",
+         "and", "but", "also", "just", "paljonko",
          "kuinka", "paljon", "mita", "mihin", "nayta", "kerro"}
 _BE = {"was", "were", "is", "are", "been", "be", "being", "olivat", "oli", "on", "ovat", "to"}   # "safe to spend"
 
@@ -228,7 +242,9 @@ def _head(np: str) -> str | None:
     tokens = np.split()
     while tokens and fold(tokens[0]) in _LEAD:
         tokens = tokens[1:]
-    tokens = [tok for tok in tokens if not tok.lower().endswith("ly") and tok.lower() not in ("you", "u")]
+    if any(fold(tok) in ("you", "u", "voit", "voisit", "sina", "sa") for tok in tokens):
+        return None                                   # the coach's "you": "so you spent", "Voit käyttää"
+    tokens = [tok for tok in tokens if not tok.lower().endswith("ly")]
     owned = [i for i, tok in enumerate(tokens) if tok.endswith(("'s", "’s", "'", "’"))]
     if owned:
         tokens = tokens[owned[-1] + 1:]               # "Marja's husband" spends: the husband
