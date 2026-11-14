@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { Estimate, Num, WhatIfResponse, WhatIfResult, WhatIfScenarioRequest } from '../api/types.ts'
@@ -142,14 +142,21 @@ export function WhatIfResultView({
 
 /**
  * The what-if sheet (`?whatif=<kind>:<value>&cut=<pct>`). The slider moves freely; the API is
- * called when it is released (pointer up or key up), about 0.5 s per call on the dev host.
+ * called on the input's native `change` event, which fires when a drag is released, on each
+ * key step, and when VoiceOver or TalkBack sets the value (they send input + change, no pointer
+ * or key events). A cancelled touch (for example a vertical swipe) and blur also commit.
+ * About 0.5 s per call on the dev host.
  */
 export function WhatIfSheet({ scenario }: { scenario: WhatIfScenarioRequest }) {
   const { lang, customerId, t } = useSettings()
   const sliderId = useId()
+  const slider = useRef<HTMLInputElement>(null)
   const [cut, setCut] = useState(scenario.cut_pct)
   const { kind, value } = scenario.selection
   const committed = scenario.cut_pct
+  // The last cut sent to the URL (and so to the API): change, pointercancel and blur can all
+  // report the same value, and only the first of them may start a request.
+  const lastSent = useRef(scenario.cut_pct)
 
   const load = useCallback(
     () => api.whatIf(customerId ?? '', { selection: { kind, value }, cut_pct: committed }, lang),
@@ -157,9 +164,20 @@ export function WhatIfSheet({ scenario }: { scenario: WhatIfScenarioRequest }) {
   )
   const { loading, error, shown, retry } = useWhatIf(`${customerId}|${kind}|${value}|${committed}|${lang}`, load)
 
-  const commit = (next: number) => {
-    if (next !== committed) setParams({ cut: String(next) })
-  }
+  const commit = useCallback((next: number) => {
+    if (!Number.isInteger(next) || next === lastSent.current) return
+    lastSent.current = next
+    setParams({ cut: String(next) })
+  }, [])
+
+  // React's onChange is the `input` event; the release is the native `change` event.
+  useEffect(() => {
+    const input = slider.current
+    if (!input) return
+    const onChange = () => commit(Number(input.value))
+    input.addEventListener('change', onChange)
+    return () => input.removeEventListener('change', onChange)
+  }, [commit])
 
   return (
     <BottomSheet title={shown?.scenario.label ?? t.whatIfTitle} onClose={closeWhatIf}>
@@ -174,6 +192,7 @@ export function WhatIfSheet({ scenario }: { scenario: WhatIfScenarioRequest }) {
             </output>
           </div>
           <input
+            ref={slider}
             id={sliderId}
             type="range"
             min={1}
@@ -182,8 +201,8 @@ export function WhatIfSheet({ scenario }: { scenario: WhatIfScenarioRequest }) {
             value={cut}
             aria-valuetext={t.whatIfCutValue(cut)}
             onChange={(event) => setCut(Number(event.currentTarget.value))}
-            onPointerUp={(event) => commit(Number(event.currentTarget.value))}
-            onKeyUp={(event) => commit(Number(event.currentTarget.value))}
+            onPointerCancel={(event) => commit(Number(event.currentTarget.value))}
+            onBlur={(event) => commit(Number(event.currentTarget.value))}
             className="mt-2 h-11 w-full cursor-pointer accent-brand"
           />
           <p role="status" aria-live="polite" className="h-5 text-sm text-muted">

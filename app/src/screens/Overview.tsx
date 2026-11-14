@@ -55,19 +55,21 @@ export function Overview({ overview }: { overview: OverviewResponse }) {
                 </button>
               </li>
             ))}
-            <li>
-              {/* The what-if screen with the contract's example request (Restaurants, 20%). */}
-              <button
-                type="button"
-                onClick={() => openWhatIf({ selection: { kind: 'category', value: 'Restaurants' }, cut_pct: 20 })}
-                className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 py-2 text-left text-base font-medium text-brand hover:bg-mint-tint"
-              >
-                {t.whatIfEntry}
-              </button>
-            </li>
           </ul>
         </section>
       )}
+
+      {/* The what-if screen with the contract's example request (Restaurants, 20%), the demo step.
+          Outside the questions list, so it shows even when the API sends no questions. */}
+      <div>
+        <button
+          type="button"
+          onClick={() => openWhatIf({ selection: { kind: 'category', value: 'Restaurants' }, cut_pct: 20 })}
+          className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 py-2 text-left text-base font-medium text-brand hover:bg-mint-tint"
+        >
+          {t.whatIfEntry}
+        </button>
+      </div>
     </div>
   )
 }
