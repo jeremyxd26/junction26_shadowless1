@@ -773,6 +773,52 @@ cases:
   no_data_tool_call: true
   tags: [meta, lead]
 
+- id: sanna-small-purchases
+  persona: CUST00860
+  question: {en: 'Where do my small purchases go?', fi: 'Mihin pienet ostokset menevät?'}
+  intent: small_purchases
+  expect: answered
+  expected_tools: [get_small_purchases]
+  tags: [small_purchases, lead]
+  numbers:
+  - {name: small_count, value: 4, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
+  - {name: small_total, value: 28.73, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
+
+- id: marja-small-purchases
+  persona: CUST00493
+  question: {en: 'How much do I spend on coffees and snacks?', fi: 'Paljonko käytän kahviin ja välipaloihin?'}
+  intent: small_purchases
+  expect: answered
+  expected_tools: [get_small_purchases]
+  tags: [small_purchases]
+  numbers:
+  - {name: small_count, value: 31, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
+  - {name: small_total, value: 156.04, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
+  - {name: small_month_avg, value: 52.01, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: small_purchases, column: month_avg_eur, where: {category: all}}}
+
+- id: eetu-small-purchases
+  persona: CUST00349
+  question: {en: 'Where do my small purchases go?', fi: 'Mihin pienet ostokset menevät?'}
+  intent: small_purchases
+  expect: answered
+  expected_tools: [get_small_purchases]
+  tags: [small_purchases]
+  numbers:
+  - {name: small_count, value: 13, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
+  - {name: small_total, value: 94.25, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
+  - {name: small_month_avg, value: 31.42, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: small_purchases, column: month_avg_eur, where: {category: all}}}
+
+- id: aleksi-small-purchases
+  persona: CUST00849
+  question: {en: 'Where do my small purchases go?', fi: 'Mihin pienet ostokseni menevät?'}
+  intent: small_purchases
+  expect: answered
+  expected_tools: [get_small_purchases]
+  tags: [small_purchases]
+  numbers:
+  - {name: small_count, value: 1, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
+  - {name: small_total, value: 8.64, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
+
 - id: marja-save-more-plan
   persona: CUST00493
   question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}

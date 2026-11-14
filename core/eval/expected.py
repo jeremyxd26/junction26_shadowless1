@@ -46,6 +46,7 @@ METRIC_FILES = {
     "what_if": "04_what_if.sql",
     "spender_profile": "05_spender_profile.sql",
     "peer_benchmark": "06_peer_benchmark.sql",   # reads the marts of core/marts/build.py
+    "small_purchases": "08_small_purchases.sql",  # #256: the last 3 complete months, EUR 10 (the tool's defaults)
 }
 
 # MCC groups of agent-core.md section 6.1, with the codes metrics.md section 1 names.

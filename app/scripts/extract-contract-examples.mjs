@@ -63,6 +63,9 @@ const NEEDED = [
   'bill.response_unknown',
   'bill.read_response',
   'host.payment_draft',
+  // The action open_host_screen and the host message it sends (contract 0.3.1, #268)
+  'action.open_host_screen',
+  'host.open_host_screen',
 ]
 
 const text = readFileSync(contractPath, 'utf8')

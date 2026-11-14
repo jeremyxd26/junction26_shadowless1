@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import type { Count } from '../lib/motion.ts'
-import { navigate, openEvidence, openWhatIf } from '../lib/url.ts'
+import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
+import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
 import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
@@ -45,7 +46,7 @@ export function ActionButton({ action, onHero = false }: { action: Action; onHer
   }
   if (action.type === 'ask') {
     return (
-      <button type="button" className={className} onClick={() => navigate('/chat', { q: action.prompt })}>
+      <button type="button" className={className} onClick={() => askInThread(action.prompt)}>
         {label}
       </button>
     )
@@ -53,6 +54,16 @@ export function ActionButton({ action, onHero = false }: { action: Action; onHer
   if (action.type === 'open_whatif') {
     return (
       <button type="button" className={className} onClick={() => openWhatIf(action.scenario)}>
+        {label}
+      </button>
+    )
+  }
+  if (action.type === 'open_host_screen') {
+    // Into the bank app's own screen (#268); a target the app does not know renders nothing.
+    const target = hostScreenTarget(action.target)
+    if (!target) return null
+    return (
+      <button type="button" className={className} onClick={() => openHostScreen(target)}>
         {label}
       </button>
     )

@@ -63,7 +63,13 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
 SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
-             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän|"
+             # the everyday ways of asking it (#340); the rules read the same words (rules.plan_what_if)
+             r"\bhow (can|could|do|should|would) i save\b(?! time)|\bsave money\b|"
+             r"\b(help me|tips to|ways to|how (can|could|do) i) (spend less|cut back)\b|"
+             r"\bways to save\b|\bsaving tips\b|\btips to save\b|\bwhere (can|could|should) i (save|cut)\b|"
+             r"\bput (more |some )?(money )?aside\b|"
+             r"\bmiten (voisin|voin|saisin) säästä\w*|\bmissä (voisin|voin) säästä\w*|\bsäästöön\b")
 # One sentence each, so the save-more answer stays within two sentences (#342, Renat's length rule).
 WHAT_IF_OFFER = ("Tell me how much you would cut {category} by, and I'll show what you'd save.",
                  "Kerro, kuinka paljon vähentäisit luokassa {category}, niin näytän säästön.")
@@ -89,11 +95,17 @@ CLARIFY_GENERAL = {
 }
 # "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
 # the card's own "why" text; {amount} is the card amount's token.
-REVIEW_PURCHASE = (
+REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-length rule)
     "That was your {category} purchase on {date}: {amount}. It is the large purchase I asked you about: "
-    "was it needed, or your choice? {why}",
+    "was it needed, or your choice?",
     "Se oli ostoksesi {date} luokassa {category}: {amount}. Tästä isosta ostoksesta kysyin sinulta: oliko se "
-    "välttämätön hankinta vai oma valinta? {why}",
+    "välttämätön hankinta vai oma valinta?",
+)
+REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
+    "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
+    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
+    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
@@ -205,7 +217,7 @@ NEXT_PAYDAY = ("Next payday", "Seuraava palkkapäivä")
 BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavallis"
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
-BILL_WORDS = r"\bbills?\b|\blasku\w*"
+BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
@@ -333,6 +345,87 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
         ids = [nums[k]["id"] for k in ("safe_to_spend", "balance_limit", "budget_limit")]
     tokens = {k.split("_")[0] if k != "safe_to_spend" else "safe": f"{{{{{n['id']}}}}}" for k, n in nums.items()}
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
+
+
+# Small purchases as one takeaway sentence (#256), in the voice of the brief and within the length rule (review
+# of #390): the takeaway number first, at most three numbers (the total, the count, the monthly average), the
+# period in words. The limit stays on the card. Words always stand between a count and a date, so a count
+# never reads as a day of a month. No advice, no judgement.
+SMALL_SENTENCE = {
+    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
+    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
+    "month": (", about {month}", ", noin {month}"),
+    "most": ("most of them at {where}", "suurin osa {where}"),
+    "largest": ("the largest part at {where}", "eniten {where}"),
+    "noun_one": ("small purchase", "pieni ostos"),
+    "noun_many": ("small purchases", "pientä ostosta"),
+    "label": ("in {label}", "jaksolla {label}"),
+}
+# A preset period in words, without digits (review of #390: the period named in words). The validator accepts a
+# month only when it equals a returned period exactly, so "from July to September 2026" would not pass; these do.
+PRESET_WORDS = {
+    "last_3_months": ("in the last three months", "viimeisen kolmen kuukauden aikana"),
+    "last_6_months": ("in the last six months", "viimeisen kuuden kuukauden aikana"),
+    "last_12_months": ("in the last twelve months", "viimeisen kahdentoista kuukauden aikana"),
+    "last_month": ("last month", "viime kuussa"),
+    "this_month": ("this month", "tässä kuussa"),
+    "this_week": ("this week", "tällä viikolla"),
+    "last_week": ("last week", "viime viikolla"),
+    "year_to_date": ("this year", "tänä vuonna"),
+}
+
+
+def period_words(view: dict[str, Any], language: str) -> str | None:
+    """The period of a small-purchases view: a preset in words ("in the last three months", "viime kuussa"),
+    another period by its label ("in 3–24 Aug 2026"); None when there is neither."""
+    preset = view.get("period_preset")
+    if preset in PRESET_WORDS:
+        return pick(PRESET_WORDS[preset], language)
+    label = view.get("period")
+    return pick(SMALL_SENTENCE["label"], language).format(label=label) if isinstance(label, str) else None
+
+
+def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The small-purchases takeaway as one sentence, and the ids it cites (at most three); None when a number
+    or the period is missing."""
+    if view.get("tool") != "get_small_purchases":
+        return None
+    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+
+    def has(key: str) -> bool:
+        return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
+
+    when = period_words(view, language)
+    if not (has("count") and has("total") and when):
+        return None
+    token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
+    kind = (view.get("takeaway") or {}).get("kind")
+    s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    if kind == "none":
+        text, ids = s("none").format(period=when), []
+    elif kind == "few":
+        noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
+        ids = [nums[k]["id"] for k in ("count", "total")]
+    else:
+        categories = view.get("categories") or []
+        largest = categories[0] if categories else {}
+        key, label = largest.get("key"), largest.get("label") or ""
+        where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
+                 else (label.lower() if language == "en" else label))
+        share = (largest.get("share") or {}).get("value")
+        if re.search(r"\d", where):
+            return None
+        where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
+        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
+                                   where_part=where_part)
+        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+    return text[:1].upper() + text[1:], ids
 
 
 # The savings plan (#369) in two sentences and at most three numbers: what can already be set aside and what
@@ -477,7 +570,9 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = safe_to_spend_sentence(view, language) or savings_plan_sentence(view, language)
+        custom = (safe_to_spend_sentence(view, language)
+                  or small_purchases_sentence(view, language)
+                  or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])
             cited += custom[1]

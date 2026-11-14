@@ -82,6 +82,8 @@ CALLS: tuple[WarmCall, ...] = (
              {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}),
     WarmCall("Will my money last until payday?", "core.tools.forecast", "get_balance_forecast",
              "GetBalanceForecastArgs", {}),
+    WarmCall("Where do my small purchases go? (#256)", "core.tools.small_purchases", "get_small_purchases",
+             "GetSmallPurchasesArgs", {}),
     WarmCall("How could I save more? (the savings plan, #369)", "core.tools.savings_plan", "get_savings_plan",
              "GetSavingsPlanArgs", {}),
 )
