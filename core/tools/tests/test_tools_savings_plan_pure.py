@@ -200,7 +200,7 @@ def test_the_card_is_a_breakdown_with_the_levers_in_words(fake):
     assert card.total.method == "savings_plan.total_month_eur@1"
     assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle"]
     assert [i["label"] for i in card.items] == ["Restaurants, a fifth less", "Lifestyle, a tenth less"]
-    assert card.estimate["text"] == "About, if you cut these as shown and the rest of your spending stays as it is."
+    assert card.estimate.text == "About, if you cut these as shown and the rest of your spending stays as it is."
     show, host = card.actions
     assert (show.type, host.type, host.target, host.label) == ("open_evidence", "open_host_screen", "monthly_saving",
                                                                "See monthly saving in S-mobiili")

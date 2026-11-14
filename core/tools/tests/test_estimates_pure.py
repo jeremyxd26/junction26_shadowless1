@@ -101,6 +101,17 @@ def forecast_card(language, status):
     return forecast._card(data, language)
 
 
+def plan_card(language):
+    from core.tools import savings_plan as sp
+    levers = [sp.Lever(key=c, category=c, label=f"{c}, a fifth less", cut_pct=20, cut_words="a fifth",
+                       cut=num("20", Unit.PERCENT, "savings_plan.cut_pct@1", None, f"n{2 * i + 2}", language),
+                       saving=num(v, Unit.EUR_PER_MONTH, "what_if.saving_month_eur@1", f"ev_lever_{i}", f"n{2 * i + 3}",
+                                  language))
+              for i, (c, v) in enumerate((("Restaurants", "45.91"), ("Lifestyle", "17.26")))]
+    total = num("63.17", Unit.EUR_PER_MONTH, "savings_plan.total_month_eur@1", "ev_plan_total", "n1", language)
+    return sp._card(levers, total, language)
+
+
 def estimate_cards(language):
     """(name, card) for every card that sets an estimate, in the states that matter."""
     cards = [("safe_to_spend", hero_card(language))]
@@ -115,6 +126,7 @@ def estimate_cards(language):
     bills = get_recurring_bills(ToolContext(customer_id="CUST00042", as_of=BILLS_TODAY, conn=_FakeStore(),
                                             language=language, _history=history_for_series()))
     cards.append(("bills_pro_rata", bills.card))
+    cards.append(("savings_plan", plan_card(language)))         # dev (#369)
     cards += [("whatif", whatif_card(language)), ("peer", peer_card(language)),
               ("forecast_below_zero", forecast_card(language, "below_zero")),
               ("forecast_comfortable", forecast_card(language, "comfortable"))]
@@ -155,6 +167,7 @@ def test_every_estimate_card_says_what_it_observed_and_what_it_assumes(language)
 def prefix(name: str) -> str:
     """The tool of a card name above, as the keys of config.ASSUMPTION_TEXT spell it."""
     for start, tool in (("safe_to_save", "safe_to_save"), ("safe_to_spend", "safe_to_spend"), ("bonus", "bonus"),
+                        ("savings_plan", "savings_plan"),
                         ("bills", "bills"), ("whatif", "what_if"), ("peer", "peer"), ("forecast", "forecast")):
         if name.startswith(start):
             return tool

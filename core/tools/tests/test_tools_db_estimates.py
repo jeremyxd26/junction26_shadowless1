@@ -22,6 +22,7 @@ from core.tools.forecast import get_balance_forecast
 from core.tools.peer import get_peer_benchmark
 from core.tools.safe_to_save import get_safe_to_save
 from core.tools.safe_to_spend import get_safe_to_spend
+from core.tools.savings_plan import get_savings_plan
 from core.tools.what_if import run_what_if
 
 AS_OF = date(2026, 9, 30)
@@ -34,6 +35,7 @@ TOOLS = {
     "bills": lambda ctx: get_recurring_bills(ctx, {}),
     "peer": lambda ctx: get_peer_benchmark(ctx, {"metric": "spend_total"}),
     "forecast": lambda ctx: get_balance_forecast(ctx, {}),
+    "savings_plan": lambda ctx: get_savings_plan(ctx, {}),          # dev (#369)
 }
 WRITTEN: dict[str, dict] = {}
 

@@ -38,7 +38,7 @@ from core.tools import config, evidence
 from core.tools.baskets import get_basket_breakdown
 from core.tools.bonus import get_bonus_estimate
 from core.tools.context import NumberRegistry, ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.safe_to_save import get_safe_to_save
 from core.tools.what_if import WhatIfRefused, run_what_if
@@ -221,7 +221,10 @@ def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=total_month.period.label, evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
+        # #380: observed are the levers' savings (each a what-if, whose evidence opens its baseline)
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language),
+                          observed=[lv.saving for lv in levers],
+                          assumptions=[assumption("savings_plan.cuts_as_shown", language)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
                  Action(type="open_host_screen", target="monthly_saving", label=host_label)],
         display_hint="list", total=total_month, comparison=None, items=items,
