@@ -82,8 +82,9 @@ def test_not_a_bill_a_month_or_a_year(question, expected):
 
 
 # A market question, not the customer's own bill (review of #544): a place, a person, an average, a comparison or a
-# purpose. The rule claims a full match only, so each keeps the plan it has on dev and never gets the customer's own
-# number as if it were a market price.
+# purpose. The rule claims a full match only, so each keeps the plan the other rules give it (on dev, "keskimäärin
+# kuukaudessa" is the own six-month average) and never gets the bill-cost plans: the customer's own typical bill or
+# own 12-month total as if it were a market price.
 @pytest.mark.parametrize("question", [
     "what does a flat rent cost in Helsinki a month?", "what does rent cost in Helsinki a year?",
     "how much does rent cost per month for a student", "what does housing cost a month in Finland",
@@ -95,7 +96,10 @@ def test_not_a_bill_a_month_or_a_year(question, expected):
 ])
 def test_a_market_question_is_not_the_customers_bill(question):
     assert template.bill_cost(guard.fold(question)) is None, question
-    assert planned(question)[0][0] == "ask_clarifying_question", question
+    calls = planned(question)
+    assert calls[0][0] != "get_recurring_bills", question
+    assert not any(name == "get_spending" and args.get("period") == {"preset": "last_12_months"}
+                   for name, args in calls), question
 
 
 def test_the_comparison_question_keeps_the_peer_benchmark():
