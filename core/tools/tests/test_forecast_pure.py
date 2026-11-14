@@ -231,3 +231,30 @@ def test_a_whole_run_gives_a_breakdown_card_and_an_answer_the_validator_accepts(
     assert draft["cited"][0] == data.lowest.id                       # the answer leads with the lowest point
     assert validator.check_text(draft["text"], allowed) == []
     assert any(str(data.first_below_zero_date.day) in s for s in result.notes)   # the date said plainly
+
+
+def test_the_lowest_point_recomputed_by_hand(monkeypatch):
+    """The synthetic customer's lowest point from its own amounts, without the tool's helpers: rent
+    613.93 on 6 Oct, utilities 98.74 a month spread (x 14 / 30.4375), groceries 14 x 40.00 a month
+    (median daily average of July, August, September = 560 / 31), 14 days to 14 Oct."""
+    from core.tools import labels
+    from core.tools.classify import classify
+    from core.tools.numbers import NumberBuilder
+
+    history = synthetic_history()
+    probe = ToolContext(customer_id="CUST00849", as_of=TODAY, conn=None)
+    probe._history = history
+    bills_total = recurring.bills_due_numbers(
+        probe, NumberBuilder(probe, classify(history, TODAY, labels.for_context(probe)))).total_value
+    monkeypatch.setattr(forecast, "metric_row", lambda ctx: ({}, {"balance_eur": "900.00", "bills_due_eur": str(bills_total)}))
+    monkeypatch.setattr(evidence, "write", lambda conn, specs: None)
+    ctx = ToolContext(customer_id="CUST00849", as_of=TODAY, conn=None)
+    ctx._history = history
+    data = forecast.get_balance_forecast(ctx, {}).data
+
+    pace = money(Decimal(560) / 31)                                               # 18.06
+    bills_by_14_oct = money(Decimal("613.93") + Decimal("98.74") * 14 / Decimal("30.4375"))   # 659.35
+    lowest_by_hand = Decimal("900.00") - bills_by_14_oct - pace * 14              # -12.19
+    assert (data.daily_pace.value, data.lowest.value) == (float(pace), float(lowest_by_hand))
+    assert data.lowest_date == data.first_below_zero_date == date(2026, 10, 14)
+    assert data.bills_until_payday.value == float(money(Decimal("613.93") + Decimal("98.74") * 15 / Decimal("30.4375")))

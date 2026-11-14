@@ -4,6 +4,7 @@ Skipped without DATABASE_URL. Each persona runs 03_safe_to_spend.sql once per to
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -48,6 +49,14 @@ def test_the_forecast_uses_the_heros_balance_and_bills_and_every_number_reconcil
     assert parts["balance"]["ref"] == components["balance"].evidence_ref
     assert parts["pace"]["ref"] == data.daily_pace.evidence_ref
     assert evidence.resolve(conn, parts["bills"]["ref"], customer_id).reconciles is True
+    # The lowest point recomputed from the tool's own numbers: balance - bills by that day - pace x days.
+    days = (data.lowest_date - AS_OF).days
+    bills_by_then = Decimal(parts["bills"]["value"])
+    assert Decimal(parts["balance"]["value"]) == Decimal(str(data.balance_now.value))
+    assert Decimal(parts["pace"]["value"]) == Decimal(str(data.daily_pace.value))
+    assert Decimal(str(data.lowest.value)) == (Decimal(str(data.balance_now.value)) - bills_by_then
+                                               - Decimal(str(data.daily_pace.value)) * days)
+    assert Decimal("0") <= bills_by_then <= Decimal(str(data.bills_until_payday.value))
 
     card = forecast.card.model_dump(mode="json")
     BreakdownCard.model_validate(card)
