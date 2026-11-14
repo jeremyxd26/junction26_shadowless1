@@ -29,9 +29,15 @@ from core.tools.models import HOST_SCREEN_TARGETS
 
 CONFIG = Path(config.__file__)
 CURRENCY = re.compile(r"[€$£]|\beur(?:o|os)?\b|\beuroa?\b", re.I)
+# Verb forms only (review of #475): "save", "saves", "saved" but not the noun "saving" ("See monthly saving in
+# S-mobiili"); "add", "adds", "added", "adding". Finnish: a word that starts with "säästä" except the noun
+# "säästäminen" in any case ("säästämi..."), whose compounds ("kuukausisäästäminen") have no word start there
+# anyway; "lisää", "lisätä" and their forms, but not "lisäksi".
 ACTION_VERBS = re.compile(
-    r"\b(?:start\w*|put\w*|mov(?:e|es|ing)\b|invest\w*|transfer\w*|deposit\w*|set\s+aside)"
-    r"|\b(?:aloit\w*|laita\w*|laitta\w*|siirr\w*|siirtä\w*|sijoit\w*|talleta\w*|talletu\w*)", re.I)
+    r"\b(?:start\w*|put\w*|mov(?:e|es|ing)\b|invest\w*|transfer\w*|deposit\w*|set\s+aside|sav(?:e|es|ed)\b"
+    r"|add(?:s|ed|ing)?\b)"
+    r"|\b(?:aloit\w*|laita\w*|laitta\w*|siirr\w*|siirtä\w*|sijoit\w*|talleta\w*|talletu\w*|säästä(?!mi)\w*"
+    r"|lisä(?:ä|t)\w*)", re.I)
 
 
 def host_label_entries() -> list[tuple[str, int, tuple[str, str]]]:
@@ -155,3 +161,16 @@ def test_no_card_string_names_an_amount_and_the_bank(language):
     for result in results:
         for text in strings_of(result.card.model_dump(mode="json")):
             assert amount_beside_bank_product(text) is None, (result.tool, text)
+
+
+@pytest.mark.parametrize("label, verb", [
+    ("See monthly saving in S-mobiili", False), ("Katso kuukausisäästäminen S-mobiilissa", False),
+    ("See Bonus to fund in S-mobiili", False), ("Katso Bonus rahastoon S-mobiilissa", False),
+    ("Contact S-Pankki", False), ("Ota yhteyttä S-Pankkiin", False), ("Säästäminen S-mobiilissa", False),
+    ("Save in S-mobiili", True), ("Add to monthly saving in S-mobiili", True), ("Start saving in S-mobiili", True),
+    ("Säästä S-mobiilissa", True), ("Lisää kuukausisäästämiseen", True), ("Aloita säästäminen S-mobiilissa", True),
+])
+def test_the_verb_check_tells_verbs_from_nouns(label, verb):
+    """Review of #475: "save" and "add" (säästä, lisää) are caught as verbs; the noun "saving" (säästäminen),
+    which the existing labels use, is not."""
+    assert bool(ACTION_VERBS.search(label)) is verb
