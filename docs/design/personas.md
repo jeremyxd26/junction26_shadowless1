@@ -147,6 +147,12 @@ All answers: `DEMO_TODAY` 2026-09-30, window 2026-04-01 … 2026-09-30 (`n_month
 | CUST00349 | `everyday_heavy` | one-off share 4.3% < 5, everyday share 30.1% ≥ 30 (checked before saver) | regular_investor, frequent_small_purchases | 22.6% | 3,161.55 | 2,445.52 |
 | CUST00849 | `steady` | keep rate 9.4% < 20, everyday share 28.0% < 30, one-off share 0% | went_below_zero (20 transactions), frequent_small_purchases | 9.4% | 2,075.65 | 1,881.06 |
 
+Sanna's spike review (#68) changes the shares, not the profile. Each share is of all spending (#235). The values below are one-off share / everyday share / unexpected share in %, and the profile is `big_ticket` in every state:
+
+| No review | Pending | "Needed" | "My choice" |
+|---|---|---|---|
+| 6.0 / 19.9 / 17.3 | 6.0 / 19.9 / 11.3 | 6.0 / 19.9 / 17.3 | 6.0 / 25.9 / 11.3 |
+
 **Peer comparison** ("people of the same age and area"). `06_peer_benchmark.sql` is run for each persona alone; it reads the marts built by `core/marts/build.py` (`peer_source = marts`). Level `age_band+area3`, `shown = true` for all four. Month averages over the window. The percentile is the share of the other peers in the group who spend less.
 
 | Persona | Peer group (comparable others) | Metric | You | Peer median | p25 – p75 | Percentile | vs median |
