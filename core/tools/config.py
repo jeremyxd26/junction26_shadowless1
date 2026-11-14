@@ -313,14 +313,14 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                     "payday goes from {free_before} to {free_after}.",
                     "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
                     "palkkapäivää: palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
-    "sts_moves": ("Your weekly safe to spend goes from {before} to {after}.",
-                  "Viikon turvallisesti käytettävissä oleva summasi on {after} (ennen laskua {before})."),
-    "sts_budget": ("Your weekly safe to spend stays {before}: your monthly budget limits it, not your balance.",
-                   "Viikon turvallisesti käytettävissä oleva summasi pysyy ennallaan, {before}: sitä rajaa "
+    "sts_moves": ("Left to spend this week goes from {before} to {after}.",
+                  "Tämän viikon käyttövarasi on {after} (ennen laskua {before})."),
+    "sts_budget": ("Left to spend this week stays {before}: your monthly budget limits it, not your balance.",
+                   "Tämän viikon käyttövarasi pysyy ennallaan, {before}: sitä rajaa "
                    "kuukausibudjettisi, ei saldosi."),
-    "sts_negative": ("This bill takes more than is free until payday, so your weekly safe to spend is {after}.",
-                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten viikon turvallisesti "
-                     "käytettävissä oleva summasi on {after}."),
+    "sts_negative": ("This bill takes more than is free until payday, so what is left to spend this week is {after}.",
+                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten tämän viikon "
+                     "käyttövarasi on {after}."),
     # warnings: a small note that never repeats a signal (contracts/api.md 11.2); today only a past due date
     "warn_past": ("The due date has passed. The payee may charge late-payment interest, so pay it soon.",
                   "Eräpäivä on mennyt. Maksunsaaja voi periä viivästyskorkoa, joten maksa lasku pian."),

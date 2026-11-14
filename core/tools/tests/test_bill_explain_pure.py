@@ -256,7 +256,7 @@ def test_a_matched_higher_bill_before_payday_with_the_budget_binding(fake):
     assert sts["free_until_payday_before"]["evidence_ref"] == "ev_free00000001"
     assert sts["free_until_payday_after"]["value"] == 12517.56
     assert sts["after"]["value"] == 180.26                       # the budget limit binds: unchanged
-    assert "Your weekly safe to spend stays €180.26: your monthly budget limits it, not your balance." in sts["text"]
+    assert "Left to spend this week stays €180.26: your monthly budget limits it, not your balance." in sts["text"]
     assert fake.runs == [{"cushion_eur": "100", "extra_bill_due_eur": "50.00"}]   # 03 itself, with the bill
     assert [a["type"] for a in out["actions"]] == ["add_to_payments"] and out["warnings"] == []
     assert out["signals"] == []
@@ -287,7 +287,7 @@ def test_the_balance_binding_moves_safe_to_spend_by_the_heros_own_computation(fa
     sts = out["safe_to_spend"]
     assert sts["effect"] == "full" and sts["reserved"] is None and sts["counted"]["value"] == 100.0
     assert sts["after"]["value"] == 93.33          # the row's balance limit, never 140.00 - 100.00
-    assert "Your weekly safe to spend goes from €140.00 to €93.33." in sts["text"]
+    assert "Left to spend this week goes from €140.00 to €93.33." in sts["text"]
 
 
 def test_a_bill_larger_than_what_is_free(fake):
@@ -296,7 +296,7 @@ def test_a_bill_larger_than_what_is_free(fake):
     sts = explain(fields_bill(amount="400.00", due=date(2026, 10, 10)))["safe_to_spend"]
     assert sts["free_until_payday_after"]["value"] == -100.0 and sts["after"]["value"] == 0.0
     assert sts["after"]["display"] == "€0.00"
-    assert sts["text"].endswith("This bill takes more than is free until payday, so your weekly safe to spend is "
+    assert sts["text"].endswith("This bill takes more than is free until payday, so what is left to spend this week is "
                                 "€0.00.")
 
 

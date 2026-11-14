@@ -56,6 +56,9 @@ const en = {
   overview: 'Overview',
   /** The header's pencil button: empties the thread (asks first when there is something in it). */
   newChat: 'New chat',
+  /** The folded opening's line after the first message: the amount is the API's `display`. */
+  foldLeft: (display: string) => `Left to spend ${display}`,
+  foldQuestions: (n: number) => (n === 1 ? '1 question from Sentti' : `${n} questions from Sentti`),
   newChatConfirm: 'This clears the conversation and the lesson progress.',
   cancel: 'Cancel',
   mockBadge: 'Mock data',
@@ -126,6 +129,8 @@ const fi: Strings = {
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
   newChat: 'Uusi keskustelu',
+  foldLeft: (display: string) => `Käyttövara ${display}`,
+  foldQuestions: (n: number) => (n === 1 ? '1 kysymys Senttiltä' : `${n} kysymystä Senttiltä`),
   newChatConfirm: 'Tämä tyhjentää keskustelun ja oppituntien edistymisen.',
   cancel: 'Peruuta',
   mockBadge: 'Testidata',

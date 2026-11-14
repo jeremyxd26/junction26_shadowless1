@@ -6,6 +6,7 @@ import { ApiError } from '../api/errors.ts'
 import type { OverviewResponse } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { prefersReducedMotion } from '../lib/motion.ts'
+import { isShown, UNFOLD_OPENING } from '../lib/openingFold.ts'
 import { OpeningContext, type AnsweredReview, type Opening, type ShownReview } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { ClientTurnRequest } from '../lib/thread.ts'
@@ -31,8 +32,16 @@ function scrollToReview(txRef: string) {
   const card =
     document.querySelector<HTMLElement>(`[data-turn="opening"] ${selector}`) ?? document.querySelector<HTMLElement>(selector)
   if (!card) return
-  card.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
-  card.focus({ preventScroll: true })
+  const bring = () => {
+    card.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+    card.focus({ preventScroll: true })
+  }
+  // Inside the folded opening: unfold it first, then bring the card into view once it is laid out.
+  if (isShown(card)) bring()
+  else {
+    window.dispatchEvent(new Event(UNFOLD_OPENING))
+    requestAnimationFrame(() => requestAnimationFrame(bring))
+  }
 }
 
 /** A turn already in the thread, brought back to the top (a second tap on a client turn's chip). */

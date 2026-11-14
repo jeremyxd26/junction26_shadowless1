@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
+import { OpeningFold } from '../components/OpeningFold.tsx'
 import { ComposerMicButton } from '../components/ComposerMicButton.tsx'
 import { ScrollToLatest } from '../components/ScrollToLatest.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
@@ -117,7 +118,9 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     <div className="flex flex-col gap-6 pb-4">
       {opening ? (
         <>
-          {opening}
+          <OpeningFold canFold={turns.length > 0} foldKey={lastId}>
+            {opening}
+          </OpeningFold>
           {empty && openingStarters && openingStarters.length > 0 && (
             <ul className="flex flex-wrap gap-2">
               {openingStarters.slice(0, 3).map((starter) => (
