@@ -690,7 +690,8 @@ def test_a_refused_composer_model_moves_the_composer_to_its_fallback_and_pauses_
     reply = c.compose("s", "u", {"type": "object"})
     assert reply.model == FLASH and seen == [LITE, FLASH]          # the same call answered on the fallback
     assert c.unavailable_reason() is None
-    assert any("refused (404)" in r.getMessage() and LITE in r.getMessage() for r in caplog.records)
+    assert any("refused (404)" in r.getMessage() and LITE in r.getMessage()
+               and r.getMessage().split("; ")[1].startswith(f"the compose uses {FLASH}") for r in caplog.records)
     c.compose("s", "u", {"type": "object"})
     c.plan(*PLAN_ARGS)
     assert seen == [LITE, FLASH, FLASH, FLASH]                     # no second request to the refused id
@@ -707,8 +708,9 @@ def test_a_refused_model_without_a_fallback_fails_its_role_only():
     c.compose_fallback_model = None
     with pytest.raises(GeminiError) as exc:
         c.compose("s", "u", {"type": "object"})
-    assert exc.value.code == "http_404" and c.unavailable_reason() is None
-    assert c.plan(*PLAN_ARGS).calls                                  # the planner is not touched
+    assert exc.value.code == "http_404"
+    assert c.unavailable_reason() == "model_refused"   # the pipeline then answers from the rules (review of #422)
+    assert c.plan(*PLAN_ARGS).calls                       # the planner's own model is not touched
 
 
 def test_a_failure_streak_pauses_only_its_own_role():
@@ -722,10 +724,12 @@ def test_a_failure_streak_pauses_only_its_own_role():
         assert c.compose("s", "u", {"type": "object"}).blocked
     with pytest.raises(GeminiError):
         c.compose("s", "u", {"type": "object"})                     # the composer pauses briefly
-    assert c.plan(*PLAN_ARGS).calls and c.unavailable_reason() is None   # the planner goes on
+    assert c.plan(*PLAN_ARGS).calls                       # the planner's calls still go out
+    assert c.unavailable_reason() == "role_paused"      # the pipeline does not try the model (review of #422)
 
 
-@pytest.mark.parametrize("name", ["ReadError", "WriteError", "RemoteProtocolError"])
+@pytest.mark.parametrize("name", ["ReadError", "WriteError", "RemoteProtocolError", "LocalProtocolError",
+                                  "ProtocolError", "CloseError"])
 def test_the_sdk_transport_errors_are_network_errors_and_pause_no_one(name):
     error = type(name, (Exception,), {})
     transport = FakeTransport(error(), error(), error(), call_response())
@@ -757,3 +761,51 @@ def test_a_refused_fallback_in_the_skip_window_is_dropped_and_the_primary_comes_
         c.plan(*PLAN_ARGS)                              # pro, serving the window, is refused
     assert c.plan(*PLAN_ARGS).calls                     # back to flash, not pro again
     assert seen == [FLASH, PRO, PRO, FLASH] and c.fallback_model is None
+
+
+# ---- review of #422 ------------------------------------------------------------------------------------------
+
+def test_a_pause_while_a_skip_window_is_open_drops_no_fallback():
+    """With the composer's skip window open and an account pause (another role's 403), a compose call sends
+    nothing and fails with the pause; the composer's healthy fallback stays."""
+    clock = Clock()
+    transport = FakeTransport(text_response("{}"))
+    c = GeminiClient(FLASH, transport, cache="off", compose_model=LITE, compose_fallback_model=FLASH,
+                     sleep=lambda s: None, clock=clock)
+    c._skip_primary_until[LITE] = clock.now + gc.PRIMARY_SKIP_S
+    c._pause(gc.CONFIG_ERROR_COOLDOWN_S, "http_403")
+    with pytest.raises(GeminiError) as exc:
+        c.compose("s", "u", {"type": "object"})
+    assert exc.value.code == "http_403" and transport.requests == [] and c.compose_fallback_model == FLASH
+
+
+def test_a_refused_id_gets_one_probe_after_the_refusal_time():
+    clock = Clock()
+    seen = []
+    steps = iter([api_error(404), text_response("{}"), api_error(404), text_response("{}")])
+
+    def transport(model, contents, config, timeout_s):
+        seen.append(model)
+        step = next(steps)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+    c = GeminiClient(FLASH, transport, cache="off", compose_model=LITE, compose_fallback_model=FLASH,
+                     sleep=lambda s: None, clock=clock, refusal_s=600.0)
+    c.compose("s", "u", {"type": "object"})               # LITE 404, FLASH answers
+    clock.now += 601
+    c.compose("s", "u", {"type": "object"})               # one probe of LITE: 404 again, FLASH answers
+    assert seen == [LITE, FLASH, LITE, FLASH] and c._is_refused(LITE)
+
+
+def test_a_paused_role_or_a_role_without_a_model_makes_the_model_unavailable():
+    blocked = {"candidates": [{"finish_reason": "SAFETY", "content": {"parts": []}}]}
+    c = client(FakeTransport(blocked))
+    for _ in range(3):
+        c.compose("s", "u", {"type": "object"})
+    assert c.unavailable_reason() == "role_paused"
+    d = GeminiClient(LITE, FakeTransport(api_error(404)), cache="off", sleep=lambda s: None)
+    with pytest.raises(GeminiError):
+        d.plan(*PLAN_ARGS)
+    assert d.unavailable_reason() == "model_refused"

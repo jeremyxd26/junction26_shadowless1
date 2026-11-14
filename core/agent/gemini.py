@@ -243,6 +243,9 @@ class GeminiModel:
 
 # ---- settings and factory -----------------------------------------------------------------------------
 
+_BLANK_LOGGED: set[str] = set()   # blank model settings already logged in this process (#383)
+
+
 class GeminiSettings(BaseSettings):
     """Read from the environment and the repository's .env, like core/app/settings.py:
     - GEMINI_API_KEY: without it the service runs the rule model only;
@@ -269,12 +272,15 @@ class GeminiSettings(BaseSettings):
     @field_validator("gemini_model", "gemini_fallback_model", "gemini_planner_model", "gemini_composer_model",
                      mode="before")
     @classmethod
-    def _trimmed_id(cls, value: Any) -> Any:
-        """Model ids are trimmed; an id of only spaces counts as unset, with one log line (#383)."""
+    def _trimmed_id(cls, value: Any, info: Any) -> Any:
+        """Model ids are trimmed; an id of only spaces counts as unset (GEMINI_MODEL then is the pinned
+        default), with one log line per process (#383)."""
         if isinstance(value, str):
             if not value.strip():
-                log.warning("a GEMINI_*MODEL setting holds only spaces; it is ignored")
-                return None
+                if info.field_name not in _BLANK_LOGGED:
+                    _BLANK_LOGGED.add(info.field_name)
+                    log.warning("%s holds only spaces; it is ignored", info.field_name.upper())
+                return DEFAULT_MODEL if info.field_name == "gemini_model" else None
             return value.strip()
         return value
 
@@ -289,6 +295,7 @@ class GeminiSettings(BaseSettings):
     gemini_composer_thinking: Literal["default", "minimal", "low", "medium", "high"] = DEFAULT_THINKING
     gemini_planner_timeout_s: float = Field(default=DEFAULT_PLANNER_TIMEOUT_S, gt=0, le=15)
     gemini_composer_timeout_s: float = Field(default=DEFAULT_COMPOSER_TIMEOUT_S, gt=0, le=15)
+    gemini_model_refusal_s: float = Field(default=600.0, ge=60, le=3600)   # a refused id's probe after (#383)
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
     daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
@@ -317,6 +324,7 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     transport = None if cache == "replay" else SdkTransport(secret)
     options = {"plan_thinking": roles["planner"]["thinking"], "compose_thinking": roles["composer"]["thinking"],
                "plan_timeout_s": roles["planner"]["timeout_s"], "compose_timeout_s": roles["composer"]["timeout_s"],
+               "refusal_s": float(getattr(s, "gemini_model_refusal_s", None) or env.gemini_model_refusal_s),
                **client_options}
     client = GeminiClient(roles["planner"]["model"], transport, fallback_model=roles["planner"]["fallback"],
                           compose_model=roles["composer"]["model"], compose_fallback_model=roles["composer"]["fallback"],
@@ -348,7 +356,7 @@ def role_settings(s: Any, env: Any | None = None) -> dict[str, dict[str, Any]]:
         level = level.strip().lower() if isinstance(level, str) and level.strip() else DEFAULT_THINKING
         roles[role] = {
             "model": own,
-            "fallback": None if fallback in (None, "none") or fallback == own else fallback,
+            "fallback": None if fallback is None or str(fallback).lower() == "none" or fallback == own else fallback,
             "thinking": effective_thinking(own, level),   # what is sent: a level the model rejects becomes low
             "timeout_s": float(getattr(s, f"gemini_{role}_timeout_s", None) or getattr(env, f"gemini_{role}_timeout_s", timeout)),
         }
