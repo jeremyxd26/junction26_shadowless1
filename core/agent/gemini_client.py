@@ -117,6 +117,10 @@ STORED_FIELDS = ("candidates", "prompt_feedback", "usage_metadata", "model_versi
 # on v1beta (v1 answered HTTP 404 for it; v1beta answered on 2026-11-14).
 API_VERSIONS = {"gemini-3.1-pro-preview": "v1beta"}
 CACHE_FORMAT = 1
+# An image read in one request (#250) goes inline. The API takes about 20 MB per request in total and
+# base64 adds a third, so an image is capped far below that; a larger one is refused before sending.
+MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 class GeminiError(RuntimeError):
@@ -211,25 +215,27 @@ class Ledger:
     or deleted ledger cannot reopen the budget. `off_switch`: while this file exists, nothing is sent."""
 
     def __init__(self, path: Path, daily_cap: int | None, off_switch: Path | None = None,
-                 max_in_flight: int = MAX_IN_FLIGHT) -> None:
+                 max_in_flight: int = MAX_IN_FLIGHT, kind_caps: dict[str, int] | None = None) -> None:
         self.path = Path(path)
         self.daily_cap = daily_cap
         self.off_switch = Path(off_switch) if off_switch is not None else None
         self.max_in_flight = max_in_flight
+        self.kind_caps = dict(kind_caps or {})   # a share of the daily budget per call kind (bill readings)
         self._lock = threading.Lock()
-        self._sent: deque[datetime] = deque()   # requests this process sent: the floor of the count
-        self._in_flight = 0
+        self._sent: deque[tuple[datetime, str]] = deque()   # requests this process sent: the floor of the count
+        self._in_flight: dict[str, int] = {}
 
     def disabled(self) -> bool:
         return self.off_switch is not None and self.off_switch.exists()
 
-    def _counted(self, since: datetime) -> int:
+    def _counted(self, since: datetime, kind: str | None = None) -> int:
         n = 0
         try:
             with self.path.open(encoding="utf-8") as f:
                 for line in f:
                     try:
-                        if datetime.fromisoformat(json.loads(line)["ts"]) >= since:
+                        entry = json.loads(line)
+                        if datetime.fromisoformat(entry["ts"]) >= since and (kind is None or entry.get("kind") == kind):
                             n += 1
                     except (ValueError, KeyError, TypeError):
                         continue
@@ -237,25 +243,30 @@ class Ledger:
             pass
         return n
 
-    def count(self) -> int:
-        """Requests sent in the last 24 hours, plus the ones in flight."""
+    def count(self, kind: str | None = None) -> int:
+        """Requests sent in the last 24 hours (of one call kind, or all), plus the ones in flight."""
         since = datetime.now(timezone.utc) - LEDGER_WINDOW
-        while self._sent and self._sent[0] < since:
+        while self._sent and self._sent[0][0] < since:
             self._sent.popleft()
-        return max(self._counted(since), len(self._sent)) + self._in_flight
+        local = sum(1 for _, k in self._sent if kind is None or k == kind)
+        flying = sum(n for k, n in self._in_flight.items() if kind is None or k == kind)
+        return max(self._counted(since, kind), local) + flying
 
     today = count                         # the name the budget had when it was a calendar day
 
-    def reserve(self) -> str | None:
-        """Take a slot for one request. None when granted, else the refusal: disabled, busy or budget."""
+    def reserve(self, kind: str = "") -> str | None:
+        """Take a slot for one request of a call kind. None when granted, else the refusal: disabled,
+        busy or budget (the daily budget, or the kind's share of it)."""
         with self._lock:
             if self.disabled():
                 return "disabled"
-            if self._in_flight >= self.max_in_flight:
+            if sum(self._in_flight.values()) >= self.max_in_flight:
                 return "busy"
             if self.daily_cap is not None and self.count() >= self.daily_cap:
                 return "budget"
-            self._in_flight += 1
+            if kind in self.kind_caps and self.count(kind) >= self.kind_caps[kind]:
+                return "budget"
+            self._in_flight[kind] = self._in_flight.get(kind, 0) + 1
             return None
 
     def allow(self) -> bool:
@@ -268,8 +279,8 @@ class Ledger:
                            "result": result, "latency_ms": latency_ms,
                            "tokens": [usage.prompt_tokens, usage.thought_tokens, usage.output_tokens]})
         with self._lock:
-            self._in_flight = max(0, self._in_flight - 1)
-            self._sent.append(now)
+            self._in_flight[kind] = max(0, self._in_flight.get(kind, 0) - 1)
+            self._sent.append((now, kind))
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8") as f:
@@ -332,6 +343,17 @@ def _for_model(model: str, config: dict[str, Any]) -> dict[str, Any]:
     return {**config, "thinking_config": {**config["thinking_config"], "thinking_level": effective_thinking(model, level)}}
 
 
+def _without_bytes(obj: Any) -> Any:
+    """The request as JSON for the cache key: every bytes value (an image) becomes its SHA-256 and size."""
+    if isinstance(obj, (bytes, bytearray)):
+        return {"sha256": hashlib.sha256(obj).hexdigest(), "bytes": len(obj)}
+    if isinstance(obj, dict):
+        return {k: _without_bytes(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_without_bytes(v) for v in obj]
+    return obj
+
+
 def scrub(raw: dict[str, Any]) -> dict[str, Any]:
     """The parts of a response worth keeping: no HTTP headers, ids or SDK bookkeeping."""
     return {k: raw[k] for k in STORED_FIELDS if k in raw}
@@ -373,7 +395,7 @@ class GeminiClient:
     def __init__(self, model: str, transport: Transport | None, *, fallback_model: str | None = None,
                  compose_model: str | None = None, compose_fallback_model: str | None = None,
                  cache: str = "on", cache_dir: Path | None = None, ledger: Ledger | None = None,
-                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0,
+                 plan_timeout_s: float = 9.0, compose_timeout_s: float = 5.0, extract_timeout_s: float = 15.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
@@ -396,6 +418,7 @@ class GeminiClient:
         self.ledger = ledger
         self.plan_timeout_s = plan_timeout_s
         self.compose_timeout_s = compose_timeout_s
+        self.extract_timeout_s = extract_timeout_s
         self.plan_thinking = plan_thinking
         self.compose_thinking = compose_thinking
         self.plan_max_tokens = plan_max_tokens
@@ -455,6 +478,22 @@ class GeminiClient:
         }
         return self._call("plan", contents, config, self.plan_timeout_s)
 
+    def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any]) -> Reply:
+        """Read an image into JSON constrained by a schema (#250): one inline image part, no tools, no
+        fallback model, one request. The cache key and any recording hold the image's SHA-256, never its
+        bytes. Raises GeminiError("image") for an image that is too large or of another type."""
+        if mime_type not in IMAGE_MIME_TYPES or not image or len(image) > MAX_INLINE_IMAGE_BYTES:
+            raise GeminiError("image")
+        contents = [{"role": "user", "parts": [{"text": text}, {"inline_data": {"mime_type": mime_type, "data": image}}]}]
+        config = {
+            "system_instruction": system,
+            "response_mime_type": "application/json",
+            "response_json_schema": schema,
+            "thinking_config": {"thinking_level": self.compose_thinking},
+            "max_output_tokens": self.compose_max_tokens,
+        }
+        return self._call("extract", contents, config, self.extract_timeout_s, allow_fallback=False)
+
     def compose(self, system: str, user_text: str, schema: dict[str, Any]) -> Reply:
         contents = [{"role": "user", "parts": [{"text": user_text}]}]
         config = {
@@ -472,7 +511,8 @@ class GeminiClient:
     # ---- cache -----------------------------------------------------------------------------------
 
     def cache_key(self, model: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any]) -> str:
-        request = {"format": CACHE_FORMAT, "model": model, "kind": kind, "contents": contents, "config": config}
+        request = {"format": CACHE_FORMAT, "model": model, "kind": kind, "contents": _without_bytes(contents),
+                   "config": config}
         canonical = json.dumps(request, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -551,8 +591,11 @@ class GeminiClient:
             return self.compose_model, self.compose_fallback_model
         return self.model, self.fallback_model
 
-    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float) -> Reply:
+    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float,
+              allow_fallback: bool = True) -> Reply:
         primary, fallback = self.models_for(kind)
+        if not allow_fallback:
+            fallback = None   # a bill reading: one request on one model (#250)
         skip_primary = fallback is not None and self.clock() < self._skip_primary_until.get(primary, 0.0)
         model = fallback if skip_primary else primary
         config = _for_model(model, config)
@@ -625,7 +668,7 @@ class GeminiClient:
             self._record(kind, model, 0, CallUsage(), error="deadline")
             raise GeminiError("deadline")
         if self.ledger is not None:
-            refused = self.ledger.reserve()
+            refused = self.ledger.reserve(kind)
             if refused is not None:
                 self._record(kind, model, 0, CallUsage(), error=refused)
                 if refused == "budget":
