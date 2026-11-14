@@ -206,6 +206,7 @@ FIX_REFUSED = [
     ("Muiden kulutus", "other_person_data"), ("Muiden menot", "other_person_data"),
     ("Muiden rahat", "other_person_data"),
     ("Muiden tilillä olevat rahat", "other_person_data"), ("Paljonko muiden tilille tuli rahaa?", "other_person_data"),
+    ("Muiden tilien saldot", "other_person_data"),
 ]
 
 

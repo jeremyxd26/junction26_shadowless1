@@ -159,7 +159,9 @@ def test_an_off_topic_question_keeps_the_generic_text():
     ("How much did I spend on healthy food?", "en", None),               # not Health: as on dev
     ("When is my health insurance bill due?", "en", "get_recurring_bills"),
     ("How much did I spend on a medicine ball?", "en", "out_of_scope"),  # as on dev (#539 improves it)
-    ("Paljonko laakerit maksoivat?", "fi", None),                        # a bearing: not refused since #539
+    # a bearing: not refused since #539, and "Paljonko X maksoi" with a thing no category maps is the unknown-thing
+    # breakdown (#635): not Health, no unfiltered total
+    ("Paljonko laakerit maksoivat?", "fi", "get_basket_breakdown"),
 ])
 def test_not_health_keeps_its_dev_outcome(question, language, expected):
     found = decided(question, language)
