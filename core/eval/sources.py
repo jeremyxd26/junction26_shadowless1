@@ -75,10 +75,11 @@ def fmt_date(iso: str, lang: str) -> str:
     return iso if lang == "en" else f"{int(d)}.{int(m)}.{y}"
 
 
-def fmt_number(value, unit: str, lang: str) -> str:
+def fmt_number(value, unit: str, lang: str, method: str | None = None) -> str:
     """The tools' own formatter (core/tools/formatting.display), so the reference answer's displays are
-    exactly what the pipeline sends: en €1,234.56 / 12.5% / "€45.91 a month", fi 1 234,56 € / 12,5 %."""
-    return answer_text.formatted(value, unit, lang)
+    exactly what the pipeline sends: en €1,234.56 / 12.5% / "€45.91 a month", fi 1 234,56 € / 12,5 %;
+    with the method, a typed cut is "20%"."""
+    return answer_text.formatted(value, unit, lang, method)
 
 
 def label_of(name: str) -> str:
@@ -121,9 +122,11 @@ class ReferenceSource:
             period = None
             if src.get("query") in ("spending", "spending_change"):
                 period = {"start": src["start"], "end": min(src["end"], self.as_of)}
+            method = method_of(src)
+            shown = fmt_number(value, item["unit"], language, method)
             numbers.append({"name": item["name"], "value": value, "unit": item["unit"], "period": period,
-                            "method": method_of(src), "display": fmt_number(value, item["unit"], language)})
-            text = f"{label_of(item['name'])}: {fmt_number(value, item['unit'], language)}"
+                            "method": method, "display": shown})
+            text = f"{label_of(item['name'])}: {shown}"
             if period:
                 text += f" ({fmt_date(period['start'], language)} – {fmt_date(period['end'], language)})"
             parts.append(text + ".")
@@ -131,8 +134,8 @@ class ReferenceSource:
             # The cut is the user's own number: state it only when the question does.
             if pct is not None and str(pct) in question and not any(n["method"] == "user_input@1" for n in numbers):
                 numbers.append({"name": "cut_pct", "value": float(pct), "unit": "percent", "period": None,
-                                "method": "user_input@1", "display": fmt_number(pct, "percent", language)})
-                parts.append(f"{label_of('cut')}: {fmt_number(pct, 'percent', language)}.")
+                                "method": "user_input@1", "display": fmt_number(pct, "percent", language, "user_input@1")})
+                parts.append(f"{label_of('cut')}: {fmt_number(pct, 'percent', language, 'user_input@1')}.")
         dates = [self.as_of]
         for item in case.get("dates") or []:
             value = expected.fresh_value(self.db, customer_id, item)

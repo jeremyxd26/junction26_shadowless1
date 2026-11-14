@@ -9,11 +9,11 @@ const sizes: Record<Size, string> = {
   // Inline chips sit in running text: the pill is 32px high and an invisible
   // ::after extends the hit area to 44px. min-w-11 (on every size) keeps it 44px wide.
   inline:
-    'relative min-h-8 px-2.5 text-[15px] leading-5 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
+    'relative min-h-8 px-2.5 text-(length:--text-sm) leading-(--text-sm--line-height) align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
   // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
   lg: 'min-h-14 px-4 text-(length:--text-review-amount) leading-(--text-review-amount--line-height) tracking-tight',
-  hero: 'min-h-16 px-5 text-[40px] leading-[44px] tracking-tight',
+  hero: 'min-h-16 px-5 text-(length:--text-hero) leading-(--text-hero--line-height) tracking-tight',
 }
 
 const tones: Record<Tone, string> = {
@@ -52,7 +52,7 @@ export function NumberChip({ number, size = 'md', tone = 'mint' }: Props) {
   return (
     <button
       type="button"
-      className={`${className} cursor-pointer transition-colors duration-150 ${pressed[tone]}`}
+      className={`${className} cursor-pointer transition-colors duration-(--duration-fast) ${pressed[tone]}`}
       aria-label={`${number.label}: ${number.display}. ${t.chipHint}`}
       onClick={() => openEvidence(ref)}
     >

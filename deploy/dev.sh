@@ -54,3 +54,15 @@ for _ in $(seq 1 12); do
 done
 echo "GET $url/healthz -> $code"
 [[ $code == 200 ]]
+
+# Security headers (#102, deploy/Caddyfile): HSTS and nosniff must come back from the public URL. A
+# deploy of a commit older than #102 serves without them and fails here, although it is running.
+headers=$(curl -sS -D - -o /dev/null --max-time 10 "$url/healthz" 2>/dev/null | tr -d '\r' || true)
+missing=""
+grep -qi '^strict-transport-security: max-age=' <<<"$headers" || missing+=" Strict-Transport-Security"
+grep -qi '^x-content-type-options: nosniff' <<<"$headers" || missing+=" X-Content-Type-Options"
+if [[ -n $missing ]]; then
+  echo "security headers missing on $url/healthz:$missing" >&2
+  exit 1
+fi
+echo "security headers present: Strict-Transport-Security, X-Content-Type-Options"

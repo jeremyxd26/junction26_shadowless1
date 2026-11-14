@@ -68,7 +68,7 @@ Every number the coach shows is one of these objects. A number can always be tra
 | `method` | string | The definition that produced the number, `<metric>.<output column>@<version>`. `<metric>` is a metric of `docs/design/metrics.md` named after its SQL file in `core/metrics/` (`recurring`, `baskets`, `safe_to_spend`, `what_if`, `spender_profile`, `peer_benchmark`, `store_price_index`), and the output column is the one listed there, for example `safe_to_spend.safe_to_spend_7d_eur@1`. Plain sums and counts that `metrics.md` does not define use `spending.*` and `evidence.*`, which are defined in the design document (section 6.2). Values the user typed in use `user_input@1`. |
 | `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. One ref backs exactly one number (one `method` and `value`), and the same number shown in several places carries the same ref. It is `null` only for values the user typed in (`method` = `user_input@1`). |
 | `label` | string | Short localised name, for example "Restaurants". |
-| `display` | string | Localised formatted value, for example `€312.80` or `312,80 €`. A plus sign is never added. Negative values show a minus. |
+| `display` | string | Localised formatted value, for example `€312.80` or `312,80 €`. A plus sign is never added. Negative values show a minus. A display with a direction word (`more`, `less`) shows the magnitude without a minus. |
 | `id` | string | Present wherever a text refers to the number with a token (`/api/ask` answers, overview insights). It is the id used in the token, for example `n1`, and is unique within one answer or insight. |
 
 <!-- example: shared.number -->
