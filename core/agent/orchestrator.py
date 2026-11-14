@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template, validator
+from core.agent import glossary, guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -408,6 +408,8 @@ class Pipeline:
         # "What was that €1,080?" (#341): the amount of the pending review's purchase is answered from the
         # review card, with no plan and no model request.
         if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
+            return lang
+        if self._answer_glossary(ctx, review, message, lang, emit, a):   # "What is a buffer?" (#568)
             return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
@@ -1120,6 +1122,65 @@ class Pipeline:
                       "cited": [number_id], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [],
+                                             "answer": TOKEN.sub("[number]", text)})
+        return True
+
+    def _answer_glossary(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """Answer "What is a buffer?" / "Mitä tarkoittaa eräpäivä?" (#568): our fixed definition of one term and,
+        when an existing Number means exactly what its sentence says, the customer's own Number from the existing
+        tool (its method id and evidence, through the tool cache as for any call). No plan, no composer, no model
+        request. False (the normal path answers) unless the whole message asks about exactly one term, no guard
+        flag is set and no refusal rule of the rule model (people included) declines it."""
+        term = glossary.match(message)
+        if term is None or a.flags:
+            return False
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
+        rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        if any(c.name == "decline" for c in rules.calls):
+            return False
+        calls: list[dict[str, Any]] = []
+        views: list[dict[str, Any]] = []
+        number_id = None
+        own = glossary.OWN.get(term.key)
+        if own is not None:
+            call = FunctionCall(own.tool, dict(own.args))
+            try:
+                records = self._run_tools(ctx, [(call, self.registry.parse(call.name, call.args)[1])], lang, emit, a)
+            except (DataUnavailable, CallRejected, ValueError):
+                records = []   # the definition alone: it needs no data
+            calls.append({"name": call.name, "args": call.args})
+            for record in records:
+                if record.get("status") == "ok":
+                    views.append(record["view"])
+                    a.ok_calls.append({"name": call.name, "args": call.args})   # for the review card, below
+                    number_id = glossary.own_number_id(term.key, record["view"])
+        numbers = ctx.numbers.all()
+        allowed = allowed_from(numbers.values(), views, self.as_of)
+        draft = None
+        for nid in dict.fromkeys([number_id, None]):   # with the Number, else the definition alone
+            text = glossary.answer_text(term.key, lang, nid)
+            draft, errors = validate({"language": lang, "text": text, "cited": [nid] if nid else [], "lesson_key": None},
+                                     language=lang, numbers=numbers, allowed=allowed)
+            if not errors and draft is not None and repeated_period(draft.text, numbers) is None:
+                break
+            log.warning("glossary answer %s failed the validator (%d problems)", term.key, len(errors))
+            draft = None
+        if draft is None:
+            return False
+        a.calls = calls
+        a.planner_turns.append({"round": 1, "source": "rules", "glossary": term.key, "calls": calls})
+        if review is not None:  # the pending review's card, as on the normal path (#581 review)
+            self._attach_review(ctx, review, emit, a)
+        text = self._deliver(draft.text, numbers, emit)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": template.brief_questions(lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})
         return True
 
