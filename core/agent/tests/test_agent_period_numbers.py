@@ -54,11 +54,6 @@ def test_a_period_gets_the_period_it_names(question, period):
     assert first_call(question) == ("get_spending", {"filter": RESTAURANTS, "period": period})
 
 
-def test_the_new_year_is_not_twelve_months():
-    name, args = first_call("Paljonko käytin viimeisen vuodenvaihteen jälkeen?")
-    assert (args.get("period") or {}).get("preset") != "last_12_months"
-
-
 def test_the_breakdown_gets_the_counted_range_too():
     """The other routes that read the period get the range named, not six or twelve months."""
     assert first_call("Mihin rahani menivät viimeisen 120 päivän aikana?") == (
@@ -81,6 +76,18 @@ def test_two_different_periods_get_the_period_question(question, question_back):
 ])
 def test_this_and_last_month_are_both_answered_by_the_comparison(question, period):
     assert first_call(question) == ("get_spending", {"period": period, "compare_to": "previous_period"})
+
+
+def test_the_breakdown_cannot_compare_so_this_and_last_month_ask():
+    name, args = first_call("Where did my money go this month and last month?")
+    assert name == "ask_clarifying_question" and args["question"] == "Which period do you mean?"
+
+
+@pytest.mark.parametrize("question", ["Paljonko käytin ravintoloihin viimeisen vuodenvaihteen jälkeen?",
+                                      "Mihin rahani menivät viimeisen vuodenvaihteen jälkeen?"])
+def test_since_the_new_year_is_the_year_so_far(question):
+    name, args = first_call(question)
+    assert args["period"] == {"preset": "year_to_date"}
 
 
 @pytest.mark.parametrize("question, period", [
