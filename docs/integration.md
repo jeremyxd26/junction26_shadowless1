@@ -105,7 +105,10 @@ Every amount in a message is a Number object of the API contract (`contracts/api
   - Inputs are at least 16 px, so iOS does not zoom into them (`app/src/index.css`).
   - Tap targets are at least 44 × 44 px (`--tap-min`, `app/DESIGN.md` section 1).
 - **Text size:** WKWebView ignores the system text size. The layout is designed to survive 200 % zoom; an in-app text-size switch is a follow-up (`app/DESIGN.md` section 5).
-- **Read aloud (#252, `app/src/lib/speech.ts`, `SpeakButton.tsx`):** a speaker button next to each of Sentti's answers reads its `text_rendered` with the device's `speechSynthesis`. Only voices that run on the device are used (`localService: true`); a cloud voice, such as Chrome's "Google …" or Edge's "… Online (Natural)" voices, is never picked, so no text is sent anywhere. Without a local voice for the answer's language the button is hidden. Nothing plays without a tap; a second tap, another answer, a new question or leaving the chat stops it.
+- **Read aloud (#252, #730, `app/src/lib/speech.ts`, `SpeakButton.tsx`):** a speaker button next to each of Sentti's answers reads its `text_rendered` aloud. What is sent, and when:
+  - In a live build, a tap sends the answer's id, never its text, to the core (`POST /api/tts`, `contracts/api.md` section 12). The core has the model provider (Gemini) synthesize the answer's text, unless that audio is already in its cache, and keeps the audio in that cache. The app stores nothing.
+  - The device's `speechSynthesis` is the fallback (an error, or no audio within 8 seconds) and the only voice of a mock build. It uses only voices that run on the device (`localService: true`); a cloud voice, such as Chrome's "Google …" or Edge's "… Online (Natural)" voices, is never picked, so that text is not sent anywhere.
+  - Without a local voice for the answer's language, the button shows only in a live build, for an answer with an id; otherwise it is hidden. Nothing plays without a tap; a second tap, another answer, a new question or leaving the chat stops it.
 
 ## 5. Security
 
