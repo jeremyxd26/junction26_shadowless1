@@ -620,7 +620,12 @@ def plan_bonus(question: str) -> dict | None:
 # people spend, or their transactions, stays a refusal (another person's data), as does a named person.
 PEERS = (r"people like me|people my age|others? (of )?my age|other people|others like me|\bmy peers\b|\bpeers?\b|"
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
-         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
+         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla|"
+         # Finns as a whole, the wording of the Statistics Finland comparison (#585, #650); "what do Finns spend" with
+         # no "I" or "my" is no comparison and stays the people rules'
+         r"other finns|average finns?|finns on average|typical finns?|ordinary finns?|the finnish average|"
+         r"people in finland|keskiverto ?suomalai\w*|suomalaiset keskimäärin|suomalaisia keskimäärin|suomalaisiin|"
+         r"kuin suomalaiset|tavalli\w* suomalai\w*|keskimääräi\w* suomalai\w*|suomalaisten keskiarvo\w*")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
 # Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
 # snacks?", "Mihin pienet ostokset menevät?". Plural forms only: "that small purchase" is one purchase, not
