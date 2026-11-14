@@ -1,6 +1,8 @@
 // Reading an answer aloud (#252) with the browser's own speechSynthesis: on the device only,
-// nothing is sent anywhere and nothing is stored. One answer speaks at a time; starting another
-// stops the first. The text is the answer's `text_rendered` exactly as the API sent it.
+// nothing is sent anywhere and nothing is stored. Only voices that run on the device are used:
+// a voice with `localService: false` (Chrome's "Google …" voices, Edge's "… Online (Natural)")
+// sends the text to a cloud service, so it is never picked. One answer speaks at a time; starting
+// another stops the first. The text is the answer's `text_rendered` exactly as the API sent it.
 import { useSyncExternalStore } from 'react'
 import type { Language } from '../api/types.ts'
 
@@ -16,14 +18,18 @@ function synth(): SpeechSynthesis | null {
     : null
 }
 
-/** The best installed voice for `lang`, or null when the device has none (the button is then hidden). */
-export function voiceFor(voices: readonly SpeechSynthesisVoice[], lang: Language): SpeechSynthesisVoice | null {
+/**
+ * The best voice on the device for `lang`, or null when the device has none (the button is then
+ * hidden). Remote voices are skipped, even when they match the language better than a local one.
+ */
+export function voiceFor(all: readonly SpeechSynthesisVoice[], lang: Language): SpeechSynthesisVoice | null {
+  const local = all.filter((voice) => voice.localService === true)
   for (const wanted of SPOKEN[lang]) {
-    const exact = voices.find((voice) => voice.lang.toLowerCase().replace('_', '-') === wanted.toLowerCase())
+    const exact = local.find((voice) => voice.lang.toLowerCase().replace('_', '-') === wanted.toLowerCase())
     if (exact) return exact
   }
   const prefix = SPOKEN[lang][SPOKEN[lang].length - 1].toLowerCase()
-  return voices.find((voice) => voice.lang.toLowerCase().startsWith(prefix)) ?? null
+  return local.find((voice) => voice.lang.toLowerCase().startsWith(prefix)) ?? null
 }
 
 // Voices load asynchronously in most browsers; `voiceschanged` tells when they arrive.
@@ -54,8 +60,10 @@ export function useVoice(lang: Language): SpeechSynthesisVoice | null {
   return synth() ? voiceFor(list, lang) : null
 }
 
-// Which answer is speaking now (its turn id), shared by every button.
+// Which answer is speaking now (its turn id), shared by every button, and the utterance that
+// speaks it: a late `end` or `error` of an utterance that was stopped must not touch the state.
 let speakingId: string | null = null
+let current: SpeechSynthesisUtterance | null = null
 const speakingListeners = new Set<() => void>()
 
 function setSpeaking(id: string | null) {
@@ -68,23 +76,34 @@ function subscribeSpeaking(onChange: () => void) {
   return () => speakingListeners.delete(onChange)
 }
 
+/** The id of the answer that is speaking now, or null. */
+export function speakingNow(): string | null {
+  return speakingId
+}
+
 export function useSpeakingId(): string | null {
-  return useSyncExternalStore(subscribeSpeaking, () => speakingId, () => speakingId)
+  return useSyncExternalStore(subscribeSpeaking, speakingNow, speakingNow)
 }
 
 /** Speaks `text` for the answer `id`, stopping whatever was speaking. */
 export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
   const s = synth()
   if (!s) return
+  // Cleared first: the cancel may end the previous utterance at once or later, and either way
+  // that end belongs to an utterance that no longer speaks.
+  current = null
   s.cancel()
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.voice = voice
   utterance.lang = voice.lang
   const finish = () => {
-    if (speakingId === id) setSpeaking(null)
+    if (current !== utterance) return
+    current = null
+    setSpeaking(null)
   }
   utterance.onend = finish
   utterance.onerror = finish
+  current = utterance
   setSpeaking(id)
   s.speak(utterance)
 }
@@ -92,6 +111,8 @@ export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
 /** Stops speech; with `id`, only when that answer is the one speaking. */
 export function stopSpeaking(id?: string) {
   if (id !== undefined && speakingId !== id) return
+  if (speakingId === null && current === null) return
+  current = null
   synth()?.cancel()
   setSpeaking(null)
 }

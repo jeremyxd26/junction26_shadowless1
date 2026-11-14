@@ -3,6 +3,7 @@ import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { stopSpeaking } from '../lib/speech.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -38,6 +39,11 @@ export function Chat({ chat, question, disclosure, suggestions }: Props) {
   // the view (DESIGN.md: no autoscroll while streaming).
   const lastId = turns.at(-1)?.id
   const many = turns.length > 1
+
+  // Every new question stops an answer that is being read aloud, the latest one or an older one.
+  useEffect(() => {
+    if (lastId !== undefined) stopSpeaking()
+  }, [lastId])
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
