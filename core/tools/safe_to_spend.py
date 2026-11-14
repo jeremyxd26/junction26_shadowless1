@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from core.tools import config, evidence, labels, metric_sql, periods, recurring
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "get_safe_to_spend"
@@ -252,13 +252,26 @@ def card_subtitle(period: Period, language: str) -> str:
     return periods.period_label(period.start, period.end, language)
 
 
+def _estimate(data: SafeToSpendData, language: str) -> Estimate:
+    """#380: observed are the balance and the bills due before payday; assumed are the usual essentials, the
+    reserve for unexpected costs, the cushion and the savings goal set aside first (the card's own Numbers)."""
+    amount = {c.key: c.amount for c in data.components}
+    return Estimate(
+        label=_t("estimate_label", language), text=_t("estimate_text", language),
+        observed=[amount[key] for key in ("balance", "bills_due") if key in amount],
+        assumptions=[assumption("safe_to_spend.spending_as_usual", language, amount.get("essentials_reserve")),
+                     assumption("safe_to_spend.reserve_for_unexpected", language, amount.get("irregular_reserve")),
+                     assumption("safe_to_spend.cushion", language, amount.get("cushion")),
+                     assumption("safe_to_spend.savings_goal_first", language, data.savings_goal)])
+
+
 def _card(data: SafeToSpendData, language: str) -> Card:
     ref = data.safe_to_spend.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="metric", title=_t("title", language), subtitle=card_subtitle(data.period, language),
         evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
+        estimate=_estimate(data, language),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         status=data.status,
         primary=data.safe_to_spend,

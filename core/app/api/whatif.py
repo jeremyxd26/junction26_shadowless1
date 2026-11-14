@@ -61,7 +61,7 @@ def build(ctx: ToolContext, body: WhatIfRequest) -> WhatIfResponse:
         "as_of": ctx.as_of,
         "language": ctx.language,
         **result.data.model_dump(mode="json"),
-        "estimate": card.estimate,
+        "estimate": card.estimate.model_dump(mode="json") if card.estimate else None,
         "evidence_ref": card.evidence_ref,
     })
 

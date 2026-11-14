@@ -653,6 +653,54 @@ USUAL_WEEK_METHOD = "safe_to_spend.usual_week_eur@1"   # everyday month x 7 / 30
 SAFE_TO_SAVE_WEEK_METHOD = "safe_to_save.week_eur@1"   # #417: safe to save monthly x 7 / 30.4375
 SAFE_TO_SAVE_DAY_METHOD = "safe_to_save.day_eur@1"     # #417: safe to save monthly / 30.4375
 
+# #380: what each estimate assumes, by "<tool>.<code>" (codes: core.tools.models.ASSUMPTION_CODES). One plain
+# sentence each, never a digit: a figure is the assumption's `value` Number. Nothing here changes a formula;
+# each sentence says what the tool already uses (docs/design/metrics.md).
+ASSUMPTION_TEXT = {
+    "safe_to_spend.spending_as_usual": (
+        "Your usual essentials continue until payday, at the pace of recent months.",
+        "Tavalliset välttämättömät menosi jatkuvat palkkapäivään asti viime kuukausien tahtiin."),
+    "safe_to_spend.reserve_for_unexpected": (
+        "A reserve for unexpected costs is kept, as large as recent months needed.",
+        "Odottamattomia menoja varten pidetään varaus, yhtä suuri kuin viime kuukaudet vaativat."),
+    "safe_to_spend.cushion": (
+        "A small cushion is kept aside until payday.",
+        "Pieni puskuri pidetään sivussa palkkapäivään asti."),
+    "safe_to_spend.savings_goal_first": (
+        "Your savings goal is set aside first each month.",
+        "Säästötavoitteesi pannaan sivuun ensin joka kuukausi."),
+    "safe_to_save.next_months_like_last": (
+        "The coming months are like a typical month of your last six.",
+        "Tulevat kuukaudet ovat kuin tavallinen kuukausi kuuden viimeisen joukosta."),
+    "what_if.cut_share": (
+        "You cut this spending by the share you chose, and the rest stays as it is.",
+        "Vähennät tätä kulutusta valitsemallasi osuudella, ja muu pysyy ennallaan."),
+    "bonus.bonus_all_at_s_group": (
+        "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Kaikki ruokaostoksesi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    "bonus.bonus_share": (
+        "This share of your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Tämä osuus ruokaostoksistasi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    "bonus.bonus_level": (
+        "The Bonus level is the one your monthly purchases at S Group reach.",
+        "Bonusprosentti on se, jonka kuukausiostoksesi S-ryhmässä saavuttavat."),
+    "bills.bills_pro_rata": (
+        "Bills paid several times a month count pro rata until payday.",
+        "Useita kertoja kuussa maksettavat laskut lasketaan suhteutettuina palkkapäivään asti."),
+    "peer.peer_group": (
+        "You are compared with other customers of your group; only group statistics are shown.",
+        "Sinua verrataan ryhmäsi muihin asiakkaisiin; vain ryhmän tunnusluvut näytetään."),
+    "forecast.spending_as_usual": (
+        "You keep spending as usual: the middle one of your last three full months' daily averages.",
+        "Kulutat tavalliseen tapaan: kolmen viimeisen täyden kuukautesi päiväkeskiarvoista keskimmäinen."),
+    "forecast.bills_on_usual_days": (
+        "Bills come on their usual days.",
+        "Laskut tulevat tavallisina päivinään."),
+    "forecast.no_income_before_payday": (
+        "Salary and other money coming in before payday are not counted.",
+        "Palkkaa ja muita ennen palkkapäivää tulevia rahoja ei lasketa."),
+}
+
 WHAT_IF_NUMBERS = (  # (key, output column, unit value)
     ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
     ("saving_per_month", "saving_month_eur", "eur_per_month"),

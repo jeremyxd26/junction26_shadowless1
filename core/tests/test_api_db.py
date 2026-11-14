@@ -300,13 +300,14 @@ def test_dining_out_what_if_matches_the_reference_and_every_number_opens(client)
     assert w["scenario"]["selection"] == {"kind": "category", "value": "Restaurants"}
     assert (w["scenario"]["cut_pct"]["value"], w["scenario"]["cut_pct"]["evidence_ref"]) == (20, None)
     assert w["evidence_ref"] == w["saving_per_month"]["evidence_ref"] and w["estimate"]["text"]
-    opened = 0
+    opened = set()
     for path, number in numbers_in(w):
         if number["evidence_ref"] is None:  # the cut the user chose: user_input@1, no evidence
             continue
         opens_with_the_same_number(client, number, path)
-        opened += 1
-    assert opened == 6
+        opened.add(number["evidence_ref"])
+    # six numbers; the baseline opens a second time from `estimate.observed` (#380), with the same ref
+    assert len(opened) == 6 and w["estimate"]["observed"][0]["evidence_ref"] == w["baseline_per_month"]["evidence_ref"]
 
 
 def test_finnish_what_if_has_the_same_numbers(client):

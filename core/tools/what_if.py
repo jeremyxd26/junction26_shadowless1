@@ -23,7 +23,8 @@ from pydantic import BaseModel, Field, model_validator
 from core.tools import aliases, config, evidence, labels, metric_sql, periods
 from core.tools.context import ToolContext
 from core.tools.formatting import display
-from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import (MERCHANT_ALIAS_PATTERN, Action, Args, Card, Estimate, Number, Period, ToolResult, Unit,
+                               assumption)
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "run_what_if"
@@ -203,7 +204,9 @@ def _card(result: WhatIfResult, cut_pct: int, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="whatif", title=result.scenario.label, subtitle=_t("subtitle", language), evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language, pct=cut_pct)},
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language, pct=cut_pct),
+                          observed=[result.baseline_per_month],   # #380
+                          assumptions=[assumption("what_if.cut_share", language, result.scenario.cut_pct)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         result=result.model_dump(mode="json"),
     )

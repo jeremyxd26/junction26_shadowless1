@@ -7,6 +7,7 @@ field: the customer always comes from the server-bound context (R4).
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from enum import Enum
 from typing import Any, Literal
@@ -169,6 +170,49 @@ class Action(BaseModel):
         return self
 
 
+# #380: what an estimate assumes, a closed list (contracts/api.md section 3, Estimates); the app switches on it.
+AssumptionCode = Literal[
+    "cut_share", "bonus_all_at_s_group", "bonus_share", "bonus_level", "spending_as_usual",
+    "reserve_for_unexpected", "next_months_like_last", "savings_goal_first", "cushion", "bills_pro_rata",
+    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown"]
+ASSUMPTION_CODES: tuple[str, ...] = AssumptionCode.__args__
+
+
+class Assumption(BaseModel):
+    """One assumption of an estimate: a fixed code, one plain sentence with no digits (a figure goes in
+    `value`), and the Number the assumption uses, if it has one."""
+
+    code: AssumptionCode
+    text: str
+    value: Number | None = None
+
+
+def assumption(key: str, language: str, value: Number | None = None) -> Assumption:
+    """The assumption `<tool>.<code>` of config.ASSUMPTION_TEXT in the request language."""
+    return Assumption(code=key.split(".", 1)[1], text=config.label(config.ASSUMPTION_TEXT[key], language), value=value)
+
+
+_WARNED_EMPTY: set[str] = set()
+
+
+class Estimate(BaseModel):
+    """A card's estimate (#380): the label and text the app shows, the observed Numbers the estimate is built
+    from (the tool's own Numbers, same ids and refs) and what it assumes. An estimate without assumptions is
+    allowed here and logged once, never raised while a response is built; tests hold every tool to it."""
+
+    label: str
+    text: str
+    observed: list[Number] = Field(default_factory=list)
+    assumptions: list[Assumption] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _warn_without_assumptions(self) -> Estimate:
+        if not self.assumptions and self.label not in _WARNED_EMPTY:
+            _WARNED_EMPTY.add(self.label)
+            logging.getLogger(__name__).warning("an estimate card has no assumptions (#380)")
+        return self
+
+
 class Card(BaseModel):
     """Common card fields (contracts/api.md section 3). Type-specific fields are added per type."""
 
@@ -179,7 +223,7 @@ class Card(BaseModel):
     title: str
     subtitle: str | None = None
     evidence_ref: str | None = None
-    estimate: dict[str, str] | None = None
+    estimate: Estimate | None = None
     actions: list[Action] = Field(default_factory=list, max_length=2)
 
 

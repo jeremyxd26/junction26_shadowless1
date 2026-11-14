@@ -27,7 +27,7 @@ from pydantic import BaseModel, field_validator
 from core.tools import baskets, config, evidence, labels, metric_sql, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, PeerMetric, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
 
@@ -224,7 +224,10 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],
         type="peer", title=_t("title", language, what=data.metric_label),
         subtitle=_t("subtitle", language, label=data.period.label),
-        evidence_ref=ref, estimate=estimate, actions=actions,
+        evidence_ref=ref, actions=actions,
+        # #380: observed is the user's own figure; assumed is the comparison group, its size as the value
+        estimate=Estimate(**estimate, observed=[data.you] if data.you is not None else [],
+                          assumptions=[assumption("peer.peer_group", language, data.peer_group.size)]),
         you=dump(data.you), peer_median=dump(data.peer_median), peer_p25=dump(data.peer_p25),
         peer_p75=dump(data.peer_p75), percentile=dump(data.percentile), vs_median=dump(data.vs_median),
         peer_group={"level": data.peer_group.level, "label": data.peer_group.label,

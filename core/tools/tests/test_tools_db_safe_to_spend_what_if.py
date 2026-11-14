@@ -158,7 +158,7 @@ def test_safe_to_spend_evidence_and_card(conn, customer_id):
     goal_part = next(p for p in top.parts if p["role"] == "goal")
     assert goal_part["ref"] == result.data.savings_goal.evidence_ref and goal_part["method"] == "safe_to_spend.savings_goal_eur@1"
     card = result.card
-    assert card.type == "metric" and card.status == result.data.status and card.estimate["text"]
+    assert card.type == "metric" and card.status == result.data.status and card.estimate.text
     assert [n.method for n in card.secondary] == [
         "safe_to_spend.free_until_payday_eur@1", "safe_to_spend.balance_limit_7d_eur@1",
         "safe_to_spend.budget_limit_7d_eur@1", "safe_to_spend.savings_goal_eur@1"]
@@ -275,7 +275,7 @@ def test_what_if_evidence_and_card(conn, customer_id):
     result = run_what_if(ctx_for(conn, customer_id), RESTAURANTS_20)
     assert_reconciles(conn, customer_id, result.evidence)
     card = result.card
-    assert card.type == "whatif" and card.estimate["text"].endswith("cut by 20%.")
+    assert card.type == "whatif" and card.estimate.text.endswith("cut by 20%.")
     assert card.result["status"] == "estimate" and card.evidence_ref == result.data.saving_per_month.evidence_ref
     assert_model_view_clean(result.model_view, customer_id)
 

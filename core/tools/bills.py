@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from core.tools import aliases, config, evidence, labels, periods, recurring
 from core.tools.classify import classify, window
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
 
@@ -165,7 +165,9 @@ def _card(data: BillsData, language: str) -> Card:
     card_id = "card_" + hashlib.sha256(f"{TOOL}|{data.upcoming_total.evidence_ref}".encode()).hexdigest()[:12]
     estimate = None
     if any(b.status == "spread" for b in data.bills):
-        estimate = {"label": _t("estimate_label", language), "text": _t("estimate_text", language)}
+        estimate = Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language),
+                            observed=[data.upcoming_total],   # #380
+                            assumptions=[assumption("bills.bills_pro_rata", language)])
     return Card(
         card_id=card_id, type="bills", title=_t("title", language), subtitle=data.due_period.label,
         evidence_ref=data.upcoming_total.evidence_ref, estimate=estimate,
