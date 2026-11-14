@@ -142,7 +142,7 @@ Card-specific fields:
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{alias, label}` or null (no merchant id; the label has no digits), `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now. While the review is pending this is always `unclassified` ("Waiting for your answer"): the purchase is in no basket total and not in the reserve.<br>- `question` `{en, fi}`: the question in both languages, with the purchase's amount (its display), category and date filled in, for example "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?".<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` ("Needed" / "Välttämätön") and `everyday_spending` ("My choice" / "Oma valinta"). The three basket keys stay the only answer options; `unclassified` is never one.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response_pending` |
-| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `weekly`, `daily` (Numbers, #417): the same headline a week and a day, `monthly` × 7 / 30.4375 (`safe_to_save.week_eur@1`) and `monthly` / 30.4375 (`safe_to_save.day_eur@1`), each a composite whose evidence opens `monthly`.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
 
 Actions:
 
@@ -561,6 +561,18 @@ The `safe_to_save` card of the overview for Sanna after she answered "needed" (v
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
     "label": "Typically left each month", "display": "€184.61 a month"
   },
+  "weekly": {
+    "value": 42.46, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_749abec0592c",
+    "label": "Typically left each week", "display": "€42.46 a week"
+  },
+  "daily": {
+    "value": 6.07, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_889b8f0ab767",
+    "label": "Typically left each day", "display": "€6.07 a day"
+  },
   "monthly_components": [
     {
       "key": "free_month",
@@ -643,6 +655,18 @@ For Aleksi (CUST00849, values from the dataset), a tight but positive month: no 
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_al1m3o5n7t9h",
     "label": "Typically left each month", "display": "€199.95 a month"
+  },
+  "weekly": {
+    "value": 45.98, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_05799f6c2369",
+    "label": "Typically left each week", "display": "€45.98 a week"
+  },
+  "daily": {
+    "value": 6.57, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_7a45a12c7293",
+    "label": "Typically left each day", "display": "€6.57 a day"
   },
   "monthly_components": [
     {
@@ -727,6 +751,18 @@ When a typical month leaves nothing, the headline is 0 and `reason` says why. Fi
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_zr1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
   },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_522c23d671c0",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_4a8389c56043",
+    "label": "Typically left each day", "display": "€0.00 a day"
+  },
   "monthly_components": [
     {
       "key": "essentials_shortfall",
@@ -807,6 +843,18 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ev1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_ffef639a75e4",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_04893f26096a",
+    "label": "Typically left each day", "display": "€0.00 a day"
   },
   "monthly_components": [
     {
@@ -1127,6 +1175,18 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month", "display": "€431.58 a month"
     },
+    "weekly": {
+      "value": 99.25, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week", "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day", "display": "€14.18 a day"
+    },
     "monthly_components": [
       {
         "key": "free_month",
@@ -1426,6 +1486,32 @@ The same overview when safe to spend cannot be computed for a known reason: `her
       "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month",
       "display": "€431.58 a month"
+    },
+    "weekly": {
+      "value": 99.25,
+      "unit": "eur_per_week",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.week_eur@1",
+      "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week",
+      "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18,
+      "unit": "eur_per_day",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.day_eur@1",
+      "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day",
+      "display": "€14.18 a day"
     },
     "monthly_components": [
       {
@@ -1806,6 +1892,18 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
       "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
       "label": "Typically left each month", "display": "€364.31 a month"
+    },
+    "weekly": {
+      "value": 83.78, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_0e9e53429269",
+      "label": "Typically left each week", "display": "€83.78 a week"
+    },
+    "daily": {
+      "value": 11.97, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_dd7a337adc06",
+      "label": "Typically left each day", "display": "€11.97 a day"
     },
     "monthly_components": [
       {

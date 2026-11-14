@@ -220,6 +220,8 @@ class SafeToSaveCard(CardBase):
     """The overview's `safe_to_save` card (section 3; metrics.md section 3.1), from get_safe_to_save (#165)."""
     type: Literal["safe_to_save"]
     monthly: Number
+    weekly: Number      # #417: monthly x 7 / 30.4375
+    daily: Number       # #417: monthly / 30.4375
     monthly_components: list[Component]
     stock: Number
     stock_explanation: str

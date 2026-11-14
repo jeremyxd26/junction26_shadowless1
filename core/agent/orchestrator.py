@@ -43,7 +43,7 @@ from typing import Any, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template
+from core.agent import guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -730,6 +730,13 @@ class Pipeline:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
                         errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                    joined = validator.amount_with_bank_product(draft.text, numbers)
+                    if joined:
+                        # #417: an amount next to the bank's screen or product reads as advice to put it
+                        # there. Model drafts only, like the checks above; templates are checked by tests.
+                        errors.append(f"'{joined}': never name an amount and the bank's screen or product "
+                                      "(S-mobiili, monthly saving, a fund) in one sentence; state the amount "
+                                      "alone, the card's button opens the screen")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

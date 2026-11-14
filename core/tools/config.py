@@ -650,6 +650,8 @@ SAFE_TO_SPEND_COMPONENTS = ("balance", "bills_due", "essentials_reserve", "irreg
 # euros a week under it (then the sentence names the usual pace).
 USUAL_PACE_MARGIN_EUR = "5"
 USUAL_WEEK_METHOD = "safe_to_spend.usual_week_eur@1"   # everyday month x 7 / 30.4375
+SAFE_TO_SAVE_WEEK_METHOD = "safe_to_save.week_eur@1"   # #417: safe to save monthly x 7 / 30.4375
+SAFE_TO_SAVE_DAY_METHOD = "safe_to_save.day_eur@1"     # #417: safe to save monthly / 30.4375
 
 WHAT_IF_NUMBERS = (  # (key, output column, unit value)
     ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
@@ -803,6 +805,9 @@ SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
     "subtitle_below_goal": ("Your goal is {goal}; at your usual pace about {monthly} would be left.",
                             "Tavoitteesi on {goal}; tavallisella tahdilla jäisi noin {monthly}."),
     "savings_goal": ("Your savings goal", "Säästötavoitteesi"),
+    # #417: the headline at two more scales (composites of `monthly`; the display says "a week" / "a day")
+    "weekly": ("Typically left each week", "Tavallisesti jää viikossa"),
+    "daily": ("Typically left each day", "Tavallisesti jää päivässä"),
     "safe_to_spend_week": ("Safe to spend in the next 7 days", "Turvallisesti käytettävissä seuraavat 7 päivää"),
     "estimate_text": (
         "A typical month of your last six: income minus bills, saving you set up, usual essentials, a "
