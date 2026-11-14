@@ -1,7 +1,18 @@
 // The composer mic's request and helpers (#735): POST /api/stt with the clip, the error mapping, the draft.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { micStrings } from './micStrings.ts'
-import { SttFailed, micFailure, pickType, transcribe, withSpoken, type SttFailure } from './stt.ts'
+import {
+  MIN_RECORD_MS,
+  SttFailed,
+  clipTooShort,
+  formatElapsed,
+  levelOf,
+  micFailure,
+  pickType,
+  transcribe,
+  withSpoken,
+  type SttFailure,
+} from './stt.ts'
 import { MAX_QUESTION } from './useChat.ts'
 
 const clip = new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3])], { type: 'audio/webm;codecs=opus' })
@@ -45,6 +56,8 @@ describe('transcribe (#735)', () => {
     expect(await failure(transcribe(clip, 'CUST00860', 'en'))).toBe('unavailable')
     respond(200, { text: '' })
     expect(await failure(transcribe(clip, 'CUST00860', 'en'))).toBe('no_speech')
+    respond(200, { text: '', language: 'en', empty: true })
+    expect(await failure(transcribe(clip, 'CUST00860', 'en'))).toBe('no_speech')
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))))
     expect(await failure(transcribe(clip, 'CUST00860', 'en'))).toBe('unavailable')
   })
@@ -69,6 +82,33 @@ describe('mic helpers (#735)', () => {
     expect(micFailure('odd')).toBe('no_mic')
   })
 
+  it('an empty recording or one under half a second is never sent (#759)', () => {
+    expect(clipTooShort(0, 3000)).toBe(true)
+    expect(clipTooShort(4000, MIN_RECORD_MS - 1)).toBe(true)
+    expect(clipTooShort(4000, MIN_RECORD_MS)).toBe(false)
+    expect(MIN_RECORD_MS).toBe(500)
+  })
+
+  it('the recording bar: a timer as m:ss, and a level that is 0 for silence and grows with loudness (#751)', () => {
+    expect(formatElapsed(0)).toBe('0:00')
+    expect(formatElapsed(3400)).toBe('0:03')
+    expect(formatElapsed(15_000)).toBe('0:15')
+    expect(formatElapsed(75_000)).toBe('1:15')
+    expect(levelOf([])).toBe(0)
+    expect(levelOf(new Uint8Array(64).fill(128))).toBe(0)
+    const quiet = levelOf(Uint8Array.from({ length: 64 }, (_, i) => (i % 2 ? 132 : 124)))
+    const loud = levelOf(Uint8Array.from({ length: 64 }, (_, i) => (i % 2 ? 200 : 56)))
+    expect(quiet).toBeGreaterThan(0)
+    expect(loud).toBeGreaterThan(quiet)
+    expect(loud).toBeLessThanOrEqual(1)
+  })
+
+  it('no speech asks the user to try again, not to type (#759)', () => {
+    expect(micStrings('en').failures.no_speech).toBe("I didn't catch that. Try again.")
+    expect(micStrings('fi').failures.no_speech).toBe('En saanut selvää. Yritä uudelleen.')
+    expect(micStrings('en').failures.unavailable).toBe("Voice input isn't available right now. Please type your question.")
+  })
+
   it('the words go after what is typed, within the composer limit', () => {
     expect(withSpoken('', ' How much? ')).toBe('How much?')
     expect(withSpoken('About food: ', 'how much?')).toBe('About food: how much?')
@@ -78,6 +118,12 @@ describe('mic helpers (#735)', () => {
   it('every reason has a short message in English and Finnish, and the button its name', () => {
     expect(micStrings('en').speak).toBe('Speak your question')
     expect(micStrings('fi').speak).toBe('Sano kysymyksesi')
+    expect(micStrings('en').cancel).toBe('Cancel recording')
+    expect(micStrings('fi').cancel).toBe('Peru nauhoitus')
+    expect(micStrings('en').stop).toBe('Stop and transcribe')
+    expect(micStrings('fi').stop).toBe('Lopeta ja kirjoita teksti')
+    expect(micStrings('en').recording).toBe('Recording')
+    expect(micStrings('fi').recording).toBe('Nauhoitetaan')
     for (const lang of ['en', 'fi'] as const) {
       for (const text of Object.values(micStrings(lang).failures)) expect(text.length).toBeLessThan(90)
     }

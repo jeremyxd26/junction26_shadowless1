@@ -200,10 +200,21 @@ def test_api_error_or_timeout_is_503(app, tmp_path, failure):
     assert entry["kind"] == "stt" and entry["result"] != "ok"     # a failed request is counted too
 
 
-def test_no_speech_is_503(app, tmp_path):
-    app.state.stt_service = service(tmp_path, FakeTransport("   "))
+@pytest.mark.parametrize("heard", ["", "   ", "[silence]", "No speech detected.", "(inaudible)",
+                                   "There is no speech in this audio.", "Ei puhetta."])
+def test_no_speech_is_200_with_an_empty_text(app, tmp_path, heard):
+    """#759: no speech is not a failure: the app asks the user to try again, and nothing goes in the box."""
+    app.state.stt_service = service(tmp_path, FakeTransport(heard))
+    r = post(app, language="fi")
+    assert r.status_code == 200 and r.json() == {"text": "", "language": "fi", "empty": True}
+
+
+@pytest.mark.parametrize("spoken", ["Is silence on my statement a problem?", "No speech today, just groceries?",
+                                    "Empty fridge, how much did I spend?"])
+def test_a_question_that_mentions_silence_is_kept(app, tmp_path, spoken):
+    app.state.stt_service = service(tmp_path, FakeTransport(spoken))
     r = post(app)
-    assert r.status_code == 503 and r.json()["error"]["code"] == "model_unavailable"
+    assert r.status_code == 200 and r.json() == {"text": spoken, "language": "en"}
 
 
 def test_switch_file_budget_zero_and_missing_key_are_503(app, tmp_path):

@@ -25,6 +25,7 @@ import io
 import json
 import logging
 import math
+import re
 import time
 import wave
 from collections.abc import Callable
@@ -156,6 +157,20 @@ def wav_seconds(audio: bytes) -> float | None:
         return None
 
 
+# What the model may answer instead of an empty text when it hears no speech (#759). Only a whole answer
+# matches, after surrounding brackets and punctuation are dropped, so a real question is never taken for one.
+NO_SPEECH = re.compile(
+    r"(?:there is |there's )?no (?:speech|audio|words?|voice)(?: (?:was |is )?(?:detected|heard|spoken|found))?"
+    r"(?: in (?:this|the) (?:audio|clip|recording))?"
+    r"|silence|silent|inaudible|empty|blank|ei puhetta|hiljaisuus|hiljaista"
+)
+
+
+def is_no_speech(text: str) -> bool:
+    """Whether a cleaned transcript is empty or only says that there was no speech."""
+    return not text or NO_SPEECH.fullmatch(text.strip(" .!*_[](){}<>").lower()) is not None
+
+
 def clean_transcript(text: str) -> str:
     """One line of plain text, at most MAX_TEXT characters, cut at a word break when one is near."""
     line = " ".join((text or "").split()).strip().strip('"\u201c\u201d').strip()
@@ -242,7 +257,7 @@ class SttService:
             ops_log.info("stt request %s, %d bytes (%s ms), %d of %s in 24 h", result, len(audio), latency_ms,
                          used, self.ledger.daily_cap)
         text = clean_transcript(raw)
-        if not text:
+        if is_no_speech(text):
             raise SttError("no_speech")
         return text
 

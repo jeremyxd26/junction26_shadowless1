@@ -73,7 +73,7 @@ describe('the opening\'s client-turn chips (#319)', () => {
     openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('shows "Show Sentti a bill" (#332), apart from the question chips; the Learn tab replaced "Lesson of the day"', () => {
+  it('shows "Show Sentti a bill" (#332) in the one chip row, after the first two questions; the Learn tab replaced "Lesson of the day"', () => {
     expect(openingChips).toEqual(['bill'])
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')
@@ -99,7 +99,8 @@ describe('the opening\'s client-turn chips (#319)', () => {
     expect(html).toContain('data-opening-part="client-chips"')
     expect(html).toContain('>Show a probe</button>')
     clientTurns.probe = { ...clientTurns.probe, visible: () => false }
-    expect(chips()).toBe('')
+    // The question chips stay; only the hidden client chip is gone.
+    expect(chips()).not.toContain('>Show a probe</button>')
   })
 })
 
