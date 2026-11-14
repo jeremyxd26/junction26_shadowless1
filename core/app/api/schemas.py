@@ -587,6 +587,20 @@ class BillSafeToSpend(Model):
     text: str
 
 
+class BillForecast(Model):
+    """The forecast balance on the bill's due date, before and after the bill (contract 0.3.4, #421). Numbers are
+    null for `outside_forecast`; the status never removes the payment draft."""
+
+    status: Literal["covered", "tight", "not_covered", "outside_forecast"]
+    before: Number | None            # the balance forecast's own Number for the due date (same evidence ref)
+    already_counted: Number | None   # what the forecast already subtracts for the matched bill by then
+    counted: Number | None           # what the bill takes from it: the amount, or the excess over already_counted
+    after: Number | None             # before - counted
+    shortfall: Number | None         # not_covered: counted - before
+    text: str
+    chip: AskAction | None           # not_covered: the forecast question
+
+
 class BillSignal(Model):
     code: Literal["iban_check_failed", "reference_check_failed", "new_payee", "amount_above_usual", "short_term"]
     text: str
@@ -623,6 +637,7 @@ class BillExplainResponse(Model):
     comparison: Comparison | None
     basket: BillBasket
     safe_to_spend: BillSafeToSpend | None  # null when safe to spend cannot be computed (as the hero)
+    forecast: BillForecast | None          # null when the forecast cannot be computed (#421, contract 0.3.4)
     glossary: list[GlossaryEntry]
     # The payment draft when the checks pass; the way to the bank (contact_bank) when there are warning signs.
     actions: list[Annotated[Union[AddToPaymentsAction, OpenHostScreenAction], Field(discriminator="type")]] = (

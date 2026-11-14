@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
@@ -171,22 +171,74 @@ def _no_data(language: str) -> ToolResult:
                       model_view={"tool": TOOL, "kind": "estimate", "status": "no_data", "notes": [note]})
 
 
-def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict | None = None) -> ToolResult:
-    if not isinstance(args, GetBalanceForecastArgs):
-        GetBalanceForecastArgs.model_validate(args or {})
+class NoForecast(Exception):
+    """No transactions, or no balance to start from: there is no forecast."""
+
+
+@dataclass
+class Projection:
+    """One forecast: its inputs, each a finished Number, and every day after today and before payday. The
+    forecast tool and the bill explanation (#421) build the Number of a day through it, so a day has one
+    Number and one evidence ref whoever asks. The specs it builds are in `nb.specs`; the caller writes them."""
+
+    language: str
+    today: date
+    pay: recurring.Payday
+    due: recurring.BillsDueNumbers
+    dues: list[recurring.BillDue]
+    balance: Number
+    balance_value: Decimal
+    pace: Number
+    pace_value: Decimal
+    sel_bills: Selection
+    nb: NumberBuilder
+    days: list[Day]
+    history: list
+
+    @property
+    def by_date(self) -> dict[date, Day]:
+        return {d.date: d for d in self.days}
+
+    def bills_by(self, day: date, label: str, series_keys: tuple[str, ...] | None = None) -> tuple[Number, Decimal]:
+        """The bills due after today up to `day` (`balance_forecast.bills_to_date_eur@1`): all the hero's bills,
+        or only the given series, with the factors of those days."""
+        span = Period(start=self.today + timedelta(days=1), end=day,
+                      label=periods.period_label(self.today + timedelta(days=1), day, self.language))
+        factors, sel = factors_on(self.dues, self.today, day), self.sel_bills
+        if series_keys is not None:
+            factors = {k: v for k, v in factors.items() if k in series_keys}
+            sel = replace(sel, series_keys=tuple(sorted(series_keys)))
+        return self.nb.transactions(sel, config.METHODS["bills_to_date"], span, label,
+                                    params={"factors": factors, "period": evidence.period_param(span)})
+
+    def balance_on(self, day: Day, label: str) -> Number:
+        """The projected balance on one day (`balance_forecast.balance_eur@1`), with its evidence."""
+        bills = self.bills_by(day.date, _t("bills_to_date", self.language))
+        day_period = _day_period(day.date, self.language)
+        number, value = self.nb.composite(
+            config.FORECAST_BALANCE_METHOD, "balance_forecast",
+            {"balance": (self.balance, self.balance_value), "bills": bills, "pace": (self.pace, self.pace_value)},
+            Unit.EUR, day_period, label, params={"days": day.days, "period": evidence.period_param(day_period)})
+        if value != day.balance:
+            raise RuntimeError("a forecast day's evidence differs from the projection")
+        return number
+
+
+def projection(ctx: ToolContext) -> Projection:
+    """The forecast's inputs and days for the server-bound customer and today. NoForecast without
+    transactions or a balance; BillsDueMismatch when the bills due of the two paths differ (as the hero)."""
     lang = ctx.language
     today = ctx.as_of
     try:
         settings, row = metric_row(ctx)   # the hero's row of 03, read once per request
     except NoTransactions:
-        return _no_data(lang)
+        raise NoForecast("no transactions up to as_of for this customer") from None
     if row.get("balance_eur") is None:
-        return _no_data(lang)
+        raise NoForecast("no balance to start from")
 
     history = ctx.history()
     rows = classify(history, today, labels.for_context(ctx))
     nb = NumberBuilder(ctx, rows)
-    reg = ctx.numbers.register
     series = recurring.detect(history, today)
     pay = recurring.payday(series, today)
     due = recurring.bills_due_numbers(ctx, nb, series=series, pay=pay)   # the hero's bills, same refs
@@ -222,22 +274,23 @@ def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict |
         raise RuntimeError("the forecast's bills up to payday differ from the bills due before payday")
 
     days = project(today, pay.date, balance_value, pace_value, bills_to)
-    by_date = {d.date: d for d in days}
+    return Projection(lang, today, pay, due, dues, balance, balance_value, pace, pace_value, sel_bills, nb, days,
+                      history)
 
-    def balance_on(day: Day, label: str) -> Number:
-        span = Period(start=today + timedelta(days=1), end=day.date,
-                      label=periods.period_label(today + timedelta(days=1), day.date, lang))
-        bills = nb.transactions(sel_bills, config.METHODS["bills_to_date"], span, _t("bills_to_date", lang),
-                                params={"factors": factors_on(dues, today, day.date),
-                                        "period": evidence.period_param(span)})
-        day_period = _day_period(day.date, lang)
-        number, value = nb.composite(
-            config.FORECAST_BALANCE_METHOD, "balance_forecast",
-            {"balance": (balance, balance_value), "bills": bills, "pace": (pace, pace_value)},
-            Unit.EUR, day_period, label, params={"days": day.days, "period": evidence.period_param(day_period)})
-        if value != day.balance:
-            raise RuntimeError("a forecast day's evidence differs from the projection")
-        return number
+
+def get_balance_forecast(ctx: ToolContext, args: GetBalanceForecastArgs | dict | None = None) -> ToolResult:
+    if not isinstance(args, GetBalanceForecastArgs):
+        GetBalanceForecastArgs.model_validate(args or {})
+    lang = ctx.language
+    try:
+        p = projection(ctx)
+    except NoForecast:
+        return _no_data(lang)
+    today, pay, due, dues, days, nb = p.today, p.pay, p.due, p.dues, p.days, p.nb
+    balance, balance_value, pace, history = p.balance, p.balance_value, p.pace, p.history
+    by_date = p.by_date
+    reg = ctx.numbers.register
+    balance_on = p.balance_on
 
     # The card's days: today, each day a once-a-month bill falls due, the first day below zero, the
     # lowest point and the day before payday; one row per day.
