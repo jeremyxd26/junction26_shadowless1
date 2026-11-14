@@ -49,7 +49,7 @@ def test_a_money_question_that_starts_like_small_talk_is_no_small_talk(message):
 def test_an_attack_next_to_small_talk_is_not_small_talk(message):
     assert meta_intent(message) is None
     found = claim(PlanInput(question=message, language="en", as_of="2026-09-30", tools=TOOLS))
-    assert not found.calls or found.calls[0].name != "finish"
+    assert found.calls and found.calls[0].name == "decline" and found.calls[0].args["kind"] == "unsafe"
 
 
 @pytest.mark.parametrize("message, lang, intent", [("How are you?", "en", "how_are_you"),
