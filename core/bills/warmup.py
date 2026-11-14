@@ -52,12 +52,14 @@ def score(fields: dict[str, Any], truth: dict[str, Any]) -> tuple[int, int, int]
 
 
 def reading_client() -> Any | None:
-    """The model client the service builds (the same key, budget, ledger and cache), or None without a key."""
+    """The reader the service builds (the same keys, budgets, ledgers and cache): Nemotron with the Gemini
+    extract role as its fallback when Nemotron is set up (#573), else the Gemini client; None without a key."""
     from core.agent.gemini import make_agent_model
     from core.app.settings import Settings
+    from core.bills.nemotron import make_reader
 
     model = make_agent_model(Settings())
-    return getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None)
+    return make_reader(getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None))
 
 
 def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
