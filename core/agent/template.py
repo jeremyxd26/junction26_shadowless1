@@ -335,8 +335,51 @@ SAFE_SENTENCE = {
 }
 
 
+def _id(node: Any) -> str | None:
+    return node["id"] if isinstance(node, dict) and isinstance(node.get("id"), str) else None
+
+
+def _value(node: Any) -> float:
+    return node.get("value") if isinstance(node, dict) and isinstance(node.get("value"), (int, float)) else 0
+
+
+def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """Pay yourself first (#391): the weekly figure with the savings goal quoted next to it, so the two add
+    up. Safe to spend: "You can spend about X this week, after setting aside about Y a month", or, when
+    the weekly figure is more than USUAL_PACE_MARGIN_EUR under the usual pace, "To keep setting aside Y,
+    about X a week is safe to spend, below your usual Z". Safe to save: the goal next to safe to spend, or
+    the goal against what the usual pace leaves. None without a goal (the sentences stay as before)."""
+    tool = view.get("tool")
+    goal = view.get("savings_goal")
+    if tool not in ("get_safe_to_spend", "get_safe_to_save") or _value(goal) <= 0 or not _id(goal):
+        return None
+    def tok(node: Any) -> str:
+        return f"{{{{{node['id']}}}}}"
+    if tool == "get_safe_to_spend":
+        safe, usual = view.get("safe_to_spend"), view.get("usual_week")
+        if view.get("binding_limit") != "budget" or not (_id(safe) and _id(usual)):
+            return None
+        if _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
+            text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["below_usual_with_goal"], language)
+            return text.format(goal=tok(goal), safe=tok(safe), usual=tok(usual)), [goal["id"], safe["id"], usual["id"]]
+        text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["with_goal"], language)
+        return text.format(safe=tok(safe), goal=tok(goal)), [safe["id"], goal["id"]]
+    monthly, weekly = view.get("monthly"), view.get("safe_to_spend_week")
+    if not (_id(monthly) and _id(weekly)):
+        return None
+    if _value(monthly) >= _value(goal):
+        text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_with_goal"], language)
+        return text.format(goal=tok(goal), weekly=tok(weekly)), [goal["id"], weekly["id"]]
+    text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language)
+    return text.format(goal=tok(goal), monthly=tok(monthly)), [goal["id"], monthly["id"]]
+
+
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
-    """The safe-to-spend takeaway as one sentence, and the ids it cites; None when a number is missing."""
+    """The safe-to-spend takeaway as one sentence, and the ids it cites; None when a number is missing.
+    With a savings goal it is the goal sentence (#391)."""
+    with_goal = goal_sentence(view, language)
+    if with_goal is not None:
+        return with_goal
     if view.get("tool") != "get_safe_to_spend":
         return None
     nums = {k: view.get(k) for k in ("safe_to_spend", "balance_limit", "budget_limit")}

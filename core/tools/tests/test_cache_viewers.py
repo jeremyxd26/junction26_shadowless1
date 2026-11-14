@@ -79,7 +79,7 @@ def test_two_viewers_with_different_answers_get_their_own_entries(tx, tmp_path, 
     key_b, b = safe_to_spend(cache, tx, B)
     key_c, c = safe_to_spend(cache, tx, C)
 
-    assert (a.data.safe_to_spend.value, b.data.safe_to_spend.value) == (180.26, 221.58)
+    assert (a.data.safe_to_spend.value, b.data.safe_to_spend.value) == (97.46, 138.79)
     assert key_a != key_b and key_c == key_b
     assert cache.stats.misses == 2 and cache.stats.hits == 1
     assert c.model_dump_json() == b.model_dump_json()
@@ -102,4 +102,4 @@ def test_the_warm_up_warms_the_label_set_a_new_viewer_starts_with(tx):
 
     _, first = safe_to_spend(cache, tx, D)
     assert cache.stats.hits == 1 and cache.stats.misses == 1
-    assert first.data.safe_to_spend.value == 221.58   # the pending state, as B above
+    assert first.data.safe_to_spend.value == 138.79   # the pending state, as B above

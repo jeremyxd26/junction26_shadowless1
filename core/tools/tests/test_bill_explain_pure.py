@@ -647,15 +647,17 @@ def test_every_run_resets_the_bill_setting_so_it_cannot_leak_into_the_next_run()
     assert ("app.extra_bill_due_eur", "") in calls
     calls.clear()
     metric_sql.run(Conn(), "03_safe_to_spend.sql", "CUST00860", AS_OF, {"extra_bill_due_eur": "145.00"})
-    assert calls[:3] == [("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),      # the resets first,
+    assert calls[:4] == [("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),      # the resets first,
+                         ("app.savings_goal_eur", ""),                               # (#391 too)
                          ("app.extra_bill_due_eur", "145.00")]                       # then the caller's value
 
 
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
-# SHA-256 of 03_safe_to_spend.sql as on main before #242 (LF line endings). The file without the bill
-# setting must stay exactly this text, so the hero cannot change silently. A deliberate change of 03 updates
-# this hash, after checking the hero's numbers (scripts/demo_check.py).
-PINNED_03 = "24469abf84faf631a0ec8e9256c71fc63307a79c4ea0fab27862af78a7a97a5b"
+# SHA-256 of 03_safe_to_spend.sql without the bill setting (LF line endings), as after #391 (pay yourself
+# first: the budget limit after a fixed savings goal). The file without the bill setting must stay exactly this
+# text, so the hero cannot change silently. A deliberate change of 03 updates this hash, after checking the
+# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py).
+PINNED_03 = "a54331f3b5eab5b3b1ec705ed7d45a8d1f900c727f17010eea8c82e43a2bcfcd"
 
 
 def test_03_without_the_bill_setting_is_the_heros_file_unchanged():

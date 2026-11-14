@@ -682,6 +682,10 @@ SAFE_TO_SPEND_NUMBERS = (  # (key, output column) read from 03_safe_to_spend.sql
     ("cushion", "cushion_eur"),
 )
 SAFE_TO_SPEND_COMPONENTS = ("balance", "bills_due", "essentials_reserve", "irregular_reserve", "cushion")
+# Pay yourself first (#391): the weekly figure is "below the usual pace" when it is more than this many
+# euros a week under it (then the sentence names the usual pace).
+USUAL_PACE_MARGIN_EUR = "5"
+USUAL_WEEK_METHOD = "safe_to_spend.usual_week_eur@1"   # everyday month x 7 / 30.4375
 
 WHAT_IF_NUMBERS = (  # (key, output column, unit value)
     ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
@@ -704,6 +708,15 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
     "balance_limit": ("Your balance allows", "Saldosi sallii"),
     "budget_limit": ("Your monthly budget allows", "Kuukausibudjettisi sallii"),
+    "savings_goal": ("Set aside first each month", "Ensin sivuun kuukaudessa"),          # #391
+    # #391 answers (template, number tokens): the goal is quoted next to safe to spend, so they add up.
+    "with_goal": ("You can spend about {safe} this week, after setting aside about {goal}.",
+                  "Voit käyttää tällä viikolla noin {safe}, kun ensin laitat sivuun noin {goal}."),
+    "below_usual_with_goal": ("To keep setting aside {goal}, about {safe} a week is safe to spend, below your "
+                              "usual {usual}.",
+                              "Jotta voit laittaa sivuun {goal}, turvallisesti käytettävissä on noin {safe} "
+                              "viikossa, alle tavallisen {usual}."),
+    "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
     "essentials_reserve": ("Essentials reserve", "Varaus välttämättömiin"),
@@ -717,11 +730,12 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "estimate_label": ("Estimate", "Arvio"),
     "estimate_text": (
         "Your balance minus bills, usual essentials and a small cushion until payday, spread over the "
-        "days to payday. It is also capped by your usual monthly budget. A recurring investment deposit "
-        "is your own saving plan, so it is kept aside too.",
+        "days to payday. It is also capped by your usual monthly budget after your savings goal is set "
+        "aside first. A recurring investment deposit is your own saving plan, so it is kept aside too.",
         "Saldosi miinus laskut, tavalliset välttämättömät menot ja pieni puskuri palkkapäivään asti, "
-        "jaettuna päiville ennen palkkapäivää. Summaa rajaa myös tavallinen kuukausibudjettisi. "
-        "Säännöllinen sijoitus on oma säästösuunnitelmasi, joten se pidetään myös sivussa.",
+        "jaettuna päiville ennen palkkapäivää. Summaa rajaa myös tavallinen kuukausibudjettisi, kun "
+        "säästötavoitteesi on ensin laitettu sivuun. Säännöllinen sijoitus on oma säästösuunnitelmasi, "
+        "joten se pidetään myös sivussa.",
     ),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
     "note_no_salary": (
@@ -818,6 +832,14 @@ SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
     "host_monthly_saving": ("See monthly saving in S-mobiili", "Katso kuukausisäästäminen S-mobiilissa"),
     "title": ("Safe to save", "Turvallisesti säästettävissä"),
     "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
+    # #391: the savings goal is quoted next to safe to spend, so the two add up; the headline stays safe to
+    # save by its own formula, and the subtitle says how it relates to the goal (card text, displays).
+    "subtitle_with_goal": ("You could set aside about {goal} on top of spending about {weekly} a week.",
+                           "Voisit laittaa sivuun noin {goal} ja käyttää silti noin {weekly} viikossa."),
+    "subtitle_below_goal": ("Your goal is {goal}; at your usual pace about {monthly} would be left.",
+                            "Tavoitteesi on {goal}; tavallisella tahdilla jäisi noin {monthly}."),
+    "savings_goal": ("Your savings goal", "Säästötavoitteesi"),
+    "safe_to_spend_week": ("Safe to spend in the next 7 days", "Turvallisesti käytettävissä seuraavat 7 päivää"),
     "estimate_text": (
         "A typical month of your last six: income minus bills, saving you set up, usual essentials, a "
         "reserve for unexpected costs and your usual everyday spending.",
