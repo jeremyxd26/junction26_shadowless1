@@ -194,14 +194,14 @@ HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we|it|there|my|the|this|that|they|you)\b|\
                 r"\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
 # A plan for the future beats every past signal (second review of #488): "I will cut taxis by 10% in May",
 # "from August I will ...", "next month I cut ...", "tomorrow ...", "Aion vähentää ... toukokuusta alkaen".
-FUTURE = (r"\bwill\b|\bgoing to\b|\bnext (week|month|year)\b|\btomorrow\b|\bfrom (now|today|next)\b|"
+WHATIF_FUTURE = (r"\bwill\b|\bgoing to\b|\bnext (week|month|year)\b|\btomorrow\b|\bfrom (now|today|next)\b|"
           r"\baion\b|\baiomme\b|\bensi (viikolla|kuussa|vuonna)\b|\bhuomenna\b")
 # Words that start a period: the future only without an unambiguous past verb (last review of #488): "from August I
 # cut taxis by 20%" is a plan, "the taxi I took from August cost 20% less" and "toukokuusta alkaen olen käyttänyt …"
 # are the past.
-FUTURE_WEAK = (r"\bstarting\b|\balkaen\b|"
+WHATIF_FUTURE_WEAK = (r"\bstarting\b|\balkaen\b|"
                r"\bfrom (january|february|march|april|may|june|july|august|september|october|november|december)\b")
-# The past verbs without the ambiguous "I cut" (present or past): they beat FUTURE_WEAK.
+# The past verbs without the ambiguous "I cut" (present or past): they beat WHATIF_FUTURE_WEAK.
 PAST_VERB_SURE = (r"\b(i|we)\s+(used|took|went|ate|reduced|lowered)\b|\b(used|took|went|ate|reduced|lowered)\b|"
                   r"\b(have|has|had)\s+(i\s+|we\s+)?(\w+ed|taken|gone|eaten|spent|cut|paid|bought)\b|\b(was|were)\b|"
                   r"\b(kävin|kävimme|söin|söimme|vähensin|vähensimme|käytimme|kulutimme)\b|"
@@ -219,7 +219,7 @@ PAST_VERB = (r"\b(i|we)\s+(used|took|went|ate|cut|reduced|lowered)\b|\b(used|too
              r"\b(kävin|kävimme|söin|söimme|vähensin|vähensimme|käytimme|kulutimme)\b|"
              r"\b(olen|olin|olemme|olimme|on|oli)\s+\w+(nyt|nut|neet)\b")
 # A past period without a month name (a named month is read by _months_mentioned, which knows "may" the verb).
-PAST_PERIOD = (r"\b(last|previous) (week|month|year)\b|\byesterday\b|\bviime (viikolla|kuussa|vuonna)\b|"
+WHATIF_PAST_PERIOD = (r"\b(last|previous) (week|month|year)\b|\byesterday\b|\bviime (viikolla|kuussa|vuonna)\b|"
                r"\beilen\b|\bedellis\w* (viiko\w*|kuu\w*)")
 # Everyday words for a what-if on merchant category codes (#346, from PR #376), resolved without the model. Each
 # code is one that the four personas spend on in the what-if window (checked on the dataset in PR #376): taxi
@@ -540,8 +540,8 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
-PAST_VERB, PAST_PERIOD, FUTURE, ACTION, FUTURE_WEAK, PAST_VERB_SURE = (
-    fold_pattern(rx) for rx in (PAST_VERB, PAST_PERIOD, FUTURE, ACTION, FUTURE_WEAK, PAST_VERB_SURE))
+PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE = (
+    fold_pattern(rx) for rx in (PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE))
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_CONTENTS_BASKETS]
 
@@ -789,15 +789,15 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
 
 def said_in_the_past(question: str, q: str, as_of: date) -> bool:
     """A message about what one did, not a scenario (reviews of #488). With no scenario marker (HYPOTHETICAL) and no
-    plan for the future (FUTURE): a past verb (PAST, PAST_VERB) or a past period word (PAST_PERIOD) is the past; a
+    plan for the future (WHATIF_FUTURE): a past verb (PAST, PAST_VERB) or a past period word (WHATIF_PAST_PERIOD) is the past; a
     named month is the past only without a verb of the scenario (ACTION). "I took 10% fewer taxis in August" and
     "restaurants 20% less in August?" are about August; "Cut restaurants by 20% in May", "May I cut taxis by 10%?",
     "I will cut taxis by 10% in May" and "if I had taken 20% fewer taxis last month ..." are scenarios."""
-    if re.search(HYPOTHETICAL, q) or re.search(FUTURE, q):
+    if re.search(HYPOTHETICAL, q) or re.search(WHATIF_FUTURE, q):
         return False
-    if re.search(FUTURE_WEAK, q) and not (re.search(PAST, q) or re.search(PAST_VERB_SURE, q)):
+    if re.search(WHATIF_FUTURE_WEAK, q) and not (re.search(PAST, q) or re.search(PAST_VERB_SURE, q)):
         return False   # "from August I cut …", "vähennän … heinäkuusta alkaen": a plan
-    if re.search(PAST, q) or re.search(PAST_VERB, q) or re.search(PAST_PERIOD, q):
+    if re.search(PAST, q) or re.search(PAST_VERB, q) or re.search(WHATIF_PAST_PERIOD, q):
         return True
     return bool(_months_mentioned(question, as_of)) and not re.search(ACTION, q)
 
