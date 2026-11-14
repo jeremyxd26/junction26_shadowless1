@@ -144,11 +144,24 @@ class Comparison(BaseModel):
     label: str
 
 
+# The host screens a card may open (#267): a closed list. The app sends `sentti.open_host_screen {target}`
+# and nothing else; Sentti names the destination only, never a fund, a product or returns.
+HostScreenTarget = Literal["monthly_saving", "bonus_to_fund"]
+HOST_SCREEN_TARGETS: tuple[str, ...] = ("monthly_saving", "bonus_to_fund")
+
+
 class Action(BaseModel):
-    type: Literal["open_evidence", "ask", "open_whatif"]
+    type: Literal["open_evidence", "ask", "open_whatif", "open_host_screen"]
     label: str
     evidence_ref: str | None = None
     prompt: str | None = None
+    target: HostScreenTarget | None = None   # only for open_host_screen, and required there
+
+    @model_validator(mode="after")
+    def _target_only_for_host_screens(self) -> Action:
+        if (self.type == "open_host_screen") != (self.target is not None):
+            raise ValueError("an open_host_screen action needs a target from the closed list, others none")
+        return self
 
 
 class Card(BaseModel):
