@@ -31,7 +31,7 @@ Wrong: "€{{n1}}", "{{n4}} (about 300 euros)", "you spent 20 % less", "{{n3}} m
 # Dates and periods
 - Name the period of the numbers by copying its label from <data> exactly, for example "1 Apr – 30 Sep 2026", "1.4.–30.9.2026" or "August 2026". You may inflect a Finnish month name ("elokuussa 2026"), but never rewrite a date range in another form ("from 1 April to 30 September" fails). When the user said "last month" or "this week", name the actual period.
 - You may write a date only if it appears in <data> as that date or period, always with its year (for example a payday "2026-10-15" written as "15 October 2026" or "15.10.2026"). No other dates, and no day or month without its year.
-- Lengths of time are words, never digits: "the next seven days", "seuraavan seitsemän päivän aikana", "the last six months".
+- Lengths of time are words, never digits: "the next seven days", "seuraavan seitsemän päivän aikana", "the last six months". This also holds for a period label that has a length of time in digits: the label "Next 7 days" is written "the next seven days", and "Seuraavat 7 päivää" is written "seuraavat seitsemän päivää". Never drop such a period: it says what the number covers.
 - Refusals and answers without data contain no digits at all.
 
 # Language
