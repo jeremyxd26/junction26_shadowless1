@@ -32,6 +32,16 @@ const ASKING_OPENING: Opening = {
 /** The contract has no standalone `bills` example; it is a card of `overview.response`. */
 const OVERVIEW_CARDS = (examples['overview.response'] as { cards: Card[] }).cards
 
+/** The baskets breakdown of `overview.response`, for the answer-card shape (#696). */
+const OVERVIEW_BASKETS = OVERVIEW_CARDS.find((card): card is BreakdownCard => card.type === 'breakdown')!
+
+/** `card.whatif` with a caveat status; the caveat text is hand-made (no contract example has one). */
+const WHATIF_EXAMPLE = examples['card.whatif'] as Card & { result: Record<string, unknown> }
+const WHATIF_WITH_CAVEAT = {
+  ...WHATIF_EXAMPLE,
+  result: { ...WHATIF_EXAMPLE.result, status: 'estimate_with_caveat', caveats: ['Your restaurant spending changes a lot from month to month, so this saving is rough.'] },
+} as unknown as Card
+
 /** The baskets breakdown of `overview.response_pending` (a review is pending, so four cells). */
 const PENDING_BASKETS = (examples['overview.response_pending'] as { cards: Card[] }).cards.find(
   (card): card is BreakdownCard => card.type === 'breakdown',
@@ -119,6 +129,17 @@ export default function CardGallery() {
         {OVERVIEW_CARDS.filter((card) => card.type === 'bills').map((card) => (
           <AnswerCard key={card.card_id} card={card} />
         ))}
+      </section>
+      {/* The baskets breakdown inside a chat answer (#696): the answer-card shape, like the bills above. */}
+      <section id="baskets-answer" aria-label="baskets breakdown in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response → cards[type=breakdown] → in an answer</p>
+        <AnswerCard card={OVERVIEW_BASKETS} />
+      </section>
+      {/* A what-if with caveats inside a chat answer (#696): the contract has no example with one, so
+          the card.whatif example gets a status and a caveat here; the caveats show as the sheet shows them. */}
+      <section id="card.whatif-caveat-answer" aria-label="card.whatif with a caveat in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.whatif (status estimate_with_caveat, hand-made caveat) → in an answer</p>
+        <AnswerCard card={WHATIF_WITH_CAVEAT} />
       </section>
       {/* A review card inside a chat answer (#318, #450): when nobody shows the question (here: no
           opening), the answer shows the card with its answer buttons; when the opening shows it,
