@@ -258,18 +258,19 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     later(prefersReducedMotion() ? 0 : tokenMs('--duration-base', 250), () => {
       setClosing(false)
       setPhase({ kind: 'not_sure' })
-      document.getElementById('baskets-title')?.focus({ preventScroll: true })
+      // The card is gone: the next thing on the screen is the first question chip.
+      document.querySelector<HTMLElement>('[data-turn="opening"] ul[aria-label] button')?.focus({ preventScroll: true })
     })
   }
 
   const visibleToast = toast && shownToast === toast.seq ? toast : null
 
   return (
-    <div className={`flex flex-col gap-4 ${visibleToast ? 'pb-40' : 'pb-4'}`}>
+    <div className={`flex flex-col gap-3 ${visibleToast ? 'pb-40' : ''}`}>
       {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
-      <p className="text-2xl font-bold text-ink">{view.greeting}</p>
+      <p className="text-xl font-semibold leading-7 text-ink">{view.greeting}</p>
       {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
 
       {card && phase.kind === 'asking' && (

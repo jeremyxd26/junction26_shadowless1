@@ -81,7 +81,7 @@ export default function App() {
             </OpeningProvider>
           )}
           {api.mode === 'mock' && (
-            <p className="mt-6 text-center text-xs text-muted">
+            <p className="mt-2 text-center text-xs text-muted">
               {t.mockBadge} · {customerId ?? '…'}
             </p>
           )}
