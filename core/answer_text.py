@@ -241,7 +241,7 @@ NEGATION = re.compile(
 SUGGESTING_NEGATION = re.compile(
     r"\bwhy\s+not\b|\bdon['’]?t\s+(?:hesitate|forget|be\s+afraid)\b|\bnever\s+hesitate\b"
     r"|\bnot\s+(?:a\s+)?(?:bad|terrible|crazy)\s+(?:idea|option|choice|move)\b|\bnothing\s+wrong\s+with\b"
-    r"|\bno\s+reason\s+not\s+to\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
+    r"|\bno\s+reason\s+not\s+to\b|\bno\s+reason\s+to\s+(?:hesitate|wait|delay)\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
     r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b"
     r"|\bcan['’]?t\s+go\s+wrong\b|\bcannot\s+go\s+wrong\b|\bwhy\s+(?:you\s+)?wouldn['’]?t\b|\bdon['’]?t\s+see\s+why\b",
     re.I)
