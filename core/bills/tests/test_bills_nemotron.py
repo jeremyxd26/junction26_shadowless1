@@ -51,8 +51,8 @@ class _Body:
     def __init__(self, data: bytes) -> None:
         self.data = data
 
-    def read(self) -> bytes:
-        return self.data
+    def read(self, size: int = -1) -> bytes:
+        return self.data if size is None or size < 0 else self.data[:size]
 
     def __enter__(self):
         return self
@@ -355,3 +355,91 @@ def test_the_transport_never_reads_the_instance_api_credentials():
     from core.bills import nemotron as module
     assert "VERDA_CLIENT" not in inspect.getsource(module).replace("VERDA_CLIENT_ID / VERDA_CLIENT_SECRET", "")
     assert isinstance(NemotronTransport(URL, KEY), NemotronTransport)
+
+
+# ---- review of #594: redirects, the URL, the answer's size, the warm-up's switch ------------------------------
+
+def test_a_redirect_is_never_followed_by_the_real_opener():
+    """R2: a loopback server answers 302 to another host; the transport's opener raises instead of following, so
+    the Authorization header goes nowhere else (one request seen)."""
+    import http.server
+    import threading
+    import urllib.request
+
+    from core.bills import nemotron as module
+    seen: list[str] = []
+
+    class Redirect(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server's name
+            seen.append(self.path)
+            self.send_response(302)
+            self.send_header("Location", "http://other.example/x")
+            self.end_headers()
+
+        def log_message(self, *args):  # quiet
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+    opener = urllib.request.build_opener(module._NoRedirect).open    # what _default_opener returns outside tests
+    request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/chat/completions", data=b"{}",
+                                     method="POST", headers={"Authorization": "Bearer " + KEY})
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        opener(request, timeout=5)
+    server.server_close()
+    assert exc.value.code == 302 and seen == ["/v1/chat/completions"]
+
+
+def test_a_redirect_is_a_short_code(tmp_path):
+    with pytest.raises(BillReadUnavailable) as exc:
+        read_bill(nemotron(Opener(http_error(302)), tmp_path), IMAGES["sample_1"], "image/png", "en")
+    assert exc.value.reason == "http_302"
+
+
+def _url(scheme: str, host: str, userinfo: str = "") -> str:
+    return scheme + "://" + (userinfo + "@" if userinfo else "") + host + "/v1"   # built from parts (gitleaks)
+
+
+@pytest.mark.parametrize("url, ok", [
+    (_url("https", "inference.example"), True),
+    (_url("http", "inference.example"), False), (_url("ftp", "inference.example"), False),
+    ("file:///etc/passwd", False), (_url("https", "inference.example", "user" + ":" + "pw"), False),
+    (_url("https", "inference.example", "user"), False), ("not a url", False), ("https://", False), ("", False),
+])
+def test_only_an_https_url_with_a_host_and_no_credentials_turns_the_reader_on(url, ok, tmp_path):
+    from core.bills.nemotron import valid_url
+    assert valid_url(url) is ok
+    s = settings(verda_inference_url=url or None)
+    choice = reader_choice(s)
+    assert (choice[0] == "nemotron") is ok
+    line = reader_state(s, ledger_path=tmp_path / "l.jsonl")
+    assert (url not in line) or not url and KEY not in line
+    if not ok and url:
+        assert choice[1] == "VERDA_INFERENCE_URL is not an https URL with a host and no credentials"
+        with pytest.raises(ValueError):
+            NemotronTransport(url, KEY)
+
+
+def test_an_oversize_answer_is_no_reading(tmp_path):
+    from core.bills.nemotron import MAX_RESPONSE_BYTES
+    body = json.dumps(completion(json.dumps(printed("sample_1")) + " " * (MAX_RESPONSE_BYTES + 10))).encode()
+    with pytest.raises(BillReadUnavailable) as exc:
+        read_bill(nemotron(Opener(body), tmp_path), IMAGES["sample_1"], "image/png", "en")
+    assert exc.value.reason == "error"
+
+
+def test_ten_thousand_unclosed_think_tags_take_no_time():
+    import time
+    t = time.perf_counter()
+    assert answer_text("<think>" * 10000) == ""
+    assert answer_text("<think>a</think>" * 5000 + '{"payee": "x"}') == '{"payee": "x"}'
+    assert time.perf_counter() - t < 0.5
+
+
+@pytest.mark.parametrize("argv, nemotron_on", [([], False), (["--reader", "nemotron"], True),
+                                               (["--reader=nemotron"], True), (["--reader", "gemini"], False)])
+def test_the_warmup_reads_with_gemini_unless_the_command_line_asks_for_nemotron(monkeypatch, argv, nemotron_on):
+    """D1: deploy/remote-deploy.sh runs the warm-up with no switch: the Gemini reader, never the provider."""
+    asked: list[bool] = []
+    monkeypatch.setattr(warmup, "reading_client", lambda nemotron=False: asked.append(nemotron))
+    assert warmup.main(argv) == 0 and asked == [nemotron_on]

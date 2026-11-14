@@ -33,6 +33,7 @@ import json
 import logging
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,10 +45,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from core.agent.gemini_client import GeminiClient, GeminiError, Ledger, Reply
 
 log = logging.getLogger("core.bills.nemotron")
+ops_log = logging.getLogger("uvicorn.error")   # the service log: what the operator sees (a fallback, a bad setting)
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LEDGER = ROOT / "var" / "nemotron-requests.jsonl"
 DEFAULT_TIMEOUT_S = 12.0
 DEFAULT_DAILY_BUDGET = 30
+# The answer is six short strings (max_tokens 4096): a larger body is no reading, and is never read further (#594).
+MAX_RESPONSE_BYTES = 32 * 1024
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,6 @@ class Provider:
 
 PROVIDER = Provider()
 FINISH = {"stop": "STOP", "length": "MAX_TOKENS", "content_filter": "SAFETY", "tool_calls": "STOP"}
-_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.S | re.I)
 
 
@@ -129,9 +132,26 @@ def request_body(model: str, contents: list[dict[str, Any]], config: dict[str, A
     return body
 
 
+def without_think(text: str) -> str:
+    """The text without <think>…</think> blocks, in one linear pass (a lazy regex is quadratic on unclosed tags,
+    #594). An unclosed block drops the rest: it is reasoning, not the reading."""
+    lower, out, i = text.lower(), [], 0
+    while True:
+        start = lower.find("<think>", i)
+        if start < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:start])
+        end = lower.find("</think>", start + 7)
+        if end < 0:
+            break
+        i = end + 8
+    return "".join(out)
+
+
 def answer_text(text: str) -> str:
     """The content without a reasoning block or a Markdown code fence around the JSON."""
-    text = _THINK.sub("", text or "").strip()
+    text = without_think(text or "").strip()
     fenced = _FENCE.match(text)
     return fenced.group(1).strip() if fenced else text
 
@@ -153,15 +173,42 @@ def response_as_gemini(model: str, data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib would send a POST's 301/302/303 on as a GET to the new place, to another host
+    or to http, with the Authorization header (#594). Every 3xx becomes an HTTPError, so a short code."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001 - urllib's signature
+        return None
+
+
+def _default_opener() -> Callable[..., Any]:
+    """The transport's opener: urllib's, without redirects. Tests replace it (core/conftest.py refuses it)."""
+    return urllib.request.build_opener(_NoRedirect).open
+
+
+def valid_url(url: str | None) -> bool:
+    """An https URL with a host and no user or password in it (#594). Only the server's environment sets it, and no
+    user input reaches it, so a private or loopback host is not refused."""
+    if not url or any(ch.isspace() for ch in url):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme == "https" and bool(parts.hostname) and parts.username is None and parts.password is None
+
+
 class NemotronTransport:
     """A gemini_client Transport: (model, contents, config, timeout_s) -> a GenerateContentResponse as JSON."""
 
     def __init__(self, base_url: str, api_key: str, provider: Provider = PROVIDER,
                  opener: Callable[..., Any] | None = None) -> None:
+        if not valid_url(base_url):
+            raise ValueError("VERDA_INFERENCE_URL must be an https URL with a host and no credentials")
         self.url = base_url.rstrip("/") + provider.chat_path
         self._key = api_key
         self.provider = provider
-        self._open = opener or urllib.request.urlopen
+        self._open = opener or _default_opener()
 
     def __repr__(self) -> str:   # never the key
         return f"NemotronTransport({self.provider.chat_path})"
@@ -175,9 +222,14 @@ class NemotronTransport:
                      "Accept": "application/json"})
         try:
             with self._open(request, timeout=timeout_s) as response:
-                data = json.loads(response.read().decode("utf-8"))
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise ProviderBadResponse()
+            data = json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise ProviderStatus(exc.code) from None
+            status = exc.code
+            exc.close()                      # the body is neither held nor reachable through the chain
+            raise ProviderStatus(status) from None
         except TimeoutError:
             raise ProviderTimeout() from None
         except urllib.error.URLError as exc:
@@ -254,6 +306,8 @@ def reader_choice(s: NemotronSettings) -> tuple[str, str]:
                                         ("VERDA_INFERENCE_KEY", s.verda_inference_key)) if not value]
     if missing:
         return "gemini", "no " + " and no ".join(missing)
+    if not valid_url(s.verda_inference_url):
+        return "gemini", "VERDA_INFERENCE_URL is not an https URL with a host and no credentials"   # never echoed
     if s.nemotron_daily_budget == 0:
         return "gemini", "NEMOTRON_DAILY_BUDGET=0"
     return "nemotron", ""
@@ -332,7 +386,7 @@ class FallbackReader:
             if why == "unusable" and not cache_only:
                 return read(self.primary)   # one more request (an unusable answer is not cached), then read_bill
             return reply                    # read_bill turns it into "could not read"
-        log.info("bill reader: Nemotron gave no usable reading (%s); the Gemini extract role reads", why)
+        ops_log.info("bill reader: Nemotron gave no usable reading (%s); the Gemini extract role reads", why)
         return read(self.fallback)
 
 

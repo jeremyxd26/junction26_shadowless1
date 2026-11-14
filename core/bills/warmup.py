@@ -5,7 +5,10 @@ one model request unless the cache already holds it, the second must come from t
 The first reading is compared with the answer key. Only counts are printed, never a field value, and the
 image is never written anywhere. It never fails the deploy: every problem is one printed line, exit 0.
 
-    python -m core.bills.warmup        # in the service container (deploy/remote-deploy.sh)
+    python -m core.bills.warmup        # in the service container (deploy/remote-deploy.sh): the Gemini reader
+    python -m core.bills.warmup --reader nemotron   # Nemotron first (#573): only by hand, on the coordinator's word
+
+Without that switch the warm-up never calls the Nemotron provider, whatever the environment holds (#594, D1).
 
 The same run with a key on a developer machine is the accuracy check of #250 (four requests the first
 time; ask the coordinator before any further real run).
@@ -51,15 +54,19 @@ def score(fields: dict[str, Any], truth: dict[str, Any]) -> tuple[int, int, int]
     return correct, len(FIELDS), checked
 
 
-def reading_client() -> Any | None:
-    """The reader the service builds (the same keys, budgets, ledgers and cache): Nemotron with the Gemini
-    extract role as its fallback when Nemotron is set up (#573), else the Gemini client; None without a key."""
+def reading_client(nemotron: bool = False) -> Any | None:
+    """The reader the service builds (the same keys, budgets, ledgers and cache): the Gemini client, or None
+    without a key. With `nemotron` (the command line's --reader nemotron, #594 D1) Nemotron with the Gemini extract
+    role as its fallback when Nemotron is set up (#573)."""
     from core.agent.gemini import make_agent_model
     from core.app.settings import Settings
-    from core.bills.nemotron import make_reader
 
     model = make_agent_model(Settings())
-    return make_reader(getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None))
+    gemini = getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None)
+    if not nemotron:
+        return gemini
+    from core.bills.nemotron import make_reader
+    return make_reader(gemini)
 
 
 def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
@@ -112,9 +119,11 @@ def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
     return correct, total
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    nemotron = args in (["--reader", "nemotron"], ["--reader=nemotron"])
     try:
-        client = reading_client()
+        client = reading_client(nemotron=True) if nemotron else reading_client()
     except Exception as exc:  # noqa: BLE001
         print(f"bill readings skipped: the model could not be set up ({type(exc).__name__})")
         return 0
