@@ -632,8 +632,9 @@ METRICS = Path(__file__).resolve().parents[2] / "metrics"
 # SHA-256 of 03_safe_to_spend.sql without the bill setting (LF line endings), as after #391 (pay yourself
 # first: the budget limit after a fixed savings goal). The file without the bill setting must stay exactly this
 # text, so the hero cannot change silently. A deliberate change of 03 updates this hash, after checking the
-# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py).
-PINNED_03 = "a54331f3b5eab5b3b1ec705ed7d45a8d1f900c727f17010eea8c82e43a2bcfcd"
+# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py; #459: the goal in
+# every label state, the same table before and after for the protected states).
+PINNED_03 = "75d31ffc40ebbc87e7c34a7057d4ca3eb25664608f77d97dccd1c4207bf2341a"   # #459: the goal as with no labels
 
 
 def test_03_without_the_bill_setting_is_the_heros_file_unchanged():
