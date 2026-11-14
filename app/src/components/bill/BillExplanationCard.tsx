@@ -58,12 +58,16 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
   return (
     <CardShell>
       {/* With large text the fact label wraps inside its own column instead of running past the card. */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
           <h3 className={CARD_TITLE}>{comparison ? s.vsUsualTitle : s.thisBillTitle}</h3>
           {comparison && <p className="text-sm text-muted">{comparison.label}</p>}
         </div>
-        {comparison && <span className="max-w-[45%] min-w-0 pt-0.5 text-right text-xs break-words text-muted">{chatStrings(lang).fact}</span>}
+        {comparison && (
+          <span className="ml-auto max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">
+            {chatStrings(lang).fact}
+          </span>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
@@ -95,11 +99,13 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
         >
           {look.icon}
         </span>
-        <div className="min-w-0">
+        {/* A size container, so the text hyphenates only when the column is narrow in rem (large
+            text); at normal size it is about 16rem and its line breaks stay as they were (#541). */}
+        <div className="@container min-w-0 flex-1">
           <p className={`flex min-h-10 items-center font-semibold ${look.color}`}>
             <span className="min-w-0 break-words hyphens-auto">{basket.label}</span>
           </p>
-          <p className="text-sm text-ink-2">{basket.text}</p>
+          <p className="text-sm text-ink-2 break-words @max-[10rem]:hyphens-auto">{basket.text}</p>
         </div>
       </div>
     </CardShell>
