@@ -92,7 +92,18 @@ select {
   animation: sheet-fade var(--duration-base) var(--ease-entry);
 }
 .sheet-panel {
-  animation: sheet-rise var(--duration-base) var(--ease-entry);
+  /* A slight spring: up a few pixels past the rest, then settle. */
+  animation: sheet-spring calc(var(--duration-base) * 1.5) var(--ease-entry);
+}
+@keyframes sheet-spring {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }
 @keyframes sheet-fade {
   from {
@@ -184,6 +195,41 @@ select {
     transform: scale(1.08);
   }
 }
+/* Buttons, chips and answers press in a little on tap (zero specificity: a component's own transform wins). */
+:where(button) {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+:where(button:not(:disabled)):active {
+  transform: scale(0.97);
+}
+/* A skeleton line: a soft light sweeps across instead of a pulse. */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-sunken) 25%,
+    color-mix(in srgb, var(--color-sunken) 45%, var(--color-surface)) 50%,
+    var(--color-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+/* A quiz or check answer pops softly when it is chosen (and the right one when it is shown). */
+.answer-pop {
+  animation: answer-pop var(--duration-base) var(--ease-entry);
+}
+@keyframes answer-pop {
+  50% {
+    transform: scale(1.03);
+  }
+}
 /* The waiting bar is hatched, never a basket colour. */
 .bar-hatched {
   background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
@@ -200,7 +246,11 @@ select {
   .motion-fade {
     animation-duration: var(--duration-fast) !important;
   }
-  .dot-bounce {
+  .dot-bounce,
+  .shimmer {
     animation: none !important;
+  }
+  :where(button:not(:disabled)):active {
+    transform: none;
   }
 }

@@ -5,6 +5,7 @@ import { MiniTest, PASS_SCORE } from '../components/learn/MiniTest.tsx'
 import { miniTest } from '../components/learn/miniTests.ts'
 import { lessonsOf, topicsFor, type Topic } from '../components/learn/topics.ts'
 import { LearnLesson } from '../components/learn/LearnLesson.tsx'
+import { SegmentedTabs } from '../components/SegmentedTabs.tsx'
 import { resetProgress, useLearnProgress } from '../lib/learnProgress.ts'
 import { useOpening } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -179,22 +180,15 @@ export function Learn() {
       <h2 id="learn-title" className="text-2xl font-bold text-ink">
         {s.title}
       </h2>
-      <div role="tablist" aria-label={s.sections} className="flex gap-1 rounded-pill bg-sunken p-1">
-        {(['lessons', 'glossary'] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={section === key}
-            onClick={() => setSection(key)}
-            className={`relative min-h-9 flex-1 rounded-pill text-[0.9375rem] font-semibold after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] ${
-              section === key ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
-            }`}
-          >
-            {key === 'lessons' ? s.segLessons : s.segGlossary}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        label={s.sections}
+        value={section}
+        onChange={setSection}
+        items={[
+          { key: 'lessons', label: s.segLessons },
+          { key: 'glossary', label: s.segGlossary },
+        ]}
+      />
 
       {section === 'glossary' ? (
         <Glossary s={s} />

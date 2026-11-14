@@ -94,12 +94,12 @@ function Stages({ answer, s }: { answer: Answer; s: Strings }) {
 function CardSkeleton() {
   return (
     <div aria-hidden="true" className="rounded-lg border border-line bg-surface p-4">
-      <div className="h-5 w-3/5 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-2 h-3.5 w-2/5 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-5 h-11 w-1/2 animate-pulse rounded-md bg-sunken" />
-      <div className="mt-5 h-3 w-full animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-3 h-3 w-11/12 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-3 h-3 w-4/5 animate-pulse rounded-pill bg-sunken" />
+      <div className="h-5 w-3/5 shimmer rounded-pill" />
+      <div className="mt-2 h-3.5 w-2/5 shimmer rounded-pill" />
+      <div className="mt-5 h-11 w-1/2 shimmer rounded-md" />
+      <div className="mt-5 h-3 w-full shimmer rounded-pill" />
+      <div className="mt-3 h-3 w-11/12 shimmer rounded-pill" />
+      <div className="mt-3 h-3 w-4/5 shimmer rounded-pill" />
     </div>
   )
 }
@@ -273,12 +273,12 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       className="flex scroll-mt-16 flex-col gap-3"
       onClick={reveal.revealing ? reveal.skip : undefined}
     >
-      <p className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
+      <p className="card-enter ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
         {turn.question}
       </p>
 
       {(hasContent || streaming || done) && (
-        <div className="flex min-h-11 items-center justify-between gap-2">
+        <div className="card-enter flex min-h-11 items-center justify-between gap-2">
           <SenttiLabel s={s} />
           {done && (
             <SpeakButton
