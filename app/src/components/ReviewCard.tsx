@@ -286,7 +286,7 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
           <button
             type="button"
             onClick={onUndo}
-            className="min-h-11 px-1 text-sm font-semibold text-mint underline underline-offset-4 hover:text-on-deep"
+            className="min-h-11 min-w-11 px-1 text-sm font-semibold text-mint underline underline-offset-4 hover:text-on-deep"
           >
             {t.undo}
           </button>
