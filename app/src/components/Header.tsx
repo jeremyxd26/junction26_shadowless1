@@ -1,8 +1,10 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { canGoBack, goBack, useUrl } from '../lib/url.ts'
 import { showPersonaButton } from '../lib/hostBridge.ts'
 import { hostStrings } from '../lib/hostStrings.ts'
 import { useSettings } from '../lib/settings.ts'
+import { BottomSheet } from './BottomSheet.tsx'
 
 const FALLBACK_LONG_PRESS_MS = 600
 const MOVE_TOLERANCE_PX = 10
@@ -16,13 +18,15 @@ function longPressMs(): number {
 }
 
 /**
- * Minimal header inside the host app: back + "Sentti", no logo, no own navigation.
+ * Minimal header inside the host app: back and "Sentti" with a small AI tag; tapping the title
+ * opens the AI disclosure (`ai_disclosure`) in a small sheet. No logo and no own navigation.
  * A long press on the header (not on a button) opens the demo persona switch. In a plain browser,
  * where nobody would guess the long press, a visible button in the left cell opens it too, unless
  * the back chevron takes that cell.
  */
-export function Header({ onLongPress }: { onLongPress: () => void }) {
+export function Header({ onLongPress, disclosure }: { onLongPress: () => void; disclosure: string }) {
   const { t, lang } = useSettings()
+  const [about, setAbout] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
   useUrl()
   const showBack = canGoBack()
@@ -89,9 +93,30 @@ export function Header({ onLongPress }: { onLongPress: () => void }) {
           // Inside a host with nowhere to go back to (not reached today); the cell keeps the title centred.
           <span aria-hidden="true" />
         )}
-        <h1 className="text-center text-lg font-semibold text-ink">Sentti</h1>
+        {/* The title with its AI tag opens the AI disclosure; the right cell is kept for the overview
+            button (#322). The accessible name is "Sentti, AI". */}
+        <h1 className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setAbout(true)}
+            aria-haspopup="dialog"
+            aria-label="Sentti, AI"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
+          >
+            Sentti
+            <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
+          </button>
+        </h1>
         <span aria-hidden="true" />
       </div>
+      {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
+      {about &&
+        createPortal(
+          <BottomSheet title={t.aboutSentti} onClose={() => setAbout(false)}>
+            <p className="text-base text-ink-2">{disclosure}</p>
+          </BottomSheet>,
+          document.body,
+        )}
     </header>
   )
 }

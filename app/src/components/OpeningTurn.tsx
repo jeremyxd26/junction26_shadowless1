@@ -1,5 +1,6 @@
 // Sentti's opening turn: turn 0 of the thread on `/` (DESIGN.md "Thread", "Opening turn").
-// In this step it shows the overview as it is; the compact opening template comes later.
+// One thought per screen (#310): greeting, the big safe-to-spend card, "Sentti asks" and 2–3
+// questions; no speaker line here, the header carries the AI tag.
 import { useMemo, type ReactNode } from 'react'
 import { ApiError } from '../api/errors.ts'
 import type { OverviewResponse } from '../api/types.ts'
@@ -9,7 +10,6 @@ import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Loaded } from '../lib/useLoad.ts'
 import { Overview } from '../screens/Overview.tsx'
-import { SenttiLabel } from './AnswerView.tsx'
 import { ErrorBlock, LoadingBlock } from './States.tsx'
 
 const noop = () => {}
@@ -52,7 +52,6 @@ export function OpeningTurn({ overview, personas, onSwitchPersona }: Props) {
 
   return (
     <section data-turn="opening" aria-label={s.sentti} className="flex flex-col gap-3">
-      <SenttiLabel s={s} />
       {overview.status === 'ready' ? (
         <Overview overview={overview.data} onRefresh={overview.refresh} />
       ) : failed ? (
