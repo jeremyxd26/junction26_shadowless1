@@ -1,17 +1,16 @@
 // One turn of the chat: the question, then Sentti's answer in the Sentti answer shape
 // (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
 // action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
-// A client turn (#319) has the same bubble and label, then its registered component.
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Action } from '../api/types.ts'
 import { STAGES, actionsOf, doneActions, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
-import { isClientTurn, type AskTurn, type ClientTurn, type Turn } from '../lib/thread.ts'
+import { isClientTurn } from '../lib/thread.ts'
+import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
-import { clientTurns } from './clientTurns.tsx'
+import { ClientTurnView } from './ClientTurnView.tsx'
 import { TokenText } from './cards.tsx'
 import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
@@ -22,10 +21,6 @@ export const ACTION_CHIP =
   'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-left text-base font-semibold text-brand hover:bg-mint-tint'
 export const QUESTION_CHIP =
   'inline-flex min-h-11 items-center rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-semibold text-ink hover:bg-mint'
-
-/** The user's side of a turn: the question typed or the chip tapped. */
-const USER_BUBBLE =
-  'ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep'
 
 /** Answer text with number chips: 16 px, with room for the 32 px inline chips. */
 const ANSWER_TEXT = 'text-base leading-8 text-ink-2'
@@ -40,7 +35,7 @@ export function InfoIcon() {
   )
 }
 
-/** "Sentti" with the AI tag; a client turn, which the AI model does not write, shows it without. */
+/** "Sentti" with the AI tag; a client turn (#319), which the AI model does not write, shows it without. */
 export function SenttiLabel({ s, ai = true }: { s: Strings; ai?: boolean }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
@@ -158,54 +153,10 @@ interface Props {
   onRetry: () => void
 }
 
-export function TurnView(props: Props) {
-  const { turn } = props
-  return isClientTurn(turn) ? <ClientTurnView turn={turn} /> : <AskTurnView {...props} turn={turn} />
-}
-
-/**
- * A client turn (#319): the tapped chip as the user's bubble, Sentti's label without the AI tag,
- * then the registered component. Each step it reports is announced once in the turn's own
- * `role="status"` region (whether or not the turn is the latest) and gets the focus on its heading.
- */
-function ClientTurnView({ turn }: { turn: ClientTurn }) {
+export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
-  const Component = clientTurns[turn.render]?.Component
-  const body = useRef<HTMLDivElement>(null)
-  const [step, setStep] = useState<{ title: string; count: number } | null>(null)
-  const onStep = useCallback((title: string) => setStep((current) => ({ title, count: (current?.count ?? 0) + 1 })), [])
-
-  useEffect(() => {
-    const heading = step && body.current?.querySelector<HTMLElement>('[data-step-heading]')
-    if (!heading) return
-    // Someone typing in the composer keeps the focus there; the step is still announced.
-    const active = document.activeElement
-    if (active?.matches('input, textarea, select, [contenteditable="true"]') && !body.current?.contains(active)) return
-    heading.focus({ preventScroll: true })
-    // The thread brings a new turn to the top itself; a later step may start lower down.
-    if (step.count > 1) heading.scrollIntoView({ block: 'nearest' })
-  }, [step])
-
-  return (
-    <article data-turn={turn.id} data-client-turn={turn.render} className="flex scroll-mt-16 flex-col gap-3">
-      <p className={USER_BUBBLE}>{turn.question}</p>
-      <div className="flex min-h-11 items-center">
-        <SenttiLabel s={s} ai={false} />
-      </div>
-      <div ref={body} className="flex flex-col gap-3">
-        {Component && <Component turnId={turn.id} onStep={onStep} />}
-      </div>
-      <p role="status" className="sr-only">
-        {step?.title ?? ''}
-      </p>
-    </article>
-  )
-}
-
-function AskTurnView({ turn, latest, suggestions, onAsk, onRetry }: Props & { turn: AskTurn }) {
-  const { lang } = useSettings()
-  const s = chatStrings(lang)
+  if (isClientTurn(turn)) return <ClientTurnView turn={turn} label={<SenttiLabel s={s} ai={false} />} />
   const { answer } = turn
   const { done } = answer
   const streaming = answer.status === 'streaming'
@@ -268,7 +219,9 @@ function AskTurnView({ turn, latest, suggestions, onAsk, onRetry }: Props & { tu
 
   return (
     <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
-      <p className={USER_BUBBLE}>{turn.question}</p>
+      <p className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
+        {turn.question}
+      </p>
 
       {(hasContent || streaming || done) && (
         <div className="flex min-h-11 items-center justify-between gap-2">
