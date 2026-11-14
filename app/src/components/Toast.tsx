@@ -23,6 +23,9 @@ interface Props {
  */
 export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClose }: Props) {
   const { t } = useSettings()
+  // A one-line note ("Answer saved.") keeps its buttons on the same line; a longer message gets
+  // them in a narrow column, so the text keeps most of the width.
+  const short = text.length <= 40 && Object.keys(numbers).length === 0
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+81px)] z-40 flex justify-center px-4">
       <div className="toast-in pointer-events-auto flex w-full max-w-[448px] items-start gap-1 rounded-lg bg-ink py-2 pl-4 pr-1 text-surface shadow-float [&_:focus-visible]:outline-mint">
@@ -30,7 +33,7 @@ export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClo
           <TokenText text={text} numbers={numbers} />
         </p>
         {/* Actions in one narrow column, so the message keeps most of the width. */}
-        <div className="flex shrink-0 flex-col items-end">
+        <div className={`flex shrink-0 ${short ? 'flex-row-reverse items-center' : 'flex-col items-end'}`}>
           <button
             type="button"
             onClick={onClose}

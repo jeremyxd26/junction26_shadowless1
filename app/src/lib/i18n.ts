@@ -44,6 +44,7 @@ const en = {
     nothing_free: 'nothing free to spend this week',
   } as Record<string, string>,
   movedTo: 'Moved to',
+  answerSaved: 'Answer saved.',
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
   /** The accessible name of the header title ("Sentti" with its AI tag). */
@@ -112,6 +113,7 @@ const fi: Strings = {
     nothing_free: 'tällä viikolla ei vapaata käytettävää',
   },
   movedTo: 'Siirretty:',
+  answerSaved: 'Vastaus tallennettu.',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',
   titleLabel: 'Sentti, tekoäly',
