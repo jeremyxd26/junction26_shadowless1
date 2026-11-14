@@ -9,12 +9,14 @@ const SUPPORTS_INERT = typeof HTMLElement !== 'undefined' && 'inert' in HTMLElem
  * sheet and of each of its ancestors up to `body` (the app, the toast, a sheet below this one,
  * anything portalled to `body`), or `aria-hidden` where `inert` is not supported. Returns the undo,
  * which touches only what this sheet changed, so stacked sheets restore each other in order.
+ * A node marked `data-sheet-keep` stays live: the host notice, which shows above every sheet and
+ * whose `role="status"` must still be announced and tappable.
  */
 function hideBackground(sheet: HTMLElement): () => void {
   const changed: HTMLElement[] = []
   for (let keep: HTMLElement = sheet; keep.parentElement && keep !== document.body; keep = keep.parentElement) {
     for (const node of Array.from(keep.parentElement.children)) {
-      if (node === keep || !(node instanceof HTMLElement)) continue
+      if (node === keep || !(node instanceof HTMLElement) || node.hasAttribute('data-sheet-keep')) continue
       if (SUPPORTS_INERT ? node.inert : node.getAttribute('aria-hidden') === 'true') continue
       if (SUPPORTS_INERT) node.inert = true
       else node.setAttribute('aria-hidden', 'true')
@@ -51,7 +53,14 @@ export function BottomSheet({ title, onClose, children }: Props) {
   const titleId = useId()
   const root = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  // The latest onClose, so a caller's inline arrow does not re-run the open effect below (which
+  // would release the background and move the focus to the opener and back on every render).
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  }, [onClose])
 
+  // Runs once while the sheet is open: hide the background, focus the panel, listen for Escape.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     const showBackground = root.current ? hideBackground(root.current) : () => {}
@@ -62,7 +71,7 @@ export function BottomSheet({ title, onClose, children }: Props) {
       if (event.key !== 'Escape') return
       // With two sheets open (evidence over what-if), Escape closes only the top one.
       const dialogs = document.querySelectorAll('[role="dialog"]')
-      if (dialogs[dialogs.length - 1] === panel.current) onClose()
+      if (dialogs[dialogs.length - 1] === panel.current) close.current()
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -72,7 +81,7 @@ export function BottomSheet({ title, onClose, children }: Props) {
       showBackground()
       previous?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab' || !panel.current) return
