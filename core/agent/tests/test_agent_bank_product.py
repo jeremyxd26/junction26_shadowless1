@@ -2,7 +2,7 @@
 saving" next to a button that leads to investment funds reads like personal investment advice).
 
 - The rule itself (validator.amount_with_bank_product, words shared with the eval in core/answer_text.py). It
-  fires on DESTINATION or ACTION uses only (r-coord's decision on the review of #475): a plain statement of a
+  fires on DESTINATION or ACTION uses only (decided in the review of #475): a plain statement of a
   figure passes. The lists below are the reviewer's drafts of that review, verbatim, plus earlier ones.
 - At runtime it rejects MODEL drafts only: the retry gets the reason, then the template writes.
 - Templates are never replaced for it, so they are held to it here: every recorded tool result through the
@@ -105,7 +105,7 @@ PASSED = [
     "S-mobiilissa {{n3}} kuluistasi on ruokaa.",                       # a share is not an amount
     "You could set aside about {{n1}} a month. The card's button opens monthly saving in S-mobiili.",
     "The cost of the fund-raiser was {{n1}}.",
-    # plain statements, rejected on b6a8ff5 and passed since r-coord's decision
+    # plain statements, rejected on b6a8ff5 and passed since the decision in the review of #475
     "Your monthly saving is {{n1}}.",
     "In S-mobiili your balance is {{n2}}.",
     "Kuukausisäästäminen {{n1}} kuukaudessa kerryttää vuodessa {{n2}}.",
@@ -264,7 +264,7 @@ def test_the_rendered_text_rule_of_the_eval_agrees():
 # ---- runtime: model drafts only ---------------------------------------------------------------------------
 
 SPEND = [FunctionCall("fake_spending", {"category": "Restaurants"}), FunctionCall("finish")]
-# {{n1}} is cited once: a token cited twice is its own rejection (r-w5's #437)
+# {{n1}} is cited once: a token cited twice is its own rejection (#437)
 JOINED = {"language": "en", "text": "Put the {{n1}} you spent on restaurants in August 2026 into monthly saving "
                                     "in S-mobiili instead.", "cited": ["n1"], "lesson_key": None}
 APART = {"language": "en", "text": "In August 2026 you spent {{n1}} on restaurants, over {{n2}} visits.",

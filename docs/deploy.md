@@ -192,6 +192,8 @@ The service keeps tool results in memory and in `/srv/var/cache/tools.sqlite3` (
 
 A cached number's evidence ref points into `coach_evidence` in the database.
 
+**The sample bills (#250).** After the tool warm-up, `remote-deploy.sh` reads the four sample bills (`docker exec shadowless1-core timeout 130 python -m core.bills.warmup`, at most 150 s, never fatal). Each sample is read once with the model (one request the first time; a reading already in the model cache costs nothing) and once more from the cache. It prints one line per sample with counts only: fields that match the answer key, fields checked by code, and the requests each reading sent. Without a key it prints that it skipped.
+
 **After a database reset or a data reload:**
 1. Stop the service.
 2. Delete the cache file: `rm /var/lib/shadowless1/var/cache/tools.sqlite3*`.
