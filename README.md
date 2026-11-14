@@ -217,9 +217,10 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
-- Two lying sources prove the checks catch invented numbers (`core/eval/liars.py`); both must fail every answer:
+- Lying sources prove the checks catch invented numbers and borrowing suggestions (`core/eval/liars.py`); each must fail every answer:
   - `--source liars:invented_text` adds an invented amount to each answer's text;
-  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it.
+  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it;
+  - `--source liars:borrowing` adds a borrowing suggestion, which the borrowing rule must catch in every answer.
 - The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.

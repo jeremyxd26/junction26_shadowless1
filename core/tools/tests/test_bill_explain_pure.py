@@ -306,7 +306,7 @@ SENTENCE_END = re.compile(r"[.!?](?=\s|$)")   # a decimal point or a Finnish dat
 @pytest.mark.parametrize("lang", ["en", "fi"])
 @pytest.mark.parametrize("case", ["budget", "moves", "negative", "covered", "after_payday", "full_unmatched"])
 def test_the_safe_to_spend_text_is_at_most_two_sentences(fake, lang, case):
-    """contracts/api.md 11.2 (r-coord: no more than two sentences, shorter on a phone)."""
+    """contracts/api.md 11.2 (no more than two sentences, shorter on a phone)."""
     housing = be.read_barcode(barcode(euros="000886", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy")
     bills = {
         "budget": (housing, None, {"free_until_payday_eur": Decimal("12517.56"), "balance_limit_7d_eur": Decimal("5841.53")}),
@@ -656,8 +656,9 @@ METRICS = Path(__file__).resolve().parents[2] / "metrics"
 # SHA-256 of 03_safe_to_spend.sql without the bill setting (LF line endings), as after #391 (pay yourself
 # first: the budget limit after a fixed savings goal). The file without the bill setting must stay exactly this
 # text, so the hero cannot change silently. A deliberate change of 03 updates this hash, after checking the
-# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py).
-PINNED_03 = "a54331f3b5eab5b3b1ec705ed7d45a8d1f900c727f17010eea8c82e43a2bcfcd"
+# hero's numbers (#391: the persona table on the issue, test_tools_db_pay_yourself_first.py; #459: the goal in
+# every label state, the same table before and after for the protected states).
+PINNED_03 = "75d31ffc40ebbc87e7c34a7057d4ca3eb25664608f77d97dccd1c4207bf2341a"   # #459: the goal as with no labels
 
 
 def test_03_without_the_bill_setting_is_the_heros_file_unchanged():

@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # POST /api/baskets/label, sliding windows; 0 turns a limit off (#144). No window is shared by all
     # viewers of a customer: answers are per viewer, so such a window would protect nothing and would let
     # anyone block the presenter's tap (review of #144).
-    # Sized for a room (r-sec): everyone on a venue's Wi-Fi arrives from one client address, so the
+    # Sized for a room (security review): everyone on a venue's Wi-Fi arrives from one client address, so the
     # address-keyed limits are generous, and the per-viewer limit and the session cap are what protect.
     label_rate_limit_per_min: int = Field(default=120, ge=0)           # per client address
     label_rate_limit_customer_per_min: int = Field(default=60, ge=0)   # per client address and customer

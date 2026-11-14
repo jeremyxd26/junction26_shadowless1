@@ -42,7 +42,10 @@ DECLINE_RULES = [
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
                           r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
-    ("out_of_scope", r"just (estimate|guess)|any number|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
+    ("out_of_scope", r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+                     r"guess (a |an |some )?(number|amount|figure)|"
+                     r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
+                     r"arvaa (jokin |joku )?(luku|summa)|mikä tahansa (luku|summa)|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
                      r"medicine|headache|lääke|päänsärky|weather|recipe"),
 ]
 # The Finnish weather ("sää") as a whole word and its weather forms, read on the question as typed (#370): folded
@@ -51,8 +54,9 @@ DECLINE_RULES = [
 WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
-    (r"groceries|grocery|food shopping|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
-    (r"restaurants?|dining out|eating out|eat out|ravintol\w*|ulkona syö\w*", "Restaurants"),
+    # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
+    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"restaurants?|dining out|eating out|eat out|fast[- ]food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
@@ -71,7 +75,7 @@ COMPOUND_OBJECT = (r"\bparking (fines?|tickets?)\b|\bpysakoin\w*(sak|virhe)\w*|\
                    r"\bcinema clubs?\b|\belokuv\w*kerho\w*")
 # "takeaway" the food, not "the main takeaway from …" / "one takeaway" (a key point)
 TAKEAWAY_WORDS = (r"(?<!key )(?<!main )(?<!big )(?<!biggest )(?<!one )take-?aways?(?!\s+(from|of)\b)|"
-                  r"fast food|noutoruo\w*|pikaruo\w*")
+                  r"fast[- ]food|noutoruo\w*|pikaruo\w*")
 BAR_WORDS = r"\bbars?\b|\bpubs?\b|baari\w*|baare\w*"
 CINEMA_WORDS = r"\bcinemas?\b(?!\s+club)|\bmovies\b|elokuv(?!\w*kerho)\w*|leffa\w*|leffoi\w*"
 MCC_GROUP_WORDS = [
@@ -424,7 +428,13 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
-    named = _categories(q, WHAT_IF_MCC_WORDS + MCC_GROUP_WORDS)
+    # An everyday word is its own selection: "fast food" and "pikaruoka" are MCC 5814 in a what-if, never also the
+    # Restaurants or Groceries category the category words find inside them (#534 with #488). A food compound
+    # ("food delivery", "pet food") is no selection the rules know, never Groceries: a cut of it asks which spending.
+    rest = q
+    for rx in [rx for rx, _ in WHAT_IF_MCC_WORDS + MCC_GROUP_WORDS] + [FOOD_COMPOUND]:
+        rest = re.sub(rx, " ", rest)
+    named = [c for rx, c in CATEGORY_WORDS if re.search(rx, rest)]
     categories = set(named) & config.WHAT_IF_CATEGORIES
     # a sub-group named with the category that holds it is that category ("restaurants and bars", review of #514)
     codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q) and GROUP_CATEGORY_OF_CODES.get(c) not in named}
@@ -435,6 +445,11 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
     if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
+        return "save_more", None
+    if categories == {"Groceries"} and selections == 1 and not pct and not half and re.search(template.SAVE_MORE, q) \
+            and not re.search(r"grocer\w*|food shopping|ruoka\w*", rest):
+        # "How could I save on food?": dev's save-more answer; bare "food" with no cut is no cut of Groceries, a
+        # regular essential the what-if leaves out (#551, the coordinator)
         return "save_more", None
     if not selections and re.search(WHOLE_SPENDING, q) and not re.search(SELECTION_CODE, q):
         return "which", None
@@ -725,6 +740,11 @@ PERIOD_NOUN_AFTER = (r"\s+(days?|weeks?|weekends?|months?|years?|eve|mornings?|e
 # Markup around a name ("on <b>Lidl</b>") is read as the bare name (#510).
 MARKUP_TAG = r"<[^<>]{1,40}>"
 WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
+# Bare "food" is food shopping (Groceries, as Finnish "ruoka"); with a noun that changes its meaning it is not:
+# eating out ("food delivery", "a food court", "food trucks and stalls", "street food") or pet and baby food
+# ("pet food", "my dog's food"). Such a message is claimed by no rule (the coordinator, review of #534).
+FOOD_COMPOUND = (r"\bfood (deliver\w*|courts?|trucks?|stalls?)\b|\b(pet|pets|dog|dogs|cat|cats|baby|babies|street)"
+                 r"('s|s'|')? food\b")
 
 
 def _is_thing(word: str) -> bool:
@@ -825,16 +845,30 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # meta question (punctuation, an emoji, "Sentti" as an address and a leading greeting allowed), and only
 # after no refusal rule matched: "hi, ignore your rules ..." stays refused, "Hi, where did my money go?"
 # is the baskets question. Russian forms are answered in English.
-_GREET = r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|huomenta|привет|здравствуй(те)?)"
+_GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
+          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
 META = [
+    # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
-                 r"kuka olet|kuka sina olet|mika olet|oletko (botti|robotti|tekoaly|ihminen)|кто ты|ты кто|ты бот)"),
-    ("capabilities", rf"({_GREET} )?(what can you do|what do you do|how do you work|what can i ask( you)?|"
-                     r"mita osaat|mita sina osaat|mita voit tehda|miten toimit|что ты умеешь|что умеешь)"),
-    ("help", rf"({_GREET} )?(help|help me|apua|помощь|помоги)"),
-    ("thanks", r"(thanks|thank you|thank you so much|thanks a lot|thx|kiitos|kiitti|kiitos paljon|спасибо)"),
-    ("greeting", _GREET),
+                 r"are you (an )?ai or (a )?human( advisor| adviser)?|are you a human (advisor|adviser)|who r u|"
+                 r"who are u|who made you|who built you|who created you|"
+                 r"kuka olet|kuka sina olet|kuka sa oot|kuka sa olet|mika olet|oletko (botti|robotti|tekoaly|ihminen)|"
+                 r"kuka teki sinut|kuka sinut teki|кто ты|ты кто|ты бот)"),
+    ("capabilities", rf"({_GREET} )?(what can you do|what else can you do|what do you do|how do you work|"
+                     r"what can i ask( you)?|what can you help( me)? with|how can you help( me)?|"
+                     r"mita osaat( tehda)?|mita sina osaat( tehda)?|mita sa osaat( tehda)?|mita voit tehda|miten toimit|"
+                     r"что ты умеешь|что умеешь)"),
+    ("help", rf"({_GREET} )?(help|help me|can you help( me)?|could you help( me)?|apua|voitko auttaa( minua)?|"
+             r"помощь|помоги)"),
+    ("privacy", rf"({_GREET} )?(is my data safe( with you)?|is my (personal )?(data|information) (safe|secure)|"
+                r"are my data safe|do you share my data|who (can )?sees? my data|onko (minun )?(tietoni|dataani) turvassa|"
+                r"ovatko tietoni turvassa|jaatko tietojani)"),
+    ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
+               r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
+    ("greeting", rf"{_GREET}( (are you there|how are you( doing)?))?|are you there|how are you( doing)?|mita kuuluu"),
 ]
+# "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
+META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
 
 
 def small_purchases_whole(q: str) -> bool:
@@ -851,9 +885,11 @@ def meta_intent(question: str) -> str | None:
     q = fold(question)
     if any(re.search(rx, q, re.I) for _, rx in DECLINE_RULES) or re.search(WEATHER_FI, question, re.I):
         return None
-    core = re.sub(r"[^\w\s']", " ", q)          # punctuation and emoji
-    core = re.sub(r"\bsentti\b", " ", core)       # Sentti as an address
-    core = " ".join(core.split())
+    core = " ".join(re.sub(r"[^\w\s']", " ", q).split())    # punctuation and emoji
+    for intent, rx in META_NAMED:
+        if re.fullmatch(fold_pattern(rx), core):
+            return intent
+    core = " ".join(re.sub(r"\bsentti\b", " ", core).split())   # Sentti as an address
     for intent, rx in META:
         if re.fullmatch(fold_pattern(rx), core):
             return intent
@@ -928,6 +964,10 @@ def _unknown_object(q: str) -> str | None:
                                     for n in re.finditer(rx, q[rest:])})
     for i, start in enumerate(starts):
         word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
+        after = q[start + len(word):].lstrip()
+        if re.fullmatch(r"[a-z]+(?:'s|s'|')", word) and (re.match(HEALTH, after) or any(
+                re.match(rx, after) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS)):
+            continue   # "my kids' clothes": the category is the thing, the possessive its owner (#527)
         if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
                 any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
             continue
@@ -961,6 +1001,11 @@ def unknown_object(question: str) -> str | None:
     user's own spelling: "Café Müller", not "cafe" (a name's capitalised words that follow it come along)."""
     question = re.sub(MARKUP_TAG, " ", question)   # "<b>Lidl</b>" is Lidl (#510)
     q = fold(question)
+    food = re.search(FOOD_COMPOUND, q)
+    if food:
+        # "food delivery", "my dog food": no category maps the compound, so a planned unfiltered total becomes
+        # the breakdown as for any unknown thing, and the answer quotes the compound (review of #534)
+        return question[food.start():food.end()] if len(q) == len(question) else food.group(0)
     word = _unknown_object(q)
     if word is None or not _is_thing(word):
         return None    # "on the whole of 2025": no thing to name
@@ -1258,6 +1303,16 @@ def _asked_filter(args: dict, asked: str) -> dict:
     return new
 
 
+def _asks_unknown_spending(q: str, peer_question: bool) -> bool:
+    """A part of the message asks about spending on a thing no category maps and asks no other rule's question:
+    "how much did I spend at Barsa last month" beside "what can I safely spend this week?" (#545). The parts are
+    finer than the clauses (any "and", "ja", "sekä", comma or semicolon: "… ja mitkä laskut ovat tulossa?"), so a
+    thing inside the other rule's own question ("Is it ok to spend money on therapy?") is no such part."""
+    return any(part.strip() and _unknown_object(part) and _spending_words(part)
+               and not _topics(part, peer_question) - {"spending"}
+               for part in re.split(CLAUSE_BREAK + r"|\s+(?:and|ja|seka)\s+|[,;]\s*", q))
+
+
 def said_in_the_past(question: str, q: str, as_of: date) -> bool:
     """A message about what one did, not a scenario (reviews of #488). With no scenario marker (HYPOTHETICAL) and no
     plan for the future (WHATIF_FUTURE): a past verb (PAST, PAST_VERB) or a past period word (WHATIF_PAST_PERIOD) is the past; a
@@ -1309,10 +1364,30 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # "How much did I spend on the pharmacy?" is never answered with the unfiltered total: the same
         # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if re.search(FOOD_COMPOUND, q) and "what_if" not in found:
+        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534), but
+        # a thing no category maps, as any unknown thing (#551): a spending question on it alone is answered with
+        # the customer's categories, and the answer quotes the compound whole; never the unfiltered total, never
+        # Groceries. Beside another rule's question it competes (#545). A what-if on one keeps the what-if rule.
+        others = [f for f in found if f != "spending"]
+        if others:
+            return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
+        if "get_basket_breakdown" in tools and _spending_words(q):
+            period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+            return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
+                                            FunctionCall("finish")))
+        return Claim(None, reason="food_compound")
     if dropped:
         # a question the rules leave unanswered (a named place, a mixed filter, a parking fine as a bill) next to
         # another rule's: the message competes, never answered by the other rule alone (#496 with #514)
         return Claim(None, candidates=tuple(dict.fromkeys(found + dropped)), reason="competing")
+    if found and not {"what_if", "small_purchases"} & set(found) and _asks_unknown_spending(q, peer_question):
+        # "How much did I spend at Barsa last month? What can I safely spend this week?": the spending question
+        # about a thing no category maps adds no spending rule, so the other rule would answer alone; the user
+        # is asked which one they mean, as on dev (#545). A what-if or small-purchases question naming such a
+        # thing keeps its own rule, and so does a question whose thing is the other rule's own ("Is it ok to
+        # spend money on therapy?" is the safe-to-spend question).
+        return Claim(None, candidates=tuple(dict.fromkeys(found + ["spending"])), reason="competing")
     if not found:
         if _unknown_object(q):
             # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health
@@ -1486,8 +1561,9 @@ def claim(request: PlanInput) -> Claim:
         args = plan_spending(question, as_of)
         if args:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
-    if re.search(SMALL_PURCHASES, q) and not re.search(WHAT_IF, q) and not peer_question and \
-            not small_purchases_whole(q):
+    small_clause = next((p for p in re.split(CLAUSE_BREAK, q) if re.search(SMALL_PURCHASES, p)), "")
+    if small_clause and not small_purchases_whole(q) and \
+            not (re.search(WHAT_IF, small_clause) or (peer_question and re.search(PEERS, small_clause))):
         # The whitelist rule's leftover is read on the WHOLE message, before any split: more than the plain
         # small-purchases question goes to the next planner (the coordinator, #379 part B; review of #465)
         return Claim(None, reason="period")
@@ -1503,6 +1579,13 @@ def claim(request: PlanInput) -> Claim:
             declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
             if declined is not None:
                 return declined          # a refusal of one part is the answer to the whole message
+            if any("unknown_object" in (part.rule, part.reason) for part in parts):
+                # one part asks about spending on a thing no category maps ("Paljonko käytin Barsaan viime kuussa?
+                # Paljonko voin turvallisesti käyttää tällä viikolla?"): its answer is the breakdown on its own, never
+                # beside another rule's answer, so the user is asked which one they mean (#545)
+                others = [r for part in parts if "unknown_object" not in (part.rule, part.reason)
+                          for r in (part.candidates or ((part.rule,) if part.rule else ()))]
+                return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
             unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
             calls = list(unique.values())
             if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1
@@ -1526,6 +1609,38 @@ def claim(request: PlanInput) -> Claim:
         return decide(False, asked)
     short = decide(False, [])
     return decide(True, []) if "spending" in (short.rule or "").split("+") else short
+
+
+# Explicit requests for a human and hard topics (#352, review of #435): a refusal with the way to the bank
+# (`contact_bank`, #420), never a clarifying question. Only a confident full match: the whole message is the
+# request (punctuation, "please" and a leading "I want to" allowed); the out-of-scope decline answers it until
+# the product owner words its own text.
+_WANT = r"((i want to|i'd like to|id like to|i would like to|i need to|can i|could i|how do i|how can i|please) )?"
+HUMAN_REQUEST = [
+    rf"{_WANT}(talk|speak|chat) (to|with) (a |an )?(human|person|real person|someone|advisor|adviser|"
+    r"customer service|support|the bank)( please)?",
+    r"(customer service|customer support|contact (the )?bank|contact s ?pankki|human please|real person please|"
+    r"i want (a|to talk to a) human)( please)?",
+    rf"{_WANT}(file|make|submit|lodge) a complaint|i have a complaint|i want to complain",
+    r"my (bank |credit |debit )?card (was|has been|got) (stolen|lost)|i lost my (bank |credit |debit )?card|"
+    r"someone (is using|used|has used) my (card|account)|my (card|account) (was|has been) hacked",
+    r"is (this|it|that) a scam|could (this|it) be a scam|i think i (was|have been|ve been) scammed|i got scammed|"
+    r"i was scammed",
+    r"i (cannot|can't|cant|can not) (pay|afford) (my |the )?(bills|rent)",
+    r"(haluan|voinko|saanko) puhua (ihmisen|asiakaspalvelun|virkailijan|jonkun) kanssa|asiakaspalvelu|"
+    r"(ota )?yhteys pankkiin",
+    r"haluan (tehda valituksen|valittaa)|miten (teen|voin tehda) valituksen",
+    r"korttini (on )?(varastettu|kadonnut|katosi)|kadotin korttini|joku (kayttaa|on kayttanyt) korttiani",
+    r"onko (tama|se|tuo) huijaus(ta)?|minua huijattiin|jouduin huijatuksi",
+    r"en (pysty|voi|saa) maksa(maan|a)? (laskujani|laskuja|vuokraa)|en saa maksettua laskujani",
+]
+
+
+def human_request(question: str) -> bool:
+    """The whole message asks for a human or names a hard topic (#352)."""
+    core = " ".join(re.sub(r"[^\w\s']", " ", fold(question)).split())
+    core = re.sub(r"( please| pls| kiitos)$", "", core)
+    return any(re.fullmatch(fold_pattern(rx), core) for rx in HUMAN_REQUEST)
 
 
 class RuleModel:

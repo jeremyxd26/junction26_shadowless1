@@ -94,11 +94,23 @@ def label_of(name: str) -> str:
     return name.replace("_", " ")
 
 
+SAVINGS_PLAN_METHODS = {   # the savings plan's own method ids (core/tools/savings_plan.py, #369, #466)
+    "total_month_eur": "savings_plan.total_month_eur@1",
+    "total_year_eur": "savings_plan.total_year_eur@1",
+    "first_saving_eur": "what_if.saving_month_eur@1",    # a lever is the what-if tool's saving
+    "other_saving_eur": "what_if.saving_month_eur@1",
+}
+
+
 def method_of(src: dict) -> str:
+    """The method id of a number a source spec produces, as the tool that makes it names it. A source with
+    `plus:` parts (a sum a confused coach would give, #411) is named by its first part."""
     if "metric" in src:
         return f"{src['metric']}.{src['column']}@1"
     if src.get("query") == "bonus":  # the tool's own method ids (core/tools/bonus.py, #216)
         return f"bonus_estimate.{src['column']}_eur@1"
+    if src.get("query") == "savings_plan":
+        return SAVINGS_PLAN_METHODS[src["column"]]
     return {"total_eur": "spending.total@1", "n_tx": "spending.n_tx@1",
             "change_eur": "spending.change@1", "change_pct": "spending.change_pct@1"}[src["column"]]
 
@@ -116,6 +128,17 @@ class ReferenceSource:
         case = self.index.get((customer_id, question))
         if case is None:  # the reference only knows the eval questions
             return Answer(text=REFUSAL["other"][language], outcome="refused", refusal_kind="out_of_scope",
+                          labels=[], tool_calls=[])
+        if case["expect"] == "any":  # the outcome may vary (#419)
+            from core.agent import template
+            lang = language if language in ("en", "fi") else "en"
+            if case.get("intent") == "borrowing":
+                # The app's own credit decision decline ("whether a loan or mortgage would be approved") names
+                # a loan, so a borrowing rule that rejects naming fails here
+                # (review of #437); `--source liars:borrowing` shows that a suggestion fails too.
+                return Answer(text=template.pick(template.REFUSAL["credit_decision"]["text"], lang),
+                              outcome="refused", refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
+            return Answer(text=template.pick(template.CLARIFY_GENERAL["question"], lang), outcome="clarify",
                           labels=[], tool_calls=[])
         if case["expect"] == "meta":  # Sentti introduces itself (#287): the template text and the four chips
             from core.agent import template

@@ -38,19 +38,19 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template
+from core.agent import guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel, meta_intent, unknown_object
-from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
-                                  render, repeated_period, unavailable_claim, validate)
+from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
+                                  plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
@@ -97,14 +97,71 @@ SENTTI_QUESTION = re.compile(
 # After the question phrase and the amount, only these may be left, or the message asks something else
 # ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
 REVIEW_FILLER = re.compile(
-    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
-    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euro|euros|euroa|eurosta|euron|eur|tulee|iso"
+    r"|isosta|minulta|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*)", re.I)
+# The euro words are their exact forms: "eurobonds" or "eurojackpot" is not filler (#447).
 # A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
 # nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
 REVIEW_BARE = re.compile(r"(?:about|me|this|that|it|minulta|sitä|tätä|siitä|tästä|sita|tata|siita|tasta)", re.I)
 _AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
+# The #368 path ("what was that €1,080?", "mikä se 1080 euron ostos oli?") also answers only a message about that
+# purchase and nothing else (#424): after the purchase reference, the amount and the purchase's own date, only the
+# #402 fillers and these purchase-question words may be left ("…and also what is my balance" takes the normal path).
+PURCHASE_FILLER = re.compile(
+    r"(?:was|is|were|oli|on|se|tämä|tuo|tama|what|again|exactly|hey|hi|so|ok|okay|oh|hmm|um|uh|sorry|wait|please|"
+    r"pls|really|actually|just|now|hei|no|siis|taas|nyt|vielä|viela|oikein|tarkalleen|kiitos|mikä|mika)", re.I)
+# The small words of a plain question about the purchase, on both paths (review of #519): "the purchase of €1,080",
+# "what was that €1,080 charge for?", "a purchase at its own store". A closed list of whole words, as the others.
+LINK_FILLER = re.compile(r"(?:of|for|a|an|at|from)", re.I)
+# A question about Sentti's question may call the purchase a charge or a payment as well (review of #519): a list of
+# its own, so the #402 list keeps the same lines as #437's. The #368 path has these in PURCHASE_REFERENCE.
+REVIEW_PURCHASE_WORDS = re.compile(
+    r"(?:charge|charges|payment|payments|maksu|maksun|maksua|maksusta|maksuun|maksut|maksuista)", re.I)
+# A day and month without a year ("… on 3.5.") and a date with slashes ("28/9/2026", "28/9") are named dates as well,
+# read day first: each must be the purchase's own (review of #519). Not inside a longer number or after a currency or
+# a letter, so "€1,080.42." or "EUR10.12." stays an amount.
+PARTIAL_DATE = re.compile(
+    r"(?<![\w.,/€$£])(\d{1,2})(?:\.(\d{1,2})\.(?![\d,])|/(\d{1,2})(?:/(\d{4}))?(?![\d/]))")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
+
+
+class _Rest(NamedTuple):
+    """What a review-amount message leaves after its question words (#424, review of #519)."""
+
+    alone: bool                   # nothing but filler words is left
+    dates: list[date]             # the dates it names: each must be the purchase's
+    days: list[tuple[int, int, int | None]]   # "3.5.", "28/9/2026": (day, month, year or None), the purchase's own
+    numbers: list[float]          # every number in it, dates aside: each must be the purchase's amount
+
+
+def _partial_dates(text: str) -> tuple[list[tuple[int, int, int | None]], str]:
+    """The dates find_dates leaves ("3.5.", "28/9/2026", "28/9") as (day, month, year or None), and the text with
+    them blanked."""
+    found: list[tuple[int, int, int | None]] = []
+
+    def blank(m: re.Match) -> str:
+        day, month = int(m.group(1)), int(m.group(2) or m.group(3))
+        if 1 <= day <= 31 and 1 <= month <= 12:
+            found.append((day, month, int(m.group(4)) if m.group(4) else None))
+            return " "
+        return m.group(0)
+
+    return found, PARTIAL_DATE.sub(blank, text)
+
+
+def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
+    """The pending purchase's own category (in both languages) and merchant label as whole-phrase patterns,
+    longest first: naming them points at that purchase, like its own date (review of #519). Another category
+    or store is another clause."""
+    category = card.get("category") or ""
+    labels = {category, *tool_config.CATEGORY_LABELS.get(category, ()), ((card.get("merchant") or {}).get("label") or "")}
+    out = []
+    for label in sorted((x for x in labels if x), key=len, reverse=True):
+        words = re.findall(r"\w+", label)
+        if words:
+            out.append(re.compile(r"\b" + r"(?:\W+(?:and|ja)\W+|\W+)".join(map(re.escape, words)) + r"\b", re.I))
+    return out
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -164,6 +221,24 @@ class DataAccess(Protocol):
 
     # Optional: `connection_if_free(wait)` gives a connection only if one is free within `wait`
     # seconds and raises DataUnavailable otherwise. Without it, a turn's calls run one by one.
+
+
+def _labels_in(views: Any) -> list[str]:
+    """Every label in the tools' model views: the user's own words for their data (#419)."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("label"), str):
+                found.append(node["label"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(views)
+    return found
 
 
 def error_envelope(code: str, language: str) -> dict[str, Any]:
@@ -314,8 +389,14 @@ class Pipeline:
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
+        foreign = bool(CYRILLIC.search(message))
         if meta is not None:
-            return self._introduce(meta, "en" if CYRILLIC.search(message) else lang, emit, a)
+            return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
+        if foreign and not re.search(r"[A-Za-z]", message):   # #352: a language Sentti does not speak
+            return self._introduce("language", "en", emit, a)
+        if human_request(message):   # #352: a human or a hard topic: the refusal with the way to the bank (#420)
+            a.planner_turns.append({"round": 1, "source": "rules", "human_request": True})
+            return self._refuse("out_of_scope", lang, emit, a)
 
         # The customer is bound here, from the request, and never from model output (R4).
         # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
@@ -406,7 +487,7 @@ class Pipeline:
                     clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
-                # question is the normal answer (#341, r-coord's decision).
+                # question is the normal answer (#341).
                 a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
@@ -769,6 +850,17 @@ class Pipeline:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
                         errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                    joined = validator.amount_with_bank_product(draft.text, numbers)
+                    if joined:
+                        # #417: an amount next to the bank's screen or product reads as advice to put it
+                        # there. Model drafts only, like the checks above; templates are checked by tests.
+                        errors.append(f"'{joined}': never tell the user to put an amount into the bank's "
+                                      "screen or product (S-mobiili, monthly saving, a fund); state the amount "
+                                      "alone, the card's button opens the screen")
+                    # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
+                    # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
+                    errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
+                                             labels=_labels_in(request.data))
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
@@ -803,11 +895,20 @@ class Pipeline:
             emit(event, payload)
         return send
 
-    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
-        """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
-        which the app renders as question chips): outcome "answered", nothing cited, no warning."""
-        a.introduced = template.meta_text(intent, lang) == template.pick(template.INTRO, lang)
-        text = self._deliver(template.meta_text(intent, lang), {}, emit)
+    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer, foreign: bool = False) -> str:
+        """Sentti's introduction (or a thank-you, the privacy answer, the language line) and the four brief
+        questions as chips (done.follow_ups, which the app renders as question chips): outcome "answered",
+        nothing cited, no warning. The full introduction comes once per conversation; a later greeting,
+        identity, capabilities or help message gets one short sentence (#352). A message in Russian gets the
+        English text and the line that Sentti answers in English or Finnish."""
+        conv = a.conversation
+        text = template.meta_text(intent, lang, introduced=conv is not None and conv.introduced)
+        a.introduced = text == template.pick(template.INTRO, lang)
+        if a.introduced and conv is not None:
+            conv.introduced = True
+        if foreign:
+            text = f"{text} {template.pick(template.LANGUAGE, 'en')}"
+        text = self._deliver(text, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
@@ -850,13 +951,18 @@ class Pipeline:
         return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
-        text, refusal = template.refusal(kind, lang)
+        text, refusal = template.refusal(kind, lang, a.question)
         text = self._deliver(text, {}, emit)
         a.outcome, a.refusal, a.text, a.text_rendered = "refused", refusal, text, text
+        if kind == "out_of_scope" and template.made_up_request(a.question):
+            # #352: no made-up or forecast number; the chips offer the typical income instead
+            follow_ups = [template.pick(template.MADE_UP_CHIP, lang), *template.brief_questions(lang)[:2]]
+        elif kind == "out_of_scope":
+            follow_ups = template.brief_questions(lang)   # the generic decline: the four brief questions (#287)
+        else:
+            follow_ups = template.follow_ups(a.question, lang, refused=True)
         emit("done", {"answer_id": a.answer_id, "outcome": "refused", "text": text, "text_rendered": text, "cited": [],
-                      # The generic decline offers the four brief questions as chips (#287).
-                      "follow_ups": template.brief_questions(lang) if kind == "out_of_scope"
-                      else template.follow_ups(a.question, lang, refused=True), "lesson": None,
+                      "follow_ups": follow_ups, "lesson": None,
                       "refusal": refusal, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
@@ -910,22 +1016,38 @@ class Pipeline:
             return None
 
     @staticmethod
-    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> tuple[bool, list[date]]:
+    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool, lang: str) -> _Rest:
         """The message asks only about Sentti's question: after the question phrase, the amount and any date,
         nothing is left but filler words and punctuation (a confident full match, as the other rules).
         Without an amount it also needs an anchor (a purchase word or "this question", in the phrase or
-        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Returns the
-        dates it removed: the caller checks they are the purchase's own date."""
+        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Also returns the
+        dates and numbers it found: the caller checks they are the purchase's."""
         spans, rest = find_dates(message[:phrase.start()] + " " + message[phrase.end():], blank_all=True)
+        days, rest = _partial_dates(rest)
         words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
-        dates = [span.start for span in spans]
-        if any(not REVIEW_FILLER.fullmatch(w) for w in words):
-            return False, dates
+        found = ([span.start for span in spans], days, [v for v, _ in scan_numbers(rest, lang)])
+        if any(not (REVIEW_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w) or REVIEW_PURCHASE_WORDS.fullmatch(w))
+               for w in words):
+            return _Rest(False, *found)
         if has_amount:
-            return True, dates
-        anchored = (any(REVIEW_ANCHOR.fullmatch(w) for w in words) or re.search(r"question|kysym", phrase.group(0), re.I)
-                    or all(REVIEW_BARE.fullmatch(w) for w in words))
-        return bool(anchored), dates
+            return _Rest(True, *found)
+        anchored = (any(REVIEW_ANCHOR.fullmatch(w) or REVIEW_PURCHASE_WORDS.fullmatch(w) for w in words)
+                    or re.search(r"question|kysym", phrase.group(0), re.I) or all(REVIEW_BARE.fullmatch(w) for w in words))
+        return _Rest(bool(anchored), *found)
+
+    @staticmethod
+    def _only_about_the_purchase(message: str, own: list[re.Pattern], lang: str) -> _Rest:
+        """The #368 path's message asks only about the purchase (#424): after the purchase's own category and
+        merchant label (`own`), every purchase reference, the amounts and any date, nothing is left but filler
+        words. Also returns the dates and numbers it found (the caller checks they are the purchase's)."""
+        for name in own:
+            message = name.sub(" ", message)
+        spans, rest = find_dates(PURCHASE_REFERENCE.sub(" ", message), blank_all=True)
+        days, rest = _partial_dates(rest)
+        words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
+        alone = all(REVIEW_FILLER.fullmatch(w) or PURCHASE_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w)
+                    for w in words)
+        return _Rest(alone, [span.start for span in spans], days, [v for v, _ in scan_numbers(rest, lang)])
 
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
@@ -936,8 +1058,8 @@ class Pipeline:
         (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
         phrase = SENTTI_QUESTION.search(message)
-        about_question, named_dates = (self._only_about_the_review(message, phrase, bool(asked)) if phrase
-                                       else (False, []))
+        rest = self._only_about_the_review(message, phrase, bool(asked), lang) if phrase else None
+        about_question = bool(rest and rest.alone)
         if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
@@ -953,12 +1075,20 @@ class Pipeline:
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
         if probe is None:
             return False
+        if not about_question:
+            rest = self._only_about_the_purchase(message, _own_names(probe), lang)
+            if not rest.alone:
+                return False   # "what was that €1,080 and how much did I spend?": the normal path (#424)
         # Any amount in the question must be the purchase's; a question about Sentti's question may name none.
-        if (asked or not about_question) and not any(
-                abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
+        amount = float(probe["amount"]["value"])
+        if (asked or not about_question) and not any(abs(v - amount) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
-        if about_question and any(d != date.fromisoformat(probe["date"]) for d in named_dates):
-            return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
+        if any(abs(v - amount) > REVIEW_AMOUNT_TOLERANCE_EUR for v in rest.numbers):
+            return False   # "what is 10% of that €1,080?", "the €500 from the €1,080 purchase": a second number
+        bought = date.fromisoformat(probe["date"])
+        if any(d != bought for d in rest.dates) or any(
+                (day, month, year or bought.year) != (bought.day, bought.month, bought.year) for day, month, year in rest.days):
+            return False   # "… my purchase on 3 May 2026" or "… on 3.5.": another purchase than Sentti's
         card = self._review_card(ctx, review)
         if card is None:
             return False

@@ -184,7 +184,11 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     key = ("income_count" if income else "count") if count else ("income" if income else "plain")
     if count and _value(view.get("tx_count")) == 1:
         key += "_one"
-    return [SPENT[key][lang][1 if what else 0].format(**fmt)], _ids(total, count)
+    first = SPENT[key][lang][1 if what else 0].format(**fmt)
+    few = pick(config.TEXT["note_too_few"], language)
+    if few in (view.get("notes") or []):
+        return [first, few], _ids(total, count)   # why no monthly habit is shown (#379, #527)
+    return [first], _ids(total, count)
 
 
 # ---- baskets --------------------------------------------------------------------------------------------

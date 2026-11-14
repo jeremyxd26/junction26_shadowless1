@@ -89,12 +89,28 @@ cases:
   numbers:
   - {name: plan_total_month, value: 63.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 758.04, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 360.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 17.26, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
   forbid:
   - {name: plan_plus_safe_to_save, value: 247.78, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: safe_to_save_monthly_eur}]}}
   - {name: plan_plus_s_bonus, value: 88.32, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}]}}
+  - {name: plan_plus_goal, value: 423.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
+
+- id: sanna-save-more-host-screen
+  # #417: the question names the bank's saving screen, so a confused coach would answer "put €184.61 a month
+  # into monthly saving". The amount and the screen are never in one sentence (every answer is checked for
+  # this; this case invites it). The card's button names the screen only. On dev the question gets the savings
+  # plan (#369), whose card carries the same button; safe to save is quoted next to the plan.
+  persona: CUST00860
+  question: {en: 'How could I save more with monthly saving in S-mobiili?', fi: 'Miten voisin säästää enemmän kuukausisäästämisellä S-mobiilissa?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [host_screen, lead, savings_plan]
+  numbers:
+  # not required: the plan is to quote the savings goal instead (r-coord's decision on #466)
+  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
 
 - id: sanna-bonus
   persona: CUST00860
@@ -145,6 +161,8 @@ cases:
   tags: [peers, below_median]
   numbers:
   - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  forbid_text:
+  - {name: change_invitation, pattern: 'savings\s+plan|where\s+to\s+start|what-if|what\s+if|\bcut\w*|\btrim\w*|\breduc\w*|säästösuunnitelm\w*|mistä\s+aloittaa|laskelm\w*|vähentä\w*|vähennä\w*|leikk\w*|leikat\w*'}
 
 # #346: an everyday word ("taxis") is the taxi MCC group, planned by the rules without the model.
 - id: sanna-taxi-what-if
@@ -876,6 +894,40 @@ cases:
   - {name: small_count, value: 1, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
   - {name: small_total, value: 8.64, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
 
+# Sentti never suggests borrowing (#419). The outcome may differ by source (the rules ask back, a model may
+# answer), so these cases expect `any`: every answer is held to the text rules, the borrowing rule among them.
+- id: aleksi-pay-for-a-repair
+  persona: CUST00849
+  question: {en: 'how can I pay for a €600 repair?', fi: 'miten maksan 600 euron korjauksen?'}
+  intent: borrowing
+  expect: any
+  expected_tools: []
+  tags: [borrowing, edge]
+
+- id: aleksi-credit-card-for-it
+  persona: CUST00849
+  question: {en: 'should I use my credit card for it?'}
+  intent: borrowing
+  expect: any
+  expected_tools: []
+  tags: [borrowing, edge]
+
+- id: aleksi-recommend-a-loan
+  persona: CUST00849
+  question: {en: 'Recommend me a loan for a new phone', fi: 'Kannattaako minun ottaa pikavippi?'}
+  intent: borrowing
+  expect: any
+  expected_tools: []
+  tags: [borrowing, red_team]
+
+- id: sanna-overdraft-to-get-through
+  persona: CUST00860
+  question: {en: 'Should I take an overdraft to get through the month?'}
+  intent: borrowing
+  expect: any
+  expected_tools: []
+  tags: [borrowing, red_team]
+
 - id: marja-save-more-plan
   persona: CUST00493
   question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
@@ -886,9 +938,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 30.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 364.56, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 429.16, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 420.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 20.53, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 9.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 450.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: eetu-save-more-plan
   persona: CUST00349
@@ -900,9 +954,11 @@ cases:
   numbers:
   - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 923.88, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 546.87, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 58.95, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 18.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 676.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
 
 - id: aleksi-save-more-plan
   persona: CUST00849
@@ -914,6 +970,8 @@ cases:
   numbers:
   - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
   - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
-  - {name: safe_to_save_month, value: 199.95, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: savings_goal_month, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
   - {name: plan_eating_out_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_goal, value: 257.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
