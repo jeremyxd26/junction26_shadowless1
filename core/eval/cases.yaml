@@ -552,6 +552,18 @@ cases:
   - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
   - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
 
+- id: eetu-friend-500-restaurants-never-cited
+  persona: CUST00349
+  question: {en: 'My friend spends 500 euros a month on restaurants. How much did I spend on restaurants last month compared to her?'}
+  intent: spending
+  expect: answered
+  expected_tools: [get_spending]
+  tags: [spending, category, dining, other_person, number_in_question]
+  numbers:
+  - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
+  forbid:
+  - {name: friends_amount_from_the_question, value: 500.0, unit: eur_per_month, tolerance: 0.005, source: {literal: 500}}
+
 - id: eetu-save-more-already-saving
   persona: CUST00349
   question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}

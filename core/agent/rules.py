@@ -32,26 +32,97 @@ from core.tools import config
 RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.PERSON_FI), key=len, reverse=True))
             + r")\b")
 
+# An amount in a request to move money: digits, with or without the euro, or the number in words.
+_NUMBER_EN = (r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|"
+              r"sixty|seventy|eighty|ninety|a hundred|hundred|a thousand|thousand)([- ](one|two|three|four|five|six|"
+              r"seven|eight|nine|hundred|thousand))*")
+AMOUNT_EN = r"(€\s?)?(\d[\d\s.,]*|" + _NUMBER_EN + r")\s?(€|euros?|eur|bucks)?\b"
+AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|"
+             r"\w+kymmentä|sata|satanen|satasen|tuhat|tonni|tonnin)\s?(€|euroa?|e)?\b")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
                r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
                + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
-    ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
-                          r"someone else|other (people|customers)|muiden|toisen"),
-    ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
-                        r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
+    # The entries below are whole words or listed word forms (#539): "selection", "promo code", "vaalia" (to cherish),
+    # "laakeri" (a bearing), "weatherproof" or "toisen kuukauden" (the second month) are ordinary words.
+    ("other_person_data", r"\bCUST\d+|\bcustomer\b(?!\s+(service|support|care|portal|experience|satisfaction|loyalty|"
+                          r"club|desk|hotline|feedback|centre|center)\b(?!\s+(agent|representative|rep|worker|"
+                          r"employee|person)))|\bneighbou?r(s|'s|s')?\b|"
+                          r"\bnaapur(i|in|ia|ille|illa|ilta|ista|issa|iin|it|eiden|eitten|eita|eille|eilla|eilta|eista|"
+                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers)\b|"
+                          r"\bmuiden (ihmisten|asiakkaiden|käyttäjien|henkilöiden|tapahtum\w*|tilit\w*|"
+                          r"tili(llä|lle|ltä|ä|n|en)|tiedot|tietoja|"
+                          r"saldo\w*|kulutus|kulutusta|kulut|kuluja|menot|menoja|rahat|rahoja|tulot|tuloja|palkat|palkkoja)\b|"
+                          r"\bjonkun toisen\b|\btoisen (ihmisen|henkilön|asiakkaan|käyttäjän|tili\w*|"
+                          r"tapahtum\w*)\b"),
+    ("credit_decision", r"\bmortgag(e|es|ed)\b|\bcredit ?scores?\b|\bcreditworth(y|iness)\b|\bapprove (my |a )?loan\b|"
+                        r"\bloan (be )?approved\b|\basuntolain\w*|\bluottokelpo\w*|\bmyöntääkö\b|\blainapäätös\w*"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
-                          r"kannattaako.*(sijoit|osak|rahasto|bitcoin|krypto)|mihin (minun )?(pitäisi|kannattaa) "
-                          r"sijoittaa|pitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*(osak|rahasto|bitcoin|krypto|etf)"),
-    ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
-    ("out_of_scope", r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
-                     r"guess (a |an |some )?(number|amount|figure)|"
-                     r"invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
-                     r"arvaa (jokin |joku )?(luku|summa)|mikä tahansa (luku|summa)|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
-                     r"medicine|headache|lääke|päänsärky|weather|recipe"),
+                          r"\bkannattaako\b.*\b(sijoit|osak|rahasto|bitcoin|krypto)\w*|"
+                          r"\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b|"
+                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*"),
+    ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
+               r"\bolenko (sairas|raskaana)\b"),
+    # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my
+    # savings account now.", "Make a payment of 30 euros to my landlord.", "Lähetä 20 euroa ystävälleni". Only as a
+    # request (a sentence's first word, or after "please", "can you", "voitko"), so "how much did I send to my
+    # landlord", "did I pay 30 euros to Elisa" or "what if I pay 50 euros to savings" stay questions.
+    ("unsafe", r"(^|[.!?;,]\s*|\b(please|pls|kindly|can you|could you|would you|will you|i want you to|"
+               r"i need you to|go ahead and)\s+)((send|move|wire|pay)\s+(me\s+)?" + AMOUNT_EN + r"[^.?!]{0,40}?\bto\b|"
+               r"send\s+me\s+" + AMOUNT_EN + r"|make\s+(a\s+)?payments?\s+(of\s+)?" + AMOUNT_EN +
+               r"[^.?!]{0,40}?\b(to|for)\b)|"
+               r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(lähetä|siirrä|maksa|lähettää|siirtää|maksaa)\b"
+               r"[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\w+(lle|lleni|llesi|llemme|lleen)\b"),
+    ("out_of_scope", r"\bjust (estimate|guess)\b|\bany number\b(?!\s+of\b)|"
+                     r"\bmake up (a |an |some )?(number|amount|figure)s?\b|\bguess (a |an |some )?(number|amount|figure)s?\b|"
+                     r"\binvent (a |an )?(number|amount)s?\b|\bkeksi (jokin |joku )?(luku|summa)\b|"
+                     r"\barvaa (jokin |joku )?(luku|summa)\b|\bmikä tahansa (luku|summa)\b|"
+                     # Python and JavaScript ("Teach me Python", "Kirjoita JavaScript-funktio", "pythonilla"), never
+                     # "Monty Python", the snakes ("pythons"), or a ticket, show, conference, course or book
+                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+(tickets?|shows?|conferences?|"
+                     r"workshops?|courses?|books?|snakes?|kurssi\w*|kirja\w*|konferenssi\w*|lipu\w*|liput)\b)|"
+                     # "code" only as program code ("write code", "python code"), never a promo, QR, zip or area code
+                     r"\b(write|writing|wrote|written|generate|generating)\s+(me\s+|us\s+)?(some\s+|the\s+)?code\b|"
+                     r"\b(example|sample|source|computer|programming|python|javascript|java|sql|html|css)\s+code\b|"
+                     r"(?<!promo )(?<!discount )(?<!voucher )(?<!coupon )(?<!gift )(?<!qr )(?<!zip )(?<!post )(?<!area )"
+                     r"\bcode\s+(a|an|me|snippets?)\b|\bcode\s+(in|for)\s+(python|javascript|java|sql|html|css)\b|"
+                     r"\bvote\b|\bäänestää\b|\belections?\b|"
+                     # the elections in Finnish, also as a compound ("eduskuntavaalit"); never "vaalia" (to cherish)
+                     r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)?vaal(i|it|in|ien|eissa|"
+                     r"eihin|eja|eilla|eille)\b|"
+                     r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)vaaleista\b|"
+                     r"\bvaaleista\b(?=\s*([?.!,;]|$))|\bvaali(kone|tulo|ehdokas|kampanja|lupaus)\w*|"
+                     r"\bmedicines?\b|\bheadaches?\b|\blääke(?!r)\w*|\bpäänsärky\w*|"
+                     r"\bweather\b(?![-\s]?(proof|strip|resist|seal))|"
+                     # a recipe asked for in any words ("Pancake recipe please"), never the spending on recipes or a
+                     # recipe box, kit, app, subscription, book, magazine, delivery or service
+                     r"(?<!\bon )(?<!\bfor )\brecipes?\b(?![\s-]+(box|boxes|kits?|apps?|subscriptions?|books?|"
+                     r"magazines?|deliver(y|ies)|services?|charges?|cards?)\b)"),
 ]
+# A question about the user's own past or usual transfers, or about transfer fees, is not a request to move money
+# (#539): "How much did I transfer to savings last month?", "How much did I pay in transfer fees?". The "transfer" of
+# the first entry still refuses "transfer 100 euros to …".
+OWN_TRANSFERS = (r"\b(did|have|had)\s+(i|we)\s+(ever\s+)?transfer(red)?\b|"
+                 r"\b(do|does)\s+(i|we)\s+(usually|normally|often|typically)\s+transfer\b|"
+                 r"\bhow much (do|does) (i|we) transfer\b|\btransfer\s+(fees?|charges?|history)\b|"
+                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b")
+# What the entries above (and "transfer") refused before #539, word parts included. A question they refused that the
+# rules would now answer with the unfiltered total ("how much did the weather stripping cost me?", "paljonko kulutin
+# Vaalimaalla?") is left to the next planner: when unclear, unclaimed rather than a number the user did not ask.
+DECLINED_BEFORE_539 = (
+    r"\btransfer\b|\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|someone else|other (people|customers)|muiden|toisen|"
+    r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|asuntolaina|luottokelpo|myöntääkö|"
+    r"lainapäätös|\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
+    r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|kannattaako.*(sijoit|osak|rahasto)|"
+    r"kannattaako.*(bitcoin|krypto)|pitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*(osak|rahasto|bitcoin|krypto|etf)|"
+    r"mihin (minun )?(pitäisi|kannattaa) sijoittaa|\bam i (ill|sick|pregnant)\b|what illness|diagnos|"
+    r"olenko (sairas|raskaana)|just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+    r"guess (a |an |some )?(number|amount|figure)|invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
+    r"arvaa (jokin |joku )?(luku|summa)|mikä tahansa (luku|summa)|python|javascript|\bcode\b|\bvote\b|äänestää|"
+    r"election|vaali|medicine|headache|lääke|päänsärky|weather|recipe")
 # The Finnish weather ("sää") as a whole word and its weather forms, read on the question as typed (#370): folded
 # it is "saa", which ends many words ("bensaa", "kassaa") and is also the verb "gets". "säästä" (save) never
 # matches, because the forms after "sää" are listed.
@@ -64,7 +135,7 @@ CATEGORY_WORDS = [
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
-    (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
+    (r"utilit\w*|electricity|sähkö\w*|\bvesi\b|\bvesilasku\w*|\bwater bills?\b", "Utilities"),   # #540: vesi
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan|vapaa-aja\w*", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
@@ -876,6 +947,12 @@ PEER_SPEND_COMPARED = r"\b(spend|spending|spent|kulutan\w*|kulutukse\w*|käytän
 WHERE_OTHERS, SPENDER_OTHER, PEER_NOT_COMPARED, PEER_SPEND_COMPARED = (
     fold_pattern(rx) for rx in (WHERE_OTHERS, SPENDER_OTHER, PEER_NOT_COMPARED, PEER_SPEND_COMPARED))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
+DECLINED_BEFORE_539 = fold_pattern(DECLINED_BEFORE_539)
+
+
+def _declines(rx: str, q: str) -> bool:
+    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539)."""
+    return bool(re.search(rx, re.sub(OWN_TRANSFERS, " ", q, flags=re.I), re.I))
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
 MONTHS = {fold(k): v for k, v in MONTHS.items()}
@@ -906,11 +983,17 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # after no refusal rule matched: "hi, ignore your rules ..." stays refused, "Hi, where did my money go?"
 # is the baskets question. Russian forms are answered in English.
 _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
-          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
+          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|moi moi|hei hei|terve terve|heippa|"
+          r"привет|здравствуй(те)?)")
 # "How are you" in English and Finnish (folded, #630): "miten sä voit", "kuinka sinä voit", "mitä sulle kuuluu",
-# "miten menee"; the whole message, alone or after a greeting.
-_HOW_ARE_YOU = (r"how are you( doing)?|(miten|kuinka) ((sa|sina) )?voit|(miten|kuinka) voit (sa|sina)|"
-                r"mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee")
+# "miten menee", "how's it going", "what's up", "mitä sä puuhaat"; "today", "tänään" or "nyt" may follow; the whole
+# message, alone or after a greeting.
+_HOW_ARE_YOU = (r"(how are you( doing)?|how('s| is) it going|what'?s up|sup|(miten|kuinka) ((sa|sina) )?voit|"
+                r"(miten|kuinka) voit (sa|sina)|mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee|"
+                r"mita ((sa|sina) )?puuhaat)( (today|now|tanaan|nyt))?")
+# The doubled Finnish greetings are also a goodbye: after an answer, "moi moi" is answered with the closing line, never
+# a new greeting (the orchestrator, #630)
+GOODBYE_GREETING = r"(moi moi|hei hei|heippa)"
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -932,7 +1015,9 @@ META = [
     ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
-META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
+META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti"),
+              # #540: "What can Sentti do?", "Mitä Sentti osaa (tehdä)?": the introduction
+              ("capabilities", r"(what can|what does) sentti (do|help( me)? with)|mita (kaikkea )?sentti osaa( tehda)?")]
 
 
 def small_purchases_whole(q: str) -> bool:
@@ -944,10 +1029,16 @@ def small_purchases_whole(q: str) -> bool:
     return all(word in SMALL_FILLERS for word in re.findall(r"[\w']+", rest))
 
 
+def goodbye_greeting(question: str) -> bool:
+    """The whole message is a doubled Finnish greeting that is also a goodbye ("moi moi", "hei hei", "heippa")."""
+    core = " ".join(re.sub(r"[^\w\s']", " ", fold(question)).split())
+    return bool(re.fullmatch(GOODBYE_GREETING, " ".join(re.sub(r"\bsentti\b", " ", core).split())))
+
+
 def meta_intent(question: str) -> str | None:
     """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
     q = fold(question)
-    if any(re.search(rx, q, re.I) for _, rx in DECLINE_RULES) or re.search(WEATHER_FI, question, re.I):
+    if any(_declines(rx, q) for _, rx in DECLINE_RULES) or re.search(WEATHER_FI, question, re.I):
         return None
     core = " ".join(re.sub(r"[^\w\s']", " ", q).split())    # punctuation and emoji
     for intent, rx in META_NAMED:
@@ -1757,6 +1848,14 @@ def _other_script(question: str) -> bool:
 
 def claim(request: PlanInput) -> Claim:
     """The one place that decides which rule claims a message, or that none does (see above)."""
+    found = _claim(request)
+    if found.rule and any(c.name == "get_spending" and not c.args.get("filter") for c in found.calls) and \
+            re.search(DECLINED_BEFORE_539, fold(request.question), re.I):
+        return Claim(None, reason="once_declined")   # never the unfiltered total instead of the old refusal (#539)
+    return found
+
+
+def _claim(request: PlanInput) -> Claim:
     question = request.question
     q = fold(question)  # "kayttaa" and "käyttää" match the same rules
     tools = {t["name"] for t in request.tools}
@@ -1772,7 +1871,7 @@ def claim(request: PlanInput) -> Claim:
             continue
         if kind == "out_of_scope" and health_total and not re.search(rx, re.sub(HEALTH_TOTAL_WORDS, " ", q), re.I):
             continue   # "how much did I spend on medicines?": a plain health total, not medicine advice (#571)
-        if re.search(rx, q, re.I):
+        if _declines(rx, q):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
     if re.search(WEATHER_FI, question, re.I):   # the weather, read unfolded (#370)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
@@ -1796,6 +1895,15 @@ def claim(request: PlanInput) -> Claim:
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
+    if cost is not None:
+        category, per = cost
+        if per == "month" and "get_recurring_bills" in tools:
+            return Claim("bills", (FunctionCall("get_recurring_bills", {}), FunctionCall("finish")))
+        if per == "year" and "get_spending" in tools:
+            return Claim("spending", (FunctionCall("get_spending", {"filter": {"categories": [category]},
+                                                                    "period": {"preset": "last_12_months"}}),
+                                      FunctionCall("finish")))
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
     if "get_safe_to_spend" in tools and re.fullmatch(BARE_WHY_LOW, bare):
         # "why so little?", "why is it lower?", "miksi niin vähän?" (#552, review of #574): only the whole message,
