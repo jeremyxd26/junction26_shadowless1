@@ -45,8 +45,9 @@ REFERENCE: dict[str, tuple[Any, str]] = {
     "everyday_spending": (600.41, "docs/design/personas.md:136"),
     "unclassified_pending": (180.07, "docs/design/personas.md:89: 1,080.42 / 6 (the one-off over the 6-month window)"),
     "spike_amount": (1080.42, "docs/design/personas.md:89"),
-    "safe_to_spend": (180.26, "docs/design/personas.md:109; contracts/api.md section 10 (after Needed)"),
-    "safe_to_spend_pending": (221.58, "contracts/api.md section 10 (while the review is pending)"),
+    "safe_to_spend": (97.46, "docs/design/metrics.md section 3, #391: after Needed (the savings goal 360 stays)"),
+    "safe_to_spend_pending": (138.79, "docs/design/metrics.md section 3, #391: while the review is pending, after "
+                                      "the savings goal 360"),
     "what_if_baseline_month": (229.56, "docs/design/personas.md:191 (dining out)"),
     "what_if_saving_month": (45.91, "docs/design/personas.md:191 (dining out, 20%)"),
 }

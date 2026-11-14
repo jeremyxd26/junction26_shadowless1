@@ -60,7 +60,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, lead]
   numbers:
-  - {name: safe_to_spend_week, value: 180.26, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 97.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -171,7 +171,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 175.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 78.86, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: marja-q4-dining-what-if
   persona: CUST00493
@@ -224,7 +224,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 285.21, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 147.23, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: eetu-q4-dining-what-if
   persona: CUST00349
@@ -277,7 +277,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, young_adult]
   numbers:
-  - {name: safe_to_spend_week, value: 166.84, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 123.15, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 

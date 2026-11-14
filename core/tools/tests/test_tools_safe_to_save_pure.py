@@ -56,6 +56,9 @@ def row(**changes) -> dict:
         "everyday_until_payday_eur": "295.28", "safe_to_save_eur": "12272.28", "save_reason": None,
         "save_reason_category": None, "save_reason_month_eur": None,
         "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+        # the weekly figure after the savings goal (#391), from the same row
+        "week_start": date(2026, 10, 1), "week_end": date(2026, 10, 7), "balance_limit_7d_eur": "5864.86",
+        "budget_limit_7d_eur": "97.46", "safe_to_spend_7d_eur": "97.46", "savings_goal_eur": "360.00",
     }
     base.update(changes)
     return {k: Decimal(v) if isinstance(v, str) and re.fullmatch(r"-?[0-9.]+", v) else v for k, v in base.items()}
@@ -161,7 +164,11 @@ def test_nothing_negative_and_no_digits_in_free_text(changes, language):
     result, _ = run(row(**changes), language)
     card = result.card.model_dump(mode="json")
     assert all(n["value"] >= 0 and not n["display"].startswith("-") for n in numbers_of(card))
-    texts = [card["title"], card["subtitle"], card["stock_explanation"], card["estimate"]["text"]]
+    # The subtitle's only digits are the displays of the goal, safe to save and the weekly figure (#391).
+    subtitle = card["subtitle"]
+    for n in (result.data.savings_goal, result.data.monthly, result.data.safe_to_spend_week):
+        subtitle = subtitle.replace(n.display, "")
+    texts = [card["title"], subtitle, card["stock_explanation"], card["estimate"]["text"]]
     texts += [c["label"] for c in card["monthly_components"] + card["stock_components"]]
     texts += [card["reason"]["text"]] if card["reason"] else []
     assert not any(re.search(r"[0-9]", t) for t in texts), texts

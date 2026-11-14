@@ -169,8 +169,14 @@ for _col, _unit, _en, _fi in [
     ("essentials_reserve_eur", Unit.EUR, "Essentials reserve", "Välttämättömien varaus"),
     ("irregular_reserve_eur", Unit.EUR, "Irregular reserve", "Odottamattomien varaus"),
     ("cushion_eur", Unit.EUR, "Cushion", "Puskuri"),
+    ("savings_goal_eur", Unit.EUR_PER_MONTH, "Savings goal set aside first", "Ensin sivuun laitettava säästötavoite"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+METHODS["safe_to_spend.usual_week_eur@1"] = MethodInfo(
+    Unit.EUR_PER_WEEK, ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),
+    ("Usual everyday spending in a typical month of the last six, per week (x 7 / 30.4375).",
+     "Tavallinen arkikulutus kuuden viime kuukauden tavallisessa kuukaudessa viikkoa kohden (x 7 / 30,4375)."),
+    METRICS_DOC + "#3-safe-to-spend")
 # Safe to save (#165), output columns of the same file (metrics.md section 3.1).
 for _col, _unit, _en, _fi in [
     ("safe_to_save_monthly_eur", Unit.EUR_PER_MONTH, "Typically left each month", "Tavallisesti jää kuukaudessa"),
