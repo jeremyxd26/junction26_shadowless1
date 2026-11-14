@@ -63,7 +63,11 @@ CATEGORY_WORDS = [
 ]
 # A word inside a compound that names something else is no group (#497): "parking fines", "pysäköintisakko",
 # "the cinema club", "elokuvakerho"; and "Cinemax" is no cinema (whole words only).
-PARKING_WORDS = r"parking(?!\s+(fines?|tickets?)\b)|pysäköin(?!\w*sak)\w*|parkki(?!\w*sak)\w*"
+PARKING_WORDS = r"parking(?!\s+(fines?|tickets?)\b)|pysäköin(?!\w*(sak|virhe))\w*|parkki(?!\w*(sak|virhe))\w*"
+# Those compounds name a thing no filter maps: the message is left unclaimed (named_object), never answered with
+# the unfiltered total or the user's bills (review of #514). Matched on the folded message.
+COMPOUND_OBJECT = (r"\bparking (fines?|tickets?)\b|\bpysakoin\w*(sak|virhe)\w*|\bparkki\w*(sak|virhe)\w*|"
+                   r"\bcinema clubs?\b|\belokuv\w*kerho\w*")
 # "takeaway" the food, not "the main takeaway from …" / "one takeaway" (a key point)
 TAKEAWAY_WORDS = (r"(?<!key )(?<!main )(?<!big )(?<!biggest )(?<!one )take-?aways?(?!\s+(from|of)\b)|"
                   r"fast food|noutoruo\w*|pikaruo\w*")
@@ -135,12 +139,19 @@ def _months_mentioned(question: str, as_of: date) -> list[tuple[int, int]]:
     return out
 
 
+def _groups(q: str, categories: list[str]) -> list[str]:
+    """The MCC groups a folded question names, without a sub-group whose own category it also names (#497 review):
+    "restaurants and bars" is Restaurants, which holds the bars, never the bars alone."""
+    return [g for rx, g in MCC_GROUP_WORDS
+            if re.search(rx, q) and config.MCC_SUBGROUP_CATEGORY.get(g) not in categories]
+
+
 def plan_spending(question: str, as_of: date) -> dict | None:
     """get_spending arguments for a spending question, or None if no period can be found."""
     q = fold(question)
     args: dict = {}
     categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
-    groups = [g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)]
+    groups = _groups(q, categories)
     flt = {}
     if groups:
         flt["mcc_groups"] = groups
@@ -255,11 +266,16 @@ WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
 NAMED_PLACE = re.compile(r"(?<!^)(?<![.!?]\s)\b(?!I\b)[A-Z][\w'&-]*\s+(?:pubs?|bars?|cinemas?|takeaways?|"
                          r"tax(?:i|is)|parking)\b")
 AT_NAME = re.compile(r"\b(?:at|from)\s+(?:the\s+)?([A-Z][\w'&-]*)")
+# ... or a capitalised group noun followed by a capitalised name ("Bar Loose", "Cinema Nova"; review of #514).
+GROUP_THEN_NAME = re.compile(r"\b(?:Pubs?|Bars?|Cinemas?|Takeaways?|Tax(?:i|is)|Parking)\s+(?!I\b)([A-Z][\w'&-]*)")
 
 
 def named_object(question: str) -> bool:
-    """The message names a place (a merchant, a club) rather than a group or category (#497)."""
-    if NAMED_PLACE.search(question):
+    """The message names a place (a merchant, a club) or a thing (a parking fine) rather than a group or category
+    (#497)."""
+    if NAMED_PLACE.search(question) or re.search(COMPOUND_OBJECT, fold(question)):
+        return True
+    if any(fold(m.group(1)) not in MONTHS for m in GROUP_THEN_NAME.finditer(question)):
         return True
     for m in AT_NAME.finditer(question):
         word = fold(m.group(1))
@@ -496,7 +512,7 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
 # "What is in my everyday spending?", the baskets card's button (#403): the basket's spending by category over
 # the card's window (the last 6 months) or a period the user named.
 BASKET_CONTENTS_BASKETS = [
-    (r"everyday spending|arjen kulutuk\w*", "everyday_spending"),
+    (r"everyday spending|arjen kulutu\w*", "everyday_spending"),
     (r"unexpected necessit\w*|odottamattom\w* välttämättöm\w*", "unexpected_necessities"),
     (r"regular essentials?|säännöllis\w* välttämättöm\w*", "regular_essentials"),
 ]
@@ -505,9 +521,12 @@ BASKET_CONTENTS_BASKETS = [
 _BASKETS_EN = r"(everyday spending|unexpected necessit(y|ies)|regular essentials?)"
 _BASKETS_FI = (r"(arjen kulutukse(en|eni)|odottamattomiin välttämättömiin( menoihin(i)?)?|"
                r"säännöllisiin välttämättömiin( menoihin(i)?)?)")
+# ... and what a basket means (review of #514): "mitä arjen kulutus tarkoittaa", "mitä on arjen kulutus"
+_BASKETS_FI_NAME = r"(arjen kulutus|odottamattomat välttämättömät( menot)?|säännölliset välttämättömät( menot)?)"
 BASKET_CONTENTS = (r"\bwhat('s| is| are) (in (my )?)?(an? )?" + _BASKETS_EN + r"\b|"
                    r"\bwhat counts as (an? )?" + _BASKETS_EN + r"\b|\bwhat goes (in|into) (my )?" + _BASKETS_EN + r"\b|"
-                   r"\bmitä " + _BASKETS_FI + r" kuuluu\b|\bmitä kuuluu " + _BASKETS_FI + r"\b")
+                   r"\bmitä " + _BASKETS_FI + r" kuuluu\b|\bmitä kuuluu " + _BASKETS_FI + r"\b|"
+                   r"\bmitä (on|tarkoittaa) " + _BASKETS_FI_NAME + r"\b|\bmitä " + _BASKETS_FI_NAME + r" tarkoittaa\b")
 INTENTS = [
     ("basket_contents", BASKET_CONTENTS),
     # Small everyday purchases (#256): only the plain question is claimed (small_purchases_whole); a cut or a
@@ -689,8 +708,8 @@ class Claim:
 
 
 def _filter_of(q: str) -> dict:
-    groups = [g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)]
     categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    groups = _groups(q, categories)
     return {"mcc_groups": groups} if groups else {"categories": categories} if categories else {}
 
 
@@ -845,9 +864,13 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
-    if "spending" in found and named_object(question):
-        found.remove("spending")   # a named place is never answered with a group's or the whole total (#497)
-        if not found:
+    if named_object(question):
+        # a named place is never answered with a group's or the whole total (#497), and a parking fine never with
+        # the user's bills (review of #514)
+        dropped = [f for f in found
+                   if f == "spending" or (f == "recurring_bills" and re.search(COMPOUND_OBJECT, q))]
+        found = [f for f in found if f not in dropped]
+        if dropped and not found:
             return Claim(None, reason="named_object")   # the model, or the general question back (not the period)
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads

@@ -278,8 +278,52 @@ def test_a_name_or_a_compound_is_not_the_whole_group(question, lang):
     assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], (question, found)
 
 
+@pytest.mark.parametrize("question,lang", [   # review of #514, F1 and F3: a compound or a name, never a total
+    ("how much did I spend on parking fines last month", "en"),
+    ("how much did I spend on parking tickets last month", "en"),
+    ("paljonko kulutin pysäköintisakkoihin viime kuussa", "fi"),
+    ("paljonko maksoin pysäköintivirhemaksuja viime kuussa", "fi"),
+    ("paljonko maksoin parkkisakkoja viime kuussa", "fi"),
+    ("how much did I spend at the cinema club last month", "en"),
+    ("paljonko kulutin elokuvakerhoon viime kuussa", "fi"),
+    ("how much did I spend at Bar Loose last month", "en"),
+    ("how much did I spend at Cinema Nova in August", "en"),
+])
+def test_spending_on_a_compound_or_a_name_after_a_group_noun_is_left_unclaimed(question, lang):
+    found = ask(question, lang)
+    assert found.rule is None and not found.calls and found.reason == "named_object", (question, found)
+
+
+def test_a_what_if_on_a_name_after_a_group_noun_asks_back():
+    found = ask("what if I cut Bar Loose by 10%")
+    assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], found
+
+
+@pytest.mark.parametrize("question,lang", [   # review of #514, F4: no bills answer for a parking fine
+    ("parking fine 80 euros, is it a bill?", "en"),
+    ("Is my parking ticket a bill?", "en"),
+    ("Onko pysäköintisakko lasku?", "fi"),
+])
+def test_a_parking_fine_question_never_gets_the_bills(question, lang):
+    found = ask(question, lang)
+    assert found.rule is None and not [c for c in found.calls if c.name == "get_recurring_bills"], (question, found)
+
+
+@pytest.mark.parametrize("question,lang,category", [   # review of #514, F2: the category holds its sub-group
+    ("how much did I spend on restaurants and bars last month", "en", "Restaurants"),
+    ("how much did I spend on bars and restaurants in August", "en", "Restaurants"),
+    ("how much did I spend on restaurants and takeaway last month", "en", "Restaurants"),
+    ("paljonko kulutin ravintoloihin ja baareihin viime kuussa", "fi", "Restaurants"),
+    ("how much did I spend on entertainment and cinemas last month", "en", "Entertainment"),
+])
+def test_a_category_named_with_its_own_sub_group_keeps_the_category(question, lang, category):
+    found = ask(question, lang)
+    assert found.rule == "spending" and first(found).args["filter"] == {"categories": [category]}, (question, found)
+
+
 @pytest.mark.parametrize("question,lang,expected", [   # unchanged by #497
     ("how much did I spend on taxis last month", "en", ("spending", {"mcc_groups": ["taxi"]})),
+    ("Which bills are coming up?", "en", ("recurring_bills", None)),
     ("how much did I spend on parking in August", "en", ("spending", {"mcc_groups": ["parking"]})),
     ("How much did I spend on restaurants last month?", "en", ("spending", {"categories": ["Restaurants"]})),
     ("how much did I spend at Restaurants last month", "en", ("spending", {"categories": ["Restaurants"]})),
@@ -301,6 +345,11 @@ def test_the_known_filters_keep_their_decisions(question, lang, expected):
     ("what is in my everyday spending in August", "en", "everyday_spending", "last_month"),
     ("what is in my everyday spending this month", "en", "everyday_spending", "this_month"),
     ("Mitä arjen kulutukseeni kuuluu elokuussa?", "fi", "everyday_spending", "last_month"),
+    # what a basket means is read as what it holds (review of #514)
+    ("mitä arjen kulutus tarkoittaa", "fi", "everyday_spending", "last_6_months"),
+    ("mitä on arjen kulutus", "fi", "everyday_spending", "last_6_months"),
+    ("Mitä tarkoittaa arjen kulutus?", "fi", "everyday_spending", "last_6_months"),
+    ("Mitä on odottamattomat välttämättömät menot?", "fi", "unexpected_necessities", "last_6_months"),
 ])
 def test_what_a_basket_holds_is_its_spending_by_category(question, lang, basket, preset):
     found = ask(question, lang)
@@ -308,8 +357,10 @@ def test_what_a_basket_holds_is_its_spending_by_category(question, lang, basket,
     assert first(found).args == {"period": {"preset": preset}, "filter": {"baskets": [basket]}, "group_by": "category"}
 
 
-def test_the_amount_of_a_basket_is_still_the_spending_question():
-    found = ask("What is my everyday spending in August?")
+@pytest.mark.parametrize("question,lang", [("What is my everyday spending in August?", "en"),
+                                           ("Mitä arjen kulutus oli elokuussa?", "fi")])
+def test_the_amount_of_a_basket_is_still_the_spending_question(question, lang):
+    found = ask(question, lang)
     assert found.rule == "spending" and first(found).args["period"] == {"preset": "last_month"}
 
 

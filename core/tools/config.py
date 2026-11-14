@@ -58,6 +58,9 @@ MCC_TO_GROUP: dict[str, str] = {mcc: group for group, codes in MCC_GROUPS.items(
 # not change); a filter on a sub-group selects its codes. The what-if names them too (WHAT_IF_MCC_NAMES).
 MCC_SUBGROUPS: dict[str, tuple[str, ...]] = {"takeaway": ("5814",), "bars": ("5813",), "cinemas": ("7832",)}
 MCC_FILTER_GROUPS: dict[str, tuple[str, ...]] = {**MCC_GROUPS, **MCC_SUBGROUPS}   # what a spending filter may name
+# The category a sub-group's rows carry in the data (takeaway and bars rows are Restaurants, cinema rows
+# Entertainment): a question naming both is about the category, which holds the sub-group (#497 review).
+MCC_SUBGROUP_CATEGORY: dict[str, str] = {"takeaway": "Restaurants", "bars": "Restaurants", "cinemas": "Entertainment"}
 
 # Classification constants (metrics.md sections 0 and 1, 02_baskets.sql).
 ONE_OFF_FACTOR = 5          # a purchase > 5x the category median of the last 365 days
