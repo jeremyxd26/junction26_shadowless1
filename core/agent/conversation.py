@@ -30,6 +30,7 @@ class Conversation:
     language: str | None = None
     turns: list[dict[str, Any]] = field(default_factory=list)  # question, calls, views, masked answer
     disclosed: bool = False   # the AI disclosure (or the introduction) was sent in this conversation (#420)
+    introduced: bool = False  # the full introduction was given: later meta questions get a short text (#352)
 
 
 class ConversationStore:
