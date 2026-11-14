@@ -46,6 +46,8 @@ const en = {
   } as Record<string, string>,
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
+  /** The overview sheet's title and the header button's name (#321, #322). */
+  overview: 'Overview',
   reviewWhy: 'Why Sentti asks',
   questionsLabel: 'Questions to ask',
   mockBadge: 'Mock data',
@@ -110,6 +112,7 @@ const fi: Strings = {
   },
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',
+  overview: 'Yleiskatsaus',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   mockBadge: 'Testidata',

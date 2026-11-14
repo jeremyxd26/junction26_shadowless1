@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { canGoBack, goBack, useUrl } from '../lib/url.ts'
+import { canGoBack, goBack, openOverview, useUrl } from '../lib/url.ts'
 import { showPersonaButton } from '../lib/hostBridge.ts'
 import { hostStrings } from '../lib/hostStrings.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -24,7 +24,16 @@ function longPressMs(): number {
  * where nobody would guess the long press, a visible button in the left cell opens it too, unless
  * the back chevron takes that cell.
  */
-export function Header({ onLongPress, disclosure }: { onLongPress: () => void; disclosure: string }) {
+export function Header({
+  onLongPress,
+  disclosure,
+  overviewReady,
+}: {
+  onLongPress: () => void
+  disclosure: string
+  /** The overview has loaded; while it loads or after it failed, the overview button is disabled. */
+  overviewReady: boolean
+}) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
@@ -107,7 +116,21 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
             <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
           </button>
         </h1>
-        <span aria-hidden="true" />
+        {/* The overview sheet from anywhere in the thread (#322), the same sheet as the overview row. */}
+        <button
+          type="button"
+          onClick={openOverview}
+          disabled={!overviewReady}
+          aria-label={t.overview}
+          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+            <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+            <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+            <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+          </svg>
+        </button>
       </div>
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
       {about &&
