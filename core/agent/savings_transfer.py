@@ -41,8 +41,19 @@ ASKS = fold_pattern(
 MOVE_WITH_AMOUNT = fold_pattern(
     r"\b(transfer|move|send|put|deposit|add|pay|increase|raise|lower|reduce|change|set|siirrä|siirtää|laita|laittaa|"
     r"pistä|pane|talleta|nosta|nostaa|muuta|maksa)\b[^.?!]{0,30}?"
-    r"(€\s?\d|\b\d[\d\s.,]*\s?(€|euros?|eur|euroa?|e)\b|\b(ten|twenty|fifty|hundred|thousand|kymmenen|"
+    # "€200", "200 €", "200€", "200 euros", "fifty euros" (a "€" is no word character, so no \b after it)
+    r"(€\s?\d|\b\d[\d\s.,]*\s?(?:€|\b(?:euros?|eur|euroa?|e)\b)|\b(ten|twenty|fifty|hundred|thousand|kymmenen|"
     r"viisikymmentä|sata|tuhat)\s+(euros?|euroa?)\b)")
+# A move or change request in a later sentence or clause, with no amount ("… Also move some money to savings now",
+# "… Increase it.", "…, and can you increase it?"): a request too, which keeps the decline rules' refusal (review of
+# #670)
+LATER_REQUEST = fold_pattern(
+    r"(?:[.!?;]|,\s*(?:and|then|ja|sitten))\s*(?:(?:also|and|then|please|pls|now|so|myös|ja|sitten|nyt)\s+)*"
+    r"(?:(?:can|could|would|will)\s+you\s+(?:also\s+)?|voi(?:tko|sitko|tteko)\s+(?:myös\s+)?)?"
+    r"(move|transfer|send|put|pay|increase|raise|lower|reduce|change|stop|cancel|set|start|deposit|add|make|double|"
+    r"siirrä|siirtää|siirtäkää|laita|laittaa|pistä|pane|nosta|nostaa|muuta|muuttaa|lopeta|lopettaa|aloita|lisää|"
+    r"pienennä|tee|tehdä|talleta)\b")
+REQUEST_ELSEWHERE = MOVE_WITH_AMOUNT + "|" + LATER_REQUEST
 NOT_OWN = fold_pattern(
     r"^\W*(please\s+|pls\s+)?(transfer|put|move|send|set|pay|make|start|stop|cancel|siirrä|siirtäkää|laita|pistä|"
     r"pane|tee|aloita|lopeta)\b|\b(can|could|would|will)\s+you\b|\bvoi(tko|sitko|tteko)\b|"
@@ -52,7 +63,7 @@ NOT_OWN = fold_pattern(
     r"tarvitsee|täytyy|jos)\b|"
     r"\bensi (kuussa|vuonna|viikolla)\b|"
     # fees, costs, interest or tax on savings are another question (review of #670)
-    r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b") + "|" + MOVE_WITH_AMOUNT
+    r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b") + "|" + REQUEST_ELSEWHERE
 # The past: a month, the last transfer, a past verb. Otherwise the question is about the usual transfer.
 PAST = fold_pattern(
     r"\b(did|was|were|went|last|latest|previous|recent|ago|transferred|moved|sent|paid|this year|so far)\b|"

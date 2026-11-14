@@ -113,7 +113,7 @@ OWN_TRANSFERS = (r"\b(did|have|had)\s+(i|we)\s+(ever\s+)?transfer(red)?\b|"
                  # move or change an amount ("… and can you increase it to 500 euros?" stays refused; review of #670)
                  r"\b(do|does|did)\s+(i|we)\s+have\s+(a|any)\s+(regular\s+|monthly\s+|recurring\s+|standing\s+)?"
                  r"transfers?\b(?=[^.?!]{0,40}(\b(to|into)\s+(my\s+|the\s+|our\s+)?savings?\b|\bsaasto(on|ihin)\b))"
-                 r"(?!.*(?:" + savings_transfer.MOVE_WITH_AMOUNT + r"|\b(tomorrow|tonight|huomenna|scheduled|"
+                 r"(?!.*(?:" + savings_transfer.REQUEST_ELSEWHERE + r"|\b(tomorrow|tonight|huomenna|scheduled|"
                  r"next\s+(week|month|year))\b))")
 # What the entries above (and "transfer") refused before #539, word parts included. A question they refused that the
 # rules would now answer with the unfiltered total ("how much did the weather stripping cost me?", "paljonko kulutin
