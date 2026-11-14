@@ -231,14 +231,15 @@ def test_only_an_unmatched_question_is_not_recognised():
 
 # ---- review fixes: requests per answer ---------------------------------------------------------------
 
-def test_a_hanging_provider_costs_two_requests_an_answer_and_pauses_no_one():
+def test_a_hanging_provider_costs_one_request_an_answer_and_pauses_no_one():
     transport = FakeTransport(TimeoutError())
     p, _ = pipeline(transport)
     p.model.client.fallback_model = None
     for _ in range(3):
         assert ask(p)["outcome"] == "answered"
-    # Per answer one planner and one composer request, no retry of either; no pause for the next (#341).
-    assert len(transport.requests) == 6 and p.model.client.unavailable_reason() is None
+    # Per answer one planner request and no retry; after a planner failure the template writes, with no
+    # composer request; and no pause for the next answer (#341).
+    assert len(transport.requests) == 3 and p.model.client.unavailable_reason() is None
 
 
 def test_a_composer_timeout_writes_the_template_with_one_composer_request():
@@ -252,12 +253,12 @@ def test_a_composer_timeout_writes_the_template_with_one_composer_request():
     assert audit.records[-1]["model_unavailable"] == "error"
 
 
-def test_a_503_storm_with_a_fallback_costs_four_requests_an_answer_and_pauses_no_one():
+def test_a_503_storm_with_a_fallback_costs_two_requests_an_answer_and_pauses_no_one():
     transport = FakeTransport(api_error(503))
     p, _ = pipeline(transport)
     assert ask(p)["outcome"] == "answered" and ask(p)["outcome"] == "answered"
-    # Per answer: the planner on flash, then pro; the composer on flash, then pro; no retries (#341).
-    assert len(transport.requests) == 8 and p.model.client.unavailable_reason() is None
+    # Per answer: the planner on flash, then pro, no retry; then the template writes; no pause (#341).
+    assert len(transport.requests) == 4 and p.model.client.unavailable_reason() is None
 
 
 def test_the_rules_first_model_starts_the_answer_for_the_composer_too():

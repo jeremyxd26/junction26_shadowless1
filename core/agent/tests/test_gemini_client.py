@@ -296,7 +296,8 @@ def test_every_call_of_an_answer_ends_within_its_deadline():
         clock.now += timeout_s
         raise TimeoutError()
 
-    c = GeminiClient(FLASH, hang, cache="off", sleep=lambda s: None, clock=clock)
+    # An 8 s composer, so the planner after it gets only the 7 s left of the answer's 15 s.
+    c = GeminiClient(FLASH, hang, cache="off", compose_timeout_s=8.0, sleep=lambda s: None, clock=clock)
     started = clock.now
     c.start_answer(object())
     calls = [lambda: c.compose("s", "u", {"type": "object"}), lambda: c.plan(*PLAN_ARGS)] * 2
