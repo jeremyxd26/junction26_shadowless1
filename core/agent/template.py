@@ -46,7 +46,7 @@ REFUSAL: dict[str, dict[str, Any]] = {
         # The warmer generic decline (#287, the product owner's first sentence). It reads complete without the
         # four brief questions that follow as chips (#352): a full stop and two examples in words.
         "text": ("That's outside my lane — I'm your money coach. I can help with things like your spending or your bills.",
-                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
+                 "Tämä ei kuulu osaamiseeni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
                  "laskuissasi."),
     },
     "unsafe": {

@@ -865,6 +865,10 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # is the baskets question. Russian forms are answered in English.
 _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
           r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
+# "How are you" in English and Finnish (folded, #630): "miten sä voit", "kuinka sinä voit", "mitä sulle kuuluu",
+# "miten menee"; the whole message, alone or after a greeting.
+_HOW_ARE_YOU = (r"how are you( doing)?|(miten|kuinka) ((sa|sina) )?voit|(miten|kuinka) voit (sa|sina)|"
+                r"mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee")
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -883,7 +887,7 @@ META = [
                 r"ovatko tietoni turvassa|jaatko tietojani)"),
     ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
                r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
-    ("greeting", rf"{_GREET}( (are you there|how are you( doing)?))?|are you there|how are you( doing)?|mita kuuluu"),
+    ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
 META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
