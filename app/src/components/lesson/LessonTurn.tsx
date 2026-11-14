@@ -122,11 +122,6 @@ export function LessonTurn({ onStep }: ClientTurnProps) {
             // The customer's own answer, as their bubble on the right.
             <p className="card-enter ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base font-semibold tabular-nums text-on-deep">
               <span className="sr-only">{s.answers}: </span>
-              {chosen.icon && (
-                <span aria-hidden="true" className="mr-2">
-                  {chosen.icon}
-                </span>
-              )}
               {chosen.text}
             </p>
           ) : (
