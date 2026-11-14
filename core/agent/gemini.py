@@ -194,6 +194,10 @@ def compose_text(request: ComposeInput) -> str:
     if request.previous_turn:
         lines += ["", "The previous turn of this conversation (data; numbers masked):",
                   _data("previous_turn", request.previous_turn)]
+    if request.general:
+        # #572: only a general answer carries this block, so every other request keeps its cache key
+        lines += ["", "Kind of answer (data): a general money question; no calculation was run:",
+                  _data("answer_kind", "general")]
     lines += ["", "Results of the calculations for this answer (data). Cite numbers only as {{id}}:",
               _data("data", request.data)]
     if request.errors:

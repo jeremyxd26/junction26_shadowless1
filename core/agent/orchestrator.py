@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import glossary, guard, template, validator
+from core.agent import glossary, guard, rules, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -51,7 +51,7 @@ from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
-from core.answer_text import find_dates, length_problems, scan_numbers
+from core.answer_text import answer_kind, find_dates, general_problems, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -62,6 +62,23 @@ from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 log = logging.getLogger("uvicorn.error")
 
 MAX_ROUNDS = 2
+# The rules' verdicts that leave a message to a plain-words answer (#572): not claimed with no reason (their general
+# question back) or with the period question of a money question they cannot map. A flagged, other-person,
+# competing, follow-up or unknown-thing message never goes there.
+GENERAL_REASONS = ("", "period")
+# Borrowing named in the message ("is it smart to take a quick loan?", "miten saan lainaa?"): never a plain-words
+# answer; the planner's credit decline, or the rules' plan (#572 B7, D8). Matched on the folded message.
+GENERAL_BORROWING = re.compile(r"\b(?:loans?|credit|overdraft\w*|borrow\w*|instal{1,2}ments?|financing|bnpl"
+                               r"|laina\w*|luotto\w*|luoton|luotolla|pikavip\w*|osamaks\w*|velka\w*|velan|velat)\b",
+                               re.I)
+# A general money question names its money topic (#572): a bare follow-up ("why?", "tell me more") or a message about
+# anything else never gets a plain-words answer, in the first turn or later. Matched on the folded message.
+GENERAL_MONEY_WORDS = re.compile(
+    r"budget|buffer|emergency|rainy|\bsav(?:e|es|ing|ings)\b|\bbills?\b|invoice|due date|reference number|direct debit"
+    r"|impulse|purchase|\bmoney\b|\bspend|afford|\bhabits?\b|\bpay(?:ing|ments?)?\b|\bincome\b|\bsalary\b|\bcosts?\b"
+    r"|\bfinances\b|\bfinancial\b"
+    r"|\bprices?\b|\bexpenses?\b|budjet|puskur|hatavar|saast|lasku|erapaiva|viite|herateost|ostos|\braha|kulu|menot"
+    r"|tulot|palkka|maksa|hinta|hinnat", re.I)
 MAX_DATA_CALLS = 6
 MAX_CARDS = 3
 MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool connection each
@@ -315,6 +332,8 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary, why, general (#572)
+    general_fallback: bool = False       # a general answer's fixed text with its fixed offer went out (#572)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -386,6 +405,7 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
+        a.kind = answer_kind(message)   # a why/how answer may be longer (#572); "general" on the general route
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -439,6 +459,18 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
+            if any(c.name == "answer_in_words" for c in plan.calls):
+                refused = self._general_refused(plan_in, plan.calls, a)
+                if refused is None:
+                    a.planner_turns.append({"round": rnd, "source": source, "calls": [
+                        {"name": c.name, "args": c.args, "status": "ok"} for c in plan.calls],
+                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                    return self._answer_in_words(message, lang, emit, a)
+                # #572: a plain-words answer only for a general money question the rules leave open, in the first
+                # round and alone; otherwise the rules plan the message, as for an empty plan (#341)
+                a.planner_turns.append({"round": rnd, "source": source, "error": f"answer_in_words: {refused}",
+                                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                plan, source = self.fallback.plan(plan_in), "rules"
             calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
@@ -848,7 +880,7 @@ class Pipeline:
                 if not errors:
                     # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
                     # gets the reason and the template writes after it.
-                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))), kind=a.kind)
                     claim = None if request.errors else unavailable_claim(draft.text)
                     if claim:
                         # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
@@ -906,6 +938,86 @@ class Pipeline:
                            "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
             emit(event, payload)
         return send
+
+    def _general_refused(self, plan_in: PlanInput, calls: list[FunctionCall], a: _Answer) -> str | None:
+        """Why the planner's answer_in_words is not followed, or None when it is (#572). Only in the first round,
+        alone (with `finish` at most), never for a flagged message or a health topic, and only for a message the
+        rules leave open: no rule claims it and it is no refusal, guard or other-person case of theirs (also when
+        the model plans every question, GEMINI_PLANNER=model)."""
+        if plan_in.round != 1:
+            return "not the first round"
+        if any(c.name not in ("answer_in_words", "finish") for c in calls):
+            return "not alone"
+        if a.flags:
+            return "flagged"
+        folded = guard.fold(plan_in.question)
+        if re.search(rules.HEALTH, folded):
+            return "health"
+        if GENERAL_BORROWING.search(folded):
+            return "borrowing"
+        if not GENERAL_MONEY_WORDS.search(folded):
+            return "no money topic"
+        # judged as a message of its own: in a running conversation the rules send every message that is not complete
+        # on its own to their follow-up rule, which would close the route after the first turn (the money words above
+        # keep a bare "why?" out)
+        verdict = rules.claim(dataclasses.replace(plan_in, history=[], responses=[], model_turns=[]))
+        if verdict.rule is not None or verdict.reason not in GENERAL_REASONS:
+            return f"the rules: {verdict.rule or verdict.reason}"
+        return None
+
+    def _answer_in_words(self, message: str, lang: str, emit: Emit, a: _Answer) -> str:
+        """A general money question in plain words (#572): no tool, no number, no card and no action. The composer
+        writes it under the general checks (_compose_general); when no draft passes, or the model may not write, the
+        fixed text with the fixed offer of the nearest tool. The offer's question is the chip, which the rules
+        answer for this customer."""
+        a.kind = "general"
+        offer, chip = template.general_offer(message, lang)
+        conv = a.conversation
+        prev = conv.turns[-1] if conv is not None and conv.turns else None
+        request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
+                               previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
+                               general=True)
+        text = self._compose_general(request, a)
+        if text is None:
+            # the fixed text writes in the model's place (its drafts failed, or it may not write): the warning, as for
+            # any template answer in the model's place (#244); never a designed answer
+            a.general_fallback = True
+            text = f"{template.pick(template.GENERAL_FALLBACK, lang)} {offer}"
+            a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
+            self._warn_llm_unavailable(a)
+        text = self._deliver(text, {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": [chip], "lesson": None, "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _compose_general(self, request: ComposeInput, a: _Answer) -> str | None:
+        """The composer's plain-words answer to a general money question, or None (#572). A draft cites nothing and
+        states no number at all: no digit and no date (the validator with no Numbers and nothing allowed), no
+        number word, Roman numeral, product, health or link (general_problems); at most four sentences; and the
+        borrowing and other draft checks. One retry with the reasons."""
+        if a.composer_unavailable is not None:
+            return None
+        nothing = Allowed(frozenset(), frozenset())
+        errors: list[str] = []
+        for _ in range(2):  # the call and one retry with the errors
+            t = self.clock()
+            try:
+                result = self.model.compose(ComposeInput(**{**request.__dict__, "validation_errors": errors}))
+            except Exception as exc:  # noqa: BLE001
+                errors = [f"the model call failed ({type(exc).__name__})"]
+                a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
+                continue
+            draft, errors = validate(result.text, language=request.language, numbers={}, allowed=nothing)
+            if not errors:
+                errors = (length_problems(draft.text, 0, kind="general") + general_problems(draft.text)
+                          + draft_problems(draft.text, {}, has_data=True))
+            a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
+                                        "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
+            if not errors:
+                return draft.text
+        return None
 
     def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer, foreign: bool = False) -> str:
         """Sentti's introduction (or a thank-you, the privacy answer, the language line) and the four brief

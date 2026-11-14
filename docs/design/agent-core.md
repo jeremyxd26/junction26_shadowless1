@@ -300,6 +300,7 @@ The planner also gets three functions that touch no data:
 | `decline` | `kind`: `investment_advice`, `credit_decision`, `out_of_scope`, `other_person_data` or `unsafe` | Ends the turn with the fixed, localised refusal template for that kind, plus 2 or 3 example questions. No data tool runs (R7, R8, R10). |
 | `ask_clarifying_question` | `question` (up to 140 characters), `options` (up to 3 short strings) | Ends the turn with `outcome: "clarify"`. The question and the options pass the output validator and reach the app as `done.clarify` (contract, section 7.2). |
 | `finish` | none | Data collection is complete; go to the composer. The model may call it in the same turn as the data tools. |
+| `answer_in_words` | none | A general money question in plain words (#572): the composer writes with no data and no number of any kind, in at most four sentences; after two failed drafts, a fixed text with the fixed offer of the nearest tool. Followed only in the first round and alone, for a message the guard does not flag, with no health or borrowing word, that names a money topic and that the rules leave open; otherwise the rules plan the message. No data tool runs. |
 
 The tests for R6 and R10 read "no **data** tool call", because `decline` is a function call that reads no data. Confirmed by the team lead; the research document is being aligned.
 

@@ -140,6 +140,12 @@ class ReferenceSource:
                               outcome="refused", refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
             return Answer(text=template.pick(template.CLARIFY_GENERAL["question"], lang), outcome="clarify",
                           labels=[], tool_calls=[])
+        if case["expect"] == "words":  # a general money question (#572): the fixed text, its offer and chip
+            from core.agent import template
+            lang = language if language in ("en", "fi") else "en"
+            offer, chip = template.general_offer(question, lang)
+            return Answer(text=f"{template.pick(template.GENERAL_FALLBACK, lang)} {offer}", outcome="answered",
+                          labels=[], tool_calls=[], follow_ups=[chip])
         if case["expect"] == "meta":  # Sentti introduces itself (#287): the template text and the four chips
             from core.agent import template
             lang = language if language in ("en", "fi") else "en"

@@ -216,12 +216,80 @@ def parse_number(raw: str, language: str) -> float:
     return float(raw.replace(",", ""))
 
 
-# One main takeaway and at most one more short sentence (Renat's answer-length rule, #288): the rest
-# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and
-# the eval (an answered outcome over it fails). The introduction and the decline texts are exempt.
-MAX_SENTENCES = 2
-MAX_SHORT_WORDS = 35
+# The answer-length rule (Renat's decision of 14 Nov 12:10, #572, after #288's two sentences): the main takeaway
+# first, then at most two more short sentences; a why/how answer and a general money answer may have four. The rest
+# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and the eval (an
+# answered outcome over it fails). The introduction and the decline texts are exempt.
+MAX_SENTENCES = 3
+MAX_SENTENCES_LONG = 4                   # kind "why" or "general"
+MAX_SHORT_WORDS = 55
+MAX_LONG_WORDS = 75
 MAX_NUMBERS = 3
+LONG_KINDS = ("why", "general")
+# A why or how question ("why is it lower?", "how does an e-invoice work?", "miksi…", "miten…"); "how much" and
+# "how many" ask an amount, so they stay ordinary.
+WHY_HOW = re.compile(r"\bwhy\b|\bhow come\b|\bhow (?!much\b|many\b|long\b)\w+|\bmiksi\b|\bmiten\b|\bminkä takia\b",
+                     re.I)
+
+
+def answer_kind(question: str, general: bool = False) -> str:
+    """The length rule's kind of an answer: "general" (a general money answer, #572), "why" (a why or how question)
+    or "ordinary"."""
+    if general:
+        return "general"
+    return "why" if WHY_HOW.search(question or "") else "ordinary"
+
+
+# A general money answer (#572) has no tool data, so it states no number of any kind: no digit (the validator's
+# R1 check), and none of these either. "one" and "yksi" stay ("one way is to…"); every larger count, a share, a
+# percentage and a Roman numeral is a figure the answer has no source for ("three months of costs", "VI months",
+# "half your income", "kolme kuukautta").
+_GENERAL_NUMBER_WORD = re.compile(
+    r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen"
+    r"|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?"
+    r"|billions?|dozens?|half|halves|quarters?|thirds?|fourths?|fifths?|tenths?|percent\w*|per\s+cent|percentage"
+    r"|kaksi|kahde\w*|kolme\w*|kolmen|neljä\w*|neljän|viisi|viide\w*|kuusi|kuude\w*|seitsemä\w*|kahdeksa\w*"
+    r"|yhdeksä\w*|kymmen\w*|\w+toista|sata\w*|sadan|tuha\w*|miljoon\w*|miljardi\w*|puolet|puolikas\w*|puoli"
+    r"|neljännes\w*|kolmannes\w*|prosent\w*|tusina\w*)\b", re.I)
+_ROMAN_NUMERAL = re.compile(r"\b(?:I{2,3}|IV|VI{0,3}|IX|XI{0,3}|XI?V|XIX|XX)\b")   # "I" alone is the pronoun
+# A product, a bank or an investment in a general answer: no product is advised (#572 B5, B6; R7). An emergency or
+# rainy-day fund is a buffer, not a product; "a share of your income" and "take stock" are plain words.
+_GENERAL_PRODUCT = re.compile(
+    r"\b(?:invest\w*|(?:index|mutual|investment|equity|bond|hedge|pension)\s+funds?|stock\s*markets?|stocks"
+    r"|shares\s+in|equit(?:y|ies)|etfs?|bonds?|crypto\w*|bitcoin|sijoit\w*|rahasto\w*|osake\w*|krypto\w*"
+    r"|joukkovelkakirj\w*|nordea|osuuspankki|danske|s-?pankki|s-?mobiili|handelsbanken|aktia|säästöpankki"
+    r"|saastopankki|revolut|n26|holvi|klarna|apple\s+pay|google\s+pay|mobilepay)\b|\bOP\b", re.I)
+# Health in a general answer: health stays out (R9; #572). "A healthy buffer" and "financial health" are plain words.
+_GENERAL_HEALTH = re.compile(
+    r"(?<!financial )\bhealth\b|\bhealth\s*care\b|\b(?:medicine\w*|medication\w*|doctors?|pharmac\w*|therap\w*"
+    r"|dentist\w*|hospital\w*|tervey\w*|lääk\w*|apteek\w*|hammaslääk\w*|terapi\w*|sairaala\w*)\b", re.I)
+# A link or a function name: an answer names neither (#572 C4, C5)
+_GENERAL_LINK = re.compile(r"https?://|\bwww\.|\b\w+\.(?:com|fi|org|net|io)\b|\b[a-z]+_[a-z_]+\b", re.I)
+# Judging the user or joking about their spending (#572 E1, E2): "bad with money", "irresponsible", "haha"
+_GENERAL_JUDGING = re.compile(
+    r"\b(?:bad|terrible|awful|hopeless|useless)\s+(?:with|at)\s+(?:money|saving|budget\w*)\b|\birresponsib\w*|\blazy\b"
+    r"|\bstupid\w*|\bfoolish\w*|\bdumb\b|\bcareless\w*|\breckless\w*|\bwasteful\w*|\bwaste\w*\s+(?:your\s+)?money\b"
+    r"|\bclowns?\b|\bhilarious\b|\bha(?:ha)+\b|\blol\b|\broast\w*|\bshame\s+on\s+you\b|\bashamed\b"
+    r"|\bhuono\w*\s+rahan|\btuhla\w*|\btyhm\w*|\btyper\w*|\bholtito\w*|\blaiska\w*|\bvastuuto\w*|\bnolo\w*", re.I)
+
+
+def general_problems(text: str) -> list[str]:
+    """What a general money answer (#572) must not contain, as retry reasons; [] when nothing. The digit check, the
+    borrowing check and the other text rules run on it as on any model text."""
+    problems = []
+    for rx, why in ((_GENERAL_NUMBER_WORD, "a number word: a general answer states no number of any kind"),
+                    (_ROMAN_NUMERAL, "a Roman numeral: a general answer states no number of any kind"),
+                    (_GENERAL_PRODUCT, "a product, bank or investment: a general answer names none"),
+                    (_GENERAL_HEALTH, "health: a general answer gives no health advice"),
+                    (_GENERAL_LINK, "a link or a function name: a general answer names neither"),
+                    (_GENERAL_JUDGING, "judging or joking: a general answer never judges the user or jokes "
+                                       "about spending")):
+        m = rx.search(text)
+        if m:
+            problems.append(f"'{m.group(0)}': {why}")
+    return problems
+
+
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 # Abbreviations whose dot ends no sentence ("approx. {{n1}}", "esim. ruoka").
 _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
@@ -332,10 +400,13 @@ def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
     return None
 
 
-def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
+def length_problems(text: str, numbers: int, displays: Iterable[str] = (), kind: str = "ordinary") -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
-    2026" names one thing, so it is one word, and its dots end no sentence)."""
+    2026" names one thing, so it is one word, and its dots end no sentence). `kind` (answer_kind): "why" and
+    "general" allow four sentences."""
+    max_sentences = MAX_SENTENCES_LONG if kind in LONG_KINDS else MAX_SENTENCES
+    max_words = MAX_LONG_WORDS if kind in LONG_KINDS else MAX_SHORT_WORDS
     plain = re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
     for d in sorted((d for d in displays if d), key=len, reverse=True):
         plain = plain.replace(d, "NUM")
@@ -351,11 +422,11 @@ def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> li
     plain = _ABBREVIATION.sub(lambda m: m.group(1).replace(".", ""), plain)
     problems = []
     sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
-    if sentences > MAX_SENTENCES:
-        problems.append(f"too long: {sentences} sentences, at most {MAX_SENTENCES}")
+    if sentences > max_sentences:
+        problems.append(f"too long: {sentences} sentences, at most {max_sentences}")
     words = len(plain.split())
-    if words > MAX_SHORT_WORDS:
-        problems.append(f"too long: {words} words, at most {MAX_SHORT_WORDS}")
+    if words > max_words:
+        problems.append(f"too long: {words} words, at most {max_words}")
     if numbers > MAX_NUMBERS:
         problems.append(f"too many numbers: {numbers}, at most {MAX_NUMBERS}; the cards show the rest")
     return problems

@@ -521,11 +521,25 @@ def _length_case():
             "tags": ["t"], "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005}]}
 
 
-def test_an_answer_over_two_sentences_fails_the_length_rule():
+def test_an_answer_over_three_sentences_fails_the_length_rule():
     q3 = {"start": "2026-07-01", "end": "2026-09-30"}
-    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual.",
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+                      "Most of it was at weekends.",
                  outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
-    assert run.check(_length_case(), ans, "en") == ["length: too long: 3 sentences, at most 2"]
+    assert run.check(_length_case(), ans, "en") == ["length: too long: 4 sentences, at most 3"]
+
+
+def test_a_why_answer_may_have_four_sentences_and_not_five():
+    # #572: a why or how question gets up to four sentences; an ordinary one three
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    case = dict(_length_case(), question={"en": "Why did I spend so much on restaurants in the last 3 months?"})
+    four = ("From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+            "Most of it was at weekends.")
+    ans = Answer(text=four, outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == []
+    ans = Answer(text=four + " Lunches were the rest.", outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)],
+                 labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == ["length: too long: 5 sentences, at most 4"]
 
 
 def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_one_word():
@@ -612,3 +626,45 @@ def test_the_below_median_case_forbids_the_invitation_and_passes_its_own_sentenc
     above = [t.format(vs="14.6% more", metric="restaurants") for t in PEER["total"] + PEER["metric"]]
     assert not any(re.search(pattern, t, re.I) for t in below), below
     assert all(re.search(pattern, t, re.I) for t in above), above
+
+
+# ---- #572: a general money question in plain words (expect: words) ------------------------------------------
+
+def _words_case():
+    return {"id": "t-words", "persona": "CUST00860", "intent": "general_money", "expect": "words",
+            "question": {"en": "How big should my emergency buffer be?"}, "no_data_tool_call": True, "tags": ["t"]}
+
+
+def test_a_plain_words_answer_passes():
+    ans = Answer(text="A buffer is money you keep aside for surprises. Many people build it up first, with a small "
+                      "transfer on payday.", outcome="answered", labels=[], tool_calls=[])
+    assert run.check(_words_case(), ans, "en", _words_case()["question"]["en"]) == []
+
+
+@pytest.mark.parametrize("text,reason", [
+    ("Keep about three months of costs aside.", "plain words: 'three'"),
+    ("Keep 3 months of costs aside.", "R1"),
+    ("Put it into an index fund.", "plain words: 'index fund'"),
+    ("A buffer helps. Build it first. Save on payday. Keep it apart. Check it monthly.", "length: too long: 5 sentences"),
+])
+def test_a_number_a_product_or_a_fifth_sentence_fails_a_plain_words_answer(text, reason):
+    ans = Answer(text=text, outcome="answered", labels=[], tool_calls=[])
+    fails = run.check(_words_case(), ans, "en", _words_case()["question"]["en"])
+    assert any(f.startswith(reason) for f in fails), fails
+
+
+def test_a_plain_words_case_needs_the_answer_and_no_tool():
+    question = _words_case()["question"]["en"]
+    asked_back = Answer(text="What would you like to know about your money?", outcome="clarify", labels=[], tool_calls=[])
+    assert run.check(_words_case(), asked_back, "en", question) == ["outcome clarify, expected answered"]
+    with_data = Answer(text="A buffer is money for surprises.", outcome="answered", labels=[],
+                       tool_calls=["get_safe_to_spend"])
+    assert run.check(_words_case(), with_data, "en", question) == ["data tools called: ['get_safe_to_spend']"]
+
+
+def test_a_plain_words_case_must_say_no_data_tool_call():
+    import expected
+    case = _words_case()
+    case.pop("no_data_tool_call")
+    errors = expected.validate({"cases": [case]})
+    assert any("no_data_tool_call" in e for e in errors), errors

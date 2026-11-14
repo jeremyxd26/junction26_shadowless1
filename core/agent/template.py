@@ -153,6 +153,37 @@ REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens w
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
+# A general money question (#572) when no plain-words answer passed the checks, or the model may not write one:
+# a fixed text with no number, ending with the fixed offer of the nearest tool (GENERAL_OFFERS); the offer's question
+# is the answer's chip, so the offer is one the rules fulfil.
+GENERAL_FALLBACK = ("I can't explain that one in words right now.", "En pysty selittämään tätä sanoin juuri nyt.")
+GENERAL_OFFERS = {   # topic: ((offer sentence, chip question) in English, the same in Finnish)
+    "bills": (("I can show the bills you have coming up.", "What bills are coming up?"),
+              ("Voin näyttää tulevat laskusi.", "Mitä laskuja minulla on tulossa?")),
+    "saving": (("I can show how you could save more.", "How could I save more?"),
+               ("Voin näyttää, miten voisit säästää enemmän.", "Miten voisin säästää enemmän?")),
+    "budget": (("I can show what you can safely spend this week.", "What can I safely spend this week?"),
+               ("Voin näyttää, paljonko voit turvallisesti käyttää tällä viikolla.",
+                "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?")),
+    "spending": (("I can show where your money went.", "Where did my money go?"),
+                 ("Voin näyttää, mihin rahasi menivät.", "Mihin rahani menivät?")),
+}
+_GENERAL_TOPICS = (   # the first that matches the folded question
+    ("bills", r"\bbills?\b|invoice|due date|reference number|direct debit|\blasku|e-?lasku|erapaiva|viite"),
+    ("saving", r"\bsav(e|es|ing|ings)\b|buffer|emergency|rainy day|saast|puskur|hatavara"),
+    ("budget", r"budget|\bspend|\bafford|budjet|kayttaa|kaytettav"),
+)
+
+
+def general_topic(question: str) -> str:
+    """The topic of a general money question (#572), for its offer: "bills", "saving", "budget" or "spending"."""
+    q = fold(question or "")
+    return next((topic for topic, rx in _GENERAL_TOPICS if re.search(rx, q)), "spending")
+
+
+def general_offer(question: str, language: str) -> tuple[str, str]:
+    """The fixed offer of the tool nearest to a general money question and its chip question (#572)."""
+    return pick(GENERAL_OFFERS[general_topic(question)], language)
 CLARIFY = {
     "question": ("Which period do you mean?", "Mitä ajanjaksoa tarkoitat?"),
     "options": (("This month", "Last month", "The last three months"),

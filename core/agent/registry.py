@@ -78,10 +78,20 @@ class FinishArgs(_Strict):
     pass
 
 
+class AnswerInWordsArgs(_Strict):
+    pass
+
+
 CONTROL = {
     "decline": (DeclineArgs, "End the turn with the fixed refusal template of this kind. Reads no data."),
     "ask_clarifying_question": (ClarifyArgs, "Ask the user one short question back, with up to 3 short options."),
     "finish": (FinishArgs, "Data collection is complete; go on to write the answer."),
+    # #572: a general money question (budgeting, a buffer, saving habits, how a bill, an e-invoice, a due date or a
+    # reference number works) is answered in plain words, with no tool data and no number
+    "answer_in_words": (AnswerInWordsArgs, "Answer a general money question in plain words, with no data and no "
+                                           "number: budgeting, a buffer, saving habits, how a bill, an e-invoice, a "
+                                           "due date or a reference number works. Never for the user's own figures. "
+                                           "Call it alone. Reads no data."),
 }
 
 

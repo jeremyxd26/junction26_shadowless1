@@ -212,7 +212,7 @@ def test_registry_parses_calls():
             reg.parse(name, args)
         assert exc.value.code == code
     schemas = {s["name"]: s for s in reg.schemas()}
-    assert set(schemas) == {"fake_spending", "decline", "ask_clarifying_question", "finish"}
+    assert set(schemas) == {"fake_spending", "decline", "ask_clarifying_question", "finish", "answer_in_words"}
     assert "properties" in schemas["fake_spending"]["parameters_json_schema"]
 
 
