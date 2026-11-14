@@ -296,7 +296,7 @@ class Pipeline:
         emit("meta", {"answer_id": a.answer_id, "conversation_id": conv.conversation_id, "language": lang,
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
-        a.flags = guard.flags(message)
+        a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
