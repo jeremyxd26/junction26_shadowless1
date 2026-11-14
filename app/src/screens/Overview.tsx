@@ -8,6 +8,7 @@ import { HeroSummary, TokenText, type NumberMotion } from '../components/cards.t
 import { SenttiLabel } from '../components/AnswerView.tsx'
 import { ReviewAnswered, ReviewAsking, type ReviewError } from '../components/ReviewCard.tsx'
 import { Toast } from '../components/Toast.tsx'
+import { answerChanges, answerMotion } from '../lib/answerMotion.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
@@ -43,7 +44,10 @@ interface ToastState {
   undo: boolean
   retry: boolean
   retryUntil: number | null
-  /** No visual toast: Sentti's reply already shows the confirmation. The live region still reads it. */
+  /**
+   * The answer came with `effect`: while Sentti's reply is on screen it shows that confirmation, so
+   * there is no visual toast. The live region still reads the message.
+   */
   silent: boolean
 }
 
@@ -55,8 +59,6 @@ const HINT_MS = 6000
 const NOTE_MS = 4000
 /** How long the answer's toast stays; its Undo is also on the answered card. */
 const TOAST_MS = 6000
-/** Keys whose "was …" hint is shown: the hero, its reserve and the basket the purchase moved to. */
-const HINTED = new Set(['safe_to_spend', 'irregular_reserve', 'regular_essentials', 'unexpected_necessities', 'everyday_spending'])
 
 /**
  * Sentti's opening turn in the thread on `/` (OpeningTurn): this week's picture, the review
@@ -182,13 +184,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     timers.current = []
     const run = ++seq.current
     const reduced = prefersReducedMotion()
-    // `effect.items` (contract 0.3.2) has the shape of `changes[]`; where it names a number, it wins.
-    const effectItems = response.effect?.items ?? []
-    const merged = [
-      ...response.changes.filter((change) => !effectItems.some((item) => item.key === change.key)),
-      ...effectItems,
-    ]
-    const changes = response.changed ? merged : []
+    // The hero, counters and overlay follow `changes[]` only; `effect` is the reply's text.
+    const changes = answerChanges(response)
     if (changes.length > 0) setOverlay({ seq: run, changes, refreshedFrom: null })
 
     const answered = response.review_state === 'answered' && asked !== null
@@ -202,28 +199,12 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       changes.some((change) => change.key === 'unclassified') &&
       changes.some((change) => change.key === basket)
 
-    const counts = Object.fromEntries(
-      changes.map((change) => [
-        change.key,
-        // Basket rows start counting when the amount leaves the waiting row.
-        { seq: run, from: change.before, run: !flies || !(change.key in BASKETS) },
-      ]),
-    )
-    const was = answered
-      ? Object.fromEntries(changes.filter((change) => HINTED.has(change.key)).map((change) => [change.key, change.before]))
-      : {}
-    setMotion({
-      seq: run,
-      counts,
-      was,
-      steady: answered && changes.length > 0 && !changes.some((change) => change.key === 'safe_to_spend'),
-      highlight: answered ? basket : null,
-      waiting: flies ? 'keep' : null,
-    })
+    setMotion(answerMotion(changes, answered, basket, flies, run))
 
     // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), there is
     // no visual toast over it: Undo stays on the answered card, and the live region reads the whole
-    // message (`text_rendered`) once. Without `effect`, the toast works as before.
+    // message (`text_rendered`) once. Without `effect`, or without the reply (no baskets card), the
+    // toast works as before.
     setToast({
       seq: run,
       text: response.message.text,
@@ -312,6 +293,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const visibleToast = toast && shownToast === toast.seq ? toast : null
   const baskets = view.cards.find(isBasketsCard)
   const replyLabel = reply ? baskets?.items.find((item) => item.key === reply)?.label : undefined
+  // The reply's own condition below: a silent toast stays silent only while the reply shows.
+  const replyShown = Boolean(reply && baskets)
 
   return (
     <div className="flex flex-col gap-3">
@@ -386,7 +369,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       <p role="status" className="sr-only">
         {visibleToast?.rendered ?? ''}
       </p>
-      {visibleToast && !visibleToast.silent && (
+      {visibleToast && !(visibleToast.silent && replyShown) && (
         <Toast
           text={visibleToast.text}
           numbers={visibleToast.numbers}
