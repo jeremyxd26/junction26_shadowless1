@@ -383,7 +383,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
               <button
                 type="button"
                 onClick={() => askInThread(question)}
-                className="relative min-h-9 rounded-md border border-line bg-surface px-3 py-1.5 text-left text-[15px] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
+                className="relative min-h-9 rounded-md border border-line bg-surface px-3 py-1.5 text-left text-[0.9375rem] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
               >
                 {question}
               </button>
