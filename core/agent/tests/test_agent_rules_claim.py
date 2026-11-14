@@ -1196,3 +1196,98 @@ def test_a_finnish_investment_question_is_declined_as_the_english_one(question):
 def test_an_ordinary_finnish_kannattaako_question_is_not_investment_advice():
     for question in ("Kannattaako minun säästää ruokaostoksista?", "Kannattaako minun maksaa laina pois?"):
         assert claimed_rule(question, "fi") != "decline"
+
+
+# ---- #638: another person's money in Finnish, and the one a thing cost --------------------------------------------
+
+def declined_as_other_person(question, lang):
+    result = plan(question, lang)
+    return [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}
+
+
+@pytest.mark.parametrize("question", [
+    "Mikä on mieheni turvallisesti käytettävä summa?",
+    "Miksi vaimoni turvallisesti käytettävä summa on pienempi kuin minun?",
+    "Miksi isäni turvallisesti käytettävä summa on suurempi kuin minun?",
+    "Mikä on puolisoni turvallisesti käytettävä summa?",
+    "Mikä on kumppanini turvallisesti käytettävä summa?",
+    "Mikä on isäni turvallisesti käytettävissä oleva summa?",
+    "Mikä on vaimoni turvallisesti säästettävissä oleva summa?",
+    "Mieheni turvallisesti käytettävä summa?",
+    "Vaimon turvallisesti käytettävissä oleva summa",
+    "Mikä on Marjan turvallisesti käytettävä summa?",
+    "Mikä on mieheni budjetti tällä viikolla?",
+    "Mikä on mieheni turvallinen käyttövara?",
+    "Paljonko miehelläni on turvallisesti käytettävissä?",
+    "Paljonko vaimoni voi käyttää turvallisesti?",
+    "Paljonko mieheni voi turvallisesti käyttää tällä viikolla?",
+    "Paljonko lapseni voi käyttää turvallisesti tällä viikolla?",
+    "Paljonko äitini voi käyttää turvallisesti?",
+    "Paljonko ystäväni voi käyttää turvallisesti?",
+    "Paljonko vaimoni voi säästää turvallisesti?",
+    "Paljonko Marja voi käyttää turvallisesti?",
+    "Onko vaimollani varaa ostaa uusi puhelin?",
+])
+def test_another_persons_safe_to_spend_in_finnish_is_declined_as_in_english(question):
+    # dev 8f8d21c answered these with the user's own safe to spend, or asked back
+    assert declined_as_other_person(question, "fi")
+
+
+@pytest.mark.parametrize("question", [
+    "Kulutanko miestäni enemmän?", "Kulutinko vaimoani enemmän viime kuussa?", "Käytänkö puolisoani enemmän ruokaan?",
+    "Kulutanko lastani enemmän?", "Kulutanko äitiäni enemmän?", "Kulutanko isääni vähemmän?",
+    "Kulutanko ystävääni enemmän?", "Kulutanko vaimooni verrattuna enemmän?", "Paljonko kulutan mieheeni verrattuna?",
+])
+def test_a_comparison_with_a_person_in_the_partitive_is_declined_as_kuin_is(question):
+    assert declined_as_other_person(question, "fi")
+
+
+@pytest.mark.parametrize("question", [
+    "What did my mother's insurance cost her?", "What did my wife's gym cost her?", "What did the gym cost my wife?",
+    "How much did the gym cost her last month?", "What did the trip cost her mother?", "What did it cost him?",
+    "What did the repairs cost Marja?",
+])
+def test_what_a_thing_cost_another_person_is_declined(question):
+    # review of #635: these got the user's own bills or breakdown
+    assert declined_as_other_person(question, "en")
+
+
+@pytest.mark.parametrize("question", [
+    "Paljonko kuntosali maksoi vaimolleni?", "Mitä äitini vakuutus maksoi hänelle?", "Paljonko maksoi lahja vaimolleni?",
+])
+def test_a_finnish_cost_to_a_person_is_never_the_users_own_numbers(question):
+    # the allative is the one charged or the one the user bought for: the message is unclaimed and asks back
+    assert data_calls(plan(question, "fi")) == []
+
+
+@pytest.mark.parametrize("lang,question,tool", [
+    ("fi", "Mikä on minun turvallisesti käytettävä summa?", "get_safe_to_spend"),
+    ("fi", "Mikä on mun turvallisesti käytettävä summa?", "get_safe_to_spend"),
+    ("fi", "Mikä on nykyinen turvallisesti käytettävä summa?", "get_safe_to_spend"),
+    ("fi", "Mikä on turvallisesti käytettävä summani?", "get_safe_to_spend"),
+    ("fi", "Paljonko minulla on tänään turvallisesti käytettävissä?", "get_safe_to_spend"),
+    ("fi", "Paljonko voin turvallisesti käyttää tällä viikolla?", "get_safe_to_spend"),
+    ("fi", "Miksi turvallisesti käytettävä summani on pienempi kuin viime viikolla?", "get_safe_to_spend"),
+    ("fi", "Mikä on mun budjetti?", "get_safe_to_spend"),
+    ("fi", "Viikoittainen budjettini?", "get_safe_to_spend"),
+    ("fi", "Paljonko voin käyttää, jos vaimoni voi ostaa auton?", "get_safe_to_spend"),
+    ("fi", "Kulutanko enemmän kuin viime kuussa?", "get_spending"),
+    ("fi", "Kulutanko ruokaan enemmän kuin viime kuussa?", "get_spending"),
+    ("fi", "Miksi kulutukseni on suurempi kuin viime vuonna?", "get_spending"),
+    ("fi", "Kulutanko enemmän kuin muut, joilla on lapsia?", "get_peer_benchmark"),
+    ("en", "What did the gym cost my wife and me?", "get_basket_breakdown"),
+    ("en", "What did the dinner cost my family?", "get_basket_breakdown"),
+    ("en", "How much did the gym cost? Is that more than last month?", "get_basket_breakdown"),
+    ("en", "What Did The Gym Cost In March?", "get_basket_breakdown"),
+])
+def test_the_users_own_money_and_a_comparison_with_oneself_keep_their_answer(lang, question, tool):
+    assert [name for name, _ in data_calls(plan(question, lang))] == [tool]
+
+
+@pytest.mark.parametrize("question", [
+    "Ostinko lapselleni enemmän kuin viime vuonna?", "Annoinko vaimolleni vähemmän rahaa kuin viime kuussa?",
+    "Voinko maksaa vuokran vuokranantajalle?", "Paljonko minun pitää vielä maksaa äidilleni?",
+    "Paljonko Tukholmassa voi käyttää lomalla?",
+])
+def test_the_users_own_payments_and_places_are_not_another_persons_money(question):
+    assert claimed_rule(question, "fi") != "decline"
