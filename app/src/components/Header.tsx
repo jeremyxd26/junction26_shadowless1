@@ -94,13 +94,13 @@ export function Header({ onLongPress, disclosure }: { onLongPress: () => void; d
           <span aria-hidden="true" />
         )}
         {/* The title with its AI tag opens the AI disclosure; the right cell is kept for the overview
-            button (#322). The accessible name is "Sentti, AI". */}
+            button (#322). The accessible name is `titleLabel`: "Sentti, AI" / "Sentti, tekoäly". */}
         <h1 className="flex justify-center">
           <button
             type="button"
             onClick={() => setAbout(true)}
             aria-haspopup="dialog"
-            aria-label="Sentti, AI"
+            aria-label={t.titleLabel}
             className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
           >
             Sentti
