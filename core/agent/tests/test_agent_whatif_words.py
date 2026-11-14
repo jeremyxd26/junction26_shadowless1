@@ -307,6 +307,35 @@ def test_a_compound_or_a_category_after_at_beside_a_question_keeps_its_answer(qu
     assert (found.rule, first(found).args.get("filter")) == expected, (question, found)
 
 
+@pytest.mark.parametrize("question,lang", [   # closing pass of #514: a group and a category that does not hold it
+    ("how much did I spend on bars and groceries last month", "en"),
+    ("how much did I spend on groceries and bars last month", "en"),
+    ("paljonko kulutin baareihin ja ruokaan viime kuussa", "fi"),
+    ("how much did I spend on bars and entertainment last month", "en"),
+    ("how much did I spend on takeaway and groceries last month", "en"),
+    ("how much did I spend on taxis and restaurants last month", "en"),
+    ("How much on taxis in August? And on groceries?", "en"),
+])
+def test_a_group_and_a_category_it_is_not_in_are_never_answered_with_one_of_them(question, lang):
+    found = ask(question, lang)
+    assert found.rule is None and not found.calls and found.reason == "mixed_filter", (question, found)
+
+
+@pytest.mark.parametrize("question,lang,expected", [
+    ("how much did I spend on taxis and bars last month", "en", {"mcc_groups": ["taxi", "bars"]}),   # two groups
+    ("how much did I spend on taxis and transportation last month", "en", {"categories": ["Transportation"]}),
+    ("Paljonko käytin noutoruokaan viime kuussa?", "fi", {"mcc_groups": ["takeaway"]}),   # "ruokaan" inside the word
+])
+def test_two_groups_or_a_group_inside_its_category_keep_one_filter(question, lang, expected):
+    found = ask(question, lang)
+    assert found.rule == "spending" and first(found).args["filter"] == expected, (question, found)
+
+
+def test_a_what_if_on_a_group_and_another_category_asks_back():
+    found = ask("what if I cut bars and groceries by 10%")
+    assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], found
+
+
 @pytest.mark.parametrize("question,lang,category", [   # the what-if too: the category holds its sub-group
     ("what if I cut restaurants and bars by 10%", "en", "Restaurants"),
     ("Entä jos vähentäisin ravintoloita ja baareja 10 %?", "fi", "Restaurants"),

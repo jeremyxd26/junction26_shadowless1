@@ -140,10 +140,22 @@ def _months_mentioned(question: str, as_of: date) -> list[tuple[int, int]]:
 
 
 def _groups(q: str, categories: list[str]) -> list[str]:
-    """The MCC groups a folded question names, without a sub-group whose own category it also names (#497 review):
+    """The MCC groups a folded question names, without a group whose own category it also names (#497 review):
     "restaurants and bars" is Restaurants, which holds the bars, never the bars alone."""
     return [g for rx, g in MCC_GROUP_WORDS
-            if re.search(rx, q) and config.MCC_SUBGROUP_CATEGORY.get(g) not in categories]
+            if re.search(rx, q) and config.MCC_GROUP_CATEGORY.get(g) not in categories]
+
+
+def _mixed_filter(q: str) -> bool:
+    """A group and a category that does not hold it ("bars and groceries"): two selections, which one spending
+    filter cannot give; never one of them alone (review of #514). A category word inside a group word is not
+    another selection ("noutoruokaan" holds "ruokaan")."""
+    groups = _groups(q, [c for rx, c in CATEGORY_WORDS if re.search(rx, q)])
+    rest = q
+    for rx, _ in MCC_GROUP_WORDS:
+        rest = re.sub(rx, " ", rest)
+    own = {config.MCC_GROUP_CATEGORY.get(g) for g in groups}
+    return bool(groups) and any(c not in own for rx, c in CATEGORY_WORDS if re.search(rx, rest))
 
 
 def plan_spending(question: str, as_of: date) -> dict | None:
@@ -260,7 +272,7 @@ WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
     (BAR_WORDS, config.MCC_SUBGROUPS["bars"]),
     (CINEMA_WORDS, config.MCC_SUBGROUPS["cinemas"]),
 ]]
-SUBGROUP_CATEGORY_OF_CODES = {config.MCC_SUBGROUPS[g]: c for g, c in config.MCC_SUBGROUP_CATEGORY.items()}
+GROUP_CATEGORY_OF_CODES = {config.MCC_FILTER_GROUPS[g]: c for g, c in config.MCC_GROUP_CATEGORY.items()}
 # A named place, not a whole group (#497): a capitalised word right before a group noun ("the Barbarian pub", not
 # at the start of a sentence), or a capitalised name after "at" / "from" that no filter maps ("at Barsa", "at
 # Cinemax"). Read on the message as typed. The what-if asks back; the spending rule never answers it with a total.
@@ -322,7 +334,7 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     named = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
     categories = set(named) & config.WHAT_IF_CATEGORIES
     # a sub-group named with the category that holds it is that category ("restaurants and bars", review of #514)
-    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q) and SUBGROUP_CATEGORY_OF_CODES.get(c) not in named}
+    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q) and GROUP_CATEGORY_OF_CODES.get(c) not in named}
     baskets = {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, q)}
     selections = len(categories) + len(codes) + len(baskets)
     if codes and named_object(question):
@@ -870,16 +882,18 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
-    dropped = []
+    dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
+    elif "spending" in found and _mixed_filter(q):
+        dropped, why = ["spending"], "mixed_filter"   # "bars and groceries": never one of the two alone
     if "recurring_bills" in found and any(re.search(COMPOUND_OBJECT, s) and re.search(BILLS_INTENT, s)
                                           for s in re.split(r"(?<=[.!?])\s+", q)):
         dropped.append("recurring_bills")   # "is my parking fine a bill?": not the user's bills (review of #514)
     if dropped:
         found = [f for f in found if f not in dropped]
         if not found:
-            return Claim(None, reason="named_object")   # the model, or the general question back (not the period)
+            return Claim(None, reason=why)   # the model, or the general question back (not the period)
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)
