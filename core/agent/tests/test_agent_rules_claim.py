@@ -671,6 +671,40 @@ def test_the_future_cue_carries_its_own_month_and_the_last_year_is_twelve_months
     assert [args["period"] for name, args in data_calls(plan(question, lang))] == [period]
 
 
+# #543: the Finnish twelve months in their forms, the plural genitive and the number in words, plan the last 12 months
+# like "viimeisen 12 kuukauden" (before: the period question). The English question is unchanged.
+@pytest.mark.parametrize("question, lang", [
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten 12 kuukauden?", "fi"),
+    ("Paljonko käytin asumiseen viimeisen 12 kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisen kahdentoista kuukauden aikana?", "fi"),
+    ("Paljonko käytin vuokraan viimeisten kahdentoista kuukauden aikana?", "fi"),
+    ("How much did I spend on rent in the last 12 months?", "en"),
+])
+def test_the_finnish_twelve_months_in_their_forms_plan_the_last_12_months(question, lang):
+    assert data_calls(plan(question, lang)) == [
+        ("get_spending", {"filter": {"categories": ["Housing"]}, "period": {"preset": "last_12_months"}})]
+
+
+# #651: the three and the six months in the singular and the plural genitive, with the digit or the word, plan their
+# presets (before: the plural asked for the period). The English questions are unchanged.
+@pytest.mark.parametrize("question, lang, preset", [
+    ("Paljonko käytin ravintoloihin viimeisten kolmen kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisten 3 kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisen kolmen kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisen 3 kuukauden aikana?", "fi", "last_3_months"),
+    ("Paljonko käytin ravintoloihin viimeisten kuuden kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisten 6 kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisen kuuden kuukauden aikana?", "fi", "last_6_months"),
+    ("Paljonko käytin ravintoloihin viimeisen 6 kuukauden aikana?", "fi", "last_6_months"),
+    ("How much did I spend on restaurants in the last three months?", "en", "last_3_months"),
+    ("How much did I spend on restaurants in the last 6 months?", "en", "last_6_months"),
+])
+def test_the_finnish_three_and_six_months_in_their_forms_plan_their_presets(question, lang, preset):
+    assert data_calls(plan(question, lang)) == [
+        ("get_spending", {"filter": {"categories": ["Restaurants"]}, "period": {"preset": preset}})]
+
+
 # ---- #379 part B: periods counted back, next week, this week, next month's rent, another script ------------
 
 def custom(start, end):
