@@ -20,7 +20,9 @@ const cardsOf = (parts: string[]) =>
 const doneOf = (parts: string[]) => events(parts).find(([name]) => name === 'done')?.[1] as AskDone
 
 describe('mock ask: the demo route answers (#684)', () => {
-  const hero = (examples['overview.response'] as { hero: Card }).hero
+  // Sanna's hero: the overview of the persona pickStream answers for without a customer, before any
+  // review answer. Per persona and per state in mockAsk.test.ts (#714).
+  const hero = (examples['overview.response_pending'] as { hero: Card }).hero
   const whatif = examples['card.whatif'] as Card
   const profile = examples['card.profile'] as Card & { profile: { description: string } }
   const peer = examples['card.peer'] as Card
