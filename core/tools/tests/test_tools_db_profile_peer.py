@@ -301,8 +301,8 @@ def test_peer_evidence_is_group_statistics_only(conn, customer_id):
 def test_peer_card_and_model_view(conn):
     result = get_peer_benchmark(ctx_for(conn, "CUST00860"), {"metric": "spend_total"})
     card = result.card
-    assert card.type == "peer" and card.estimate["label"] == "Estimate"
-    assert card.estimate["text"].startswith("Compared with at least 20 other customers")
+    assert card.type == "peer" and card.estimate.label == "Estimate"
+    assert card.estimate.text.startswith("Compared with at least 20 other customers")
     assert card.percentile["value"] == 51 and card.percentile["display"] == "51st percentile"
     assert card.vs_median["display"] == "1.2% more"
     assert card.peer_group["label"] == "Age 35-44, postal area 005" and card.peer_group["size"]["value"] == 118
