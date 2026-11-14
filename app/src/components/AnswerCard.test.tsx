@@ -116,6 +116,20 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain('data-answer-main')
   })
 
+  it('safe to save at 0 (#684 review): the reason amount is the first row, still three rows', () => {
+    for (const name of ['card.safe_to_save_zero', 'card.safe_to_save_everyday']) {
+      const save = examples[name] as Card & {
+        reason: { category: { label: string } | null; amount: { label: string; display: string } }
+      }
+      expect(save.reason).toBeTruthy()
+      const html = render(save)
+      const rows = html.split('data-figure-row').slice(1)
+      expect(rows).toHaveLength(3)
+      expect(rows[0]).toContain(`>${save.reason.category?.label ?? save.reason.amount.label}</span>`)
+      expect(rows[0]).toContain(`aria-label="${save.reason.amount.label}: ${save.reason.amount.display}`)
+    }
+  })
+
   it('safe to spend (#684): four secondary numbers are cut to three rows', () => {
     const hero = (examples['overview.response'] as { hero: Card & { secondary: { display: string }[] } }).hero
     expect(hero.secondary.length).toBeGreaterThan(3)
