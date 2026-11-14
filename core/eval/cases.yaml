@@ -1225,6 +1225,14 @@ cases:
   expected_tools: [get_spending]
   tags: [qa, missing_data, too_few]
 
+- id: aleksi-qa-travel-what-if-one-purchase
+  persona: CUST00849
+  question: {en: 'what if I cut travel by 20%?'}
+  intent: what_if
+  expect: any
+  expected_tools: [run_what_if]
+  tags: [qa, missing_data, too_few]
+
 - id: sanna-qa-why-safe-to-spend-lower
   persona: CUST00860
   question: {en: 'why is my safe to spend lower than it was?'}
