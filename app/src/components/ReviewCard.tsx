@@ -111,8 +111,8 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       </div>
 
       {tokens.has('n1') ? (
-        // Tokens in the question: the amount and the date sit in the sentence as chips. The 48px line
-        // leaves each 40px chip its full 48px touch area, with no overlap between lines.
+        // Tokens in the question: the amount and the date sit in the sentence as chips. On the 48px
+        // line each 40px chip keeps a touch area of about 46px (measured), with no overlap between lines.
         <p className="mt-3 text-xl font-bold leading-12 text-on-deep">
           {fill(question, { n1: <NumberChip number={card.amount} size="lead" />, date: dateChip })}
         </p>
@@ -152,8 +152,12 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       </div>
 
       {error && (
-        <div role="alert" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
-          <span className="flex-1">{error.message}</span>
+        // Only the message is the alert; the countdown sits outside it, so a screen reader does not
+        // announce every second of it.
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
+          <span role="alert" className="flex-1">
+            {error.message}
+          </span>
           {error.retryable && (
             <RetryButton
               onRetry={onRetry}

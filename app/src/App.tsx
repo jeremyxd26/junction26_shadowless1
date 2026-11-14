@@ -8,7 +8,9 @@ import { Header } from './components/Header.tsx'
 import { PersonaSheet } from './components/PersonaSheet.tsx'
 import { ErrorBlock, LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
+import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
+import { useChat } from './lib/useChat.ts'
 import { useLoad, type Loaded } from './lib/useLoad.ts'
 import { setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
@@ -40,18 +42,29 @@ export default function App() {
   const settings: Settings = useMemo(() => ({ lang, customerId, t: strings(lang) }), [lang, customerId])
   const { t } = settings
   const closePersonas = useCallback(() => setPersonaSheet(false), [])
+  // The chat lives here, so its conversation survives a trip to the overview and back.
+  const chat = useChat(customerId, lang)
+  const ready = overview.status === 'ready' ? overview.data : null
+  const isChat = path === '/chat'
 
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
         <Header onLongPress={() => setPersonaSheet(true)} />
-        <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-2">
+        <main
+          className={`flex-1 px-4 pt-2 ${isChat ? 'pb-[calc(env(safe-area-inset-bottom)+88px)]' : 'pb-[calc(env(safe-area-inset-bottom)+16px)]'}`}
+        >
           {path === '/cards' && CardGallery ? (
             <Suspense fallback={<LoadingBlock lines={6} />}>
               <CardGallery />
             </Suspense>
-          ) : path === '/chat' ? (
-            <Chat question={params.get('q')} />
+          ) : isChat ? (
+            <Chat
+              chat={chat}
+              question={params.get('q')}
+              disclosure={ready?.ai_disclosure || t.disclosure}
+              suggestions={ready?.suggested_questions.length ? ready.suggested_questions : chatStrings(lang).starters}
+            />
           ) : overview.status === 'ready' ? (
             <Overview overview={overview.data} onRefresh={overview.refresh} />
           ) : overview.status === 'error' || personas.status === 'error' ? (
