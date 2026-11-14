@@ -43,7 +43,8 @@ export function LessonTurn({
   lessons: given,
   startAt,
   doneText,
-}: ClientTurnProps & { lessons?: Lesson[]; startAt?: string; doneText?: string }) {
+  onFinish,
+}: ClientTurnProps & { lessons?: Lesson[]; startAt?: string; doneText?: string; onFinish?: { label: string; act: () => void }[] }) {
   const { lang, t, customerId } = useSettings()
   const s = lessonStrings(lang)
   const opening = useOpening()
@@ -191,6 +192,7 @@ export function LessonTurn({
           verdict={verdict}
           last={last}
           doneText={doneText ?? s.done}
+          finish={onFinish}
           animate={picked !== null && !reduced}
           onNext={next}
           s={s}
@@ -212,6 +214,7 @@ function LessonReveal({
   verdict,
   last,
   doneText,
+  finish,
   animate,
   onNext,
   s,
@@ -222,6 +225,7 @@ function LessonReveal({
   verdict: string
   last: boolean
   doneText: string
+  finish?: { label: string; act: () => void }[]
   animate: boolean
   onNext: () => void
   s: Strings
@@ -255,7 +259,27 @@ function LessonReveal({
             {lesson.kind === 'quiz' ? lesson.concept : lesson.kind === 'split' ? s.two.concept : lesson.id === 1 ? s.one.concept : s.three.concept}
           </p>
           {last ? (
-            <p className="text-base text-ink-2">{doneText}</p>
+            <>
+              <p className="text-base text-ink-2">{doneText}</p>
+              {finish && finish.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {finish.map((step, index) => (
+                    <button
+                      key={step.label}
+                      type="button"
+                      onClick={step.act}
+                      className={
+                        index === 0
+                          ? 'min-h-11 rounded-pill bg-deep px-5 text-base font-semibold text-on-deep'
+                          : 'min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint'
+                      }
+                    >
+                      {step.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
             <button
               type="button"

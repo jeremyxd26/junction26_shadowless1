@@ -4,14 +4,26 @@ import { useSettings } from '../../lib/settings.ts'
 import { learnStrings } from './learnStrings.ts'
 import { miniTest } from './miniTests.ts'
 
-const ANSWER =
-  'min-h-11 rounded-md border border-line bg-surface px-4 py-2 text-left text-base font-semibold text-ink hover:bg-sunken disabled:hover:bg-surface'
+/** An answer; its colour comes only from its state, so no background class competes with another. */
+const ANSWER = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink'
+/** A pass is at least this many right answers out of three. */
+export const PASS_SCORE = 2
 
 /**
  * A topic's mini-test: three questions, one at a time. After each answer a short verdict, and after a
  * wrong one a friendly line on why; at the end the score ("2 of 3") is kept with the persona's progress.
  */
-export function MiniTest({ topic, onDone }: { topic: string; onDone: () => void }) {
+export function MiniTest({
+  topic,
+  onDone,
+  onNextTopic,
+}: {
+  topic: string
+  /** Back to the topic list. */
+  onDone: () => void
+  /** The next topic, or undefined after the last one. */
+  onNextTopic?: () => void
+}) {
   const { lang, customerId } = useSettings()
   const s = learnStrings(lang)
   const [questions] = useState(() => miniTest(topic, lang))
@@ -36,14 +48,38 @@ export function MiniTest({ topic, onDone }: { topic: string; onDone: () => void 
         <h3 ref={heading} tabIndex={-1} className="text-lg font-semibold text-ink outline-none">
           {s.testResult(score, questions.length)}
         </h3>
-        <p className="text-base text-ink-2">{score === questions.length ? s.testAll : s.testKind}</p>
-        <button
-          type="button"
-          onClick={onDone}
-          className="min-h-11 self-start rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
-        >
-          {s.back}
-        </button>
+        <p className="text-base text-ink-2">
+          {score === questions.length ? s.testAll : score >= PASS_SCORE ? s.testPassed : s.testRetryNote}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {score < PASS_SCORE ? (
+            <button
+              type="button"
+              onClick={() => {
+                setIndex(0)
+                setPicked(null)
+                setScore(0)
+                setFinished(false)
+              }}
+              className="min-h-11 rounded-pill bg-deep px-5 text-base font-semibold text-on-deep"
+            >
+              {s.retry}
+            </button>
+          ) : (
+            onNextTopic && (
+              <button type="button" onClick={onNextTopic} className="min-h-11 rounded-pill bg-deep px-5 text-base font-semibold text-on-deep">
+                {s.nextTopic}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            onClick={onDone}
+            className="min-h-11 rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
+          >
+            {s.backToTopics}
+          </button>
+        </div>
       </section>
     )
   }
@@ -59,7 +95,15 @@ export function MiniTest({ topic, onDone }: { topic: string; onDone: () => void 
         {question.options.map((option) => {
           const chosen = picked === option.key
           const isRight = option.key === question.right
-          const look = picked === null ? '' : isRight ? 'border-brand bg-mint-tint' : chosen ? 'border-warning bg-warning-tint' : 'opacity-60'
+          // Before the answer: white. After it: the right answer green, a wrong pick red, the rest faded.
+          const look =
+            picked === null
+              ? 'border-line bg-surface hover:bg-sunken'
+              : isRight
+                ? 'border-brand bg-mint'
+                : chosen
+                  ? 'border-danger bg-danger-tint'
+                  : 'border-line bg-surface opacity-60'
           return (
             <button
               key={option.key}
@@ -72,6 +116,7 @@ export function MiniTest({ topic, onDone }: { topic: string; onDone: () => void 
               }}
               className={`${ANSWER} ${look}`}
             >
+              {picked !== null && isRight && <span className="sr-only">, {s.testCorrectMark}</span>}
               {option.text}
             </button>
           )
