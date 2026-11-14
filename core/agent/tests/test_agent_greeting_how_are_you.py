@@ -25,8 +25,8 @@ def variants(form):
 
 
 @pytest.mark.parametrize("message", [v for form in FORMS for v in variants(form)])
-def test_every_finnish_how_are_you_is_the_greeting(message):
-    assert meta_intent(message) == "greeting", message
+def test_every_finnish_how_are_you_is_the_small_talk(message):
+    assert meta_intent(message) == "how_are_you", message   # #790: small talk, no longer the introduction
 
 
 @pytest.mark.parametrize("message", ["How are you?", "Hi, how are you doing?", "Miten sa voit", "Moi! Mitä kuuluu?"])
@@ -36,8 +36,8 @@ def test_the_greeting_answer_is_the_warm_one_with_the_offer_and_no_model_request
     done = dict(events)["done"]
     lang = "en" if message.startswith(("How", "Hi")) else "fi"
     assert done["outcome"] == "answered" and done["refusal"] is None
-    assert done["text"] in (template.pick(template.INTRO, lang), template.meta_text("greeting", lang, introduced=True))
-    assert done["follow_ups"] == template.brief_questions(lang) and model.plan_inputs == []
+    assert done["text"] == template.pick(template.HOW_ARE_YOU_REPLY, lang)   # #790: warm, turns to money
+    assert done["follow_ups"] == [template.pick(template.BRIEF_QUESTIONS[2], lang)] and model.plan_inputs == []
 
 
 TOOLS = [{"name": t, "description": "", "parameters_json_schema": {}} for t in
@@ -76,11 +76,17 @@ def test_the_finnish_generic_decline_reads_naturally():
 
 MORE = ["miten voit tänään", "kuinka voit tänään?", "How are you today?", "mitä sulle kuuluu tänään", "Miten menee nyt?",
         "how's it going", "How is it going?", "how are you doing", "What's up?", "whats up", "sup", "Hei, mitä sä puuhaat?",
-        "mitä puuhaat", "moi moi", "Heippa!", "terve terve", "moikka", "hei hei", "Moi moi, miten menee?"]
+        "mitä puuhaat", "Moi moi, miten menee?"]
+GREETINGS = ["moi moi", "Heippa!", "terve terve", "moikka", "hei hei"]
 
 
 @pytest.mark.parametrize("message", MORE)
-def test_the_second_set_of_forms_is_the_greeting(message):
+def test_the_second_set_of_forms_is_the_small_talk(message):
+    assert meta_intent(message) == "how_are_you", message
+
+
+@pytest.mark.parametrize("message", GREETINGS)
+def test_the_doubled_and_short_greetings_stay_the_greeting(message):
     assert meta_intent(message) == "greeting", message
 
 

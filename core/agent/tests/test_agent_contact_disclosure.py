@@ -80,7 +80,7 @@ def test_a_data_answer_first_discloses_once(make_pipeline):
 def test_a_decline_first_discloses_and_the_next_answer_does_not(make_pipeline):
     pipe = make_pipeline(ScriptedModel(plans=[[FunctionCall("decline", {"kind": "out_of_scope"})], SPEND],
                                        drafts=[GOOD]))
-    events = run(pipe, "Kerro vitsi", language="fi")
+    events = run(pipe, "Kerro runo", language="fi")   # "kerro vitsi" is small talk since #790
     first = done_of(events)
     assert first["ai_disclosure"] == DISCLOSURE["fi"] and first["actions"] == [CONTACT["fi"]]
     second = done_of(run(pipe, conversation_id=dict(events)["meta"]["conversation_id"]))

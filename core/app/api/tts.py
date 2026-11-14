@@ -70,6 +70,16 @@ def answer_record(app: Any, answer_id: str) -> dict[str, Any] | None:
     return audit.find(answer_id)
 
 
+# Fewer voice requests than this left in the 24 hours: the answer carries `X-Tts-Budget: low`, and the app
+# stops fetching ahead (it reads an answer only on a tap); with the budget used up the device voice reads.
+LOW_TTS_LEFT = 50
+
+
+def budget_header(service: TtsService) -> dict[str, str]:
+    left = service.remaining()
+    return {"X-Tts-Budget": "low" if left is not None and left < LOW_TTS_LEFT else "ok"}
+
+
 @router.post("/api/tts", response_model=None)
 def post_tts(request: Request, body: TtsRequest) -> Response | JSONResponse:
     request.state.language = body.language
@@ -90,7 +100,8 @@ def post_tts(request: Request, body: TtsRequest) -> Response | JSONResponse:
     except TtsError as exc:
         log.info("tts %s: %s", body.answer_id, exc.code)
         if exc.code in ("budget", "busy"):
-            return envelope("rate_limited", body.language, headers={"Retry-After": str(exc.retry_after or 60)})
+            return envelope("rate_limited", body.language, headers={"Retry-After": str(exc.retry_after or 60), "X-Tts-Budget": "low"})
         return envelope("model_unavailable", body.language)
     log.info("tts %s: %s, %d bytes", body.answer_id, "cache" if cached else "model", len(audio))
-    return Response(audio, media_type="audio/wav", headers={"Cache-Control": "private, max-age=3600"})
+    headers = {"Cache-Control": "private, max-age=3600", **budget_header(tts_service(request.app))}
+    return Response(audio, media_type="audio/wav", headers=headers)

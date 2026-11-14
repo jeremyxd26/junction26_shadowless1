@@ -419,7 +419,26 @@ function PathStep({
   )
 }
 
-/** The glossary: a search field, then the terms A–Z as an accordion. */
+/** `text` with every case-insensitive occurrence of `needle` in a light brand-green mark. */
+function Marked({ text, needle }: { text: string; needle: string }) {
+  if (!needle) return <>{text}</>
+  const lower = text.toLowerCase()
+  const parts: ReactNode[] = []
+  let at = 0
+  for (let found = lower.indexOf(needle); found >= 0; found = lower.indexOf(needle, at)) {
+    if (found > at) parts.push(text.slice(at, found))
+    parts.push(
+      <mark key={found} className="rounded-sm bg-mint-tint px-0.5 text-ink">
+        {text.slice(found, found + needle.length)}
+      </mark>,
+    )
+    at = found + needle.length
+  }
+  if (at < text.length) parts.push(text.slice(at))
+  return <>{parts}</>
+}
+
+/** The glossary: a search field, then the terms A–Z as an accordion; a search opens the matches and marks the words. */
 function Glossary({ s }: { s: Strings }) {
   const { lang } = useSettings()
   const opening = useOpening()
@@ -452,9 +471,12 @@ function Glossary({ s }: { s: Strings }) {
         <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
           {shown.map((entry) => (
             <li key={entry.id}>
-              <details className="group px-4">
+              {/* A search opens the matching terms (a new key resets the row when the search starts or ends). */}
+              <details key={needle ? 'search' : 'browse'} open={needle ? true : undefined} className="group px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-base font-semibold text-ink [&::-webkit-details-marker]:hidden">
-                  {entry.term}
+                  <span>
+                    <Marked text={entry.term} needle={needle} />
+                  </span>
                   <svg
                     aria-hidden="true"
                     viewBox="0 0 24 24"
@@ -466,7 +488,9 @@ function Glossary({ s }: { s: Strings }) {
                     <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </summary>
-                <p className="pb-2 text-base text-ink-2">{entry.text}</p>
+                <p className="pb-2 text-base text-ink-2">
+                  <Marked text={entry.text} needle={needle} />
+                </p>
                 {entry.figure && (
                   <p className="pb-3 text-sm text-ink-2">
                     {s.inYourNumbers}: <span className="font-semibold tabular-nums text-ink">{entry.figure}</span>

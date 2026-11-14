@@ -979,7 +979,8 @@ class Pipeline:
         identity, capabilities or help message gets one short sentence (#352). A message in Russian gets the
         English text and the line that Sentti answers in English or Finnish."""
         conv = a.conversation
-        text = template.meta_text(intent, lang, introduced=conv is not None and conv.introduced)
+        text = template.meta_text(intent, lang, introduced=conv is not None and conv.introduced,
+                                  turn=len(conv.turns) if conv is not None else 0)
         a.introduced = text == template.pick(template.INTRO, lang)
         if a.introduced and conv is not None:
             conv.introduced = True
@@ -989,7 +990,7 @@ class Pipeline:
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
-                      "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
+                      "follow_ups": template.meta_follow_ups(intent, lang), "lesson": None, "refusal": None,
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang

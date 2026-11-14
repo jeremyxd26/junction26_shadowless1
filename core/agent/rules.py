@@ -1229,6 +1229,12 @@ _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon
 _HOW_ARE_YOU = (r"(how are you( doing)?|how('s| is) it going|what'?s up|sup|(miten|kuinka) ((sa|sina) )?voit|"
                 r"(miten|kuinka) voit (sa|sina)|mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee|"
                 r"mita ((sa|sina) )?puuhaat)( (today|now|tanaan|nyt))?")
+# "Tell me a joke", "kerro vitsi" (folded, #790): the whole message, alone or after a greeting.
+_JOKE = (r"(((can|could|will|would) you )?(please )?(tell|give) (me|us) (a|another|one more|some)( (good|funny|money))? "
+         r"jokes?( please)?|(do you )?know any( (good|funny|money))? jokes|say something funny|make me laugh|"
+         r"(a |another )?(money )?jokes?( please)?|(kerro|kerropa|kerrotko|kertoisitko)( (mulle|minulle))?"
+         r"( (joku|jokin|yksi|toinen|hauska))? (raha)?vitsi|osaatko (kertoa )?(vitseja|vitsin|yhtaan vitsia)|"
+         r"(raha)?vitsi)")
 # The doubled Finnish greetings are also a goodbye: after an answer, "moi moi" is answered with the closing line, never
 # a new greeting (the orchestrator, #630)
 GOODBYE_GREETING = r"(moi moi|hei hei|heippa)"
@@ -1250,7 +1256,10 @@ META = [
                 r"ovatko tietoni turvassa|jaatko tietojani)"),
     ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
                r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
-    ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
+    # #790: small talk gets a warm template line that turns to money; "how are you spending?" is no small talk
+    ("how_are_you", rf"({_GREET} )?{_HOW_ARE_YOU}"),
+    ("joke", rf"({_GREET} )?{_JOKE}"),
+    ("greeting", rf"{_GREET}( are you there)?|are you there"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
 META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti"),

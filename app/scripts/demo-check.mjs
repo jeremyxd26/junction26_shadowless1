@@ -6,7 +6,7 @@
 // It writes nothing but this output. Never run it in a loop against the dev host: each run asks the
 // coach two questions.
 import { chromium } from 'playwright-core'
-import { TEXT, USAGE, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+import { CHIP_ROW, TEXT, USAGE, downOnly, findBrowser, line, parseAmount, parseArgs, rowProblems, rowQuestions } from './demo-check-lib.mjs'
 
 // The greeting and the amounts are API texts: Finnish from a live core with lang=fi, English in a
 // mock build (its examples are English only), so either form is accepted.
@@ -136,29 +136,31 @@ try {
     const hero = (await mod.locator('[data-opening-part="hero"] button span').first().textContent().catch(() => '')) ?? ''
     const review = mod.locator('[data-opening-part="review"]')
     const asks = (await review.count()) > 0 && (await review.first().innerText()).includes(T.asks)
-    const chips = await opening.locator('button').evaluateAll((buttons) => buttons.filter((b) => !b.closest('[data-opening-part]')).map((b) => b.innerText.trim()))
-    // The fit at 375 × 768, on the module itself.
+    // The opening's chips are one scrollable row since #784; its question chips are checked here.
+    const chips = rowQuestions(await mod.locator(CHIP_ROW).locator('button').allInnerTexts())
+    // The fit at 375 × 768, on the module itself: the row's first chip is above the composer and on screen.
     const fitPage = await context.newPage()
     await fitPage.setViewportSize({ width: 375, height: 768 })
     await fitPage.goto(`${base}/?persona=${persona}&lang=${lang}`)
     await fitPage.locator('[data-opening-part="hero"]').waitFor({ timeout: MODULE_MS }).catch(() => null)
     await fitPage.waitForTimeout(500)
-    const fit = await fitPage.evaluate(() => {
-      const opening = document.querySelector('[data-turn="opening"]')
-      const chips = [...(opening?.querySelectorAll('button') ?? [])].filter((b) => !b.closest('[data-opening-part]'))
-      const last = chips.at(-1)
+    const fit = await fitPage.evaluate((row) => {
+      const first = document.querySelector(row)?.querySelector('button')
       const composer = document.querySelector('form')
-      return last && composer ? { chip: Math.round(last.getBoundingClientRect().bottom), composer: Math.round(composer.getBoundingClientRect().top) } : null
-    })
+      if (!first || !composer) return null
+      const box = first.getBoundingClientRect()
+      return { chip: Math.round(box.bottom), composer: Math.round(composer.getBoundingClientRect().top), onScreen: box.left >= 0 && box.right <= innerWidth }
+    }, CHIP_ROW)
     await fitPage.close()
     const problems = []
     if (!GREETING.test(greeting)) problems.push(`greeting "${short(greeting, 30)}"`)
     if (amount(hero) === null) problems.push(`hero "${short(hero, 20)}" is not an amount`)
     if (!asks) problems.push(`no "${T.asks}" (answered already? Start over resets the viewer)`)
-    if (chips.length !== 3) problems.push(`${chips.length} chips, not 3`)
-    if (!fit) problems.push('no chips or no composer at 375×768')
-    else if (fit.chip > fit.composer) problems.push(`last chip ends at ${fit.chip} px, under the composer at ${fit.composer} px (375×768)`)
-    const measured = `"${short(greeting, 20)}", hero ${hero}, "${T.asks}" ${asks ? 'shown' : 'missing'}, ${chips.length} chips; last chip ${fit?.chip ?? '?'} px above the composer at ${fit?.composer ?? '?'} px (375×768)`
+    problems.push(...rowProblems(chips, T.firstQuestion))
+    if (!fit) problems.push('no chip row or no composer at 375×768')
+    else if (fit.chip > fit.composer) problems.push(`the chip row ends at ${fit.chip} px, under the composer at ${fit.composer} px (375×768)`)
+    else if (!fit.onScreen) problems.push('the row\'s first chip is off screen (375×768)')
+    const measured = `"${short(greeting, 20)}", hero ${hero}, "${T.asks}" ${asks ? 'shown' : 'missing'}, ${chips.length} question chips in the row, first "${short(chips[0] ?? '?', 30)}"; the row ends ${fit?.chip ?? '?'} px, the composer starts at ${fit?.composer ?? '?'} px (375×768)`
     report(2, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : `first screen: ${measured}`)
   }
 
@@ -220,7 +222,8 @@ try {
 
   // 4. The chip "Where did my money go?": an answer streams in and ends with text and a card.
   {
-    const chipNames = await mod.locator('[data-turn="opening"] button').evaluateAll((buttons) => buttons.filter((b) => !b.closest('[data-opening-part]')).map((b) => b.innerText.trim()))
+    // The question chips of the opening's row (#784).
+    const chipNames = rowQuestions(await mod.locator(CHIP_ROW).locator('button').allInnerTexts())
     const question = chipNames.includes(T.firstQuestion) ? T.firstQuestion : chipNames[0]
     if (!hasOpening || !question) {
       report(4, 'SKIP', 'the question chips of the opening turn are not in this build (#313)')
