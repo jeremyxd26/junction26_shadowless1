@@ -761,6 +761,16 @@ PLAN_SENTENCE = {
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
     "none_goal": ("None of the usual cuts would add much here; you already set aside about {goal} first.",
                   "Tavalliset vähennykset eivät lisäisi tässä paljon; laitat jo ensin sivuun noin {goal}."),
+    # What already goes to savings (#560), before the plan; it takes the goal's place in the text (the goal stays in
+    # the tool result and on the safe-to-spend card), so the answer never names two amounts "set aside". The
+    # amount's display carries "a month". The neutral line has no digit and no amount (the bank-screen rule) and ends
+    # at "yet": with the plan sentence it would pass the length rule's 35 words, and the card's own action speaks.
+    "already": ("A regular transfer of about {amount} already goes to savings ({share} of your income).",
+                "Säästöihin menee jo säännöllisesti noin {amount}, mikä on {share} tuloistasi."),
+    "already_no_share": ("A regular transfer of about {amount} already goes to savings.",
+                         "Säästöihin menee jo säännöllisesti noin {amount}."),
+    "no_transfer": ("In this account I don't see a regular transfer to savings yet.",
+                    "Tällä tilillä en vielä näe säännöllistä siirtoa säästöön."),
 }
 PLAN_MAX_NUMBERS = 3
 
@@ -778,7 +788,18 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     goal = goal if goal and isinstance(goal.get("value"), (int, float)) and goal["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    # What already goes to savings (#560): a lead sentence with its amount and share, or the neutral line when the
+    # tool saw no regular transfer; either takes the goal's place in the text. None when it could not be read.
+    saving, share = num(view.get("already_saving")), num(view.get("already_share"))
+    lead: tuple[str, list[str]] | None = None
+    if view.get("saving_seen") is True and saving:
+        lead = ((s("already").format(amount=tok(saving), share=tok(share)), [saving["id"], share["id"]]) if share
+                else (s("already_no_share").format(amount=tok(saving)), [saving["id"]]))
+    elif view.get("saving_seen") is False:
+        lead = (s("no_transfer"), [])
     if view.get("kind") != "plan":
+        if lead:
+            return s("none") + " " + lead[0], lead[1]
         return (s("none_goal").format(goal=tok(goal)), [goal["id"]]) if goal else (s("none"), [])
     total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
@@ -809,18 +830,31 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     else:
         cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
                ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
-    # The total and any cited cut share first, then the goal, then the year, within three numbers.
-    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
-    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
     cuts_text = s("and").join(cuts)
+    if lead and lead[1]:
+        # The transfer first, then the plan's total (no year, no goal), within three numbers: the share leaves first,
+        # then the whole lead.
+        if len(lead[1]) + 1 + len(cut_ids) > PLAN_MAX_NUMBERS and len(lead[1]) > 1:
+            lead = (s("already_no_share").format(amount=tok(saving)), [saving["id"]])
+        if len(lead[1]) + 1 + len(cut_ids) <= PLAN_MAX_NUMBERS:
+            text = lead[0] + " " + s("plan_no_year").format(total=tok(total), cuts=cuts_text)
+            return text, lead[1] + [total["id"]] + cut_ids
+        lead = None
+    if lead:   # the neutral line takes the goal's place; the plan sentence is as it is without the goal
+        goal = None
+    # The total and any cited cut share first, then the goal, then the year, within three numbers.
+    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if with_year:
         sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
     else:
         sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
     if with_goal:
         sentences.append(s("goal").format(goal=tok(goal)))
+    if lead:
+        sentences.append(lead[0])
     ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([goal["id"]] if with_goal else [])
     return " ".join(sentences), ids
 
