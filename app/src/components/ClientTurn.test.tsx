@@ -69,9 +69,9 @@ describe('the opening\'s client-turn chips (#319)', () => {
     openingChips.length = 0
   })
 
-  it('renders nothing while openingChips is empty', () => {
-    expect(openingChips).toEqual([])
-    expect(chips()).toBe('')
+  it('shows the registered "Lesson of the day" chip (#703)', () => {
+    expect(openingChips).toEqual(['lesson'])
+    expect(chips()).toContain('>Lesson of the day</button>')
   })
 
   it('shows a visible chip, apart from the question chips, and hides one that is not visible', () => {

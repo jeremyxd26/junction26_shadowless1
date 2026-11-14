@@ -43,6 +43,7 @@ function opening(shownReview: ShownReview | null, threadReviews: Record<string, 
     refresh: vi.fn(),
     scrollToReview: vi.fn(),
     pushClientTurn: vi.fn(),
+    overview: null,
   }
 }
 
