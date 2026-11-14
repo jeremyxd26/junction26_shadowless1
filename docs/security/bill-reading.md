@@ -21,6 +21,26 @@ Suppose an injected account number is **structurally valid** (correct check digi
 
 On a bill with a barcode, the barcode's account wins, and a different printed account is flagged as a disagreement. The demo uses only sample bills, and the reading never pays anything: the host shows, confirms and executes a payment.
 
+## What the model gets wrong, measured
+Accuracy on the four sample bills with the real model (2026-11-14, `gemini-3.8-flash`, four requests):
+
+| Sample | Fields right | Checked by code | Miss |
+|---|---|---|---|
+| 1 (fi, barcode) | 5/6 | 2 | barcode: 55 digits instead of 54, so it was dropped and the printed fields were used |
+| 2 (fi, barcode) | 6/6 | 5 | none |
+| 3 (fi, barcode) | 5/6 | 2 | barcode: 55 digits instead of 54, dropped as above |
+| 4 (en, no barcode) | 6/6 | 1 | none |
+| **All** | **22/24** | | |
+
+- **The barcodes.** The model miscounts a long run of zeros in a 54-digit barcode. The parser rejects the string and the reading falls back to the printed fields. Their IBAN and reference are still checked by their check digits; the amount and due date wait for the user's confirmation. A wrong barcode never becomes a field.
+- **The due date.** The first run scored 21/24: the model copied sample 4's "20 October 2026" exactly, but the date check took only Finnish and ISO dates. It now also takes an English month name ("20 October 2026", "20 Oct 2026"). The same cached reading scores 22/24 without a new request.
+
+## The endpoint's limits
+- `POST /api/bill/read` reads only the gallery's sample ids. An open upload is a separate issue behind a flag that is off.
+- The route goes through the persona allowlist and the viewer session. Its own read window allows 6 readings a minute per address and 30 an hour per viewer; over it, 429 `rate_limited` with `Retry-After`.
+- The log line of a reading holds counts only (fields found, fields checked), never a field value.
+- At deploy (`deploy/remote-deploy.sh`, `python -m core.bills.warmup`) each sample is read twice: once with the model (a cached sample costs nothing), then from the cache. The step prints counts against the answer key and never fails the deploy.
+
 ## Budget and privacy
 - **One request per reading.** There is no retry and no fallback model. A refusal (switch file, budget, pause, error) gives 503 `model_unavailable`, and the app offers typing the fields instead.
 - **Daily share.** `BILL_READ_DAILY_BUDGET` (default 50) is the readings' share of the daily model budget.
