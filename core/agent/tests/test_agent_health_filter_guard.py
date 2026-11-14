@@ -161,12 +161,22 @@ def test_the_health_mcc_group_and_a_health_merchant_alias_are_dropped_too(make_p
     ("How much did I spend at the pharmacy last month and what can I safely spend this week?", "en"),
     ("Paljonko käytin apteekkiin viime kuussa ja paljonko voin turvallisesti käyttää tällä viikolla?", "fi"),
 ])
-def test_a_planned_health_total_never_runs_even_when_the_question_names_health(make_pipeline, question, language):
-    # health stays declined as on dev: the model's Health total is dropped whatever the question says
+def test_a_question_that_names_health_keeps_the_filter_and_both_sentences_are_templates(make_pipeline, question,
+                                                                                        language):
+    # #571: the question names health, so the model's Health total runs; a Health answer is never a model draft, and
+    # the other tool's sentence beside it is its template too
     done, ran, model, cards = _ask(make_pipeline, question, _with_safe(), drafts=[LEAK, LEAK], language=language)
-    assert ran == [("get_safe_to_spend", {})] and model.compose_inputs == []
-    assert "card_health001" not in [c["card_id"] for c in cards]
+    assert ("get_spending", HEALTH_FILTER) in ran and ("get_safe_to_spend", {}) in ran
+    assert model.compose_inputs == [] and "card_health001" in [c["card_id"] for c in cards]
     assert validator.meta_text(done["text"]) is None and "{{" not in done["text_rendered"]
+    assert "llm_unavailable" not in done["warnings"]
+
+
+@pytest.mark.parametrize("merchant", ["Health service A", "Terveyspalvelu B"])
+def test_a_health_merchant_total_for_a_health_question_is_the_template(make_pipeline, merchant):
+    done, ran, model, _ = _ask(make_pipeline, "How much did I spend at the pharmacy last month?",
+                               _alone({"merchant": merchant}), drafts=[LEAK, LEAK])
+    assert ran == [("get_spending", {"merchant": merchant})] and model.compose_inputs == []
 
 
 @pytest.mark.parametrize("source", ["rules", "fallback"])
