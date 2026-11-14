@@ -11,26 +11,22 @@ interface Props {
   text: string
   /** The answer's language (`meta.language`); it picks the voice. */
   language: Language
-  /** False once a newer question was asked: the answer then stops speaking. */
-  latest: boolean
 }
 
 /**
  * A speaker next to Sentti's answer (#252). A tap reads the answer aloud with the device's voice
- * for its language, a second tap stops; another answer, a new question, leaving the screen or a
- * persona switch (the turn unmounts) stops it too. Nothing plays without a tap. Without speech
- * support or without a voice for the language, nothing is rendered.
+ * for its language, a second tap stops; another answer, a new question (the chat stops speech for
+ * every question, #438), leaving the screen or a persona switch (the turn unmounts) stops it too.
+ * Nothing plays without a tap. Without speech support or without a local voice for the language,
+ * nothing is rendered.
  */
-export function SpeakButton({ id, text, language, latest }: Props) {
+export function SpeakButton({ id, text, language }: Props) {
   const { lang } = useSettings()
   const s = speechStrings(lang)
   const voice = useVoice(language)
   const speakingId = useSpeakingId()
   const speaking = speakingId === id
 
-  useEffect(() => {
-    if (!latest) stopSpeaking(id)
-  }, [latest, id])
   useEffect(() => () => stopSpeaking(id), [id])
 
   if (!voice || !text) return null

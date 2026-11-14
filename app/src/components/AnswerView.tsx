@@ -221,7 +221,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       {(hasContent || streaming || done) && (
         <div className="flex min-h-11 items-center justify-between gap-2">
           <SenttiLabel s={s} />
-          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} latest={latest} />}
+          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
         </div>
       )}
       {streaming && <Stages answer={answer} s={s} />}
