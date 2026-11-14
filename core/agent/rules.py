@@ -823,6 +823,22 @@ WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For exa
 WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer taxis?", "What if I cut takeaway?"),
                          ("Entä jos vähentäisin ravintoloita?", "Entä jos käyttäisin taksia vähemmän?",
                           "Entä jos vähentäisin noutoruokaa?"))
+# A budget for a past period (#547): Sentti keeps no budget that the customer sets, so the rules ask back with what
+# they can show, and no answer says that a budget was or was not set. A budget for this week is the safe-to-spend
+# question, as before; "what is my monthly budget" stays as it was (the safe-to-spend card's own "Your monthly
+# budget allows" is a figure Sentti derives). Matched on the folded question.
+BUDGET_WORDS = r"\bbudget\w*|\bspending (limit|cap)s?\b|budjet\w*|\bkulutusraj\w*"   # "kuukausibudjetti" too
+BUDGET_PAST_FI = r"\bylitin\w*|\bpysyin\w*"   # "Ylitinkö budjettini?", "Pysyinkö budjetissa?": as "Did I go over …?"
+# At most 140 characters each: a longer question is rejected by the clarify function's schema (registry.ClarifyArgs),
+# and the answer then falls through to "I could not find data" (review of #579). The options name the two offers.
+BUDGET_BACK = ("Sentti sees your transactions, not a budget plan, so I can't say how you did against one. I can show "
+               "your spending or safe to spend.",
+               "Sentti näkee tapahtumasi, ei budjettisuunnitelmaa, joten en voi verrata kulutustasi siihen. Voin "
+               "näyttää kulutuksesi tai turvallisen summan.")
+BUDGET_OPTIONS = (("How much did I spend last month?", "What can I safely spend this week?"),
+                  ("Paljonko käytin viime kuussa?", "Paljonko voin turvallisesti käyttää tällä viikolla?"))
+BUDGET_OPTIONS_THIS_MONTH = (("How much did I spend this month?", "What can I safely spend this week?"),
+                             ("Paljonko käytin tässä kuussa?", "Paljonko voin turvallisesti käyttää tällä viikolla?"))
 # A money question the rules cannot map: it asks about the period only when it is about spending.
 MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
 # "Why is my safe to spend lower?" (#552, review of #574), on the folded question: the bare whole message ("why so
@@ -1467,6 +1483,15 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f not in dropped]
         if not found:
             return Claim(None, reason=why)   # the model, or the general question back (not the period)
+    preset = ((spending or {}).get("period") or {}).get("preset")
+    if re.search(BUDGET_WORDS, q) and set(found) <= {"safe_to_spend", "spending"} and preset != "this_week" and \
+            not (spending or {}).get("compare_to") and \
+            (re.search(PAST, q) or re.search(BUDGET_PAST_FI, q) or _other_period(spending)):
+        # "what was my budget last month", "did I stay within budget in August" (#547): the question back; this
+        # week's budget questions keep theirs (safe to spend, or the two rules' question back), and so does a
+        # comparison ("Why is my monthly budget lower than last month?": the spending comparison, as on dev)
+        options = BUDGET_OPTIONS_THIS_MONTH if preset == "this_month" else BUDGET_OPTIONS
+        return Claim("budget", tuple(RuleModel._clarify(BUDGET_BACK, options, lang)))
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)

@@ -543,6 +543,36 @@ FIXED_CUT = re.compile(
 # Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
 # "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
 KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
+# A budget, goal or limit the customer set or did not set (#547): "You did not set a budget for August 2026" was a
+# claim no tool returned. A draft may say it only when the answer's data holds such a figure (a label that names a
+# budget, goal or limit: the safe-to-spend card's "Your monthly budget allows", the savings goal).
+_SETTING_EN = r"(?:budgets?|goals?|limits?|targets?|caps?)"
+_SETTING_FI = r"\w*(?:budjet|tavoit|raja|katto)\w*"   # with a compound: "säästötavoitetta", "kuukausibudjettia"
+_SET_EN = r"(?:set|set\s+up|created|defined|made|chosen|picked|entered|added|agreed(?:\s+on)?)"
+SETTING_CLAIM = re.compile(
+    rf"\byou(?:\s+have|['’]ve|\s+had|['’]d)?\s+(?:not\s+|never\s+|yet\s+to\s+)?{_SET_EN}\s+(?:up\s+)?"
+    rf"(?:a|an|any|your|no|yourself\s+a)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:did\s*n['’]?t|did\s+not|have\s*n['’]?t|have\s+not|had\s*n['’]?t|had\s+not|never)\s+(?:yet\s+)?"
+    rf"(?:{_SET_EN}|have|had|got)\s+(?:up\s+)?(?:a|an|any|your)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:do\s*n['’]?t|do\s+not)\s+have\s+(?:a|an|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\b(?:no|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\s+(?:was|were|is|are|has\s+been|have\s+been)\s+(?:set|defined|set\s+up)\b"
+    rf"|\b{_SETTING_EN}\s+(?:that\s+)?you(?:\s+have|['’]ve)?\s+{_SET_EN}\b"
+    rf"|\byour\s+(?:[\w-]+\s+)?budget\s+(?:was|is|for|of)\b"
+    rf"|\bet\s+(?:ole\s+)?(?:asettanut|määrittänyt|määritellyt|laatinut|tehnyt|valinnut|asettaneet)\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b(?:asetit|määritit|laadit|olet\s+(?:asettanut|määrittänyt|laatinut))\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\bsinulla\s+ei\s+ole\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b{_SETTING_FI}\s+ei\s+ole\s+(?:asetettu|määritetty|määritelty)"
+    rf"|\bbudjettisi\s+(?:oli|on)\b", re.I)
+_SETTING_LABEL = re.compile(r"budget|goal|limit|target|budjet|tavoit|raja", re.I)
+
+
+def setting_claim(text: str, labels: Iterable[str] = ()) -> str | None:
+    """The words in which a draft says the customer set or did not set a budget, goal or limit, when no label in the
+    answer's data names one; None otherwise (#547)."""
+    if any(_SETTING_LABEL.search(label) for label in labels):
+        return None
+    m = SETTING_CLAIM.search(text)
+    return m.group(0).strip() if m else None
 # The stand's count without its noun (row 2): "cost {{n1}} across {{n2}}." The count follows across / over / in
 # / yhteensä and no noun follows it. A count whose noun comes first ("the number of transactions was {{n2}}",
 # "tapahtumien määrä oli {{n2}}") is fine (review of #437).
@@ -662,6 +692,10 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    setting = setting_claim(text, labels)
+    if setting:
+        problems.append(f"'{setting}': no tool returned a budget, goal or limit; never say the user set or did not "
+                        "set one, answer with the figures in <data>")
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
