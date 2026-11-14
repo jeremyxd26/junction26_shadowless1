@@ -659,6 +659,9 @@ ASSUMPTION_TEXT = {
     "forecast.bills_on_usual_days": (
         "Bills come on their usual days.",
         "Laskut tulevat tavallisina päivinään."),
+    "savings_plan.cuts_as_shown": (
+        "You cut these as shown and the rest of your spending stays as it is.",
+        "Vähennät näitä kuten näytetään, ja muu kulutuksesi pysyy ennallaan."),
     "forecast.no_income_before_payday": (
         "Salary and other money coming in before payday are not counted.",
         "Palkkaa ja muita ennen palkkapäivää tulevia rahoja ei lasketa."),
