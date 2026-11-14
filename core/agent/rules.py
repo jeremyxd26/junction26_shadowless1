@@ -180,7 +180,8 @@ WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
     # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
-    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks|"
+     r"\bruokakulu\w*", "Groceries"),   # "ruokakuluni" (#664)
     (r"restaurants?|dining out|eating out|eat out|fast[- ]food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
@@ -189,7 +190,12 @@ CATEGORY_WORDS = [
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan|vapaa-aja\w*", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
-    (r"\btransportation\b|liikkumi\w*", "Transportation"),   # the peer card's label (#403)
+    # the peer card's label (#403); "transport" and "liikenne", the app's own label for it (#664). The group phrases
+    # ("public transport", "joukkoliikenne") are removed before this list is read; an insurance or a fine is no
+    # transport spending ("transport insurance", "liikenteen vakuutus", "liikennevakuutus", "liikennesakko"; review
+    # of #672), for "transportation" too
+    (r"\btransportation\b(?! (insurance|fines?)\b)|liikkumi\w*|\btransport\b(?! (insurance|fines?)\b)|"
+     r"\bliikenne(kulu\w*|meno\w*)?\b|\bliikentee(n|seen|ssä|stä|lle)\b(?! (vakuutu|sak)\w*)", "Transportation"),
 ]
 # A word inside a compound that names something else is no group (#497): "parking fines", "pysäköintisakko",
 # "the cinema club", "elokuvakerho"; and "Cinemax" is no cinema (whole words only).
@@ -197,7 +203,8 @@ PARKING_WORDS = r"parking(?!\s+(fines?|tickets?)\b)|pysäköin(?!\w*(sak|virhe))
 # Those compounds name a thing no filter maps: the message is left unclaimed (named_object), never answered with
 # the unfiltered total or the user's bills (review of #514). Matched on the folded message.
 COMPOUND_OBJECT = (r"\bparking (fines?|tickets?)\b|\bpysakoin\w*(sak|virhe)\w*|\bparkki\w*(sak|virhe)\w*|"
-                   r"\bcinema clubs?\b|\belokuv\w*kerho\w*")
+                   r"\bcinema clubs?\b|\belokuv\w*kerho\w*|"
+                   r"\btransport(ation)? fines?\b|\bliikennesak\w*|\bliikentee\w* sak\w*")   # review of #672
 # "takeaway" the food, not "the main takeaway from …" / "one takeaway" (a key point)
 TAKEAWAY_WORDS = (r"(?<!key )(?<!main )(?<!big )(?<!biggest )(?<!one )take-?aways?(?!\s+(from|of)\b)|"
                   r"fast[- ]food|noutoruo\w*|pikaruo\w*")
@@ -1205,13 +1212,16 @@ def _cost_subject(q: str) -> str | None:
     m = re.search(COST_SUBJECT_EN, q) or re.search(COST_SUBJECT_FI, q)
     if not m:
         return None
-    phrase = " ".join((m.group(1) or m.group(m.lastindex)).split())
+    g = 1 if m.group(1) else m.lastindex
+    phrase = " ".join(m.group(g).split())
+    # the category words read the word after the phrase too: "liikenteen vakuutuksesta" is no Transportation (#672)
+    context = " ".join(q[m.start(g):].split()[:len(phrase.split()) + 1])
     if re.search(template.INCOME_WORDS + "|" + BONUS_WORD + r"|\btyonantaj\w*|\bemployer\w*", phrase):
         return None   # "Paljonko bonusta työnantaja maksoi?": money paid to the user, no thing bought
     first = phrase.split()[0]
     if first in COST_NO_THING or first in OBJECT_STOP or not _is_thing(first) or re.fullmatch(_M, first) or \
             re.search(fold_pattern(PERIOD_NOUN_AFTER), " " + phrase) or re.search(HEALTH, phrase) or \
-            any(re.search(rx, phrase) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            any(re.search(rx, context) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
         return None   # a category, group, period, or a health word (the Health rule's: "my doctor visits", #607)
     return phrase
 
