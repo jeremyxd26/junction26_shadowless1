@@ -146,23 +146,28 @@ def _groups(q: str, categories: list[str]) -> list[str]:
             if re.search(rx, q) and config.MCC_GROUP_CATEGORY.get(g) not in categories]
 
 
+def _categories(q: str, group_words=None) -> list[str]:
+    """The categories a folded question names outside its group words (review of #514): a category word inside a
+    group phrase is no category ("public transportation" is the public transport group, not Transportation;
+    "noutoruokaan" is takeaway, not Groceries)."""
+    rest = q
+    for rx, _ in group_words or MCC_GROUP_WORDS:
+        rest = re.sub(rx, " ", rest)
+    return [c for rx, c in CATEGORY_WORDS if re.search(rx, rest)]
+
+
 def _mixed_filter(q: str) -> bool:
     """A group and a category that does not hold it ("bars and groceries"): two selections, which one spending
-    filter cannot give; never one of them alone (review of #514). A category word inside a group word is not
-    another selection ("noutoruokaan" holds "ruokaan")."""
-    groups = _groups(q, [c for rx, c in CATEGORY_WORDS if re.search(rx, q)])
-    rest = q
-    for rx, _ in MCC_GROUP_WORDS:
-        rest = re.sub(rx, " ", rest)
-    own = {config.MCC_GROUP_CATEGORY.get(g) for g in groups}
-    return bool(groups) and any(c not in own for rx, c in CATEGORY_WORDS if re.search(rx, rest))
+    filter cannot give; never one of them alone (review of #514)."""
+    categories = _categories(q)
+    return bool(categories) and bool(_groups(q, categories))
 
 
 def plan_spending(question: str, as_of: date) -> dict | None:
     """get_spending arguments for a spending question, or None if no period can be found."""
     q = fold(question)
     args: dict = {}
-    categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    categories = _categories(q)
     groups = _groups(q, categories)
     flt = {}
     if groups:
@@ -331,7 +336,7 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
-    named = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    named = _categories(q, WHAT_IF_MCC_WORDS + MCC_GROUP_WORDS)
     categories = set(named) & config.WHAT_IF_CATEGORIES
     # a sub-group named with the category that holds it is that category ("restaurants and bars", review of #514)
     codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q) and GROUP_CATEGORY_OF_CODES.get(c) not in named}
@@ -726,7 +731,7 @@ class Claim:
 
 
 def _filter_of(q: str) -> dict:
-    categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    categories = _categories(q)
     groups = _groups(q, categories)
     return {"mcc_groups": groups} if groups else {"categories": categories} if categories else {}
 

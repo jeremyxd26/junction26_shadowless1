@@ -331,6 +331,25 @@ def test_two_groups_or_a_group_inside_its_category_keep_one_filter(question, lan
     assert found.rule == "spending" and first(found).args["filter"] == expected, (question, found)
 
 
+@pytest.mark.parametrize("question,lang,expected", [   # a category word inside a group phrase is no category
+    ("how much did I spend on public transportation last month", "en", {"mcc_groups": ["public_transport"]}),
+    ("How much did I spend on public transportation in August?", "en", {"mcc_groups": ["public_transport"]}),
+    ("how much did I spend on public transportation and taxis last month", "en",
+     {"mcc_groups": ["taxi", "public_transport"]}),
+    ("paljonko kulutin joukkoliikenteeseen viime kuussa", "fi", {"mcc_groups": ["public_transport"]}),
+    ("paljonko kulutin pikaruokaan viime kuussa", "fi", {"mcc_groups": ["takeaway"]}),
+    ("how much did I spend on transportation last month", "en", {"categories": ["Transportation"]}),
+])
+def test_a_category_word_inside_a_group_phrase_is_the_group(question, lang, expected):
+    found = ask(question, lang)
+    assert found.rule == "spending" and first(found).args["filter"] == expected, (question, found)
+
+
+def test_a_what_if_on_public_transportation_cuts_the_group_not_the_category():
+    found = ask("what if I cut public transportation by 10%")
+    assert first(found).args == {"selection": {"kind": "mcc", "value": "4111"}, "cut_pct": 10}, found
+
+
 def test_a_what_if_on_a_group_and_another_category_asks_back():
     found = ask("what if I cut bars and groceries by 10%")
     assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], found
