@@ -66,7 +66,9 @@ _MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", 
 _PAYEE = re.compile(r"[^\W_][\w .,&'’()/+\-]*", re.UNICODE)
 # A payee is a name (review of #594, D2): a phone number (seven or more digits in all), a domain ("site.example/pay")
 # or a key-shaped token (24 or more characters without a space) is no payee, so it is shown as unread.
-_PAYEE_DOMAIN = re.compile(r"\b[\w-]+\.[a-z]{2,}\b", re.I)
+# A company form written after a dot ("As.Oy Kotikatu", "S.Oy") is a name, not a domain: none of these is a top-level
+# domain, and a real domain later in the text ("evil.oy.example.com") is still found (#637).
+_PAYEE_DOMAIN = re.compile(r"\b[\w-]+\.(?!(?:oy|oyj|ab|abp|ry|tmi|ay)\b)[a-z]{2,}\b", re.I)
 _PAYEE_LONG_TOKEN = re.compile(r"\S{24,}")
 
 

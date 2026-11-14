@@ -7,8 +7,11 @@ image is never written anywhere. It never fails the deploy: every problem is one
 
     python -m core.bills.warmup        # in the service container (deploy/remote-deploy.sh): the Gemini reader
     python -m core.bills.warmup --reader nemotron   # Nemotron first (#573): only by hand, on the coordinator's word
+    python -m core.bills.warmup --reader nemotron-only   # Nemotron alone (#637): a timeout shows as a timeout
 
-Without that switch the warm-up never calls the Nemotron provider, whatever the environment holds (#594, D1).
+Without one of those switches the warm-up never calls the Nemotron provider, whatever the environment holds (#594,
+D1). With `nemotron` a Nemotron timeout is followed by a Gemini reading (one Gemini request); `nemotron-only`
+never builds the Gemini reader, so it warms the Nemotron cache and nothing else.
 
 The same run with a key on a developer machine is the accuracy check of #250 (four requests the first
 time; ask the coordinator before any further real run).
@@ -54,10 +57,19 @@ def score(fields: dict[str, Any], truth: dict[str, Any]) -> tuple[int, int, int]
     return correct, len(FIELDS), checked
 
 
-def reading_client(nemotron: bool = False) -> Any | None:
+def reading_client(nemotron: bool = False, alone: bool = False) -> Any | None:
     """The reader the service builds (the same keys, budgets, ledgers and cache): the Gemini client, or None
     without a key. With `nemotron` (the command line's --reader nemotron, #594 D1) Nemotron with the Gemini extract
-    role as its fallback when Nemotron is set up (#573)."""
+    role as its fallback when Nemotron is set up (#573). With `alone` (--reader nemotron-only, #637) the Nemotron
+    client alone, or None when Nemotron is not set up."""
+    if alone:
+        from pathlib import Path
+
+        from core.agent.gemini import OFF_SWITCH, GeminiSettings
+        from core.bills.nemotron import NemotronSettings, make_nemotron_client
+        env = GeminiSettings()
+        return make_nemotron_client(NemotronSettings(), cache=env.gemini_cache, cache_dir=Path(env.gemini_cache_dir),
+                                    off_switch=OFF_SWITCH)
     from core.agent.gemini import make_agent_model
     from core.app.settings import Settings
 
@@ -122,13 +134,15 @@ def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     nemotron = args in (["--reader", "nemotron"], ["--reader=nemotron"])
+    alone = args in (["--reader", "nemotron-only"], ["--reader=nemotron-only"])
     try:
-        client = reading_client(nemotron=True) if nemotron else reading_client()
+        client = (reading_client(alone=True) if alone else reading_client(nemotron=True) if nemotron
+                  else reading_client())
     except Exception as exc:  # noqa: BLE001
         print(f"bill readings skipped: the model could not be set up ({type(exc).__name__})")
         return 0
     if client is None:
-        print("bill readings skipped: no model key")
+        print("bill readings skipped: " + ("Nemotron is not set up" if alone else "no model key"))
         return 0
     try:
         run(client)
