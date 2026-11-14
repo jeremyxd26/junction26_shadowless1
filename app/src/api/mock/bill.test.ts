@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BillApiError } from '../bill.ts'
 import type { BillErrorEnvelope, BillExplainRequest, BillExplainResponse, BillReadResponse } from '../billTypes.ts'
 import { createMockBillApi } from './bill.ts'
-import { FORECASTS } from './billForecast.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import { createMockClient } from './mockClient.ts'
 import contract from './contract-examples.json'
 
@@ -21,20 +21,9 @@ async function rejection(promise: Promise<unknown>): Promise<BillApiError> {
 
 describe('bill mock', () => {
   it('answers the contract requests with the contract responses', async () => {
-    // Until `mocks:sync` brings contract 0.3.4, the examples have no `forecast`: the mock adds the
-    // provisional one (see billForecast.ts). After the sync the examples' own forecast is used.
-    const matched = examples['bill.response'] as BillExplainResponse
-    const unknown = examples['bill.response_unknown'] as BillExplainResponse
-    expect(await api.explain(examples['bill.request'] as BillExplainRequest)).toEqual({
-      ...matched,
-      forecast: matched.forecast ?? FORECASTS.covered,
-    })
-    expect(await api.explain(examples['bill.request_fields'] as BillExplainRequest)).toEqual({
-      ...unknown,
-      forecast: unknown.forecast ?? FORECASTS.outside_forecast,
-    })
+    expect(await api.explain(examples['bill.request'] as BillExplainRequest)).toEqual(examples['bill.response'])
+    expect(await api.explain(examples['bill.request_fields'] as BillExplainRequest)).toEqual(examples['bill.response_unknown'])
   })
-
   it('answers another 54-digit barcode with the contract error, reason included', async () => {
     const barcode = (examples['bill.request'] as BillExplainRequest).barcode!.replace(/1$/, '2')
     const error = await rejection(
@@ -96,35 +85,30 @@ describe('bill mock', () => {
     }
   })
 
-  it('attaches a forecast for every status: the contract cases and the provisional ones', async () => {
-    const barcode = await api.explain(examples['bill.request'] as BillExplainRequest)
-    expect(barcode.forecast?.status).toBe('covered')
+  it('gives every forecast status: three from the contract examples, tight from the fixture', async () => {
+    const notCovered = examples['bill.response_not_covered'] as BillExplainResponse
+    expect((await api.explain(examples['bill.request'] as BillExplainRequest)).forecast?.status).toBe('covered')
     const request = examples['bill.request_fields'] as BillExplainRequest
-    const typed = await api.explain(request)
-    expect(typed.forecast).toEqual(FORECASTS.outside_forecast)
-    const water = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Vesi Oy' } })
-    expect(water.forecast?.status).toBe('not_covered')
-    expect(water.forecast?.chip).toEqual({ type: 'ask', label: 'See your balance forecast', prompt: 'Will my money last until payday?' })
-    const energy = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Energia Oy' } })
-    expect(energy.forecast?.status).toBe('tight')
-    expect(energy.forecast?.chip).toBeNull()
-  })
-
-  it('keeps the provisional forecasts within the contract rules', () => {
-    for (const forecast of Object.values(FORECASTS)) {
-      if (forecast.status === 'outside_forecast') {
-        expect([forecast.before, forecast.counted, forecast.after, forecast.shortfall]).toEqual([null, null, null, null])
-        continue
-      }
-      const { before, counted, after } = forecast
-      expect(Math.round((before!.value - counted!.value) * 100) / 100).toBe(after!.value)
-      expect(forecast.chip !== null).toBe(forecast.status === 'not_covered')
-      expect(forecast.shortfall !== null).toBe(forecast.status === 'not_covered')
+    expect((await api.explain(request)).forecast?.status).toBe('outside_forecast')
+    // The contract's own typed bill, and the typed-fallback sample's payee, get the contract's not_covered.
+    const typed = {
+      ...request,
+      fields: { payee: notCovered.bill.payee!, iban: notCovered.bill.iban, reference: notCovered.bill.reference, amount: '700.00', due_date: notCovered.bill.due_date },
     }
+    expect(await api.explain(typed)).toEqual(notCovered)
+    const water = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Vesi Oy' } })
+    expect(water.forecast).toEqual(notCovered.forecast)
+    const energy = await api.explain({ ...request, fields: { ...request.fields!, payee: 'Esimerkki Energia Oy' } })
+    expect(energy.forecast).toEqual(TIGHT_FORECAST)
   })
 
-  it('copied covered and outside_forecast exactly from the contract examples (0.3.4)', () => {
-    expect((examples['bill.response'] as BillExplainResponse).forecast).toEqual(FORECASTS.covered)
-    expect((examples['bill.response_unknown'] as BillExplainResponse).forecast).toEqual(FORECASTS.outside_forecast)
+  it('keeps the provisional tight forecast within the contract rules', () => {
+    const { before, counted, after, shortfall, chip } = TIGHT_FORECAST
+    expect(Math.round((before!.value - counted!.value) * 100) / 100).toBe(after!.value)
+    // A bill outside the forecast's bills takes its whole amount: the bill's amount Number (11.2).
+    expect(counted!.method).toBe('user_input@1')
+    expect(counted!.evidence_ref).toBeNull()
+    expect(shortfall).toBeNull()
+    expect(chip).toBeNull()
   })
 })

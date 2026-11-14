@@ -18,3 +18,14 @@ export function trapTarget<T>(items: readonly T[], active: T | null, shift: bool
   if (shift) return index <= 0 ? last : null
   return index === -1 || index === items.length - 1 ? first : null
 }
+
+/**
+ * Whether this sheet closes on a keydown: Escape, not handled yet by another sheet, and this sheet
+ * is the top dialog (#513). Every open sheet listens on `window`; the first one to close marks the
+ * event handled, so one Escape closes exactly one sheet even when the dialogs change under it
+ * (a deep-linked overview mounts late, so its listener runs after the top sheet already closed).
+ */
+export function escapeCloses<T>(event: { key: string; defaultPrevented: boolean }, dialogs: ArrayLike<T>, panel: T | null): boolean {
+  if (event.key !== 'Escape' || event.defaultPrevented || panel === null) return false
+  return dialogs.length > 0 && dialogs[dialogs.length - 1] === panel
+}

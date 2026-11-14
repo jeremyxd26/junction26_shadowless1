@@ -314,6 +314,17 @@ def _quotable(word: str) -> bool:
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
 
 
+UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
+                   "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
+
+
+def unknown_lead(word: str, language: str) -> str:
+    """#598: the sentence for a thing no category maps, before the answer to the other question; the user's word is
+    quoted when it is safe to quote, and never with a digit (the answer's text has no digits of its own)."""
+    quote = bool(word) and _quotable(word) and not re.search(r"\d", word)
+    return pick(UNKNOWN_PLAIN, language).format(word=word) if quote else pick(UNKNOWN_NO_WORD, language)
+
+
 def _first_month(details: dict[str, Any]) -> date:
     """The customer's own first day of data from the tool's error (#379), else the dataset's first day."""
     first = _iso_day(details.get("first"))
@@ -598,7 +609,21 @@ def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[s
     tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
               (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
     text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
-    return text.format(**{**{"goal": ""}, **tokens}), [node["id"] for node in cited]
+    text = text.format(**{**{"goal": ""}, **tokens})
+    # #575: a pending or "Needed" review's purchase (core.agent.why_review) takes the place of the other side's
+    # figure: the first sentence stays, the review sentence follows, still at most three numbers.
+    review = view.get("review_effect") or {}
+    amount_id = (review.get("amount") or {}).get("id")
+    review_key = {("pending", True): "why_review_pending_lowers", ("pending", False): "why_review_pending_same",
+                  ("needed", True): "why_review_needed_moved", ("needed", False): "why_review_needed_same"}.get(
+        (review.get("state"), bool(review.get("moved"))))
+    if amount_id and review_key:
+        first = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+        kept = cited[:2] if key == "why_budget_goal" else cited[:1]
+        sentence = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[review_key], language).format(
+            amount="{{" + amount_id + "}}")
+        return first + " " + sentence, [node["id"] for node in kept] + [amount_id]
+    return text, [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
