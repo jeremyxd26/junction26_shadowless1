@@ -4,7 +4,11 @@
 // - `bill.read_response`, `bill.response`, `bill.response_unknown` and `bill.error`.
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
-// - the readings of the other samples (sample_4 has a misread amount over the explain limit).
+// - the readings of the other samples (sample_1 has a reference that fails its check digits, kept
+//   `unchecked` with a note; sample_3 answers 503 `model_unavailable`; sample_4 has a misread
+//   amount over the explain limit);
+// - the readings' own rate window (section 11.4): a 7th reading within a minute answers 429
+//   `rate_limited` with `Retry-After`.
 // The housing sample returns the contract's `bill.read_response` in the request's language: for
 // Finnish exactly the example; for English the same values with English displays of the amount and
 // the due date (provisional, like sample_1's).
@@ -297,10 +301,43 @@ function sameFields(fields: NonNullable<BillExplainRequest['fields']>, bill: Bil
   )
 }
 
-export function createMockBillApi(): BillApi {
+// ---- Rate window of the readings (section 11.4) -----------------------------------------------
+
+/** Readings allowed per minute, as the core's window per address. */
+export const READS_PER_MINUTE = 6
+
+const RATE_LIMITED: Record<Language, string> = {
+  en: 'Too many bill readings in a short time. Wait a moment and try again.',
+  fi: 'Liian monta laskun lukua lyhyessä ajassa. Odota hetki ja yritä uudelleen.',
+}
+
+/**
+ * The window of the readings: over 6 a minute, 429 `rate_limited` with `Retry-After` in whole
+ * seconds until the oldest reading leaves the window. Readings that are answered count, as on the
+ * core; a refused one does not.
+ */
+export function createReadWindow(now: () => number = Date.now) {
+  const times: number[] = []
+  return function admit(lang: Language): void {
+    const current = now()
+    while (times.length > 0 && current - times[0] >= 60_000) times.shift()
+    if (times.length >= READS_PER_MINUTE) {
+      const wait = Math.max(1, Math.ceil((times[0] + 60_000 - current) / 1000))
+      throw new BillApiError(429, { code: 'rate_limited', message: RATE_LIMITED[lang], retryable: true }, wait)
+    }
+    times.push(current)
+  }
+}
+
+export function createMockBillApi(now: () => number = Date.now): BillApi {
+  const admit = createReadWindow(now)
   return {
     samples: (lang) => later(() => samples(lang), 200),
-    read: (request) => later(() => readSample(request.sample_id, request.language), 700),
+    read: (request) =>
+      later(() => {
+        admit(request.language)
+        return readSample(request.sample_id, request.language)
+      }, 700),
     explain: (request) => later(() => explain(request), 500),
   }
 }

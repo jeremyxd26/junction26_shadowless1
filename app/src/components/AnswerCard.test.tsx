@@ -38,21 +38,29 @@ describe('AnswerCard: profile, peer and bills', () => {
   })
   afterAll(() => vi.unstubAllGlobals())
 
-  it('profile: the name, the description, the traits and every feature number as its display', () => {
+  it('profile (#684): the name in normal weight, the traits, the deciding feature large and three rows; no title, no description', () => {
     const html = render(profile)
-    expect(html).toContain(profile.profile.label)
-    expect(html).toContain(profile.profile.description)
+    expect(html).toContain(`<p class="mt-2 text-lg leading-7 text-ink">${profile.profile.label}</p>`)
+    // The title restates the question and the description is the answer's sentence.
+    expect(html).not.toContain(escape(profile.title))
+    expect(html).not.toContain(profile.profile.description)
     for (const trait of profile.traits) expect(html).toContain(trait.label)
-    for (const feature of profile.features) expect(html).toContain(feature.value.display)
+    const [deciding, ...rest] = [...profile.features].sort((a, b) => Number(b.decides_label) - Number(a.decides_label))
+    expect(html.slice(html.indexOf('data-answer-main'))).toContain(deciding.value.display)
+    for (const feature of rest.slice(0, 3)) expect(html).toContain(feature.value.display)
+    expect(html.split('data-figure-row').length - 1).toBe(Math.min(3, rest.length))
+    // The period once, as a caption.
+    expect(html).toContain(`data-answer-caption="" class="min-w-0 flex-1 text-xs text-muted">${deciding.value.period.label}</p>`)
   })
 
-  it('peer: you against the median, with the gap, the percentile and the group size', () => {
+  it('peer (#684): you as the main number, then the median, the gap and the percentile', () => {
     const html = render(peer)
-    for (const number of [peer.you, peer.peer_median, peer.vs_median, peer.percentile, peer.peer_group.size]) {
+    for (const number of [peer.you, peer.peer_median, peer.vs_median, peer.percentile]) {
       expect(html).toContain(number.display)
     }
-    expect(html).toContain(peer.peer_group.label)
-    expect(html).toContain(escape(peer.note))
+    expect(html.split('data-figure-row').length - 1).toBe(3)
+    // Its title names what is compared, so it stays, in the normal weight (not CARD_TITLE).
+    expect(html).toContain(`<p class="mt-2 text-lg leading-7 text-ink">${escape(peer.title)}</p>`)
   })
 
   it('peer without a comparable group: only the note, no numbers', () => {
@@ -62,7 +70,7 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain(peer.peer_median.display)
   })
 
-  it('bills: the bills card with its bills and total', () => {
+  it('bills: its bills and total', () => {
     const html = render(bills)
     const items = (bills as unknown as { items: { label: string; typical_month: { display: string } }[] }).items
     expect(items.length).toBeGreaterThan(0)
@@ -76,20 +84,123 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain(profile.profile.description)
   })
 
-  it('peer: the gap has its visible label, and the large chip has a medium twin for narrow screens', () => {
-    const html = render(peer)
-    expect(html).toContain(`>${peer.vs_median.label}</span>`)
-    expect(html).toContain('hidden min-[360px]:inline-flex')
-    expect(html).toContain('inline-flex min-[360px]:hidden')
+  it('peer: the gap has its visible label', () => {
+    expect(render(peer)).toContain(`>${peer.vs_median.label}</span>`)
   })
 
-  it('a number without an evidence ref is a plain chip, not a button', () => {
+  it('a number without an evidence ref is plain text, not a button; with one it opens its evidence (#684: no pill)', () => {
     const html = render({ ...peer, vs_median: { ...peer.vs_median, evidence_ref: null } } as PeerData)
-    expect(html).toContain(`<span class="inline-flex min-w-11`)
-    expect(html).toMatch(new RegExp(`<span class="inline-flex min-w-11[^"]*">${peer.vs_median.display}</span>`))
-    expect(html).not.toMatch(new RegExp(`<button[^>]*>${peer.vs_median.display}</button>`))
+    // A plain span with the 44 px ::after target, and no button named after the number.
+    expect(html).toMatch(/<span class="inline-flex items-center[^"]*after:-inset-y-2\.5[^"]*">/)
+    expect(html).not.toContain(`aria-label="${peer.vs_median.label}: `)
     // With a ref it opens the evidence: a button with the label in its accessible name.
     expect(render(peer)).toMatch(new RegExp(`<button[^>]*aria-label="${peer.vs_median.label}: ${peer.vs_median.display}`))
+    expect(render(peer)).not.toContain('rounded-pill border font-semibold')
+  })
+
+  it('what-if (#684): the monthly saving large, then the week, the year and the baseline', () => {
+    const whatif = examples['card.whatif'] as Card & {
+      result: Record<'saving_per_month' | 'saving_per_week' | 'saving_per_year' | 'baseline_per_month', { display: string }>
+    }
+    const html = render(whatif)
+    expect(html.slice(html.indexOf('data-answer-main'))).toContain(whatif.result.saving_per_month.display)
+    for (const key of ['saving_per_week', 'saving_per_year', 'baseline_per_month'] as const) expect(html).toContain(whatif.result[key].display)
+    expect(html.split('data-figure-row').length - 1).toBe(3)
+    expect(html).not.toContain(whatif.title)
+  })
+
+  it('what-if not offered: no "€0.00" headline, the frame with its title as before', () => {
+    const whatif = examples['card.whatif'] as Card & { result: Record<string, unknown> & { saving_per_month: { display: string } } }
+    const html = render({ ...whatif, result: { ...whatif.result, status: 'not_offered' } } as unknown as Card)
+    expect(html).toContain(whatif.title)
+    expect(html).not.toContain('data-answer-main')
+  })
+
+  it('safe to save at 0 (#684 review): the reason amount is the first row, still three rows', () => {
+    for (const name of ['card.safe_to_save_zero', 'card.safe_to_save_everyday']) {
+      const save = examples[name] as Card & {
+        reason: { category: { label: string } | null; amount: { label: string; display: string } }
+      }
+      expect(save.reason).toBeTruthy()
+      const html = render(save)
+      const rows = html.split('data-figure-row').slice(1)
+      expect(rows).toHaveLength(3)
+      expect(rows[0]).toContain(`>${save.reason.category?.label ?? save.reason.amount.label}</span>`)
+      expect(rows[0]).toContain(`aria-label="${save.reason.amount.label}: ${save.reason.amount.display}`)
+    }
+  })
+
+  it('safe to spend (#684): four secondary numbers are cut to three rows', () => {
+    const hero = (examples['overview.response'] as { hero: Card & { secondary: { display: string }[] } }).hero
+    expect(hero.secondary.length).toBeGreaterThan(3)
+    expect(render(hero).split('data-figure-row').length - 1).toBe(3)
+  })
+
+  it('a fact card has no source label (#685)', () => {
+    const html = render({ ...profile, estimate: null } as ProfileData)
+    expect(html).not.toContain('From your transactions')
+    expect(render({ ...profile, type: 'stores', estimate: null } as unknown as Card)).not.toContain('From your transactions')
+  })
+
+  const basketsOf = (name: string) =>
+    (examples[name] as { cards: Card[] }).cards.find(
+      (card) => card.type === 'breakdown' && (card as unknown as { items: { key: string }[] }).items.some((item) => item.key === 'regular_essentials'),
+    ) as Card & { total: { display: string }; items: { label: string }[]; comparison: unknown }
+
+  it('baskets breakdown (#696): the total large, every basket as a row, no green pills', () => {
+    const baskets = basketsOf('overview.response')
+    const html = render(baskets)
+    expect(html).toContain('data-answer-main')
+    expect(html).toContain(baskets.total.display)
+    const rows = html.split('data-figure-row').slice(1)
+    expect(rows.length).toBe(baskets.items.length + (baskets.comparison ? 1 : 0))
+    baskets.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+    expect(html).not.toContain('bg-mint')
+    expect(html).not.toContain(`<h3`)
+  })
+
+  it('baskets with a review pending (#696 ruling): all four parts of the total, "Waiting for your answer" included', () => {
+    const pending = basketsOf('overview.response_pending')
+    expect(pending.items.length).toBe(4)
+    const rows = render(pending).split('data-figure-row').slice(1)
+    expect(rows.length).toBeGreaterThanOrEqual(4)
+    pending.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+  })
+
+  it('bills (#696): the total due before payday large, every bill as a row (no part of the total is cut)', () => {
+    const html = render(bills)
+    expect(html).toContain('data-answer-main')
+    const rows = html.split('data-figure-row').slice(1)
+    const items = (bills as unknown as { items: { label: string }[] }).items
+    expect(rows.length).toBe(items.length)
+    const four = { ...bills, items: [...items, ...items].slice(0, 4).map((item, index) => ({ ...item, bill_id: `b${index}` })) } as unknown as Card
+    expect(render(four).split('data-figure-row').length - 1).toBe(4)
+    expect(html).not.toContain('bg-mint')
+  })
+
+  it('what-if with a caveat (#696): its caveats under the numbers, as the sheet shows them; a plain estimate shows none', () => {
+    const whatif = examples['card.whatif'] as Card & { result: Record<string, unknown> }
+    const caveat = 'Your restaurant spending changes a lot from month to month.'
+    const withCaveat = render({ ...whatif, result: { ...whatif.result, status: 'estimate_with_caveat', caveats: [caveat] } } as unknown as Card)
+    expect(withCaveat).toContain('data-answer-caveats')
+    expect(withCaveat).toContain(escape(caveat))
+    expect(withCaveat).toContain('data-answer-main')
+    const notOffered = render({ ...whatif, result: { ...whatif.result, status: 'not_offered', caveats: [caveat] } } as unknown as Card)
+    expect(notOffered).toContain(escape(caveat))
+    expect(notOffered).not.toContain('data-answer-main')
+    const plain = render({ ...whatif, result: { ...whatif.result, status: 'estimate', caveats: [caveat] } } as unknown as Card)
+    expect(plain).not.toContain('data-answer-caveats')
+  })
+
+  it('review in an answer (#696): the white frame of the answer card, the amount once in the question (no large repeat), answer buttons kept', () => {
+    const review = examples['card.review'] as Card & { amount: { display: string }; options: { label: { en: string } }[] }
+    const html = render(review)
+    expect(html).not.toContain('data-answer-main')
+    // Visible text only: the number's button also names the amount in its accessible label.
+    expect(html.replace(/<[^>]*>/g, '').split(review.amount.display).length - 1).toBe(1)
+    expect(html).not.toContain('bg-deep')
+    expect(html).toContain(review.amount.display)
+    for (const option of review.options) expect(html).toContain(escape(option.label.en))
   })
 
   it('bills and safe to save in an answer draw no action of their own (the chat shows them as chips)', () => {

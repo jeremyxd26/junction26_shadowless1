@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
-from core.agent import people, template
+from core.agent import people, savings_transfer, template
 from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
 from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
@@ -40,31 +40,119 @@ AMOUNT_EN = r"(€\s?)?(\d[\d\s.,]*|" + _NUMBER_EN + r")\s?(€|euros?|eur|bucks
 AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|"
              r"\w+kymmentä|sata|satanen|satasen|tuhat|tonni|tonnin)\s?(€|euroa?|e)?\b")
 
+# Object tests for the credit class (#677), so a rare ordinary wording is not refused: a loan's own papers ("Can I get
+# a loan statement?"), a loan from a listed source that lends no money ("Saanko lainaa kirjastosta?"), lending to
+# someone ("Paljonko voin lainata kaverilleni?" is guarded in place) and borrowing from one's own money ("How much can I
+# borrow from my savings goal?"). On a hard rule the refusing side is the safe side: the source is an allowlist, so a
+# bank or any other name ("Saanko lainaa Nordealta?") keeps the refusal, as does an account at the bank. Investing time
+# keeps the investment refusal (review of #682): a time object with a period would read "invest" as a category total.
+LOAN_OBJECT = (r"(?!\s+(statements?|documents?|papers?|numbers?|accounts?|receipts?|letters?|calculators?|overviews?"
+               r"|details|balances?|summar\w*|history|interest|payments?|repayments?|terms|agreements?|contracts?"
+               r"|bills?|limits? (statements?|letters?))\b)")
+LOAN_SOURCE = (r"(?!\s+(kirjasto|ystäv|(työ)?kaver|naapur|(iso)?isä|(iso)?äi[dt]|(iso)?vanhemm|sisko|sisar|velj|mumm"
+               r"|pap(p)?a|ukki|puoliso|vaimo|mieh)\w*(sta|stä|lta|ltä)(ni|si|mme|nne|nsa|nsä)?\b)")
+OWN_MONEY_SOURCE = (r"(?!\s+from\s+(my|our)\s+(own\s+)?(savings( goal)?|buffer|goal|account|pot|reserve|money"
+                    r"|emergency fund)\b(?!\s+(at|with|in|from)\s+(the|a|my|our)\s+(banks?|lenders?)\b))")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?\b|merchant ids?\b|raakatiedot|"
                + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     # The entries below are whole words or listed word forms (#539): "selection", "promo code", "vaalia" (to cherish),
     # "laakeri" (a bearing), "weatherproof" or "toisen kuukauden" (the second month) are ordinary words.
     ("other_person_data", r"\bCUST\d+|\bcustomer\b(?!\s+(service|support|care|portal|experience|satisfaction|loyalty|"
-                          r"club|desk|hotline|feedback|centre|center)\b(?!\s+(agent|representative|rep|worker|"
+                          # a customer number with digits is another customer's (review of #657); "customer gifts of …"
+                          r"club|desk|hotline|feedback|centre|center|parking|gifts?(?!\s+(of|from|to)\b)|"
+                          r"number(?!\s*\d)|area|magazine)\b(?!\s+(agent|representative|rep|worker|"
                           r"employee|person)))|\bneighbou?r(s|'s|s')?\b|"
                           r"\bnaapur(i|in|ia|ille|illa|ilta|ista|issa|iin|it|eiden|eitten|eita|eille|eilla|eilta|eista|"
-                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers)\b|"
+                          r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers|clients)\b|"
                           r"\bmuiden (ihmisten|asiakkaiden|käyttäjien|henkilöiden|tapahtum\w*|tilit\w*|"
                           r"tili(llä|lle|ltä|ä|n|en)|tiedot|tietoja|"
                           r"saldo\w*|kulutus|kulutusta|kulut|kuluja|menot|menoja|rahat|rahoja|tulot|tuloja|palkat|palkkoja)\b|"
                           r"\bjonkun toisen\b|\btoisen (ihmisen|henkilön|asiakkaan|käyttäjän|tili\w*|"
                           r"tapahtum\w*)\b"),
-    ("credit_decision", r"\bmortgag(e|es|ed)\b|\bcredit ?scores?\b|\bcreditworth(y|iness)\b|\bapprove (my |a )?loan\b|"
-                        r"\bloan (be )?approved\b|\basuntolain\w*|\bluottokelpo\w*|\bmyöntääkö\b|\blainapäätös\w*"),
-    ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
-                          r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
+    # a decision about credit, never the user's own mortgage payment, its interest or a credit score report (#627)
+    # (a loan or credit question without these words keeps its outcome: "Should I take a loan to afford a car?" is the
+    # planner's, whose prompt never suggests borrowing)
+    ("credit_decision", r"\bapprove (my |a |the )?(loan|mortgage)\b|"
+                        r"\b(loan|mortgage) (application )?(be |get |gets |been )?(approved|granted|accepted|rejected)\b|"
+                        r"\b(will|would|can|could|do|does|might) (i|we) (get|qualify for|be approved for|be granted|afford) "
+                        r"(a |an |the )?(new |bigger )?mortgage\b|"
+                        r"\bshould (i|we) (take|get|apply for|take out) (a |an |the )?(new )?mortgage\b|"
+                        r"\b(good|best|right|cheapest|which|what kind of) mortgages?\b|"
+                        r"\b(my|our|what is my|whats my) credit ?(scores?|ratings?|standing|history)\b"
+                        r"(?![\s-]+(reports?|checks?|services?|fees?)\b)|"
+                        # the user's own credit as a class (#677): "Is my credit good enough for a car loan?", "Do I
+                        # have good credit?", "Can I get a credit card?" (never its statement), "Mikä on
+                        # luottotietoni?", "Myöntäisikö pankki minulle lainan?"
+                        r"\b(is|are) (my|our) credit\b.*\b(good|enough|high|strong|ok|okay)\b|"
+                        r"\b(do|have) (i|we) (got |have )?(good|bad|enough|decent|great|poor|any) credit\b|"
+                        r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|"
+                        r"apply for) (a |an |the )?(new )?credit cards?\b" + LOAN_OBJECT + r"|"
+                        r"\bluottotie(to|do)\w*|\bmyöntäisi(kö)?\b|"
+                        r"\bcredit ?scores?\b(?=\s*\?)|\b(am|are) (i|we) creditworthy\b|\bcreditworthiness\b|"
+                        r"\bmyöntääkö\b|\bsaa(nko|mmeko|isinko) (asunto)?lain\w*\b" + LOAN_SOURCE +
+                        r"|\bluottokelpoisuute(ni|si|mme)\b|"
+                        r"\bonko (minulla |meillä )?luottokelpoisuu\w*|\blainapäätös\w*|"
+                        # eligibility as a class (review of #657): eligible / likely / qualify, can I get or borrow,
+                        # how much can I borrow, is my income enough, in English and Finnish
+                        r"\b(eligible|likely|qualif\w*|pre-?approved)\b.*\b(mortgage|loan)s?\b|"
+                        r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|borrow|"
+                        r"afford) (a |an |the )?(new |bigger |car |home )?(mortgage|loan)\b" + LOAN_OBJECT + r"|"
+                        r"\b(can|could) (i|we) borrow\b" + OWN_MONEY_SOURCE +
+                        r"|\bhow much (can|could|would) (i|we) borrow\b" + OWN_MONEY_SOURCE + r"|"
+                        r"\b(income|salary|earnings|pay) (is |are )?(enough|sufficient|high enough) for\b.*\b(mortgage|loan)\b|"
+                        r"\bwould (the |a |my )?(bank|lender) (give|lend|approve|accept)\b|"
+                        r"\b(voinko|voimmeko|saisinko|pääsenkö|pääsisinkö) (saada |ottaa )?(asunto|auto|kulutus)?lain\w*\b"
+                        + LOAN_SOURCE + r"|"
+                        r"\bpaljonko (minä )?(asunto|auto)?lainaa (saan|saisin|voin saada)\b|"
+                        r"\bpaljonko voin lainata\b(?!\s+\w+(lle|lleni|llesi|lleen|llemme|llenne)\b)|"
+                        r"\briittää(kö)?\b.*\b(asunto|auto)?lain\w*|\bonko (minulla|meillä) varaa (asunto|auto)?lain\w*|"
+                        r"\bluottokelpoi(?!suusselvity|suusraport|suustarkist)\w*"),
+    ("investment_advice", r"\b(should|which|what|best)\b.*\b(buy|buying|sell|selling|invest|investing|hold|own|pick)\b"
+                          r".*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(should|which|what|best)\b.*\b(stocks?|shares|funds?|etfs?|crypto\w*|bitcoin)\b.*"
+                          r"\b(buy|sell|invest|hold|own|pick)\b|"
+                          r"\b(best|good|top|safest) (stocks?|shares|funds?|etfs?|crypto\w*)\b|"
+                          r"\b(which|what) (stocks?|shares|etfs?|crypto\w*|bitcoin)\b|"
+                          # R7 as a class (review of #657): which or what fund is best, savings into a security, a
+                          # security or saving, an opinion on one, is it worth it
+                          r"\b(which|what) funds? (is|are) (the )?(best|good|right|safest)\b|\bbest funds?\b|"
+                          r"\bput (my|our|the) (money|savings) into (funds?|stocks?|shares|etfs?|crypto\w*|bitcoin|gold)\b|"
+                          r"\bshould (i|we) (get|buy)\b.*\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(shares|stocks?|funds?|etfs?|crypto\w*|bitcoin)\b.*\bor (save|saving|keep)\b|"
+                          r"\b(think|opinion) (about|of|on) (bitcoin|crypto\w*|stocks?|shares|funds?|etfs?)\b|"
+                          r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
+                          r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
+                          r"\b(could|would|can|shall) (i|we) (invest|start investing)\b|"   # "should" and "where": the #650 forms below
+                          # R7 as a class, the rows #657 left for later (#677): a good time to buy, a recommendation,
+                          # a pick, "better than", "smart to buy gold", which fund (Finnish)
+                          r"\b(good|right|best|bad) time to (buy|sell|invest)\b|"
+                          r"\brecommend\w*\b.*\b(stocks?|shares|(?<!emergency )(?<!rainy day )funds?|etfs?|crypto\w*"
+                          r"|bitcoin|gold)\b|"
+                          r"\bpick (a |an |some |me a |me some )?(stocks?|shares|funds?|etfs?)\b|"
+                          r"\b(index funds?|stocks?|shares|etfs?|crypto\w*|bitcoin|gold) (are |is )?better than\b|"
+                          r"\b(smart|wise|sensible|a good idea|worth it) to (buy|invest in|get|own) (gold|stocks?|shares"
+                          r"|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(mikä|mihin|minkä|millainen|millaiseen) (rahasto|osake|etf)\w*|"
+                          r"\b(rahasto|osake|etf)\w*\b.*\b(kannattaa|pitäisi) valita\b|"
+                          # "invest in" stays refused as before: the spending rule would read "invest" as the Invest
+                          # Deposit category, a wrong total for "invest in my garden" (#627, written down)
+                          r"\binvest(ing)? (in|into)\b|\bshould (i|we) put (my|our|the) (money|savings) into\b|"
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto|bitcoin|krypto)\w*|"
-                          r"\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b|"
-                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*"),
-    ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
+                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*|"
+                          # whether or how to invest, with any tail ("Should I invest like the average Finn?"), before
+                          # the peer rule (#650; R7)
+                          # "invest", "investing", "investments", never "investigate" (review of #655)
+                          r"\bshould (i|we) (\w+ ){0,2}invest(ing|ments?)?\b|\b(how|where|what) (should|would|could|can|"
+                          r"do) (i|we) (\w+ )?invest(ing|ments?)?\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?"
+                          r"invest(ing|ments?)?\b|"
+                          r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
+                          r"\b(miten|kuinka|mihin) (\w+ )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
+                          r"(\w+ )?sijoittaa\b"),
+    ("unsafe", r"\bam i (ill|sick(?! of\b)|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
     # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my
     # savings account now.", "Make a payment of 30 euros to my landlord.", "Lähetä 20 euroa ystävälleni". Only as a
@@ -76,13 +164,23 @@ DECLINE_RULES = [
                r"[^.?!]{0,40}?\b(to|for)\b)|"
                r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(lähetä|siirrä|maksa|lähettää|siirtää|maksaa)\b"
                r"[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\w+(lle|lleni|llesi|llemme|lleen)\b"),
+    # The same request with "put" or "deposit" into savings or an account (#668): "Put 100 euros into savings",
+    # "Laita 100 euroa säästöön", "Pistä 50 euroa säästötilille". Only as a request, so "what if I put 100 euros into
+    # savings", "how much did I put into savings" and a budget or goal setting stay what they were.
+    ("unsafe", r"(^|[.!?;,]\s*|\b(please|pls|kindly|can you|could you|would you|will you|i want you to|"
+               r"i need you to|go ahead and)\s+)(put|deposit|add|stash|place)\s+" + AMOUNT_EN +
+               r"[^.?!]{0,30}?\b(in|into|to|on)\s+(my\s+|the\s+|our\s+)?(savings?|savings account|account)\b"
+               r"(?!\s+(goal|target|budget|plan)s?\b)|"
+               r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(laita|laittaa|pistä|pistää|pane|panna|talleta|"
+               r"tallettaa)\b[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\b(säästöön|säästöihin|säästötili\w*|tilille\w*|"
+               r"tilillesi|tililleni)\b"),
     ("out_of_scope", r"\bjust (estimate|guess)\b|\bany number\b(?!\s+of\b)|"
                      r"\bmake up (a |an |some )?(number|amount|figure)s?\b|\bguess (a |an |some )?(number|amount|figure)s?\b|"
                      r"\binvent (a |an )?(number|amount)s?\b|\bkeksi (jokin |joku )?(luku|summa)\b|"
                      r"\barvaa (jokin |joku )?(luku|summa)\b|\bmikä tahansa (luku|summa)\b|"
                      # Python and JavaScript ("Teach me Python", "Kirjoita JavaScript-funktio", "pythonilla"), never
                      # "Monty Python", the snakes ("pythons"), or a ticket, show, conference, course or book
-                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+(tickets?|shows?|conferences?|"
+                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+([\w-]+\s+)?(tickets?|shows?|conferences?|"
                      r"workshops?|courses?|books?|snakes?|kurssi\w*|kirja\w*|konferenssi\w*|lipu\w*|liput)\b)|"
                      # "code" only as program code ("write code", "python code"), never a promo, QR, zip or area code
                      r"\b(write|writing|wrote|written|generate|generating)\s+(me\s+|us\s+)?(some\s+|the\s+)?code\b|"
@@ -96,7 +194,7 @@ DECLINE_RULES = [
                      r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)vaaleista\b|"
                      r"\bvaaleista\b(?=\s*([?.!,;]|$))|\bvaali(kone|tulo|ehdokas|kampanja|lupaus)\w*|"
                      r"\bmedicines?\b|\bheadaches?\b|\blääke(?!r)\w*|\bpäänsärky\w*|"
-                     r"\bweather\b(?![-\s]?(proof|strip|resist|seal))|"
+                     r"\bweather\b(?![-\s]?(proof|strip|resist|seal|apps?\b|stations?\b|radios?\b))|"
                      # a recipe asked for in any words ("Pancake recipe please"), never the spending on recipes or a
                      # recipe box, kit, app, subscription, book, magazine, delivery or service
                      r"(?<!\bon )(?<!\bfor )\brecipes?\b(?![\s-]+(box|boxes|kits?|apps?|subscriptions?|books?|"
@@ -130,7 +228,8 @@ WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
     # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
-    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks|"
+     r"\bruokakulu\w*|\bruokameno\w*", "Groceries"),   # "ruokakuluni" (#664), "ruokamenoni" (#683)
     (r"restaurants?|dining out|eating out|eat out|fast[- ]food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
@@ -139,7 +238,12 @@ CATEGORY_WORDS = [
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan|vapaa-aja\w*", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
-    (r"\btransportation\b|liikkumi\w*", "Transportation"),   # the peer card's label (#403)
+    # the peer card's label (#403); "transport" and "liikenne", the app's own label for it (#664). The group phrases
+    # ("public transport", "joukkoliikenne") are removed before this list is read; an insurance or a fine is no
+    # transport spending ("transport insurance", "liikenteen vakuutus", "liikennevakuutus", "liikennesakko"; review
+    # of #672), for "transportation" too
+    (r"\btransportation\b(?! (insurance|fines?)\b)|liikkumi\w*|\btransport\b(?! (insurance|fines?)\b)|"
+     r"\bliikenne(kulu\w*|meno\w*)?\b|\bliikentee(n|seen|ssä|stä|lle)\b(?! (vakuutu|sak)\w*)", "Transportation"),
 ]
 # A word inside a compound that names something else is no group (#497): "parking fines", "pysäköintisakko",
 # "the cinema club", "elokuvakerho"; and "Cinemax" is no cinema (whole words only).
@@ -147,7 +251,8 @@ PARKING_WORDS = r"parking(?!\s+(fines?|tickets?)\b)|pysäköin(?!\w*(sak|virhe))
 # Those compounds name a thing no filter maps: the message is left unclaimed (named_object), never answered with
 # the unfiltered total or the user's bills (review of #514). Matched on the folded message.
 COMPOUND_OBJECT = (r"\bparking (fines?|tickets?)\b|\bpysakoin\w*(sak|virhe)\w*|\bparkki\w*(sak|virhe)\w*|"
-                   r"\bcinema clubs?\b|\belokuv\w*kerho\w*")
+                   r"\bcinema clubs?\b|\belokuv\w*kerho\w*|"
+                   r"\btransport(ation)? fines?\b|\bliikennesak\w*|\bliikentee\w* sak\w*")   # review of #672
 # "takeaway" the food, not "the main takeaway from …" / "one takeaway" (a key point)
 TAKEAWAY_WORDS = (r"(?<!key )(?<!main )(?<!big )(?<!biggest )(?<!one )take-?aways?(?!\s+(from|of)\b)|"
                   r"fast[- ]food|noutoruo\w*|pikaruo\w*")
@@ -176,20 +281,56 @@ MONTH_RX = (r"(?:\b(january|february|march|april|may|june|july|august|september|
 # a year or a day, or capitalised inside a sentence.
 MAY_MONTH = (r"\b(in|of|for|during|since|from|until|till|to|through|and|or|vs|versus|than|between|last|this|next|"
              r"early|late|mid|before|after|\d{1,2}(st|nd|rd|th)?)\s+may\b|\bmay\s+(\d|and\b|or\b|vs\b|versus\b)")
+# A digit after an amount or comparison word is an amount, never a count of months or days (review of #665): "Käytinkö
+# yli 50 viimeisen kuukauden aikana ravintoloihin?" asks about the past month. Fixed-width lookbehinds, folded
+# spelling; put right before the digit of a number-before form.
+NOT_AN_AMOUNT = (r"(?<!yli )(?<!alle )(?<!noin )(?<!vahintaan )(?<!enintaan )(?<!over )(?<!under )(?<!than )")
+# "viime kuun" right after a digit that is a count ("12 viime kuun") is that many months; after an amount ("yli 100
+# viime kuun") it is last month, as before: no digit before it, or the digit (1 to 6 of them) follows an amount word.
+_AMOUNT_WORDS = ("yli", "alle", "noin", "vahintaan", "enintaan", "over", "under", "than")
+LAST_MONTH_NOT_COUNT = (r"(?:(?<!\d )|" + "|".join(f"(?<={w} {'[0-9]' * n} )" for w in _AMOUNT_WORDS for n in range(1, 7))
+                        + ")")
 
 PRESETS = [
-    (r"last (3|three) months|past (3|three) months|viimeisen (3|kolmen) kuukauden|viimeiset (3|kolme) kuukautta", "last_3_months"),
-    (r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|\bkeskimäärin kuukaudessa\b",
+    # the singular and the plural genitive, with the digit or the word (#543, #651): "viimeisten kolmen kuukauden".
+    # Each month alternative ends on the whole word, "aikana" optional, so a bare message full-matches it (#673).
+    # The number before "viimeisen" is the same period ("kolmen viimeisen kuukauden", #665).
+    # "kk" and "kuun" are the month too, the digit may touch "kk", and "viime" may stand for "viimeisen" after the
+    # number: "viimeisen 3kk", "viimeisen kolmen kk", "3 viime kuun" (#665); "12:n kuukauden" and "kuukautena" too.
+    # A digit before "viime(isen)" is no count after an amount word (NOT_AN_AMOUNT).
+    (r"last (3|three) months|past (3|three) months|viimeis(en|ten) (3|kolmen)(:n)? (kuukauden|kuukautena)( aikana)?\b|"
+     r"\b(" + NOT_AN_AMOUNT + r"3|kolmen) viimeisen kuukauden( aikana)?\b|viimeiset (3|kolme) kuukautta|"
+     r"viimeis(en|ten) (3|kolmen) ?(kuun|kk)\b|\b(" + NOT_AN_AMOUNT + r"3|kolmen) viime(isen|isten)? "
+     r"(kuukauden|kuun|kk)\b", "last_3_months"),
+    (AVERAGE_MONTHLY := r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|"
+                        r"\bkeskimäärin kuukaudessa\b",
      "last_6_months"),   # the metric's window (#395 row 14)
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
-    (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
-    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)", "last_12_months"),
-    (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
+    (r"last (6|six) months|past (6|six) months|viimeis(en|ten) (6|kuuden)(:n)? (kuukauden|kuukautena)( aikana)?\b|"
+     r"\b(" + NOT_AN_AMOUNT + r"6|kuuden) viimeisen kuukauden( aikana)?\b|"
+     r"viimeis(en|ten) (6|kuuden) ?(kuun|kk)\b|\b(" + NOT_AN_AMOUNT + r"6|kuuden) viime(isen|isten)? "
+     r"(kuukauden|kuun|kk)\b", "last_6_months"),
+    # the plural genitive and the number in words are the same period (#543, #651): "viimeisten 12 kuukauden aikana",
+    # "viimeisen kahdentoista kuukauden" (the answers' own wording). "12" and "vuoden" are whole words: "viimeisen
+    # 120 päivän" and "viimeisen vuodenvaihteen" are not twelve months (#665). "viimeisen 12 kuun", "viimeisen 12kk",
+    # "viimeisen 12 kk" and "12 viime kuun" are twelve months, as before (#665).
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen vuoden\b|"
+     r"viimeis(en|ten) (12|kahdentoista)(:n)? (kuukauden|kuukautena)( aikana)?\b|"
+     r"\b(" + NOT_AN_AMOUNT + r"12|kahdentoista) viimeisen kuukauden( aikana)?\b|"
+     r"viimeis(en|ten) (12|kahdentoista) ?(kuun|kk)\b|\b(" + NOT_AN_AMOUNT + r"12|kahdentoista) viime(isen|isten)? "
+     r"(kuukauden|kuun|kk)\b", "last_12_months"),
+    # "viime kuun" after a number is that many months ("3 viime kuun", "kolmen viime kuun", #665), never last month;
+    # after an amount ("yli 100 viime kuun") it is last month, as before (LAST_MONTH_NOT_COUNT)
+    (r"last month|previous month|viime kuussa|" + LAST_MONTH_NOT_COUNT +
+     r"(?<!kahden )(?<!kolmen )(?<!neljän )(?<!viiden )(?<!kuuden )"
+     r"(?<!seitsemän )(?<!kahdeksan )(?<!yhdeksän )(?<!kymmenen )(?<!toista )viime kuun\b|viime kuukausi\b|"
+     r"edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
     (r"last week|viime viikolla", "last_week"),
-    (r"this year|year to date|tänä vuonna", "year_to_date"),
+    # "(viimeisen) vuodenvaihteen jälkeen" (since the New Year) is the year so far, not twelve months (#665)
+    (r"this year|year to date|tänä vuonna|vuodenvaihteen jälkeen", "year_to_date"),
 ]
 # A range of months (#379). Groups: first month (English, Finnish), its year, second month, its year.
 _M = (r"(?:\b(january|february|march|april|may|june|july|august|september|october|november|december|"
@@ -223,6 +364,19 @@ LAST_YEARS = (r"\b(?:last|past) " + _N + r" years\b|\bviimeisen " + _N + r" vuod
               r" vuotta\b")
 YEAR_BEFORE_LAST = r"\byear before last\b|\btoissa ?vuonna\b|\btoissa ?vuoden\b|\btoissavuo\w*"
 YEARS_AGO = r"\b" + _N + r" years? ago\b|\b" + _N + r" (?:vuotta|vuosi) sitten\b"
+# A whole number of months or days counted back from the data's last day (#665): "the last 36 months", "viimeisen 120
+# päivän", "kahden viimeisen kuukauden". 3, 6 and 12 months are the presets (PRESETS reads them); any other count is
+# the custom range it names, never another period. A number before "viimeisen" is never "the past month".
+COUNT_WORDS = {**NUMBER_WORDS, "twelve": 12, "kahdentoista": 12}
+_C = r"(\d{1,4}|" + "|".join(sorted(COUNT_WORDS, key=len, reverse=True)) + r")"
+# the number before "viimeisen": a digit after an amount word is no count (NOT_AN_AMOUNT, review of #665)
+_C_BEFORE = r"(" + NOT_AN_AMOUNT + r"\d{1,4}|" + "|".join(sorted(COUNT_WORDS, key=len, reverse=True)) + r")"
+MONTHS_BACK = (r"\b(?:last|past) " + _C + r" months\b|\bviimeis(?:en|ten) " + _C + r"(?::n)? (?:kuukauden|kuukautena)\b|"
+               r"\b" + _C_BEFORE + r" viimeisen kuukauden\b|\bviimeis(?:en|ten) " + _C + r" ?(?:kuun|kk)\b|\b" +
+               _C_BEFORE + r" viime(?:isen|isten)? (?:kuukauden|kuun|kk)\b")   # "viimeisen 9kk", "24 viime kuun"
+DAYS_BACK = (r"\b(?:last|past) " + _C + r" days\b|\bviimeis(?:en|ten) " + _C + r" paivan\b|\b" + _C_BEFORE +
+             r" viimeisen paivan\b")
+NUMBER_BEFORE_LAST = r"\b(" + NOT_AN_AMOUNT + r"\d+|\w+toista|\w+kymmenen|" + "|".join(COUNT_WORDS) + r") viimeis"
 
 
 def _last_complete_months(n: int, as_of: date) -> tuple[date, date]:
@@ -239,9 +393,43 @@ def _number(word: str) -> int:
     return int(word) if word.isdigit() else NUMBER_WORDS[word]
 
 
+def _counts(q: str) -> list[tuple[str, int]]:
+    """Every "last N months / days" in a folded message, as (unit, N), months first (#665)."""
+    found = []
+    for rx, unit in ((MONTHS_BACK, "months"), (DAYS_BACK, "days")):
+        for m in re.finditer(rx, q):
+            word = next(g for g in m.groups() if g)
+            found.append((unit, int(word) if word.isdigit() else COUNT_WORDS[word]))
+    return found
+
+
+def _counted_range(unit: str, n: int, as_of: date) -> tuple[date, date] | str:
+    """The dates of one count; "preset" for 3, 6 or 12 months (PRESETS reads those), "unread" out of range."""
+    if unit == "months" and n in (3, 6, 12):
+        return "preset"
+    if not 0 < n <= (120 if unit == "months" else 3660):
+        return "unread"
+    if unit == "months":
+        return _last_complete_months(n, as_of)
+    return date.fromordinal(as_of.toordinal() - n + 1), as_of
+
+
+def _counted_back(q: str, as_of: date) -> tuple[date, date] | str | None:
+    """#665: the dates of the message's first "last N months / days" count for a count no preset has; "preset" or
+    "unread" (see _counted_range); None when the message counts no months or days."""
+    counts = _counts(q)
+    return _counted_range(*counts[0], as_of) if counts else None
+
+
 def _relative_period(q: str, as_of: date, months: list[tuple[int, int]]) -> tuple[date, date] | None:
-    """The dates of "the past month", "over the last 5 years", "the year before last", "two years ago"."""
-    if re.search(PAST_MONTH, q):
+    """The dates of "the past month", "over the last 5 years", "the year before last", "two years ago", and of "the
+    last N months / days" (#665)."""
+    counted = _counted_back(q, as_of)
+    if isinstance(counted, tuple):
+        return counted
+    if counted is not None:
+        return None                        # a preset's count, or one out of range: never another period
+    if re.search(PAST_MONTH, q) and not re.search(NUMBER_BEFORE_LAST, q):
         return _last_complete_months(1, as_of)
     if m := re.search(LAST_YEARS, q):
         n = _number(next(g for g in m.groups() if g))
@@ -342,9 +530,15 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     between = re.search(r"between (\d{1,2}) and (\d{1,2}) " + MONTH_RX + r"\s+(\d{4})", q)
     year_only = re.search(r"\b(?:in|vuonna|vuoden)\s+(\d{4})\b", q)
     presets = [p for rx, p in PRESETS if re.search(rx, q)]
-    preset = presets[0] if presets else None
+    named = named_periods(q, as_of)
+    # a narrowing word never outranks the period it narrows (#665): "so far this year" is the year, "lately, in the
+    # last six months" the six months; alone, "so far" or "lately" keeps its own preset
+    preset = next((p for p in named if not p.startswith("counted")), presets[0] if presets else None)
     if compare and {"this_month", "last_month"} <= set(presets):
         preset = "this_month"   # "compare this month with last month": this month, against the one before
+    elif later := adjacent_pair(named):
+        # "this month and last month" (#665): both, as the comparison of the later one with the one before it
+        preset, compare = later, True
 
     named_range = None if compare else _named_range(q, as_of)
     if named_range:
@@ -582,12 +776,18 @@ S_GROUP_CHAINS = r"s-?market\w*|prisma\w*|alepa\w*|\bsale\b|\babc\b|sokos\w*|her
 BONUS = (r"(?<!['’])\bs[- ]?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
          r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*|"
          rf"\bbonu\w*\b.*\b({S_GROUP_CHAINS})|\b({S_GROUP_CHAINS}).*\bbonu\w*|"
-         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi|tienaisin|ansaitsisin)\b")
+         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi|tienaisin|ansaitsisin)\b|"
+         # the Bonus received ("Paljonko Bonusta olen saanut kaikkiaan?"): the S-Bonus estimate, never the spending
+         # total (#639); a bonus from work is no S-Bonus
+         r"\bbonu\w*\b(?!.*\b(työ\w*|palk\w*|esimie\w*|work|salary|employer|job|boss)\b).*"
+         r"\b(saanut|saaneet|kertynyt|kerännyt|received|earned|got|collected)\b|"
+         r"\b(saanut|saaneet|received|earned|got|collected)\b.*\bbonu\w*\b"
+         r"(?!.*\b(työ\w*|palk\w*|work|salary|employer|job|boss)\b)")
 # A bonus word the S-Bonus rule does not claim ("How much could I earn in bonus?") competes with the
 # income rule: an employer's bonus or the S-Bonus, the planner or a question back decides.
 BONUS_WORD = r"\bbonu\w*"
 SHARE_WORDS = [(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b|puoleen", 50),
-               (r"\ball\b|\bkaikki\w*", 100)]
+               (r"\ball\b|\bkaikki(?!aan\b)\w*", 100)]   # "kaikkiaan" is "in total", no share (#639)
 # A share stated in a form the rules cannot read: a fraction or a number written as a word.
 SHARE_UNREADABLE = (r"\b(a |one )?(third|quarter|fifth|tenth)s?\b|\b\w+sosa\w*|\b\d+\s?/\s?\d+\b|"
                     r"\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b|"
@@ -620,7 +820,12 @@ def plan_bonus(question: str) -> dict | None:
 # people spend, or their transactions, stays a refusal (another person's data), as does a named person.
 PEERS = (r"people like me|people my age|others? (of )?my age|other people|others like me|\bmy peers\b|\bpeers?\b|"
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
-         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
+         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla|"
+         # Finns as a whole, the wording of the Statistics Finland comparison (#585, #650); "what do Finns spend" with
+         # no "I" or "my" is no comparison and stays the people rules'
+         r"other finns|average finns?|finns on average|typical finns?|ordinary finns?|the finnish average|"
+         r"people in finland|keskiverto ?suomalai\w*|suomalaiset keskimäärin|suomalaisia keskimäärin|suomalaisiin|"
+         r"kuin suomalaiset|tavalli\w* suomalai\w*|keskimääräi\w* suomalai\w*|suomalaisten keskiarvo\w*")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
 # Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
 # snacks?", "Mihin pienet ostokset menevät?". Plural forms only: "that small purchase" is one purchase, not
@@ -951,13 +1156,46 @@ DECLINED_BEFORE_539 = fold_pattern(DECLINED_BEFORE_539)
 
 
 def _declines(rx: str, q: str) -> bool:
-    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539)."""
+    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539), nor a
+    message that is only the question whether the user has a regular transfer to savings, which the rules claim (#658;
+    any other message keeps the refusal, review of #670), nor one that is only the question how much to transfer to
+    savings, which the rules claim as the savings plan (#668, the same single-question rule)."""
+    if savings_transfer.have_transfer(q) or savings_transfer.set_aside_transfer(q):
+        return False
     return bool(re.search(rx, re.sub(OWN_TRANSFERS, " ", q, flags=re.I), re.I))
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
 MONTHS = {fold(k): v for k, v in MONTHS.items()}
 MONTH_RX = fold_pattern(MONTH_RX)
 PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
+# Words that narrow a period and never name a second one (#665): "so far this year", "average monthly over the last 3
+# months", "lately, in the last six months".
+PERIOD_MODIFIERS = fold_pattern(r"\bso far\b|\btähän mennessä\b|" + AVERAGE_MONTHLY + "|" + RECENTLY)
+ADJACENT_PAIRS = (("this_month", "last_month"), ("this_week", "last_week"))
+
+
+def named_periods(q: str, as_of: date) -> list[str]:
+    """The different periods a folded message names (#665): its presets, and "counted" for a "last N months / days"
+    range no preset has. A narrowing word (PERIOD_MODIFIERS) is not a period."""
+    bare = re.sub(PERIOD_MODIFIERS, " ", q)
+    found = list(dict.fromkeys(p for rx, p in PRESETS if re.search(rx, bare)))
+    ranges = {_counted_range(unit, n, as_of) for unit, n in _counts(bare)}
+    found += [f"counted {r[0]}" for r in sorted(r for r in ranges if isinstance(r, tuple))]
+    return found
+
+
+def adjacent_pair(named: list[str]) -> str | None:
+    """The later period of "this month and last month" or "this week and last week" (#665): the comparison answers
+    both. None for any other set."""
+    return next((later for later, earlier in ADJACENT_PAIRS if set(named) == {later, earlier}), None)
+
+
+def two_periods(q: str, as_of: date, comparison: bool = True) -> bool:
+    """A folded message that names two or more different periods no rule answers together (#665): the period
+    question back, never one of them chosen by the table's order. `comparison`: the route answers an adjacent pair
+    with the spending comparison (the breakdown and the basket contents cannot, so for them a pair is two periods)."""
+    named = named_periods(q, as_of)
+    return len(named) >= 2 and not (comparison and adjacent_pair(named))
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
@@ -1134,6 +1372,19 @@ COST_SUBJECT_FI = (r"\b(?:paljonko|mita|kuinka paljon)\s+(?:minun\s+|meidan\s+)?
                    r"|\b(?:paljonko|mita|kuinka paljon)\s+maksoin\s+([^\W\d_]+n)\b")
 # a subject that is a bill, not a purchase: what "how much is my insurance bill" gives (the bills tool)
 COST_BILL_THINGS = r"\binsurance\b|\b(?:phone|mobile)\s+plan\b|\bsubscriptions?\b|vakuutu\w*|vakuutus\w*|liittym\w*"
+# Narrower than any filter of the spending tool (#639): a part of the week, and a pronoun that names nothing without a
+# previous turn; the rent as an obligation ("Paljonko minun pitää maksaa vuokraa?"). Folded below.
+WEEK_PART = (r"\bweekends?\b|\bweekdays?\b|\bweeknights?\b|\bon (mondays|tuesdays|wednesdays|thursdays|fridays|"
+             r"saturdays|sundays)\b|\bviikonlop\w*|\barkipäiv\w*|\barkisin\b|\barki-?iltaisin\b|"
+             r"\b(maanantai|tiistai|keskiviikko|torstai|perjantai|lauantai|sunnuntai)sin\b")
+PRONOUN_THING = r"\b(on|for|at) (it|that|this|them|those)\b|\bsiihen\b|\bniihin\b|\btuohon\b|\bnoihin\b"
+OBLIGATION_TO_PAY = (r"\b(pitää|pitäisi|täytyy|joudun|joudumme|on) maksaa\b|\bmaksettava\w*|"
+                     r"\b(have|has|need|needs) to pay\b|\bmust pay\b")
+RENT_WORDS = r"\bvuokra\w*|\brent\b"
+# a question about the Bonus already received, not an estimate asked for ("Paljonko Bonusta olen saanut?") (#639)
+BONUS_RECEIVED = r"\b(saanut|saaneet|kertynyt|kerännyt|received|earned|got|collected)\b"
+WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS, BONUS_RECEIVED = (
+    fold_pattern(rx) for rx in (WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS, BONUS_RECEIVED))
 # no thing: the whole of the spending, or a period ("What did everything cost me?", "How much did last month cost?")
 COST_NO_THING = {"it", "everything", "all", "that", "this", "these", "those", "i", "we", "you", "kaikki", "se", "ne",
                  "tama", "tuo", "kulutus", "kulutukseni", "spending", "shopping", "life"}
@@ -1144,13 +1395,16 @@ def _cost_subject(q: str) -> str | None:
     m = re.search(COST_SUBJECT_EN, q) or re.search(COST_SUBJECT_FI, q)
     if not m:
         return None
-    phrase = " ".join((m.group(1) or m.group(m.lastindex)).split())
+    g = 1 if m.group(1) else m.lastindex
+    phrase = " ".join(m.group(g).split())
+    # the category words read the word after the phrase too: "liikenteen vakuutuksesta" is no Transportation (#672)
+    context = " ".join(q[m.start(g):].split()[:len(phrase.split()) + 1])
     if re.search(template.INCOME_WORDS + "|" + BONUS_WORD + r"|\btyonantaj\w*|\bemployer\w*", phrase):
         return None   # "Paljonko bonusta työnantaja maksoi?": money paid to the user, no thing bought
     first = phrase.split()[0]
     if first in COST_NO_THING or first in OBJECT_STOP or not _is_thing(first) or re.fullmatch(_M, first) or \
             re.search(fold_pattern(PERIOD_NOUN_AFTER), " " + phrase) or re.search(HEALTH, phrase) or \
-            any(re.search(rx, phrase) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            any(re.search(rx, context) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
         return None   # a category, group, period, or a health word (the Health rule's: "my doctor visits", #607)
     return phrase
 
@@ -1628,6 +1882,24 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f != "spending"]
         if not found:
             return Claim(None, reason="to_person")
+    if "spending" in found and re.search(WEEK_PART, q):
+        # "at the weekend", "on weekdays", "viikonloppuisin": no filter of the spending tool, so never the whole period
+        # as the answer; the planner reads it (#639)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="week_part")
+    if "spending" in found and not (spending or {}).get("filter") and re.search(PRONOUN_THING, q):
+        # "how much did I spend on it last month?" with no turn before it ("it" names nothing; a follow-up is decided
+        # in claim() before this): never the whole period (#639)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="pronoun")
+    if found and set(found) <= {"spending", "where_money_went", "basket_contents"} and \
+            two_periods(q, as_of, comparison=set(found) == {"spending"}):
+        # "viimeisten 12 kuukauden ja viimeisten 3 kuukauden" (#665): two different periods, so the period question
+        # back, never the one the table lists first; "this month and last month" is the comparison (adjacent_pair).
+        # Beside another rule's question the message keeps the question of which one is meant, as before.
+        return Claim(None, reason="period")
     dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
@@ -1698,9 +1970,18 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # thing keeps its own rule, and so does a question whose thing is the other rule's own ("Is it ok to
         # spend money on therapy?" is the safe-to-spend question).
         return Claim(None, candidates=tuple(dict.fromkeys(found + ["spending"])), reason="competing")
+    if not found and re.search(OBLIGATION_TO_PAY, q) and re.search(RENT_WORDS, q) and "get_recurring_bills" in tools:
+        # "Paljonko minun pitää maksaa vuokraa?": the rent as a bill, what the bills tool shows (#639)
+        return _plan_intent("recurring_bills", question, q, as_of, tools, lang, spending)
     if not found and (subject := _cost_subject(q)) and re.search(COST_BILL_THINGS, subject) and \
             "get_recurring_bills" in tools:
-        # "What did my insurance cost me last month?": a bill, what "how much is my insurance bill" gives (#623)
+        if (re.search(PAST_PERIOD, q) or _months_mentioned(question, as_of)) and "get_basket_breakdown" in tools:
+            # a past period ("What did my insurance cost me last month?"): the bills tool shows what is due now, never
+            # what one bill cost then; the unknown-thing breakdown says the payment is not visible on its own (#639)
+            period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+            return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
+                                            FunctionCall("finish")))
+        # "How much is my insurance?", "What does my phone plan cost me?": a bill, what the bills tool gives (#623)
         return _plan_intent("recurring_bills", question, q, as_of, tools, lang, spending)
     if not found:
         if _unknown_object(q):
@@ -1807,6 +2088,10 @@ def _follow_up(request: PlanInput, q: str, as_of: date, tools: set[str]) -> Clai
         args = plan_spending(before + ". " + question, as_of) if asked.reason == "period" else None
         if not args:
             return not_claimed
+        if stated.get("period"):
+            # the answer's own period, never the first the table finds in the joined text: the question may have
+            # named two (#665)
+            args = {**args, "period": stated["period"]}
         return Claim("follow_up", (FunctionCall("get_spending", args), FunctionCall("finish")))
     if len(calls) != 1 or calls[0].get("name") not in FOLLOW_TOOLS or "get_spending" not in tools:
         return not_claimed
@@ -1877,7 +2162,9 @@ def _claim(request: PlanInput) -> Claim:
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     # "my doctor visits", "dentist bills" in a plain health total: a thing the user paid for, not the doctor's own money
     # (#571); in any other message the people rules read it as before ("my son's dentist", review of #607)
-    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else question,
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else
+                              # in a comparison with people like me, "Finns" is a crowd, never a name (#650)
+                              re.sub(r"\bFinns\b", "people", question, flags=re.I) if peer_question else question,
                               peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
@@ -1893,8 +2180,23 @@ def _claim(request: PlanInput) -> Claim:
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
+    if "get_savings_plan" in tools and savings_transfer.have_transfer(q):
+        # "Do I have a regular transfer to savings?" (#658) is exempted from the move-money refusal only to be claimed,
+        # so it is claimed before the follow-up rule too, never a question back (review of #670)
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
+    if savings_transfer.set_aside_transfer(q):
+        # "How much should I transfer to savings?" (#668) is exempted from the move-money refusal only to be claimed, so
+        # it is claimed before the follow-up rule too: the savings plan, as "How could I save more?"
+        return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    if "get_savings_plan" in tools and savings_transfer.asks(q):
+        # "How much did I transfer to savings last month?" (#658): what already goes to savings (#560), the template's
+        # answer in any model state; never a spending category or the unfiltered total
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
+    if savings_transfer.set_aside(q):
+        # "How much should I put into savings each month?" (#668): how much to set aside, as "How could I save more?"
+        return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
     if cost is not None:
         category, per = cost
@@ -2006,10 +2308,14 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
-        template_answer = claim(request).rule == "safe_to_spend_why"
+        # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
+        # the template's answer in both rounds: no composer model
+        found = claim(request)
+        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer")
+        # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
+        bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
-                          template_answer=template_answer)
+                          template_answer=template_answer, bonus_received=bonus_received)
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:

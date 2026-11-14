@@ -11,7 +11,9 @@ function subscribe(onChange: () => void) {
 
 /** True when the customer asked for less motion: no flight and no counting, only a short cross-fade. */
 export function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribe, () => window.matchMedia(REDUCE).matches)
+  // The server snapshot (no motion preference known) only matters when rendering to a string, as in
+  // tests; the browser always reads the media query.
+  return useSyncExternalStore(subscribe, () => window.matchMedia(REDUCE).matches, () => false)
 }
 
 export function prefersReducedMotion(): boolean {

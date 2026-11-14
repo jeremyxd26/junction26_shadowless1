@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
-import type { BasketKey } from '../api/types.ts'
+import type { BasketKey, OverviewResponse } from '../api/types.ts'
+import type { ClientTurnRequest } from './thread.ts'
 
 /**
  * The "Sentti asks" card the opening shows right now, as the overview reports it (#450). Once it is
@@ -23,6 +24,8 @@ export interface AnsweredReview {
 export interface Opening {
   /** The `tx_ref` of the review the opening asks about, or null when none is pending. */
   reviewTxRef: string | null
+  /** The overview the opening shows, once loaded (null while it loads or failed), for client turns (#703). */
+  overview: OverviewResponse | null
   /** The review card the opening actually shows (asking or answered), or null (Not sure, none). */
   shownReview: ShownReview | null
   /** The overview reports the card it shows; null when it shows none. */
@@ -38,6 +41,11 @@ export interface Opening {
   refresh: () => void
   /** Bring the review card for `txRef` into view (the opening's first) and move focus to it. */
   scrollToReview: (txRef: string) => void
+  /**
+   * Push a client turn into the thread (#319), for an opening chip: nothing is sent to the API.
+   * A second push with the same `id` brings the first turn back into view instead.
+   */
+  pushClientTurn: (request: ClientTurnRequest) => void
 }
 
 export const OpeningContext = createContext<Opening | null>(null)

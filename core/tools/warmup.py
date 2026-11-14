@@ -90,10 +90,10 @@ CALLS: tuple[WarmCall, ...] = (
 
 # The partner's four questions (the same pairs as SUGGESTED_QUESTIONS in core/app/api/texts.py).
 BRIEF_QUESTIONS: tuple[tuple[str, str], ...] = (
-    ("Where did my money go?", "Mihin rahani menivät?"),
-    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
     ("What can I safely spend this week?", "Paljonko voin turvallisesti käyttää tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
+    ("Where did my money go?", "Mihin rahani menivät?"),
+    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
 )
 
 

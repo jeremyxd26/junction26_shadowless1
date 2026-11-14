@@ -4,6 +4,13 @@ import type { Action, AskDone, AskEvent, AskMeta, Card, Num } from '../api/types
 
 export type AnswerStatus = 'streaming' | 'done' | 'error' | 'stopped'
 
+/**
+ * Why an answer stopped (#715): the Stop button (`you`), or a new question while it streamed
+ * (`next_question`), since one answer streams at a time. The answer says which, so it never claims
+ * the user pressed Stop when they only asked something else.
+ */
+export type StopReason = 'you' | 'next_question'
+
 /** The three waiting stages, in order. A `status` event names its stage. */
 export const STAGES = ['understanding', 'tool', 'writing'] as const
 export type StageKey = (typeof STAGES)[number]
@@ -27,6 +34,8 @@ export interface Answer {
   text: string
   done: AskDone | null
   error: AnswerError | null
+  /** Set with `status: 'stopped'`. */
+  stoppedBy?: StopReason
 }
 
 export const EMPTY_ANSWER: Answer = {
@@ -138,4 +147,9 @@ export function actionsOf(cards: Card[]): Card['actions'] {
     }
   }
   return actions
+}
+
+/** A streaming answer, stopped for `reason`; what it showed so far stays. Any other answer is left as it is. */
+export function stopped(answer: Answer, reason: StopReason): Answer {
+  return answer.status === 'streaming' ? { ...answer, status: 'stopped', stoppedBy: reason } : answer
 }

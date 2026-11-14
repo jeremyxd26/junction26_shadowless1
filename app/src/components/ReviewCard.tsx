@@ -13,6 +13,8 @@ import { RetryButton } from './RetryButton.tsx'
 
 /** The deep-green "Sentti asks" surface: never the hero green, so a question never looks like an answer. */
 const SURFACE = 'rounded-xl bg-deep p-4 text-on-deep outline-none [&_:focus-visible]:outline-mint'
+/** Inside a chat answer (#696): the answer card's white frame, not the opening's deep green. */
+const ANSWER_SURFACE = 'rounded-lg border border-line bg-surface p-4 text-ink outline-none'
 
 /** Tokens the question may carry: `{{n1}}` is the card's amount, `{{date}}` its date. */
 const TOKEN = /\{\{(n1|date)\}\}/g
@@ -51,7 +53,7 @@ function factsOf(card: ReviewCardData, date: string): string {
  * amount gets the amount chip at its start: the amount is shown once, with no separate line.
  * `compact` (after the answer, as context): 16px text and the smaller inline chip.
  */
-function QuestionText({ card, compact = false }: { card: ReviewCardData; compact?: boolean }) {
+function QuestionText({ card, compact = false, inAnswer = false }: { card: ReviewCardData; compact?: boolean; inAnswer?: boolean }) {
   const { lang, t } = useSettings()
   const date = formatDate(card.date, lang)
   const purchase = purchaseOf(card, t.reviewSeePurchase)
@@ -62,14 +64,22 @@ function QuestionText({ card, compact = false }: { card: ReviewCardData; compact
       type="button"
       onClick={() => purchase.ref && openEvidence(purchase.ref)}
       aria-label={`${date}. ${purchase.label}`}
-      className="relative inline-flex min-h-9 items-center rounded-pill border border-on-deep-muted/60 px-2.5 leading-6 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+      className={`relative inline-flex min-h-9 items-center rounded-pill border px-2.5 leading-6 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[''] ${
+        inAnswer ? 'border-line hover:border-ink' : 'border-on-deep-muted/60 hover:border-on-deep'
+      }`}
     >
       {date}
     </button>
   ) : (
     date
   )
-  const amountChip = <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  // In an answer the question carries the amount once, as a number in the text (tappable when it
+  // has an evidence ref), not a pill and not repeated as a large number (#696 ruling).
+  const amountChip = inAnswer ? (
+    <NumberChip number={card.amount} size="inline" tone="plain" />
+  ) : (
+    <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  )
   const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
   const sentence = tokens.has('n1')
     ? fill(question, { n1: amountChip, date: dateChip })
@@ -82,10 +92,17 @@ function QuestionText({ card, compact = false }: { card: ReviewCardData; compact
       : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
   // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
   // touch area at 44px.
+  if (inAnswer) {
+    return compact ? (
+      <p className="mt-2 text-base leading-6 text-ink-2">{sentence}</p>
+    ) : (
+      <p className="mt-2 text-lg leading-8 text-ink">{sentence}</p>
+    )
+  }
   return compact ? (
     <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
   ) : (
-    <p className="mt-2 text-xl font-bold leading-[26px] text-on-deep">{sentence}</p>
+    <p className="mt-1.5 text-lg font-semibold leading-[1.3] text-on-deep">{sentence}</p>
   )
 }
 
@@ -125,7 +142,7 @@ function WhySheet({ card, onClose }: { card: ReviewCardData; onClose: () => void
 }
 
 /** "? Sentti asks", then the card's own controls on the right. */
-function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNode }) {
+function AsksHeader({ titleId, children, inAnswer = false }: { titleId: string; children?: ReactNode; inAnswer?: boolean }) {
   const { t } = useSettings()
   return (
     <div className="flex flex-wrap items-center gap-x-3">
@@ -133,7 +150,7 @@ function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNo
         ?
       </span>
       {/* No min-w-0: the title keeps its longest word, so on a narrow screen the buttons wrap below. */}
-      <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
+      <h2 id={titleId} className={`flex-1 text-base ${inAnswer ? 'text-muted' : 'font-semibold text-on-deep'}`}>
         {t.reviewAsks}
       </h2>
       {children}
@@ -157,6 +174,8 @@ interface AskingProps {
   onNotSure: () => void
   onRetry: () => void
   leaving: boolean
+  /** Inside a chat answer: the answer card's look (#696); the behaviour is the same. */
+  inAnswer?: boolean
 }
 
 /**
@@ -164,7 +183,7 @@ interface AskingProps {
  * (#310 decision): the question with its amount chip and two answer buttons; `why` behind ⓘ.
  */
 export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function ReviewAsking(
-  { card, busy, error, onAnswer, onNotSure, onRetry, leaving },
+  { card, busy, error, onAnswer, onNotSure, onRetry, leaving, inAnswer = false },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -181,15 +200,17 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       aria-busy={busy !== null}
       data-review-card={card.tx_ref}
       data-opening-part="review"
-      className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
+      className={`${inAnswer ? ANSWER_SURFACE : SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
-      <AsksHeader titleId={titleId}>
+      <AsksHeader titleId={titleId} inAnswer={inAnswer}>
         {/* Client only: closes the card; the purchase keeps waiting for an answer. */}
         <button
           type="button"
           onClick={onNotSure}
           disabled={busy !== null}
-          className="min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
+          className={`min-h-11 px-1 text-sm font-semibold underline underline-offset-4 ${
+            inAnswer ? 'text-muted hover:text-ink' : 'text-on-deep-muted hover:text-on-deep'
+          }`}
         >
           {t.reviewNotSure}
         </button>
@@ -197,13 +218,15 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
           type="button"
           onClick={() => setWhyOpen(true)}
           aria-label={t.reviewWhy}
-          className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-pill text-on-deep-muted hover:text-on-deep"
+          className={`-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-pill ${
+            inAnswer ? 'text-muted hover:text-ink' : 'text-on-deep-muted hover:text-on-deep'
+          }`}
         >
           <InfoGlyph />
         </button>
       </AsksHeader>
 
-      <QuestionText card={card} />
+      <QuestionText card={card} inAnswer={inAnswer} />
 
       {/* Two columns while each is at least 9rem wide, else one; labels wrap inside the buttons. */}
       <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-2">
@@ -217,6 +240,8 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
               onClick={() => onAnswer(option.basket)}
               disabled={busy !== null || waiting}
               className={`flex min-h-12 min-w-0 items-center gap-1.5 rounded-lg border-l-4 bg-surface py-1.5 pl-1.5 pr-2 text-left text-base font-bold leading-5 text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
+                inAnswer ? 'border-y border-r border-y-line border-r-line' : ''
+              } ${
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
@@ -261,6 +286,8 @@ interface AnsweredProps {
   basket: BasketKey
   /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
   onUndo?: () => void
+  /** Inside a chat answer: the answer card's look (#696). */
+  inAnswer?: boolean
 }
 
 /**
@@ -268,7 +295,7 @@ interface AnsweredProps {
  * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
-  { card, basket, onUndo },
+  { card, basket, onUndo, inAnswer = false },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -282,9 +309,9 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       aria-labelledby={titleId}
       data-review-card={card.tx_ref}
       data-opening-part="review"
-      className={`${SURFACE} card-enter`}
+      className={`${inAnswer ? ANSWER_SURFACE : SURFACE} card-enter`}
     >
-      <AsksHeader titleId={titleId}>
+      <AsksHeader titleId={titleId} inAnswer={inAnswer}>
         {onUndo && (
           <button
             type="button"
@@ -295,8 +322,8 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
           </button>
         )}
       </AsksHeader>
-      <QuestionText card={card} compact />
-      <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
+      <QuestionText card={card} compact inAnswer={inAnswer} />
+      <p className={`mt-2 flex items-center gap-2 text-base font-bold ${inAnswer ? 'text-ink' : 'text-on-deep'}`}>
         <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
           <Check className="size-4" />
         </span>

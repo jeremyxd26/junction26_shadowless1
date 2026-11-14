@@ -17,7 +17,7 @@ import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
-import { OverviewRow } from '../components/OverviewRow.tsx'
+import { OpeningChips } from '../components/OpeningChips.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
 type Phase =
@@ -376,14 +376,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       )}
 
       {view.suggested_questions.length > 0 && (
-        // The first three questions as sent, stacked; each is asked in this thread.
-        <ul aria-label={t.questionsLabel} className="flex flex-col items-start gap-2">
+        // The first three questions as sent, side by side and wrapping; each is asked in this thread.
+        <ul aria-label={t.questionsLabel} className="flex flex-wrap gap-2">
           {view.suggested_questions.slice(0, 3).map((question) => (
             <li key={question}>
               <button
                 type="button"
                 onClick={() => askInThread(question)}
-                className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
+                className="relative min-h-9 rounded-md border border-line bg-surface px-3 py-1.5 text-left text-[15px] leading-5 text-ink hover:bg-sunken after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
               >
                 {question}
               </button>
@@ -392,7 +392,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
         </ul>
       )}
 
-      <OverviewRow disabled={busy !== null} />
+      <OpeningChips />
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">

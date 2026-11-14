@@ -66,6 +66,15 @@ PERSON_FI = {
     "toimitusjohtaja", "toimitusjohtajan", "johtaja", "johtajan", "tyontekija", "tyontekijan", "tyontekijat",
     "myyja", "myyjan", "tarjoilija", "nainen", "naisen", "henkilo", "henkilon", "joku",
 }
+# The partitive forms (#638), which name the person of a comparison: "Kulutanko miestäni enemmän?" is "Do I spend more
+# than my husband?". Only the comparison rule reads them: "muut, joilla on lapsia" stays a peer question.
+PERSON_FI_PARTITIVE = {
+    "miesta", "miestani", "vaimoa", "vaimoani", "puolisoa", "puolisoani", "kumppania", "kumppaniani", "lasta",
+    "lastani", "lapsia", "lapsiani", "aitia", "aitiani", "isaa", "isaani", "ystavaa", "ystavaani", "ystavia",
+    "ystaviani", "naapuria", "naapuriani", "siskoa", "siskoani", "veljea", "veljeani", "poikaa", "poikaani", "tytarta",
+    "tytartani", "vanhempia", "vanhempiani", "kaveria", "kaveriani", "tyokaveria", "tyokaveriani", "kollegaa",
+    "kollegaani", "pomoa", "pomoani", "tyttoystavaa", "tyttoystavaani", "poikaystavaa", "poikaystavaani",
+}
 # The user's own household: "our household", "our family", "perheemme" (review of #458).
 HOUSEHOLD = {"household", "family", "home", "perhe", "perheeni", "perheemme", "perheen", "kotitalous", "talouteni",
              "taloutemme",
@@ -204,6 +213,33 @@ PATTERNS = {
     "spender": re.compile(rf"\b(?:what (?:kind|type|sort) of (?:spender|saver|consumer) (?:is|was|are) {_NP1}|"
                           rf"is (?P<np3>{_TOKEN}) an? (?:big |small |good |bad )?(?:spender|saver)|"
                           rf"millainen (?:kuluttaja|saastaja) (?P<np2>{_TOKEN}) on\b)", re.I),
+    # #638, read per clause: a person who may spend or save ("Paljonko vaimoni voi käyttää turvallisesti?"), who can
+    # afford something ("Onko vaimollani varaa …?"), who owns the coach's Finnish term ("mieheni turvallisesti
+    # käytettävä summa", "mieheni budjetti", as "my husband's safe to spend"), a comparison in the partitive or with
+    # "verrattuna" ("Kulutanko miestäni enemmän?", "vaimooni verrattuna"), and the one a thing cost ("What did my wife's
+    # gym cost her?", review of #635; "Paljonko kuntosali maksoi vaimolleni?")
+    "fi_modal_subject": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}) (?:voi|voisi|pystyy|pystyisi|uskaltaa) (?:\w+ )?"
+                                   rf"(?:kayttaa|kuluttaa|saastaa|tuhlata|ostaa|laittaa)\b", re.I),
+    "fi_afford": re.compile(rf"\bonko (?P<np>{_TOKEN}) varaa\b", re.I),
+    "fi_term_owner": re.compile(rf"(?P<np>{_TOKEN}) (?:turvallisesti (?:kaytettav|saastettav)\w*|turvalli\w* kayttovar\w*|"
+                                rf"budjet\w*)", re.I),
+    "fi_compare_partitive": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}) (?P<cmp>enemman|vahemman|useammin|harvemmin|"
+                                       rf"suuremm\w*|pienemm\w*|verrattuna)\b|\bverrattuna (?P<np2>{_TOKEN})", re.I),
+    "cost_to": re.compile(rf"\b(?:cost|costs|charge|charged|charges) (?!(?:in|on|at|per|for|to|with|from|by|of|last|this|"
+                          rf"next|each|every|so|now|then|about|around|altogether|overall)\b)"
+                          rf"(?P<np>(?:(?:my|our|the|his|her|their) )?{_TOKEN}"
+                          rf"(?: (?:and|or) (?:(?:my|our|the|his|her|their) )?{_TOKEN})?)", re.I),
+    # a person's thing as the subject of a cost question: "How much did my husband's phone plan cost?" (#639, review of
+    # #647); the user's own spending on it keeps its outcome ("How much did I spend on my husband's birthday?")
+    "owner_cost": re.compile(rf"\b(?:did|does|do|is|was|has|will|would) (?:my|our) (?P<np>{_TOKEN})['’]s? "
+                             rf"(?:{_TOKEN} ){{0,3}}(?:cost|costs|come to|run)\b(?!\s+(?:me|us)\b)", re.I),
+    # the Finnish twin: "Paljonko mieheni liittymä maksoi?", "Mitä vaimoni vakuutus maksaa?" (review of #679); the
+    # user's own cost of it ("… maksoi minulle") keeps its outcome
+    "fi_owner_cost": re.compile(rf"\b(?:paljonko|mita|kuinka paljon) (?P<np>{_TOKEN}) (?:{_TOKEN} ){{1,2}}?"
+                                rf"(?:maksoi|maksaa|maksoivat|maksavat|kustansi|kustantaa)\b(?! (?:minulle|meille)\b)",
+                                re.I),
+    "fi_cost_to": re.compile(rf"\b(?:maksoi|maksoivat|maksavat|kustansi)(?: {_TOKEN}){{0,2}}? "
+                             rf"(?P<np>{_TOKEN}(?:lle|lleni|llemme))\b", re.I),
     # a lone name at the start with a time: "Jane in June, how much?"
     "lead_name": re.compile(rf"^(?P<np>{_TOKEN}) (?:in|during) (?:{_CALENDAR_RX})\b|"
                            rf"^(?P<np2>{_TOKEN}) (?:last|this) (?:week|month|year)\b", re.I),
@@ -288,11 +324,18 @@ def _known(token: str) -> bool:
             or any(re.fullmatch(re.escape(s) + _ENDING, t) for s in STEMS))
 
 
+def _case_stem(word: str) -> str:
+    """A folded word without its "-lla(ni)" or "-lle(ni)" ending. A stem whose genitive is a person word reads as that
+    genitive (#638): "miehelläni" is "miehen", "äidilleni" is "äidin", like "vaimollani" and "isälläni"."""
+    stem = re.sub(r"(?<=\w\w\w)(?:ll(?:a|ani)|lle(?:ni)?)$", "", word)
+    return stem + "n" if stem != word and stem + "n" in PERSON_FI else stem
+
+
 def kind_of(np: str) -> str:
     """person, crowd, unknown or thing, for the words of a subject or owner (case and accents as typed)."""
     tokens = [t for t in re.findall(_TOKEN, np)]
     words = [re.sub(r"['’]s?$", "", fold(t).strip(".")) for t in tokens]
-    words = [w if w in PERSON_FI else re.sub(r"(?<=\w\w\w)(?:ll(?:a|ani)|lle(?:ni)?)$", "", w) for w in words]
+    words = [w if w in PERSON_FI else _case_stem(w) for w in words]
     content = [(t, w) for t, w in zip(tokens, words) if w not in DETERMINER]
     if content and (all(w in FIRST for _, w in content) or content[-1][1] in FIRST):
         return "first"                               # "I", "help me (save)": the user
@@ -413,6 +456,50 @@ def _normalised(question: str) -> str:
     return PRODUCT_TERM.sub("budget", question)
 
 
+_PLACE = re.compile(r"(?:ss|st|ll|lt)a$|lle$|ksi$")   # a local case: "Tukholmassa" is a place, no name
+
+
+def _other_spender(clause: str, first: bool) -> list[str]:
+    """The verdicts of the #638 rules on one clause (accents off, see PATTERNS). A Finnish allative after "maksoi" is the
+    one charged or the one the user bought for ("Paljonko maksoi lahja vaimolleni?"): the message is unclaimed."""
+    out: list[str] = []
+    for name in ("fi_modal_subject", "fi_afford"):
+        for m in PATTERNS[name].finditer(clause):
+            np, kind = m.group("np"), kind_of(m.group("np"))
+            if fold(np) in FI_STOP or (kind == "name" and _PLACE.search(fold(np))):
+                continue                              # "Paljonko voi käyttää", "Paljonko Tukholmassa voi käyttää"
+            if first and not re.search(rf"\b(?:{_QUESTION}|miksi|onko)\s*$", clause[:m.start()], re.I):
+                continue                              # "Paljonko voin käyttää, jos vaimoni voi ostaa auton?"
+            if kind in ("person", "name"):
+                out.append(DECLINE)
+    for m in PATTERNS["fi_term_owner"].finditer(clause):
+        np, kind = m.group("np"), kind_of(m.group("np"))
+        if kind == "person" or (kind == "name" and m.start() > 0 and re.search(r"(?<!ne)n$", fold(np))):
+            out.append(DECLINE)                       # "mieheni / Marjan turvallisesti käytettävä summa"
+    for m in PATTERNS["fi_compare_partitive"].finditer(clause):
+        word = fold(m.group("np") or m.group("np2"))
+        verrattuna = m.group("np2") is not None or fold(m.group("cmp")) == "verrattuna"
+        if word in (FI_INTO_PERSON if verrattuna else PERSON_FI_PARTITIVE):
+            out.append(DECLINE)                       # "Kulutanko miestäni enemmän?", "vaimooni verrattuna"
+    for m in PATTERNS["cost_to"].finditer(clause):
+        np, kind = m.group("np"), kind_of(m.group("np"))
+        if fold(np).split()[0] in ("her", "him", "them") or kind == "person" or (
+                kind == "name" and m.group(0)[:1].islower()):
+            out.append(DECLINE)                       # "cost her" ("her" alone is no determiner); title case is no name
+    for m in PATTERNS["owner_cost"].finditer(clause):
+        if kind_of(m.group("np")) == "person":
+            out.append(DECLINE)                       # "did my husband's phone plan cost?"
+    for m in PATTERNS["fi_owner_cost"].finditer(clause):
+        if kind_of(m.group("np")) == "person" and re.search(r"(?:ni|n)$", fold(m.group("np"))):
+            out.append(DECLINE)                       # "Paljonko mieheni liittymä maksoi?" (a genitive owner)
+    for m in PATTERNS["fi_cost_to"].finditer(clause):
+        if kind_of(m.group("np")) in ("person", "name"):
+            out.append(UNCLAIMED)
+    if re.search(r"\b(?:maksoi|maksoivat|maksavat|kustansi)\b.*\b(?:hanelle|heille)\b", clause, re.I):
+        out.append(UNCLAIMED)                         # "Mitä äitini vakuutus maksoi hänelle?"
+    return out
+
+
 def classify(question: str, peer_question: bool = False) -> str | None:
     question = _normalised(question)
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
@@ -481,6 +568,8 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             verdicts.append(UNCLAIMED)                # "Lidlin tulot", "Prisman palkka": not the user's
             continue
         judge(m.group("np"), unclaim=not first)
+    for clause in re.split(r"[.?!;]", _plain(question)):
+        verdicts += _other_spender(" ".join(re.sub(r"[,:]", " ", clause).split()), first)
 
     # Subjects: only when the user is not the subject, or a question clause asks about someone else.
     for name in ("aux_subject", "aux_subject_of", "subject", "subject_base", "what_if", "is_spending", "group_of",
