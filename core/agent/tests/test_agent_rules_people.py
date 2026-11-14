@@ -12,10 +12,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from core.agent.model import PlanInput
 from core.agent.rules import RuleModel
+from core.agent.toolset import default_registry
 
 ALL = ["get_spending", "get_basket_breakdown", "get_safe_to_spend", "get_spender_profile", "get_peer_benchmark",
        "get_recurring_bills", "get_bonus_estimate", "run_what_if", "get_safe_to_save", "get_balance_forecast"]
@@ -105,3 +109,33 @@ def test_another_persons_own_money_is_declined(question, language):
 @pytest.mark.parametrize("question,language", OWN)
 def test_the_users_own_spending_that_mentions_someone_is_not_declined(question, language):
     assert not [c for c in calls(question, language) if c.name == "decline"], question
+
+
+# ---- the review of #458: the reviewer's probe sets and the coordinator's lists A, B and C -------------------
+# core/agent/tests/other_person_probes.json groups them by the expected outcome (see its "about").
+FIXTURE = json.loads((Path(__file__).parent / "other_person_probes.json").read_text(encoding="utf-8"))
+SCHEMAS = default_registry().schemas()
+
+
+def decision(question: str, language: str) -> str:
+    result = RuleModel().plan(PlanInput(question=question, language=language, as_of="2026-09-30", tools=SCHEMAS))
+    first = result.calls[0]
+    if first.name == "decline":
+        return "decline:" + str(first.args.get("kind"))
+    return "unclaimed" if not result.recognised else first.name
+
+
+@pytest.mark.parametrize("question,language", FIXTURE["not_declined"])
+def test_the_users_own_question_is_never_declined_as_someone_elses(question, language):
+    assert decision(question, language) != "decline:other_person_data", question
+
+
+@pytest.mark.parametrize("question,language", FIXTURE["declined"])
+def test_another_persons_money_is_declined_in_every_form(question, language):
+    assert decision(question, language) == "decline:other_person_data", question
+
+
+@pytest.mark.parametrize("question,language", FIXTURE["not_user_data"])
+def test_someone_elses_question_never_gets_the_users_numbers(question, language):
+    got = decision(question, language)
+    assert got.startswith("decline:") or got == "unclaimed", (question, got)
