@@ -102,6 +102,15 @@ export function splitTakeaway(text: string): { takeaway: string; rest: string } 
 }
 
 /** The card actions shown as action chips under the explanation: at most 2 per card, no repeats. */
+/**
+ * The answer's text came from the question's template because the AI model was not used
+ * (`warnings` has `llm_unavailable`, contract section 7.2), whatever the outcome. The numbers are
+ * the same either way; the app shows a quiet note.
+ */
+export function writtenByTemplate(done: AskDone | null): boolean {
+  return done?.warnings?.includes('llm_unavailable') ?? false
+}
+
 export function actionsOf(cards: Card[]): Card['actions'] {
   const seen = new Set<string>()
   const actions: Card['actions'] = []
