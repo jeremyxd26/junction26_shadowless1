@@ -1,10 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Card, ReviewCard } from '../api/types.ts'
+import type { Card, Language, ReviewCard } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { BASKETS } from '../lib/baskets.ts'
+import { strings } from '../lib/i18n.ts'
 import { OpeningContext, type Opening, type ShownReview } from '../lib/openingContext.ts'
 import { reviewPlacement, threadReview, THREAD_REVIEW_START } from '../lib/reviewPointer.ts'
 import { reviewStrings } from '../lib/reviewStrings.ts'
+import { SettingsContext } from '../lib/settings.ts'
 import { AnswerCard } from './AnswerCard.tsx'
 
 // Server rendering needs a server snapshot for the URL and reduced-motion stores; reuse the client one.
@@ -20,11 +23,20 @@ vi.mock('react', async (importOriginal) => {
 const review = contract.examples['card.review'] as unknown as ReviewCard
 const TX = review.tx_ref
 
+/** The opening's question answered with Needed, as the label response names it (#452). */
+const NEEDED: ShownReview = { txRef: TX, phase: 'answered', basketKey: 'unexpected_necessities', basketLabel: 'Unexpected necessities' }
+const NEEDED_FI: ShownReview = { ...NEEDED, basketLabel: 'Välttämättömät' }
+
 function opening(shownReview: ShownReview | null, threadReviews: Record<string, string> = {}): Opening {
   return {
     reviewTxRef: TX,
     shownReview,
     reportReview: vi.fn(),
+    // As OpeningProvider derives it from the reported card.
+    answered:
+      shownReview?.phase === 'answered'
+        ? { txRef: shownReview.txRef, basketKey: shownReview.basketKey, basketLabel: shownReview.basketLabel }
+        : null,
     threadReviews,
     claimThreadReview: vi.fn(),
     releaseThreadReview: vi.fn(),
@@ -33,18 +45,30 @@ function opening(shownReview: ShownReview | null, threadReviews: Record<string, 
   }
 }
 
-const render = (value: Opening | null) =>
+const render = (value: Opening | null, lang: Language = 'en') =>
   renderToStaticMarkup(
-    <OpeningContext.Provider value={value}>
-      <AnswerCard card={review as unknown as Card} />
-    </OpeningContext.Provider>,
+    <SettingsContext.Provider value={{ lang, customerId: 'CUST00860', t: strings(lang) }}>
+      <OpeningContext.Provider value={value}>
+        <AnswerCard card={review as unknown as Card} />
+      </OpeningContext.Provider>
+    </SettingsContext.Provider>,
   )
 
 describe('reviewPlacement (#450)', () => {
-  it('points only when the opening shows this purchase (asking or answered) or another turn shows it', () => {
+  it('points only when the opening asks about this purchase or another turn shows it', () => {
     expect(reviewPlacement(TX, 'me', opening({ txRef: TX, phase: 'asking' }))).toBe('pointer')
-    expect(reviewPlacement(TX, 'me', opening({ txRef: TX, phase: 'answered' }))).toBe('pointer')
     expect(reviewPlacement(TX, 'me', opening(null, { [TX]: 'earlier-turn' }))).toBe('pointer')
+  })
+
+  it('says where the purchase went once the opening answered it, and points again after Undo (#452)', () => {
+    expect(reviewPlacement(TX, 'me', opening(NEEDED))).toBe('answered')
+    expect(reviewPlacement(TX, 'me', opening(NEEDED, { [TX]: 'earlier-turn' }))).toBe('answered')
+    // Undo: the opening asks again.
+    expect(reviewPlacement(TX, 'me', opening({ txRef: TX, phase: 'asking' }))).toBe('pointer')
+    // Another purchase answered in the opening changes nothing here.
+    expect(reviewPlacement(TX, 'me', opening({ ...NEEDED, txRef: 'txr_other' }))).toBe('card')
+    // An answer that closed its own card stays empty.
+    expect(reviewPlacement(TX, 'me', opening(NEEDED), true)).toBe('none')
   })
 
   it('shows the card itself after Not sure, for another purchase, with no question, or outside the thread', () => {
@@ -130,8 +154,47 @@ describe('a review card in an answer (#318, #450)', () => {
   })
 
   it('never says the question was answered in the pointer', () => {
-    for (const shown of [{ txRef: TX, phase: 'asking' as const }, { txRef: TX, phase: 'answered' as const }]) {
-      expect(render(opening(shown)).toLowerCase()).not.toContain('answered')
+    expect(render(opening({ txRef: TX, phase: 'asking' })).toLowerCase()).not.toContain('answered')
+  })
+})
+
+describe('the answered line (#452)', () => {
+  beforeAll(() => {
+    vi.stubGlobal('document', { documentElement: {} })
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }))
+    vi.stubGlobal('window', {
+      location: new URL('http://localhost/'),
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+      addEventListener() {},
+      removeEventListener() {},
+    })
+  })
+  afterAll(() => vi.unstubAllGlobals())
+
+  const icon = BASKETS.unexpected_necessities.icon
+
+  it('EN: "You put this in <icon> <label>." with the label from the API, and no button', () => {
+    const html = render(opening(NEEDED))
+    expect(html).toContain(`data-review-answered="${TX}"`)
+    expect(html).toContain(`You put this in <span aria-hidden="true">${icon}</span> Unexpected necessities.`)
+    expect(html).not.toContain('<button')
+    expect(html).not.toContain(reviewStrings('en').asked)
+    expect(html).not.toContain('data-review-card')
+  })
+
+  it('FI: "Laitoit tämän koriin <icon> <label>."', () => {
+    const html = render(opening(NEEDED_FI), 'fi')
+    expect(html).toContain(`Laitoit tämän koriin <span aria-hidden="true">${icon}</span> Välttämättömät.`)
+    expect(html).not.toContain('<button')
+  })
+
+  it('after Undo: back to "Sentti already asked…" with the 44 px Show, EN and FI', () => {
+    for (const lang of ['en', 'fi'] as const) {
+      const s = reviewStrings(lang)
+      const html = render(opening({ txRef: TX, phase: 'asking' }), lang)
+      expect(html).toContain(s.asked)
+      expect(html).toMatch(new RegExp(`<button type="button" aria-label="${s.showLabel}" class="inline-flex min-h-11[^"]*">${s.show}</button>`))
+      expect(html).not.toContain(s.putIn)
     }
   })
 })

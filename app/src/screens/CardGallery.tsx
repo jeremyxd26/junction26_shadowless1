@@ -19,6 +19,7 @@ const ASKING_OPENING: Opening = {
   reviewTxRef: REVIEW_TX,
   shownReview: { txRef: REVIEW_TX, phase: 'asking' },
   reportReview: () => {},
+  answered: null,
   threadReviews: {},
   claimThreadReview: () => {},
   releaseThreadReview: () => {},
