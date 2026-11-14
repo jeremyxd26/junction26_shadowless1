@@ -3,6 +3,7 @@ takeaway sentence passes the real validator, for every count from 1 to 31, in En
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -85,24 +86,36 @@ def compose(history, language="en", **args):
     return draft["text"], {nid: numbers[nid] for nid in draft["cited"]}
 
 
+def rendered(history, language="en"):
+    """The sentence as the user reads it: every token replaced by its Number's display."""
+    text, cited = compose(history, language)
+    return re.sub(r"\{\{(n\d+)\}\}", lambda m: cited[m.group(1)].display, text)
+
+
 def restaurants(n: int) -> list:
     """n small restaurant purchases spread over July to September (EUR 3.10 each)."""
     return [tx(i, date(2026, 7, 1) + timedelta(days=(i * 3) % 92), "Restaurants", "-3.10") for i in range(1, n + 1)]
 
 
 def test_the_summary_sentence_in_english():
-    text, cited = compose(restaurants(31))
-    assert text.startswith("1 Jul – 30 Sep 2026: {{")
-    assert "small purchases of {{" in text and "added up to {{" in text and "a month — most of them at " \
-           "restaurants and cafés." in text
+    _, cited = compose(restaurants(31))
+    assert rendered(restaurants(31)) == ("1 Jul – 30 Sep 2026: 31 small purchases of €10.00 or less added up to "
+                                         "€96.10, about €32.03 a month — most of them at restaurants and cafés.")
     assert [n.method for n in cited.values()] == ["small_purchases.count@1", "small_purchases.max_amount_eur@1",
                                                   "small_purchases.total_eur@1", "small_purchases.month_avg_eur@1"]
 
 
 def test_the_summary_sentence_in_finnish():
-    text, _ = compose(restaurants(31), "fi")
-    assert "pientä ostosta (enintään {{" in text and "maksoi yhteensä {{" in text
-    assert text.endswith("kuukaudessa — suurin osa ravintoloissa ja kahviloissa.")
+    assert rendered(restaurants(31), "fi") == ("1.7.–30.9.2026: 31 pientä ostosta (enintään 10,00 €) maksoi "
+                                               "yhteensä 96,10 €, noin 32,03 € / kk — suurin osa ravintoloissa ja "
+                                               "kahviloissa.")
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_no_unit_is_said_twice(language):
+    """The monthly Number's display already says "a month" / "/ kk"; the sentence must not repeat it."""
+    text = rendered(restaurants(31), language)
+    assert "a month a month" not in text and "/ kk kuukaudessa" not in text
 
 
 def test_the_largest_part_when_no_category_has_more_than_half():
@@ -111,15 +124,16 @@ def test_the_largest_part_when_no_category_has_more_than_half():
 
 
 def test_few_and_none():
-    few, cited = compose(restaurants(4))
-    assert "Only {{" in few and "small purchases of {{" in few and "not much to see here." in few
-    assert len(cited) == 3                               # count, limit, total: no month average needed
-    one, _ = compose(restaurants(1))
-    assert "small purchase of {{" in one                 # singular
-    fi_one, _ = compose(restaurants(1), "fi")
-    assert "pieni ostos (enintään {{" in fi_one
-    none, cited = compose([tx(1, date(2026, 8, 3), "Groceries", "-30.00")])
-    assert "No small purchases of {{" in none and len(cited) == 1
+    assert rendered(restaurants(4)) == ("1 Jul – 30 Sep 2026: Only 4 small purchases of €10.00 or less, €12.40 in "
+                                        "all — not much to see here.")
+    assert len(compose(restaurants(4))[1]) == 3          # count, limit, total: no month average needed
+    assert rendered(restaurants(1)) == ("1 Jul – 30 Sep 2026: Only 1 small purchase of €10.00 or less, €3.10 in "
+                                        "all — not much to see here.")
+    assert rendered(restaurants(1), "fi") == ("1.7.–30.9.2026: Vain 1 pieni ostos (enintään 10,00 €), yhteensä "
+                                              "3,10 € — tässä ei ole paljon nähtävää.")
+    none = [tx(1, date(2026, 8, 3), "Groceries", "-30.00")]
+    assert rendered(none) == "1 Jul – 30 Sep 2026: No small purchases of €10.00 or less."
+    assert rendered(none, "fi") == "1.7.–30.9.2026: Ei yhtään pientä ostosta (enintään 10,00 €)."
 
 
 @pytest.mark.parametrize("language", ["en", "fi"])

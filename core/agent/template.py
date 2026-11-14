@@ -332,7 +332,8 @@ SMALL_SENTENCE = {
     "few": ("Only {count} {noun} of {max} or less, {total} in all — not much to see here.",
             "Vain {count} {noun} (enintään {max}), yhteensä {total} — tässä ei ole paljon nähtävää."),
     "none": ("No small purchases of {max} or less.", "Ei yhtään pientä ostosta (enintään {max})."),
-    "month": (", about {month} a month", ", noin {month} kuukaudessa"),
+    # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
+    "month": (", about {month}", ", noin {month}"),
     "most": ("most of them at {where}", "suurin osa {where}"),
     "largest": ("the largest part at {where}", "eniten {where}"),
     "noun_one": ("small purchase", "pieni ostos"),
