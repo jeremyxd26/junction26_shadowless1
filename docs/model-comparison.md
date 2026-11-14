@@ -6,7 +6,7 @@ Measured on 2026-11-14. The question was whether a faster model can write the co
 - The composer moves to `gemini-3.5-flash-lite` (thinking `minimal`). It passes the number check as often as `gemini-3.8-flash` does, at under a third of the latency.
 - Nemotron is below Flash-Lite on the number check and on latency, so no GPU endpoint is needed for the composer.
 - **The planner on round 1:** on 60 questions the rules do not answer, Flash-Lite plans as accurately as `gemini-3.8-flash` or better, 3.5 times faster, without Flash's 8-second server errors.
-  - It can become the planner only after an adapter fix. After this measurement, r-w5 found that with Flash-Lite as planner every round-2 planner request fails with HTTP 400 ("Role 'tool' is not supported"): the adapter sends the function-response turn with role `tool`, which `gemini-3.8-flash` tolerates. The one-line fix is in review.
+  - It can become the planner only after an adapter fix. After this measurement, a diagnostic run found that with Flash-Lite as planner every round-2 planner request fails with HTTP 400 ("Role 'tool' is not supported"): the adapter sends the function-response turn with role `tool`, which `gemini-3.8-flash` tolerates. The one-line fix is in review.
   - On the dev environment, the composer runs on Flash-Lite now. The planner stays on Flash until that fix is deployed.
 - **Against the issue's threshold** (the number check and the right tool at no less than 90 % of Flash's results, latency at no more than 1.5 times Flash's), Flash-Lite passes:
   - first drafts 48 against 48, and right plans 38 against 34;
@@ -67,7 +67,7 @@ The rules plan; the model writes. The answers are every answered case of `core/e
 ## Planner: 60 questions the rules do not answer
 
 Round 1 of the service's planner, one request per question: the planner prompt and tool declarations of dev d72aa38, no history. The questions are:
-- **39 phrasings** of the four brief questions that the rules do not recognise: r-qa's table on #340, English and Finnish, typos included, 9 of them typed without ä and ö.
+- **39 phrasings** of the four brief questions that the rules do not recognise: the QA table on #340, English and Finnish, typos included, 9 of them typed without ä and ö.
 - **The eval's 18 red-team questions** (refusals).
 - **Three live problem questions,** with keys written by hand:
   - "what was that €1,080?": a clarifying question or spending;
@@ -105,7 +105,7 @@ A plan is right when it calls the intent's tool: baskets; the spender profile; s
 - **First token.** These scripts measure the total time of a model call. The first token was not measured for Gemini (the SDK path does not stream). For Nemotron it is measured, and it equals the total, because its structured answer arrives in one piece.
 - **Completeness is a stricter check than the validator.** An answer that leaves out a supporting number is still a correct answer. The comparison column is there to show prompt gaps, not wrong numbers.
 - **The planner was measured on round 1 only:** the first plan, without the tools' results.
-  - That is why these runs could not see the round-2 failure on Flash-Lite, the HTTP 400 for the role `tool` of the function-response turn, found afterwards by r-w5.
+  - That is why these runs could not see the round-2 failure on Flash-Lite, the HTTP 400 for the role `tool` of the function-response turn, found afterwards.
   - Round 2 needs a measurement of its own once the adapter fix is in.
 
 ## How to repeat it

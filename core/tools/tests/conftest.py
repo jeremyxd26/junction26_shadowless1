@@ -19,6 +19,27 @@ if str(ROOT) not in sys.path:
 
 from core.tools import db  # noqa: E402
 
+# Database tests read the four personas only on the shared database (#502). A test that reads a sample
+# customer (CUST00001, CUST00002, CUST00006: the worked numbers of metrics.md) carries this marker and runs
+# only when asked for, on a private database: DB_SAMPLE_CUSTOMERS=1.
+SAMPLE_CUSTOMERS_ENV = "DB_SAMPLE_CUSTOMERS"
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "sample_customer: reads a sample customer from the database; skipped unless "
+                   f"{SAMPLE_CUSTOMERS_ENV}=1 (the shared database is for the four personas)")
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.environ.get(SAMPLE_CUSTOMERS_ENV) == "1":
+        return
+    skip = pytest.mark.skip(reason="reads a sample customer: the shared database is for the four personas "
+                                   f"({SAMPLE_CUSTOMERS_ENV}=1 runs it on a private database)")
+    for item in items:
+        if "sample_customer" in item.keywords:
+            item.add_marker(skip)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def spike_reviews_off():

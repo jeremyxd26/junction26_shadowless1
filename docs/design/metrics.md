@@ -267,8 +267,9 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 
 **The savings goal (#391, product decision).** Safe to spend is computed after a monthly savings goal, so the money Sentti says can be spent and the money it says can be set aside are different euros and add up.
 - **The default goal** is safe to save monthly (section 3.1), rounded down to a multiple of 10 €.
-  - It is computed with the spike review's purchase left out of the run rates (the primed terms above), in every state: the labelled purchases once a review exists, else the purchase a review would ask about (`core/tools/reviews.py` `candidates`).
-  - So it is one figure per customer for the month. It does not move when a review appears or is answered: with no review it equals the pending state's goal (Sanna 360, not 180).
+  - It is computed as with no labels at all (#459): every transaction in the basket the rules give it, and only the purchase the first spike review asks about left out of the run rates (the primed terms above). That purchase is the top candidate by the rules (`core/tools/reviews.py` `candidates`, the most recent day first, then the largest), whatever the labels say.
+  - So it is one figure per customer for the month, in every review state. It does not move when a review appears, is answered or expires unanswered, or when a later review asks about another purchase: with no review it equals the pending state's goal (Sanna 360, not 180), and a customer whose first review expired while a second is pending keeps the first goal (Eetu 600, not 540).
+  - The goal needs each row's basket by the rules, which the shared classification block does not give, so `03_safe_to_spend.sql` carries a copy of its rule CASE (`cls_rules`), kept byte-identical by `core/tools/tests/test_tools_safe_to_spend_goal_pure.py`.
 - **"Needed"** grows the irregular reserve, so safe to spend falls (Sanna 138.79 → 97.46) while the goal stays 360. **"My choice"** changes nothing.
 - **Safe to save keeps its own formula** (section 3.1). After "Needed" it can be below the goal (Sanna 184.61 against 360), and the safe-to-save card then says so.
 - **The figure quoted next to safe to spend is the goal** (hero, answers): "You can spend about €138.79 this week, after setting aside about €360.00 a month." When safe to spend is more than `USUAL_PACE_MARGIN_EUR` (5 €) a week under the usual everyday pace: "To keep setting aside €360.00 a month, about €97.46 a week is safe to spend, below your usual €137.80 a week." With a goal of 0 the sentences stay as before.
@@ -493,7 +494,7 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 - the warning sign `amount_above_usual` still applies against the category's typical month, and then names that basis ("much more than all your Utilities payments in a usual month");
 - the basket (regular essentials) and the effect on safe to spend are as for a match.
 
-**Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
+**Comparison and warning signs.** For your regular bill (a matched bill that fits it, #400), `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
 
 | Code | Rule |
 |---|---|
@@ -503,6 +504,17 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 | `short_term` | `0 ≤ D - as_of < 7` days (`config.BILL_SHORT_TERM_DAYS`); a past due date is a warning instead. |
 
 **Evidence.** The bill's amount (`bill_barcode@1` or `user_input@1`) is not the customer's data and has no ref. In the composites that use it (the comparison, the counted amount), it is a part stored inline with only its method, value and date, never the payee, IBAN or reference. The balance limit with the bill is a `metric` spec whose settings hold the counted amount, so its evidence re-runs 03 with it and reconciles.
+
+**The forecast on the due date (#421).** The balance forecast of section 3.3, on the bill's due date `D`, before and after the bill (`bill_explain._forecast`):
+- **The window.** The forecast covers today up to the day before payday. A due date before `as_of`, or on or after payday, is `outside_forecast`, with no numbers. The due date is taken as printed, with no shift to a banking day, as the forecast's days, the bills due and the effect on safe to spend use calendar dates.
+- **Before.** The forecast's own Number for `D` (`balance_forecast.balance_eur@1`, built by `forecast.Projection.balance_on`, the same code as the forecast card, so the same ref). For `D` = today it is the balance now.
+- **How the forecast and the bill overlap.** The forecast already subtracts the hero's bills on their expected days. When the bill belongs to one of those series (any match), the balance before already holds what the forecast has subtracted for that series by `D`: `already_counted`, the series' part of `balance_forecast.bills_to_date_eur@1` up to `D`. So the bill takes only `counted = max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`), and nothing is subtracted twice. This is not safe to spend's `reserved`, which runs up to payday: a monthly bill expected after `D` is not in the balance on `D` yet, so a bill due before its usual day takes its whole amount. Unmatched: `counted = A`.
+- **After:** `before - counted` (`bill.forecast_after_eur@1`).
+- **The status:** `not_covered` below 0; `tight` below `config.BILL_FORECAST_MARGIN_EUR` (€100); else `covered`. For `not_covered`, `shortfall = counted - before` (`bill.forecast_shortfall_eur@1`), the sentence names it and the date, and a chip asks the forecast question. No sentence suggests borrowing (#419).
+- **The draft.** The status never removes the payment draft.
+- **A known failure** (no transactions, no balance, the bills due of the two paths differ): the block is `null`, as `safe_to_spend`.
+- **Example (CUST00860, sample 2, €312.70 to a utilities payee, due 13 Oct):** the forecast for 13 Oct is €12,491.82. Utilities is spread over the month, so €79.61 of it (186.40 × 13 / 30.4375) is already in it. The bill takes €233.09, and €12,258.73 is left: `covered`.
+- **Example (CUST00849, lowest €641.43 on 14 Oct):** a bill of €600 due then leaves €41.43 (`tight`). One of €700 is €58.57 short (`not_covered`).
 
 ## 4. What-if savings — "How could I save more?"
 
@@ -518,6 +530,8 @@ saving_year    = saving_month * 12
 **What may be cut** (team-lead decision): a what-if never proposes cutting `regular_essentials`. Those rows of a selection are left out of the baseline and shown in `regular_excluded_eur`. `everyday_spending` is the normal target. `unexpected_necessities` may be cut, but the row's `status` is `estimate_with_caveat` and the coach says these are needed costs that only sometimes can be reduced. A selection with nothing cuttable gets `status = not_offered` and zero savings: for example `category:Groceries`, which is all regular essentials.
 
 Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<key>` or `merchant:<id>`; default `category:Restaurants`. Cut `app.whatif_pct`, default 20. Examples: dining out −20% = `category:Restaurants`; taxis −50% = `mcc:4121` with 50; all everyday spending −10% = `basket:everyday_spending` with 10.
+
+**Everyday words and names (#346, #377).** The rules plan everyday words without the model (`core/agent/rules.py` `WHAT_IF_MCC_WORDS`): taxi 4121, public transport 4111, fuel 5541/5542, parking 7523, takeaway and fast food 5814, bars 5813, cinemas 7832. An MCC selection whose codes are exactly one of these is named in words on the card and in the label ("Spend 10% less on taxis" / "Käytä 10 % vähemmän: taksit", `config.WHAT_IF_MCC_NAMES`); any other code list keeps "purchases with MCC …". In the dataset, fuel, parking, public transport and groceries are regular essentials for all four personas, so their what-if is `not_offered`. When the rules ask which spending to cut, they suggest only restaurants, entertainment, taxis and takeaway, which give an estimate for each persona (a database test).
 
 **Output** (`04_what_if.sql`, one row per customer with spending in the selection): `selection`, `cut_pct`, `status` (`estimate`, `estimate_with_caveat`, `not_offered`), `baseline_month_eur`, `saving_month_eur`, `saving_week_eur`, `saving_year_eur`, `n_tx`, `one_off_excluded_eur`, `n_one_off`, `regular_excluded_eur`, `n_months`, `period_start`, `period_end`. Method text for the card: "Average of your last 6 full months (one-off purchases left out), cut by p%".
 

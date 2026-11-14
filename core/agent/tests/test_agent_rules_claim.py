@@ -49,7 +49,7 @@ def without_dots(text):
 
 
 # message -> the rule that claims it, or "not claimed". Every phrase QA reported for these issues is here:
-# #316 (the safe-to-spend paraphrases), r-qa's #340 table (the four brief questions, 47 phrasings), #357
+# #316 (the safe-to-spend paraphrases), the QA table of #340 (the four brief questions, 47 phrasings), #357
 # (the S-Bonus and the income), and the period words of #281 ("this month", "last month", "lately").
 TABLE = [
     # Q1 Where did my money go?
@@ -155,6 +155,12 @@ TABLE = [
     ("fi", "Kuinka monta päivää on jäljellä palkkapäivään?", "recurring_bills"),
     ("fi", "Paljonko rahaa on jäljellä tilillä?", NOT_CLAIMED),
     ("en", "What if I cut my restaurant budget by 20%?", "what_if"),
+    # #483: the Finnish indicative "vähennän" / "vähennä" / "vähennetään" is a what-if too
+    ("fi", "Entä jos vähennän matkailua 20 %?", "what_if"),
+    ("fi", "Entä jos vähennän ravintoloita 20 %?", "what_if"),
+    ("fi", "vähennä ravintoloita 10 %", "what_if"),
+    ("fi", "Entä jos ravintoloita vähennetään 20 %?", "what_if"),
+    ("fi", "Mitä jos vähentäisin matkustamista 20 prosenttia?", "what_if"),
     ("en", "What's my card limit?", NOT_CLAIMED),
     ("en", "Can you raise my limit?", NOT_CLAIMED),
     ("en", "Should I take a loan to afford a car?", NOT_CLAIMED),
@@ -937,6 +943,28 @@ def test_an_unknown_things_spending_question_never_leaves_another_rule_answering
     assert alone, other
     result = plan(question, lang)
     assert data_calls(result) != alone and data_calls(result) == [], (question, data_calls(result))
+
+
+@pytest.mark.parametrize("question,lang,expected", [
+    # #534 with #488: an everyday word is its own selection in a what-if, never also the category found inside it
+    ("What if I spent 20% less on fast food?", "en", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän pikaruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän noutoruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("What if I spent 20% less on food?", "en", {"kind": "category", "value": "Groceries"}),
+    ("What if I spent 20% less on eating out?", "en", {"kind": "category", "value": "Restaurants"}),
+])
+def test_a_what_if_on_an_everyday_word_cuts_its_codes_and_bare_food_cuts_groceries(question, lang, expected):
+    calls = data_calls(plan(question, lang))
+    assert [name for name, _ in calls] == ["run_what_if"] and calls[0][1]["selection"] == expected
+
+
+def test_a_what_if_on_a_food_compound_asks_which_spending_and_saving_on_it_is_the_save_more_question():
+    from core.agent.rules import WHAT_IF_WHICH
+    for question in ("What if I spent 20% less on food delivery?", "What if I cut pet food by 20%?"):
+        result = plan(question)
+        assert data_calls(result) == [] and result.calls[0].args["question"] == WHAT_IF_WHICH[0], question
+    assert [name for name, _ in data_calls(plan("How could I save on food delivery?"))] == \
+        ["get_safe_to_save", "get_basket_breakdown"]
 
 
 @pytest.mark.parametrize("question,lang", [
