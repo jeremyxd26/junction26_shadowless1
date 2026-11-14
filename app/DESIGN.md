@@ -167,9 +167,9 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
 ### Opening turn
 The opening is a client template built only from `GET /api/overview` fields, until the contract has a server-written opening (#338). Top to bottom, under the header:
 1. **Greeting:** `greeting` as received, one line in `--text-xl` (20 / 28, 600), for example "Hi Sanna 👋". No second line; the AI disclosure is behind the header's ⓘ.
-2. **One big card (safe to spend):** the green block (`--color-hero`, `--radius-xl`). It shows:
+2. **One big card (left to spend this week, the safe-to-spend figure):** the green block (`--color-hero`, `--radius-xl`). It shows:
    - the hero's `primary.display` as sent, in `--text-hero` (40 / 44), white. No client rounding; a whole-euro display is a contract request (#338);
-   - one caption, a client string without a number, chosen by `hero.status`: "Safe to spend this week" (`ok`), "Less room than usual this week" (`below_usual`), "Nothing free this week" (`nothing_free`); FI from the app's strings;
+   - one caption, a client string without a number, chosen by `hero.status`: "left to spend this week" (`ok`), with the line "After bills, essentials, a surprise reserve and savings" under it (#743), "Less room than usual this week" (`below_usual`), "Nothing free this week" (`nothing_free`); FI from the app's strings;
    - the Estimate badge in its on-green form, and a chevron ›.
 
    The whole card is one button: a tap opens a bottom sheet with the hero's `components` ("how it is made"), each part a number chip.

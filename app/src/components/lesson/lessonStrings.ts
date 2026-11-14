@@ -17,14 +17,14 @@ const en = {
   /** Another option, named by its label. */
   isLabel: (display: string, label: string) => `${display} is ${label}.`,
   none: 'No lesson for this profile today. Ask me anything below.',
-  /** Lesson 1: safe to spend. */
+  /** Lesson 1: left to spend this week (the safe-to-spend figure). */
   one: {
     question: { week: 'How much can you safely spend this week?', month: 'How much can you safely spend this month?' } satisfies Record<Span, string>,
-    right: { week: (display) => `Right: ${display} is your safe amount this week.`, month: (display) => `Right: ${display} is your safe amount this month.` } satisfies Record<Span, Sentence>,
-    close: { week: (display) => `Close. ${display} is your safe amount this week.`, month: (display) => `Close. ${display} is your safe amount this month.` } satisfies Record<Span, Sentence>,
+    right: { week: (display) => `Right: ${display} is what's left to spend this week.`, month: (display) => `Right: ${display} is what's left to spend this month.` } satisfies Record<Span, Sentence>,
+    close: { week: (display) => `Close. ${display} is what's left to spend this week.`, month: (display) => `Close. ${display} is what's left to spend this month.` } satisfies Record<Span, Sentence>,
     /** The reveal without a verdict, when there was nothing to choose from. */
-    plain: { week: (display) => `${display} is your safe amount this week.`, month: (display) => `${display} is your safe amount this month.` } satisfies Record<Span, Sentence>,
-    concept: 'Safe to spend is the money left for you after your regular bills and your saving are taken care of.',
+    plain: { week: (display) => `${display} is what's left to spend this week.`, month: (display) => `${display} is what's left to spend this month.` } satisfies Record<Span, Sentence>,
+    concept: 'Left to spend is the money that stays yours after your regular bills and your saving are taken care of.',
   },
   /** Lesson 2: where the money goes (no right or wrong). */
   two: {
@@ -55,10 +55,10 @@ const fi: LessonStrings = {
   none: 'Tälle profiilille ei ole tänään oppituntia. Kysy minulta mitä tahansa alla.',
   one: {
     question: { week: 'Paljonko voit turvallisesti käyttää tällä viikolla?', month: 'Paljonko voit turvallisesti käyttää tässä kuussa?' },
-    right: { week: (display) => `Oikein: ${display} on turvallinen summasi tällä viikolla.`, month: (display) => `Oikein: ${display} on turvallinen summasi tässä kuussa.` },
-    close: { week: (display) => `Melkein. ${display} on turvallinen summasi tällä viikolla.`, month: (display) => `Melkein. ${display} on turvallinen summasi tässä kuussa.` },
-    plain: { week: (display) => `${display} on turvallinen summasi tällä viikolla.`, month: (display) => `${display} on turvallinen summasi tässä kuussa.` },
-    concept: 'Turvallisesti käytettävissä on raha, joka jää sinulle, kun säännölliset laskusi ja säästösi on hoidettu.',
+    right: { week: (display) => `Oikein: ${display} on käyttövarasi tällä viikolla.`, month: (display) => `Oikein: ${display} on käyttövarasi tässä kuussa.` },
+    close: { week: (display) => `Melkein. ${display} on käyttövarasi tällä viikolla.`, month: (display) => `Melkein. ${display} on käyttövarasi tässä kuussa.` },
+    plain: { week: (display) => `${display} on käyttövarasi tällä viikolla.`, month: (display) => `${display} on käyttövarasi tässä kuussa.` },
+    concept: 'Käyttövara on raha, joka jää sinulle, kun säännölliset laskusi ja säästösi on hoidettu.',
   },
   two: {
     question: 'Mikä kori vie suurimman osan rahoistasi?',
