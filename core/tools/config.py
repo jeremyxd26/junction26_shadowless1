@@ -921,21 +921,6 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "see_purchase": ("See the purchase", "Näytä ostos"),
     "month_avg": ("{label}, monthly average", "{label}, kuukausikeskiarvo"),
     # label confirmations (POST /api/baskets/label)
-    "done_unexpected_necessities": (
-        "Thanks. {product} now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-        "Kiitos. {product} varaa nyt enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä "
-        "oleva summa on pienempi.",
-    ),
-    "done_everyday_spending": (
-        "Thanks. This counts as everyday spending, so your everyday spending this month is {amount} higher "
-        "than usual. Your safe to spend stays the same.",
-        "Kiitos. Tämä lasketaan arkikulutukseksi, joten arkikulutuksesi on tässä kuussa {amount} tavallista "
-        "suurempi. Turvallisesti käytettävissä oleva summa pysyy ennallaan.",
-    ),
-    "undone_pending": ("Undone. This purchase is waiting for your answer again.",
-                       "Peruttu. Tämä ostos odottaa taas vastaustasi."),
-    "undone_closed": ("Undone. This purchase is back in the group the rules give it.",
-                      "Peruttu. Tämä ostos on taas siinä ryhmässä, johon säännöt sen sijoittavat."),
     "unchanged": ("Nothing changed: this answer is already saved.",
                   "Mikään ei muuttunut: tämä vastaus on jo tallennettu."),
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
