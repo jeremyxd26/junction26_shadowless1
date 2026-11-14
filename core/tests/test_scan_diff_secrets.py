@@ -29,6 +29,7 @@ SYNTHETIC = "not-a-" + "real-password"
 AWS_LIKE = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
 ENV_VALUE = "fake" + "-env-value-" + "0123456789"
 TOKEN_LIKE = "fake" + "Tok3n" + "Value98765"
+NVIDIA_LIKE = "nv" + "api-" + "fakeOnly" + "0123456789" * 3
 ALLOWLIST = (
     "[[rules]]\n"
     'id = "postgres-url-password"\n'
@@ -134,9 +135,11 @@ def test_key_shapes_and_assignments_are_found(repo):
         "deploy/run.sh": f"export API_TOKEN={TOKEN_LIKE}\n",
         "deploy/values.yaml": f"password: {TOKEN_LIKE}\n",
         "settings.py": f'GEMINI_API_KEY = "{TOKEN_LIKE}"\n',
+        "notes.txt": f"the reader's key was {NVIDIA_LIKE} until today\n",
     })
     found = kinds(scan_head(repo, net_only=True))
     assert ("aws_key_id", "config.py") in found
+    assert ("nvidia_api_key", "notes.txt") in found
     assert ("secret_assignment_unquoted", "deploy/run.sh") in found
     assert ("secret_assignment_unquoted", "deploy/values.yaml") in found
     assert ("secret_assignment", "settings.py") in found

@@ -425,8 +425,8 @@ def display_matches(display: str, value: float, unit: str, language: str, method
 
 # ---- #417: an amount is never put into the bank's screen or product in one sentence ----------------------
 # The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
-# saving" reads like personal investment advice. The rule fires on a DESTINATION or ACTION use only (r-coord's
-# decision on the review of #475): an amount in the same sentence as moving, putting, sending, setting, adding,
+# saving" reads like personal investment advice. The rule fires on a DESTINATION or ACTION use only (decided
+# in the review of #475): an amount in the same sentence as moving, putting, sending, setting, adding,
 # starting, opening or investing into, to or in the bank's screen or product. A plain statement of a figure
 # passes ("Your monthly saving is €184.61.", "In S-mobiili your balance is €5,864.86."). Shared by the
 # pipeline's validator (token text, model drafts only) and the eval runner (rendered text, every answer).
