@@ -5,6 +5,7 @@ import { EvidenceSheet } from './components/EvidenceSheet.tsx'
 import { OpeningProvider, OpeningTurn } from './components/OpeningTurn.tsx'
 import { WhatIfSheet } from './components/WhatIfSheet.tsx'
 import { Header } from './components/Header.tsx'
+import { HostNotice } from './components/HostNotice.tsx'
 import { PersonaSheet } from './components/PersonaSheet.tsx'
 import { LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
@@ -104,6 +105,9 @@ export default function App() {
           onClose={closePersonas}
         />
       )}
+      {/* Once for every screen and sheet: "This continues in the bank app." when no host takes a
+          hand-over (#431). Last, so it sits above an open sheet. */}
+      <HostNotice />
     </SettingsContext.Provider>
   )
 }
