@@ -360,7 +360,9 @@ class Pipeline:
                 # they do not recognise while the model may not be used (#244).
                 in_place = source == "fallback" or (a.model_unavailable is not None
                                                     and not getattr(plan, "recognised", True))
-                if in_place:
+                if in_place or (model_failed and "decline" not in controls):   # a rules refusal carries none
+                    # An empty plan the rules replaced carries the warning like a failed one: the note and the
+                    # warning always come together (#383, from the review of #368).
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)

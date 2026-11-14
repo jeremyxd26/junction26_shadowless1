@@ -454,3 +454,42 @@ def test_without_a_key_the_template_writes_with_no_model_draft_attempt():
     attempts = audit.records[-1]["composer_attempts"]
     assert [a["raw"] for a in attempts] == ["template"] and "llm_unavailable" in done["warnings"]
     assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
+
+def test_an_empty_plan_answered_by_the_rules_clarify_carries_the_warning_with_the_note():
+    """#383 (from the review of #368): the note "I could not work that out" and llm_unavailable come together."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and done["clarify"]["question"].startswith("I could not")
+    assert "llm_unavailable" in done["warnings"]
+
+
+
+def test_a_rules_refusal_after_an_empty_plan_carries_no_warning():
+    """Review of #422: the empty-plan warning is for the clarifying question only."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Should I put my savings into tech stocks?")
+    assert done["outcome"] == "refused" and "llm_unavailable" not in done["warnings"]
+
+
+def test_a_refused_planner_model_answers_on_its_fallback_without_a_warning():
+    def transport(model, contents, config, timeout_s):
+        if model == "gemini-3.8-flash" and "tools" in config:
+            raise api_error(404)
+        return PLAN_OK if "tools" in config else text_response(DRAFT_OK)
+
+    p, audit = pipeline(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+
+
+def test_a_paused_role_means_no_planner_attempt_and_no_note():
+    """Review of #422: a role paused after a streak makes the model unavailable for the answer: the rules
+    plan, no request is tried, and the 'could not work that out' note does not appear."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._role_paused_until["compose"] = p.model.client.clock() + 30
+    done = ask(p, "Tell me something useful about my groceries")
+    assert transport.requests == [] and audit.records[-1]["model_unavailable"] == "role_paused"
+    assert not done["clarify"]["question"].startswith("I could not") and "llm_unavailable" in done["warnings"]

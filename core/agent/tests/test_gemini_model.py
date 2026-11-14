@@ -331,3 +331,42 @@ def test_a_bad_role_setting_keeps_the_service_on_the_rule_model(monkeypatch, nam
 
     monkeypatch.setenv(name, value)
     assert isinstance(make_agent_model(settings(gemini_api_key="test-key-not-real")), RuleModel)
+
+
+
+# ---- #383: trimmed model ids and thinking levels -----------------------------------------------------------------
+
+def test_model_ids_and_levels_are_trimmed_and_an_empty_id_is_the_default():
+    c = make_model(settings(gemini_api_key="test-key-not-real", gemini_composer_model="  gemini-3.5-flash-lite  ",
+                            gemini_planner_model="   ", gemini_composer_thinking=" Minimal ")).client
+    assert c.compose_model == LITE_ID and c.compose_thinking == "minimal"
+    assert c.model == FLASH_ID                                        # only spaces: the default
+
+
+def test_the_settings_class_trims_ids_and_levels(monkeypatch, caplog):
+    monkeypatch.setenv("GEMINI_COMPOSER_MODEL", " gemini-3.5-flash-lite ")
+    monkeypatch.setenv("GEMINI_PLANNER_MODEL", "   ")
+    monkeypatch.setenv("GEMINI_COMPOSER_THINKING", " MINIMAL ")
+    s = gemini.GeminiSettings()
+    assert s.gemini_composer_model == LITE_ID and s.gemini_planner_model is None and s.gemini_composer_thinking == "minimal"
+    assert any("only spaces" in r.getMessage() for r in caplog.records)
+
+
+
+def test_a_blank_gemini_model_is_the_pinned_default_and_is_logged_once(monkeypatch, caplog):
+    """Review of #422: GEMINI_MODEL="   " must not turn the model off for everyone."""
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+
+    gemini._BLANK_LOGGED.clear()
+    monkeypatch.setenv("GEMINI_MODEL", "   ")
+    for _ in range(3):
+        assert gemini.GeminiSettings().gemini_model == gemini.DEFAULT_MODEL
+    assert sum("only spaces" in r.getMessage() for r in caplog.records) == 1
+    model = make_agent_model(settings(gemini_api_key="test-key-not-real"))
+    assert not isinstance(model, RuleModel)
+
+
+def test_fallback_none_in_any_case_turns_it_off():
+    c = make_model(settings(gemini_api_key="test-key-not-real", gemini_fallback_model="NONE")).client
+    assert c.fallback_model is None and c.compose_fallback_model is None
