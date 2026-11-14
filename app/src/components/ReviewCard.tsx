@@ -220,12 +220,15 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
-              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px; breaking anywhere is
-                  only the last resort on very narrow screens. */}
+              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px. With large text the label
+                  hyphenates in the UI language ("Vält-tä-mä-tön", #541); breaking without a hyphen is
+                  only the last resort, where no hyphenation point fits. */}
               <span aria-hidden="true" className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md text-base ${look.tint}`}>
                 {look.icon}
               </span>
-              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{option.label[lang]}</span>
+              <span lang={lang} className="min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
             </button>
           )
         })}
@@ -256,14 +259,19 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
 interface AnsweredProps {
   card: ReviewCardData
   basket: BasketKey
+  /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
+  onUndo?: () => void
 }
 
 /**
- * After the tap: the question stays, with a check and the chosen answer under it, and what the
- * answer does (`options[].effect`) until Sentti's reply in the thread explains it (#317).
+ * After the tap: the header, the question and the chosen answer (reference 2-after-needed). What
+ * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
-export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered({ card, basket }, ref) {
-  const { lang } = useSettings()
+export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
+  { card, basket, onUndo },
+  ref,
+) {
+  const { lang, t } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
@@ -276,7 +284,17 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       data-opening-part="review"
       className={`${SURFACE} card-enter`}
     >
-      <AsksHeader titleId={titleId} />
+      <AsksHeader titleId={titleId}>
+        {onUndo && (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="min-h-11 min-w-11 px-1 text-sm font-semibold text-mint underline underline-offset-4 hover:text-on-deep"
+          >
+            {t.undo}
+          </button>
+        )}
+      </AsksHeader>
       <QuestionText card={card} compact />
       <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
         <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
@@ -285,7 +303,6 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
         <span aria-hidden="true">{look?.icon}</span>
         {option?.label[lang]}
       </p>
-      {option && <p className="mt-1 line-clamp-2 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
     </section>
   )
 })

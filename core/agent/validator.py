@@ -618,14 +618,15 @@ def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
 
 
 # #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
-# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check.
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
+# payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
 _META_TEXT = re.compile(
-    r"\b(is|are|was|were|been|gets?|got) declined\b|\bdeclined before\b|\bbefore i (write|answer|reply)\b|"
-    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) instructed\b|"
-    r"\bi was (told|instructed)\b|\bmy (instructions|rules|guidelines|prompt|system prompt)\b|"
-    r"\bhylätään\b|\bhylättiin\b|\bennen kuin (kirjoitan|vastaan)\b|"
-    r"\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|\bminulla ei ole lupaa\b|"
-    r"\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+    r"\b(is|are|gets?) declined\b|\bdeclined before\b|\bdeclined by my\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) (instructed|programmed)\b|"
+    r"\bi was (told|instructed|programmed|set up)\b|\bhow i(?: was|['’]ve been| have been| am|['’]m) set up\b|"
+    r"\bmy (instructions|rules|guidelines|prompt|system prompt|programming)\b|\bper my\b|"
+    r"\bhylätään\b|\bennen kuin (kirjoitan|vastaan)\b|\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|"
+    r"\bminulla ei ole lupaa\b|\bminulla on ohjeet\b|\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
 
 
 def meta_text(text: str) -> str | None:
@@ -661,15 +662,15 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    alone = count_without_noun(text, numbers)
+    if alone:
+        problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
     extra = health_extra(text, numbers)
     if extra:
         problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
     meta = meta_text(text)
     if meta:
         problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
-    alone = count_without_noun(text, numbers)
-    if alone:
-        problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
     used = TOKEN.findall(text)
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")

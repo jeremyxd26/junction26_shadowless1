@@ -1,11 +1,11 @@
-"""#598: a Health filter the model planned stands only when the question names health. "How much did I spend on the
-gym last month and what can I safely spend this week?" was answered on the stand with a Health card and "Your health
-spending is declined before I write.": the model mapped the gym to Health, and its draft echoed a composer line.
+"""#598: "How much did I spend on the gym last month and what can I safely spend this week?" was answered on the stand
+with a Health card and "Your health spending is declined before I write.": the model mapped the gym to Health, and
+its draft echoed a composer line.
 
-- The model's Health-filtered get_spending for a question with no health word is dropped before anything runs; the
-  other question is still answered, and the template says the thing can't be seen on its own. Alone, the call becomes
-  the category breakdown of the same period: the rule path's answer for an unknown thing.
-- An answer with a Health-filtered total is the template, never a model draft; so is the other tool's sentence.
+- A Health total the model plans (the Health category, the health MCC group or a health merchant's alias) never runs:
+  it is dropped before anything runs. Beside another question, the other question is still answered and the template
+  says the thing can't be seen on its own; alone, the call becomes the category breakdown of the same period, the
+  rule path's answer for an unknown thing. The composer never writes such an answer.
 - A model draft about its own rules or process is rejected and retried, then the template writes.
 No database, no key."""
 
@@ -27,6 +27,7 @@ WEEK = Period(start=date(2026, 10, 1), end=date(2026, 10, 7), label="Next 7 days
 HEALTH_FILTER = {"categories": ["Health"]}
 LEAK = "Your health spending is declined before I write."
 ACCEPTANCE = "How much did I spend on the gym last month and what can I safely spend this week?"
+SAFE_FI = "ja paljonko voin turvallisesti käyttää tällä viikolla?"
 
 
 class PeriodArgs(FakeArgs):
@@ -91,13 +92,18 @@ def _ask(make_pipeline, question, plan, drafts=(), language="en"):
     return dict(events)["done"], ran, model, cards
 
 
-def _health_and_safe():
-    return [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": HEALTH_FILTER}),
+def _with_safe(flt=None):
+    return [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": flt or HEALTH_FILTER}),
             FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]
 
 
+def _alone(flt=None):
+    return [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": flt or HEALTH_FILTER}),
+            FunctionCall("finish")]
+
+
 def test_the_stand_question_answers_safe_to_spend_and_says_the_gym_is_not_seen_on_its_own(make_pipeline):
-    done, ran, model, cards = _ask(make_pipeline, ACCEPTANCE, _health_and_safe(), drafts=[LEAK, LEAK])
+    done, ran, model, cards = _ask(make_pipeline, ACCEPTANCE, _with_safe(), drafts=[LEAK, LEAK])
     assert ran == [("get_safe_to_spend", {})]                      # the Health total never ran
     assert model.compose_inputs == []                               # the template wrote it, not the model
     assert [c["card_id"] for c in cards] == ["card_safe0001"]       # no Health card
@@ -106,87 +112,120 @@ def test_the_stand_question_answers_safe_to_spend_and_says_the_gym_is_not_seen_o
     assert text.startswith("I can't see “gym” on its own in your transactions")
     assert "Safe to spend in the coming week" in text
     assert validator.meta_text(text) is None and "declined" not in text and "health" not in text.lower()
-    assert "llm_unavailable" not in done["warnings"]                # the template by choice, not a failure
+    assert "llm_unavailable" not in done["warnings"]                # the template by design, not a failure
 
 
-@pytest.mark.parametrize("thing, word", [("the gym", "gym"), ("yoga", "yoga"), ("massage", "massage"),
-                                         ("vitamins from the supermarket", "vitamins")])
-def test_no_word_that_is_not_health_gets_a_health_card(make_pipeline, thing, word):
-    two = f"How much did I spend on {thing} last month and what can I safely spend this week?"
-    done, ran, model, cards = _ask(make_pipeline, two, _health_and_safe(), drafts=[LEAK, LEAK])
-    assert ("get_spending", HEALTH_FILTER) not in ran and model.compose_inputs == []
-    assert "card_health001" not in [c["card_id"] for c in cards]
-    assert f"“{word}”" in done["text"] and validator.meta_text(done["text"]) is None
-    # alone: the breakdown of the same period, the rule path's answer for an unknown thing
-    alone = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": HEALTH_FILTER}),
-             FunctionCall("finish")]
-    done, ran, model, cards = _ask(make_pipeline, f"How much did I spend on {thing} last month?", alone)
+NEIGHBOURS = [
+    ("How much did I spend on the gym last month", "en", "gym"),
+    ("How much did I spend on yoga last month", "en", "yoga"),
+    ("How much did I spend on massage last month", "en", "massage"),
+    ("How much did I spend on vitamins from the supermarket last month", "en", "vitamins"),
+    ("Paljonko käytin kuntosaliin viime kuussa", "fi", "kuntosaliin"),
+    ("Paljonko käytin joogaan viime kuussa", "fi", "joogaan"),
+    ("Paljonko käytin hierontaan viime kuussa", "fi", "hierontaan"),
+    ("Paljonko käytin vitamiineihin marketista viime kuussa", "fi", None),
+]
+
+
+@pytest.mark.parametrize("question, language, word", NEIGHBOURS)
+def test_no_neighbour_gets_a_health_card_beside_a_second_question(make_pipeline, question, language, word):
+    two = f"{question} {SAFE_FI}" if language == "fi" else f"{question} and what can I safely spend this week?"
+    done, ran, model, cards = _ask(make_pipeline, two, _with_safe(), drafts=[LEAK, LEAK], language=language)
+    assert ran == [("get_safe_to_spend", {})] and model.compose_inputs == []
+    assert [c["card_id"] for c in cards] == ["card_safe0001"]
+    safe = "Safe to spend in the coming week" if language == "en" else "Turvallisesti käytettävissä"
+    assert safe in done["text"] and validator.meta_text(done["text"]) is None
+    assert "health" not in done["text"].lower() and "tervey" not in done["text"].lower()
+    if word:
+        assert done["text"].startswith(template.unknown_lead(word, language))
+
+
+@pytest.mark.parametrize("question, language, word", NEIGHBOURS)
+def test_no_neighbour_gets_a_health_card_alone(make_pipeline, question, language, word):
+    done, ran, model, cards = _ask(make_pipeline, f"{question}?", _alone(), drafts=[LEAK, LEAK], language=language)
     assert ran == [("get_basket_breakdown", {})] and model.compose_inputs == []
     assert [c["card_id"] for c in cards] == ["card_baskets001"]
-    assert f"“{word}”" in done["text"] and "Health" not in done["text"]
+    assert "declined" not in done["text"] and validator.meta_text(done["text"]) is None
+    if word:
+        assert word in done["text"]
 
 
-def test_the_finnish_question_gets_the_finnish_sentence(make_pipeline):
-    question = "Paljonko käytin kuntosaliin viime kuussa ja paljonko voin turvallisesti käyttää tällä viikolla?"
-    done, ran, _, cards = _ask(make_pipeline, question, _health_and_safe(), language="fi")
-    assert ran == [("get_safe_to_spend", {})] and "card_health001" not in [c["card_id"] for c in cards]
-    assert done["text"].startswith("En löydä tapahtumistasi erikseen sanaa ”kuntosaliin”")
+@pytest.mark.parametrize("flt", [{"mcc_groups": ["health"]}, {"merchant": "Health service A"},
+                                 {"merchant": "Terveyspalvelu B"}])
+def test_the_health_mcc_group_and_a_health_merchant_alias_are_dropped_too(make_pipeline, flt):
+    done, ran, model, _ = _ask(make_pipeline, ACCEPTANCE, _with_safe(flt), drafts=[LEAK, LEAK])
+    assert ran == [("get_safe_to_spend", {})] and "“gym”" in done["text"] and model.compose_inputs == []
 
 
-def test_the_health_mcc_group_is_guarded_too(make_pipeline):
-    plan = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["health"]}}),
-            FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]
-    done, ran, _, _ = _ask(make_pipeline, ACCEPTANCE, plan)
-    assert ran == [("get_safe_to_spend", {})] and "“gym”" in done["text"]
+@pytest.mark.parametrize("question, language", [
+    ("How much did I spend at the pharmacy last month and what can I safely spend this week?", "en"),
+    ("Paljonko käytin apteekkiin viime kuussa ja paljonko voin turvallisesti käyttää tällä viikolla?", "fi"),
+])
+def test_a_question_that_names_health_keeps_the_filter_and_both_sentences_are_templates(make_pipeline, question,
+                                                                                        language):
+    # #571: the question names health, so the model's Health total runs; a Health answer is never a model draft, and
+    # the other tool's sentence beside it is its template too
+    done, ran, model, cards = _ask(make_pipeline, question, _with_safe(), drafts=[LEAK, LEAK], language=language)
+    assert ("get_spending", HEALTH_FILTER) in ran and ("get_safe_to_spend", {}) in ran
+    assert model.compose_inputs == [] and "card_health001" in [c["card_id"] for c in cards]
+    assert validator.meta_text(done["text"]) is None and "{{" not in done["text_rendered"]
+    assert "llm_unavailable" not in done["warnings"]
 
 
 @pytest.mark.parametrize("merchant", ["Health service A", "Terveyspalvelu B"])
-def test_a_health_merchant_alias_counts_as_health(make_pipeline, merchant):
-    # security review of #607: a total on a health merchant's alias is Health: dropped for a question with no health
-    # word, the template's for one that has it
-    plan = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": {"merchant": merchant}}),
-            FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]
-    done, ran, model, _ = _ask(make_pipeline, ACCEPTANCE, plan, drafts=[LEAK, LEAK])
-    assert ran == [("get_safe_to_spend", {})] and "“gym”" in done["text"] and model.compose_inputs == []
-    plan = [FunctionCall("get_spending", {"period": {"preset": "last_month"}, "filter": {"merchant": merchant}}),
-            FunctionCall("finish")]
-    done, ran, model, _ = _ask(make_pipeline, "How much did I spend at the pharmacy last month?", plan,
-                               drafts=[LEAK, LEAK])
+def test_a_health_merchant_total_for_a_health_question_is_the_template(make_pipeline, merchant):
+    done, ran, model, _ = _ask(make_pipeline, "How much did I spend at the pharmacy last month?",
+                               _alone({"merchant": merchant}), drafts=[LEAK, LEAK])
     assert ran == [("get_spending", {"merchant": merchant})] and model.compose_inputs == []
 
 
-@pytest.mark.parametrize("question", [
-    "How much did I spend at the pharmacy last month and what can I safely spend this week?",
-    "Paljonko käytin apteekkiin viime kuussa ja paljonko voin turvallisesti käyttää tällä viikolla?",
-])
-def test_a_question_that_names_health_keeps_the_filter_and_both_sentences_are_templates(make_pipeline, question):
-    lang = "fi" if question.startswith("Paljonko") else "en"
-    done, ran, model, cards = _ask(make_pipeline, question, _health_and_safe(), drafts=[LEAK, LEAK], language=lang)
-    assert ("get_spending", HEALTH_FILTER) in ran and ("get_safe_to_spend", {}) in ran
-    assert model.compose_inputs == []                               # a Health answer is never a model draft
-    assert "card_health001" in [c["card_id"] for c in cards]
-    assert validator.meta_text(done["text"]) is None and "llm_unavailable" not in done["warnings"]
-    assert "{{" not in done["text_rendered"]
+@pytest.mark.parametrize("source", ["rules", "fallback"])
+def test_only_the_models_plan_is_guarded(make_pipeline, source):
+    from core.agent.orchestrator import _Answer
+    pipeline, a = make_pipeline(ScriptedModel(), registry(*_specs([]))), _Answer(started=0.0)
+    calls = _with_safe()
+    assert pipeline._health_filter_guard(ACCEPTANCE, calls, source, a) is calls and a.health_dropped is None
+    assert pipeline._health_filter_guard(ACCEPTANCE, calls, "model", a) is not calls and a.health_dropped == "gym"
 
 
 # ---- the draft check for meta text ---------------------------------------------------------------------------
 
+N1 = Number(id="n1", value=147.64, unit=Unit.EUR, period=AUG, method="spending.total@1",
+            evidence_ref="ev_aaaaaaaaaaa1", label="Restaurants", display="€147.64")
+
+
 @pytest.mark.parametrize("text", [
     LEAK,
     "Your Health spending is declined, so here is your safe to spend: {{n1}}.",
+    "That question gets declined by my system. You spent {{n1}}.",
+    "Rule: health is declined. You spent {{n1}}.",
     "I am not allowed to comment on that, but you spent {{n1}}.",
     "I'm not allowed to say more. You spent {{n1}}.",
     "My instructions say I can only give totals: {{n1}}.",
+    "My rules do not let me say more. You spent {{n1}}.",
+    "Per my guidelines, you spent {{n1}}.",
+    "I was told not to comment. You spent {{n1}}.",
+    "I have been instructed to give totals only: {{n1}}.",
+    "I am not able to answer that because of how I was set up. You spent {{n1}}.",
     "Before I write the answer: you spent {{n1}}.",
     "Terveyskulusi hylätään ennen kuin kirjoitan. Käytit {{n1}}.",
     "En saa kommentoida sitä, mutta käytit {{n1}}.",
     "Ohjeeni kieltävät sen. Käytit {{n1}}.",
+    "Minulla on ohjeet, jotka estävät vastaamasta. Käytit {{n1}}.",
 ])
 def test_a_draft_about_its_own_rules_or_process_is_rejected(text):
-    n1 = Number(id="n1", value=147.64, unit=Unit.EUR, period=AUG, method="spending.total@1",
-                evidence_ref="ev_aaaaaaaaaaa1", label="Restaurants", display="€147.64")
-    problems = validator.draft_problems(text, {"n1": n1}, has_data=True)
+    problems = validator.draft_problems(text, {"n1": N1}, has_data=True)
     assert any("your own rules, instructions or process" in p for p in problems), (text, problems)
+
+
+@pytest.mark.parametrize("text", [
+    "Your card payment was declined at Prisma on 3 August 2026.",
+    "The payment was declined, so no money left your account.",
+    "Maksu hylättiin Prismassa 3.8.2026.",
+    "In August 2026 you spent {{n1}} on restaurants.",
+])
+def test_a_declined_payment_is_data_not_meta_text(text):
+    assert validator.meta_text(text) is None
 
 
 def test_a_leaked_draft_is_retried_then_the_template_writes(make_pipeline):
@@ -212,8 +251,8 @@ def _texts(value):
 
 def test_the_fixed_refusal_and_unknown_texts_are_not_meta_text():
     # refusals never pass through the draft check; this shows the check would not break them if they did
-    fixed = [*_texts(template.REFUSAL), *_texts(template.HEALTH_REFUSAL), *_texts(template.UNKNOWN_PLAIN),
-             *_texts(template.UNKNOWN_NO_WORD), *_texts(template.UNKNOWN), *_texts(template.NOTHING)]
+    fixed = [*_texts(template.REFUSAL), *_texts(template.UNKNOWN_PLAIN), *_texts(template.UNKNOWN_NO_WORD),
+             *_texts(template.UNKNOWN), *_texts(template.NOTHING)]
     assert fixed and [t for t in fixed if validator.meta_text(t)] == []
     for lang in ("en", "fi"):
         assert validator.meta_text(template.unknown_lead("gym", lang)) is None
