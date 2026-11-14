@@ -172,10 +172,19 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
 BILL_WORDS = r"\bbills?\b|\blasku\w*"
-BILL_PAYDAY = r"\b(payday|pay day|salary|income|palkka\w*|palkkapäiv\w*|tulo|tulot|tuloni|tuloja)\b"
+# Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
+# takeaway below read them from here, so a question routed for its income gets the income (#216).
+INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
+                r"tuloja|tienaa?\w*|ansaitse\w*)\b")
 
 # Matched against the folded question (no diacritics), so folded here too.
-SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY))
+SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS))
+
+
+def asks_income(q: str) -> bool:
+    """A folded question about income or payday and not about the bills ("Which bills are due before
+    payday?" is a bills question)."""
+    return bool(re.search(INCOME_WORDS, q)) and not re.search(BILL_WORDS, q)
 
 
 def _num(node: Any, label: str | None = None) -> tuple[str, str] | None:
@@ -243,7 +252,7 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
     elif tool == "get_recurring_bills":
         if re.search(SAVE_MORE, q):  # "save more": the bills due before payday, one number
             picks.append(_num(view.get("upcoming_total")))
-        elif re.search(BILL_PAYDAY, q) and not re.search(BILL_WORDS, q):
+        elif asks_income(q):
             picks += [_num(i.get("typical_month"), i.get("label")) for i in view.get("income") or []]
             if isinstance(view.get("next_payday"), str):
                 extra.append(f"{pick(NEXT_PAYDAY, language)}: {_date(view['next_payday'], language)}.")
