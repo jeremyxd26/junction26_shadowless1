@@ -3,8 +3,13 @@
 // the module, so the app's CSP (`frame-ancestors 'self'`, scripts and styles from 'self') allows it:
 // no inline script or style; sizes are set through the CSSOM.
 import './demo.css'
+import { moduleHref, safePath } from './path.ts'
 
 type Lang = 'en' | 'fi'
+
+/** The host screens a module may ask for (`sentti.openHostScreen`, docs/integration.md section 3). */
+const HOST_TARGETS = ['monthly_saving', 'bonus_to_fund'] as const
+type HostTarget = (typeof HOST_TARGETS)[number]
 
 interface Strings {
   host: string
@@ -26,8 +31,12 @@ interface Strings {
   confirm: string
   nothingPaid: string
   opensIn: (target: string) => string
+  nothingOpens: string
+  targets: Record<HostTarget, string>
   invalidJson: string
   startOver: string
+  notEnvelope: string
+  announce: (name: string) => string
 }
 
 const TEXT: Record<Lang, Strings> = {
@@ -38,7 +47,7 @@ const TEXT: Record<Lang, Strings> = {
     defaultPersona: 'Default',
     language: 'Language',
     note: 'A neutral host app around the Sentti module, for the demo. Not a bank screen.',
-    messages: 'Messages',
+    messages: 'Last 30 messages',
     noMessages: 'No messages yet.',
     close: 'Close',
     draftTitle: 'Payment draft',
@@ -51,8 +60,12 @@ const TEXT: Record<Lang, Strings> = {
     confirm: 'Confirm in the bank app',
     nothingPaid: 'Demo: nothing is paid',
     opensIn: (target) => `Opens in the bank app: ${target}`,
+    nothingOpens: 'Demo: nothing opens',
+    targets: { monthly_saving: 'Monthly saving', bonus_to_fund: 'Bonus to fund' },
     invalidJson: '(not JSON)',
     startOver: 'Start over',
+    notEnvelope: '(not a message object)',
+    announce: (name) => `Message: ${name}`,
   },
   fi: {
     host: 'Pankkisovellus (demo)',
@@ -61,7 +74,7 @@ const TEXT: Record<Lang, Strings> = {
     defaultPersona: 'Oletus',
     language: 'Kieli',
     note: 'Neutraali isäntäsovellus Sentti-moduulin ympärillä esittelyä varten. Ei pankin näkymä.',
-    messages: 'Viestit',
+    messages: 'Viimeiset 30 viestiä',
     noMessages: 'Ei vielä viestejä.',
     close: 'Sulje',
     draftTitle: 'Maksuluonnos',
@@ -74,8 +87,12 @@ const TEXT: Record<Lang, Strings> = {
     confirm: 'Vahvista pankin sovelluksessa',
     nothingPaid: 'Demo: mitään ei makseta',
     opensIn: (target) => `Avautuu pankin sovelluksessa: ${target}`,
+    nothingOpens: 'Demo: mitään ei avata',
+    targets: { monthly_saving: 'Kuukausisäästö', bonus_to_fund: 'Bonus rahastoon' },
     invalidJson: '(ei JSONia)',
     startOver: 'Aloita alusta',
+    notEnvelope: '(ei viestiobjekti)',
+    announce: (name) => `Viesti: ${name}`,
   },
 }
 
@@ -94,17 +111,13 @@ interface Envelope {
   payload?: unknown
 }
 
-/** `?path=` sets the module's path in the iframe (for example `/cards` under `npm run dev`). Same origin only. */
-function safePath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return '/'
-  return value
-}
 
 const page = new URLSearchParams(location.search)
 const state = {
   lang: (page.get('lang') === 'fi' ? 'fi' : 'en') as Lang,
   persona: page.get('persona') ?? '',
-  path: safePath(page.get('path')),
+  // `?path=` sets the module's path in the iframe (for example `/cards` under `npm run dev`).
+  path: safePath(page.get('path'), location.origin),
   open: false,
 }
 
@@ -173,9 +186,11 @@ const logTitle = el('h2', 'log-title')
 log.setAttribute('aria-labelledby', 'log-title')
 logTitle.id = 'log-title'
 const logList = el('ol', 'log-list')
-logList.setAttribute('aria-live', 'polite')
 const logEmpty = el('p', 'log-empty')
-log.append(logTitle, logEmpty, logList)
+// Screen readers hear only the message name, never the payload (it can hold an IBAN).
+const logAnnounce = el('p', 'visually-hidden')
+logAnnounce.setAttribute('role', 'status')
+log.append(logTitle, logEmpty, logList, logAnnounce)
 
 workspace.append(slot, log)
 stage.append(controls, workspace)
@@ -183,11 +198,11 @@ root.append(stage)
 
 let frame: HTMLIFrameElement | null = null
 let sheet: HTMLElement | null = null
+/** Where the focus goes back when a sheet closes: the element focused before it opened. */
+let returnFocus: HTMLElement | null = null
 
 function moduleUrl(): string {
-  const params = new URLSearchParams({ lang: state.lang })
-  if (state.persona) params.set('persona', state.persona)
-  return `${state.path}?${params.toString()}`
+  return moduleHref(state.path, location.origin, state.lang, state.persona)
 }
 
 /**
@@ -208,36 +223,43 @@ function installHost(target: HTMLIFrameElement) {
   win.dispatchEvent(new PopStateEvent('popstate', { state: win.history.state }))
 }
 
-/** Every message goes to the log, unknown names too; the known ones get the host's mock answer. */
-function parseEnvelope(json: string): Envelope | null {
+type Parsed = { json: true; value: unknown } | { json: false }
+
+function parse(raw: string): Parsed {
   try {
-    const value: unknown = JSON.parse(json)
-    return typeof value === 'object' && value !== null ? (value as Envelope) : null
+    return { json: true, value: JSON.parse(raw) as unknown }
   } catch {
-    return null
+    return { json: false }
   }
 }
 
-function onModuleMessage(json: string) {
-  const message = parseEnvelope(json)
-  addLog(message, json)
+function asEnvelope(value: unknown): Envelope | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Envelope) : null
+}
+
+/** Every message goes to the log, unknown names too; the known ones get the host's mock answer. */
+function onModuleMessage(raw: string) {
+  const parsed = parse(raw)
+  const message = parsed.json ? asEnvelope(parsed.value) : null
+  addLog(parsed, message, raw)
   if (!message || typeof message.type !== 'string') return
-  const payload = (typeof message.payload === 'object' && message.payload !== null ? message.payload : {}) as Record<string, unknown>
+  const payload = (asEnvelope(message.payload) ?? {}) as Record<string, unknown>
   if (message.type === 'sentti.close') closeModule()
   else if (message.type === 'sentti.paymentDraft') showDraft(payload)
   else if (message.type === 'sentti.openHostScreen') showHostScreen(payload)
 }
 
-function addLog(message: Envelope | null, raw: string) {
+function addLog(parsed: Parsed, message: Envelope | null, raw: string) {
   const t = TEXT[state.lang]
+  const label = message && typeof message.type === 'string' ? message.type : parsed.json ? t.notEnvelope : t.invalidJson
+  const shown = message ? JSON.stringify(message.payload ?? {}) : parsed.json ? JSON.stringify(parsed.value) : raw
   const item = el('li', 'log-item')
   const time = el('span', 'log-time', new Date().toLocaleTimeString(state.lang === 'fi' ? 'fi-FI' : 'en-GB'))
-  const name = el('span', 'log-name', message && typeof message.type === 'string' ? message.type : t.invalidJson)
-  const body = el('code', 'log-body', message ? JSON.stringify(message.payload ?? {}) : raw.slice(0, 160))
-  item.append(time, name, body)
+  item.append(time, el('span', 'log-name', label), el('code', 'log-body', shown.slice(0, 200)))
   logList.prepend(item)
   while (logList.children.length > LOG_LIMIT) logList.lastElementChild?.remove()
   logEmpty.hidden = true
+  logAnnounce.textContent = t.announce(label)
 }
 
 function formatDate(iso: unknown): string {
@@ -251,39 +273,77 @@ function text(value: unknown): string {
   return typeof value === 'string' && value !== '' ? value : '–'
 }
 
-/** A mock host sheet over the module, inside the phone. Close, the scrim and Escape dismiss it. */
+/**
+ * A mock host sheet over the module, inside the phone. Close, the primary button, the scrim and
+ * Escape dismiss it. The focus moves to the panel when it opens (also when it was in the iframe,
+ * so Escape reaches the panel), Tab and Shift+Tab stay inside it, and on close the focus returns
+ * to where it was before (or to the module).
+ */
 function openSheet(title: string, build: (panel: HTMLElement) => void) {
-  closeSheet()
+  const before = document.activeElement
+  closeSheet(false)
+  returnFocus = before instanceof HTMLElement && before !== document.body ? before : frame
   const t = TEXT[state.lang]
   sheet = el('div', 'sheet')
   const scrim = el('button', 'sheet-scrim')
   scrim.type = 'button'
   scrim.tabIndex = -1
   scrim.setAttribute('aria-label', t.close)
-  scrim.addEventListener('click', closeSheet)
+  scrim.addEventListener('click', () => closeSheet())
   const panel = el('div', 'sheet-panel')
+  panel.tabIndex = -1
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-modal', 'true')
   panel.setAttribute('aria-labelledby', 'sheet-title')
+  panel.addEventListener('keydown', (event) => trapKeys(event, panel))
   const head = el('div', 'sheet-head')
   const heading = el('h2', 'sheet-title', title)
   heading.id = 'sheet-title'
   const close = el('button', 'sheet-close', '×')
   close.type = 'button'
   close.setAttribute('aria-label', t.close)
-  close.addEventListener('click', closeSheet)
+  close.addEventListener('click', () => closeSheet())
   head.append(heading, close)
   panel.append(head)
   build(panel)
   sheet.append(scrim, panel)
   hostBody.append(sheet)
-  const primary = panel.querySelector<HTMLElement>('.sheet-primary')
-  ;(primary ?? close).focus()
+  panel.focus()
 }
 
-function closeSheet() {
-  sheet?.remove()
+/** Escape closes; Tab and Shift+Tab cycle through the panel's buttons only. */
+function trapKeys(event: KeyboardEvent, panel: HTMLElement) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeSheet()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const items = [...panel.querySelectorAll<HTMLElement>('button')]
+  if (items.length === 0) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || active === panel)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || active === panel)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+/** Closes the open sheet; with `restore` (a user's close), the focus returns where it was. */
+function closeSheet(restore = true) {
+  if (!sheet) return
+  sheet.remove()
   sheet = null
+  const target = returnFocus
+  returnFocus = null
+  if (!restore) return
+  if (target && document.contains(target)) target.focus()
+  else frame?.focus()
 }
 
 function showDraft(payload: Record<string, unknown>) {
@@ -305,19 +365,24 @@ function showDraft(payload: Record<string, unknown>) {
     }
     const confirm = el('button', 'sheet-primary', t.confirm)
     confirm.type = 'button'
-    confirm.addEventListener('click', closeSheet)
+    confirm.addEventListener('click', () => closeSheet())
     panel.append(list, confirm, el('p', 'sheet-note', t.nothingPaid))
   })
 }
 
+function isHostTarget(value: unknown): value is HostTarget {
+  return typeof value === 'string' && (HOST_TARGETS as readonly string[]).includes(value)
+}
+
+/** Only the two documented targets open a sheet; any other target is logged and ignored, like a host would. */
 function showHostScreen(payload: Record<string, unknown>) {
+  if (!isHostTarget(payload.target)) return
   const t = TEXT[state.lang]
-  const target = text(payload.target)
-  openSheet(t.opensIn(target), (panel) => {
+  openSheet(t.opensIn(t.targets[payload.target]), (panel) => {
     const done = el('button', 'sheet-primary', t.close)
     done.type = 'button'
-    done.addEventListener('click', closeSheet)
-    panel.append(el('p', 'sheet-note', t.nothingPaid), done)
+    done.addEventListener('click', () => closeSheet())
+    panel.append(el('p', 'sheet-note', t.nothingOpens), done)
   })
 }
 
@@ -329,7 +394,7 @@ function showHostScreen(payload: Record<string, unknown>) {
  */
 function openModule(reset = false) {
   state.open = true
-  closeSheet()
+  closeSheet(false)
   frame?.remove()
   const current = el('iframe', 'module')
   frame = current
@@ -359,7 +424,7 @@ function startOver() {
 
 function closeModule() {
   state.open = false
-  closeSheet()
+  closeSheet(false)
   frame?.remove()
   frame = null
   home.hidden = false
