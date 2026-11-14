@@ -31,7 +31,7 @@ describe('HostNotice (#431)', () => {
     expect(en).toContain('role="status"')
     expect(en).toContain('>This continues in the bank app.</button>')
     expect(en).toContain('min-h-11')
-    expect(view(true, 'fi')).toContain('>Tämä jatkuu pankin sovelluksessa.</button>')
+    expect(view(true, 'fi')).toContain('>Tämä jatkuu pankkisovelluksessa.</button>')
   })
 
   it('a host stub that takes the message (the demo frame) shows nothing', () => {
