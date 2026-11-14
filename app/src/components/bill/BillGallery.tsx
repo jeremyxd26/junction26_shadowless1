@@ -53,12 +53,15 @@ function SampleTile({ sample, onPick }: { sample: BillSample; onPick: (sampleId:
     <button
       type="button"
       onClick={() => onPick(sample.sample_id)}
-      className="flex min-h-11 w-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-left transition-colors duration-(--duration-fast) hover:border-brand active:bg-mint-tint"
+      className="@container flex min-h-11 w-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-left transition-colors duration-(--duration-fast) hover:border-brand active:bg-mint-tint"
     >
       <span className="block bg-sunken p-3">
         <img src={sample.image_url} alt="" className="mx-auto aspect-[4/5] w-full max-w-36 rounded-sm shadow-sm" />
       </span>
-      <span className="flex flex-col gap-0.5 px-3 py-2">
+      {/* With large text the tile is narrow in rem (under 7rem; at normal size it is 8.6–9.4rem), and
+          only then the words hyphenate in the UI language, so normal-size line breaks stay as they
+          were. A word that still does not fit breaks as a last resort instead of being clipped (#541). */}
+      <span lang={lang} className="flex min-w-0 flex-col gap-0.5 px-3 py-2 break-words @max-[7rem]:hyphens-auto">
         <span className="text-base font-semibold text-ink">{sample.title}</span>
         <span className="text-xs text-muted">{s.sampleLanguage[sample.language] ?? sample.language}</span>
       </span>
