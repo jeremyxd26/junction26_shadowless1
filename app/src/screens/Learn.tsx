@@ -4,12 +4,10 @@ import { learnStrings } from '../components/learn/learnStrings.ts'
 import { MiniTest, PASS_SCORE } from '../components/learn/MiniTest.tsx'
 import { miniTest } from '../components/learn/miniTests.ts'
 import { lessonsOf, topicsFor, type Topic } from '../components/learn/topics.ts'
-import { LessonTurn } from '../components/lesson/LessonTurn.tsx'
+import { LearnLesson } from '../components/learn/LearnLesson.tsx'
 import { resetProgress, useLearnProgress } from '../lib/learnProgress.ts'
 import { useOpening } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
-
-const noop = () => {}
 
 type Strings = ReturnType<typeof learnStrings>
 type View = { kind: 'home' } | { kind: 'topic'; topic: string } | { kind: 'lesson'; topic: string; lesson: string } | { kind: 'quiz'; topic: string }
@@ -141,18 +139,12 @@ export function Learn() {
     return (
       <section aria-label={s.topics[view.topic] ?? s.title} className="flex flex-col gap-4">
         <BackButton label={s.topics[view.topic] ?? s.back} onBack={() => setView({ kind: 'topic', topic: view.topic })} />
-        <LessonTurn
+        <LearnLesson
           key={`${view.topic}:${view.lesson}`}
-          turnId={0}
-          onStep={noop}
-          onBusy={noop}
           lessons={lessonsOf(view.topic, overview, lang)}
           startAt={view.lesson}
-          doneText={s.lessonDoneText}
-          onFinish={[
-            ...(quizLength(view.topic) > 0 ? [{ label: s.takeQuiz, act: () => setView({ kind: 'quiz', topic: view.topic }) }] : []),
-            { label: s.backToTopic, act: () => setView({ kind: 'topic', topic: view.topic }) },
-          ]}
+          onQuiz={quizLength(view.topic) > 0 ? () => setView({ kind: 'quiz', topic: view.topic }) : undefined}
+          onBack={() => setView({ kind: 'topic', topic: view.topic })}
         />
       </section>
     )
