@@ -74,9 +74,14 @@ PLAN = default_registry().tools["get_savings_plan"]
     ("Paljonko siirrän säästöön kuukaudessa? Nosta sitä 50 €.", None),
     ("Paljonko siirsin säästöön viime kuussa? Laita sinne lisää.", None),
     ("Paljonko siirrän säästöön kuukaudessa? Voitko nostaa sitä?", None),
-    # ... but a follow-up question in a later sentence is no request
-    ("How much did I transfer to savings last month? And the month before?", "past"),
-    ("Paljonko siirsin säästöön viime kuussa? Entä sitä edellisenä?", "past"),
+    # Renat's decision on the review of #670: only one question with nothing after it is claimed, so a later sentence,
+    # even a follow-up question, leaves the message to the rules as before #658; a closing "please" is no clause
+    ("How much did I transfer to savings last month? And the month before?", None),
+    ("Paljonko siirsin säästöön viime kuussa? Entä sitä edellisenä?", None),
+    ("Increase it. Do I have a regular transfer to savings?", None),
+    ("How much do I transfer to savings each month and move 50e more", None),
+    ("Paljonko siirrän säästöön kuukaudessa ja nosta sitä", None),
+    ("Do I have a regular transfer to savings, please?", "usual"),
 ])
 def test_which_questions_are_about_the_users_own_transfers_to_savings(question, kind):
     assert savings_transfer.asks(fold(question)) == kind
@@ -107,6 +112,7 @@ def plan_input(question, language):
     ("How much did I transfer to savings last month?", "en"), ("Do I have a regular transfer to savings?", "en"),
     ("How much did I put into savings in August?", "en"), ("Paljonko siirsin säästöön viime kuussa?", "fi"),
     ("Paljonko siirrän säästöön kuukaudessa?", "fi"),
+    ("Do I have a regular transfer to my savings account at another bank?", "en"),
 ])
 def test_the_rules_claim_them_for_the_savings_plan_and_the_template_writes(question, language):
     request = plan_input(question, language)
@@ -137,10 +143,48 @@ def test_the_rules_claim_them_for_the_savings_plan_and_the_template_writes(quest
     ("Do I have a regular transfer to savings? Increase it.", "en"),
     ("Do I have a monthly transfer to savings, and can you increase it?", "en"),
     ("Paljonko siirsin säästöön viime kuussa? Siirrä myös 200 € säästöön.", "fi"),
+    # delta review of #670 (refused on dev 6096c6a, refused here): an amount with no space before the unit, and a
+    # request after "and", a comma, a dash or a later sentence, with or without an amount
+    ("Do I have a regular transfer to savings and move 50e there", "en"),
+    ("Do I have a regular transfer to savings and move 50eur there", "en"),
+    ("Do I have a monthly transfer to savings and increase it to 200e", "en"),
+    ("Do I have a monthly transfer to savings and can you increase it to 200eur?", "en"),
+    ("Do I have a regular transfer to savings and increase it", "en"),
+    ("Do I have a regular transfer to savings and please increase it", "en"),
+    ("Do I have a regular transfer to savings, increase it", "en"),
+    ("Do I have a regular transfer to savings - increase it", "en"),
+    ("Do I have a regular transfer to savings? Bump it up", "en"),
+    ("Do I have a regular transfer to savings? Please top it up by 100", "en"),
+    ("Do I have a regular transfer to savings and can you increase it?", "en"),
+    ("Do I have a regular transfer to savings? I want to increase it", "en"),
+    # ... and with no connector at all, or the request first (refused on dev, refused here)
+    ("Do I have a regular transfer to savings please increase it", "en"),
+    ("Do I have a regular transfer to savings increase it to 200", "en"),
+    ("Increase it. Do I have a regular transfer to savings?", "en"),
+    ("Do I have a regular transfer to savings scheduled?", "en"),
 ])
 def test_a_request_to_move_money_and_other_refusals_stay_declined(question, language):
     calls = RuleModel().plan(plan_input(question, language)).calls
     assert [c.name for c in calls] == ["decline"]
+
+
+@pytest.mark.parametrize("question, exempt", [
+    ("Do I have a regular transfer to savings?", True), ("Do we have a monthly transfer to our savings account?", True),
+    ("Do I have a regular transfer to my savings account at another bank?", True),
+    ("Do I have a regular transfer to savings, please?", True),
+    ("Do I have a regular transfer to savings please increase it", False),
+    ("Do I have a regular transfer to savings and increase it", False),
+    ("Do I have a regular transfer to savings? Bump it up", False),
+    ("Increase it. Do I have a regular transfer to savings?", False),
+    ("Do I have a regular transfer to my mother?", False),
+    ("Do I have a regular transfer to savings scheduled for tomorrow?", False),
+])
+def test_only_the_whole_message_asking_for_a_transfer_to_savings_is_exempted(question, exempt):
+    # Renat's decision on the review of #670: the "transfer" of "Do I have a regular transfer to savings?" is exempted
+    # from the move-money refusal only when that question is the whole message, and then the rules claim it
+    q = fold(question)
+    assert savings_transfer.have_transfer(q) is exempt
+    assert not exempt or savings_transfer.asks(q) == "usual"
 
 
 def test_how_much_the_user_can_move_keeps_devs_savings_plan():

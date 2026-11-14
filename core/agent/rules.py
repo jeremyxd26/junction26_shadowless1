@@ -108,13 +108,7 @@ DECLINE_RULES = [
 OWN_TRANSFERS = (r"\b(did|have|had)\s+(i|we)\s+(ever\s+)?transfer(red)?\b|"
                  r"\b(do|does)\s+(i|we)\s+(usually|normally|often|typically)\s+transfer\b|"
                  r"\bhow much (do|does) (i|we) transfer\b|\btransfer\s+(fees?|charges?|history)\b|"
-                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b|"
-                 # "Do I have a regular transfer to savings?" (#658): only to savings, and never next to a request to
-                 # move or change an amount ("… and can you increase it to 500 euros?" stays refused; review of #670)
-                 r"\b(do|does|did)\s+(i|we)\s+have\s+(a|any)\s+(regular\s+|monthly\s+|recurring\s+|standing\s+)?"
-                 r"transfers?\b(?=[^.?!]{0,40}(\b(to|into)\s+(my\s+|the\s+|our\s+)?savings?\b|\bsaasto(on|ihin)\b))"
-                 r"(?!.*(?:" + savings_transfer.REQUEST_ELSEWHERE + r"|\b(tomorrow|tonight|huomenna|scheduled|"
-                 r"next\s+(week|month|year))\b))")
+                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b")
 # What the entries above (and "transfer") refused before #539, word parts included. A question they refused that the
 # rules would now answer with the unfiltered total ("how much did the weather stripping cost me?", "paljonko kulutin
 # Vaalimaalla?") is left to the next planner: when unclear, unclaimed rather than a number the user did not ask.
@@ -957,7 +951,11 @@ DECLINED_BEFORE_539 = fold_pattern(DECLINED_BEFORE_539)
 
 
 def _declines(rx: str, q: str) -> bool:
-    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539)."""
+    """A decline rule matches the folded question; the user's own past or usual transfers never do (#539), nor a
+    message that is only the question whether the user has a regular transfer to savings, which the rules claim (#658;
+    any other message keeps the refusal, review of #670)."""
+    if savings_transfer.have_transfer(q):
+        return False
     return bool(re.search(rx, re.sub(OWN_TRANSFERS, " ", q, flags=re.I), re.I))
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
