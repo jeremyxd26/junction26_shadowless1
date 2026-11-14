@@ -1,4 +1,6 @@
 import type { Num } from '../api/types.ts'
+import { chipWrapping } from '../lib/displayParts.ts'
+import { DisplayText } from './ChipText.tsx'
 import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -40,23 +42,33 @@ interface Props {
   tone?: Tone
   /** Count up or down from an earlier value to `number` (a review answer); ends on `display`. */
   count?: Count
+  /**
+   * An inline-size chip that stands on its own (a row's amount, not part of a sentence) may wrap
+   * like the larger sizes. Chips in running text never wrap.
+   */
+  wrap?: boolean
 }
 
 /**
  * Every number the app shows: the API's `display` string, unchanged, in a pill.
  * With an `evidence_ref` it is a button that opens the evidence sheet.
  */
-export function NumberChip({ number, size = 'md', tone = 'mint', count }: Props) {
+export function NumberChip({ number, size = 'md', tone = 'mint', count, wrap = false }: Props) {
   const { t } = useSettings()
   const text = useCountedText(number, count, tokenMs('--duration-money', 900))
-  const className = `inline-flex min-w-11 items-center justify-center whitespace-nowrap rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
+  // Chips in running text never wrap. A standalone chip may wrap its display at a space outside the
+  // amount ("€1,080.55" / "a month") when its container is too narrow, e.g. at 200 % text (#493).
+  const inText = (size === 'inline' || size === 'lead') && !wrap
+  const wrapping = chipWrapping(inText)
+  const className = `inline-flex min-w-11 items-center justify-center ${wrapping} rounded-pill border font-semibold tabular-nums ${sizes[size]} ${tones[tone]}`
+  const body = inText ? text : <DisplayText text={text} />
   // A new count cross-fades the figure in (the only motion left under reduced motion).
   const shown = count ? (
     <span key={count.seq} className="motion-fade">
-      {text}
+      {body}
     </span>
   ) : (
-    text
+    body
   )
 
   if (!number.evidence_ref) {
