@@ -53,6 +53,19 @@ MCC_GROUPS: dict[str, tuple[str, ...]] = {
     "electronics_home": ("5200", "5251", "5712", "5732", "5734"),  # sample: category Home & Tech
 }
 MCC_TO_GROUP: dict[str, str] = {mcc: group for group, codes in MCC_GROUPS.items() for mcc in codes}
+# Sub-groups of the spending filter (#497): codes inside a group above (takeaway 5814 and bars 5813 are part of
+# restaurants) or outside any (cinemas 7832). A row keeps its one group (MCC_TO_GROUP, so breakdowns by group do
+# not change); a filter on a sub-group selects its codes. The what-if names them too (WHAT_IF_MCC_NAMES).
+MCC_SUBGROUPS: dict[str, tuple[str, ...]] = {"takeaway": ("5814",), "bars": ("5813",), "cinemas": ("7832",)}
+MCC_FILTER_GROUPS: dict[str, tuple[str, ...]] = {**MCC_GROUPS, **MCC_SUBGROUPS}   # what a spending filter may name
+# The category every row of a filter group carries in the data (checked on the four personas). A question naming a
+# group with its own category is about the category, which holds the group ("restaurants and bars"); with another
+# category it asks about two selections ("bars and groceries"), which one filter cannot give (#497 review).
+MCC_GROUP_CATEGORY: dict[str, str] = {
+    "groceries": "Groceries", "restaurants": "Restaurants", "taxi": "Transportation",
+    "public_transport": "Transportation", "fuel": "Transportation", "parking": "Transportation", "health": "Health",
+    "electronics_home": "Home & Tech", "takeaway": "Restaurants", "bars": "Restaurants", "cinemas": "Entertainment",
+}
 
 # Classification constants (metrics.md sections 0 and 1, 02_baskets.sql).
 ONE_OFF_FACTOR = 5          # a purchase > 5x the category median of the last 365 days
@@ -130,6 +143,9 @@ MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
     "parking": ("Parking", "Pysäköinti"),
     "health": ("Health", "Terveys"),
     "electronics_home": ("Electronics and home", "Elektroniikka ja koti"),
+    "takeaway": ("Takeaway and fast food", "Pikaruoka ja noutoruoka"),   # sub-groups (#497)
+    "bars": ("Bars", "Baarit"),
+    "cinemas": ("Cinemas", "Elokuvateatterit"),
     "other": ("Other", "Muut"),
 }
 
@@ -887,6 +903,18 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     ),
     "mcc": ("purchases with MCC {codes}", "ostokset, MCC {codes}"),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}
+# The everyday names of the MCC selections the what-if rules plan from everyday words (#346, #377). An MCC
+# what-if whose codes are exactly one of these keys is named in words ("Spend 10% less on taxis" / "Käytä 10 %
+# vähemmän: taksit"); any other code list keeps the code text (WHAT_IF_TEXT["mcc"]). Keys are sorted code tuples.
+WHAT_IF_MCC_NAMES: dict[tuple[str, ...], tuple[str, str]] = {
+    MCC_GROUPS["taxi"]: ("taxis", "taksit"),
+    MCC_GROUPS["public_transport"]: ("public transport", "joukkoliikenne"),
+    MCC_GROUPS["fuel"]: ("fuel", "polttoaine"),
+    MCC_GROUPS["parking"]: ("parking", "pysäköinti"),
+    MCC_SUBGROUPS["takeaway"]: ("takeaway and fast food", "pikaruoka ja noutoruoka"),
+    MCC_SUBGROUPS["bars"]: ("bars", "baarit"),
+    MCC_SUBGROUPS["cinemas"]: ("cinemas", "elokuvateatterit"),
 }
 
 # ---- spike reviews (#68, contract 0.2.0 sections 3 and 10) ----------------------------------------

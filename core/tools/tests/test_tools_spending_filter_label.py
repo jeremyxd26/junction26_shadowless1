@@ -52,6 +52,20 @@ def test_a_two_category_total_names_both_in_its_label_card_and_evidence(language
     assert result.model_view["filter_parts"] == 2
 
 
+@pytest.mark.parametrize("language,group,expected", [
+    ("en", "bars", "Bars"), ("fi", "bars", "Baarit"),
+    ("en", "takeaway", "Takeaway and fast food"), ("fi", "cinemas", "Elokuvateatterit"),
+])
+def test_a_sub_group_filter_is_named_never_spending(language, group, expected):
+    """#496 merged with #514: the sub-groups of #497 keep their labels in filter_label (Number, card, evidence)."""
+    assert filter_label([], [group], [], None, language) == expected
+    result, store = run({"filter": {"mcc_groups": [group]}}, language)
+    total = result.data.total
+    assert total.label == expected and result.card.title == expected
+    assert evidence_api._label_of(store.rows[total.evidence_ref], language) == expected
+    assert total.label not in ("Spending", "Kulutus", "Total spending", "Kulutus yhteensä")
+
+
 def test_three_parts_and_mixed_filters():
     assert filter_label(["Housing", "Restaurants", "Travel"], [], [], None, "en") == "Housing, restaurants and travel"
     assert filter_label(["Restaurants"], ["taxi"], [], None, "en") == "Restaurants and taxi"

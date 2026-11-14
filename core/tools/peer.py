@@ -209,12 +209,19 @@ def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: 
     return n
 
 
+def cut_prompt(metric: str, language: str, label: str | None = None) -> str:
+    """The prompt of the card's action for a metric: the save-more question for all spending, else the what-if
+    of that metric (its label, the card's own when given), which the what-if rule claims and asks by how much
+    (#418, #403)."""
+    if metric == "spend_total":
+        return _t("action_prompt_total", language)
+    label = label if label is not None else metric_label(metric, language)
+    return _t("action_prompt", language, what=label.lower() if language == "en" else label)
+
+
 def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> Card:
     ref = data.peer_median.evidence_ref
-    if data.metric == "spend_total":
-        prompt = _t("action_prompt_total", language)
-    else:
-        prompt = _t("action_prompt", language, what=data.metric_label.lower() if language == "en" else data.metric_label)
+    prompt = cut_prompt(data.metric, language, data.metric_label)
     # A cut is offered only above the median and for spending that can be cut (#418); the text says the
     # same offer (answer_sentences.peer), so the two always appear together.
     offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None)
