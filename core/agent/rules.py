@@ -40,6 +40,20 @@ AMOUNT_EN = r"(€\s?)?(\d[\d\s.,]*|" + _NUMBER_EN + r")\s?(€|euros?|eur|bucks
 AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|"
              r"\w+kymmentä|sata|satanen|satasen|tuhat|tonni|tonnin)\s?(€|euroa?|e)?\b")
 
+# Object tests for the credit class (#677), so a rare ordinary wording is not refused: a loan's own papers ("Can I get
+# a loan statement?"), a loan from a listed source that lends no money ("Saanko lainaa kirjastosta?"), lending to
+# someone ("Paljonko voin lainata kaverilleni?" is guarded in place) and borrowing from one's own money ("How much can I
+# borrow from my savings goal?"). On a hard rule the refusing side is the safe side: the source is an allowlist, so a
+# bank or any other name ("Saanko lainaa Nordealta?") keeps the refusal, as does an account at the bank. Investing time
+# keeps the investment refusal (review of #682): a time object with a period would read "invest" as a category total.
+LOAN_OBJECT = (r"(?!\s+(statements?|documents?|papers?|numbers?|accounts?|receipts?|letters?|calculators?|overviews?"
+               r"|details|balances?|summar\w*|history|interest|payments?|repayments?|terms|agreements?|contracts?"
+               r"|bills?|limits? (statements?|letters?))\b)")
+LOAN_SOURCE = (r"(?!\s+(kirjasto|ystäv|(työ)?kaver|naapur|(iso)?isä|(iso)?äi[dt]|(iso)?vanhemm|sisko|sisar|velj|mumm"
+               r"|pap(p)?a|ukki|puoliso|vaimo|mieh)\w*(sta|stä|lta|ltä)(ni|si|mme|nne|nsa|nsä)?\b)")
+OWN_MONEY_SOURCE = (r"(?!\s+from\s+(my|our)\s+(own\s+)?(savings( goal)?|buffer|goal|account|pot|reserve|money"
+                    r"|emergency fund)\b(?!\s+(at|with|in|from)\s+(the|a|my|our)\s+(banks?|lenders?)\b))")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
@@ -68,20 +82,33 @@ DECLINE_RULES = [
                         r"(a |an |the )?(new |bigger )?mortgage\b|"
                         r"\bshould (i|we) (take|get|apply for|take out) (a |an |the )?(new )?mortgage\b|"
                         r"\b(good|best|right|cheapest|which|what kind of) mortgages?\b|"
-                        r"\b(my|our|what is my|whats my) credit ?scores?\b(?![\s-]+(reports?|checks?|services?|fees?)\b)|"
+                        r"\b(my|our|what is my|whats my) credit ?(scores?|ratings?|standing|history)\b"
+                        r"(?![\s-]+(reports?|checks?|services?|fees?)\b)|"
+                        # the user's own credit as a class (#677): "Is my credit good enough for a car loan?", "Do I
+                        # have good credit?", "Can I get a credit card?" (never its statement), "Mikä on
+                        # luottotietoni?", "Myöntäisikö pankki minulle lainan?"
+                        r"\b(is|are) (my|our) credit\b.*\b(good|enough|high|strong|ok|okay)\b|"
+                        r"\b(do|have) (i|we) (got |have )?(good|bad|enough|decent|great|poor|any) credit\b|"
+                        r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|"
+                        r"apply for) (a |an |the )?(new )?credit cards?\b" + LOAN_OBJECT + r"|"
+                        r"\bluottotie(to|do)\w*|\bmyöntäisi(kö)?\b|"
                         r"\bcredit ?scores?\b(?=\s*\?)|\b(am|are) (i|we) creditworthy\b|\bcreditworthiness\b|"
-                        r"\bmyöntääkö\b|\bsaa(nko|mmeko|isinko) (asunto)?lain\w*|\bluottokelpoisuute(ni|si|mme)\b|"
+                        r"\bmyöntääkö\b|\bsaa(nko|mmeko|isinko) (asunto)?lain\w*\b" + LOAN_SOURCE +
+                        r"|\bluottokelpoisuute(ni|si|mme)\b|"
                         r"\bonko (minulla |meillä )?luottokelpoisuu\w*|\blainapäätös\w*|"
                         # eligibility as a class (review of #657): eligible / likely / qualify, can I get or borrow,
                         # how much can I borrow, is my income enough, in English and Finnish
                         r"\b(eligible|likely|qualif\w*|pre-?approved)\b.*\b(mortgage|loan)s?\b|"
                         r"\b(can|could|will|would|do|does|might) (i|we) (get|qualify for|be approved for|be granted|borrow|"
-                        r"afford) (a |an |the )?(new |bigger |car |home )?(mortgage|loan)\b|"
-                        r"\b(can|could) (i|we) borrow\b|\bhow much (can|could|would) (i|we) borrow\b|"
+                        r"afford) (a |an |the )?(new |bigger |car |home )?(mortgage|loan)\b" + LOAN_OBJECT + r"|"
+                        r"\b(can|could) (i|we) borrow\b" + OWN_MONEY_SOURCE +
+                        r"|\bhow much (can|could|would) (i|we) borrow\b" + OWN_MONEY_SOURCE + r"|"
                         r"\b(income|salary|earnings|pay) (is |are )?(enough|sufficient|high enough) for\b.*\b(mortgage|loan)\b|"
                         r"\bwould (the |a |my )?(bank|lender) (give|lend|approve|accept)\b|"
-                        r"\b(voinko|voimmeko|saisinko|pääsenkö|pääsisinkö) (saada |ottaa )?(asunto|auto|kulutus)?lain\w*|"
-                        r"\bpaljonko (minä )?(asunto|auto)?lainaa (saan|saisin|voin saada)\b|\bpaljonko voin lainata\b|"
+                        r"\b(voinko|voimmeko|saisinko|pääsenkö|pääsisinkö) (saada |ottaa )?(asunto|auto|kulutus)?lain\w*\b"
+                        + LOAN_SOURCE + r"|"
+                        r"\bpaljonko (minä )?(asunto|auto)?lainaa (saan|saisin|voin saada)\b|"
+                        r"\bpaljonko voin lainata\b(?!\s+\w+(lle|lleni|llesi|lleen|llemme|llenne)\b)|"
                         r"\briittää(kö)?\b.*\b(asunto|auto)?lain\w*|\bonko (minulla|meillä) varaa (asunto|auto)?lain\w*|"
                         r"\bluottokelpoi(?!suusselvity|suusraport|suustarkist)\w*"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(buy|buying|sell|selling|invest|investing|hold|own|pick)\b"
@@ -100,6 +127,17 @@ DECLINE_RULES = [
                           r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
                           r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
                           r"\b(could|would|can|shall) (i|we) (invest|start investing)\b|"   # "should" and "where": the #650 forms below
+                          # R7 as a class, the rows #657 left for later (#677): a good time to buy, a recommendation,
+                          # a pick, "better than", "smart to buy gold", which fund (Finnish)
+                          r"\b(good|right|best|bad) time to (buy|sell|invest)\b|"
+                          r"\brecommend\w*\b.*\b(stocks?|shares|(?<!emergency )(?<!rainy day )funds?|etfs?|crypto\w*"
+                          r"|bitcoin|gold)\b|"
+                          r"\bpick (a |an |some |me a |me some )?(stocks?|shares|funds?|etfs?)\b|"
+                          r"\b(index funds?|stocks?|shares|etfs?|crypto\w*|bitcoin|gold) (are |is )?better than\b|"
+                          r"\b(smart|wise|sensible|a good idea|worth it) to (buy|invest in|get|own) (gold|stocks?|shares"
+                          r"|funds?|etfs?|crypto\w*|bitcoin)\b|"
+                          r"\b(mikä|mihin|minkä|millainen|millaiseen) (rahasto|osake|etf)\w*|"
+                          r"\b(rahasto|osake|etf)\w*\b.*\b(kannattaa|pitäisi) valita\b|"
                           # "invest in" stays refused as before: the spending rule would read "invest" as the Invest
                           # Deposit category, a wrong total for "invest in my garden" (#627, written down)
                           r"\binvest(ing)? (in|into)\b|\bshould (i|we) put (my|our|the) (money|savings) into\b|"
