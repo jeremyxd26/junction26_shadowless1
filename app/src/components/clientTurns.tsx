@@ -31,19 +31,28 @@ export interface ClientTurnEntry {
   visible: () => boolean
   /** The same content as a screen of its own; the turn links to it when its code fails to load. */
   screen?: string
+  /** Loads the component's code ahead of the first tap (#728): the same import `Component` uses. */
+  prefetch?: () => Promise<unknown>
   Component: ComponentType<ClientTurnProps>
+}
+
+/** The bill flow's code: one import, shared by the prefetch and the first bill turn. */
+function loadBillFlow() {
+  return import('./bill/BillFlow.tsx')
 }
 
 /** The registry: `render` key → the component that draws the turn. */
 export const clientTurns: Record<string, ClientTurnEntry> = {
   // "Show Sentti a bill" (#332): gallery → reading → fields → explanation → Add to payments, in the
   // thread. Only where the bills match the persona: in mock mode, or live with the core's bills on.
-  // The flow's code loads with the first bill turn, as `/bill` and `/cards` load it.
+  // The flow's code is its own chunk, loaded at idle once the opening shows (#728), so a tab left
+  // open across a redeploy (which deletes the old chunks) already has it when the bill is tapped.
   bill: {
     chip: (lang) => billStrings(lang).chip,
     visible: () => api.mode === 'mock' || BILL_LIVE,
     screen: '/bill',
-    Component: lazy(() => import('./bill/BillFlow.tsx').then((module) => ({ default: module.BillFlow }))),
+    prefetch: loadBillFlow,
+    Component: lazy(() => loadBillFlow().then((module) => ({ default: module.BillFlow }))),
   },
   // "Lesson of the day" (#703): a question about the user's own number, then the reveal. Always
   // shown; a profile without a lesson gets one sentence instead.
@@ -56,4 +65,23 @@ export const openingChips: string[] = ['bill']
 /** What a tap on `key`'s chip (or the composer's paperclip, #705) pushes: its text, its component, one turn per key. */
 export function clientTurnRequest(key: string, lang: Language): ClientTurnRequest {
   return { question: clientTurns[key].chip(lang), render: key, id: key }
+}
+
+let prefetched = false
+
+/**
+ * Loads the code of every visible client turn once, when the browser is idle after the opening has
+ * rendered (#728). A tab left open across a redeploy then needs no old chunk when the bill is tapped,
+ * and the first tap is instant. A failed prefetch is left to the turn's own error boundary.
+ */
+export function prefetchClientTurns() {
+  if (prefetched) return
+  prefetched = true
+  const run = () => {
+    for (const entry of Object.values(clientTurns)) {
+      if (entry.prefetch && entry.visible()) entry.prefetch().catch(() => {})
+    }
+  }
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 4000 })
+  else window.setTimeout(run, 1500)
 }

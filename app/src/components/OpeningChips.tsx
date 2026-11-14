@@ -1,12 +1,15 @@
+import { useEffect } from 'react'
 import { useOpening } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
-import { clientTurnRequest, clientTurns, openingChips } from './clientTurns.tsx'
+import { clientTurnRequest, clientTurns, openingChips, prefetchClientTurns } from './clientTurns.tsx'
 
 /**
  * The opening's client-turn chips (#319), in `openingChips` order: each tap pushes its client turn
  * into the thread, without the API. `data-opening-part` keeps them apart from the question chips.
  */
 export function OpeningChips() {
+  // The client turns' code loads at idle once the opening shows, ahead of the first tap (#728).
+  useEffect(() => prefetchClientTurns(), [])
   const { lang } = useSettings()
   const opening = useOpening()
   const shown = openingChips.filter((key) => clientTurns[key]?.visible())
