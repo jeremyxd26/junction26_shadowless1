@@ -132,6 +132,27 @@ def test_without_a_key_the_service_answers_model_unavailable(app):
     assert r.status_code == 503 and r.json()["error"]["message"].startswith("The bill cannot be read")
 
 
+def test_with_the_readers_variables_set_a_test_builds_no_reader_and_sends_nothing(app, monkeypatch):
+    """#594 R1: what a worktree's .env would put into the environment is removed by core/conftest.py before every
+    test, and the reader's settings read no .env file: no Nemotron reader is built and nothing is sent."""
+    import importlib.util
+    from pathlib import Path
+
+    from core.app.api.bill_read import reading_client
+
+    spec = importlib.util.spec_from_file_location("core_conftest", Path(__file__).resolve().parents[1] / "conftest.py")
+    isolation = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(isolation)
+    monkeypatch.setenv("VERDA_INFERENCE_URL", "https://" + "inference.example" + "/v1")   # built from parts
+    monkeypatch.setenv("VERDA_INFERENCE_KEY", "verda-" + "test-key")
+    monkeypatch.setenv("BILL_READER", "nemotron")
+    isolation.isolate_bill_reader(monkeypatch)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        assert reading_client(app) is None
+        r = c.post("/api/bill/read", json={"customer_id": "CUST00860", "language": "en", "sample_id": "sample_1"})
+    assert r.status_code == 503 and isolation.REFUSED == []
+
+
 def test_the_read_response_schema_takes_a_note_and_holds_its_types():
     """#511: the contract example holds only null notes and true; the schema must accept a text note and refuse
     a note of another type and a false needs_confirmation."""

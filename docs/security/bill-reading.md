@@ -54,7 +54,7 @@ Accuracy on the four sample bills with the real model (2026-11-14, `gemini-3.8-f
 - `POST /api/bill/read` reads only the gallery's sample ids. A crafted id, an extra body field or a multipart upload is 400, and no model request is made.
 - The route goes through the persona allowlist and the viewer session. Its own read window allows 6 readings a minute per address and 30 an hour per viewer; over it, 429 `rate_limited` with `Retry-After`. The address window counts cache hits too, so behind one venue address the 6 a minute are shared by everyone there.
 - No audit record is written for a reading. One log line holds counts only (fields found, fields checked), never a field value. A failure of the read is 503 `model_unavailable`, and only its class name is logged.
-- At deploy (`deploy/remote-deploy.sh`, `python -m core.bills.warmup`) each sample is read twice: once with the model (a cached sample costs nothing), then from the cache. The step prints counts against the answer key and never fails the deploy, whatever goes wrong.
+- At deploy (`deploy/remote-deploy.sh`, `python -m core.bills.warmup`) each sample is read twice: once with the model (a cached sample costs nothing), then from the cache. The step prints counts against the answer key and never fails the deploy, whatever goes wrong. It reads with the Gemini reader: the Nemotron provider (#573) is called only with `--reader nemotron` on the command line, by hand, never at deploy, start-up, a health check or in tests.
 
 ## Budget and privacy
 - **One request per reading not in the cache.** There is no retry and no fallback model.
