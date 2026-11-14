@@ -402,6 +402,8 @@ function openModule(reset = false) {
   current.title = 'Sentti'
   current.width = String(PHONE_W)
   current.height = String(MODULE_H)
+  // The composer's mic (#735) records inside the frame: the frame must be allowed the microphone.
+  current.allow = 'microphone'
   let resetting = reset
   current.addEventListener('load', () => {
     if (resetting) {

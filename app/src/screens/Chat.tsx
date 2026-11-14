@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
+import { ComposerMicButton } from '../components/ComposerMicButton.tsx'
 import { ScrollToLatest } from '../components/ScrollToLatest.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
@@ -10,6 +11,7 @@ import { stopSpeaking } from '../lib/speech.ts'
 import { lastAskId } from '../lib/thread.ts'
 import { landBelowHeader } from '../lib/threadScroll.ts'
 import { NEAR_LIMIT, fitPaste } from '../lib/questionLength.ts'
+import { withSpoken } from '../lib/stt.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -186,6 +188,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           {cut ? s.cut : ''}
         </p>
         <ComposerBillButton />
+        <ComposerMicButton
+          onText={(text) => {
+            setDraft((current) => withSpoken(current, text))
+            setCut(false)
+          }}
+        />
         <label htmlFor="chat-input" className="sr-only">
           {s.inputLabel}
         </label>
