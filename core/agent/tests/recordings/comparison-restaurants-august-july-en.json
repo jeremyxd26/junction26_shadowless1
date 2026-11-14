@@ -146,8 +146,8 @@
       "content": {
        "parts": [
         {
-         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} on Restaurants. Compared with July 2026, your spending changed by {{n5}}.\",\n  \"cited\": [\"n1\", \"n5\"],\n  \"lesson_key\": null\n}",
-         "thought_signature": "EmAKXgFpFH0TJO_a4jl3i03lXO2r43DKz5BXEvztTWzbusZiAJwWCp86RreOlMF742NtkGG--F9YRIKfyWZpEDqh_xkNBowmU6yq1-lUIDhKTD5R7tcZHAwDdTny_bZtrdg="
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} on Restaurants, which is {{n3}} more than in July 2026.\",\n  \"cited\": [\n    \"n1\",\n    \"n3\"\n  ],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0TBiqgNtQnE4Ry4X4pdo6Od7O0N0nAnHR4KRq6GPuUPZMOkIkWCu0Q5pz5N6Fqjf3Vqkc_cMV-A_8vTNRoTazOK53FxTwlsPb1ht8uMLbOOgZsLS5gN4_JO7I="
         }
        ],
        "role": "model"
@@ -156,9 +156,9 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 3137,
+     "prompt_token_count": 3507,
      "thoughts_token_count": 0,
-     "candidates_token_count": 72
+     "candidates_token_count": 78
     }
    }
   }
@@ -170,7 +170,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "In August 2026 you spent {{n1}} on Restaurants. Compared with July 2026, your spending changed by {{n5}}.",
-  "text_rendered": "In August 2026 you spent €506.19 on Restaurants. Compared with July 2026, your spending changed by €227.11."
+  "text": "In August 2026 you spent {{n1}} on Restaurants, which is {{n3}} more than in July 2026.",
+  "text_rendered": "In August 2026 you spent €506.19 on Restaurants, which is 81.4% more than in July 2026."
  }
 }

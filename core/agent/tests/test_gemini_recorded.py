@@ -246,6 +246,8 @@ def test_a_comparison_names_both_periods_without_joined_figures():
     text = load("comparison-restaurants-august-july-en")["expect"]["text"]
     assert "August 2026" in text and "July 2026" in text
     assert not re.search(r"\{\{n\d+\}\}\s+and\s+\{\{n\d+\}\}\s+compared", text)
+    # Row 4 of #398: the direction in words after the change (re-recorded after the prompt example was fixed)
+    assert re.search(r"\{\{n\d+\}\}\s+(?:more|less|higher|lower)\s+than\b", text), text
 
 
 def test_upcoming_bills_take_no_past_window():
