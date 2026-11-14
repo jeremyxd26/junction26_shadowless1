@@ -533,3 +533,65 @@ def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_o
     ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants.", outcome="answered",
                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
     assert run.check(_length_case(), ans, "en") == []
+
+
+# ---- review of #437: `any` is not vacuous; borrowing as for drafts; forbid_text --------------------------------
+
+ANY = {"id": "t-any", "persona": "CUST00849", "intent": "borrowing", "expect": "any",
+       "question": {"en": "Should I take an overdraft to get through the month?"}, "expected_tools": [], "tags": ["t"]}
+
+
+def any_answer(text="I can't predict whether a loan would be approved. I can show what you could save each month.",
+               outcome="refused", **kw):
+    fields = dict(text=text, outcome=outcome, refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
+    fields.update(kw)
+    return Answer(**fields)
+
+
+@pytest.mark.parametrize("outcome", ["answered", "refused", "clarify"])
+def test_an_any_case_passes_each_real_outcome(outcome):
+    assert run.check(ANY, any_answer(outcome=outcome), "en") == []
+
+
+@pytest.mark.parametrize("outcome", ["fallback", "error", None])
+def test_an_any_case_fails_another_outcome(outcome):
+    fails_with(ANY, any_answer(outcome=outcome), "en", "expected one of answered, refused, clarify")
+
+
+def test_an_any_case_with_an_empty_text_fails():
+    fails_with(ANY, any_answer(text="  "), "en", "empty text")
+
+
+def test_an_any_case_with_an_invented_declared_number_fails():
+    ans = any_answer(text="You have €99,999.00.", outcome="answered", tool_numbers=[],
+                     numbers=[{"id": "n1", "value": 99999.0, "unit": "eur", "display": "€99,999.00",
+                               "method": "spending.total@1", "period": None}])
+    fails_with(ANY, ans, "en", "was not returned by a tool")
+
+
+@pytest.mark.parametrize("text", ["You could take out a small loan for it.", "A credit card could cover the gap.",
+                                  "Voit ottaa lainaa siihen."])
+def test_a_borrowing_suggestion_fails_an_any_case(text):
+    fails_with(ANY, any_answer(text=text), "en", "R borrowing suggestion")
+
+
+@pytest.mark.parametrize("text", ["I can't recommend taking a loan.", "Älä ota lainaa tähän.",
+                                  "I can't predict whether a loan or mortgage would be approved, and I don't rate "
+                                  "creditworthiness. The bank's loan process gives that answer."])
+def test_a_negation_or_naming_a_loan_passes_the_borrowing_rule(text):
+    assert not any("borrowing" in f for f in run.check(ANY, any_answer(text=text), "en"))
+
+
+def test_a_forbidden_phrase_fails_and_its_absence_passes():
+    case = dict(ANY, forbid_text=[{"name": "change_invitation", "pattern": r"savings\s+plan|what-if"}])
+    fails_with(case, any_answer(text="A savings plan can show where to start."), "en",
+               "forbidden phrase change_invitation")
+    assert run.check(case, any_answer(text="That is already your saving."), "en") == []
+
+
+def test_a_forbid_text_item_needs_a_compiling_pattern():
+    import expected
+
+    doc = {"cases": [dict(ANY, forbid_text=[{"name": "x", "pattern": "("}, {"name": "y"}])]}
+    errors = expected.validate(doc)
+    assert any("does not compile" in e for e in errors) and any("needs a name and a pattern" in e for e in errors)

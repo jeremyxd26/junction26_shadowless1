@@ -257,6 +257,14 @@ def validate(doc: dict) -> list[str]:
                     errors.append(f"{cid}: {item.get('name')}: no tolerance")
             if kind == "dates" and item.get("unit") != "date":
                 errors.append(f"{cid}: {item.get('name')}: dates need unit date")
+        for item in c.get("forbid_text") or []:
+            if not item.get("name") or not item.get("pattern"):
+                errors.append(f"{cid}: forbid_text item needs a name and a pattern")
+                continue
+            try:
+                re.compile(item["pattern"])
+            except re.error:
+                errors.append(f"{cid}: forbid_text {item['name']}: the pattern does not compile")
     return errors
 
 
