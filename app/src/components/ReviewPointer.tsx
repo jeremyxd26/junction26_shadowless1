@@ -56,14 +56,16 @@ function Pointer({ card }: { card: ReviewCard }) {
   const opening = useOpening()
   const look = BASKETS.unclassified
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2">
+    // Wraps: with large text "Show" moves under the text once the text's longest word no longer fits
+    // beside it, instead of covering the text (#688).
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2">
       <span
         aria-hidden="true"
         className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md text-sm font-bold ${look.tint} ${look.color}`}
       >
         {look.icon}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="flex-1 basis-0 break-words">
         <p className="text-sm font-semibold text-ink">{s.asked}</p>
         {card.subtitle && <p className="text-xs text-muted">{card.subtitle}</p>}
       </div>

@@ -299,8 +299,9 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 </span>
                 {/* The label column never shrinks below its longest word, so when that word does not fit
                     beside the amount, the amount moves under the label instead of covering it, and only
-                    then (#493). Hyphens only in a very narrow row (large text), never at normal size. */}
-                <div className="flex-1 basis-0">
+                    then (#493). In a very narrow row (large text) the label first takes a full line under
+                    the icon, and only then hyphenates (#680); at normal size neither applies. */}
+                <div className="flex-1 basis-0 @max-[15rem]:basis-full">
                   <p className={`break-words font-semibold leading-5 @max-[15rem]:hyphens-auto ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
