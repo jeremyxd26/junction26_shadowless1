@@ -57,6 +57,7 @@ from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.missing import MissingData
+from core.tools.numbers import model_number
 from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
@@ -794,7 +795,15 @@ class Pipeline:
                           **({"details": exc.details} if getattr(exc, "details", None) else {}))
         except MissingData as exc:   # a category never used, too few purchases (#379)
             # its Numbers are registered here, in call order, whether or not the tool cache ran the tool
-            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.register(ctx.numbers))
+            details = exc.register(ctx.numbers)
+            record.update(status="error", error=exc.reason, reason=exc.reason, details=details)
+            # The audit's tool outputs list what the call returned (#609): its reason and the model view of each
+            # Number the missing-data answer may cite, so a cited number is one a tool of the answer returned.
+            if before is not None:
+                before.wait()
+            with a.lock:
+                a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = {
+                    "error": exc.reason, **{key: model_number(ctx.numbers.get(details[key])) for key in exc.numbers}}
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning
