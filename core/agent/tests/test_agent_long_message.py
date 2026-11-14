@@ -351,14 +351,20 @@ def test_a_dropped_spending_question_never_leaves_the_other_rule_alone(question)
     assert (found.rule, found.reason) == (None, "competing") and "spending" in found.candidates, (question, found)
 
 
-@pytest.mark.parametrize("question,reason", [   # alone, the dropped question keeps its own reason
-    ("How much did I spend on bars and groceries last month", "mixed_filter"),
-    ("How much did I spend at Barsa last month", "named_object"),
-    ("How much did I spend on parking fines last month", "named_object"),
-])
-def test_a_dropped_spending_question_alone_keeps_its_reason(question, reason):
+def test_a_mixed_filter_alone_keeps_its_reason():
+    found = ask("How much did I spend on bars and groceries last month")
+    assert (found.rule, found.reason, found.calls) == (None, "mixed_filter", ()), found
+
+
+@pytest.mark.parametrize("question", ["How much did I spend at Barsa last month",
+                                      "How much did I spend on parking fines last month"])
+def test_a_named_place_or_compound_alone_is_never_a_total(question):
+    """Unclaimed (named_object), or once the missing-data rule (#443) is merged, its answer: unclaimed
+    (unknown_object) or the breakdown. Never get_spending. Holds with and without #443."""
     found = ask(question)
-    assert (found.rule, found.reason, found.calls) == (None, reason, ()), (question, found)
+    assert not [c for c in found.calls if c.name == "get_spending"], (question, found)
+    unclaimed = found.rule is None and not found.calls and found.reason in ("named_object", "unknown_object")
+    assert unclaimed or [c.name for c in found.calls if c.name != "finish"] == ["get_basket_breakdown"], found
 
 
 def test_a_parking_fine_told_beside_a_bills_question_keeps_the_bills():

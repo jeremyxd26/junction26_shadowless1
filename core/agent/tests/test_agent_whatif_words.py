@@ -259,11 +259,21 @@ def test_a_takeaway_as_a_key_point_is_no_takeaway_filter(question):
     assert found.rule == "spending" and "filter" not in first(found).args, (question, found)
 
 
+def assert_never_a_total_for_a_name(found, question):
+    """A named place or a compound is never answered with the unfiltered total, nor a group's or a category's total.
+    It is left unclaimed (named_object, #497), or it gets the missing-data rule's answer once #443 is merged: left
+    unclaimed (unknown_object) or the breakdown of where the money went, which says the thing is not shown on its
+    own (the standing decision of #379). The test holds with and without #443."""
+    assert not [c for c in found.calls if c.name == "get_spending"], (question, found)
+    unclaimed = found.rule is None and not found.calls and found.reason in ("named_object", "unknown_object")
+    breakdown = [c.name for c in found.calls if c.name != "finish"] == ["get_basket_breakdown"]
+    assert unclaimed or breakdown, (question, found)
+
+
 @pytest.mark.parametrize("question", ["how much did I spend at Barsa last month",
                                       "how much did I spend at Cinemax last month"])
 def test_spending_at_a_name_no_filter_maps_is_never_the_total(question):
-    found = ask(question)
-    assert found.rule is None and not found.calls and found.reason == "named_object", (question, found)
+    assert_never_a_total_for_a_name(ask(question), question)
 
 
 @pytest.mark.parametrize("question,lang", [
@@ -289,9 +299,8 @@ def test_a_name_or_a_compound_is_not_the_whole_group(question, lang):
     ("how much did I spend at Bar Loose last month", "en"),
     ("how much did I spend at Cinema Nova in August", "en"),
 ])
-def test_spending_on_a_compound_or_a_name_after_a_group_noun_is_left_unclaimed(question, lang):
-    found = ask(question, lang)
-    assert found.rule is None and not found.calls and found.reason == "named_object", (question, found)
+def test_spending_on_a_compound_or_a_name_after_a_group_noun_is_never_a_total(question, lang):
+    assert_never_a_total_for_a_name(ask(question, lang), question)
 
 
 @pytest.mark.parametrize("question,lang,expected", [   # a compound beside another question names nothing
