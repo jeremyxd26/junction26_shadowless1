@@ -17,8 +17,8 @@ Numbers, each a Number from the one formatter with the method `small_purchases.<
 - `count` and `total_eur`: transactions evidence that lists exactly these purchases (a Selection with
   their ids, as the review card does);
 - `avg_eur`: total / count (composite `mean`), only when there is at least one purchase;
-- `month_avg_eur`: total / the number of months (composite `scale`), only when the period is whole
-  calendar months (the default is);
+- `month_avg_eur`: total / the number of months (composite `scale`), only when the period is two or more whole
+  calendar months (the default is); for one month it would only repeat the total (#465);
 - `flexible_total_eur`: everyday spending in the period (transactions evidence, refunds netted);
 - `share_pct`: the total's share of everyday spending (composite), only when that is above zero;
 - per category, largest first: `total_eur` (transactions) and `share_pct` of the small total
@@ -137,7 +137,7 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
         average = nb.composite(config.METHODS["small_avg"], "mean", {"total": total, "count": count}, Unit.EUR,
                                period, _t("average", lang))
     months = whole_months(period)
-    if months:
+    if months and months > 1:   # one month: the average would only repeat the total (#465)
         month_average = nb.composite(config.METHODS["small_month_avg"], "scale", {"base": total},
                                      Unit.EUR_PER_MONTH, period, _t("month_average", lang),
                                      params={"factor_num": 1, "factor_den": months})
@@ -175,14 +175,23 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
                       model_view=_model_view(data, notes, args.period.preset.value))
 
 
+def _what(label: str, language: str) -> str:
+    return label.lower() if language == "en" else label
+
+
+def cut_prompt(category: str, language: str) -> str:
+    """The prompt of the card's action for a category: its what-if with no amount, which the what-if rule claims
+    and asks by how much (#142, #403)."""
+    return _t("action_prompt", language, what=_what(config.label(config.CATEGORY_LABELS[category], language), language))
+
+
 def _card(data: SmallPurchasesData, language: str) -> Card:
     ref = data.total.evidence_ref
     actions = [Action(type="open_evidence", label=_t("show", language), evidence_ref=ref)]
     if data.categories:
-        largest = data.categories[0].label
-        what = largest.lower() if language == "en" else largest
-        actions.append(Action(type="ask", label=_t("action_label", language, what=what),
-                              prompt=_t("action_prompt", language, what=what)))
+        largest = data.categories[0]
+        actions.append(Action(type="ask", label=_t("action_label", language, what=_what(largest.label, language)),
+                              prompt=cut_prompt(largest.key, language)))
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=data.period.label, evidence_ref=ref,

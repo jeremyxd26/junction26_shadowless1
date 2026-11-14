@@ -251,6 +251,54 @@ run_rates AS (   -- daily averages over the 6 complete months (or the customer's
     WHERE c.tx_date <= p.win_end
     GROUP BY c.customer_id, p.win_start, p.win_end
 ),
+cls_rules AS (   -- #459: the rules' basket of every row, labels ignored, for the savings goal. The CASE below is a
+                 -- copy of the rule CASE of `cls`, byte for byte: the shared classification block stays untouched
+                 -- in the six files that carry it, and core/tools/tests/test_tools_safe_to_spend_goal_pure.py
+                 -- checks that the copy equals it.
+    SELECT x.*,
+               CASE
+                   WHEN x.flow <> 'spend'                                    THEN NULL
+                   WHEN x.tx_type IN ('housing_payment', 'utilities_payment') THEN 'regular_essentials'
+                   WHEN x.is_subscription                                     THEN 'regular_essentials'
+                   WHEN x.category IN ('Health', 'Home & Tech')               THEN 'unexpected_necessities'
+                   WHEN x.category = 'Transportation' AND x.mcc = '4121'      THEN 'everyday_spending'   -- taxi
+                   WHEN x.category IN ('Groceries', 'Transportation') AND x.is_one_off
+                                                                              THEN 'unexpected_necessities'
+                   WHEN x.category IN ('Groceries', 'Transportation')         THEN 'regular_essentials'
+                   WHEN x.category IN ('Restaurants', 'Entertainment', 'Lifestyle', 'Travel')
+                                                                              THEN 'everyday_spending'
+                   ELSE 'unclassified'
+               END AS rule_basket
+    FROM cls x
+),
+review_purchase AS (   -- #391, #459: the purchase the first spike review asks about (core/tools/reviews.py
+                       -- `candidates`), by the rules, whatever the labels say: a one-off of the spend flow in the
+                       -- window, in unexpected_necessities or everyday_spending, not Health and not a health MCC
+                       -- (R9); the most recent day first, then the largest, then the id. The same purchase in
+                       -- every review state.
+    SELECT DISTINCT ON (c.customer_id) c.customer_id, c.id AS tx_id
+    FROM cls_rules c, params p
+    WHERE c.flow = 'spend' AND c.is_one_off AND c.tx_date BETWEEN p.win_start AND p.win_end
+      AND c.rule_basket IN ('unexpected_necessities', 'everyday_spending')
+      AND c.category <> 'Health' AND (c.mcc IS NULL OR c.mcc NOT IN ('5912', '8011', '8021', '8099'))
+    ORDER BY c.customer_id, c.tx_date DESC, c.out_eur DESC, c.id
+),
+run_rates_before AS (   -- #391, #459: the run rates for the savings goal, computed as with no labels at all: every
+                        -- row in its rules' basket, and only the first review's purchase left out. So the goal is
+                        -- one figure for the month in every review state: it does not move when a review
+                        -- appears, is answered or expires, or when a later review asks about another purchase.
+    SELECT c.customer_id,
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'regular_essentials' AND c.tx_type = 'purchase'
+                                    AND NOT c.is_subscription AND c.tx_date >= p.win_start)        AS essentials_eur,
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'unexpected_necessities' AND c.tx_date >= p.win_start) AS irregular_eur,
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'everyday_spending' AND NOT c.is_one_off
+                                    AND c.tx_date >= p.win_start)                                   AS everyday_eur
+    FROM cls_rules c
+    CROSS JOIN params p
+    LEFT JOIN review_purchase rp USING (customer_id)
+    WHERE c.tx_date <= p.win_end AND c.id IS DISTINCT FROM rp.tx_id
+    GROUP BY c.customer_id
+),
 -- Safe to save (metrics.md 3.1): the everyday_spending category with the largest window total,
 -- one-offs left out, on the same basis as the everyday run rate. A sensitive category is never
 -- named (R9): Health is skipped, so the next category would be named.
@@ -278,6 +326,9 @@ calc AS (
            COALESCE(rr.irregular_eur  / NULLIF(rr.window_days, 0), 0) AS irregular_per_day,
            COALESCE(rr.everyday_eur   / NULLIF(rr.window_days, 0), 0) AS everyday_per_day,
            COALESCE(rr.window_days, 0)                                AS window_days,
+           COALESCE(rb.essentials_eur / NULLIF(rr.window_days, 0), 0) AS essentials_before_per_day,
+           COALESCE(rb.irregular_eur  / NULLIF(rr.window_days, 0), 0) AS irregular_before_per_day,
+           COALESCE(rb.everyday_eur   / NULLIF(rr.window_days, 0), 0) AS everyday_before_per_day,
            et.category                                                AS top_everyday_category,
            COALESCE(et.category_eur / NULLIF(rr.window_days, 0), 0)   AS top_everyday_per_day,
            COALESCE(NULLIF(current_setting('app.cushion_eur', true), ''), '100')::numeric AS cushion_eur,
@@ -288,6 +339,7 @@ calc AS (
     JOIN bills bl USING (customer_id)
     JOIN budget bu USING (customer_id)
     LEFT JOIN run_rates rr USING (customer_id)
+    LEFT JOIN run_rates_before rb USING (customer_id)
     LEFT JOIN everyday_top et USING (customer_id)
 ),
 limits AS (
@@ -302,15 +354,31 @@ limits AS (
                - (c.essentials_per_day + c.irregular_per_day) * 30.4375 AS free_month_eur
     FROM calc c
 ),
-result AS (
+saving AS (
     SELECT l.*,
-           GREATEST(l.free_until_payday_eur, 0) / l.days_to_payday * LEAST(7, l.days_to_payday) AS balance_limit_7d,
-           GREATEST(l.free_month_eur, 0) * 7 / 30.4375                                       AS budget_limit_7d,
            -- safe to save (metrics.md 3.1), from the same unrounded terms
            l.everyday_per_day * l.days_to_payday                                             AS everyday_until_payday,
            l.everyday_per_day * 30.4375                                                      AS everyday_month,
            round(GREATEST(l.free_month_eur - l.everyday_per_day * 30.4375, 0), 2)            AS safe_to_save_monthly
     FROM limits l
+),
+goal AS (   -- pay yourself first (#391): a fixed monthly savings goal. By default safe to save monthly
+            -- before the customer answers a spike review, rounded down to a multiple of 10 euros;
+            -- `app.savings_goal_eur` sets another goal (the tool's argument). Never below 0.
+    SELECT s.*,
+           GREATEST(COALESCE(
+               NULLIF(current_setting('app.savings_goal_eur', true), '')::numeric,
+               floor(round(GREATEST(s.income_month_eur - s.sweep_month_eur - s.committed_month_eur
+                                    - (s.essentials_before_per_day + s.irregular_before_per_day) * 30.4375
+                                    - s.everyday_before_per_day * 30.4375, 0), 2) / 10) * 10), 0) AS savings_goal
+    FROM saving s
+),
+result AS (
+    SELECT g.*,
+           GREATEST(g.free_until_payday_eur, 0) / g.days_to_payday * LEAST(7, g.days_to_payday) AS balance_limit_7d,
+           -- B. budget limit after the savings goal: what a typical month leaves to spend once the goal is set aside
+           GREATEST(g.free_month_eur - g.savings_goal, 0) * 7 / 30.4375                       AS budget_limit_7d
+    FROM goal g
 )
 SELECT customer_id,
        round(LEAST(balance_limit_7d, budget_limit_7d), 2) AS safe_to_spend_7d_eur,
@@ -319,6 +387,7 @@ SELECT customer_id,
        round(budget_limit_7d, 2)          AS budget_limit_7d_eur,
        round(free_until_payday_eur, 2)    AS free_until_payday_eur,
        round(free_month_eur, 2)           AS free_month_eur,
+       round(savings_goal, 2)             AS savings_goal_eur,
        round(balance_eur, 2)              AS balance_eur,
        balance_tx_id,
        round(bills_due_eur, 2)            AS bills_due_eur,

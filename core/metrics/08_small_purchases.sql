@@ -14,7 +14,7 @@
 -- Restaurants, Entertainment or Lifestyle, of at most app.small_max euros. A refund is never a purchase;
 -- it still lowers everyday spending, as in the baskets.
 -- Result: per customer one row with category = 'all' (count, total_eur, avg_eur, month_avg_eur when the
--- period is whole months, share_pct of everyday spending, flexible_total_eur), then one row per category
+-- period is two or more whole months (#465), share_pct of everyday spending, flexible_total_eur), then one row per category
 -- with small purchases (count, total_eur,
 -- share_pct of the small total), largest first. Money is positive euros, rounded as the tool rounds:
 -- the average and the shares are computed from the totals rounded to cents.
@@ -162,7 +162,7 @@ SELECT r.customer_id,
        r.n                                                                            AS count,
        r.total                                                                        AS total_eur,
        CASE WHEN r.category = 'all' AND r.n > 0 THEN round(r.total / r.n, 2) END       AS avg_eur,
-       CASE WHEN r.category = 'all' AND m.months > 0 THEN round(r.total / m.months, 2) END AS month_avg_eur,
+       CASE WHEN r.category = 'all' AND m.months > 1 THEN round(r.total / m.months, 2) END AS month_avg_eur,
        CASE WHEN r.category = 'all' THEN round(COALESCE(e.flexible_eur, 0), 2) END     AS flexible_total_eur,
        CASE WHEN r.category = 'all' AND round(COALESCE(e.flexible_eur, 0), 2) > 0
                 THEN round(100 * r.total / round(e.flexible_eur, 2), 1)

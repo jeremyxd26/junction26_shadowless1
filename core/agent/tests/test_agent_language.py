@@ -51,8 +51,10 @@ def test_language_of_every_eval_question():
     cases = yaml.safe_load((ROOT / "core/eval/cases.yaml").read_text(encoding="utf-8"))["cases"]
     # The meta questions (#287: "Hi", "Kiitos!", Russian forms) are too short to detect by design; their
     # language comes from the request or the conversation, and a Russian message gets the English text.
-    wrong = [(lang, q) for c in cases if c["expect"] != "meta" for lang, q in c["question"].items()
-             if detect_language(q) != lang]
+    # A case tagged other_language asks in another language on purpose (a health question in Russian is the
+    # planner's to decline); it is sent with the answer language of its key.
+    wrong = [(lang, q) for c in cases if c["expect"] != "meta" and "other_language" not in (c.get("tags") or [])
+             for lang, q in c["question"].items() if detect_language(q) != lang]
     assert wrong == []
 
 

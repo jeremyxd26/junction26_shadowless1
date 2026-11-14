@@ -53,6 +53,19 @@ MCC_GROUPS: dict[str, tuple[str, ...]] = {
     "electronics_home": ("5200", "5251", "5712", "5732", "5734"),  # sample: category Home & Tech
 }
 MCC_TO_GROUP: dict[str, str] = {mcc: group for group, codes in MCC_GROUPS.items() for mcc in codes}
+# Sub-groups of the spending filter (#497): codes inside a group above (takeaway 5814 and bars 5813 are part of
+# restaurants) or outside any (cinemas 7832). A row keeps its one group (MCC_TO_GROUP, so breakdowns by group do
+# not change); a filter on a sub-group selects its codes. The what-if names them too (WHAT_IF_MCC_NAMES).
+MCC_SUBGROUPS: dict[str, tuple[str, ...]] = {"takeaway": ("5814",), "bars": ("5813",), "cinemas": ("7832",)}
+MCC_FILTER_GROUPS: dict[str, tuple[str, ...]] = {**MCC_GROUPS, **MCC_SUBGROUPS}   # what a spending filter may name
+# The category every row of a filter group carries in the data (checked on the four personas). A question naming a
+# group with its own category is about the category, which holds the group ("restaurants and bars"); with another
+# category it asks about two selections ("bars and groceries"), which one filter cannot give (#497 review).
+MCC_GROUP_CATEGORY: dict[str, str] = {
+    "groceries": "Groceries", "restaurants": "Restaurants", "taxi": "Transportation",
+    "public_transport": "Transportation", "fuel": "Transportation", "parking": "Transportation", "health": "Health",
+    "electronics_home": "Home & Tech", "takeaway": "Restaurants", "bars": "Restaurants", "cinemas": "Entertainment",
+}
 
 # Classification constants (metrics.md sections 0 and 1, 02_baskets.sql).
 ONE_OFF_FACTOR = 5          # a purchase > 5x the category median of the last 365 days
@@ -130,6 +143,9 @@ MCC_GROUP_LABELS: dict[str, tuple[str, str]] = {
     "parking": ("Parking", "Pysäköinti"),
     "health": ("Health", "Terveys"),
     "electronics_home": ("Electronics and home", "Elektroniikka ja koti"),
+    "takeaway": ("Takeaway and fast food", "Pikaruoka ja noutoruoka"),   # sub-groups (#497)
+    "bars": ("Bars", "Baarit"),
+    "cinemas": ("Cinemas", "Elokuvateatterit"),
     "other": ("Other", "Muut"),
 }
 
@@ -160,6 +176,8 @@ MERCHANT_KIND_DEFAULT = ("Merchant", "Kauppias")
 TEXT: dict[str, tuple[str, str]] = {
     "spending": ("Spending", "Kulutus"),
     "income": ("Income", "Tulot"),
+    # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
+    "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),
@@ -172,6 +190,8 @@ TEXT: dict[str, tuple[str, str]] = {
         "Jakso rajattiin saatavilla olevaan dataan: {label}.",
     ),
     "note_empty": ("No transactions in this period.", "Ei tapahtumia tällä jaksolla."),
+    "note_too_few": ("Only a few purchases in this period, so this is no monthly habit.",
+                     "Tällä jaksolla on vain muutama ostos, joten tämä ei ole kuukausittainen tapa."),
     "note_typical": (
         "A comparison with a typical period is not defined yet, so none is shown.",
         "Vertailua tyypilliseen jaksoon ei ole vielä määritelty, joten sitä ei näytetä.",
@@ -217,6 +237,8 @@ BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (
 # A matched bill is the regular bill only when it fits it (#400): a once-a-month series and at least half of its
 # typical month. Otherwise it is a bill from the same payee category (a quarterly water bill among utilities).
 BILL_FIT_MIN_RATIO = Decimal("0.5")
+# The forecast on the due date (#421): below this balance after the bill, it is `tight`; below zero `not_covered`.
+BILL_FORECAST_MARGIN_EUR = Decimal("100")
 
 BILL_TEXT: dict[str, tuple[str, str]] = {
     "amount": ("Amount due", "Maksettava summa"),
@@ -245,15 +267,27 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                             "ennen sitä."),
     # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
     # free until payday, then at most one sts_* sentence on the weekly number.
-    "effect_excess": ("{reserved} is already set aside for your {label} payments before payday on {payday}, so "
-                      "only the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
-                      "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+    # Your regular bill (it fits, #400) is "your {label} bill"; a bill of the same payee category is set against
+    # "your {label} payments" (review of #425).
+    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
+                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
                       "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("{reserved} is already set aside for your {label} payments before payday on {payday}, "
-                       "which covers this one, so nothing changes.",
-                       "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
+                       "covers this one, so nothing changes.",
+                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
                        "tämän laskun, joten mikään ei muutu."),
+    "effect_excess_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                               "{payday}, so only the extra {counted} is added: free until payday goes from "
+                               "{free_before} to {free_after}.",
+                               "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                               "joten vain ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+                               "(ennen laskua {free_before})."),
+    "effect_covered_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                                "{payday}, which covers this one, so nothing changes.",
+                                "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                                "mikä kattaa tämän laskun, joten mikään ei muutu."),
     "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
                     "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
@@ -284,12 +318,34 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     # #400: a bill of the same payee category is compared with the category's whole month, and says so
     "sig_above_category": ("This bill is {amount}, much more than all your {label} payments in a usual month "
                            "({typical}).",
-                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi ({label}) tavallisena "
-                           "kuukautena ({typical})."),
+                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi luokassa {label} "
+                           "tavallisena kuukautena: {typical}."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
     "action": ("Add to payments", "Lisää maksuihin"),
+    # The forecast on the due date (#421): one sentence for each status, never advice to borrow (#419).
+    "forecast_before": ("Forecast balance on the due date", "Ennustettu saldo eräpäivänä"),
+    "forecast_already": ("Already in the forecast for this bill by the due date",
+                         "Tälle laskulle jo ennusteessa eräpäivään mennessä"),
+    "forecast_counted": ("Taken from the forecast by this bill", "Lasku vie ennusteesta"),
+    "forecast_after": ("Forecast balance after this bill", "Ennustettu saldo laskun jälkeen"),
+    "forecast_shortfall": ("Short of this bill", "Laskusta puuttuu"),
+    "forecast_covered": ("Your forecast balance on {due} covers this bill: {after} would be left after it.",
+                         "Ennustettu saldosi {due} riittää tähän laskuun: sen jälkeen jäisi {after}."),
+    "forecast_tight": ("Your forecast balance on {due} covers this bill, but only {after} would be left after it.",
+                       "Ennustettu saldosi {due} riittää tähän laskuun, mutta sen jälkeen jäisi vain {after}."),
+    "forecast_not_covered": ("Your forecast balance on {due} does not cover this bill: it is {shortfall} short.",
+                             "Ennustettu saldosi {due} ei riitä tähän laskuun: siitä puuttuu {shortfall}."),
+    "forecast_beyond": ("Due on {due}, beyond your balance forecast, which runs until the day before your payday "
+                        "on {payday}.",
+                        "Eräpäivä {due} on saldoennusteen ulkopuolella: ennuste ulottuu palkkapäivää {payday} "
+                        "edeltävään päivään."),
+    "forecast_past": ("The due date {due} has passed, so your balance forecast does not include it.",
+                      "Eräpäivä {due} on jo mennyt, joten saldoennuste ei sisällä sitä."),
+    # the chip of `not_covered`: the forecast question as the rules know it (core/agent/rules.py)
+    "forecast_chip": ("See your balance forecast", "Katso saldoennusteesi"),
+    "forecast_prompt": ("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
 }
 # The message of a 422 invalid_bill, by reason (contracts/api.md section 11.1).
 BILL_REFUSAL_TEXT: dict[str, tuple[str, str]] = {
@@ -422,6 +478,10 @@ def peer_offers_cut(metric: str, value) -> bool:
     """The peer answer offers a cut (the text and the card's action together, #418): above the median by more
     than the margin, for spending that can be cut."""
     return value is not None and metric not in PEER_NO_CUT_ACTION and peer_gap_shown(value) > PEER_ACTION_MARGIN_PCT
+
+
+# Fewer purchases than this behind a figure: the figure is marked, and a what-if derives no monthly habit (#379).
+TOO_FEW_TRANSACTIONS = 3
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
@@ -646,6 +706,92 @@ SAFE_TO_SPEND_NUMBERS = (  # (key, output column) read from 03_safe_to_spend.sql
     ("cushion", "cushion_eur"),
 )
 SAFE_TO_SPEND_COMPONENTS = ("balance", "bills_due", "essentials_reserve", "irregular_reserve", "cushion")
+# Pay yourself first (#391): the weekly figure is "below the usual pace" when it is more than this many
+# euros a week under it (then the sentence names the usual pace).
+USUAL_PACE_MARGIN_EUR = "5"
+USUAL_WEEK_METHOD = "safe_to_spend.usual_week_eur@1"   # everyday month x 7 / 30.4375
+SAFE_TO_SAVE_WEEK_METHOD = "safe_to_save.week_eur@1"   # #417: safe to save monthly x 7 / 30.4375
+SAFE_TO_SAVE_DAY_METHOD = "safe_to_save.day_eur@1"     # #417: safe to save monthly / 30.4375
+
+# #380: what each estimate assumes, by "<tool>.<code>" (codes: core.tools.models.ASSUMPTION_CODES). One plain
+# sentence each, never a digit: a figure is the assumption's `value` Number. Nothing here changes a formula;
+# each sentence says what the tool already uses (docs/design/metrics.md).
+ASSUMPTION_TEXT = {
+    "safe_to_spend.spending_as_usual": (
+        "Your usual essentials continue until payday, at the pace of recent months.",
+        "Tavalliset välttämättömät menosi jatkuvat palkkapäivään asti viime kuukausien tahtiin."),
+    "safe_to_spend.reserve_for_unexpected": (
+        "A reserve for unexpected costs is kept, as large as recent months needed.",
+        "Odottamattomia menoja varten pidetään varaus, yhtä suuri kuin viime kuukausina on tarvittu."),
+    "safe_to_spend.cushion": (
+        "A small cushion is kept aside until payday.",
+        "Pieni puskuri pidetään sivussa palkkapäivään asti."),
+    "safe_to_spend.savings_goal_first": (
+        "A monthly amount for saving is put aside first, worked out from a typical month.",
+        "Kuukausittainen säästösumma laitetaan sivuun ensin, tavallisen kuukauden perusteella laskettuna."),
+    # #503 review: the budget limit, which binds for every persona, is computed from a typical month
+    "safe_to_spend.budget_from_usual_month": (
+        "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+        "Tavallisen kuukauden tulot, säännölliset laskut ja tavalliset välttämättömät menot toistuvat kuten viime "
+        "kuukausina."),
+    "safe_to_spend.bills_on_usual_days": (
+        "Bills come on their usual days, at their usual amounts.",
+        "Laskut tulevat tavallisina päivinään tavallisin summin."),
+    "safe_to_save.next_months_like_last": (
+        "The coming months are like a typical month of your last six.",
+        "Tulevat kuukaudet ovat kuin tavallinen kuukausi kuuden viimeisen joukosta."),
+    "what_if.next_months_like_last": (
+        "The coming months are like the average of your last six full months.",
+        "Tulevat kuukaudet ovat kuin kuuden viimeisen täyden kuukautesi keskiarvo."),
+    "what_if.cut_share": (
+        "You cut this spending by the share you chose, and the rest stays as it is.",
+        "Vähennät tätä kulutusta valitsemallasi osuudella, ja muu pysyy ennallaan."),
+    "bonus.bonus_all_at_s_group": (
+        "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Kaikki ruokaostoksesi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    "bonus.bonus_share": (
+        "This share of your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+        "Tämä osuus ruokaostoksistasi tehdään S-ryhmän kaupoissa; se on laskelma, ei tieto siitä, missä asioit."),
+    # the fixed assumptions of the estimate (config.BONUS_ASSUMPTIONS), one code each (#503 review)
+    "bonus.bonus_household": (
+        "You are the only shopper in a co-op household.",
+        "Olet osuuskaupan talouden ainoa ostaja."),
+    "bonus.bonus_table": (
+        "The default Bonus table applies, not the KPO or Koillismaa table.",
+        "Käytössä on tavallinen Bonustaulukko, ei KPO:n tai Koillismaan taulukko."),
+    "bonus.bonus_payment_card": (
+        "You pay with an S-Etukortti Visa, which adds the payment benefit.",
+        "Maksat S-Etukortti Visalla, joka tuo maksutapaedun."),
+    "bonus.bonus_goods": (
+        "None of it is alcohol, tobacco or lottery, which earn no Bonus.",
+        "Ostoksissa ei ole alkoholia, tupakkaa eikä arpoja, joista ei saa Bonusta."),
+    "bonus.bonus_level": (
+        "The Bonus level is the one your monthly purchases at S Group reach.",
+        "Bonusprosentti on se, jonka kuukausiostoksesi S-ryhmässä saavuttavat."),
+    "bills.bills_pro_rata": (
+        "Bills paid several times a month count pro rata until payday.",
+        "Useita kertoja kuussa maksettavat laskut lasketaan suhteutettuina palkkapäivään asti."),
+    "peer.peer_group": (
+        "You are compared with other customers of your group; only group statistics are shown.",
+        "Sinua verrataan ryhmäsi muihin asiakkaisiin; vain ryhmän tunnusluvut näytetään."),
+    "forecast.spending_as_usual": (
+        "Your usual everyday spending and essentials continue, at the middle one of your last three full months' "
+        "daily averages; unexpected costs are not counted.",
+        "Tavallinen arjen kulutuksesi ja välttämättömät menosi jatkuvat kolmen viimeisen täyden kuukautesi "
+        "päiväkeskiarvoista keskimmäisen tahtiin; odottamattomia menoja ei lasketa."),
+    "forecast.bills_on_usual_days": (
+        "Bills come on their usual days.",
+        "Laskut tulevat tavallisina päivinään."),
+    "savings_plan.next_months_like_last": (
+        "The coming months are like the average of your last six full months.",
+        "Tulevat kuukaudet ovat kuin kuuden viimeisen täyden kuukautesi keskiarvo."),
+    "savings_plan.cuts_as_shown": (
+        "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+        "Vähennät tätä kulutusta näytetyllä osuudella, ja muu kulutuksesi pysyy ennallaan."),
+    "forecast.no_income_before_payday": (
+        "Salary and other money coming in before payday are not counted.",
+        "Palkkaa ja muita ennen palkkapäivää tulevia rahoja ei lasketa."),
+}
 
 WHAT_IF_NUMBERS = (  # (key, output column, unit value)
     ("baseline_per_month", "baseline_month_eur", "eur_per_month"),
@@ -668,6 +814,15 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
     "balance_limit": ("Your balance allows", "Saldosi sallii"),
     "budget_limit": ("Your monthly budget allows", "Kuukausibudjettisi sallii"),
+    "savings_goal": ("Set aside first each month", "Ensin sivuun kuukaudessa"),          # #391
+    # #391 answers (template, number tokens): the goal is quoted next to safe to spend, so they add up.
+    "with_goal": ("You can spend about {safe} this week, after setting aside about {goal}.",
+                  "Voit käyttää tällä viikolla noin {safe}, kun ensin laitat sivuun noin {goal}."),
+    "below_usual_with_goal": ("To keep setting aside {goal}, about {safe} a week is safe to spend, below your "
+                              "usual {usual}.",
+                              "Jotta voit laittaa sivuun {goal}, turvallisesti käytettävissä on noin {safe} "
+                              "viikossa, alle tavallisen {usual}."),
+    "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
     "essentials_reserve": ("Essentials reserve", "Varaus välttämättömiin"),
@@ -681,11 +836,12 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "estimate_label": ("Estimate", "Arvio"),
     "estimate_text": (
         "Your balance minus bills, usual essentials and a small cushion until payday, spread over the "
-        "days to payday. It is also capped by your usual monthly budget. A recurring investment deposit "
-        "is your own saving plan, so it is kept aside too.",
+        "days to payday. It is also capped by your usual monthly budget after your savings goal is set "
+        "aside first. A recurring investment deposit is your own saving plan, so it is kept aside too.",
         "Saldosi miinus laskut, tavalliset välttämättömät menot ja pieni puskuri palkkapäivään asti, "
-        "jaettuna päiville ennen palkkapäivää. Summaa rajaa myös tavallinen kuukausibudjettisi. "
-        "Säännöllinen sijoitus on oma säästösuunnitelmasi, joten se pidetään myös sivussa.",
+        "jaettuna päiville ennen palkkapäivää. Summaa rajaa myös tavallinen kuukausibudjettisi, kun "
+        "säästötavoitteesi on ensin laitettu sivuun. Säännöllinen sijoitus on oma säästösuunnitelmasi, "
+        "joten se pidetään myös sivussa.",
     ),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
     "note_no_salary": (
@@ -782,6 +938,17 @@ SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
     "host_monthly_saving": ("See monthly saving in S-mobiili", "Katso kuukausisäästäminen S-mobiilissa"),
     "title": ("Safe to save", "Turvallisesti säästettävissä"),
     "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
+    # #391: the savings goal is quoted next to safe to spend, so the two add up; the headline stays safe to
+    # save by its own formula, and the subtitle says how it relates to the goal (card text, displays).
+    "subtitle_with_goal": ("You could set aside about {goal} on top of spending about {weekly} a week.",
+                           "Voisit laittaa sivuun noin {goal} ja käyttää silti noin {weekly} viikossa."),
+    "subtitle_below_goal": ("Your goal is {goal}; at your usual pace about {monthly} would be left.",
+                            "Tavoitteesi on {goal}; tavallisella tahdilla jäisi noin {monthly}."),
+    "savings_goal": ("Your savings goal", "Säästötavoitteesi"),
+    # #417: the headline at two more scales (composites of `monthly`; the display says "a week" / "a day")
+    "weekly": ("Typically left each week", "Tavallisesti jää viikossa"),
+    "daily": ("Typically left each day", "Tavallisesti jää päivässä"),
+    "safe_to_spend_week": ("Safe to spend in the next 7 days", "Turvallisesti käytettävissä seuraavat 7 päivää"),
     "estimate_text": (
         "A typical month of your last six: income minus bills, saving you set up, usual essentials, a "
         "reserve for unexpected costs and your usual everyday spending.",
@@ -837,6 +1004,17 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
     "cut": ("Cut you chose", "Valitsemasi leikkaus"),
+    "selection_total": ("{what} in the period", "{what} jaksolla"),   # too few purchases (#379)
+    # Too few purchases for a monthly habit (#379): the chat's answer and the what-if screen's caveat.
+    "too_few_one": ("{span} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
+                    "{span} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "too_few_none": ("{span} you made no {what} purchases, so there is nothing to cut.",
+                     "{span} luokassa {what} ei ollut yhtään ostosta, joten leikattavaa ei ole."),
+    "too_few_few": ("{span} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to "
+                    "cut.",
+                    "{span} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
+                    "ei ole."),
+    "purchases": ("Purchases", "Ostoksia"),
     "baseline_per_month": ("{what} in a typical month", "{what} tavallisena kuukautena"),
     "saving_per_month": ("You would save", "Säästäisit"),
     "saving_per_week": ("Per week", "Viikossa"),
@@ -863,6 +1041,18 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     ),
     "mcc": ("purchases with MCC {codes}", "ostokset, MCC {codes}"),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}
+# The everyday names of the MCC selections the what-if rules plan from everyday words (#346, #377). An MCC
+# what-if whose codes are exactly one of these keys is named in words ("Spend 10% less on taxis" / "Käytä 10 %
+# vähemmän: taksit"); any other code list keeps the code text (WHAT_IF_TEXT["mcc"]). Keys are sorted code tuples.
+WHAT_IF_MCC_NAMES: dict[tuple[str, ...], tuple[str, str]] = {
+    MCC_GROUPS["taxi"]: ("taxis", "taksit"),
+    MCC_GROUPS["public_transport"]: ("public transport", "joukkoliikenne"),
+    MCC_GROUPS["fuel"]: ("fuel", "polttoaine"),
+    MCC_GROUPS["parking"]: ("parking", "pysäköinti"),
+    MCC_SUBGROUPS["takeaway"]: ("takeaway and fast food", "pikaruoka ja noutoruoka"),
+    MCC_SUBGROUPS["bars"]: ("bars", "baarit"),
+    MCC_SUBGROUPS["cinemas"]: ("cinemas", "elokuvateatterit"),
 }
 
 # ---- spike reviews (#68, contract 0.2.0 sections 3 and 10) ----------------------------------------
@@ -899,21 +1089,6 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "see_purchase": ("See the purchase", "Näytä ostos"),
     "month_avg": ("{label}, monthly average", "{label}, kuukausikeskiarvo"),
     # label confirmations (POST /api/baskets/label)
-    "done_unexpected_necessities": (
-        "Thanks. {product} now keeps a bigger reserve for surprises like this, so your safe to spend is lower.",
-        "Kiitos. {product} varaa nyt enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä "
-        "oleva summa on pienempi.",
-    ),
-    "done_everyday_spending": (
-        "Thanks. This counts as everyday spending, so your everyday spending this month is {amount} higher "
-        "than usual. Your safe to spend stays the same.",
-        "Kiitos. Tämä lasketaan arkikulutukseksi, joten arkikulutuksesi on tässä kuussa {amount} tavallista "
-        "suurempi. Turvallisesti käytettävissä oleva summa pysyy ennallaan.",
-    ),
-    "undone_pending": ("Undone. This purchase is waiting for your answer again.",
-                       "Peruttu. Tämä ostos odottaa taas vastaustasi."),
-    "undone_closed": ("Undone. This purchase is back in the group the rules give it.",
-                      "Peruttu. Tämä ostos on taas siinä ryhmässä, johon säännöt sen sijoittavat."),
     "unchanged": ("Nothing changed: this answer is already saved.",
                   "Mikään ei muuttunut: tämä vastaus on jo tallennettu."),
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
@@ -999,6 +1174,9 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+# #380 / #503 review: the assumption code of each fixed assumption above; the share's code depends on the share
+BONUS_ASSUMPTION_CODES = {"assume_household": "bonus_household", "assume_table": "bonus_table",
+                          "assume_card": "bonus_payment_card", "assume_goods": "bonus_goods", "assume_share": None}
 
 # ---- small purchases (#256, metrics.md section 12, 08_small_purchases.sql) --------------------------
 # The flexible everyday categories whose small purchases are counted: the everyday_spending basket's
@@ -1012,11 +1190,12 @@ SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (d
 SMALL_PURCHASE_DEFAULT_PERIOD = "last_3_months"
 # Where the small purchases of a category happen, as the takeaway sentence names them ("most of them at
 # restaurants and cafés"); a category's label otherwise.
-SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {
-    "Restaurants": ("restaurants and cafés", "ravintoloissa ja kahviloissa"),
-    "Entertainment": ("entertainment", "viihteessä"),
-    "Lifestyle": ("lifestyle shopping", "lifestyle-ostoksissa"),
+SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {   # with the preposition of each category (#465)
+    "Restaurants": ("at restaurants and cafés", "ravintoloissa ja kahviloissa"),
+    "Entertainment": ("on entertainment", "viihteessä"),
+    "Lifestyle": ("on lifestyle shopping", "lifestyle-ostoksissa"),
 }
+SMALL_PURCHASE_WHERE_OTHER = ("on {label}", "luokassa {label}")   # a category outside the table
 SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Small purchases", "Pienet ostokset"),
     "count": ("Small purchases", "Pieniä ostoksia"),

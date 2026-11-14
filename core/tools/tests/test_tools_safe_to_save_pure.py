@@ -10,6 +10,7 @@ import pytest
 
 from core.tools import config, metric_sql, safe_to_spend
 from core.tools.context import ToolContext
+from core.tools.formatting import money
 from core.tools.safe_to_save import build, get_safe_to_save, window
 
 AS_OF = date(2026, 9, 30)
@@ -56,6 +57,9 @@ def row(**changes) -> dict:
         "everyday_until_payday_eur": "295.28", "safe_to_save_eur": "12272.28", "save_reason": None,
         "save_reason_category": None, "save_reason_month_eur": None,
         "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+        # the weekly figure after the savings goal (#391), from the same row
+        "week_start": date(2026, 10, 1), "week_end": date(2026, 10, 7), "balance_limit_7d_eur": "5864.86",
+        "budget_limit_7d_eur": "97.46", "safe_to_spend_7d_eur": "97.46", "savings_goal_eur": "360.00",
     }
     base.update(changes)
     return {k: Decimal(v) if isinstance(v, str) and re.fullmatch(r"-?[0-9.]+", v) else v for k, v in base.items()}
@@ -161,7 +165,11 @@ def test_nothing_negative_and_no_digits_in_free_text(changes, language):
     result, _ = run(row(**changes), language)
     card = result.card.model_dump(mode="json")
     assert all(n["value"] >= 0 and not n["display"].startswith("-") for n in numbers_of(card))
-    texts = [card["title"], card["subtitle"], card["stock_explanation"], card["estimate"]["text"]]
+    # The subtitle's only digits are the displays of the goal, safe to save and the weekly figure (#391).
+    subtitle = card["subtitle"]
+    for n in (result.data.savings_goal, result.data.monthly, result.data.safe_to_spend_week):
+        subtitle = subtitle.replace(n.display, "")
+    texts = [card["title"], subtitle, card["stock_explanation"], card["estimate"]["text"]]
     texts += [c["label"] for c in card["monthly_components"] + card["stock_components"]]
     texts += [card["reason"]["text"]] if card["reason"] else []
     assert not any(re.search(r"[0-9]", t) for t in texts), texts
@@ -178,6 +186,9 @@ def test_every_number_is_metric_evidence_of_03():
     card = result.card.model_dump(mode="json")
     for n in numbers_of(card):
         spec = specs[n["evidence_ref"]]
+        if n["method"] in (config.SAFE_TO_SAVE_WEEK_METHOD, config.SAFE_TO_SAVE_DAY_METHOD):   # #417: of `monthly`
+            assert spec["formula"] == "scale" and spec["parts"][0]["ref"] == card["monthly"]["evidence_ref"]
+            continue
         assert spec["kind"] == "metric" and spec["source"]["file"] == "03_safe_to_spend.sql"
         assert n["method"] == f"safe_to_spend.{spec['source']['column']}@1"
         assert Decimal(spec["value"]) == Decimal(str(n["value"]))
@@ -315,3 +326,25 @@ def test_no_row_raises_in_both_lanes_after_one_run(monkeypatch):
     runs, got = _two_lanes(monkeypatch, None)
     assert runs == ["03_safe_to_spend.sql"]
     assert all(isinstance(g, safe_to_spend.NoTransactions) for g in got)
+
+
+# ---- #417: the headline at three scales ----------------------------------------------------------------
+
+@pytest.mark.parametrize("changes", [
+    {},                                                                     # Sanna's fixture, 184.61
+    dict(safe_to_save_monthly_eur="364.31", everyday_month_eur="419.48"),
+    dict(free_month_eur="2000.00", safe_to_save_monthly_eur="1234.56", everyday_month_eur="765.44"),
+    dict(everyday_month_eur="900.00", safe_to_save_monthly_eur="0.00", save_reason="largest_everyday_category",
+         save_reason_category="Restaurants", save_reason_month_eur="186.93"),
+])
+def test_week_and_day_reconcile_with_the_month_by_the_stated_formula(changes):
+    r = row(**changes)
+    result, _ = run(r)
+    monthly = r["safe_to_save_monthly_eur"]
+    data, m = result.data, Decimal(monthly)
+    assert Decimal(str(data.weekly.value)) == money(m * 7 / Decimal("30.4375"))
+    assert Decimal(str(data.daily.value)) == money(m / Decimal("30.4375"))
+    assert (data.weekly.unit.value, data.daily.unit.value) == ("eur_per_week", "eur_per_day")
+    card = result.card.model_dump(mode="json")
+    assert card["weekly"]["value"] == data.weekly.value and card["daily"]["value"] == data.daily.value
+    assert result.model_view["weekly"]["id"] == data.weekly.id

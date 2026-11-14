@@ -236,6 +236,10 @@ SANNA_03_ROW = {
     "free_until_payday_eur": Decimal("12567.56"), "everyday_until_payday_eur": Decimal("295.28"),
     "safe_to_save_eur": Decimal("12272.28"), "save_reason": None, "save_reason_category": None,
     "save_reason_month_eur": None, "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+    # the weekly figure after the savings goal (#391): "Needed" keeps the goal at 360
+    "week_start": date(2026, 10, 1), "week_end": date(2026, 10, 7), "balance_limit_7d_eur": Decimal("5864.86"),
+    "budget_limit_7d_eur": Decimal("97.46"), "safe_to_spend_7d_eur": Decimal("97.46"),
+    "savings_goal_eur": Decimal("360.00"),
 }
 
 
@@ -408,6 +412,8 @@ def _post_whatif(monkeypatch, body, tool):
 @pytest.mark.parametrize("selection", [
     {"kind": "category", "value": "Health"},                                     # R9
     {"kind": "mcc", "value": sorted(config.MCC_GROUPS["health"])[0]},             # R9
+    {"kind": "mcc", "value": "8021"},                                            # R9, whatever the history (#510)
+    {"kind": "mcc", "value": "5411,8021"},                                       # R9 inside a list
     {"kind": "category", "value": "Salary"},                                     # not spending
     {"kind": "basket", "value": "luxuries"},
     {"kind": "mcc", "value": "taxi"},
@@ -415,14 +421,14 @@ def _post_whatif(monkeypatch, body, tool):
 ])
 def test_whatif_selections_refused_before_the_tool_are_422(clean_env, monkeypatch, selection):
     called = []
-    response = _post_whatif(monkeypatch, whatif_body(selection), lambda ctx, args: called.append(args))
+    response = _post_whatif(monkeypatch, whatif_body(selection), lambda ctx, args, too_few=None: called.append(args))
     assert_envelope(response, 422, "invalid_scenario")
     assert called == []
     assert "Health" not in response.text and "R9" not in response.text
 
 
 def test_whatif_refusals_of_the_tool_are_422_without_their_text(clean_env, monkeypatch):
-    def no_spending(ctx, args):
+    def no_spending(ctx, args, too_few=None):
         raise WhatIfRefused("invalid_scenario: the selection has no spending in the last 6 full months")
 
     response = _post_whatif(monkeypatch, WHATIF, no_spending)
@@ -433,7 +439,7 @@ def test_whatif_refusals_of_the_tool_are_422_without_their_text(clean_env, monke
 def test_whatif_errors_are_in_the_bodys_language(clean_env, monkeypatch):
     """The review of #106: a Finnish request gets Finnish errors, not only with ?lang=fi."""
     fi_health = {**whatif_body({"kind": "category", "value": "Health"}), "language": "fi"}
-    response = _post_whatif(monkeypatch, fi_health, lambda ctx, args: None)
+    response = _post_whatif(monkeypatch, fi_health, lambda ctx, args, too_few=None: None)
     assert_envelope(response, 422, "invalid_scenario")
     assert response.json()["error"]["message"] == "Tätä tilannetta ei voi laskea."
 
@@ -441,16 +447,16 @@ def test_whatif_errors_are_in_the_bodys_language(clean_env, monkeypatch):
         raise ApiError("customer_not_found")
 
     monkeypatch.setattr(deps, "require_customer", unknown)   # what-if checks through deps.customer_connection
-    response = _post_whatif(monkeypatch, {**WHATIF, "language": "fi"}, lambda ctx, args: None)
+    response = _post_whatif(monkeypatch, {**WHATIF, "language": "fi"}, lambda ctx, args, too_few=None: None)
     assert_envelope(response, 404, "customer_not_found")
     assert response.json()["error"]["message"] == "Asiakasta ei löytynyt."
-    response = _post_whatif(monkeypatch, WHATIF, lambda ctx, args: None)            # language en: English
+    response = _post_whatif(monkeypatch, WHATIF, lambda ctx, args, too_few=None: None)            # language en: English
     assert response.json()["error"]["message"] == "We couldn't find this customer."
 
 
 def test_a_bug_in_the_what_if_tool_is_a_500_not_a_refusal(clean_env, monkeypatch):
     """Only the tool's refusal type is a 422; any other ValueError (or pydantic error) is a bug."""
-    def bug(ctx, args):
+    def bug(ctx, args, too_few=None):
         raise ValueError("a tool bug, not a refusal")
 
     response = _post_whatif(monkeypatch, WHATIF, bug)
@@ -461,13 +467,14 @@ def test_a_bug_in_the_what_if_tool_is_a_500_not_a_refusal(clean_env, monkeypatch
 def test_whatif_maps_a_merchant_id_to_the_customers_alias(clean_env, monkeypatch):
     seen = []
 
-    def capture(ctx, args):
-        seen.append((ctx.customer_id, ctx.language, args))
+    def capture(ctx, args, too_few=None):
+        seen.append((ctx.customer_id, ctx.language, args, too_few))
         raise WhatIfRefused("stop here")
 
     _post_whatif(monkeypatch, {**whatif_body({"kind": "merchant", "value": "MRC-RES-0001"}), "language": "fi"},
                  capture)
-    customer, language, args = seen[0]
+    customer, language, args, too_few = seen[0]
+    assert too_few == "not_offered"   # the endpoint answers too few purchases as not_offered (#379)
     alias = aliases.build(_history(), date(2026, 9, 30)).for_merchant("MRC-RES-0001").key
     assert (customer, language, args.selection.kind, args.selection.value, args.cut_pct) == (
         "CUST00860", "fi", "merchant", alias, 20)

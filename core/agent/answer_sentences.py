@@ -76,10 +76,17 @@ _KNOWN_LABELS = {lab for table in (config.CATEGORY_LABELS, config.BASKET_LABELS,
                  for pair in table.values() for lab in pair}
 
 
-def _subject(label: str, language: str) -> str | None:
-    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat")."""
+def _subject(label: str, language: str, parts: list[str] | None = None) -> str | None:
+    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat",
+    and for a filter of two or more parts "housing and restaurants", "luokissa Asuminen ja ravintolat", #399). A
+    filter of several parts is built from its parts, never by re-reading the joined label (review of #496)."""
     if label in (pick(config.TEXT["spending"], language), pick(config.TEXT["income"], language)):
         return None
+    if parts and len(parts) > 1:
+        if language == "fi":
+            return "luokissa " + _join(parts, language)
+        return _join([p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+                      for p in parts], language)
     if language == "fi":
         return f"luokassa {label}"
     return label.lower() if label in _KNOWN_LABELS else label
@@ -136,7 +143,8 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if not total or not isinstance(period, str) or not ok(period):
         return None
     label = (view.get("total") or {}).get("label") or ""
-    what = _subject(label, language)
+    parts = view.get("filter_labels")
+    what = _subject(label, language, [p for p in parts if isinstance(p, str)] if isinstance(parts, list) else None)
     lang = 1 if language == "fi" else 0
     phrase = in_period(period, language)
     fmt = {"total": total, "count": count, "what": what or "", "period": phrase, "Period": _cap(phrase)}
@@ -176,7 +184,11 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     key = ("income_count" if income else "count") if count else ("income" if income else "plain")
     if count and _value(view.get("tx_count")) == 1:
         key += "_one"
-    return [SPENT[key][lang][1 if what else 0].format(**fmt)], _ids(total, count)
+    first = SPENT[key][lang][1 if what else 0].format(**fmt)
+    few = pick(config.TEXT["note_too_few"], language)
+    if few in (view.get("notes") or []):
+        return [first, few], _ids(total, count)   # why no monthly habit is shown (#379, #527)
+    return [first], _ids(total, count)
 
 
 # ---- baskets --------------------------------------------------------------------------------------------
@@ -352,6 +364,21 @@ def safe_to_save(view: dict[str, Any], language: str, save_more: bool) -> Senten
     monthly, stock = _tok(view.get("monthly")), _tok(view.get("stock"))
     if not monthly:
         return None
+    goal, weekly = _tok(view.get("savings_goal")), _tok(view.get("safe_to_spend_week"))
+    if goal and weekly and (_value(view.get("savings_goal")) or 0) > 0:
+        # Pay yourself first (#391): the goal is quoted next to safe to spend, so the two add up; when safe to
+        # save by its own formula is below the goal, the goal against it. The stock may follow (three numbers).
+        if (_value(view.get("monthly")) or 0) >= (_value(view.get("savings_goal")) or 0):
+            first = pick(config.SAFE_TO_SAVE_TEXT["subtitle_with_goal"], language).format(goal=goal, weekly=weekly)
+            cited = [goal, weekly]
+        else:
+            first = pick(config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language).format(goal=goal, monthly=monthly)
+            cited = [goal, monthly]
+        sentences = [first]
+        if stock and not save_more:
+            sentences.append(pick(STOCK, language).format(stock=stock))
+            cited.append(stock)
+        return sentences, _ids(*cited)
     reason = (view.get("reason") or {}).get("text")
     if _value(view.get("monthly")) == 0 and isinstance(reason, str) and not re.search(r"\d", reason):
         if save_more:                      # the reason, then the what-if offer: two sentences
@@ -437,7 +464,8 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return [pick(PEER_SAME[kind], language).format(metric=metric)], []   # within the margin either way
     if value < 0:
         return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
-    offer = config.peer_offers_cut(view.get("metric") or "", value)
+    # the tool's decision when it states it (the what-if's own count included, #379 part B), else the rule
+    offer = bool(view["offers_cut"]) if "offers_cut" in view else config.peer_offers_cut(view.get("metric") or "", value)
     return [pick((PEER if offer else PEER_PLAIN)[kind], language).format(vs=vs, metric=metric)], _ids(vs)
 
 

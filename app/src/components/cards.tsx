@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
-import type { Count } from '../lib/motion.ts'
+import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -172,6 +172,73 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
   )
 }
 
+/**
+ * The opening's one big card (the #310 decision, one thought per screen): safe to spend as the
+ * API's `display`, a caption chosen by `hero.status`, and a chevron. The whole card opens how the
+ * number is made (its evidence: the hero components): the button's `::after` covers the card,
+ * and the Estimate badge sits above it, in the flow of the caption row. After a review answer the
+ * amount counts to the new value, with "↓ was …" beside it, on the same line, so nothing jumps.
+ */
+export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
+  const { t } = useSettings()
+  const primary = card.primary
+  const text = useCountedText(primary, motion?.counts.safe_to_spend, tokenMs('--duration-money', 900))
+  const count = motion?.counts.safe_to_spend
+  const was = motion?.was.safe_to_spend
+  const estimate = useEstimateToggle()
+  const ref = primary.evidence_ref ?? card.evidence_ref
+  const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
+  const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
+  return (
+    <section data-opening-part="hero" className="relative rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <button
+          type="button"
+          disabled={!ref}
+          onClick={() => ref && openEvidence(ref)}
+          aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
+          className="min-w-0 text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-mint"
+        >
+          {/* 40px at 375 px, down to 28px on a narrow screen or at 200 % zoom. */}
+          <span
+            key={count?.seq ?? 'static'}
+            className={`block text-[clamp(28px,11vw,40px)] font-bold leading-[1.1] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
+          >
+            {text}
+          </span>
+        </button>
+        {/* The hint's slot is always there, invisible until an answer, so the card never changes
+            height when "was …" comes or goes, even where it wraps under the amount. After a review
+            answer: never red, never grey on the green block (DESIGN.md, #35). */}
+        <span
+          aria-hidden={hint ? undefined : true}
+          className={`inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted ${hint ? 'motion-fade' : 'invisible'}`}
+        >
+          {was ? <Arrow down={was.value > primary.value} /> : <Check />}
+          {hint ?? t.was(primary.display)}
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span aria-hidden="true" className="inline-flex min-w-32 flex-1 items-center gap-1 text-sm font-semibold text-on-hero-muted">
+          {caption}
+          <Chevron />
+        </span>
+        {card.estimate && (
+          // Above the card's button; the badge keeps its 44px target without making the row taller.
+          <div className="relative z-10 -my-2.5 shrink-0">
+            <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
+          </div>
+        )}
+      </div>
+      {card.estimate && estimate.open && (
+        <div className="relative z-10">
+          <EstimateNote estimate={card.estimate} id={estimate.id} onHero />
+        </div>
+      )}
+    </section>
+  )
+}
+
 /** Shown when the overview has no hero yet (`hero: null`): a clear line instead of an empty slot. */
 export function HeroPending() {
   const { t } = useSettings()
@@ -222,19 +289,22 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 highlighted ? look.tint.split(' ')[0] : ''
               } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
             >
-              <div className="flex items-center gap-3">
+              {/* With large text the amount moves under the label instead of running past the card (#493). */}
+              <div className="flex flex-wrap items-center gap-3">
                 <span
                   aria-hidden="true"
                   className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
                 >
                   {look.icon}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className={`font-semibold leading-5 ${look.color}`}>{item.label}</p>
+                {/* At least 6rem for the label; when that does not fit beside the amount, the amount moves
+                    under it instead of covering it (#493). */}
+                <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
+                  <p className={`min-w-0 break-words hyphens-auto font-semibold leading-5 ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
-                <span data-amount-key={item.key} className="shrink-0">
-                  <NumberChip number={item.amount} size="inline" count={motion?.counts[item.key]} />
+                <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">
+                  <NumberChip number={item.amount} size="inline" wrap count={motion?.counts[item.key]} />
                 </span>
               </div>
               {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
@@ -248,9 +318,11 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
           )
         })}
       </ul>
-      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-muted">
-        <span>{card.total.label}</span>
-        <NumberChip number={card.total} size="inline" />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+        <span className="min-w-[min(5rem,100%)] flex-1 basis-0">{card.total.label}</span>
+        <span className="ml-auto max-w-full shrink-0">
+          <NumberChip number={card.total} size="inline" wrap />
+        </span>
       </div>
     </CardShell>
   )

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from core.tools import aliases, config, evidence, labels, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
 from core.tools.models import (
     Action, Args, Card, CompareTo, Comparison, Direction, Filter, GroupBy, Number, Period, PeriodArg,
     Tone, ToolResult, Unit,
@@ -83,19 +84,58 @@ def _base_selection(args: GetSpendingArgs, period: Period, alias_map: aliases.Al
                      merchant_id=merchant_id)
 
 
-def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
+def top_categories(rows: list, language: str, n: int = 5) -> list[dict[str, str]]:
+    """The customer's largest spending categories in the whole data, Health never among them (R9): chips."""
+    sums: dict[str, Decimal] = defaultdict(Decimal)
+    for c in rows:
+        if c.tx.category != "Health" and c.out_eur > 0:
+            sums[c.tx.category] += c.out_eur
+    ranked = sorted(sums, key=lambda k: (-sums[k], k))[:n]
+    return [{"key": k, "label": config.label(config.CATEGORY_LABELS[k], language) if k in config.CATEGORY_LABELS else k}
+            for k in ranked]
+
+
+
+
+def filter_names(categories, mcc_groups, baskets, merchant: str | None, language: str) -> list[str]:
+    """The labels of a filter's parts, each once: categories, groups and baskets in that order, each sorted as the
+    selection sorts them, then a merchant's alias. The parts after the first are lower-cased whole ("home & tech",
+    "electronics and home"); an alias keeps its case (review of #496)."""
+    known = list(dict.fromkeys(
+        [config.label(config.CATEGORY_LABELS[c], language) for c in categories if c in config.CATEGORY_LABELS]
+        + [config.label(config.MCC_GROUP_LABELS[g], language) for g in mcc_groups if g in config.MCC_GROUP_LABELS]
+        + [config.label(config.BASKET_LABELS[b], language) for b in baskets if b in config.BASKET_LABELS]))
+    names = known + ([merchant] if merchant else [])
+    return [n if i == 0 or i >= len(known) else n.lower() for i, n in enumerate(names)]
+
+
+def join_names(names: list[str], language: str) -> str:
+    """"Housing and restaurants", "Housing, restaurants and travel", "Asuminen ja ravintolat"."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + (" ja " if language == "fi" else " and ") + names[-1]
+
+
+def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
+    """A filter in words, every part named: "Restaurants", "Housing and restaurants", "Asuminen ja ravintolat"
+    (#399); None without a filter. A filtered sum is never labelled as all spending. The tool and the evidence view
+    name one filter the same way (filter_names)."""
+    names = filter_names(categories, mcc_groups, baskets, merchant, language)
+    return join_names(names, language) if names else None
+
+
+def _filter_names_of(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> list[str]:
     f = args.filter or Filter()
-    parts = [bool(f.categories), bool(f.baskets), bool(f.mcc_groups), f.merchant is not None]
-    if sum(parts) == 1:
-        if f.categories and len(f.categories) == 1:
-            return config.label(config.CATEGORY_LABELS[f.categories[0].value], language)
-        if f.mcc_groups and len(f.mcc_groups) == 1:
-            return config.label(config.MCC_GROUP_LABELS[f.mcc_groups[0].value], language)
-        if f.baskets and len(f.baskets) == 1:
-            return config.label(config.BASKET_LABELS[f.baskets[0].value], language)
-        if f.merchant is not None:
-            return alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
-    return _text("spending" if args.direction is Direction.OUT else "income", language)
+    merchant = (alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
+                if f.merchant is not None else None)
+    return filter_names(sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
+                        sorted({b.value for b in f.baskets or []}), merchant, language)
+
+
+def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
+    names = _filter_names_of(args, alias_map, language)
+    return join_names(names, language) if names else _text("spending" if args.direction is Direction.OUT else "income",
+                                                             language)
 
 
 def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap, language: str) -> tuple[str, str]:
@@ -145,7 +185,13 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
     lang = ctx.language
     notes: list[str] = []
 
-    resolved = periods.resolve(args.period, ctx.as_of, lang)
+    try:
+        resolved = periods.resolve(args.period, ctx.as_of, lang)
+    except periods.PeriodOutOfRange as exc:
+        # The answer names the customer's own first month of data, not the dataset's (#379).
+        history = ctx.history()
+        first = history[0].tx_date.isoformat() if history else None
+        raise periods.PeriodOutOfRange(str(exc), reason=exc.reason, first=first, last=ctx.as_of.isoformat()) from None
     period = resolved.period
     if resolved.clamped:
         notes.append(_text("note_clamped", lang, label=period.label))
@@ -160,9 +206,17 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
     total_label = _total_label(args, alias_map, lang)
     total, total_value = nb.transactions(base, config.METHODS["total"], period, total_label)
     tx_count, n_value = nb.transactions(base, config.METHODS["n_tx"], period, _text("transactions", lang))
+    if args.filter is not None and n_value == 0 and not select(rows, base.with_period(config.DATA_START, ctx.as_of)):
+        # Never in the whole data (#379): what is missing, and the customer's own largest categories.
+        raise MissingData("category_absent", what=total_label, top=top_categories(rows, lang))
     total, tx_count = reg(total), reg(tx_count)
+    # the note is about a monthly habit, so only over the what-if window or longer, never a single month (#534)
+    months = (period.end.year - period.start.year) * 12 + period.end.month - period.start.month + 1
+    too_few = args.filter is not None and 0 < n_value < config.TOO_FEW_TRANSACTIONS and months >= config.WINDOW_MONTHS
     if n_value == 0:
         notes.append(_text("note_empty", lang))
+    elif too_few:
+        notes.append(_text("note_too_few", lang))   # the numbers are shown, marked (#379)
 
     # ---- comparison ----
     comparison = None
@@ -244,7 +298,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         card=_card(args, data, lang),
         notes=notes,
         evidence=list(nb.specs),
-        model_view=_model_view(data, base.direction, notes, group_counts),
+        model_view=_model_view(data, base.direction, notes, group_counts, _filter_names_of(args, alias_map, lang)),
     )
 
 
@@ -265,7 +319,8 @@ def _card(args: GetSpendingArgs, data: SpendingData, language: str) -> Card:
                 items=[g.model_dump() for g in data.groups], **common)
 
 
-def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None) -> dict[str, Any]:
+def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None,
+                filter_names: list[str] | None = None) -> dict[str, Any]:
     """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3).
 
     A group's amount is the total of all its transactions in the period. The view says so, and gives
@@ -287,6 +342,9 @@ def _model_view(data: SpendingData, direction: str, notes: list[str], counts: li
         "period": data.period.label,
         "direction": direction,
         "total": _model_number(data.total),
+        # what the total's label names (#399): each part once, as the sentence names it ("luokissa" for two or more)
+        "filter_parts": len(filter_names or []),
+        "filter_labels": list(filter_names or []),
         "tx_count": _model_number(data.tx_count),
         "comparison": comparison,
         "groups": [
