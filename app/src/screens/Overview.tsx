@@ -497,7 +497,7 @@ function FlyingAmount({
       ref={pill}
       aria-hidden="true"
       style={{ visibility: 'hidden' }}
-      className="pointer-events-none fixed left-0 top-0 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill border-2 border-waiting bg-surface py-1 pl-2 pr-3 text-[15px] font-bold tabular-nums text-ink shadow-float"
+      className="pointer-events-none fixed left-0 top-0 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill border-2 border-waiting bg-surface py-1 pl-2 pr-3 text-[0.9375rem] font-bold tabular-nums text-ink shadow-float"
     >
       <span className="text-base">{landed ? BASKETS[basket]?.icon : '?'}</span>
       {flight.display}

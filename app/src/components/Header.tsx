@@ -173,7 +173,7 @@ export function Header({
               role="tab"
               aria-selected={tab === key}
               onClick={() => onTab(key)}
-              className={`relative min-h-9 flex-1 rounded-pill text-[15px] font-semibold after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] ${
+              className={`relative min-h-9 flex-1 rounded-pill text-[0.9375rem] font-semibold after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] ${
                 tab === key ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
               }`}
             >

@@ -14,7 +14,7 @@ const sizes: Record<Size, string> = {
   inline:
     'relative min-h-8 px-2.5 text-(length:--text-sm) leading-(--text-sm--line-height) align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   // In the review question (18px semibold text): a 32px pill, its hit area extended to 44px.
-  lead: 'relative min-h-8 px-2 text-[17px] leading-6 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
+  lead: 'relative min-h-8 px-2 text-[1.0625rem] leading-6 align-baseline after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[""]',
   md: 'min-h-11 px-3.5 text-base',
   // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
   // The amount of a large chip never breaks, so with very large text its size is capped by the
