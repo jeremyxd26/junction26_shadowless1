@@ -5,6 +5,7 @@ import { showPersonaButton } from '../lib/hostBridge.ts'
 import { hostStrings } from '../lib/hostStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BottomSheet } from './BottomSheet.tsx'
+import { learnStrings } from './learn/learnStrings.ts'
 
 const FALLBACK_LONG_PRESS_MS = 600
 const MOVE_TOLERANCE_PX = 10
@@ -30,6 +31,9 @@ export function Header({
   overviewReady,
   onNewChat,
   threadEmpty = true,
+  tab = 'chat',
+  onTab,
+  learnDot = false,
 }: {
   onLongPress: () => void
   disclosure: string
@@ -38,6 +42,11 @@ export function Header({
   /** "New chat": empties the thread; asked first when the thread has something in it. */
   onNewChat?: () => void
   threadEmpty?: boolean
+  /** The thread's two tabs (Chat, Learn), on the first screen only. */
+  tab?: 'chat' | 'learn'
+  onTab?: (tab: 'chat' | 'learn') => void
+  /** A small dot on the Learn tab while a lesson is under way. */
+  learnDot?: boolean
 }) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
@@ -151,6 +160,31 @@ export function Header({
         </button>
         </div>
       </div>
+      {onTab && (
+        // Chat and Learn as two tabs under the title; each tab keeps a 44 px target (36 px pill + its ::after).
+        <div role="tablist" aria-label={learnStrings(lang).tabs} className="mx-4 mb-2 flex gap-1 rounded-pill bg-sunken p-1">
+          {(['chat', 'learn'] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => onTab(key)}
+              className={`relative min-h-9 flex-1 rounded-pill text-[15px] font-semibold after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] ${
+                tab === key ? 'bg-surface text-ink shadow-sm' : 'text-ink-2 hover:text-ink'
+              }`}
+            >
+              {key === 'chat' ? learnStrings(lang).tabChat : learnStrings(lang).tabLearn}
+              {key === 'learn' && learnDot && (
+                <>
+                  <span aria-hidden="true" className="ml-1.5 inline-block size-2 rounded-pill bg-brand align-middle" />
+                  <span className="sr-only">, {learnStrings(lang).unfinishedDot}</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
       {about && createPortal(<AboutSheet disclosure={disclosure} onClose={() => setAbout(false)} />, document.body)}
       {confirmNew &&

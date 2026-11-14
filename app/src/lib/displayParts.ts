@@ -27,13 +27,14 @@ export function displayParts(display: string): DisplayPart[] {
 }
 
 /**
- * Chips in running text never wrap. A standalone chip does not shrink below its content in a flex
- * row (like a nowrap chip), and is at most as wide as its container; past that its display wraps
- * between the amount and the words after it (DisplayText). A chip whose text used to spill into
- * its own padding, hidden by nowrap, now wraps instead (#493).
+ * A chip never breaks inside its amount. A chip in running text moves to the next line whole, like a
+ * word; only when it is wider than the whole line (200 % text on a narrow screen) does its display
+ * wrap between the amount and the words after it ("€3,010.59" | "a month", #726), instead of
+ * running past the column. A standalone chip does not shrink below its content in a flex row, and
+ * is at most as wide as its container; past that it wraps the same way (DisplayText, #493).
  */
 export function chipWrapping(inText: boolean): string {
-  return inText ? 'whitespace-nowrap' : 'shrink-0 max-w-full text-center'
+  return inText ? 'max-w-full text-left' : 'shrink-0 max-w-full text-center'
 }
 
 /**
