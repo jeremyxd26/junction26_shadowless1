@@ -763,16 +763,17 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 |---|---|---|
 | `count`, `total_eur` | The small purchases in the period | `transactions`, listing exactly these purchases |
 | `avg_eur` | `total / count`, when there is at least one | composite `mean` |
-| `month_avg_eur` | `total / months`, when the period is whole calendar months (the default is) | composite `scale` |
+| `month_avg_eur` | `total / months`, when the period is two or more whole calendar months (the default is); for one month it would only repeat the total, so there is none (#465) | composite `scale` |
 | `flexible_total_eur` | Everyday spending in the period, refunds netted | `transactions` |
 | `share_pct` | The total's share of everyday spending; per category, its share of the small total | composite `share_pct` |
 | `max_amount_eur` | The limit used | composite `rule_value` |
 
 **The answer.** One sentence, at most three numbers, the period in words:
-- **Five or more:** the total first, the count and the monthly average, and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part at …" when no category holds more than half of the small total.
+- **Five or more:** the total first, the count and the monthly average (none for one month), and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part …" when no category holds more than half of the small total.
+- **Where:** each category takes its own preposition (`config.SMALL_PURCHASE_WHERE`, #465): "at restaurants and cafés", "on entertainment", "on lifestyle shopping", and "on <label>" for any other category. Finnish uses the case of each phrase ("ravintoloissa ja kahviloissa", "viihteessä"), and "luokassa <label>" otherwise.
 - **Fewer than 5** (`config.SMALL_PURCHASE_MIN_COUNT`): "Only 4 small purchases in the last three months, €28.73 in all: not much to see here."
 - **None:** it says so.
-- **The limit** (€10.00) stays on the card.
+- **The limit:** the default (€10.00) stays on the card. A limit the user asked for is named with its own Number, in the place of the monthly average, so there are still at most three numbers (#465): "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at restaurants and cafés." In Finnish: "… 31 ostosta rajalla 25,00 €, …".
 
 **The rule** (`core/agent/rules.py`) claims only the plain question. After the trigger (plural forms only), the default period and a fixed list of filler words are removed, nothing may be left. An amount, another period, a filter or a "stop", in words or digits, hands the message on to the next planner (review of #390).
 

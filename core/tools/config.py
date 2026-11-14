@@ -1034,11 +1034,12 @@ SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (d
 SMALL_PURCHASE_DEFAULT_PERIOD = "last_3_months"
 # Where the small purchases of a category happen, as the takeaway sentence names them ("most of them at
 # restaurants and cafés"); a category's label otherwise.
-SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {
-    "Restaurants": ("restaurants and cafés", "ravintoloissa ja kahviloissa"),
-    "Entertainment": ("entertainment", "viihteessä"),
-    "Lifestyle": ("lifestyle shopping", "lifestyle-ostoksissa"),
+SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {   # with the preposition of each category (#465)
+    "Restaurants": ("at restaurants and cafés", "ravintoloissa ja kahviloissa"),
+    "Entertainment": ("on entertainment", "viihteessä"),
+    "Lifestyle": ("on lifestyle shopping", "lifestyle-ostoksissa"),
 }
+SMALL_PURCHASE_WHERE_OTHER = ("on {label}", "luokassa {label}")   # a category outside the table
 SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Small purchases", "Pienet ostokset"),
     "count": ("Small purchases", "Pieniä ostoksia"),

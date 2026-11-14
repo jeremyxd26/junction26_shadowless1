@@ -62,10 +62,13 @@ def test_the_month_average_is_the_total_over_whole_months_only():
                                                             "€8.34 a month")
     spec = store.rows[m.evidence_ref]
     assert spec["formula"] == "scale" and spec["params"] == {"factor_num": 1, "factor_den": 3}
-    one, _, _ = run(august(*FIVE), period={"preset": "last_month"})
-    assert one.data.month_average.value == 25.0
-    part, _, _ = run(august(*FIVE), period={"preset": "this_month"})          # 1-30 Sep is whole: one month
-    assert part.data.month_average is not None
+    # one month: the average would only repeat the total, so there is none, in the data, the view or the card (#465)
+    for preset in ("last_month", "this_month"):                              # 1-30 Sep is whole: one month too
+        one, _, _ = run(august(*FIVE), period={"preset": preset})
+        assert one.data.month_average is None and one.model_view["per_month"] is None, preset
+        assert "small_purchases.month_avg_eur@1" not in one.card.model_dump_json(), preset
+    two, _, _ = run(august(*FIVE), period={"preset": "custom", "start": "2026-07-01", "end": "2026-08-31"})
+    assert two.data.month_average.value == 12.5                              # two whole months: 25.00 / 2
     odd, _, _ = run(august(*FIVE), period={"preset": "custom", "start": "2026-08-03", "end": "2026-08-31"})
     assert odd.data.month_average is None                                    # not whole months: no average
     assert odd.model_view["per_month"] is None
