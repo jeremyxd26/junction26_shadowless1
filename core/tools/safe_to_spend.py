@@ -253,15 +253,19 @@ def card_subtitle(period: Period, language: str) -> str:
 
 
 def _estimate(data: SafeToSpendData, language: str) -> Estimate:
-    """#380: observed are the balance and the bills due before payday; assumed are the usual essentials, the
-    reserve for unexpected costs, the cushion and the savings goal set aside first (the card's own Numbers)."""
+    """#380: both limbs of safe to spend, from the card's own Numbers (no new Number). The balance limb observes
+    the balance and the bills due before payday and assumes the usual essentials, the reserve for unexpected costs,
+    the cushion and the bills on their usual days; the budget limb (#503 review: it binds for every persona) is the
+    card's budget limit, from a typical month that repeats, after the monthly amount for saving is put aside."""
     amount = {c.key: c.amount for c in data.components}
     return Estimate(
         label=_t("estimate_label", language), text=_t("estimate_text", language),
-        observed=[amount[key] for key in ("balance", "bills_due") if key in amount],
+        observed=[amount[key] for key in ("balance", "bills_due") if key in amount] + [data.budget_limit],
         assumptions=[assumption("safe_to_spend.spending_as_usual", language, amount.get("essentials_reserve")),
                      assumption("safe_to_spend.reserve_for_unexpected", language, amount.get("irregular_reserve")),
                      assumption("safe_to_spend.cushion", language, amount.get("cushion")),
+                     assumption("safe_to_spend.bills_on_usual_days", language),
+                     assumption("safe_to_spend.budget_from_usual_month", language),
                      assumption("safe_to_spend.savings_goal_first", language, data.savings_goal)])
 
 

@@ -64,14 +64,14 @@ The flow column of the shared classification block (`02_baskets.sql` to `06_peer
 
 | Estimate | Observed | Assumptions (`code`: value) | Where the formula is |
 |---|---|---|---|
-| Safe to spend | the balance; the bills due before payday | `spending_as_usual`: the essentials reserve; `reserve_for_unexpected`: the irregular reserve; `cushion`: the cushion; `savings_goal_first`: the goal | section 3 |
+| Safe to spend | the balance; the bills due before payday; the budget limit | `spending_as_usual`: the essentials reserve; `reserve_for_unexpected`: the irregular reserve; `cushion`: the cushion; `bills_on_usual_days`; `budget_from_usual_month` (the budget limit, which binds for every persona); `savings_goal_first`: the goal | section 3 |
 | Safe to save | the month's components (free month and everyday month, or the shortfall) | `next_months_like_last` | section 3.1 |
-| What-if | the baseline a month | `cut_share`: the customer's own cut (`user_input@1`, no ref) | section 4 |
-| S-Bonus | the grocery spending a month | `bonus_all_at_s_group` (share 100%) or `bonus_share`: the share; `bonus_level`: the Bonus percentage | `docs/domain/s-group-benefits.md` section 4 |
+| What-if | the baseline a month | `next_months_like_last`; `cut_share`: the customer's own cut (`user_input@1`, no ref) | section 4 |
+| S-Bonus | the grocery spending a month | `bonus_all_at_s_group` (share 100%) or `bonus_share`: the share; `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods` (the fixed assumptions, `config.BONUS_ASSUMPTIONS`); `bonus_level`: the Bonus percentage | `docs/domain/s-group-benefits.md` section 4 |
 | Bills (pro rata) | the total until payday | `bills_pro_rata` | section 3.2 |
 | Peer benchmark | the customer's own figure | `peer_group`: the group size | section 6 |
-| Balance forecast | the balance today; the bills until payday | `spending_as_usual`: the daily pace; `bills_on_usual_days`; `no_income_before_payday` | section 3.3 |
-| Savings plan (#369) | the levers' savings a month (each a what-if, whose evidence opens its baseline) | `cuts_as_shown` | `core/tools/savings_plan.py` |
+| Balance forecast | the balance today; the bills until payday | `spending_as_usual`: the daily pace (everyday spending and essentials; unexpected costs are not counted); `bills_on_usual_days`; `no_income_before_payday` | section 3.3 |
+| Savings plan (#369) | the levers' baselines a month (`what_if.baseline_month_eur@1`) | `next_months_like_last`; `cuts_as_shown`, one per lever: its cut share | `core/tools/savings_plan.py` |
 
 ## 1. Three baskets — "Where did my money go?"
 

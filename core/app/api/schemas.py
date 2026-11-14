@@ -34,7 +34,8 @@ UnitName = Literal["eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_p
 AssumptionCode = Literal[
     "cut_share", "bonus_all_at_s_group", "bonus_share", "bonus_level", "spending_as_usual",
     "reserve_for_unexpected", "next_months_like_last", "savings_goal_first", "cushion", "bills_pro_rata",
-    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown"]
+    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown", "budget_from_usual_month",
+    "bonus_household", "bonus_table", "bonus_payment_card", "bonus_goods"]
 
 
 # ---- shared objects (section 2) --------------------------------------------------------------------

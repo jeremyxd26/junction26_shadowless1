@@ -177,13 +177,42 @@ def test_observed_and_values_are_the_cards_own_numbers(language):
         assert len(missing) <= len(off_card.get(name, ())), (name, missing)
 
 
-def test_an_empty_assumptions_list_is_allowed_and_logged_once(caplog):
-    models._WARNED_EMPTY.discard("Probe")
+def test_an_empty_assumptions_list_is_allowed_and_logged_once_per_estimate(caplog):
+    models._WARNED_EMPTY.difference_update({"Probe|t", "Probe|u"})
     with caplog.at_level(logging.WARNING, logger="core.tools.models"):
         first = models.Estimate(label="Probe", text="t")
         second = models.Estimate(label="Probe", text="t")
-    assert first.assumptions == [] and second.observed == []
-    assert [r.getMessage() for r in caplog.records].count("an estimate card has no assumptions (#380)") == 1
+        other = models.Estimate(label="Probe", text="u")           # another estimate with the same label
+    assert first.assumptions == [] and second.observed == [] and other.assumptions == []
+    assert [r.getMessage() for r in caplog.records].count("an estimate card has no assumptions (#380)") == 2
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_every_fixed_bonus_assumption_is_on_the_card(language):
+    """#503 review: each fixed assumption of the S-Bonus estimate (config.BONUS_ASSUMPTIONS) is an assumption of
+    the card, so a new fixed assumption cannot be forgotten and an app that shows "We assume" drops none."""
+    for share_pct in (None, 50):
+        codes = [a.code for a in bonus_run(share_pct=share_pct, language=language)[0].card.estimate.assumptions]
+        for key in config.BONUS_ASSUMPTIONS:
+            assert key in config.BONUS_ASSUMPTION_CODES, key
+            code = config.BONUS_ASSUMPTION_CODES[key]
+            assert (code in codes) if code else ({"bonus_all_at_s_group", "bonus_share"} & set(codes)), (key, codes)
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_the_hero_estimate_names_both_limbs(language):
+    """#503 review: the budget limit binds for every persona, so the hero lists it as observed and its assumptions
+    (a typical month repeats, the monthly amount for saving put aside first) next to the balance limb's."""
+    est = hero_card(language).estimate
+    assert [n.method for n in est.observed][-1] == "safe_to_spend.budget_limit_7d_eur@1"
+    assert {"spending_as_usual", "reserve_for_unexpected", "cushion", "bills_on_usual_days",
+            "budget_from_usual_month", "savings_goal_first"} == {a.code for a in est.assumptions}
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_the_what_if_assumes_the_coming_months_are_like_the_last(language):
+    codes = [a.code for a in whatif_card(language).estimate.assumptions]
+    assert codes == ["next_months_like_last", "cut_share"]
 
 
 def test_the_closed_list_is_one_list_in_the_tools_the_schema_and_the_contract():

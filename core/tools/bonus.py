@@ -298,10 +298,14 @@ def get_bonus_estimate(ctx: ToolContext, args: GetBonusEstimateArgs | dict | Non
 
 
 def _assumptions(data: BonusEstimateData, language: str) -> list:
-    """#380: the share bought at S Group stores (all of it by default, or the user's own share) and the
-    Bonus level that spending reaches; their Numbers are the card's own."""
+    """#380: the share bought at S Group stores (all of it by default, or the user's own share), the fixed
+    assumptions of the estimate (household, Bonus table, payment card, goods: config.BONUS_ASSUMPTIONS) and the
+    Bonus level that spending reaches; the Numbers are the card's own."""
     share = "bonus.bonus_all_at_s_group" if float(data.share.value) >= 100 else "bonus.bonus_share"
-    return [assumption(share, language, data.share), assumption("bonus.bonus_level", language, data.bonus_percent)]
+    fixed = [assumption(f"bonus.{config.BONUS_ASSUMPTION_CODES[key]}", language)
+             for key in config.BONUS_ASSUMPTIONS if config.BONUS_ASSUMPTION_CODES[key]]   # #503 review
+    return [assumption(share, language, data.share), *fixed,
+            assumption("bonus.bonus_level", language, data.bonus_percent)]
 
 
 def _card(data: BonusEstimateData, language: str) -> Card:

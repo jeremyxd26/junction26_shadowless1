@@ -123,7 +123,7 @@ Fields common to all cards:
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
-| `estimate` | object or null | `{label, text, observed, assumptions}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, the S-Bonus `metric` card, the balance forecast, and the `safe_to_save`, `bills` (pro rata amounts), `peer`, `whatif` and `stores` cards. The app must show `label` (for example "Estimate") and make `text` (the estimate in plain words) reachable. `observed` and `assumptions` (since 0.3.6, #380) separate what was observed from what is assumed: see Estimates below. |
+| `estimate` | object or null | `{label, text, observed, assumptions}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, the S-Bonus `metric` card, the balance forecast, and the `safe_to_save`, `bills` (pro rata amounts), `peer` and `whatif` cards (and the savings plan's `breakdown` card). The app must show `label` (for example "Estimate") and make `text` (the estimate in plain words) reachable. `observed` and `assumptions` (since 0.3.6, #380) separate what was observed from what is assumed: see Estimates below. |
 | `actions` | Action[] | Buttons, at most 2. See below. |
 
 Card-specific fields:
@@ -145,26 +145,31 @@ Card-specific fields:
 | `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `weekly`, `daily` (Numbers, #417): the same headline a week and a day, `monthly` × 7 / 30.4375 (`safe_to_save.week_eur@1`) and `monthly` / 30.4375 (`safe_to_save.day_eur@1`), each a composite whose evidence opens `monthly`. When `monthly` is 0 both are present with 0.00. Each is rounded to cents on its own, so `daily` × 30.4375 can differ from `monthly` by up to about 0.15, and seven times `daily` need not equal `weekly` on screen.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
 
 Estimates (since 0.3.6, #380). Every `estimate` separates what was observed in the customer's transactions from what is assumed, so the app can show "Based on …" and "We assume …" from the structure; the answer text does not list them.
-- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. They are Numbers the tool already computed, with the same values and refs as where they appear elsewhere: on the card (the balance and the bills due before payday for safe to spend), or in the answer's numbers for an input the card does not show (the forecast's balance today and its bills, the S-Bonus share).
+- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. The Numbers inside an estimate (in `observed` and in each assumption's `value`) are complete Number objects: the app reads them from the estimate and never looks them up by id in the answer's `numbers` map, which holds only the Numbers the text cites. Some appear nowhere else in the response (the forecast's daily pace). Where the same Number is on the card too, it has the same value and evidence ref.
 - `assumptions` (`{code, text, value}`[]): what the estimate assumes. `code` is from the closed list below; `text` is one plain sentence in the request language with no digits; `value` is a Number when the assumption uses one (for example the savings goal), else `null`. A `value` with `method` `user_input@1` (the what-if's own cut) has no evidence ref.
-- Every card that sets `estimate` has at least one assumption, except `stores`, which no tool builds yet. The app ignores a code it does not know.
+- Every card that sets `estimate` has at least one assumption. The app ignores a code it does not know.
 
 | `code` | Used by | Meaning (`value`) |
 |---|---|---|
-| `spending_as_usual` | safe to spend; balance forecast | Spending goes on at the recent pace: usual essentials until payday (the essentials reserve); for the forecast, the usual daily pace (the pace). |
+| `spending_as_usual` | safe to spend; balance forecast | Spending goes on at the recent pace: usual essentials until payday (the essentials reserve); for the forecast, the usual everyday spending and essentials at the daily pace, with unexpected costs not counted (the pace). |
 | `reserve_for_unexpected` | safe to spend | A reserve for unexpected costs is kept, as large as recent months needed (the irregular reserve). |
 | `cushion` | safe to spend | A small cushion is kept aside until payday (the cushion). |
-| `savings_goal_first` | safe to spend | The savings goal is set aside first each month (the goal, `safe_to_spend.savings_goal_eur@1`). |
-| `next_months_like_last` | `safe_to_save` | The coming months are like a typical month of the last six (no value). |
+| `savings_goal_first` | safe to spend | A monthly amount for saving, worked out from a typical month, is put aside first (the goal, `safe_to_spend.savings_goal_eur@1`). |
+| `next_months_like_last` | `safe_to_save`; `whatif`; savings plan | The coming months are like the last six (no value). |
 | `cut_share` | `whatif` | The customer's own cut of the selected spending, the rest unchanged (the cut, `user_input@1`). |
 | `bonus_all_at_s_group` | S-Bonus | All grocery shopping is at S Group stores: a what-if, not a fact (the share, 100%). |
 | `bonus_share` | S-Bonus | The given share of grocery shopping is at S Group stores (the share). |
 | `bonus_level` | S-Bonus | The Bonus level is the one that monthly spending reaches (the Bonus percentage). |
 | `bills_pro_rata` | `bills` | Bills paid several times a month count pro rata until payday (no value). |
 | `peer_group` | `peer` | The comparison group; only group statistics are shown (the group size). |
-| `bills_on_usual_days` | balance forecast | Bills come on their usual days (no value). |
+| `bills_on_usual_days` | safe to spend; balance forecast | Bills come on their usual days, at their usual amounts (no value). |
 | `no_income_before_payday` | balance forecast | Salary and other money coming in before payday are not counted (no value). |
-| `cuts_as_shown` | savings plan | The plan's cuts happen as shown and the rest of spending stays as it is (no value). |
+| `cuts_as_shown` | savings plan | The plan's cut happens as shown and the rest of spending stays as it is; one per lever (the cut share). |
+| `budget_from_usual_month` | safe to spend | Income, regular bills and usual essentials of a typical month repeat, as in the last months: the budget limit (no value). |
+| `bonus_household` | S-Bonus | The customer is the only shopper in a co-op household (no value). |
+| `bonus_table` | S-Bonus | The default Bonus table applies, not the KPO or Koillismaa table (no value). |
+| `bonus_payment_card` | S-Bonus | Payment with an S-Etukortti Visa, which adds the payment benefit (no value). |
+| `bonus_goods` | S-Bonus | None of it is alcohol, tobacco or lottery, which earn no Bonus (no value). |
 
 Examples for the estimate kinds that have no card example here:
 
@@ -207,6 +212,26 @@ The S-Bonus estimate's `estimate` for Sanna (the `metric` card of `get_bonus_est
         "label": "Assumed share at S-Group stores",
         "display": "100%"
       }
+    },
+    {
+      "code": "bonus_household",
+      "text": "You are the only shopper in a co-op household.",
+      "value": null
+    },
+    {
+      "code": "bonus_table",
+      "text": "The default Bonus table applies, not the KPO or Koillismaa table.",
+      "value": null
+    },
+    {
+      "code": "bonus_payment_card",
+      "text": "You pay with an S-Etukortti Visa, which adds the payment benefit.",
+      "value": null
+    },
+    {
+      "code": "bonus_goods",
+      "text": "None of it is alcohol, tobacco or lottery, which earn no Bonus.",
+      "value": null
     },
     {
       "code": "bonus_level",
@@ -267,7 +292,7 @@ The balance forecast's `estimate` for Sanna (the `breakdown` card of `get_balanc
   "assumptions": [
     {
       "code": "spending_as_usual",
-      "text": "You keep spending as usual: the middle one of your last three full months' daily averages.",
+      "text": "Your usual everyday spending and essentials continue, at the middle one of your last three full months' daily averages; unexpected costs are not counted.",
       "value": {
         "value": 66.79,
         "unit": "eur_per_day",
@@ -442,12 +467,7 @@ The host message it sends:
   "title": "Your grocery stores",
   "subtitle": "Price level per visit, last 12 months",
   "evidence_ref": "ev_p5r7t9v1x3z5",
-  "estimate": {
-    "label": "Estimate",
-    "text": "The data has receipt totals, not shelf prices. A higher level means people pay more per visit there, which mixes prices with basket size.",
-    "observed": [],
-    "assumptions": []
-  },
+  "estimate": null,
   "items": [
     {
       "merchant": { "id": "MRC-GRO-0035", "label": "Grocery store A" },
@@ -635,6 +655,11 @@ The host message it sends:
       }
     ],
     "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
       {
         "code": "cut_share",
         "text": "You cut this spending by the share you chose, and the rest stays as it is.",
@@ -1439,6 +1464,19 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           "evidence_ref": "ev_u6b8d0f2h4j6",
           "label": "Bills before payday",
           "display": "€842.19"
+        },
+        {
+          "value": 248.5,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_s5t7w9y1a3c5",
+          "label": "Your monthly budget allows",
+          "display": "€248.50"
         }
       ],
       "assumptions": [
@@ -1494,8 +1532,18 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
           }
         },
         {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
           "code": "savings_goal_first",
-          "text": "Your savings goal is set aside first each month.",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
           "value": {
             "value": 430.0,
             "unit": "eur_per_month",
@@ -2348,6 +2396,19 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
           "evidence_ref": "ev_pn0b2i4l6l8s",
           "label": "Bills before payday",
           "display": "€928.50"
+        },
+        {
+          "value": 138.79,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_pn8b0u2d4g6t",
+          "label": "Your monthly budget allows",
+          "display": "€138.79"
         }
       ],
       "assumptions": [
@@ -2403,8 +2464,18 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
           }
         },
         {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
           "code": "savings_goal_first",
-          "text": "Your savings goal is set aside first each month.",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
           "value": {
             "value": 360.0,
             "unit": "eur_per_month",
@@ -3453,6 +3524,11 @@ A store switch is not a what-if scenario. It is shown in the `stores` card with 
       }
     ],
     "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
       {
         "code": "cut_share",
         "text": "You cut this spending by the share you chose, and the rest stays as it is.",

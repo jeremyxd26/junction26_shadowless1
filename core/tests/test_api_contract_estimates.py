@@ -50,12 +50,10 @@ def estimates_in(name: str, raw) -> list[tuple[str, str | None, dict]]:
 
 def test_every_example_estimate_says_what_it_observed_and_what_it_assumes():
     found = [e for name, raw in examples().items() for e in estimates_in(name, raw)]
-    assert len(found) >= 16
+    assert len(found) >= 15                     # the stores example has `estimate: null` until a tool builds it
     for name, card_type, est in found:
         assert {"observed", "assumptions"} <= set(est), name
-        if card_type == "stores":                                   # no tool builds the stores card yet
-            assert est["observed"] == [] and est["assumptions"] == [], name
-            continue
+        assert card_type != "stores", name
         assert est["observed"] and est["assumptions"], name
         for a in est["assumptions"]:
             assert a["code"] in ASSUMPTION_CODES, (name, a["code"])
