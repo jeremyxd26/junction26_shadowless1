@@ -193,3 +193,19 @@ def test_the_profile_answer_names_the_type_before_its_numbers():
                        ("fi", "Kuluttajaprofiilisi: Big ticket. A few large purchases shape your months.")]:
         text = template_draft([view], [], lang, None, "What kind of spender am I?")["text"]
         assert text.startswith(lead) and "{{n90}}" in text
+
+
+
+@pytest.mark.parametrize("binding,lang,reason", [
+    ("budget", "en", "because your monthly budget is the limit ({{n9}}); your balance would allow more ({{n8}})."),
+    ("balance", "en", "because your balance is the limit ({{n8}}); your monthly budget would allow more ({{n9}})."),
+    ("budget", "fi", "koska kuukausibudjettisi on raja ({{n9}}); saldosi sallisi enemmän ({{n8}})."),
+])
+def test_safe_to_spend_is_one_sentence_with_the_binding_limit(binding, lang, reason):
+    # After #246: the amount and which limit binds, the same three numbers as before.
+    view = {**SAFE, "binding_limit": binding, "balance_limit": n(8, 5864.86 if binding == "budget" else 120.0),
+            "budget_limit": n(9, 180.26)}
+    draft = template_draft([view], [], lang, None, "What can I safely spend this week?")
+    assert sorted(draft["cited"]) == ["n6", "n8", "n9"]
+    assert draft["text"].startswith(("Safe to spend in the coming week: {{n6}}", "Turvallisesti")) and reason in draft["text"]
+    assert not any(c.isdigit() for c in draft["text"].replace("{{n6}}", "").replace("{{n8}}", "").replace("{{n9}}", ""))
