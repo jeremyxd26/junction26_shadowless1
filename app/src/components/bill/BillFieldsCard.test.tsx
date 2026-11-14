@@ -60,3 +60,22 @@ describe('BillFieldsCard: checked marks and notes (contract 0.3.7)', () => {
     expect(html.split(checkedWord).length - 1).toBe(1 + 1)
   })
 })
+
+describe('BillFieldsCard: a failed check digit stays the most visible thing (the review)', () => {
+  it('shows the warning first, repeats it over the button, and the button says Explain anyway', () => {
+    const withFail: BillReadResponse = structuredClone(reading)
+    withFail.fields.reference = { ...withFail.fields.reference!, status: 'unchecked', note: 'This reference number does not pass its check.' }
+    const html = renderToStaticMarkup(<BillFieldsCard reading={withFail} busy={false} error={null} onConfirm={() => {}} />)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('The reference number does not pass its check digit.')
+    expect(html.split('Check the reference number before paying.').length - 1).toBe(2)
+    expect(html).toContain('>Explain anyway</button>')
+    expect(html).not.toContain('Looks right, explain it')
+  })
+
+  it('without a failed check: no warning, "Looks right, explain it"', () => {
+    const html = card(null)
+    expect(html).not.toContain('before paying')
+    expect(html).toContain('>Looks right, explain it</button>')
+  })
+})
