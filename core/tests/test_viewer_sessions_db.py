@@ -263,3 +263,39 @@ def test_a_full_session_cannot_answer_another_review(db_conn, monkeypatch):
         reviews.save_answer(db_conn, key, reviews.decide(first, "unexpected_necessities", now).review, now)
         with pytest.raises(reviews.TooManyAnswers):
             reviews.save_answer(db_conn, key, reviews.decide(second, "everyday_spending", now).review, now)
+
+
+# due before payday (15 Oct), so 03 runs again with the viewer's labels and the bill
+BILL_FIELDS = {"payee": "Esimerkki Remontti Oy", "iban": "FI71 1234 5600 0098 76", "reference": "12344",
+               "amount": "145.00", "due_date": "2026-10-10"}
+
+
+def bill(client, value: str | None) -> dict:
+    as_viewer(client, value)
+    r = client.post("/api/bill/explain", json={"customer_id": LEAD, "language": "en", "fields": BILL_FIELDS})
+    assert r.status_code == 200, r.text
+    return r.json()["safe_to_spend"]
+
+
+def test_the_bill_explanation_starts_from_the_viewers_own_state(client, db_conn):
+    """#242, after the review of #199: after A taps "Needed", A's bill starts from A's hero, and its "after"
+    is 03 run again with A's labels and the bill; B and a viewer without a cookie still see the hero of the
+    pending state."""
+    from core.tools import evidence
+
+    review = overview(client, A).json()["reviews"][0]
+    pending = bill(client, A)
+    answer(client, A, review["tx_ref"], "unexpected_necessities")    # A: "Needed"
+    a, b, fresh = bill(client, A), bill(client, B), bill(client, None)
+    assert a["before"]["value"] == overview(client, A).json()["hero"]["primary"]["value"] == 180.26
+    assert b["before"] == fresh["before"] == pending["before"]
+    assert b["before"]["value"] == overview(client, B).json()["hero"]["primary"]["value"] == 221.58
+    assert a["before"]["evidence_ref"] != b["before"]["evidence_ref"]        # computed with A's labels
+    for s in (a, b):   # each from its own state, the bill added in full
+        assert s["effect"] == "full"
+        assert round(s["free_until_payday_before"]["value"] - s["free_until_payday_after"]["value"], 2) == 145.0
+    after = evidence.resolve(db_conn, a["after"]["evidence_ref"], LEAD)
+    balance = evidence.resolve(db_conn, after.parts[0]["ref"], LEAD)
+    assert after.reconciles is True and balance.reconciles is True
+    settings = balance.spec["source"]["settings"]
+    assert settings["extra_bill_due_eur"] == "145.00" and "tx_labels" in settings   # A's labels and the bill

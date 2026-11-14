@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 
 from core.app.api import errors, schemas, texts
 from core.tools import config as tools_config
+from core.tools import models as tool_models
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
@@ -54,8 +55,9 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.request_fields": schemas.BillExplainRequest,
     "bill.response": schemas.BillExplainResponse,
     "bill.response_unknown": schemas.BillExplainResponse,
-    # bill.error joins with #242, which adds invalid_bill and its `reason` (PENDING_ERROR_CODES);
-    # bill.read_response with #250 (section 11.4, not implemented yet)
+    "bill.error": schemas.BillErrorResponse,                # #242: invalid_bill with its `reason`
+    # bill.read_response joins with #250 (section 11.4, not implemented yet)
+    "action.open_host_screen": schemas.OpenHostScreenAction,   # contract 0.3.1 (#267)
 }
 
 # Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
@@ -68,9 +70,8 @@ ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {}
 # Whoever implements one removes it here: test_pending_entries_are_still_missing fails while a field
 # is both implemented and listed. Empty since #165 implemented `safe_to_save` (both overview examples).
 PENDING: dict[str, set[str]] = {}
-# Error codes the models do not have yet: invalid_bill comes with the bill endpoint (#242),
-# model_unavailable with the bill reading (#250).
-PENDING_ERROR_CODES: set[str] = {"invalid_bill", "model_unavailable"}
+# Error codes the models do not have yet: model_unavailable comes with the bill reading (#250).
+PENDING_ERROR_CODES: set[str] = {"model_unavailable"}
 # Error codes the service has ahead of the contract. Empty since contract 0.2.2 (not_found is in it).
 ERROR_CODE_ADDITIONS: set[str] = set()
 
@@ -225,6 +226,10 @@ def test_enums_match_the_contract_text():
     request_fields = {"customer_id", "scenario", "language"}
     kinds_table = set(re.findall(r"^\| `([a-z_]+)` \| ", whatif, re.M)) - request_fields
     assert set(typing.get_args(schemas.SelectionKind)) == kinds_table
+    # #267: the closed target list of open_host_screen, in the API schema, the tool model and the Actions table
+    host_row = backticked(r"^\| `open_host_screen` \|") - {"open_host_screen", "label", "target",
+                                                           "sentti.openHostScreen", "{target}"}
+    assert literal_values(schemas.OpenHostScreenAction, "target") == set(tool_models.HOST_SCREEN_TARGETS) == host_row
 
 
 # ---- every method id a tool can emit has a name and a unit (texts.METHODS) ---------------------------

@@ -10,12 +10,22 @@
 // - Evidence: the two contract examples by ref. Other refs that appear in a mock overview get an
 //   evidence object built only from that overview's own data (see buildEvidence). The examples
 //   hold only a first page of rows, so a request with a cursor gets an empty last page.
+// - Labels (POST /api/baskets/label): the contract's label examples. The mock remembers the answer
+//   for this page load, and the next overview carries the example's `after` numbers, no review and
+//   no waiting row. Undoing "I chose it" has no example: it is the "I chose it" example run backwards.
+//   The basket shares of that overview are the basket amounts over the total, as the core counts
+//   them (metrics.md, baskets.share_pct); the contract has no post-answer overview example.
 import type { ApiClient } from '../client.ts'
 import { ApiError } from '../errors.ts'
+import { applyChanges, isBasketsCard } from '../../lib/changes.ts'
 import type {
+  BasketKey,
   ErrorEnvelope,
   Language,
   EvidenceResponse,
+  LabelChange,
+  LabelRequest,
+  LabelResponse,
   MetricCard,
   Num,
   OverviewResponse,
@@ -35,6 +45,10 @@ const examples = contract.examples as unknown as {
   'evidence.response': EvidenceResponse
   'evidence.response_composite': EvidenceResponse
   'error.response': ErrorEnvelope
+  'label.response': LabelResponse
+  'label.response_wanted': LabelResponse
+  'label.response_undo': LabelResponse
+  'label.error': ErrorEnvelope
   'card.safe_to_save': SafeToSaveCard
   'card.safe_to_save_aleksi': SafeToSaveCard
   'card.safe_to_save_zero': SafeToSaveCard
@@ -182,10 +196,97 @@ function placeholderEvidence(number: Num): EvidenceResponse {
   }
 }
 
+/** The answer the customer gave in this page load, by customer. */
+const answers: Record<string, BasketKey> = {}
+
+/** The contract example for an answer. */
+function answerExample(basket: BasketKey): LabelResponse {
+  return clone(basket === 'everyday_spending' ? examples['label.response_wanted'] : examples['label.response'])
+}
+
+function reversed(changes: LabelChange[]): LabelChange[] {
+  return changes.map((change) => ({ ...change, before: change.after, after: change.before }))
+}
+
+/** Two moves in a row as one: the first `before`, the last `after`; numbers that end where they began drop out. */
+function chained(first: LabelChange[], second: LabelChange[]): LabelChange[] {
+  const merged = new Map<string, LabelChange>()
+  for (const change of [...first, ...second]) {
+    const earlier = merged.get(change.key)
+    merged.set(change.key, earlier ? { ...change, before: earlier.before } : change)
+  }
+  return [...merged.values()].filter((change) => change.before.value !== change.after.value)
+}
+
+/** Shares as the core counts them: each basket amount over the total, in percent, one decimal. */
+function withShares(overview: OverviewResponse): OverviewResponse {
+  return {
+    ...overview,
+    cards: overview.cards.map((card) => {
+      if (!isBasketsCard(card) || card.total.value <= 0) return card
+      const items = card.items.map((item) => {
+        if (!item.share) return item
+        const value = Math.round((item.amount.value / card.total.value) * 1000) / 10
+        return { ...item, share: { ...item.share, value, display: `${value.toFixed(1)}%` } }
+      })
+      return { ...card, items }
+    }),
+  }
+}
+
+/** The overview as the core would serve it now: pending, or with the answer applied. */
+function currentOverview(customerId: string): OverviewResponse | undefined {
+  const base = OVERVIEWS[customerId]
+  const basket = answers[customerId]
+  if (!base || !basket) return base
+  const answered = applyChanges(clone(base), answerExample(basket).changes)
+  return withShares({
+    ...answered,
+    reviews: [],
+    cards: answered.cards.map((card) =>
+      isBasketsCard(card) ? { ...card, items: card.items.filter((item) => item.key !== 'unclassified') } : card,
+    ),
+  })
+}
+
+const TX_REF_NOT_FOUND = {
+  code: 'tx_ref_not_found',
+  message: 'This question is no longer open.',
+  retryable: false,
+}
+
+function label(request: LabelRequest): LabelResponse {
+  const base = OVERVIEWS[request.customer_id]
+  if (!base) throw new ApiError(404, examples['error.response'].error)
+  const review = base.reviews[0]
+  if (!review || review.tx_ref !== request.tx_ref) throw new ApiError(404, TX_REF_NOT_FOUND)
+  if (request.basket !== null && !review.options.some((option) => option.basket === request.basket)) {
+    throw new ApiError(422, examples['label.error'].error)
+  }
+
+  const current = answers[request.customer_id] ?? null
+  if (request.basket === current) {
+    // Idempotent: the same answer again changes nothing.
+    const same = current ? answerExample(current) : clone(examples['label.response_undo'])
+    return { ...same, changed: false, changes: [] }
+  }
+  if (request.basket === null && current) {
+    delete answers[request.customer_id]
+    return { ...clone(examples['label.response_undo']), changes: reversed(answerExample(current).changes) }
+  }
+  const basket = request.basket as BasketKey
+  answers[request.customer_id] = basket
+  const response = answerExample(basket)
+  if (current) response.changes = chained(reversed(answerExample(current).changes), response.changes)
+  return response
+}
+
 function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   if (EVIDENCE[ref]) return clone(EVIDENCE[ref])
-  const overview = OVERVIEWS[customerId]
-  if (overview) {
+  // The overview as served now first, then the pending one: refs from before an answer stay valid.
+  const overviews = [currentOverview(customerId), OVERVIEWS[customerId]]
+  for (const overview of overviews) {
+    if (!overview) continue
     if (overview.hero && (overview.hero.primary.evidence_ref === ref || overview.hero.evidence_ref === ref)) {
       return heroEvidence(overview.hero)
     }
@@ -277,7 +378,7 @@ export function createMockClient(): ApiClient {
       }),
     overview: (customerId: string) =>
       later(() => {
-        const overview = OVERVIEWS[customerId]
+        const overview = currentOverview(customerId)
         if (!overview) throw new ApiError(404, examples['error.response'].error)
         return clone(overview)
       }),
@@ -287,6 +388,7 @@ export function createMockClient(): ApiClient {
         // The contract shows only the first page of rows; any next page is empty and the last.
         return cursor ? { ...evidence, rows: [], next_cursor: null } : evidence
       }),
+    label: (request: LabelRequest) => later(() => label(request)),
     // About the dev host's speed (0.5 s), so the sheet's loading state shows in mock mode too.
     whatIf: (_customerId: string, scenario: WhatIfScenarioRequest, lang: Language) =>
       later(() => mockWhatIf(scenario, lang), 500),

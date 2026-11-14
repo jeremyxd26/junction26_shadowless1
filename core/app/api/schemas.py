@@ -86,7 +86,16 @@ class OpenWhatifAction(Model):
     scenario: dict
 
 
-Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction], Field(discriminator="type")]
+class OpenHostScreenAction(Model):
+    """Open a screen of the host app (contract 0.3.1, #267). The app sends the host message
+    `sentti.openHostScreen` with `{target}` only; the target list is closed."""
+    type: Literal["open_host_screen"]
+    label: str
+    target: Literal["monthly_saving", "bonus_to_fund"]
+
+
+Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction, OpenHostScreenAction],
+                   Field(discriminator="type")]
 
 
 class CardBase(Model):
@@ -224,13 +233,30 @@ class ErrorBody(Model):
     code: Literal["invalid_request", "customer_not_found", "evidence_not_found", "evidence_forbidden",
                   "invalid_scenario", "tx_ref_not_found", "basket_not_allowed", "rate_limited",
                   "data_unavailable", "llm_unavailable", "internal",
-                  "not_found"]  # not_found: contract addition (#79), an unknown route
+                  "not_found",  # not_found: contract addition (#79), an unknown route
+                  "invalid_bill"]  # the bill explanation (#242); its body adds `reason` (BillErrorBody)
     message: str
     retryable: bool
 
 
 class ErrorResponse(Model):
     error: ErrorBody
+
+
+BillRefusalReason = Literal["one_of_barcode_or_fields", "payee_with_fields", "barcode_length", "barcode_version",
+                            "barcode_chars", "barcode_check", "due_date", "amount_missing", "due_date_missing",
+                            "amount_too_large"]
+
+
+class BillErrorBody(ErrorBody):
+    """A 422 invalid_bill: the envelope plus `reason`; `message` is that reason's sentence (section 11.1)."""
+
+    code: Literal["invalid_bill"]
+    reason: BillRefusalReason
+
+
+class BillErrorResponse(Model):
+    error: BillErrorBody
 
 
 # ---- GET /api/personas (section 5) -----------------------------------------------------------------

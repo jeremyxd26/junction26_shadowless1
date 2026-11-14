@@ -55,6 +55,11 @@ KNOWN_TOOLS = [
               "(the share only if the user gave one, else the default), with fixed assumptions. An estimate; "
               "never says where the user shops. Returns numbers with ids; cite them as {{id}}.",
               ("Estimating your S-Bonus", "Arvioin S-Bonuksesi")),
+    KnownTool("core.tools.forecast", "get_balance_forecast", "GetBalanceForecastArgs",
+              "The balance from today to the day before payday if the user spends as usual: the lowest projected "
+              "balance and its date, whether it goes below zero, the bills before payday and the usual spending a "
+              "day. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              ("Projecting your balance until payday", "Ennustan saldosi palkkapäivään asti")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
               "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
               "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",

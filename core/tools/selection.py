@@ -6,6 +6,7 @@ A `Selection` is the data part of an evidence spec. Every tool and evidence reso
 
 from __future__ import annotations
 
+import calendar
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -37,6 +38,7 @@ class Selection:
                                         # purchases (metrics.md section 2); replaces the flow filter
     series_keys: tuple[str, ...] | None = None  # several series (the bills due total); () = none
     tx_ids: tuple[int, ...] | None = None       # exactly these transactions (a reviewed purchase, #68)
+    series_not_in: tuple[str, ...] = ()         # leave out these recurring series (the bills, #257)
 
     def to_spec(self) -> dict[str, Any]:
         spec: dict[str, Any] = {
@@ -56,6 +58,8 @@ class Selection:
             spec["series_keys"] = list(self.series_keys)
         if self.tx_ids is not None:
             spec["tx_ids"] = list(self.tx_ids)
+        if self.series_not_in:  # only when set, so refs of other numbers do not change
+            spec["series_not_in"] = list(self.series_not_in)
         return spec
 
     @classmethod
@@ -75,6 +79,7 @@ class Selection:
             series_key=spec.get("series_key"),
             series_keys=tuple(spec["series_keys"]) if "series_keys" in spec else None,
             tx_ids=tuple(int(i) for i in spec["tx_ids"]) if "tx_ids" in spec else None,
+            series_not_in=tuple(spec.get("series_not_in") or ()),
         )
 
     def with_group(self, by: str, key: str | None = None, not_in: tuple[str, ...] = ()) -> Selection:
@@ -127,6 +132,8 @@ def select(rows: list[CTx], sel: Selection) -> list[CTx]:
             continue
         if sel.tx_ids is not None and c.tx.id not in sel.tx_ids:
             continue
+        if sel.series_not_in and series_key_of(c) in sel.series_not_in:
+            continue
         if sel.baskets and c.basket not in sel.baskets:
             continue
         if sel.mcc_groups and c.mcc_group not in sel.mcc_groups:
@@ -161,7 +168,8 @@ MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_m
                      config.METHODS["peer_you"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}
 SCALED_MEDIAN_METHODS = {config.METHODS["bill_due"]}
-SUM_OF_SCALED_MEDIANS_METHODS = {config.METHODS["bills_due"]}
+SUM_OF_SCALED_MEDIANS_METHODS = {config.METHODS["bills_due"], config.METHODS["bills_to_date"]}
+DAILY_PACE_METHODS = {config.METHODS["daily_pace"]}
 
 
 def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any] | None = None) -> Decimal:
@@ -177,6 +185,9 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
     - safe_to_spend.bills_due_eur: the same unrounded term for every series in params["factors"]
       ({series key: [factor_num, factor_den]}), summed and rounded once, exactly as 03 computes
       bills_due_eur (metrics wins: the per-bill items, each rounded, may differ from it by 0.01 each).
+      balance_forecast.bills_to_date_eur: the same, with the factors of the days up to one date (#257).
+    - balance_forecast.daily_pace_eur: for each month in params["months"] ("YYYY-MM"), the selected
+      amounts of that month / its number of days; the median of those daily averages, rounded once.
     """
     if method in SUM_METHODS:
         return money(sum((amount(c, sel.direction) for c in rows), Decimal("0")))
@@ -203,4 +214,11 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
             if totals:
                 total += statistics.median(totals) * Decimal(str(num)) / Decimal(str(den))
         return money(total)
+    if method in DAILY_PACE_METHODS:
+        by_month: dict[str, Decimal] = defaultdict(Decimal)
+        for c in rows:
+            by_month[month_key(c.tx.tx_date)] += amount(c, sel.direction)
+        months = (params or {})["months"]
+        daily = [by_month[m] / calendar.monthrange(int(m[:4]), int(m[5:7]))[1] for m in months]
+        return money(statistics.median(daily)) if daily else Decimal("0.00")
     raise ValueError(f"method {method!r} is not a transactions method")

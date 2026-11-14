@@ -274,6 +274,28 @@ SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|
                    + RELATION)
 
 
+# "Will my money last until payday?" (#257). It needs the money or balance phrasing, so a bills
+# question that only mentions payday still goes to the bills; Finnish with or without ä and ö. A
+# question about the past ("since last payday", "what was my balance") is not a forecast.
+PAYDAY = (r"(?:pay ?day|next salary|(?:my )?salary (?:arrives|comes|lands|is paid)|palkkap[äa]iv\w*|palkka\w*|"
+          r"palkan tulo\w*)")
+FORECAST_PAST = (r"\b(?:was|were|did|had|since|oli|olivat|oliko|olivatko)\b|"
+                 r"\blast (?:month|week|year|payday)\b|\bviime\w*\b")
+FORECAST = (r"^(?!.*(?:" + FORECAST_PAST + r")).*?(?:"
+            r"\b(?:money|cash|balance|savings|it)\b.{0,20}\blast\s+(?:until|till|to|through|before)\b.{0,15}"
+            + PAYDAY + "|"
+            r"\benough (?:money|cash)\b.{0,25}" + PAYDAY + "|"
+            r"\benough\b.{0,20}\blast\s+(?:until|till|to)\b.{0,15}" + PAYDAY + "|"
+            r"\bbalance\b.{0,30}\b(?:before|until|till|by)\b.{0,10}" + PAYDAY + "|"
+            r"what will my balance be|balance forecast|forecast (?:of )?my balance|how low will my balance|"
+            r"\blowest (?:point|balance)\b.{0,30}\b(?:before|until|till)\b.{0,10}" + PAYDAY + "|"
+            r"run out of money|make it (?:to|until|till) " + PAYDAY + "|"
+            r"riitt(?:[äa]v[äa]tk[öo]|[äa][äa]k[öo])\b.{0,40}" + PAYDAY + "|"
+            r"\bsaldo\w*\b.{0,30}\bennen\b.{0,10}" + PAYDAY + "|"
+            r"\bsaldo\w*\b.{0,30}" + PAYDAY + r"\s+(?:asti|mennessä|mennessa)\b|"
+            r"p[äa]rj[äa][äa]nk[öo]\b.{0,30}" + PAYDAY + "|"
+            r"loppu(?:vatko|uko)\b.{0,20}\brah|\brah\w*\b.{0,20}loppu(?:vatko|uko))")
+
 # The intents the rules know, each with its own full pattern (#316, #340). Which one claims a message is
 # decided in claim() below.
 # 1. "Where did my money go?": where the money goes, what it goes to most, a breakdown.
@@ -339,6 +361,7 @@ INTENTS = [
     ("where_money_went", WHERE),
     ("safe_to_spend", SAFE),
     ("spender_type", SPENDER),
+    ("balance_forecast", FORECAST),   # "Will my money last until payday?" (#257)
     # Bills, payday and income: the template's own matchers, so the answer cites what was asked.
     ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS),
     ("bonus", BONUS),
@@ -427,6 +450,7 @@ def meta_intent(question: str) -> str | None:
 PRECEDENCE = {
     ("bonus", "recurring_bills"), ("bonus", "what_if"), ("bonus", "spending"), ("bonus", "peers"),
     ("safe_to_spend", "spending"), ("safe_to_spend", "recurring_bills"),
+    ("balance_forecast", "recurring_bills"), ("balance_forecast", "spending"),   # payday words (#257)
     ("bonus", "where_money_went"), ("bonus", "safe_to_spend"),
     ("where_money_went", "spending"),
     ("spender_type", "peers"), ("spender_type", "spending"),
@@ -443,6 +467,7 @@ CANDIDATE_QUESTIONS = {
     "spending": ("How much did I spend this month?", "Paljonko käytin tässä kuussa?"),
     "recurring_bills": ("Which bills are coming up next?", "Mitkä laskut ovat tulossa seuraavaksi?"),
     "bonus": ("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"),
+    "balance_forecast": ("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
     "peers": ("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
 }
 CLARIFY_WHICH = ("Which of these do you mean?", "Mitä näistä tarkoitat?")
@@ -571,6 +596,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
                         tools, lang)
     if intent == "recurring_bills":
         return _claimed(intent, [("get_recurring_bills", {})], tools, lang)
+    if intent == "balance_forecast":
+        return _claimed(intent, [("get_balance_forecast", {})], tools, lang)
     if intent == "bonus":
         share = plan_bonus(q)
         if share is None:

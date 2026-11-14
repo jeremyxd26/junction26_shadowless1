@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import type { Action, BreakdownCard, Insight, MetricCard, Num, ReviewCard, SafeToSpendStatus } from '../api/types.ts'
+import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
+import { BASKETS } from '../lib/baskets.ts'
+import type { Count } from '../lib/motion.ts'
 import { navigate, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
@@ -58,6 +60,39 @@ export function ActionButton({ action, onHero = false }: { action: Action; onHer
   return null
 }
 
+/**
+ * How the overview's numbers move after a review answer (#35). Keys are the label response's
+ * `changes[].key`: `safe_to_spend`, `irregular_reserve` and the basket keys.
+ */
+export interface NumberMotion {
+  /** Counter runs from the `before` value, by key. */
+  counts: Record<string, Count>
+  /** "was …" hints (the `before` Number), by key, while they show. */
+  was: Record<string, Num>
+  /** The answer left safe to spend as it was: the hero says "stays the same". */
+  steady: boolean
+  /** The basket row the purchase moved to, tinted while the hints show. */
+  highlight: string | null
+  /** The waiting row after an answer: kept while its amount counts to zero, then faded out. */
+  waiting: 'keep' | 'leave' | null
+}
+
+function Arrow({ down }: { down: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={`size-4 shrink-0 ${down ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M12 5v14M6 13l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export function Check({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={`shrink-0 ${className}`} fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 /** The green safe-to-spend block: no border, no shadow, everything white or on-hero-muted. */
 const HERO_BLOCK = 'rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint'
 
@@ -68,22 +103,39 @@ const statusDot: Record<SafeToSpendStatus, string> = {
 }
 
 /** The weekly safe-to-spend block: one primary number, one line about the reserve. */
-export function HeroCard({ card }: { card: MetricCard }) {
+export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
   const { t } = useSettings()
   const status = card.status ?? 'ok'
   const reserve = card.components.find((component) => component.key === 'irregular_reserve')
+  const wasPrimary = motion?.was.safe_to_spend
+  const wasReserve = motion?.was.irregular_reserve
   const estimate = useEstimateToggle()
   return (
     <section className={HERO_BLOCK}>
       <div className="flex items-start justify-between gap-3">
-        <h2 className="min-w-0 pt-3 text-sm font-semibold text-on-hero-muted">{card.title}</h2>
+        <div className="min-w-0 pt-3">
+          <h2 className="text-sm font-semibold text-on-hero-muted">{card.title}</h2>
+          {card.subtitle && <p className="text-sm text-on-hero-muted">{card.subtitle}</p>}
+        </div>
         {card.estimate && <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />}
       </div>
       {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} onHero />}
 
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <NumberChip number={card.primary} size="hero" tone="hero" />
-        {card.subtitle && <span className="text-sm text-on-hero-muted">{card.subtitle}</span>}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <NumberChip number={card.primary} size="hero" tone="hero" count={motion?.counts.safe_to_spend} />
+        {/* After a review answer: never red, never grey on the green block (DESIGN.md, #35). */}
+        {wasPrimary && (
+          <span className="motion-fade inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted">
+            <Arrow down={wasPrimary.value > card.primary.value} />
+            {t.was(wasPrimary.display)}
+          </span>
+        )}
+        {!wasPrimary && motion?.steady && (
+          <span className="motion-fade inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted">
+            <Check />
+            {t.staysSame}
+          </span>
+        )}
       </div>
       <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-on-hero">
         <span aria-hidden="true" className={`size-2.5 rounded-pill ${statusDot[status] ?? statusDot.ok}`} />
@@ -92,7 +144,9 @@ export function HeroCard({ card }: { card: MetricCard }) {
 
       {reserve && (
         <p className="mt-3 text-base leading-8 text-on-hero">
-          {reserve.label} <NumberChip number={reserve.amount} size="inline" /> {t.keptAside}.
+          {reserve.label} <NumberChip number={reserve.amount} size="inline" count={motion?.counts.irregular_reserve} />{' '}
+          {wasReserve && <span className="motion-fade text-on-hero-muted">({t.was(wasReserve.display)}) </span>}
+          {t.keptAside}.
         </p>
       )}
 
@@ -119,67 +173,65 @@ export function HeroPending() {
   )
 }
 
-const BASKETS: Record<string, { icon: string; color: string; tint: string; bar: string }> = {
-  regular_essentials: {
-    icon: '🏠',
-    color: 'text-basket-essentials',
-    tint: 'bg-basket-essentials-tint',
-    bar: 'bg-basket-essentials',
-  },
-  unexpected_necessities: {
-    icon: '🔧',
-    color: 'text-basket-unexpected',
-    tint: 'bg-basket-unexpected-tint',
-    bar: 'bg-basket-unexpected',
-  },
-  everyday_spending: {
-    icon: '☕️',
-    color: 'text-basket-everyday',
-    tint: 'bg-basket-everyday-tint',
-    bar: 'bg-basket-everyday',
-  },
-  unclassified: { icon: '?', color: 'text-waiting', tint: 'bg-waiting-tint', bar: 'bg-line-strong' },
-}
-
-/** The three baskets, always icon + label + colour; a pending purchase shows as a fourth, neutral row. */
-export function BasketsCard({ card }: { card: BreakdownCard }) {
-  const items = card.items.filter((item) => item.key in BASKETS)
+/**
+ * The three baskets, always icon + label + colour; a pending purchase shows as a fourth, neutral
+ * row. Rows follow DESIGN.md "Basket row": tile, label, the amount on the right, a 6 px bar under it.
+ */
+export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: NumberMotion }) {
+  const { t } = useSettings()
+  // The waiting row is shown only while something waits (or while it fades out after an answer).
+  const items = card.items.filter(
+    (item) => item.key in BASKETS && !(item.key === 'unclassified' && item.amount.value <= 0 && !motion?.waiting),
+  )
   const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className={CARD_TITLE}>{card.title}</h2>
+          <h2 id="baskets-title" tabIndex={-1} className={`${CARD_TITLE} outline-none`}>
+            {card.title}
+          </h2>
           {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
         </div>
         {card.estimate && <EstimateBadge estimate={card.estimate} control={estimate.control} />}
       </div>
       {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
 
-      {/* Visual only: widths follow the API's share numbers; the numbers themselves are the chips below. */}
-      <div aria-hidden="true" className="mt-4 flex h-3 w-full gap-0.5 overflow-hidden rounded-pill bg-sunken">
-        {items.map((item) => (
-          <div key={item.key} className={BASKETS[item.key].bar} style={{ width: `${item.share?.value ?? 0}%` }} />
-        ))}
-      </div>
-
       <ul className="mt-3 flex flex-col">
         {items.map((item) => {
           const look = BASKETS[item.key]
+          const was = motion?.was[item.key]
+          const highlighted = motion?.highlight === item.key
+          const leaving = item.key === 'unclassified' && motion?.waiting === 'leave'
           return (
-            <li key={item.key} className="flex gap-3 border-b border-line py-2.5 last:border-b-0">
-              <span
-                aria-hidden="true"
-                className={`inline-flex size-10 shrink-0 items-center justify-center rounded-pill text-lg font-bold ${look.tint} ${look.color}`}
-              >
-                {look.icon}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex min-h-10 items-center justify-between gap-2">
-                  <span className={`font-semibold ${look.color}`}>{item.label}</span>
-                  {item.share && <NumberChip number={item.share} size="inline" tone="neutral" />}
+            <li
+              key={item.key}
+              data-basket-row={item.key}
+              className={`-mx-2 rounded-md border-b border-line px-2 py-2.5 transition-colors duration-500 last:border-b-0 ${
+                highlighted ? look.tint.split(' ')[0] : ''
+              } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
+                >
+                  {look.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={`font-semibold leading-5 ${look.color}`}>{item.label}</p>
+                  {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
-                <NumberChip number={item.amount} />
+                <span data-amount-key={item.key} className="shrink-0">
+                  <NumberChip number={item.amount} size="inline" count={motion?.counts[item.key]} />
+                </span>
+              </div>
+              {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
+              <div aria-hidden="true" className="ml-[52px] mt-2 h-1.5 overflow-hidden rounded-pill bg-sunken">
+                <div
+                  className={`h-full rounded-pill transition-[width] duration-500 ${look.bar}`}
+                  style={{ width: `${Math.max(0, Math.min(100, item.share?.value ?? 0))}%` }}
+                />
               </div>
             </li>
           )
@@ -187,44 +239,8 @@ export function BasketsCard({ card }: { card: BreakdownCard }) {
       </ul>
       <div className="mt-2 flex items-center justify-between gap-2 text-sm text-muted">
         <span>{card.total.label}</span>
-        <NumberChip number={card.total} />
+        <NumberChip number={card.total} size="inline" />
       </div>
-    </CardShell>
-  )
-}
-
-/**
- * Placeholder for the review question (`reviews[0]`, state `unclassified`).
- * Answering it (POST /api/baskets/label) is issue #35.
- */
-export function ReviewPlaceholder({ card }: { card: ReviewCard }) {
-  const { lang, t } = useSettings()
-  return (
-    <CardShell className="border-mint-line">
-      <span className="inline-flex items-center gap-1 rounded-pill bg-waiting-tint px-2.5 py-1 text-xs font-semibold text-waiting">
-        <span aria-hidden="true">?</span>
-        {card.current_basket.label}
-      </span>
-      <h2 className={`mt-2 ${CARD_TITLE}`}>{card.title}</h2>
-      {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <NumberChip number={card.amount} />
-        {card.merchant && <span className="text-sm text-muted">{card.merchant.label}</span>}
-      </div>
-      <p className="mt-3 text-base text-ink-2">{card.question[lang]}</p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {card.options.map((option) => (
-          <button
-            key={option.basket}
-            type="button"
-            aria-disabled="true"
-            className="min-h-11 cursor-not-allowed rounded-pill border border-line bg-sunken px-3 text-base font-semibold text-muted"
-          >
-            {option.label[lang]}
-          </button>
-        ))}
-      </div>
-      <p className="mt-2 text-sm text-muted">{t.reviewSoon}</p>
     </CardShell>
   )
 }
