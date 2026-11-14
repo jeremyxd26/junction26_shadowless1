@@ -253,7 +253,8 @@ class ErrorBody(Model):
                   "invalid_scenario", "tx_ref_not_found", "basket_not_allowed", "rate_limited",
                   "data_unavailable", "llm_unavailable", "internal",
                   "not_found",  # not_found: contract addition (#79), an unknown route
-                  "invalid_bill"]  # the bill explanation (#242); its body adds `reason` (BillErrorBody)
+                  "invalid_bill",  # the bill explanation (#242); its body adds `reason` (BillErrorBody)
+                  "model_unavailable"]  # a bill reading cannot use the model (#250, section 11.4)
     message: str
     retryable: bool
 
@@ -542,6 +543,32 @@ class BillExplainRequest(Model):
     barcode: str | None = Field(default=None, max_length=80)
     payee: str | None = Field(default=None, min_length=1, max_length=70)  # only beside a barcode
     fields: BillFieldsRequest | None = None
+
+
+class BillReadField(Model):
+    """One field of a bill reading (section 11.4, #250): a string proposal for the user to confirm."""
+    value: str
+    display: str
+    status: Literal["checked", "unchecked"]   # only an IBAN or a reference can be checked (decision A of #250)
+    source: Literal["barcode", "printed"]
+    note: str | None
+
+
+class BillReadFields(Model):
+    payee: BillReadField | None
+    iban: BillReadField | None
+    reference: BillReadField | None
+    amount: BillReadField | None
+    due_date: BillReadField | None
+    barcode: BillReadField | None
+
+
+class BillReadResponse(Model):
+    """POST /api/bill/read (section 11.4): a proposal, not an explanation; no Number objects."""
+    sample_id: str
+    language: Language
+    fields: BillReadFields
+    needs_confirmation: Literal[True]
 
 
 class BillRead(Model):
