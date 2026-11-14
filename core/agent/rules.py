@@ -313,7 +313,7 @@ SPENDER = (r"\bwhat (kind|type|sort) of (spender|saver|consumer)\b|\b\w+ of (spe
 # 3. "What can I safely spend this week?": what the user MAY spend: a limit, a budget, what is left, what
 #    they can afford (#316). A question about what they DID spend (PAST) is the spending rule's.
 SAFE = (r"safe(ly)? to spend|safely spend|spend safely|\bturvallisesti\b|"
-        r"(?<!credit )\b(spending )?limit\b|\bbudget\w*|\bbudjet\w*|"
+        r"(?<!credit )\b(spending )?limit\b|\bbudget\w*|budjet\w*|"
         r"\bleft to spend\b|\b(have|got) (left )?to spend\b|\b(have|got) left (this|for the|for this) week\b|"
         r"\b(the )?most i (can|could) spend\b|"
         r"\b(can|could|may) i (\w+ly )?(spend|afford)\b|\bafford\b|"
@@ -328,6 +328,7 @@ NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borro
             r"\bnext (year|month|summer|winter|spring|autumn|christmas)\b|\bwedding\b|\bin the future\b|"
             r"\bnext week\w*|\bcoming week\b|\bensi viiko\w*|\bmonthly\b|\bkuukausibudjet\w*|\bkuukauden budjet\w*|"
             r"\bin a year\b|\bnext \d+ days\b|\bend of (the|this) month\b|\bkuun loppuun\b|\bvuoden päästä\b|"
+            r"\bvuodessa\b|\bseuraava\w* \d+ päivä\w*|\bkuukauden loppuun\b|\btuleva\w* viiko\w*|"
             r"\bensi (vuonna|vuodeksi|kuussa|kesänä|talvena|jouluna)\b|\bhäi\w*|\bhäät\b|\btulevaisuude\w*")
 # 3. A message about a total, or a spending question without "I" ("How much was spent?", "Paljonko meni
 #    elokuussa?"), stands on its own in a conversation.
@@ -338,7 +339,8 @@ COMPLETE_WORDS = (r"\btotal\b|\boverall\b|\bspending\b|\b(was|were|been) spent\b
 SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these|those|previous|prior) "
              r"(rules|instructions|guidelines|limits)\b|"
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
-             r"\b(unohda|ohita)\b.*\b(säänn\w*|sääntö\w*|ohje\w*)")
+             r"\b(unohda|ohita)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
+             r"\b(esitä|kuvittele|oleta)\b.*\b(ei|ettei)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)")
 # 4. What other people spend most on is no question about the user's own money.
 WHERE_OTHERS = r"\bwho\b|\bpeople\b|\bothers?\b|\beveryone\b|\bmuut\b|\bmuiden\b|\bihmiset\b|\bkuka\b"
 # Another person's profile ("what kind of spender is Marjatta?") is not the user's own (#298).
@@ -768,6 +770,11 @@ def claim(request: PlanInput) -> Claim:
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
+    if "get_spending" in tools and any(re.fullmatch(rx, bare) for rx, _ in PRESETS):
+        args = plan_spending(question, as_of)
+        if args:
+            return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
