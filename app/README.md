@@ -21,7 +21,7 @@ npm run test         # unit tests (vitest): the /api/ask stream parser on the co
 
 `npm run demo:check -- <base-url> [--lang en|fi] [--persona CUST00860]` walks the 60-second path of `docs/demo-script.md` in a headless Chromium (`playwright-core`). It prints one PASS, FAIL or SKIP line per step, and exits 0 only when no step fails. It uses a local Chrome or chrome-headless-shell, or the one in `DEMO_CHECK_BROWSER=<path>`, and never downloads a browser. CI does not run it.
 
-- Dev host: `npm run demo:check -- https://sentti.jeremyxd.dev`. Each run asks the coach two questions, so do not loop it.
+- Dev host: `npm run demo:check -- https://sentti.jeremyxd.dev`. **The check is not read-only:** it taps "Needed", which writes a basket label (a real `POST /api/baskets/label` for the viewer it runs as; Start over gives it a fresh viewer), and it sends two real questions to `/api/ask`, which run the model. Agree a run against the shared dev environment with the team first, and never loop it.
 - Local mock build: `VITE_API_MODE=mock npm run build && npm run preview`, then `npm run demo:check -- http://localhost:4173`.
 
 ### Mock and live mode
