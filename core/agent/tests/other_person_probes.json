@@ -1164,6 +1164,30 @@
   [
    "Does Ruohonjuuri give me S-Bonus points?",
    "en"
+  ],
+  [
+   "Paljonko kulutti Ruoka kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon kulutti Ruoka viime kuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Vaatteet kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Ruoka?",
+   "fi"
+  ],
+  [
+   "Paljonko perheeni käytti ruokaan kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko me ja lapseni käytimme kesäkuussa?",
+   "fi"
   ]
  ],
  "declined": [
@@ -1610,6 +1634,14 @@
   [
    "How much did May earn in June?",
    "en"
+  ],
+  [
+   "Paljonko lapsellani kului rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko lapselleni jäi rahaa kesäkuussa?",
+   "fi"
   ]
  ],
  "not_user_data": [
@@ -2720,6 +2752,10 @@
   [
    "What did the Virtanen family spend?",
    "en"
+  ],
+  [
+   "Paljonko kulutti Fazer minulta?",
+   "fi"
   ]
  ],
  "claimed": [
@@ -3295,6 +3331,70 @@
   ],
   [
    "Paljonko vanhempani lähettivät minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Fazer kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Zalando kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Ruohonjuuri kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Biltema kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Jysk kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Lindex kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Marimekko kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Rautia kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Alko kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Yle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Vakuutus kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Puhelin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Apteekki kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Lääkäri kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Parturi kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Kampaaja kesäkuussa?",
    "fi"
   ]
  ]

@@ -58,7 +58,7 @@ PERSON_FI = {
     "esimies", "esimieheni", "esimiehen", "vuokranantaja", "vuokranantajani", "vuokranantajan", "exa", "exani",
     "exan", "sisko", "siskoni", "siskon", "sisar", "sisareni", "sisaren", "veli", "veljeni", "veljen", "aiti",
     "aitini", "aidin", "isa", "isani", "isan", "poika", "poikani", "pojan", "tytar", "tyttareni", "tyttaren",
-    "lapsi", "lapseni", "lapsen", "lapset", "lasteni", "lasten", "naapuri", "naapurini", "naapurin", "mies",
+    "lapsi", "lapseni", "lapsen", "lapset", "lasteni", "lasten", "lapsella", "lapsellani", "lapselle", "lapselleni", "naapuri", "naapurini", "naapurin", "mies",
     "mieheni", "miehen", "miehet", "vanhemmat", "vanhempani", "vanhempien", "mummo", "mummoni", "ukki", "ukkini",
     "isoaiti", "isoisa", "tati", "seta", "eno", "serkku", "serkkuni",
 }
@@ -85,6 +85,23 @@ CALENDAR_EN = {"january", "february", "march", "april", "may", "june", "july", "
 CALENDAR_FI = ("tammikuu", "helmikuu", "maaliskuu", "huhtikuu", "toukokuu", "kesakuu", "heinakuu", "elokuu",
                "syyskuu", "lokakuu", "marraskuu", "joulukuu", "maanantai", "tiistai", "keskiviikko", "torstai",
                "perjantai", "lauantai", "sunnuntai", "viikonlopu", "joulu", "paasiai", "juhannu", "vappu", "uusivuo")
+# Plain spending nouns, Finnish stems with case endings and English words: never a person ("Paljonko kulutti
+# Ruoka", "Vaatteet", "Vakuutus"). A shop's name is in STEMS.
+THING_NOUN_STEMS = ("ruoka", "ruoa", "ruoan", "ruokaa", "juoma", "vaatte", "vaate", "vakuutu", "puhelin", "apteek",
+                    "laakar", "parturi", "kampaaj", "vuokra", "sahko", "netti", "liikenne", "bensa", "polttoaine",
+                    "kuntosali", "lahja", "harrastu", "matka", "ravintol", "kahvil", "lasku", "kirja", "lelu", "elokuv",
+                    "taksi", "juna", "bussi", "asunto", "terveys", "kauneus", "lemmikki", "hoito", "laakk", "ostoks",
+                    "kulutu", "meno", "tulo", "palkka", "saasto")
+THING_NOUNS_EN = {"food", "drink", "drinks", "clothes", "insurance", "phone", "pharmacy", "doctor", "hairdresser",
+                  "barber", "electricity", "internet", "gym", "gifts", "hobbies", "cafe", "books", "toys", "movies",
+                  "train", "bus", "car", "health", "beauty", "pets", "groceries", "shopping", "spending"}
+
+
+def _thing_noun(token: str) -> bool:
+    t = re.sub(r"['’]s?$", "", fold(token).strip(".'’"))
+    return t in THING_NOUNS_EN or any(t.startswith(s) for s in THING_NOUN_STEMS)
+
+
 THINGS_EN = {"today", "yesterday", "month", "week", "year", "day", "last", "this", "next", "rent", "food", "travel",
              "groceries", "bills", "salary", "income", "spending", "shopping", "restaurants", "fuel", "taxi",
              "transport", "insurance", "electricity", "water", "phone", "internet", "gym", "pharmacy", "total",
@@ -275,6 +292,8 @@ def kind_of(np: str) -> str:
         return "crowd"
     if any(_known(t) for t, _ in content):
         return "thing"
+    if any(_thing_noun(t) for t, _ in content):
+        return "noun"                                # "Ruoka", "Vaatteet", "Vakuutus": a spending noun
     content = [(t, w) for t, w in content if w not in NOT_A_NAME]
     if not content:
         return "thing"
@@ -289,6 +308,7 @@ def kind_of(np: str) -> str:
 FI_STOP = {"miten", "kuinka", "paljonko", "milloin", "mihin", "mista", "missa", "mika", "mita", "ennen",
            "on", "kun", "niin", "jos", "nyt", "sen", "taman", "tan", "sinun", "kaiken", "koko", "jokaisen", "oman",
            "minun", "meidan", "kuin"}
+FI_COST = re.compile(r"maksoi|maksaa", re.I)
 FI_MODAL = (r"voin|voit|voi|voimme|voitte|voivat|voisin|voisit|voisi|haluan|haluat|haluaa|pitaa|pitaisi|"
             r"saan|saat|kannattaa|kannattaisi|pystyn|pystyt|pystyy|aion|aiot|aikoo|taytyy|tarvitsee")
 ADVERBS = {"safely", "really", "actually", "usually", "probably", "roughly", "approximately", "exactly", "only",
@@ -392,6 +412,21 @@ def classify(question: str, peer_question: bool = False) -> str | None:
                 continue                              # "me and my wife spend": the user's own
             if name == "fi_verb_first" and re.search(rf"\b(?:{FI_MODAL})\s*$", plain[:m.start()], re.I):
                 continue                              # "Voit käyttää": an infinitive after a modal, no subject
+            if name == "fi_verb_first" and not re.search(r"\b(?:paljonko|paljon|mita|mihin|montako|euroa)\s*$",
+                                                         plain[:m.start()], re.I):
+                continue                              # "Paljonko perhe käytti ruokaan": the subject is before
+            if name == "fi_verb_first" and FI_COST.fullmatch(m.group("verb")):
+                # "Paljonko maksoi X?": X may be a thing that cost. A name with an object is the payer
+                # ("maksoi Marja vuokraa"); without one it is unclear; a known shop is the user's bill.
+                payer = kind_of(m.group("np"))
+                after = plain[m.end():].split()
+                has_object = bool(after) and not (_known(after[0]) or fold(after[0]) in ("viime", "tana", "tassa",
+                                                                                         "yhteensa", "kuussa"))
+                if payer == "person" or (payer == "name" and has_object):
+                    verdicts.append(DECLINE)
+                elif payer in ("name", "noun"):
+                    verdicts.append(UNCLAIMED)
+                continue
             if name == "group_of" and first:
                 continue                              # "I spent on one of my friends"
             if first and name in ("aux_subject", "subject", "subject_base", "fi_subject", "fi_verb_first"):
