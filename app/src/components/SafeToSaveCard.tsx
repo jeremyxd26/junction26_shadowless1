@@ -127,15 +127,23 @@ export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
         )}
       </CardShell>
 
-      <CardShell>
-        <h3 className={CARD_TITLE}>{card.stock.label}</h3>
-        <p className="text-sm text-muted">{card.stock.period.label}</p>
-        <div className="mt-2">
-          <NumberChip number={card.stock} size="lg" />
+      {/* What is on the account beyond the needs until payday: collapsed by default (Renat's review). */}
+      <details className="group rounded-lg border border-line bg-surface">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 [&::-webkit-details-marker]:hidden">
+          <span className={CARD_TITLE}>{card.stock.label}</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </summary>
+        <div className="px-4 pb-4">
+          <p className="text-sm text-muted">{card.stock.period.label}</p>
+          <div className="mt-2">
+            <NumberChip number={card.stock} size="lg" />
+          </div>
+          <p className="mt-2 text-base text-ink-2">{card.stock_explanation}</p>
+          <ComponentRows components={card.stock_components} />
         </div>
-        <p className="mt-2 text-base text-ink-2">{card.stock_explanation}</p>
-        <ComponentRows components={card.stock_components} />
-      </CardShell>
+      </details>
 
       <p className="px-1 text-sm text-muted">{t.saveSeparate}</p>
     </div>

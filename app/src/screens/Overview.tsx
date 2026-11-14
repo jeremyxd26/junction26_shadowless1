@@ -55,6 +55,8 @@ interface ToastState {
    * there is no visual toast. The live region still reads the message.
    */
   silent: boolean
+  /** "Not sure" closed the card: Undo brings the question back (client only, nothing was sent). */
+  restore?: boolean
 }
 
 type Motion = NumberMotion & { seq: number }
@@ -65,6 +67,8 @@ const HINT_MS = 6000
 const NOTE_MS = 4000
 /** How long the answer's toast stays; its Undo is also on the answered card. */
 const TOAST_MS = 6000
+/** How long the "Not sure" toast with its Undo stays. */
+const RESTORE_MS = 5000
 
 /**
  * Sentti's opening turn in the thread on `/` (OpeningTurn): this week's picture, the review
@@ -311,9 +315,19 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     later(prefersReducedMotion() ? 0 : tokenMs('--duration-base', 250), () => {
       setClosing(false)
       setPhase({ kind: 'not_sure' })
-      // The card is gone: the next thing on the screen is the first question chip.
-      document.querySelector<HTMLElement>('[data-turn="opening"] ul[aria-label] button')?.focus({ preventScroll: true })
+      // A way back (Renat's review): an Undo toast for 5 s, and "Change answer" on the line left behind.
+      const run = ++seq.current
+      setToast({ seq: run, text: t.reviewHidden, rendered: t.reviewHidden, numbers: {}, undo: false, retry: false, retryUntil: null, silent: false, restore: true })
+      setShowToast(run)
+      later(RESTORE_MS, () => setToast((current) => (current && current.seq === run ? null : current)))
+      document.querySelector<HTMLElement>('[data-review-change]')?.focus({ preventScroll: true })
     })
+  }
+
+  /** Brings the question back after "Not sure" (the toast's Undo or "Change answer"). */
+  function restoreQuestion() {
+    setToast(null)
+    setPhase({ kind: 'asking' })
   }
 
   const visibleToast = toast && shownToast === toast.seq ? toast : null
@@ -341,6 +355,19 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           onNotSure={notSure}
           onRetry={() => void send(lastRequest.current)}
         />
+      )}
+      {card && phase.kind === 'not_sure' && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-lg border border-line bg-surface px-3 py-1">
+          <span className="text-sm text-ink-2">{t.reviewSkipped}</span>
+          <button
+            type="button"
+            data-review-change=""
+            onClick={restoreQuestion}
+            className="min-h-11 px-1 text-sm font-semibold text-brand underline underline-offset-4"
+          >
+            {t.reviewChange}
+          </button>
+        </div>
       )}
       {card && phase.kind === 'answered' && (
         <ReviewAnswered
@@ -384,7 +411,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
         <Toast
           text={visibleToast.text}
           numbers={visibleToast.numbers}
-          onUndo={visibleToast.undo && busy === null ? () => void send(null) : undefined}
+          onUndo={visibleToast.restore ? restoreQuestion : visibleToast.undo && busy === null ? () => void send(null) : undefined}
           onRetry={visibleToast.retry ? () => void send(null) : undefined}
           retryUntil={visibleToast.retryUntil}
           onClose={() => setToast(null)}

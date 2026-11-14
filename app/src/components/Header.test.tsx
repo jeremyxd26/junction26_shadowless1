@@ -11,8 +11,8 @@ const DISCLOSURE = examples['overview.response'].ai_disclosure
 describe('the AI disclosure behind the header badge (#685)', () => {
   it('the badge stays visible, with an ⓘ, in one real button with an accessible name', () => {
     const html = renderToStaticMarkup(<AboutButton onOpen={() => {}} />)
-    expect(html).toMatch(/^<button type="button" aria-haspopup="dialog" aria-label="Sentti, AI\. About Sentti" class="[^"]*min-h-11/)
-    expect(html).toContain('>AI</span>')
+    expect(html).toMatch(/^<button type="button" aria-haspopup="dialog" aria-label="Sentti, AI\. How Sentti works" class="[^"]*min-h-11/)
+    expect(html).toContain('<span>AI</span>')
     expect(html).toContain('data-icon="info"')
     // The ⓘ is drawn, not read: the button's name already says what it opens.
     expect(html).toMatch(/<svg data-icon="info" aria-hidden="true"/)
@@ -25,7 +25,7 @@ describe('the AI disclosure behind the header badge (#685)', () => {
         <AboutButton onOpen={() => {}} />
       </SettingsContext.Provider>,
     )
-    expect(html).toContain('aria-label="Sentti, tekoäly. Tietoa Senttistä"')
+    expect(html).toContain('aria-label="Sentti, tekoäly. Näin Sentti toimii"')
   })
 
   it("the sheet it opens is a labelled dialog with the ready response's ai_disclosure", () => {
@@ -36,7 +36,7 @@ describe('the AI disclosure behind the header badge (#685)', () => {
     const labelledBy = /aria-labelledby="([^"]+)"/.exec(html)?.[1]
     expect(labelledBy).toBeTruthy()
     expect(html).toContain(`id="${labelledBy}"`)
-    expect(html).toContain('>About Sentti<')
+    expect(html).toContain('>How Sentti works<')
     expect(html).toContain(`>${DISCLOSURE}</p>`)
   })
 

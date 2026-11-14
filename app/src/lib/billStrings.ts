@@ -17,6 +17,16 @@ const en = {
   cardSubtitle: 'Read from the bill · check before you continue',
   checkedMeans: 'Checked means the code verified an IBAN or a reference number by its check digits. Fields you haven’t confirmed are never used.',
   looksRight: 'Looks right, explain it',
+  /** A failed check digit (an IBAN or a reference read from the bill): the warning stays until it is fixed. */
+  explainAnyway: 'Explain anyway',
+  checkFail: {
+    reference: 'The reference number does not pass its check digit.',
+    iban: 'The account number (IBAN) does not pass its check digit.',
+  } as Record<'reference' | 'iban', string>,
+  checkBeforePaying: {
+    reference: 'Check the reference number before paying.',
+    iban: 'Check the account number before paying.',
+  } as Record<'reference' | 'iban', string>,
   editDetails: 'Edit details',
   typeTitle: 'Type the bill’s details',
   checked: 'Checked',
@@ -45,10 +55,10 @@ const en = {
   vsUsualTitle: 'This bill vs usual',
   thisBillTitle: 'This bill',
   vsUsualWord: { worse: 'more than usual', better: 'less than usual', neutral: 'the same as usual' } as Record<string, string>,
-  safeTitle: 'Safe to spend after this bill',
+  safeTitle: 'Left to spend after this bill',
   estimate: {
     label: 'Estimate',
-    text: 'Safe to spend is an estimate: it uses your balance, the bills due before payday and your usual spending.',
+    text: 'Left to spend is an estimate: it uses your balance, the bills due before payday and your usual spending.',
   },
   before: 'Before this bill',
   after: 'After this bill',
@@ -80,6 +90,15 @@ const fi: BillStrings = {
   cardSubtitle: 'Luettu laskusta · tarkista ennen kuin jatkat',
   checkedMeans: 'Tarkistettu tarkoittaa, että koodi on varmistanut tilinumeron tai viitenumeron tarkisteen avulla. Tietoja, joita et ole vahvistanut, ei koskaan käytetä.',
   looksRight: 'Näyttää oikealta, selitä',
+  explainAnyway: 'Selitä silti',
+  checkFail: {
+    reference: 'Viitenumero ei läpäise tarkistetta.',
+    iban: 'Tilinumero (IBAN) ei läpäise tarkistetta.',
+  },
+  checkBeforePaying: {
+    reference: 'Tarkista viitenumero ennen maksamista.',
+    iban: 'Tarkista tilinumero ennen maksamista.',
+  },
   editDetails: 'Muokkaa tietoja',
   typeTitle: 'Kirjoita laskun tiedot',
   checked: 'Tarkistettu',
