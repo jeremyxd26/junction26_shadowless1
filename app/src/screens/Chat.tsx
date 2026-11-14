@@ -9,16 +9,16 @@ interface Props {
   chat: ChatSession
   /** `?q=`: a question picked on the overview, sent as soon as the persona is known. */
   question: string | null
+  /** The first message of every chat: the overview's `ai_disclosure` (contract section 6), or the app's own. */
+  disclosure: string
   /** Starter questions: the overview's suggestions, or the partner's questions. */
   suggestions: string[]
 }
 
 /** The chat on POST /api/ask. The view never scrolls while an answer streams in. */
-export function Chat({ chat, question, suggestions }: Props) {
-  const { lang, customerId, t } = useSettings()
+export function Chat({ chat, question, disclosure, suggestions }: Props) {
+  const { lang, customerId } = useSettings()
   const s = chatStrings(lang)
-  // The first message of every chat (issue #87): "Sentti is an AI assistant. Numbers come from your transactions."
-  const disclosure = t.disclosure
   const { turns, busy, send, retry, stop } = chat
   const [draft, setDraft] = useState('')
   const input = useRef<HTMLInputElement>(null)

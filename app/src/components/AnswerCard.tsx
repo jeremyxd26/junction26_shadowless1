@@ -1,6 +1,7 @@
 // The cards of a chat answer (`card` events, contract sections 3 and 7.2), one renderer per
 // `type` in the shared answer-card frame (DESIGN.md "Answer card"). Card `actions` are not
 // drawn here: the chat shows them as action chips under the explanation.
+import { Component, type ReactNode } from 'react'
 import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -135,7 +136,7 @@ function isBasketsBreakdown(card: BreakdownCard): boolean {
   return card.items.some((item) => item.key === 'regular_essentials')
 }
 
-export function AnswerCard({ card }: { card: Card }) {
+function CardBody({ card }: { card: Card }) {
   switch (card.type) {
     case 'metric':
       return <MetricAnswer card={card as MetricCard} />
@@ -150,4 +151,37 @@ export function AnswerCard({ card }: { card: Card }) {
     default:
       return <GenericAnswer card={card} />
   }
+}
+
+/**
+ * One malformed card (for example a breakdown without `items`) must not take the whole chat
+ * down: it falls back to the shared frame with its title, and the rest of the answer stays.
+ */
+class CardBoundary extends Component<{ card: Card; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('Sentti card failed', this.props.card.type, error)
+  }
+
+  componentDidUpdate(previous: { card: Card }) {
+    // A new version of the card (same card_id) gets a fresh try.
+    if (this.state.failed && previous.card !== this.props.card) this.setState({ failed: false })
+  }
+
+  render() {
+    return this.state.failed ? <GenericAnswer card={this.props.card} /> : this.props.children
+  }
+}
+
+export function AnswerCard({ card }: { card: Card }) {
+  return (
+    <CardBoundary card={card}>
+      <CardBody card={card} />
+    </CardBoundary>
+  )
 }

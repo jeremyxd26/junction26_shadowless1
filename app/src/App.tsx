@@ -60,6 +60,7 @@ export default function App() {
             <Chat
               chat={chat}
               question={params.get('q')}
+              disclosure={ready?.ai_disclosure || t.disclosure}
               suggestions={ready?.suggested_questions.length ? ready.suggested_questions : chatStrings(lang).starters}
             />
           ) : overview.status === 'ready' ? (

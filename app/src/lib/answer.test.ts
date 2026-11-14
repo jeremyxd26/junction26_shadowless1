@@ -71,6 +71,21 @@ describe('answer shape helpers', () => {
     expect(splitTakeaway('Which period do you mean?')).toEqual({ takeaway: 'Which period do you mean?', rest: '' })
   })
 
+  it('does not cut at an abbreviation followed by a lower-case word', () => {
+    const fi = 'Käytit ruokaan esim. kaupoissa {{n1}}. Ero on pieni.'
+    expect(splitTakeaway(fi)).toEqual({ takeaway: 'Käytit ruokaan esim. kaupoissa {{n1}}.', rest: 'Ero on pieni.' })
+    const en = 'You spend approx. three times more on Fridays. That is a habit.'
+    expect(splitTakeaway(en)).toEqual({ takeaway: 'You spend approx. three times more on Fridays.', rest: 'That is a habit.' })
+  })
+
+  it('cuts before a capital letter, also a Finnish one, and before a number token', () => {
+    expect(splitTakeaway('Hyvä alku. Älä huoli.')).toEqual({ takeaway: 'Hyvä alku.', rest: 'Älä huoli.' })
+    expect(splitTakeaway('Groceries went up! {{n2}} more than in August.')).toEqual({
+      takeaway: 'Groceries went up!',
+      rest: '{{n2}} more than in August.',
+    })
+  })
+
   it('never shows half a number token', () => {
     expect(withoutPartialToken('September cost {{n1')).toBe('September cost ')
     expect(withoutPartialToken('September cost {{n1}')).toBe('September cost ')

@@ -83,8 +83,12 @@ export function withoutPartialToken(text: string): string {
   return text.replace(/\{(\{(n([0-9]+\}?)?)?)?$/, '')
 }
 
-/** The core's sentence split for deltas (contract 0.1 sends one sentence per delta). */
-const SENTENCE_END = /(?<=[.!?])\s+/
+/**
+ * A sentence ends at `.`, `!` or `?` and whitespace, but only when the next sentence starts with
+ * a capital letter or a number token. So abbreviations such as "esim. ruokaan" or "approx. three"
+ * do not cut the takeaway short.
+ */
+const SENTENCE_END = /(?<=[.!?])\s+(?=\p{Lu}|\{\{)/u
 
 /**
  * The answer shape: the first sentence is the bold takeaway, the rest is the explanation.

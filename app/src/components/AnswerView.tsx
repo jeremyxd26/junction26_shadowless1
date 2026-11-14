@@ -35,7 +35,7 @@ function SenttiLabel({ s }: { s: Strings }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
-      <span className="rounded-sm border border-brand px-1 text-[11px] leading-4 font-bold">AI</span>
+      <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>
     </p>
   )
 }
@@ -171,26 +171,13 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
         )}
       </>
     )
-  } else if (done && outcome === 'fallback') {
-    // The template line in body weight, the cards, and one quiet note.
-    body = (
-      <>
-        {answer.text && (
-          <p className={ANSWER_TEXT}>
-            <TokenText text={answer.text} numbers={answer.numbers} />
-          </p>
-        )}
-        {answer.cards.map((card) => (
-          <AnswerCard key={card.card_id} card={card} />
-        ))}
-        <p className="flex gap-2 text-sm text-muted">
-          <InfoIcon />
-          {s.fallbackNote}
-        </p>
-      </>
-    )
   } else {
-    const { takeaway, rest } = splitTakeaway(answer.text)
+    // Answered and fallback share one layout, so nothing changes its look when `done` arrives;
+    // a fallback only adds its quiet note. Until a card arrives, the text waits for `done`: an
+    // answer without cards may still turn out to be a refusal or a clarification, which look
+    // different, so the stages and the skeleton stay until then.
+    const holdText = streaming && answer.cards.length === 0
+    const { takeaway, rest } = holdText ? { takeaway: '', rest: '' } : splitTakeaway(answer.text)
     body = (
       <>
         {takeaway && (
@@ -201,10 +188,16 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
         {answer.cards.map((card) => (
           <AnswerCard key={card.card_id} card={card} />
         ))}
-        {streaming && answer.cards.length === 0 && !answer.text && <CardSkeleton />}
+        {holdText && <CardSkeleton />}
         {rest && (
           <p className={ANSWER_TEXT}>
             <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} />
+          </p>
+        )}
+        {done && outcome === 'fallback' && (
+          <p className="flex gap-2 text-sm text-muted">
+            <InfoIcon />
+            {s.fallbackNote}
           </p>
         )}
       </>
