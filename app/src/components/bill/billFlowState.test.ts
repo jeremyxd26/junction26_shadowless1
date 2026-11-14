@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { BillExplainRequest, BillExplainResponse, BillReadResponse } from '../../api/billTypes.ts'
 import contract from '../../api/mock/contract-examples.json'
-import { flowReducer, initialFlow, type FlowState } from './billFlowState.ts'
+import { ApiError } from '../../api/errors.ts'
+import { flowReducer, initialFlow, toFlowError, type FlowState } from './billFlowState.ts'
 
 const examples = contract.examples as unknown as Record<string, unknown>
 const reading = examples['bill.read_response'] as BillReadResponse
@@ -65,5 +66,19 @@ describe('bill flow steps', () => {
   it('starts over on back', () => {
     const state = run({ type: 'pick', sampleId: 'sample_2' }, { type: 'read_ok', sampleId: 'sample_2', reading }, { type: 'back' })
     expect(state).toBe(initialFlow)
+  })
+})
+
+describe('toFlowError', () => {
+  const now = 5_000_000
+  it('keeps the wait of a 429 as the time Try again opens', () => {
+    const limited = new ApiError(429, { code: 'rate_limited', message: 'Wait a moment.', retryable: true }, 30)
+    expect(toFlowError(limited, 'fallback', now)).toEqual({ message: 'Wait a moment.', retryable: true, until: now + 30_000 })
+  })
+
+  it('has no wait without Retry-After, and turns anything else into the retryable fallback', () => {
+    const plain = new ApiError(500, { code: 'internal', message: 'Something went wrong.', retryable: true })
+    expect(toFlowError(plain, 'fallback', now).until).toBeNull()
+    expect(toFlowError(new Error('x'), 'fallback', now)).toEqual({ message: 'fallback', retryable: true, until: null })
   })
 })
