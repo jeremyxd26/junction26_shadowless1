@@ -6,6 +6,7 @@ import type { Action } from '../api/types.ts'
 import { STAGES, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
+import { captionOf } from '../lib/answerFigures.ts'
 import { nextStep } from '../lib/nextStep.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -207,8 +208,14 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
             <TokenText text={takeaway} numbers={answer.numbers} plain />
           </p>
         )}
-        {answer.cards.map((card) => (
-          <AnswerCard key={card.card_id} card={card} />
+        {/* One main number per answer: only the first card draws one large (#684). */}
+        {answer.cards.map((card, index) => (
+          <AnswerCard
+            key={card.card_id}
+            card={card}
+            later={index > 0}
+            previousCaption={index > 0 ? captionOf(answer.cards[index - 1]) : null}
+          />
         ))}
         {holdText && <CardSkeleton />}
         {rest && (

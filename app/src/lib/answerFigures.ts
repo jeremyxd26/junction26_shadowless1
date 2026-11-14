@@ -44,7 +44,7 @@ type PeerCard = Card & {
 }
 
 type WhatIfCard = Card & {
-  result: { saving_per_month: Num; saving_per_week: Num; saving_per_year: Num; baseline_per_month: Num }
+  result: { status?: string; saving_per_month: Num; saving_per_week: Num; saving_per_year: Num; baseline_per_month: Num }
 }
 
 const row = (number: Num | null | undefined, key: string): FigureRow[] =>
@@ -62,6 +62,30 @@ function figures(main: Num | null, rows: FigureRow[], extra: Partial<AnswerFigur
     rows: rows.slice(0, MAX_ROWS),
     note: null,
     ...extra,
+  }
+}
+
+/**
+ * A later card of the same answer (the peer card after the profile): one main number per answer,
+ * so its main number becomes its first row, still at most three rows; and its caption goes when
+ * the card before it showed the same period.
+ */
+export function asLaterCard(figures: AnswerFigures, previousCaption: string | null): AnswerFigures {
+  const rows = figures.main ? [{ key: 'main', label: figures.main.label, number: figures.main }, ...figures.rows] : figures.rows
+  return {
+    ...figures,
+    caption: figures.caption === previousCaption ? null : figures.caption,
+    main: null,
+    rows: rows.slice(0, MAX_ROWS),
+  }
+}
+
+/** The caption a card shows, or null; never throws (a malformed card falls back in its own boundary). */
+export function captionOf(card: Card): string | null {
+  try {
+    return answerFigures(card)?.caption ?? null
+  } catch {
+    return null
   }
 }
 
@@ -97,7 +121,8 @@ export function answerFigures(card: Card): AnswerFigures | null {
     }
     case 'whatif': {
       const result = (card as WhatIfCard).result
-      if (!result?.saving_per_month) return null
+      // Not offered (nothing to cut): no "€0.00 a month" headline; the frame with its title, as before.
+      if (!result?.saving_per_month || result.status === 'not_offered') return null
       return figures(result.saving_per_month, [
         ...row(result.saving_per_week, 'week'),
         ...row(result.saving_per_year, 'year'),

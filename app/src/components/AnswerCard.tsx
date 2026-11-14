@@ -6,7 +6,7 @@
 // are not drawn here: the answer shows at most one next step under the text.
 import { Component, type ReactNode } from 'react'
 import type { BreakdownCard, Card, Comparison, Num, ReviewCard } from '../api/types.ts'
-import { answerFigures, isBasketsBreakdown, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
+import { answerFigures, asLaterCard, isBasketsBreakdown, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
@@ -116,8 +116,16 @@ function GenericAnswer({ card }: { card: Card }) {
   )
 }
 
-function CardBody({ card }: { card: Card }) {
-  const figures = answerFigures(card)
+/** Where the card stands in its answer: a later card has no large number of its own. */
+interface Place {
+  later?: boolean
+  /** The caption of the card before it, so the same period is not shown twice. */
+  previousCaption?: string | null
+}
+
+function CardBody({ card, later = false, previousCaption = null }: { card: Card } & Place) {
+  const own = answerFigures(card)
+  const figures = own && later ? asLaterCard(own, previousCaption) : own
   if (figures) return <AnswerFrame card={card} figures={figures} />
   switch (card.type) {
     case 'breakdown':
@@ -159,10 +167,10 @@ class CardBoundary extends Component<{ card: Card; children: ReactNode }, { fail
   }
 }
 
-export function AnswerCard({ card }: { card: Card }) {
+export function AnswerCard({ card, later, previousCaption }: { card: Card } & Place) {
   return (
     <CardBoundary card={card}>
-      <CardBody card={card} />
+      <CardBody card={card} later={later} previousCaption={previousCaption} />
     </CardBoundary>
   )
 }

@@ -90,6 +90,10 @@ describe('the answer reads once (#684, #685)', () => {
         expect(count(section, 'data-answer-main')).toBeLessThanOrEqual(1)
         expect(count(section, 'data-figure-row')).toBeLessThanOrEqual(3)
       }
+      // One main number per answer, however many cards; and no period twice in a row.
+      expect(count(html, 'data-answer-main')).toBe(1)
+      const captions = [...html.matchAll(/data-answer-caption="" class="[^"]*">([^<]*)</g)].map((match) => match[1])
+      captions.forEach((caption, index) => expect(caption).not.toBe(captions[index - 1]))
       // No green pills: no mint number chips and no mint follow-up chips.
       expect(html).not.toContain('bg-mint-tint')
     })
@@ -118,6 +122,18 @@ describe('the answer reads once (#684, #685)', () => {
   it('save more: the next step is the bank screen the demo path taps', async () => {
     const step = stepOf(render('How could I save more?', await answerOf('How could I save more?')))
     expect(step).toContain('>See monthly saving in S-mobiili</button>')
+  })
+
+  it('spender type: two cards, one large number and one period caption; the peer card keeps three rows', async () => {
+    const answer = await answerOf('What kind of spender am I?')
+    expect(answer.cards.map((card) => card.type)).toEqual(['profile', 'peer'])
+    const html = render('What kind of spender am I?', answer)
+    expect(count(html, 'data-answer-main')).toBe(1)
+    expect(count(html, 'data-answer-caption')).toBe(1)
+    const peerSection = html.split('<section').at(-1)!
+    expect(count(peerSection, 'data-figure-row')).toBe(3)
+    // The peer's own main number ("You") is its first row now.
+    expect(peerSection).toContain('>You</span>')
   })
 
   it('spender type: the answer sentence is not repeated in the card', async () => {

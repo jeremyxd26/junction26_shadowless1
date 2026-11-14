@@ -109,6 +109,13 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain(whatif.title)
   })
 
+  it('what-if not offered: no "€0.00" headline, the frame with its title as before', () => {
+    const whatif = examples['card.whatif'] as Card & { result: Record<string, unknown> & { saving_per_month: { display: string } } }
+    const html = render({ ...whatif, result: { ...whatif.result, status: 'not_offered' } } as unknown as Card)
+    expect(html).toContain(whatif.title)
+    expect(html).not.toContain('data-answer-main')
+  })
+
   it('safe to spend (#684): four secondary numbers are cut to three rows', () => {
     const hero = (examples['overview.response'] as { hero: Card & { secondary: { display: string }[] } }).hero
     expect(hero.secondary.length).toBeGreaterThan(3)
