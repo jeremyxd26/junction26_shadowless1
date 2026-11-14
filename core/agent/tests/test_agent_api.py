@@ -297,3 +297,29 @@ def test_a_recognised_question_past_the_model_window_is_an_answer_with_the_warni
     assert agent.pipeline.model.calls == calls
     refused = client.post("/api/ask", json={**BODY, "message": "Should I put my savings into tech stocks?"}).json()
     assert refused["outcome"] == "refused" and "llm_unavailable" not in refused["warnings"]
+
+
+def test_the_answer_reads_the_labels_of_the_requests_viewer(client):
+    # Issue #253: the viewer cookie's session key reaches every tool call's context, never the audit.
+    from agent_fakes import fake_spending
+
+    from core.agent.registry import ToolSpec
+    from core.app.api import viewer as viewer_api
+
+    seen = []
+
+    def spy(ctx, args):
+        seen.append(ctx.viewer)
+        return fake_spending(ctx, args)
+
+    agent = client.install(plans=[SPEND, SPEND], drafts=[GOOD, GOOD])
+    agent.pipeline.registry.tools["fake_spending"] = ToolSpec("fake_spending", "t", agent.pipeline.registry.tools[
+        "fake_spending"].args_model, spy, ("x", "x"))
+    value = viewer_api.new_value()
+    client.cookies.set(viewer_api.COOKIE, value, domain="testserver.local")
+    answer_id = client.post("/api/ask", json=BODY).json()["answer_id"]
+    client.cookies.clear()
+    client.post("/api/ask", json=BODY)
+    assert seen == [viewer_api.session_key(value), None]   # without a cookie: the shared state
+    audit = agent.audit.find(answer_id)
+    assert value not in json.dumps(audit) and viewer_api.session_key(value) not in json.dumps(audit)
