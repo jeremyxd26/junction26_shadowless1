@@ -90,9 +90,13 @@ describe('safe to save: the week and the day under the month (#477)', () => {
     expect(readable(actions)).not.toMatch(/[0-9€]/)
   })
 
-  it('in a chat answer the card shows the week and day chips too, and no actions of its own', () => {
+  it('in a chat answer (#684): the month large, the week, the day and the stock as three rows, each opening its evidence, no actions', () => {
     const html = renderToStaticMarkup(<AnswerCard card={sanna as unknown as Card} />)
-    expect(part(html, 'data-save-scales')).toMatch(chipButton(sanna.weekly!))
+    expect(html.slice(html.indexOf('data-answer-main'))).toMatch(chipButton(sanna.monthly))
+    for (const number of [sanna.weekly!, sanna.daily!, sanna.stock]) expect(html).toMatch(chipButton(number))
+    expect(html.split('data-figure-row').length - 1).toBe(3)
     expect(html).not.toContain('data-card-actions')
+    // The subtitle and the stock's explanation are sentences the answer already says.
+    expect(html).not.toContain(sanna.stock_explanation)
   })
 })

@@ -331,15 +331,18 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
 
 const TOKEN = /\{\{(n[0-9]+)\}\}/g
 
-/** Text with number tokens (contract 2.4): each token becomes a chip with the number's `display`. */
-export function TokenText({ text, numbers }: { text: string; numbers: Record<string, Num> }) {
+/**
+ * Text with number tokens (contract 2.4): each token becomes a chip with the number's `display`;
+ * a chat answer passes `plain` for numbers as text, without the pill (#684).
+ */
+export function TokenText({ text, numbers, plain = false }: { text: string; numbers: Record<string, Num>; plain?: boolean }) {
   const parts: ReactNode[] = []
   let last = 0
   for (const match of text.matchAll(TOKEN)) {
     const index = match.index ?? 0
     if (index > last) parts.push(text.slice(last, index))
     const number = numbers[match[1]]
-    parts.push(number ? <NumberChip key={`${match[1]}-${index}`} number={number} size="inline" /> : match[0])
+    parts.push(number ? <NumberChip key={`${match[1]}-${index}`} number={number} size="inline" tone={plain ? 'plain' : 'mint'} /> : match[0])
     last = index + match[0].length
   }
   if (last < text.length) parts.push(text.slice(last))
