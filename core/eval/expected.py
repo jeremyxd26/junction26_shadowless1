@@ -78,7 +78,7 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused", "meta")
+EXPECTS = ("answered", "no_data", "refused", "meta", "any")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 

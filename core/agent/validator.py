@@ -438,3 +438,65 @@ def repeated_period(text: str, numbers: dict[str, Number]) -> str | None:
 def render(text: str, numbers: dict[str, Number]) -> str:
     """Replace every token with its Number's localised display (text_rendered)."""
     return TOKEN.sub(lambda m: numbers[m.group(1)].display, text)
+
+
+# ---- model-draft checks for the composer defects seen on the stand (#398) ------------------------------------
+# They run on model drafts only (orchestrator._compose): a rejected draft is retried with the reason, then the
+# template writes. A template is never rejected by them.
+
+SELF_INTRO = re.compile(r"^\W*(?:(?:hi|hello|hei|moi)\W+)?(?:i am|i'm|olen)\s+sentti\b", re.I)
+COMPOSITE_CLAIM = re.compile(
+    r"\bcombined\s+with\b|\badds?\s+up\s+to\b|\bthe\s+sum\s+of\b|\btogether\s+(?:make|makes|come\s+to|comes\s+to|total|totals)\b"
+    r"|\byhteenlaskettuna\b|\byhdessä\s+(?:ne\s+)?(?:muodostavat|tekevät|ovat)\b", re.I)
+JOINED_COMPARISON = re.compile(r"\{\{n\d+\}\}\s+(?:and|ja)\s+\{\{n\d+\}\}\s+(?:compared|verrattuna)", re.I)
+FIXED_CUT = re.compile(
+    r"\b(?:cut|cutting|reduce|reducing|lower|lowering)\b[^.!?]{0,40}\b(?:housing|rent|utilities|insurance|loans?|mortgage)\b"
+    r"|\b(?:housing|rent|utilities|insurance|loans?|mortgage)\b[^.!?]{0,20}\bcut\b"
+    r"|\b(?:vähent\w*|leikka\w*|pienentä\w*)\b[^.!?]{0,40}\b(?:asumi\w*|vuokra\w*|vakuutu\w*|laina\w*|asunto\w*)", re.I)
+# Words the composer got wrong on the stand: a misspelling and a label it made up instead of the data's own.
+KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemat\w*", re.I)
+_COUNT_END = re.compile(r"\s*(?:[.,;:!?)]|$|(?:and|but|ja|mutta)\b)", re.I)
+
+
+def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
+                   labels: Iterable[str] = ()) -> list[str]:
+    """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
+    `labels` are the labels in the answer's data, which a draft may always name (#419)."""
+    problems = []
+    borrowing = answer_text.borrowing_suggestion(text, labels)
+    if borrowing:
+        problems.append(f"'{borrowing}': never suggest borrowing (a loan, credit, a credit card, instalments, an "
+                        "overdraft); say what is safe to spend, or offer saving towards a date from <data>")
+    if has_data and SELF_INTRO.search(text):
+        problems.append("do not introduce yourself in an answer about the user's money; start with the answer")
+    m = COMPOSITE_CLAIM.search(text)
+    if m:
+        problems.append(f"'{m.group(0)}': never explain a number as a sum or combination of other numbers")
+    if JOINED_COMPARISON.search(text):
+        problems.append("write a comparison with its direction in words, not two figures joined by 'and'")
+    m = FIXED_CUT.search(text)
+    if m:
+        problems.append(f"'{m.group(0)}': never suggest cutting housing, utilities, insurance or loans")
+    m = KNOWN_WRONG.search(text)
+    if m:
+        problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    used = TOKEN.findall(text)
+    for token in TOKEN.finditer(text):
+        number = numbers.get(token.group(1))
+        if number is not None and number.unit.value == "count" and _COUNT_END.match(text, token.end()):
+            problems.append(f"a count keeps its noun: write '{{{{{token.group(1)}}}}} transactions', not the number alone")
+            break
+    if len(used) != len(set(used)):
+        problems.append("cite each number once; a result is not its own reason")
+    else:
+        seen = {}
+        for i in used:
+            n = numbers.get(i)
+            if n is None:
+                continue
+            key = (n.unit.value, float(n.value))
+            if key in seen and seen[key] != i:
+                problems.append("two numbers with the same value repeat each other; cite it once")
+                break
+            seen[key] = i
+    return problems

@@ -1,0 +1,176 @@
+{
+ "question": "Did I spend more on restaurants in August than in July?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [
+  {
+   "name": "get_spending",
+   "args": {
+    "period": {
+     "preset": "last_month"
+    },
+    "filter": {
+     "categories": [
+      "Restaurants"
+     ]
+    },
+    "direction": "out",
+    "group_by": "none",
+    "compare_to": "previous_period",
+    "top_n": 5
+   },
+   "numbers": [
+    {
+     "value": 506.19,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_fa90fe34abb2",
+     "label": "Restaurants",
+     "display": "€506.19",
+     "id": "n1"
+    },
+    {
+     "value": 10,
+     "unit": "count",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.n_tx@1",
+     "evidence_ref": "ev_ef0b759316a0",
+     "label": "Transactions",
+     "display": "10",
+     "id": "n2"
+    },
+    {
+     "value": 81.4,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.change_pct@1",
+     "evidence_ref": "ev_dbf1fe091c1d",
+     "label": "Change vs July 2026",
+     "display": "81.4%",
+     "id": "n3"
+    },
+    {
+     "value": 279.08,
+     "unit": "eur",
+     "period": {
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "label": "July 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_e791199250c8",
+     "label": "July 2026",
+     "display": "€279.08",
+     "id": "n4"
+    },
+    {
+     "value": 227.11,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.change@1",
+     "evidence_ref": "ev_95ab619fc66f",
+     "label": "Change vs July 2026",
+     "display": "€227.11",
+     "id": "n5"
+    }
+   ],
+   "model_view": {
+    "tool": "get_spending",
+    "period": "August 2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 506.19,
+     "unit": "eur",
+     "label": "Restaurants"
+    },
+    "tx_count": {
+     "id": "n2",
+     "value": 10,
+     "unit": "count",
+     "label": "Transactions"
+    },
+    "comparison": {
+     "label": "vs July 2026",
+     "baseline": {
+      "id": "n4",
+      "value": 279.08,
+      "unit": "eur",
+      "label": "July 2026"
+     },
+     "change": {
+      "id": "n5",
+      "value": 227.11,
+      "unit": "eur",
+      "label": "Change vs July 2026"
+     },
+     "change_pct": {
+      "id": "n3",
+      "value": 81.4,
+      "unit": "percent",
+      "label": "Change vs July 2026"
+     },
+     "tone": "worse"
+    },
+    "groups": [],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} on Restaurants. Compared with July 2026, your spending changed by {{n5}}.\",\n  \"cited\": [\"n1\", \"n5\"],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0TJO_a4jl3i03lXO2r43DKz5BXEvztTWzbusZiAJwWCp86RreOlMF742NtkGG--F9YRIKfyWZpEDqh_xkNBowmU6yq1-lUIDhKTD5R7tcZHAwDdTny_bZtrdg="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3137,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 72
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_spending",
+   "finish"
+  ],
+  "text": "In August 2026 you spent {{n1}} on Restaurants. Compared with July 2026, your spending changed by {{n5}}.",
+  "text_rendered": "In August 2026 you spent €506.19 on Restaurants. Compared with July 2026, your spending changed by €227.11."
+ }
+}
