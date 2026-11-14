@@ -157,6 +157,20 @@ select {
     border-bottom-width: 0;
   }
 }
+/* Three dots that bounce one after another while Sentti is thinking (the scroll-to-latest button). */
+.dot-bounce {
+  animation: dot-bounce 1s var(--ease-standard) infinite;
+}
+@keyframes dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
 /* The waiting bar is hatched, never a basket colour. */
 .bar-hatched {
   background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
@@ -172,5 +186,8 @@ select {
   /* Numbers still cross-fade in 150 ms (DESIGN.md, motion). */
   .motion-fade {
     animation-duration: var(--duration-fast) !important;
+  }
+  .dot-bounce {
+    animation: none !important;
   }
 }
