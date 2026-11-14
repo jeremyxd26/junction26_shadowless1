@@ -446,27 +446,30 @@ PEER_SAME = {"total": ("You spend about the same as the median of people like yo
 # #569: one line of national context after the comparison: two facts side by side, no comparison word between the
 # customer's amount and the survey's; the survey's period (its year, as the Number's returned period) and the source.
 # No age digits (the digit rule): "your age group". Short, so the comparison and the line fit the length rule.
-NATIONAL = ("Households of your age spent {amount} per adult-equivalent {period} ({source}).",   # the display says "a month"
-            "Ikäryhmäsi kotitaloudet käyttivät {amount} aikuista vastaavaa henkilöä kohti {period} ({source}).")
+# The display carries "a month"; the survey's category comes from the tool, long or short (the length rule).
+NATIONAL = ("Households your age spent {amount} per adult-equivalent on {what} ({source}, {period}).",
+            "Ikäryhmäsi kotitaloudet käyttivät {what} {amount} aikuista vastaavaa henkilöä kohti ({source}, {period}).")
 
 
-def _national(view: dict[str, Any], language: str, ok: Ok) -> tuple[list[str], list[str]]:
+def _national(view: dict[str, Any], language: str, ok: Ok) -> list[tuple[list[str], list[str]]]:
+    """The line with the survey's category in its long and its short words, in that order; [] without a line."""
     n = view.get("national") if isinstance(view.get("national"), dict) else None
     amount = _tok(n.get("amount")) if n else None
-    if not n or not amount or not all(isinstance(n.get(k), str) and ok(n[k]) for k in ("survey", "source")):
-        return [], []
-    return [pick(NATIONAL, language).format(amount=amount, period=in_period(n["survey"], language),
-                                            source=n["source"])], _ids(amount)
+    if not n or not amount or not all(isinstance(n.get(k), str) and ok(n[k]) for k in ("survey", "source", "what")):
+        return []
+    whats = [n["what"]] + ([n["what_short"]] if isinstance(n.get("what_short"), str) and ok(n["what_short"]) else [])
+    return [([pick(NATIONAL, language).format(amount=amount, what=what, source=n["source"], period=n["survey"])],
+             _ids(amount)) for what in whats]
 
 
 def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     found = _peer(view, language, ok)
     if found is None:
         return None
-    extra, ids = _national(view, language, ok)
-    if extra and answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
-        return found          # the comparison and its offer come first; the context line only when it fits
-    return found[0] + extra, found[1] + ids
+    for extra, ids in _national(view, language, ok):
+        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
+            return found[0] + extra, found[1] + ids
+    return found              # the comparison and its offer come first; the context line only when it fits
 
 
 def _peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:

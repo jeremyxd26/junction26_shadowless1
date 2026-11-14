@@ -75,6 +75,7 @@ class NationalContext(BaseModel):
     survey_year: int
     source: str             # "Statistics Finland" / "Tilastokeskus", in the request language
     what: str               # what the survey's category holds, in the words of the line
+    what_short: str         # the same, short, when the long form would break the length rule
 
 
 class PeerBenchmarkData(BaseModel):
@@ -234,7 +235,8 @@ def _national(nb: NumberBuilder, reg, metric: str, level: str, peer_group: str, 
     amount, _ = nb.composite(config.METHODS["national_month"], "rule_value", {}, Unit.EUR_PER_MONTH, year,
                              _t("national_label", lang), params={**fig.params(), "period": evidence.period_param(year)})
     return NationalContext(amount=reg(amount), age_group=fig.age_group, survey_year=fig.survey_year,
-                           source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang))
+                           source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang),
+                           what_short=config.label(config.NATIONAL_WHAT_SHORT[metric], lang))
 
 
 def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
@@ -328,6 +330,7 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
         # #569: only when there is a line, so the model view of every other peer answer stays as it was
         # (no age digits: the answer may not state a digit that is no Number or returned period)
         **({"national": {"amount": model_number(data.national.amount), "survey": data.national.amount.period.label,
-                         "source": data.national.source, "what": data.national.what, "context_only": True}}
+                         "source": data.national.source, "what": data.national.what,
+                         "what_short": data.national.what_short, "context_only": True}}
            if data.national else {}),
     }

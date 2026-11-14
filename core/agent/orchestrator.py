@@ -541,8 +541,16 @@ class Pipeline:
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
+        # #569: a peer answer with the national context line is written by the template, which states the survey's
+        # figure with its source and period beside the comparison and compares nothing; no model draft can turn it
+        # into a verdict. No prompt change; no model request, so no warning either (the model did not fail).
+        national = any(isinstance(v, dict) and v.get("tool") == "get_peer_benchmark" and v.get("national")
+                       for v in views)
+        unavailable = planner_fallback or a.composer_unavailable is not None
+        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or national, a=a)
+        if national and not unavailable:
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "national_context": True})
+            used_template = False
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).

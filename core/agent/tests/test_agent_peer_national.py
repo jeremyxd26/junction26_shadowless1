@@ -29,7 +29,9 @@ def view(language: str, vs: float = 14.2, offers_cut: bool = False, national: bo
         v["national"] = {"amount": {"id": "n8", "value": 332.33, "unit": "eur_per_month", "label": "x"},
                          "survey": "1 Jan – 31 Dec 2022" if language == "en" else "1.1.–31.12.2022",
                          "source": "Statistics Finland" if language == "en" else "Tilastokeskus",
-                         "what": "food and non-alcoholic beverages", "context_only": True}
+                         "what": "food and non-alcoholic drinks" if language == "en" else
+                         "elintarvikkeisiin ja alkoholittomiin juomiin",
+                         "what_short": "food" if language == "en" else "ruokaan", "context_only": True}
     return v
 
 
@@ -37,10 +39,11 @@ def ok(text, **kw):
     return True
 
 
-@pytest.mark.parametrize("language,words", [("en", "per adult-equivalent during 1 Jan – 31 Dec 2022 (Statistics "
-                                                      "Finland)"),
-                                             ("fi", "aikuista vastaavaa henkilöä kohti jaksolla 1.1.–31.12.2022 "
-                                                    "(Tilastokeskus)")])
+@pytest.mark.parametrize("language,words", [
+    ("en", "per adult-equivalent on food and non-alcoholic drinks (Statistics Finland, 1 Jan – 31 Dec 2022)."),
+    ("fi", "käyttivät elintarvikkeisiin ja alkoholittomiin juomiin {{n8}} aikuista vastaavaa henkilöä kohti "
+           "(Tilastokeskus, 1.1.–31.12.2022)."),
+])
 def test_the_line_follows_the_comparison_with_the_source_and_the_survey_period(language, words):
     sentences, ids = answer_sentences.peer(view(language), language, ok)
     assert len(sentences) == 2 and ids == ["n6", "n8"] and "{{n8}}" in sentences[1] and words in sentences[1]
@@ -56,9 +59,18 @@ def test_the_comparison_and_the_line_keep_the_length_rule(language, vs, offers_c
     assert len(sentences) == 2      # the line fits next to every comparison of the kept categories
 
 
+def test_the_short_category_words_when_the_long_ones_do_not_fit():
+    v = view("en", 89.5, offers_cut=True)
+    v["national"]["what"] = "transport without buying a vehicle"
+    v["national"]["what_short"] = "transport"
+    sentences, ids = answer_sentences.peer(v, "en", ok)
+    assert len(sentences) == 2 and " on transport (" in sentences[1]
+    assert answer_text.length_problems(" ".join(sentences), len(ids)) == []
+
+
 def test_the_line_is_dropped_when_it_would_break_the_length_rule(monkeypatch):
-    long = ("Households of your age spent {amount} per adult-equivalent {period} ({source}), " + "and so on " * 8 +
-            "today.", "x")
+    long = ("Households your age spent {amount} per adult-equivalent on {what} ({source}, {period}), " +
+            "and so on " * 8 + "today.", "x")
     monkeypatch.setattr(answer_sentences, "NATIONAL", long)
     sentences, ids = answer_sentences.peer(view("en"), "en", ok)
     assert len(sentences) == 1 and ids == ["n6"]
@@ -105,3 +117,62 @@ def test_a_health_comparison_is_still_declined():
                                       language="en", as_of="2026-09-30",
                                       tools=[{"name": t, "description": "", "parameters_json_schema": {}} for t in ALL]))
     assert [c.name for c in plan.calls] == ["decline"]
+
+
+# ---- the model path: the template writes a peer answer with the line; the validator guards the figure anyway ----
+
+def _numbers():
+    from datetime import date
+
+    from core.tools.models import Number, Period, Unit
+    year = Period(start=date(2022, 1, 1), end=date(2022, 12, 31), label="1 Jan – 31 Dec 2022")
+    month = Period(start=date(2026, 4, 1), end=date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
+    return {"n8": Number(id="n8", value=332.33, unit=Unit.EUR_PER_MONTH, period=year,
+                         method="national_context.monthly_eur@1", evidence_ref="ev_aaaaaaaaaaa8", label="x",
+                         display="€332.33 a month"),
+            "n1": Number(id="n1", value=628.86, unit=Unit.EUR_PER_MONTH, period=month,
+                         method="peer_benchmark.you_month_eur@1", evidence_ref="ev_aaaaaaaaaaa1", label="x",
+                         display="€628.86 a month")}
+
+
+@pytest.mark.parametrize("text,bad", [
+    ("Households your age spent {{n8}} per adult-equivalent on food (Statistics Finland, 1 Jan – 31 Dec 2022).",
+     False),
+    ("You spend {{n1}}, more than households of your age at {{n8}} (Statistics Finland, 1 Jan – 31 Dec 2022).", True),
+    ("Households of your age spent only {{n8}} on food (Statistics Finland, 1 Jan – 31 Dec 2022).", True),
+    ("Ikäryhmäsi kotitaloudet käyttivät {{n8}} vähemmän kuin sinä (Tilastokeskus, 1.1.–31.12.2022).", True),
+])
+def test_the_validator_never_lets_the_figure_become_a_comparison(text, bad):
+    from core.agent.validator import national_problems
+    assert bool(national_problems(text, _numbers())) is bad
+
+
+def test_a_peer_answer_with_the_line_is_written_by_the_template_and_no_model_draft(make_pipeline):
+    from agent_fakes import FakeArgs, registry, run
+
+    from core.agent.model import FunctionCall, ScriptedModel
+    from core.agent.registry import ToolSpec
+    from core.tools.models import ToolResult, Unit
+
+    def peer_tool(ctx, args):
+        nums = _numbers()
+        n6 = ctx.numbers.register(nums["n1"].model_copy(update={"id": None, "value": 14.2, "unit": Unit.PERCENT,
+                                                               "method": "peer_benchmark.vs_median_pct@1",
+                                                               "display": "14.2% more"}))
+        n8 = ctx.numbers.register(nums["n8"].model_copy(update={"id": None}))
+        v = view("en")
+        v["vs_median"]["id"], v["national"]["amount"]["id"] = n6.id, n8.id
+        return ToolResult(tool="get_peer_benchmark", data={}, card=None, evidence=[], model_view=v)
+
+    spec = ToolSpec("get_peer_benchmark", "Peers.", FakeArgs, peer_tool, ("Looking", "Katson"))
+    comparing = {"language": "en", "text": "You spend more than households of your age.", "cited": [],
+                 "lesson_key": None}
+    model = ScriptedModel(plans=[[FunctionCall("get_peer_benchmark", {}), FunctionCall("finish")]],
+                          drafts=[comparing, comparing])
+    events = run(make_pipeline(model, registry(spec)), "How does my grocery spending compare with people like me?",
+                 language="en")
+    done = dict(events)["done"]
+    assert model.compose_inputs == [] and done["outcome"] == "answered"
+    assert "Statistics Finland" in done["text"] and "more than households" not in done["text"]
+    assert "llm_unavailable" not in done["warnings"]
+

@@ -630,8 +630,13 @@ CITY_LABELS: dict[str, tuple[str, str]] = {   # metrics.md section 6: first two 
 # The national context line (#569): what the survey's category holds, in the words of the line. Context, never a
 # verdict: no comparison word between the customer's amount and the survey's.
 NATIONAL_WHAT: dict[str, tuple[str, str]] = {
-    "Groceries": ("food and non-alcoholic beverages", "elintarvikkeisiin ja alkoholittomiin juomiin"),
+    "Groceries": ("food and non-alcoholic drinks", "elintarvikkeisiin ja alkoholittomiin juomiin"),
     "Transportation": ("transport without buying a vehicle", "liikenteeseen ilman ajoneuvon ostoa"),
+}
+# the same, short, for an answer whose comparison sentence leaves no room for the long form (the length rule)
+NATIONAL_WHAT_SHORT: dict[str, tuple[str, str]] = {
+    "Groceries": ("food", "ruokaan"),
+    "Transportation": ("transport", "liikenteeseen"),
 }
 PEER_TEXT: dict[str, tuple[str, str]] = {
     "title": ("{what}: you and people like you", "{what}: sinä ja kaltaisesi"),
