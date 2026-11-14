@@ -16,11 +16,11 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Path, Query, Request
 
-from core.tools import config, evidence, periods
+from core.tools import config, evidence, periods, spending
 from core.tools.formatting import display
 from core.tools.models import Unit
 from core.tools.numbers import json_value
-from core.tools.selection import Selection
+from core.tools.selection import NONE_KEY, Selection
 
 from . import texts
 from .deps import CUSTOMER_ID_PATTERN, EVIDENCE_REF_PATTERN, customer_connection
@@ -45,30 +45,57 @@ def _period_of(spec: dict[str, Any], load: Loader) -> tuple[date, date]:
     return as_of, as_of
 
 
-def _label_of(spec: dict[str, Any], language: str) -> str:
+def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = None) -> str:
     info = texts.method_info(spec["method"])
     if spec["kind"] != "transactions":
         return texts.pick(info.name, language)
     sel = spec["selection"]
     group = sel.get("group") or {}
+    dims = sum(bool(sel.get(k)) for k in ("categories", "mcc_groups", "baskets", "merchant_id"))
+    if spec["method"] == config.METHODS["total"] and not group and dims > 1:
+        # A filter across dimensions is named as the tool names it, never by its first part alone (#501); the
+        # merchant by its alias when the resolver could name it, else neutrally.
+        if sel.get("merchant_id") and not merchant_label:
+            named = spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], None, language)
+            return named + config.label(config.TEXT["filter_at_unnamed"], language)
+        return spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], merchant_label, language)
+    if spec["method"] == config.METHODS["total"] and not group and dims == 0 and sel.get("direction") == "in":
+        return config.label(config.TEXT["income"], language)   # an unfiltered income total is income (#501)
     if sel.get("series_key") in config.SERIES_LABELS:
         return config.label(config.SERIES_LABELS[sel["series_key"]], language)
+    # A breakdown's own items, named as the tool names them (Number label = card title = evidence title, #567):
+    # "Other" is the purchases with no merchant group, "Everything else" the rest after the top items; neither is
+    # the customer's total spending.
+    if group.get("by") == "mcc_group" and group.get("key") == NONE_KEY:
+        return config.label(config.TEXT["no_mcc_group"], language)
+    if group.get("not_in") and not group.get("key"):
+        return config.label(config.TEXT["everything_else"], language)
     if group.get("by") == "category" and group.get("key") in config.CATEGORY_LABELS:
         return config.label(config.CATEGORY_LABELS[group["key"]], language)
     if group.get("by") == "basket" and group.get("key") in config.BASKET_LABELS:
         return config.label(config.BASKET_LABELS[group["key"]], language)
     if group.get("by") == "mcc_group" and group.get("key") in config.MCC_GROUP_LABELS:
-        return config.label(config.MCC_GROUP_LABELS[group["key"]], language)
+        return spending.group_label(group["key"], language)   # as the tool's item (review of #528)
     if len(sel["categories"]) == 1 and sel["categories"][0] in config.CATEGORY_LABELS:
         return config.label(config.CATEGORY_LABELS[sel["categories"][0]], language)
     if len(sel["mcc_groups"]) == 1 and sel["mcc_groups"][0] in config.MCC_GROUP_LABELS:
-        return config.label(config.MCC_GROUP_LABELS[sel["mcc_groups"][0]], language)
+        # "Restaurants (card purchases)", never the category's own label (review of #528)
+        return spending.group_label(sel["mcc_groups"][0], language)
     if len(sel["baskets"]) == 1 and sel["baskets"][0] in config.BASKET_LABELS:
         return config.label(config.BASKET_LABELS[sel["baskets"][0]], language)
+    if spec["method"] == config.METHODS["total"]:
+        # A filtered sum is never "Total spending" (#399): every part of the filter is named, as the tool names
+        # it; a merchant the view cannot name (its alias needs the history) gets a neutral label.
+        named = spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], None, language)
+        if named:
+            return named
+        if sel.get("merchant_id"):
+            return config.label(config.TEXT["spending_merchant"], language)
     return texts.pick(info.name, language)
 
 
-def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader) -> dict[str, Any]:
+def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader,
+                     merchant_label: str | None = None) -> dict[str, Any]:
     info = texts.method_info(spec["method"])
     value = Decimal(spec["value"])
     start, end = _period_of(spec, load)
@@ -78,7 +105,7 @@ def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader
         "period": {"start": start, "end": end, "label": periods.period_label(start, end, language)},
         "method": spec["method"],
         "evidence_ref": ref,
-        "label": _label_of(spec, language),
+        "label": _label_of(spec, language, merchant_label),
         "display": display(value, info.unit, language, spec["method"]),
     }
 
@@ -122,7 +149,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
 
     spec = res.spec if res.spec is not None else load(res.ref)  # a resolver may not hand back its spec
 
-    number = number_from_spec(res.ref, spec, language, load)
+    number = number_from_spec(res.ref, spec, language, load, merchant_label=res.merchant_label)
     info = texts.method_info(res.method)
     body: dict[str, Any] = {
         "evidence_ref": res.ref,

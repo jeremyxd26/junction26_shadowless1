@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
+import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { stopSpeaking } from '../lib/speech.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -29,7 +31,16 @@ interface Props {
 export function Chat({ chat, question, disclosure, suggestions, opening, starters: openingStarters }: Props) {
   const { lang, customerId } = useSettings()
   const s = chatStrings(lang)
-  const { turns, busy, send, retry, stop } = chat
+  const { turns, busy, retry, stop } = chat
+  // Every question goes through here, so the opening can close its Undo toast (#315).
+  const chatSend = chat.send
+  const send = useCallback(
+    (question: string) => {
+      notifyAsked()
+      chatSend(question)
+    },
+    [chatSend],
+  )
   const [draft, setDraft] = useState('')
   const input = useRef<HTMLInputElement>(null)
 
@@ -53,6 +64,11 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     document.querySelector(`[data-turn="${lastId}"]`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
   }, [lastId, many])
+
+  // Every new question stops an answer that is being read aloud, the latest one or an older one.
+  useEffect(() => {
+    if (lastId !== undefined) stopSpeaking()
+  }, [lastId])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()

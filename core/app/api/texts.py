@@ -31,6 +31,8 @@ ERRORS: dict[str, Pair] = {
     "data_unavailable": ("Your data is not available right now. Please try again.",
                          "Tietosi eivät ole juuri nyt saatavilla. Yritä uudelleen."),
     "llm_unavailable": ("Explanations are not available right now.", "Selitykset eivät ole juuri nyt saatavilla."),
+    "model_unavailable": ("The bill cannot be read right now. You can type its details instead.",
+                          "Laskua ei voi lukea juuri nyt. Voit kirjoittaa sen tiedot itse."),
     "internal": ("Something went wrong. Please try again.", "Jokin meni vikaan. Yritä uudelleen."),
     "not_found": ("There is nothing at this address.", "Tästä osoitteesta ei löydy mitään."),
 }
@@ -172,6 +174,14 @@ for _col, _unit, _en, _fi in [
     ("savings_goal_eur", Unit.EUR_PER_MONTH, "Savings goal set aside first", "Ensin sivuun laitettava säästötavoite"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+METHODS["safe_to_save.week_eur@1"] = MethodInfo(
+    Unit.EUR_PER_WEEK, ("Typically left each week", "Tavallisesti jää viikossa"),
+    ("What a typical month leaves, per week (x 7 / 30.4375).",
+     "Mitä tavallisesta kuukaudesta jää, viikkoa kohden (x 7 / 30,4375)."), METRICS_DOC + "#31-safe-to-save-33")
+METHODS["safe_to_save.day_eur@1"] = MethodInfo(
+    Unit.EUR_PER_DAY, ("Typically left each day", "Tavallisesti jää päivässä"),
+    ("What a typical month leaves, per day (/ 30.4375).",
+     "Mitä tavallisesta kuukaudesta jää, päivää kohden (/ 30,4375)."), METRICS_DOC + "#31-safe-to-save-33")
 METHODS["safe_to_spend.usual_week_eur@1"] = MethodInfo(
     Unit.EUR_PER_WEEK, ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),
     ("Usual everyday spending in a typical month of the last six, per week (x 7 / 30.4375).",
@@ -337,6 +347,24 @@ METHODS["savings_plan.cut_pct@1"] = MethodInfo(
     Unit.PERCENT, ("Cut share", "Vähennyksen osuus"),
     ("How much of a category's usual spending the plan cuts, a setting of the plan.",
      "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
+    PLAN_DOC)
+# What already goes to savings, beside the plan (#560): never part of the plan's total.
+METHODS["savings_plan.already_share_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Share of your income", "Osuus tuloistasi"),
+    ("The typical month of the regular transfer to savings or investments, as a share of the typical monthly "
+     "income; both are the recurring series' own typical months.",
+     "Säännöllisen säästö- tai sijoitussiirron tavallinen kuukausi osuutena tavallisen kuukauden tuloista; "
+     "molemmat ovat toistuvien sarjojen omia tavallisia kuukausia."),
+    PLAN_DOC)
+METHODS["savings_plan.already_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Already goes to savings, a month", "Säästöihin menee jo kuukaudessa"),
+    ("The sum of the typical months of the regular transfers to savings or investments, when there are several.",
+     "Säännöllisten säästö- tai sijoitussiirtojen tavallisten kuukausien summa, kun niitä on useita."),
+    PLAN_DOC)
+METHODS["savings_plan.income_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Your income, a typical month", "Tulosi tavallisena kuukautena"),
+    ("The sum of the typical months of the income series, when there are several.",
+     "Tulosarjojen tavallisten kuukausien summa, kun niitä on useita."),
     PLAN_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).

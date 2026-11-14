@@ -10,6 +10,8 @@
 // - Evidence: the two contract examples by ref. Other refs that appear in a mock overview get an
 //   evidence object built only from that overview's own data (see buildEvidence). The examples
 //   hold only a first page of rows, so a request with a cursor gets an empty last page.
+//   The numbers of the bill explanation examples (section 11) open placeholder evidence by ref for
+//   every persona (see BILL_EXAMPLES).
 // - Labels (POST /api/baskets/label): the contract's label examples. The mock remembers the answer
 //   for this page load, and the next overview carries the example's `after` numbers, no review and
 //   no waiting row. Undoing "I chose it" has no example: it is the "I chose it" example run backwards.
@@ -36,6 +38,7 @@ import type {
   WhatIfResponse,
   WhatIfScenarioRequest,
 } from '../types.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -55,6 +58,9 @@ const examples = contract.examples as unknown as {
   'card.safe_to_save_zero': SafeToSaveCard
   'card.safe_to_save_everyday': SafeToSaveCard
   'whatif.response': WhatIfResponse
+  'bill.response': unknown
+  'bill.response_unknown': unknown
+  'bill.response_not_covered': unknown
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -64,6 +70,13 @@ const CARD_EXAMPLES = [
   examples['card.safe_to_save_zero'],
   examples['card.safe_to_save_everyday'],
 ]
+
+/**
+ * The bill explanation examples (contract section 11). Their numbers open placeholder evidence by
+ * ref whatever the persona is: the `bill.*` numbers first, any other of their refs after the
+ * persona's own overview (so a hero ref still opens the hero's evidence for Aino).
+ */
+const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], examples['bill.response_not_covered'], TIGHT_FORECAST]
 
 /** Sanna as in core/config/personas.yaml (lead persona of the demo). */
 const SANNA: Persona = {
@@ -296,6 +309,9 @@ function label(request: LabelRequest): LabelResponse {
 
 function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   if (EVIDENCE[ref]) return clone(EVIDENCE[ref])
+  const billNumbers = collectNumbers(BILL_EXAMPLES).filter((candidate) => candidate.evidence_ref === ref)
+  const computedByBill = billNumbers.find((candidate) => candidate.method.startsWith('bill.'))
+  if (computedByBill) return placeholderEvidence(computedByBill)
   // The overview as served now first, then the pending one: refs from before an answer stay valid.
   const overviews = [currentOverview(customerId), OVERVIEWS[customerId]]
   for (const overview of overviews) {
@@ -310,6 +326,7 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   }
   const cardNumber = collectNumbers(CARD_EXAMPLES).find((candidate) => candidate.evidence_ref === ref)
   if (cardNumber) return placeholderEvidence(cardNumber)
+  if (billNumbers[0]) return placeholderEvidence(billNumbers[0])
   throw new ApiError(404, {
     code: 'evidence_not_found',
     message: 'We could not find how this number was built.',

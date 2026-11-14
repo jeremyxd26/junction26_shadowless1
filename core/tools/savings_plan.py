@@ -15,13 +15,14 @@ total a month and a year computed here; no model adds numbers (rules in docs/des
   total a year twelve times that (composite `scale`). Both are estimates. Each cut share is a rule value
   (`savings_plan.cut_pct@1`), so an answer can cite it as a number instead of bare digits.
 - These are savings from cutting below the usual pace: they add to safe to save, never to safe to spend
-  (r-w6's invariant, #381). Safe to save a month is shown next to the plan as it is today, never added in.
+  (the invariant of #381). The savings goal set aside first (#391) is named next to the plan, the same
+  Number and ref as the safe-to-spend answer cites, in every review state, never added in (#468).
 - The S-Bonus is never shown with the plan, never part of the total (product owner, #369): no amount on the
   card or in the model view. When its estimate is offered, its own question ("How much S-Bonus could I
   get?") is the answer's first follow-up, answered with its own Number and evidence (coordinator, #411).
 - The card has no digit outside a Number or the period: each row's label says its cut in words.
-- When no lever reaches the threshold, the card is the baskets card (where the money goes), next to safe to
-  save (coordinator, #411). A failure of safe to save or the S-Bonus leaves them out; the plan still stands.
+- When no lever reaches the threshold, the card is the baskets card (where the money goes), next to the
+  savings goal (coordinator, #411). A failure of the goal or the S-Bonus leaves them out; the plan still stands.
 """
 
 from __future__ import annotations
@@ -36,11 +37,12 @@ from pydantic import BaseModel
 
 from core.tools import config, evidence
 from core.tools.baskets import get_basket_breakdown
+from core.tools.bills import get_recurring_bills
 from core.tools.bonus import get_bonus_estimate
 from core.tools.context import NumberRegistry, ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
-from core.tools.safe_to_save import get_safe_to_save
+from core.tools.safe_to_spend import get_safe_to_spend
 from core.tools.missing import MissingData
 from core.tools.what_if import WhatIfRefused, run_what_if
 
@@ -67,8 +69,15 @@ class SavingsPlanData(BaseModel):
     levers: list[Lever]
     total_month: Number | None      # None when no lever reaches the threshold
     total_year: Number | None
-    safe_to_save: Number | None     # shown next to the plan, never added in
+    savings_goal: Number | None     # the goal set aside first (#391, #468): named next to the plan, never added in
     follow_up: str | None           # the S-Bonus question, offered when the estimate is (coordinator, #411)
+    # What already goes to savings (#560): the recurring savings or investment series' typical month (the bills
+    # tool's own Number, the same method and evidence) and its share of the typical monthly income. Never added to
+    # the plan's total, never compared with other customers. `saving_seen` is False when no such series shows
+    # (the neutral line), None when it could not be read.
+    already_saving: Number | None = None
+    already_share: Number | None = None
+    saving_seen: bool | None = None
 
 
 def _t(key: str, language: str, **kw: Any) -> str:
@@ -114,7 +123,7 @@ def role(category: str) -> str:
 
 
 def _decoration(name: str, fn) -> Any:
-    """An extra beside the plan (safe to save, the S-Bonus, the baskets card of the no-lever answer): any
+    """An extra beside the plan (the savings goal, the S-Bonus, the baskets card of the no-lever answer): any
     failure leaves it out and keeps the plan (#411)."""
     try:
         return fn()
@@ -142,6 +151,16 @@ def _shown_card(card: Card, shown) -> Card:
     return card.model_copy(update={k: walk(v) for k, v in (card.model_extra or {}).items()})
 
 
+def already_saving(ctx: ToolContext) -> tuple[list[Number], list[Number]]:
+    """The typical months of the recurring series that move money to savings or investments, and of the income
+    series, as the bills tool computes them (its own Numbers, method `recurring.typical_month_eur@1`, evidence the
+    series' transactions). Read only: the bills tool writes its evidence specs, nothing else (#560)."""
+    data = get_recurring_bills(ctx, {}).data
+    saving = [b.typical_month for b in data.bills if b.category in config.SAVINGS_CATEGORIES]
+    income = [i.typical_month for i in data.income]
+    return saving, income
+
+
 def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = None) -> ToolResult:
     GetSavingsPlanArgs.model_validate(args or {}) if not isinstance(args, GetSavingsPlanArgs) else args
     lang = ctx.language
@@ -163,6 +182,7 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
 
     nb = NumberBuilder(ctx, [])
     levers: list[Lever] = []
+    results = []   # each lever's what-if result, for its baseline in the estimate (#503 review)
     for category, pct, result in ((first_category, first_pct, first),
                                   (other_category, other_pct, others.get(other_category) if other_category else None)):
         if category is not None and counts(result):
@@ -174,6 +194,7 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
             label = _t("lever", lang, what=what, words=words) if words else _t("lever_no_words", lang, what=what)
             levers.append(Lever(key=category, category=what, label=label, cut_pct=pct, cut=reg(cut),
                                 cut_words=words, saving=saving))
+            results.append(result)
 
     total_month = total_year = None
     if levers:
@@ -187,8 +208,11 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
                                  params={"factor_num": 12, "factor_den": 1, "period": evidence.period_param(window)})
         total_month, total_year = reg(month_n), reg(year_n)
 
-    # Safe to save: the safe-to-save tool's own headline (its view's `monthly`), the same Number and ref.
-    safe_to_save = shown(_decoration("safe to save", lambda: get_safe_to_save(private, {}).data.monthly))
+    # The savings goal set aside first (#391): the safe-to-spend answer's own Number (the same ref), the same in
+    # every review state, so the two answers of one conversation name one monthly figure (#468). It is never
+    # added to the plan's total; a goal of 0 is left out.
+    goal = _decoration("savings goal", lambda: get_safe_to_spend(private, {}).data.savings_goal)
+    savings_goal = shown(goal) if goal is not None and goal.value > 0 else None
 
     # The S-Bonus is never shown with the plan: no amount on the card or in the model view, so nothing can put
     # it next to the total. When the estimate is offered, its own question is the answer's first follow-up, and
@@ -196,24 +220,70 @@ def get_savings_plan(ctx: ToolContext, args: GetSavingsPlanArgs | dict | None = 
     bonus_offered = _decoration("S-Bonus", lambda: get_bonus_estimate(private, {}).data.status != "not_offered")
     follow_up = _t("bonus_follow_up", lang) if bonus_offered else None
 
+    # What already goes to savings (#560): the series' own typical month, and its share of the typical income (a
+    # composite `share_pct` of the two series Numbers). Beside the plan, never added to its total.
+    flows = _decoration("already saving", lambda: already_saving(private))
+    already = share = None   # built here, registered after every other Number of the answer (below)
+    seen: bool | None = None
+    already_refs: list[str] = []
+    if flows is not None:
+        saving_ns, income_ns = flows
+        seen = bool(saving_ns)
+        if saving_ns:
+            window_s = saving_ns[0].period
+            if len(saving_ns) == 1:
+                saving_n = saving_ns[0]
+            else:   # several saving series: one sum, its parts the series' own Numbers
+                saving_n, _ = nb.composite(config.SAVINGS_PLAN_METHODS["already_month"], "sum",
+                                           {f"series_{i}": (n, _value(n)) for i, n in enumerate(saving_ns)},
+                                           Unit.EUR_PER_MONTH, window_s, _t("already_month", lang),
+                                           params={"period": evidence.period_param(window_s)})
+            already = saving_n.model_copy(update={"id": None, "label": _t("already_month", lang)})
+            already_refs = [n.evidence_ref for n in saving_ns]
+            if income_ns:
+                if len(income_ns) == 1:
+                    income_n = income_ns[0]
+                else:
+                    income_n, _ = nb.composite(config.SAVINGS_PLAN_METHODS["income_month"], "sum",
+                                               {f"series_{i}": (n, _value(n)) for i, n in enumerate(income_ns)},
+                                               Unit.EUR_PER_MONTH, window_s, _t("income_month", lang),
+                                               params={"period": evidence.period_param(window_s)})
+                if _value(income_n) > 0:
+                    share_n, _ = nb.composite(config.SAVINGS_PLAN_METHODS["already_share"], "share_pct",
+                                              {"part": (saving_n, _value(saving_n)),
+                                               "whole": (income_n, _value(income_n))},
+                                              Unit.PERCENT, window_s, _t("already_share", lang))
+                    share = share_n
+                    already_refs += [n.evidence_ref for n in income_ns]
+
     extra_evidence: list = []
     card = None
     if levers:
-        card = _card(levers, total_month, lang)
-    else:   # no lever: where the money goes, next to safe to save (coordinator, #411)
+        # #380 / #503 review: the estimate observes each lever's baseline (the what-if's own Number and ref). They
+        # are registered after every Number above, so no existing id or text token of the answer moves; the plan's
+        # answer gains these Numbers on purpose.
+        baselines = [shown(r.baseline_per_month) for r in results]
+        card = _card(levers, total_month, lang, baselines)
+    else:   # no lever: where the money goes, next to the savings goal (coordinator, #411, #468)
         baskets = _decoration("baskets", lambda: get_basket_breakdown(private, dict(config.SAVINGS_PLAN_NONE_BASKETS)))
         if baskets is not None and baskets.card is not None:
             card = _shown_card(baskets.card, shown)
             extra_evidence = list(baskets.evidence)
+    # #560's two Numbers come last, after the baselines and the breakdown card, so no id or text token that the plan's
+    # answer had before moves
+    already = reg(already) if already is not None else None
+    share = reg(share) if share is not None else None
 
     data = SavingsPlanData(levers=levers, total_month=total_month, total_year=total_year,
-                           safe_to_save=safe_to_save, follow_up=follow_up)
+                           savings_goal=savings_goal, follow_up=follow_up, already_saving=already,
+                           already_share=share, saving_seen=seen)
     evidence.write(ctx.conn, nb.specs)
+    extra_evidence += [ref for ref in already_refs if ref and ref not in extra_evidence and ref not in nb.specs]
     return ToolResult(tool=TOOL, data=data, card=card, notes=[], evidence=list(nb.specs) + extra_evidence,
                       model_view=_model_view(data))
 
 
-def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
+def _card(levers: list[Lever], total_month: Number, language: str, baselines: list[Number]) -> Card:
     """The existing breakdown card: the total a month as the headline and one row per lever (each row's key is
     its category, its label in words). No digit outside a Number or the period: no S-Bonus amount, and the
     estimate text is the assumption in words."""
@@ -224,7 +294,12 @@ def _card(levers: list[Lever], total_month: Number, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="breakdown", title=_t("title", language), subtitle=total_month.period.label, evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
+        # #380 / #503 review: observed are the levers' baselines (what_if.baseline_month_eur@1); the savings are
+        # baseline x an assumed cut, the estimate itself. Assumed: the coming months, and each lever's cut share.
+        estimate=Estimate(label=_t("estimate_label", language), text=_t("estimate_text", language),
+                          observed=list(baselines),
+                          assumptions=[assumption("savings_plan.next_months_like_last", language),
+                                       *(assumption("savings_plan.cuts_as_shown", language, lv.cut) for lv in levers)]),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
                  Action(type="open_host_screen", target="monthly_saving", label=host_label)],
         display_hint="list", total=total_month, comparison=None, items=items,
@@ -242,6 +317,10 @@ def _model_view(data: SavingsPlanData) -> dict[str, Any]:
                     "saving": model_number(lv.saving)} for lv in data.levers],
         "total_month": model_number(data.total_month),
         "total_year": model_number(data.total_year),
-        "safe_to_save": model_number(data.safe_to_save),
+        "savings_goal": model_number(data.savings_goal),
         "follow_up": data.follow_up,
+        # what already goes to savings (#560): beside the plan, never part of its total
+        "already_saving": model_number(data.already_saving),
+        "already_share": model_number(data.already_share),
+        "saving_seen": data.saving_seen,
     }

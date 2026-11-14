@@ -476,6 +476,28 @@ def render(text: str, numbers: dict[str, Number]) -> str:
     return TOKEN.sub(lambda m: numbers[m.group(1)].display, text)
 
 
+# ---- #417: an amount is never joined to the bank's screen or product in one sentence --------------------
+# The screen behind the "monthly saving" button holds investment funds, so "put €360 a month into monthly
+# saving" next to that button reads like personal investment advice. The amount sentence and the bank's
+# screen stay apart; the button names the screen only. Model drafts only: it runs in the orchestrator's
+# _compose with the other model-draft checks. A template is never replaced for it; templates are held to
+# it by tests that render each tool's template in English and Finnish. The words: answer_text.bank_action.
+_MONEY_UNITS = {"eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
+
+
+def amount_with_bank_product(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first sentence with an amount (the token of a euro Number) that puts something into the bank's
+    screen or product (answer_text.bank_action), rendered; or None. A plain statement passes ("Your monthly
+    saving is {{n1}}."), as does a sentence with only one of them ("an AI money coach inside S-mobiili")."""
+    for sentence in answer_text.SENTENCE_BREAK.split(text):
+        if not answer_text.bank_action(sentence):
+            continue
+        if any(t in numbers and numbers[t].unit.value in _MONEY_UNITS for t in TOKEN.findall(sentence)):
+            return TOKEN.sub(lambda m: numbers[m.group(1)].display if m.group(1) in numbers else m.group(0),
+                             sentence).strip()
+    return None
+
+
 # ---- model-draft checks for the composer defects seen on the stand (#398) ------------------------------------
 # They run on model drafts only (orchestrator._compose): a rejected draft is retried with the reason, then the
 # template writes. A template is never rejected by them.
@@ -600,8 +622,26 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
+# payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
+_META_TEXT = re.compile(
+    r"\b(is|are|gets?) declined\b|\bdeclined before\b|\bdeclined by my\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) (instructed|programmed)\b|"
+    r"\bi was (told|instructed|programmed|set up)\b|\bhow i(?: was|['’]ve been| have been| am|['’]m) set up\b|"
+    r"\bmy (instructions|rules|guidelines|prompt|system prompt|programming)\b|\bper my\b|"
+    r"\bhylätään\b|\bennen kuin (kirjoitan|vastaan)\b|\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|"
+    r"\bminulla ei ole lupaa\b|\bminulla on ohjeet\b|\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+
+
+def meta_text(text: str) -> str | None:
+    """The first words in a draft about the model's own rules, instructions or process, or None."""
+    m = _META_TEXT.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
-                   labels: Iterable[str] = ()) -> list[str]:
+                   labels: Iterable[str] = (), views: Iterable[Any] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
     `labels` are the labels in the answer's data, which a draft may always name (#419)."""
     problems = []
@@ -634,7 +674,83 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
+    meta = meta_text(text)
+    if meta:
+        problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
     used = TOKEN.findall(text)
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")
+    problems += safe_to_spend_problems(text, views)
+    return problems
+
+
+# ---- pay yourself first in a model draft (#552) ------------------------------------------------------------
+# The safe-to-spend view says which limit binds (binding_limit) and holds the savings goal set aside first. A
+# draft about safe to spend cites the goal when the budget side binds, and names the binding limit as the cause,
+# never the other one. The sides are the view's own Numbers: the balance side is the balance limit, free until
+# payday and the components (balance, bills, reserves, cushion); the budget side is the budget limit, the goal and
+# the usual pace.
+_CAUSE = re.compile(r"\b(?:because(?:\s+of)?|based\s+on|due\s+to|driven\s+by|comes?\s+from|set\s+by|limited\s+by"
+                    r"|capped\s+by|depends?\s+on|thanks\s+to|koska|perustuu|johtuu)\b", re.I)
+_SIDE_WORD = re.compile(
+    r"\b(?:(?P<budget>budget\w*|goals?|set(?:ting)?\s+aside|aside|sav(?:e|es|ing|ings)\b|\w*budjet\w*|\w*tavoit\w*"
+    r"|sivuun|\w*s[aä][aä]st[oöaä]\w*)"
+    r"|(?P<balance>balance|bills?|reserves?|account|\w*saldo\w*|\w*lasku\w*|varau\w*|tili\w*))", re.I)
+# A concessive clause up to its comma ("although your balance is X, …", "vaikka saldosi on X, …"): its side word
+# is not the cause (review of #574)
+_CONCESSIVE = re.compile(r"\b(?:although|though|while|even\s+if|even\s+though|vaikka)\b[^,;]*[,;]?", re.I)
+# A sentence that refers back to the one before ("This is based on …", "Se johtuu …")
+_BACK_REFERENCE = re.compile(r"^\W*(?:this|that|it|the\s+reason|se|tämä|tuo|syy)\b", re.I)
+_BALANCE_KEYS = ("balance_limit", "free_until_payday")
+_BUDGET_KEYS = ("budget_limit", "savings_goal", "usual_week")
+
+
+def _node_id(node: Any) -> str | None:
+    return node.get("id") if isinstance(node, dict) and isinstance(node.get("id"), str) else None
+
+
+def _node_value(node: Any) -> float:
+    return node.get("value") if isinstance(node, dict) and isinstance(node.get("value"), (int, float)) else 0
+
+
+def safe_to_spend_problems(text: str, views: Iterable[Any] = ()) -> list[str]:
+    """What a draft gets wrong about safe to spend (#552), as retry reasons; [] when nothing."""
+    problems: list[str] = []
+    cited = set(TOKEN.findall(text))
+    for view in views:
+        if not isinstance(view, dict) or view.get("tool") != "get_safe_to_spend":
+            continue
+        binding = view.get("binding_limit")
+        safe, goal = view.get("safe_to_spend"), view.get("savings_goal")
+        if binding not in ("budget", "balance") or _node_id(safe) not in cited:
+            continue   # a draft that does not answer with safe to spend
+        balance = {_node_id(view.get(k)) for k in _BALANCE_KEYS} | \
+            {_node_id(c.get("amount")) for c in view.get("components") or [] if isinstance(c, dict)}
+        budget = {_node_id(view.get(k)) for k in _BUDGET_KEYS}
+        balance.discard(None)
+        budget.discard(None)
+        if binding == "budget" and _node_value(goal) > 0 and _node_id(goal) and _node_id(goal) not in cited:
+            problems.append(f"the savings goal is set aside first: say it with {{{{{_node_id(goal)}}}}} next to safe "
+                            "to spend, for example 'after setting aside {{" + _node_id(goal) + "}} first'")
+        if _node_value(goal) <= 0 and _node_id(goal) in cited:
+            problems.append("no savings goal is set aside (it is zero): do not cite it; name the limit that binds")
+        if _node_value(view.get("balance_limit")) == _node_value(view.get("budget_limit")):
+            continue   # both limits allow the same: either may be named
+        binding_ids, other_ids = (budget, balance) if binding == "budget" else (balance, budget)
+        names_binding = any(m.lastgroup == binding for m in _SIDE_WORD.finditer(text))
+        if cited & other_ids and not cited & binding_ids and not names_binding:
+            # only the other side's figures, and the binding limit neither cited nor named ("…, ja laskut ovat X")
+            problems.append(f"safe to spend is set by the {binding} limit: cite it, not only the other side's figures")
+        other = "balance" if binding == "budget" else "budget"
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            tokens = set(TOKEN.findall(sentence))
+            if tokens and _node_id(safe) not in tokens and not _BACK_REFERENCE.search(sentence):
+                continue   # a statement about other figures ("Your bills of X are covered because …")
+            masked = _CONCESSIVE.sub(lambda c: " " * len(c.group(0)), sentence)
+            for m in _CAUSE.finditer(masked):
+                side = _SIDE_WORD.search(masked, m.end())
+                if side and side.lastgroup == other:
+                    problems.append(f"'{sentence[m.start():side.end()]}': safe to spend is set by the {binding} limit, "
+                                    f"not the {other}; name the {binding} limit as the reason")
+                    break
     return problems

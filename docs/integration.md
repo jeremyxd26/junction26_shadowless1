@@ -65,8 +65,8 @@ Every message is `{"type": "...", "v": 1, "payload": {...}}`. Message names are 
 | Direction | `type` | `payload` | What happens | Status |
 |---|---|---|---|---|
 | module → host | `sentti.close` | `{}` | The customer leaves the module: the back button on the module's first screen. The host closes the WebView. | main (#170) |
-| module → host | `sentti.paymentDraft` | `{payee, iban, reference, amount, due_date}` | The customer taps "Add to payments" on an explained bill. **S-mobiili shows the payment in its own payment screen, and the customer confirms it there.** Sentti never pays (`contracts/api.md` section 11.3). | contract 0.3.0 on main; app planned (#331) |
-| module → host | `sentti.openHostScreen` | `{"target": "monthly_saving"}` | The customer taps a card's link into the bank's own screen. `target` is `monthly_saving` (the safe-to-save card), `bonus_to_fund` (the S-Bonus estimate) or `contact_bank` (the way to a human: refusals and bills with warning signs, contract 0.3.3, #420); the payday plan will reuse it (#258). The host ignores a target it does not know. | contract 0.3.1 on dev; app planned (#268) |
+| module → host | `sentti.paymentDraft` | `{payee, iban, reference, amount, due_date}` | The customer taps "Add to payments" on an explained bill. **S-mobiili shows the payment in its own payment screen, and the customer confirms it there.** Sentti never pays (`contracts/api.md` section 11.3). | contract 0.3.0 on main; app: dev (#331, merged with #563) |
+| module → host | `sentti.openHostScreen` | `{"target": "monthly_saving"}` | The customer taps a card's link into the bank's own screen. `target` is `monthly_saving` (the safe-to-save card), `bonus_to_fund` (the S-Bonus estimate) or `contact_bank` (the way to a human: refusals and bills with warning signs, contract 0.3.3, #420); the payday plan will reuse it (#258). The host ignores a target it does not know. | contract 0.3.1 on dev; app: dev for `monthly_saving` and `bonus_to_fund` (#268), `contact_bank` planned (#470) |
 | module → host | `sentti.ready` | `{"version": "1", "language": "fi"}` | The module has loaded; the host may now send `host.context` and `host.session`. | planned, no issue yet |
 | module → host | `sentti.openTransaction` | `{"transaction_id": "tx_606016"}` | The customer taps a transaction in an evidence sheet. The host opens it in its own transaction view; the host maps the id. | planned, no issue yet |
 | host → module | `host.context` | `{"language": "fi", "theme": {"color-brand": "#007841"}}` | Language and theme, section 4. | planned, no issue yet |
@@ -105,7 +105,7 @@ Every amount in a message is a Number object of the API contract (`contracts/api
   - Inputs are at least 16 px, so iOS does not zoom into them (`app/src/index.css`).
   - Tap targets are at least 44 × 44 px (`--tap-min`, `app/DESIGN.md` section 1).
 - **Text size:** WKWebView ignores the system text size. The layout is designed to survive 200 % zoom; an in-app text-size switch is a follow-up (`app/DESIGN.md` section 5).
-- **Read aloud (planned, #252):** on-device `speechSynthesis` only. The speaker button is hidden when the device has no voice, and no text is sent anywhere.
+- **Read aloud (#252, `app/src/lib/speech.ts`, `SpeakButton.tsx`):** a speaker button next to each of Sentti's answers reads its `text_rendered` with the device's `speechSynthesis`. Only voices that run on the device are used (`localService: true`); a cloud voice, such as Chrome's "Google …" or Edge's "… Online (Natural)" voices, is never picked, so no text is sent anywhere. Without a local voice for the answer's language the button is hidden. Nothing plays without a tap; a second tap, another answer, a new question or leaving the chat stops it.
 
 ## 5. Security
 
@@ -229,12 +229,11 @@ class SenttiActivity : AppCompatActivity() {
 ## 7. What is not built yet
 
 - **Identity from the host:** the token exchange, the session cookie it sets and the function that resolves the customer from it (section 2). The demo uses persona ids.
-- **The bridge:** `sentti.close` on iOS and Android is built (#170). `sentti.paymentDraft` (#331), `sentti.openHostScreen` (#268), `sentti.ready`, `sentti.openTransaction` and every message from the host are planned.
+- **The bridge:** `sentti.close` on iOS and Android is built (#170); `sentti.paymentDraft` (#331) and `sentti.openHostScreen` (#268) are on dev. `sentti.ready`, `sentti.openTransaction` and every message from the host are planned.
 - **Swedish:** `sv` in the API, the texts and the app.
 - **Theme tokens from the host:** the module uses its own S-mobiili-style tokens.
 - **Planned in the app:**
   - answering the review card, the module's one write (#35, PR #157; the API is on main, PR #141);
   - the chat-first first screen (#311);
   - the persona button outside a host (#323);
-  - the demo page `/demo.html` (#325);
-  - reading answers aloud on the device (#252).
+  - the demo page `/demo.html` (#325).

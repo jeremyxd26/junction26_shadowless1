@@ -1,6 +1,6 @@
 // A tiny router on the History API. The first screen is one thread on `/` (`/chat` redirects to
-// it); overlays and demo settings are query parameters (`?evidence=`, `?persona=`, `?lang=`), so
-// the WebView back button closes a sheet the same way it leaves a screen.
+// it); overlays and demo settings are query parameters (`?evidence=`, `?whatif=`, `?overview=1`,
+// `?persona=`, `?lang=`), so the WebView back button closes a sheet the same way it leaves a screen.
 import { useSyncExternalStore } from 'react'
 import { hostPlatform, sendToHost } from './hostBridge.ts'
 import type { WhatIfScenarioRequest, WhatIfSelection } from '../api/types.ts'
@@ -120,6 +120,29 @@ export function closeWhatIf() {
   else setParams({ whatif: null, cut: null })
 }
 
+/**
+ * Opens the overview sheet as a history entry (`?overview=1`), so Back closes it (#321). When it is
+ * open already, nothing happens: no second entry, no URL change (#513).
+ */
+export function openOverview() {
+  const url = new URL(window.location.href)
+  if (overviewFromParams(url.searchParams)) return
+  url.searchParams.set('overview', '1')
+  go(url, 'push', { sheet: true })
+}
+
+/** Closes the overview sheet: a step back if the app opened it, else (deep-linked) a replace. */
+export function closeOverview() {
+  const state = window.history.state as { sheet?: boolean } | null
+  if (state?.sheet) window.history.back()
+  else setParams({ overview: null })
+}
+
+/** `?overview=1`: the overview sheet is open. */
+export function overviewFromParams(params: URLSearchParams): boolean {
+  return params.get('overview') === '1'
+}
+
 /** The scenario in the URL, or null when it is missing or not valid. */
 export function whatIfFromParams(params: URLSearchParams): WhatIfScenarioRequest | null {
   const raw = params.get('whatif')
@@ -144,15 +167,21 @@ function parseScenario(scenario: unknown): WhatIfScenarioRequest | null {
 
 type BackState = { screen?: boolean; sheet?: boolean } | null
 
-/** A sheet is open: opened by the app (history state) or deep-linked (`?evidence=`, `?whatif=`). */
+/**
+ * A sheet is open: opened by the app (history state) or deep-linked (`?evidence=`, `?whatif=`,
+ * `?overview=1`).
+ */
 function sheetOpen(state: BackState): boolean {
   const params = new URLSearchParams(window.location.search)
-  return Boolean(state?.sheet) || params.has('evidence') || params.has('whatif')
+  return Boolean(state?.sheet) || params.has('evidence') || params.has('whatif') || overviewFromParams(params)
 }
 
-/** Closes the top sheet: evidence stacks over what-if, so it goes first. */
+/** Closes the top sheet. They stack evidence over what-if over overview, so they close in that order. */
 function closeTopSheet() {
-  if (new URLSearchParams(window.location.search).has('evidence')) closeEvidence()
+  const params = new URLSearchParams(window.location.search)
+  if (params.has('evidence')) closeEvidence()
+  else if (params.has('whatif')) closeWhatIf()
+  else if (overviewFromParams(params)) closeOverview()
   else closeWhatIf()
 }
 
@@ -178,7 +207,8 @@ export function canGoBack(): boolean {
 /**
  * Back: close the open sheet, or leave an inner screen; on the first screen, hand control back
  * to the host app with `sentti.close` (iOS or Android, docs/integration.md). If no host takes the
- * message there (a plain browser, or the host's handler throws), nothing happens.
+ * message there (a plain browser, or the host's handler throws), nothing happens. With a sheet
+ * open on the first screen (the overview, too), Back closes the sheet and never sends `sentti.close`.
  */
 export function goBack() {
   const state = window.history.state as BackState

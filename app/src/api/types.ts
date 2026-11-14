@@ -133,6 +133,12 @@ export interface SafeToSaveReason {
 export interface SafeToSaveCard extends CardBase {
   type: 'safe_to_save'
   monthly: Num
+  /**
+   * The same headline a week and a day (contract 0.3.5, #417): composites whose evidence opens
+   * `monthly`. Optional here, so a core older than 0.3.5 that leaves them out still renders (#477).
+   */
+  weekly?: Num
+  daily?: Num
   monthly_components: Component[]
   stock: Num
   stock_explanation: string
@@ -258,6 +264,17 @@ export interface LabelChange {
 
 export type ReviewState = 'answered' | 'pending' | 'closed'
 
+/**
+ * What the answer did (contract 0.3.2, added): the numbers that moved, with a confirmation text
+ * whose numbers are tokens. On an undo, before and after swap. Null or missing on older cores.
+ */
+export interface LabelEffect {
+  items: LabelChange[]
+  text: string
+  text_rendered: string
+  numbers: Record<string, Num>
+}
+
 export interface LabelResponse {
   customer_id: string
   as_of: string
@@ -269,6 +286,7 @@ export interface LabelResponse {
   message: { text: string; text_rendered: string; numbers: Record<string, Num> }
   changes: LabelChange[]
   refetch: string[]
+  effect?: LabelEffect | null
 }
 
 // POST /api/ask (contract section 7).

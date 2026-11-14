@@ -1,22 +1,31 @@
 // The bill flow (Lasku): one container that runs the steps and makes the calls.
 // gallery → reading (POST /api/bill/read) → fields → explaining (POST /api/bill/explain) → explanation.
-// The `fields` step is the fields card (#329); the explanation card (#330) plugs into the
-// `explanation` step, which until then shows only the match sentence.
+// The `fields` step is the fields card (#329); the `explanation` step is the explanation (#330),
+// headed by the response's match sentence.
 import { useEffect, useReducer } from 'react'
 import { billApi } from '../../api/bill.ts'
 import { ApiError } from '../../api/errors.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { strings } from '../../lib/i18n.ts'
+import { askInThread } from '../../lib/url.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CardShell } from '../cards.tsx'
 import { ErrorBlock, LoadingBlock } from '../States.tsx'
+import { AddToPayments } from './AddToPayments.tsx'
+import { BillExplanationCard } from './BillExplanationCard.tsx'
 import { BillFieldsCard } from './BillFieldsCard.tsx'
 import { BillGallery } from './BillGallery.tsx'
+import { BillSignals } from './BillSignals.tsx'
 import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
 
 interface Props {
   /** Called when the user is finished with an explained bill. */
   onDone?: () => void
+  /**
+   * Asks a question in the thread, the path of every ask chip. Without it, the app's shared
+   * `askInThread` opens the thread with the question and replaces the history entry (no new one).
+   */
+  onAsk?: (question: string) => void
 }
 
 function toFlowError(error: unknown, fallback: string): FlowError {
@@ -24,7 +33,7 @@ function toFlowError(error: unknown, fallback: string): FlowError {
   return { message: fallback, retryable: true }
 }
 
-export function BillFlow({ onDone }: Props) {
+export function BillFlow({ onDone, onAsk }: Props) {
   const { lang, customerId } = useSettings()
   const [state, dispatch] = useReducer(flowReducer, initialFlow)
   const s = billStrings(lang)
@@ -91,22 +100,31 @@ export function BillFlow({ onDone }: Props) {
         <div className="flex flex-col gap-3">
           <h2 className="text-card-title font-bold text-brand">{state.reading ? s.confirmTitle : s.typeTitle}</h2>
           {state.notice && <p className="rounded-lg bg-sunken p-3 text-base text-ink-2">{state.notice}</p>}
-          {state.step === 'fields' && state.error && <ErrorBlock message={state.error.message} />}
           <BillFieldsCard
             key={state.sampleId ?? 'typed'}
             reading={state.reading}
             busy={state.step === 'explaining'}
+            // A 422 `invalid_bill` is not retryable: its message asks to compare or edit the fields.
+            error={state.step === 'fields' ? state.error : null}
             onConfirm={(request) => dispatch({ type: 'confirm', request })}
           />
+          {state.step === 'explaining' && (
+            <CardShell>
+              <p className="mb-3 text-base text-ink-2">{s.explaining}</p>
+              <LoadingBlock lines={5} />
+            </CardShell>
+          )}
           <BackButton label={s.backToSamples} onClick={back} />
         </div>
       )
     case 'explanation':
       return (
         <div className="flex flex-col gap-3">
-          <CardShell>
-            <p className="text-base text-ink-2">{state.response.match.text}</p>
-          </CardShell>
+          <h2 className="text-card-title font-bold text-ink">{state.response.match.text}</h2>
+          <BillExplanationCard response={state.response} onAsk={onAsk ?? askInThread}>
+            <BillSignals signals={state.response.signals} />
+            <AddToPayments response={state.response} />
+          </BillExplanationCard>
           <BackButton
             label={s.done}
             onClick={() => {

@@ -301,13 +301,14 @@ def test_dining_out_what_if_matches_the_reference_and_every_number_opens(client)
     assert w["scenario"]["selection"] == {"kind": "category", "value": "Restaurants"}
     assert (w["scenario"]["cut_pct"]["value"], w["scenario"]["cut_pct"]["evidence_ref"]) == (20, None)
     assert w["evidence_ref"] == w["saving_per_month"]["evidence_ref"] and w["estimate"]["text"]
-    opened = 0
+    opened = set()
     for path, number in numbers_in(w):
         if number["evidence_ref"] is None:  # the cut the user chose: user_input@1, no evidence
             continue
         opens_with_the_same_number(client, number, path)
-        opened += 1
-    assert opened == 6
+        opened.add(number["evidence_ref"])
+    # six numbers; the baseline opens a second time from `estimate.observed` (#380), with the same ref
+    assert len(opened) == 6 and w["estimate"]["observed"][0]["evidence_ref"] == w["baseline_per_month"]["evidence_ref"]
 
 
 def test_finnish_what_if_has_the_same_numbers(client):
@@ -364,6 +365,42 @@ def test_refused_selections_are_422(client):
     assert unknown.status_code == 404 and unknown.json()["error"]["code"] == "customer_not_found"
 
 
+def test_the_overview_hero_says_what_it_observed_and_what_it_assumes(lead_overview):
+    """#380 on the wire: the hero's estimate lists both limbs (#503 review): observed are the balance, the bills and
+    the budget limit (the card's own Numbers, same refs); the assumptions are the balance limb's four and the budget
+    limb's two, the goal's value the same Number as on the card."""
+    hero = lead_overview["hero"]
+    est = hero["estimate"]
+    assert [a["code"] for a in est["assumptions"]] == ["spending_as_usual", "reserve_for_unexpected", "cushion",
+                                                       "bills_on_usual_days", "budget_from_usual_month",
+                                                       "savings_goal_first"]
+    components = {c["key"]: c["amount"]["evidence_ref"] for c in hero["components"]}
+    assert [n["evidence_ref"] for n in est["observed"]] == [components["balance"], components["bills_due"],
+                                                            hero["secondary"][2]["evidence_ref"]]   # the budget limit
+    assert est["assumptions"][5]["value"]["evidence_ref"] == hero["secondary"][3]["evidence_ref"]   # the goal
+
+
+def test_an_estimate_number_is_a_complete_object_read_from_the_estimate(client):
+    """#503 review (contract section 3, Estimates): the Numbers inside an estimate are complete objects that the app
+    reads from the estimate; the forecast's daily pace is on no card, and the answer's `numbers` map holds only the
+    Numbers the text cites, so a Number the text does not cite is in the estimate only."""
+    r = client.post("/api/ask", json={"customer_id": LEAD, "message": "Will my money last until payday?",
+                                      "language": "en"}, headers={"Accept": "application/json"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    forecast = [c for c in body["cards"] if c.get("display_hint") == "time_series"]
+    assert forecast, [c["type"] for c in body["cards"]]
+    est = forecast[0]["estimate"]
+    listed = est["observed"] + [a["value"] for a in est["assumptions"] if a["value"]]
+    for n in listed:
+        assert {"value", "unit", "period", "method", "evidence_ref", "label", "display"} <= set(n), n
+    pace = next(a["value"] for a in est["assumptions"] if a["code"] == "spending_as_usual")
+    assert pace["evidence_ref"] not in str({k: v for k, v in forecast[0].items() if k != "estimate"})   # on no card
+    numbers = body.get("numbers") or {}
+    ids = set(numbers) if isinstance(numbers, dict) else {n["id"] for n in numbers}
+    assert ids <= set(body.get("cited") or []), (ids, body.get("cited"))     # the map holds only cited Numbers
+
+
 @pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
 def test_a_category_with_one_or_two_purchases_is_not_offered_with_the_reason(client, customer_id):
     """Review of #379 part B, B1: never a 500. The existing status not_offered, every saving and the baseline
@@ -382,3 +419,14 @@ def test_a_category_with_one_or_two_purchases_is_not_offered_with_the_reason(cli
             opens_with_the_same_number(client, number, path, customer_id)
     rows = client.get(f"/api/evidence/{w['evidence_ref']}", params={"customer_id": customer_id}).json()["rows"]
     assert 1 <= len(rows) < config.TOO_FEW_TRANSACTIONS and all(r["category"] == "Travel" for r in rows)
+
+
+def test_a_too_few_what_if_observes_the_purchases_never_nothing(client):
+    """#503 with #379 part B: with a single purchase both left-out totals are 0, so the estimate observes the
+    selection total of the caveat (CUST00849, Travel): never an empty list, never zero, and it opens the purchases."""
+    response = post_whatif(client, "category", "Travel", customer_id="CUST00849")
+    assert response.status_code == 200, response.text
+    w = response.json()
+    observed = w["estimate"]["observed"]
+    assert len(observed) == 1 and observed[0]["value"] > 0, observed
+    assert observed[0]["display"] in w["caveats"][0] and observed[0]["evidence_ref"] == w["evidence_ref"]
