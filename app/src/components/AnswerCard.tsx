@@ -5,9 +5,12 @@ import { Component, type ReactNode } from 'react'
 import type { BreakdownCard, Card, Comparison, MetricCard, Num, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
+import { BillsCards } from './BillsCard.tsx'
 import { BasketsCard, CARD_TITLE, CardShell } from './cards.tsx'
 import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
+import { PeerCard, type PeerData } from './PeerCard.tsx'
+import { ProfileCard, type ProfileData } from './ProfileCard.tsx'
 import { SafeToSaveCard } from './SafeToSaveCard.tsx'
 
 /** Title, subtitle and the fact or estimate marker, top right. */
@@ -146,6 +149,12 @@ function CardBody({ card }: { card: Card }) {
     }
     case 'safe_to_save':
       return <SafeToSaveCard card={card as SafeToSaveData} />
+    case 'profile':
+      return <ProfileCard card={card as ProfileData} header={<CardHeader card={card} />} />
+    case 'peer':
+      return <PeerCard card={card as PeerData} header={<CardHeader card={card} />} />
+    case 'bills':
+      return <BillsCards cards={[card]} />
     // Any other type gets the generic card, `review` included: it is answered in "Sentti asks" (#35).
     default:
       return <GenericAnswer card={card} />
