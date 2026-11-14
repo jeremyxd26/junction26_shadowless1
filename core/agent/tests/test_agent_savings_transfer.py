@@ -82,6 +82,10 @@ PLAN = default_registry().tools["get_savings_plan"]
     ("How much do I transfer to savings each month and move 50e more", None),
     ("Paljonko siirrän säästöön kuukaudessa ja nosta sitä", None),
     ("Do I have a regular transfer to savings, please?", "usual"),
+    # delta review of #670: in one sentence, a move or change with an amount written with no space before the unit is
+    # a request too ("50e", "200eur"), as with a space
+    ("Did I move 50e to savings last month?", None), ("Nosta säästösiirtoa 200eur?", None),
+    ("Did I move 50 euros to savings last month?", None), ("Nosta säästösiirtoa 50 €?", None),
 ])
 def test_which_questions_are_about_the_users_own_transfers_to_savings(question, kind):
     assert savings_transfer.asks(fold(question)) == kind
