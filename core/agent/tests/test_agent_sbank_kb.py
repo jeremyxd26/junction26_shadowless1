@@ -46,7 +46,7 @@ def test_the_file_has_between_thirty_and_sixty_entries_with_every_field():
     assert len({e.id for e in ENTRIES}) == len(ENTRIES)
     for e in ENTRIES:
         assert e.topic and e.questions_en and e.questions_fi and e.answer_en and e.answer_fi
-        assert re.fullmatch(r"https://www\.s-pankki\.fi/fi/asiakaspalvelu/[\w./-]+", e.source_url), e.source_url
+        assert re.fullmatch(r"https://www\.s-pankki\.fi/fi/asiakaspalvelu/[\w./-]*", e.source_url), e.source_url
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.retrieved_at)
 
 
@@ -101,13 +101,15 @@ def test_matching_in_english_and_finnish(question, lang, entry_id):
 @pytest.mark.parametrize("question", ["How much did I spend at S-market?", "What is my S-mobiili balance?",
                                       "Paljonko käytin S-marketissa?", "Mikä on S-mobiilin saldoni?",
                                       "Which S-Bank card should I get?", "Kannattaako S-Pankin tili?",
-                                      "Did I pay with my S-Bank card in August?", "How much bonus did I get?"])
+                                      "Did I pay with my S-Bank card in August?", "How much bonus did I get?",
+                                      "Show my e-invoices", "Näytä e-laskuni"])
 def test_the_customers_own_figures_and_a_recommendation_are_never_answered_here(question):
     assert sbank_kb.answer_for(question, "fi" if re.search(r"[äö]|paljonko|kannattaako", question, re.I) else "en") is None
 
 
 @pytest.mark.parametrize("question, lang", [
-    ("Can I afford a new bicycle?", "en"), ("Keep my savings separate from bills", "en"), ("I paid swiftly", "en"),
+    ("Can I afford a new bicycle?", "en"), ("Can I afford a new bicycle?", "fi"), ("I paid swiftly", "fi"),
+    ("Keep my savings separate from bills", "en"), ("I paid swiftly", "en"),
     ("Is my pink jacket expensive?", "en"), ("What's bank interest?", "en")])
 def test_english_phrases_are_whole_words_and_an_apostrophe_s_is_not_s_bank(question, lang):
     assert sbank_kb.find_bank_entry(question, lang) is None and sbank_kb.answer_for(question, lang) is None

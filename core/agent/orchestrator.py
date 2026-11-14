@@ -1285,7 +1285,8 @@ class Pipeline:
         No plan, no tool, no number, no model request. False (the normal path answers) when sbank_kb leaves the
         message (the customer's own figures, a recommendation), a guard flag is set, or the rule model declines
         it or claims it for one of its own answers (a data rule, a decline, "I can't answer that one yet").
-        Exception (#808): an e-invoice how-to entry answers before the bills rule alone ("Miten tilaan e-laskun?").
+        Exception (#808): an e-invoice how-to entry answers before the bills rule alone or the rules' "I can't
+        answer that one yet" ("Miten tilaan e-laskun?").
         The answer is in the question's language (sbank_kb.answer_language), also when the app asked in the other."""
         if a.flags:
             return False
@@ -1297,8 +1298,8 @@ class Pipeline:
                                              tools=self.registry.schemas(), history=history, guard_flags=a.flags))
         if any(c.name == "decline" for c in rules.calls):
             return False
-        bills_only = [c.name for c in rules.calls if c.name != "finish"] == ["get_recurring_bills"]
-        if rules.recognised and not (bills_only and kb.entry_id in sbank_kb.OVER_BILLS_RULE):
+        data = {c.name for c in rules.calls if c.name not in ("finish", "ask_clarifying_question")}
+        if rules.recognised and not (kb.entry_id in sbank_kb.OVER_BILLS_RULE and data <= {"get_recurring_bills"}):
             return False
         lang = kb.lang
         numbers = ctx.numbers.all()

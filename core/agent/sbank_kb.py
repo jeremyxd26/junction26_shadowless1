@@ -81,6 +81,7 @@ BANK_NAME = r"(?<![\w'-])s[- ]?(?:bank's|bank|pankin|pankki)\s+"
 # The customer's own figures: a data question, never a knowledge-base answer.
 OWN_FIGURES = (r"\d|€|\beur(?:o|os)?\b|\bhow (?:much|many)\b|\bbalance\b|\b(?:did|have|had) (?:i|we) "
                r"(?:spend|spent|pay|paid|buy|bought|earn|earned|get|got|receive|received|save|saved)\b|"
+               r"\b(?:show|list|give)(?: me)?(?: all)? my\b|\bnayta\b|\blistaa\b|"
                r"\bwhy (?:is|are|was|were|did|does|do|has|have) my\b|\bi (?:spent|paid|bought|earned|saved)\b|\bmy (?:spending|income|salary|budget|savings|"
                r"expenses|bills|purchases|transactions)\b|"
                r"\bpaljonko\b|\bkuinka (?:paljon|monta)\b|\bmontako\b|\bsaldo\w*|\bkaytin\b|\bkulutin\b|"
@@ -104,13 +105,15 @@ def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s'/-]", " ", text).split())
 
 
-def _compile(phrases: tuple[str, ...], end: str) -> tuple[tuple[re.Pattern, int], ...]:
-    return tuple((re.compile(r"(?<![\w-])" + re.escape(_norm(p)) + end), len(_norm(p))) for p in phrases if _norm(p))
+def _compile(phrases: tuple[str, ...], end: str, short_end: str) -> tuple[tuple[re.Pattern, int], ...]:
+    return tuple((re.compile(r"(?<![\w-])" + re.escape(_norm(p)) + (short_end if len(_norm(p)) <= 5 else end)),
+                  len(_norm(p))) for p in phrases if _norm(p))
 
 
-# English phrases are whole words (a plural allowed: "bic" is not "bicycle"); Finnish ones are stems ("e-lask").
-_KEYWORDS = {e.id: {"en": _compile(e.keywords_en + e.questions_en, r"(?:e?s)?(?![\w-])"),
-                    "fi": _compile(e.keywords_fi + e.questions_fi, "")}
+# English phrases are whole words (a plural allowed: "bic" is not "bicycle"); Finnish ones are stems ("e-lask"),
+# except a short one, which ends at a letter ("bic-tunnus" yes, "bicycle" no).
+_KEYWORDS = {e.id: {"en": _compile(e.keywords_en + e.questions_en, r"(?:e?s)?(?![\w-])", r"(?:e?s)?(?![\w-])"),
+                    "fi": _compile(e.keywords_fi + e.questions_fi, "", r"(?![a-z])")}
              for e in ENTRIES}
 
 
@@ -126,10 +129,7 @@ def asks_advice(question: str) -> bool:
     return bool(re.search(ADVICE, _norm(question)) or re.search(OUT_OF_SCOPE, _norm(question)))
 
 
-def find_bank_entry(question: str, lang: str) -> Entry | None:
-    """The knowledge-base entry that answers the question in this language, or None. The keyword matcher:
-    the entry whose phrases (keywords and question variants) cover the most characters of the message; a tie
-    goes to the earlier entry in the file."""
+def _best(question: str, lang: str) -> tuple[Entry | None, int]:
     text = _norm(question)
     texts = (text, re.sub(BANK_NAME, "", text))   # "block my S-Bank card" is also "block my card"
     lang = "fi" if lang == "fi" else "en"
@@ -138,27 +138,35 @@ def find_bank_entry(question: str, lang: str) -> Entry | None:
         score = sum(size for rx, size in _KEYWORDS[entry.id][lang] if any(rx.search(t) for t in texts))
         if score > best_score:
             best, best_score = entry, score
-    return best
+    return best, best_score
 
 
-# The e-invoice how-to entries answer before the rule model's bills rule, which claims any "e-lasku" message
-# (#808: "Miten tilaan e-laskun?"); a message about the customer's own bills never reaches an entry here.
+def find_bank_entry(question: str, lang: str) -> Entry | None:
+    """The knowledge-base entry that answers the question in this language, or None. The keyword matcher:
+    the entry whose phrases (keywords and question variants) cover the most characters of the message; a tie
+    goes to the earlier entry in the file."""
+    return _best(question, lang)[0]
+
+
+# The e-invoice how-to entries answer before the rule model's bills rule, which claims any "e-lasku" message,
+# and before its "I can't answer that one yet" (#808: "Miten tilaan e-laskun?"); a message about the customer's
+# own bills never reaches an entry here.
 OVER_BILLS_RULE = frozenset({"e_invoice_order", "e_invoice_edit", "e_invoice_notice", "e_invoice_move",
                              "e_invoice_not_working"})
 
 
 def answer_language(question: str, lang: str) -> str:
-    """The language of the answer (#808): the question's own, as the core's detector reads it; when the detector
-    is unsure, the language whose phrases match the question; else the request's language."""
+    """The language of the answer (#808), the question's own, also when the app asked in the other: the language
+    whose phrases cover more of the question ("Miten otan yhteyttä S-Pankkiin?" is Finnish), unless the core's
+    detector reads the question as the other language (then the request's); on a tie, the detector; else the
+    request's language."""
+    lang = "fi" if lang == "fi" else "en"
+    en, fi = _best(question, "en")[1], _best(question, "fi")[1]
     detected = detect_language(question)
-    if detected in ("en", "fi"):
-        return detected
-    en, fi = find_bank_entry(question, "en"), find_bank_entry(question, "fi")
-    if fi is not None and en is None:
-        return "fi"
-    if en is not None and fi is None:
-        return "en"
-    return "fi" if lang == "fi" else "en"
+    if en != fi:
+        winner = "en" if en > fi else "fi"
+        return winner if detected in (None, winner) else lang
+    return detected if detected in ("en", "fi") else lang
 
 
 @dataclass(frozen=True)
