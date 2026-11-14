@@ -22,6 +22,8 @@ ERRORS: dict[str, Pair] = {
                            "Luvun laskentatapaa ei löytynyt."),
     "evidence_forbidden": ("This evidence belongs to another customer.", "Tämä tieto kuuluu toiselle asiakkaalle."),
     "invalid_scenario": ("This scenario cannot be calculated.", "Tätä tilannetta ei voi laskea."),
+    # the default text; the endpoint sends the sentence of the reason (config.BILL_REFUSAL_TEXT, #242)
+    "invalid_bill": ("This bill cannot be explained.", "Tätä laskua ei voi selittää."),
     "tx_ref_not_found": ("This question is not open.", "Tämä kysymys ei ole avoinna."),
     "basket_not_allowed": ("This answer is not one of the options for this question.",
                            "Tämä vastaus ei ole yksi tämän kysymyksen vaihtoehdoista."),
@@ -251,6 +253,35 @@ for _id, _unit, _name, _summary in [
       "Ostot kuukaudessa, joita tavallisen Bonustaulukon alin taso edellyttää.")),
 ]:
     METHODS[f"bonus_estimate.{_id}@1"] = MethodInfo(_unit, _name, _summary, BONUS_DOC)
+
+# The bill explanation (#242, contracts/api.md section 11; the rules in metrics.md section 3.3). The two
+# input methods appear in an evidence view only as the inline part of a bill composite: an amount in euros.
+BILL_DOC = METRICS_DOC + "#34-a-bill-and-safe-to-spend-242"
+for _id, _unit, _name, _summary in [
+    ("user_input@1", Unit.EUR, ("Typed by you", "Itse kirjoitettu"),
+     ("A value you typed or confirmed.", "Arvo, jonka kirjoitit tai vahvistit.")),
+    ("bill_barcode@1", Unit.EUR, ("Read from the bill's barcode", "Luettu laskun viivakoodista"),
+     ("A value read from the bill's virtual barcode and checked by code.",
+      "Laskun virtuaaliviivakoodista luettu ja koodilla tarkistettu arvo.")),
+    ("bill.vs_typical_eur@1", Unit.EUR, ("Difference from the usual amount", "Ero tavalliseen summaan"),
+     ("The bill's amount minus the typical monthly amount of the same bill.",
+      "Laskun summa miinus saman laskun tavallinen kuukausisumma.")),
+    ("bill.vs_typical_pct@1", Unit.PERCENT, ("Difference from the usual amount", "Ero tavalliseen summaan"),
+     ("The difference from the typical monthly amount, in percent of it.",
+      "Ero tavalliseen kuukausisummaan prosentteina siitä.")),
+    ("bill.counted_eur@1", Unit.EUR, ("Added to the bills before payday", "Lisätään laskuihin ennen palkkapäivää"),
+     ("The bill's amount, or only its excess over what is already counted for the same bill before payday.",
+      "Laskun summa tai vain se osa, joka ylittää saman laskun jo laskuihin ennen palkkapäivää lasketun summan.")),
+    ("bill.free_until_payday_after_eur@1", Unit.EUR,
+     ("Free until payday after the bill", "Vapaana palkkapäivään asti laskun jälkeen"),
+     ("Free until payday minus what the bill adds to the bills before payday.",
+      "Palkkapäivään asti vapaana oleva summa miinus se, mitä lasku lisää laskuihin ennen palkkapäivää.")),
+    ("bill.safe_to_spend_after_eur@1", Unit.EUR,
+     ("Safe to spend after the bill", "Turvallisesti käytettävissä laskun jälkeen"),
+     ("The smaller of the balance limit, recomputed with the bill, and the monthly budget limit.",
+      "Pienempi kahdesta: laskun kanssa uudelleen laskettu saldoraja ja kuukausibudjetin raja.")),
+]:
+    METHODS[_id] = MethodInfo(_unit, _name, _summary, BILL_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

@@ -36,13 +36,32 @@ def is_reserved_setting(name: str) -> bool:
     return key in RESERVED_SETTINGS or key.startswith("customer_")
 
 
+BILL_AMOUNT = re.compile(r"[0-9]{1,6}\.[0-9]{2}")   # euros with cents, ASCII digits
+BILL_AMOUNT_MAX = Decimal("100000.00")
+
+
+def _bill_amount(value: str) -> bool:
+    """More than 0 and at most 100,000.00, written with exactly two decimals."""
+    return bool(BILL_AMOUNT.fullmatch(value)) and Decimal(0) < Decimal(value) <= BILL_AMOUNT_MAX
+
+
+# Settings with a declared type and bound: their value is checked here before anything runs, for a tool's
+# settings and for a stored evidence spec alike, and a value that fails is refused, never repaired. The
+# value reaches PostgreSQL only as a bound parameter of set_config, never spliced into the SQL.
+# - extra_bill_due_eur (03_safe_to_spend.sql, #242): a bill the customer showed, due before payday.
+TYPED_SETTINGS = {"extra_bill_due_eur": _bill_amount}
+
+
 def check_settings(settings: dict[str, str] | None) -> None:
-    """Refuse a reserved or malformed setting name before anything touches the database."""
-    for name in settings or {}:
+    """Refuse a reserved or malformed setting name, or a typed setting's value out of its bound, before
+    anything touches the database."""
+    for name, value in (settings or {}).items():
         if is_reserved_setting(name):
             raise ValueError(f"setting {name!r} is reserved: run() sets it from its arguments")
         if not isinstance(name, str) or not SETTING_NAME.fullmatch(name):
             raise ValueError(f"bad setting name {name!r}")
+        if name in TYPED_SETTINGS and not TYPED_SETTINGS[name](str(value)):
+            raise ValueError(f"setting {name!r} is out of its bound")
 
 
 def customer_range(customer_id: str) -> tuple[str, str]:
@@ -72,9 +91,12 @@ def run(conn: psycopg.Connection, file: str, customer_id: str, as_of: date,
     # server's values win even if a name ever slipped past check_settings (defence in depth, #122).
     # tx_labels (#68) comes before everything: the customer's labels as JSON, passed by the caller
     # (core.tools.labels.metric_settings) so its evidence spec records them; empty means none, so a
-    # session-level value can never leak in.
+    # session-level value can never leak in. The typed settings are reset the same way (#242): a
+    # transaction-local set_config inside a caller's open transaction stays set until that transaction
+    # ends, so a bill's extra_bill_due_eur would otherwise reach the next run of 03 in it (the hero).
     server = [("demo_today", as_of.isoformat()), ("customer_from", lo), ("customer_to", hi)]
-    values = [("tx_labels", "")] + list((settings or {}).items()) + server
+    resets = [("tx_labels", "")] + [(name, "") for name in TYPED_SETTINGS]
+    values = resets + list((settings or {}).items()) + server
     own_transaction = conn.info.transaction_status == pq.TransactionStatus.IDLE
     with conn.transaction():
         if own_transaction:
