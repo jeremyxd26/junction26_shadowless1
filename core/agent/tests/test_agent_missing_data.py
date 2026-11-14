@@ -92,3 +92,7 @@ def test_a_period_outside_the_data_next_to_real_data_is_written_by_the_composer(
     assert model.compose_inputs[0].errors[0]["reason"] == "period_in_future"   # the composer sees the reason
     assert dict(events)["done"]["outcome"] == "answered"
     assert fake_spending  # the registry's own data tool ran beside it
+    # on the rule path the same message is claimed by no rule: the model plans both calls (review of #443)
+    tools = [{"name": n, "description": "", "parameters_json_schema": {}} for n in ALL]
+    assert not RuleModel().plan(PlanInput(question="How much did I spend in August and next month?", language="en",
+                                          as_of=AS_OF.isoformat(), tools=tools)).recognised

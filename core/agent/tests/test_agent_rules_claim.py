@@ -221,7 +221,7 @@ TABLE = [
     ("fi", "paljonko käytin kuntosaliin viime kuussa?", NOT_CLAIMED),
     ("en", "how much did I spend at Lidl in May?", NOT_CLAIMED),
     ("en", "how much did I spend at the weekend last month?", "spending"),
-    ("en", "how much did I spend on doctor visits last month?", "spending"),
+    ("en", "how much did I spend on doctor visits last month?", "decline"),
     ("fi", "paljonko voin käyttää seuraavan viikon aikana", NOT_CLAIMED),
     ("fi", "paljonko voin käyttää kuussa", NOT_CLAIMED),
     ("fi", "paljonko voin käyttää kuukaudessa", NOT_CLAIMED),
@@ -284,7 +284,7 @@ def test_the_breakdown_reads_only_whole_month_words(question, lang, period):
 
 @pytest.mark.parametrize("question,lang,period", [
     ("summarize my spending in July", "en", {"preset": "custom", "start": "2026-07-01", "end": "2026-07-31"}),
-    ("how much did I spend on doctor visits in July", "en",
+    ("how much did I spend on taxis in July", "en",
      {"preset": "custom", "start": "2026-07-01", "end": "2026-07-31"}),
     ("How much did I spend in Mar?", "en", {"preset": "custom", "start": "2026-03-01", "end": "2026-03-31"}),
     ("How much did I spend in Sept 2026?", "en", {"preset": "this_month"}),
@@ -316,10 +316,17 @@ def test_a_health_what_if_is_refused(question, lang):
     assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "out_of_scope"}
 
 
-@pytest.mark.parametrize("question", ["How much did I save on pharmacy last month?",
-                                      "How much did I spend on doctor visits last month?"])
-def test_spending_on_health_is_still_spending(question):
-    assert [name for name, _ in data_calls(plan(question))] == ["get_spending"]
+@pytest.mark.parametrize("question,lang", [("How much did I save on pharmacy last month?", "en"),
+                                           ("How much did I spend on doctor visits last month?", "en"),
+                                           ("How much did I spend on the pharmacy last month?", "en"),
+                                           ("Paljonko käytin lääkkeisiin viime kuussa?", "fi"),
+                                           ("Paljonko käytin apteekissa viime kuussa?", "fi"),
+                                           ("how much did I spend on doctor visits in July", "en")])
+def test_a_spending_question_on_health_is_declined(question, lang):
+    # The coordinator's decision in the review of #443 (reversing #384's "still plans spending"): never the
+    # unfiltered total for a health word; the same out-of-scope decline as the health what-if (R9).
+    result = plan(question, lang)
+    assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "out_of_scope"}
 
 
 @pytest.mark.parametrize("question,lang,args", [
@@ -540,3 +547,57 @@ def test_a_range_or_the_future_reaches_the_tool_as_that_period(question, lang, p
 def test_a_comparison_of_two_months_is_not_a_range():
     assert data_calls(plan("How did my spending in September compare with August?")) == [
         ("get_spending", {"period": {"preset": "this_month"}, "compare_to": "previous_period"})]
+
+
+
+@pytest.mark.parametrize("question,lang,period", [
+    # review of #443: a period word or "all categories" is never an unknown object
+    ("what was my spending for last month?", "en", {"preset": "last_month"}),
+    ("how much did I spend for last month?", "en", {"preset": "last_month"}),
+    ("how much did I spend for the last 3 months?", "en", {"preset": "last_3_months"}),
+    ("how much did I spend for the past 3 months?", "en", {"preset": "last_3_months"}),
+    ("what did I spend on last week?", "en", {"preset": "last_week"}),
+    ("how much have I spent on the last week?", "en", {"preset": "last_week"}),
+    ("how much did I spend at the end of last month?", "en", {"preset": "last_month"}),
+    ("how much did I spend in total on last month?", "en", {"preset": "last_month"}),
+    ("how much did I spend on all categories last month?", "en", {"preset": "last_month"}),
+    ("paljonko kulutin kaikkiin kategorioihin viime kuussa?", "fi", {"preset": "last_month"}),
+    ("paljonko käytin kaikkiin ostoksiin viime kuussa?", "fi", {"preset": "last_month"}),
+    # "last year" is the previous calendar year; "next March" is the future; a reversed range is both months
+    ("how much did I spend last year?", "en", {"preset": "custom", "start": "2025-01-01", "end": "2025-12-31"}),
+    ("paljonko käytin viime vuonna?", "fi", {"preset": "custom", "start": "2025-01-01", "end": "2025-12-31"}),
+    ("how much did I spend next March?", "en", {"preset": "custom", "start": "2027-03-01", "end": "2027-03-31"}),
+    ("paljonko kulutin ensi maaliskuussa?", "fi", {"preset": "custom", "start": "2027-03-01", "end": "2027-03-31"}),
+    ("how much did I spend from January 2025 to October 2024?", "en",
+     {"preset": "custom", "start": "2024-10-01", "end": "2025-01-31"}),
+])
+def test_period_words_last_year_next_month_name_and_reversed_ranges(question, lang, period):
+    assert [args["period"] for name, args in data_calls(plan(question, lang))] == [period]
+
+
+@pytest.mark.parametrize("question,lang,tools", [
+    # what-if, save more and the bills win over the future rule when their own words match
+    ("how much will I save in a year if I cut restaurants by 20%?", "en", ["run_what_if"]),
+    ("how could I save more next month?", "en", ["get_safe_to_save", "get_basket_breakdown"]),
+    ("how can I spend less next year?", "en", ["get_safe_to_save", "get_basket_breakdown"]),
+    ("miten voisin säästää enemmän ensi kuussa?", "fi", ["get_safe_to_save", "get_basket_breakdown"]),
+    ("what will my bills cost next month?", "en", ["get_recurring_bills"]),
+])
+def test_what_if_save_more_and_bills_win_over_the_future(question, lang, tools):
+    assert [name for name, _ in data_calls(plan(question, lang))] == tools
+
+
+@pytest.mark.parametrize("question", [
+    # a future period next to another period: no rule claims it, the model plans both (the mixed route)
+    "how much will I spend next month and what did I spend in August?",
+    "what did I spend in August and how much will I spend next month?",
+    "how much will I spend next month compared to last month?",
+    "How much did I spend in August and next month?",
+    "how much did I spend by Christmas last year?",
+    "could I afford a holiday in March last year?",
+    # an unknown object next to a category is not answered for the category alone
+    "how much did I spend on the gym and restaurants last month?",
+])
+def test_a_future_with_another_period_or_an_unknown_object_with_a_category_is_not_claimed(question):
+    assert not plan(question).recognised
+    assert not plan("paljonko käytin kuntosaliin ja ravintoloihin viime kuussa?", "fi").recognised

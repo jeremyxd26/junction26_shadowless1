@@ -36,7 +36,7 @@ class PeriodOutOfRange(ValueError):
     """The period has no day inside [DATA_START, as_of]. `reason` says which side it misses (#379):
     "period_before_data" (it ends before the data starts) or "period_in_future" (it starts after as_of)."""
 
-    def __init__(self, message: str, reason: str = "period_in_future") -> None:
+    def __init__(self, message: str, reason: str) -> None:
         super().__init__(message)
         self.reason = reason
 
