@@ -38,7 +38,12 @@ const THINKING_MS = 500
  * Sentti's reveal follows three typing dots and types in word by word (the answer reveal, #686),
  * and a bar fills as lessons are done. Under reduced motion everything shows at once.
  */
-export function LessonTurn({ onStep, lessons: given }: ClientTurnProps & { lessons?: Lesson[] }) {
+export function LessonTurn({
+  onStep,
+  lessons: given,
+  startAt,
+  doneText,
+}: ClientTurnProps & { lessons?: Lesson[]; startAt?: string; doneText?: string }) {
   const { lang, t, customerId } = useSettings()
   const s = lessonStrings(lang)
   const opening = useOpening()
@@ -47,7 +52,11 @@ export function LessonTurn({ onStep, lessons: given }: ClientTurnProps & { lesso
   // The Learn tab passes a topic's lessons; the thread's turn takes the overview's three.
   const [lessons] = useState<Lesson[]>(() => given ?? lessonsFor(opening?.overview ?? null))
   // It starts at the first lesson not done yet (the Learn tab's progress), or the first when all are done.
-  const [start] = useState(() => startIndex(lessons, readProgress(customerId).done))
+  // The Learn tab can open a given lesson (`startAt`, its key); a missing key falls back to the first not done.
+  const [start] = useState(() => {
+    const asked = startAt ? lessons.findIndex((item) => lessonKey(item) === startAt) : -1
+    return asked >= 0 ? asked : startIndex(lessons, readProgress(customerId).done)
+  })
   const [index, setIndex] = useState(start)
   const [picked, setPicked] = useState<string | null>(null)
   const [revealed, setRevealed] = useState(() => lessons.length > 0 && opensOnReveal(lessons[start]))
@@ -71,7 +80,7 @@ export function LessonTurn({ onStep, lessons: given }: ClientTurnProps & { lesso
   const title = !lesson
     ? s.none
     : verdict
-      ? [verdict, split, last ? s.done : null].filter(Boolean).join(' ')
+      ? [verdict, split, last ? (doneText ?? s.done) : null].filter(Boolean).join(' ')
       : lesson.kind === 'quiz'
         ? lesson.question
         : lesson.kind === 'split'
@@ -181,6 +190,7 @@ export function LessonTurn({ onStep, lessons: given }: ClientTurnProps & { lesso
           picked={picked}
           verdict={verdict}
           last={last}
+          doneText={doneText ?? s.done}
           animate={picked !== null && !reduced}
           onNext={next}
           s={s}
@@ -201,6 +211,7 @@ function LessonReveal({
   picked,
   verdict,
   last,
+  doneText,
   animate,
   onNext,
   s,
@@ -210,6 +221,7 @@ function LessonReveal({
   picked: string | null
   verdict: string
   last: boolean
+  doneText: string
   animate: boolean
   onNext: () => void
   s: Strings
@@ -243,7 +255,7 @@ function LessonReveal({
             {lesson.kind === 'quiz' ? lesson.concept : lesson.kind === 'split' ? s.two.concept : lesson.id === 1 ? s.one.concept : s.three.concept}
           </p>
           {last ? (
-            <p className="text-base text-ink-2">{s.done}</p>
+            <p className="text-base text-ink-2">{doneText}</p>
           ) : (
             <button
               type="button"

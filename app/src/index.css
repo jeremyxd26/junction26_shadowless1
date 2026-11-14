@@ -171,6 +171,19 @@ select {
     transform: translateY(-4px);
   }
 }
+/* "Topic done": the check pops in once (static under reduced motion). */
+.check-pop {
+  animation: check-pop 420ms var(--ease-entry) both;
+}
+@keyframes check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+}
 /* The waiting bar is hatched, never a basket colour. */
 .bar-hatched {
   background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
