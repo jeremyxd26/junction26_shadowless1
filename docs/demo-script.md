@@ -15,7 +15,7 @@ Status markers: **now** = on the dev environment today (checked live on 14 Nov 2
    VITE_API_MODE=mock npm run build
    npm run preview
    ```
-   Then open `http://localhost:4173/demo.html?lang=en&persona=CUST00860`. In the mock build the AI answers are the contract's recorded examples, and **Start over** (or a reload) brings "Sentti asks" back.
+   Then open `http://localhost:4173/demo.html?lang=en&persona=CUST00860`. In the mock build the AI answers are the contract's recorded examples, and **Start over** (or a reload) brings "Sentti asks" back. Sanna's safe to spend is the same there, **€138.79 → €97.46** after "Needed". The whole 60-second path runs in the mock, step 4 included: "How could I save more?" answers with the contract's Safe to save card instead of the savings plan, and its **"See monthly saving in S-mobiili"** opens "**Opens in the bank app: Monthly saving**" as on dev (#495). `npm run demo:check -- http://localhost:4173` checks this path.
 3. **Last resort: a screen recording.** Record a full run beforehand (see "Recording") and play it if neither option works on the day.
 
 **Persona:** Sanna (`CUST00860`), the lead persona: a large Home & Tech purchase in late September that Sentti asks about. **Language:** EN on stage; FI with `lang=fi` or the FI switch in the persona sheet.
