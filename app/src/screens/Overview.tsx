@@ -14,12 +14,18 @@ import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { onAsked } from '../lib/threadEvents.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
-import { useOpening } from '../lib/openingContext.ts'
+import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { OverviewRow } from '../components/OverviewRow.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
-type Phase = { kind: 'asking' } | { kind: 'answered'; basket: BasketKey } | { kind: 'not_sure' } | { kind: 'gone' }
+type Phase =
+  | { kind: 'asking' }
+  // `label`: the basket's name as the label response gave it, for answers that point here (#452).
+  | { kind: 'answered'; basket: BasketKey; label: string }
+  | { kind: 'not_sure' }
+  | { kind: 'gone' }
 
 /**
  * The numbers of the latest label response, shown over the overview until the overview
@@ -73,13 +79,20 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const [card] = useState<ReviewCard | null>(() => overview.reviews[0] ?? null)
   const [phase, setPhase] = useState<Phase>({ kind: 'asking' })
   // Tell the thread which review card the opening shows (#450): answers point to it only then.
+  // Once answered, the basket goes with it, so those answers say where the purchase went (#452).
   const reportReview = useOpening()?.reportReview
   useEffect(() => {
     if (!reportReview) return
-    const shown = card && (phase.kind === 'asking' || phase.kind === 'answered') ? { txRef: card.tx_ref, phase: phase.kind } : null
+    const shown: ShownReview | null = !card
+      ? null
+      : phase.kind === 'asking'
+        ? { txRef: card.tx_ref, phase: 'asking' }
+        : phase.kind === 'answered'
+          ? { txRef: card.tx_ref, phase: 'answered', basketKey: phase.basket, basketLabel: phase.label }
+          : null
     reportReview(shown)
     return () => reportReview(null)
-  }, [reportReview, card, phase.kind])
+  }, [reportReview, card, phase])
   const [closing, setClosing] = useState(false)
   const [busy, setBusy] = useState<BasketKey | 'undo' | null>(null)
   const [error, setError] = useState<ReviewError | null>(null)
@@ -226,7 +239,12 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     })
     focusCard.current = true
     if (answered) {
-      setPhase({ kind: 'answered', basket })
+      // The basket's name from the API: the label response, else the overview's baskets card.
+      const label =
+        response.label?.label ??
+        overviewRef.current.cards.find(isBasketsCard)?.items.find((item) => item.key === basket)?.label ??
+        ''
+      setPhase({ kind: 'answered', basket, label })
       setReply(basket)
       setReplyNote(response.effect ? { text: response.effect.text, numbers: response.effect.numbers } : null)
       later(HINT_MS, () =>
@@ -373,6 +391,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           ))}
         </ul>
       )}
+
+      <OverviewRow disabled={busy !== null} />
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">

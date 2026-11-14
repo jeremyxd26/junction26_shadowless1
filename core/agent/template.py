@@ -46,7 +46,7 @@ REFUSAL: dict[str, dict[str, Any]] = {
         # The warmer generic decline (#287, the product owner's first sentence). It reads complete without the
         # four brief questions that follow as chips (#352): a full stop and two examples in words.
         "text": ("That's outside my lane — I'm your money coach. I can help with things like your spending or your bills.",
-                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
+                 "Tämä ei kuulu osaamiseeni — olen rahavalmentajasi. Voin auttaa esimerkiksi kulutuksessasi tai "
                  "laskuissasi."),
     },
     "unsafe": {
@@ -478,6 +478,32 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
 BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
+# #540: "what does <bill> cost a month / a year?" for a regular bill's category: the bills tool's typical month, or
+# the last 12 months of that category from the spending tool (never a month multiplied by twelve). Word boundaries
+# throughout; a named month ("tässä kuussa", "this month") is no "per month", and "for a month" is a duration ("to
+# rent a car for a month").
+BILL_COST = (r"\b(cost|costs|pay|maksaa|maksavat|maksan|maksamme)\b|"
+             r"\bhow much (is|are) (my |the )?(rent|electricity|utilities|housing|water bills?)\b")
+BILL_COST_MONTH = (r"(?<!for )\b(a|per|each|every) month\b|\bmonthly\b|\bkuukaudessa\b|\bkuukausittain\b|"
+                   r"(?<!tassa )(?<!ensi )(?<!viime )\bkuussa\b")
+BILL_COST_YEAR = r"(?<!for )\b(a|per|each|every) year\b|\byearly\b|\bannually\b|\bvuodessa\b|\bvuosittain\b"
+# Not a question about the customer's own bill: a number ("rent 900 a month"), renting something ("to rent a car").
+# A scenario ("what if", "would", "jos", a conditional verb) is rules.HYPOTHETICAL, checked in bill_cost.
+BILL_COST_NOT = r"\d|\bto rent\b|\brent(ing|ed|al)\b"
+BILL_COST_CATEGORIES = ("Housing", "Utilities")
+# A full match only (review of #544): every word is a cost word, a period word, filler, or one of the category's own
+# forms (BILL_COST_OWN). A place, a person, an average or a comparison ("in Helsinki", "for a student", "keskimäärin",
+# "compared to others", "to heat") is a market question, never the customer's own bill. The forms are a closed list,
+# folded like the question, not the rules' category patterns: those end in \w*, so a compound ("sähköauto",
+# "vuokralaiselle", "asumistuki") would count as the bill (re-check of #544).
+BILL_COST_FILLER = frozenset("""what how much does do is are my the a an per each every i we our for cost costs pay
+    month year monthly yearly annually bill bills usually paljonko mita maksaa maksavat maksan maksamme minun meidan
+    kuukaudessa kuussa kuukausittain vuodessa vuosittain lasku laskut laskuni tavallisesti""".split())
+BILL_COST_OWN = {
+    "Housing": frozenset("rent housing vuokra vuokran vuokraa asuminen asumisen asumista asumiskulut".split()),
+    "Utilities": frozenset("""electricity electric utilities water sahko sahkon sahkoa sahkosta sahkolasku vesi
+        vesilasku""".split()),
+}
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
@@ -485,6 +511,25 @@ INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|i
 
 # Matched against the folded question (no diacritics), so folded here too.
 SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS))
+
+
+def bill_cost(q: str) -> tuple[str, str] | None:
+    """(category, "month" or "year") for a folded question that asks what a regular bill costs a month or a year,
+    else None: a cost word, exactly one category named, a bill category, and one of the two periods (#540). A
+    scenario, a number or renting something is never one."""
+    # the category and scenario words in one place (rules imports this module)
+    from core.agent.rules import CATEGORY_WORDS, HYPOTHETICAL
+    if not re.search(BILL_COST, q) or re.search(BILL_COST_NOT, q) or re.search(HYPOTHETICAL, q):
+        return None
+    categories = {category for rx, category in CATEGORY_WORDS if re.search(rx, q)}
+    month, year = bool(re.search(BILL_COST_MONTH, q)), bool(re.search(BILL_COST_YEAR, q))
+    if len(categories) != 1 or not categories <= set(BILL_COST_CATEGORIES) or month == year:
+        return None
+    category = categories.pop()
+    for word in re.findall(r"[^\W\d_]+", q):
+        if word not in BILL_COST_FILLER and word not in BILL_COST_OWN[category]:
+            return None                       # another word: a market question or something more (#544 review)
+    return category, "month" if month else "year"
 
 
 def asks_income(q: str) -> bool:
@@ -971,8 +1016,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     q = fold(question)
     # #342: human sentences for the tools answer_sentences writes; the others (profile, peer, S-Bonus,
     # safe to spend, an unknown tool) keep their own form below.
+    cost = bill_cost(q)
     owns = [answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
-                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
+                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)),
+                                      bill_only=cost[0] if cost and cost[1] == "month" else None)   # #540
             for view in views]
     generic = views   # the views that get the sentence-per-tool form below
     if views and all(own is not None for own in owns):

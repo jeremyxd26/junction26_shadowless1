@@ -50,7 +50,7 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
-from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
+from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import GENERAL_BORROWING as GENERAL_BORROWING_WORDS
@@ -455,6 +455,8 @@ class Pipeline:
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
+        if meta == "greeting" and conv.turns and goodbye_greeting(message):
+            meta = "thanks"   # "moi moi" after an answer is a goodbye: the closing line, never a new greeting (#630)
         foreign = bool(CYRILLIC.search(message))
         if meta is not None:
             return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
@@ -970,7 +972,9 @@ class Pipeline:
                     if repeated:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
-                        errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                        errors.append(f"'{repeated}': the number's display already says how often; write the "
+                                      "number alone, with no period phrase after it and no 'a typical month of' or "
+                                      "'tavallisena kuukautena' before it")
                     joined = validator.amount_with_bank_product(draft.text, numbers)
                     if joined:
                         # #417: an amount next to the bank's screen or product reads as advice to put it

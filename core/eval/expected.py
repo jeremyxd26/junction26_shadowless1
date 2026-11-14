@@ -156,6 +156,9 @@ def connect(as_of: str) -> Db:
 
 def evaluate(db: Db, cid: str, src: dict):
     """The value a source spec produces for one customer (Decimal, int, str or date)."""
+    if "literal" in src:
+        # a number the question itself states ("my friend spends 500 euros"): for `forbid`, never from the data
+        return Decimal(str(src["literal"]))
     if "metric" in src:
         rows = db.metric(src["metric"], cid, src.get("settings"))
         where = src.get("where", {})
