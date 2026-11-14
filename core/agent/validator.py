@@ -592,6 +592,25 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# A Health total is stated plainly (#571, R9): the total, the period and the count, nothing more. A draft that
+# cites a Health Number never adds a tip, an offer, a comparison or a judgement, in any language the answer uses.
+_HEALTH_LABEL = re.compile(r"\bhealth\b|\bterveys|\bterveyteen\b", re.I)
+_HEALTH_EXTRA = re.compile(
+    r"\b(a lot|too much|quite|only|little|high|low|higher|lower|more than|less than|usual|unusual|normal|average|"
+    r"try|consider|could|should|might|maybe|tip|tips|advice|save|saving|cut|reduce|compare|compared|people like you|"
+    r"worry|healthy|unhealthy|good|bad|great)\b|"
+    r"\b(paljon|vähän|liikaa|korkea|matala|tavallista|tavallinen|normaali|keskimäär\w*|kannattaa|kannattaisi|voisit|"
+    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono)\b", re.I)
+
+
+def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first tip, offer, comparison or judgement word in a draft that cites a Health Number, or None."""
+    if not any(_HEALTH_LABEL.search(numbers[i].label or "") for i in TOKEN.findall(text) if i in numbers):
+        return None
+    m = _HEALTH_EXTRA.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
                    labels: Iterable[str] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
@@ -619,6 +638,9 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    extra = health_extra(text, numbers)
+    if extra:
+        problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")

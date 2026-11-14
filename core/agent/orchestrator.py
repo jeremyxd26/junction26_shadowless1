@@ -541,8 +541,13 @@ class Pipeline:
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
+        # A Health total is the per-tool template, never a model draft (#571, R9): no tip, offer, comparison or
+        # judgement can be added to it, whatever planned the call.
+        health_total = any(c["name"] == "get_spending" and "Health" in (((c.get("args") or {}).get("filter") or {})
+                                                                       .get("categories") or []) for c in a.calls)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
+                                             skip_model=planner_fallback or a.composer_unavailable is not None
+                                             or health_total, a=a)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).

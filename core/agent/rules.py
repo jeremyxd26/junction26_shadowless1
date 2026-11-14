@@ -406,9 +406,26 @@ WHAT_IF_BASKET_WORDS = [(fold_pattern(rx), basket) for rx, basket in [
 WHOLE_SPENDING = r"\b(my|our) (spending|expenses)\b|\bkulutusta(ni|mme)\b|\bmenoja(ni|mme)\b"
 PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
-# A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
-HEALTH = (r"\bhealth(care)?\b|tervey\w*|lääk(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
-          r"hammaslääk\w*|\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
+# A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words. A plain
+# health total is answered with the Health filter (Renat, 14 Nov, #571); "laakeri" (a bearing) is no medicine.
+HEALTH = (r"\bhealth(care)?\b|tervey\w*|lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
+          r"hammaslääk\w*|\bchemists?\b|\bantidepressant\w*|\bpregnancy tests?\b|\braskaustest\w*|"
+          r"\bmedicines?\b(?! balls?)|"
+          r"\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
+# Beyond a plain health total (#571): an inference, advice, a judgement or a tip about it declines the whole
+# message ("how much at the pharmacy, and what does that say about me?"); one rule never answers the total alone.
+HEALTH_NOT_TOTAL = (r"\bsay about me\b|\bsuggests?\b|\bmean for me\b|\bam i (getting )?(ill|sick|pregnant)\b|"
+                    r"\bwhat illness\w*\b|\bsee a doctor\b|\bwhich medicines?\b|\bwhat medicines?\b|\bis (that|it|this) "
+                    r"(a lot|much|too much|normal|high)\b|\btips?\b|\badvice\b|\bspend less on\b|\bcut\b|"
+                    r"\bkertoo minusta\b|\bolenko (sairas|sairastumassa|raskaana)\b|\bmitä lääkkeitä\b|"
+                    r"\bpitäisikö (minun )?(mennä|käydä) lääkärissä\b|\bonko (se|tämä) (paljon|liikaa|normaalia)\b|"
+                    r"\bvink\w*|\bneuvo\w*")
+# A question about what was saved at the pharmacy is no spending total: the next planner reads it (#571).
+HEALTH_SAVED = r"\bsav(e|ed|ing)\b|\bsäästi\w*|\bsäästin\b"
+# The decline rule's medicine words, which a plain health total may hold ("how much did I spend on medicines?").
+HEALTH_TOTAL_WORDS = r"medicines?|lääke(?!r)\w*|lääkk\w*"
+# A visit or bill at the doctor's is the user's own spending, not the doctor's money (#571).
+CARE_VISITS = r"\b(?:doctors?|dentists?)(?:'s|s')?\s+(visits?|appointments?|bills?|fees?|costs?|check-?ups?)\b"
 # A selection the rules do not map (an MCC, a merchant): never replaced by a category of their own.
 SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
 
@@ -825,6 +842,8 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
+HEALTH_NOT_TOTAL, HEALTH_SAVED, HEALTH_TOTAL_WORDS = (
+    fold_pattern(rx) for rx in (HEALTH_NOT_TOTAL, HEALTH_SAVED, HEALTH_TOTAL_WORDS))
 PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE = (
     fold_pattern(rx) for rx in (PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE))
 RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE_BETWEEN, RANGE_FI))
@@ -1328,6 +1347,13 @@ def said_in_the_past(question: str, q: str, as_of: date) -> bool:
     return bool(_months_mentioned(question, as_of)) and not re.search(ACTION, q)
 
 
+def _plain_health_total(q: str) -> bool:
+    """A question about the user's own health spending and nothing beyond its total (#571): a health word, a money
+    or spending word, and no what-if, comparison with people, inference, advice, judgement or tip."""
+    return bool(re.search(HEALTH, q) and (re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q))
+                and not re.search(HEALTH_NOT_TOTAL, q) and not re.search(WHAT_IF, q) and not re.search(PEERS, q))
+
+
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
                   drop_spending: bool = False, asked: str | None = None) -> Claim:
     q = fold(question)
@@ -1361,9 +1387,18 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if re.search(HEALTH, q) and (re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q)) and \
             not {"safe_to_spend", "balance_forecast", "small_purchases"} & set(found):
-        # "How much did I spend on the pharmacy?" is never answered with the unfiltered total: the same
-        # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
-        return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+        # "How much did I spend on the pharmacy?" is never answered with the unfiltered total (#443). A plain health
+        # total is the Health category's total for the period asked, labelled Health, never the thing the user named
+        # (Renat, 14 Nov, #571). A what-if, a comparison with people, or anything beyond the total stays declined (R9).
+        if re.search(HEALTH_SAVED, q):
+            return Claim(None, reason="health_saved")   # what was saved at the pharmacy: the next planner reads it
+        if not set(found) - {"spending", "where_money_went"}:
+            if spending is None or "spending" not in found:
+                return Claim(None, reason="period")      # as any category's total without a period
+            spending = {**spending, "filter": {"categories": ["Health"]}}
+            found = ["spending"]
+        else:
+            return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if re.search(FOOD_COMPOUND, q) and "what_if" not in found:
         # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534), but
         # a thing no category maps, as any unknown thing (#551): a spending question on it alone is answered with
@@ -1541,20 +1576,28 @@ def claim(request: PlanInput) -> Claim:
     # a named or specific person still is (#216).
     peer_question = (bool(re.search(PEERS, q)) and bool(re.search(SELF, q))
                      and not re.search(SPECIFIC_PERSON, q, re.I) and not re.search(OTHERS_DATA, q))
+    health_total = _plain_health_total(q)
     for kind, rx in DECLINE_RULES:
         if kind == "other_person_data" and peer_question:
             continue
+        if kind == "out_of_scope" and health_total and not re.search(rx, re.sub(HEALTH_TOTAL_WORDS, " ", q), re.I):
+            continue   # "how much did I spend on medicines?": a plain health total, not medicine advice (#571)
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
     if re.search(WEATHER_FI, question, re.I):   # the weather, read unfolded (#370)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
-    verdict = people.classify(question, peer_question)   # #350, #405: someone else's money
+    # "my doctor visits", "dentist bills": a thing the user paid for, not the doctor's own money (#571)
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I), peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
     if verdict == people.UNCLAIMED:   # cannot tell whose money: never the user's own numbers
         return Claim(None, reason="other_person")
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
+    if re.search(HEALTH, q) and (re.search(HEALTH_NOT_TOTAL, q) or peer_question or re.search(PEERS, q)):
+        # an inference, advice, a judgement, a tip or a comparison with people about health spending declines the
+        # whole message (#571, R9): "Miten terveyskuluni vertautuvat kaltaisiini?" as "… compared with people like me"
+        return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if _other_script(question):
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):

@@ -227,7 +227,7 @@ TABLE = [
     ("fi", "paljonko käytin kuntosaliin viime kuussa?", "unknown_object"),
     ("en", "how much did I spend at Lidl in May?", "unknown_object"),
     ("en", "how much did I spend at the weekend last month?", "spending"),
-    ("en", "how much did I spend on doctor visits last month?", "decline"),
+    ("en", "how much did I spend on doctor visits last month?", "spending"),   # the Health total (#571)
     ("fi", "paljonko voin käyttää seuraavan viikon aikana", NOT_CLAIMED),
     ("fi", "paljonko voin käyttää kuussa", NOT_CLAIMED),
     ("fi", "paljonko voin käyttää kuukaudessa", NOT_CLAIMED),
@@ -332,17 +332,21 @@ def test_a_health_what_if_is_refused(question, lang):
     assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "out_of_scope"}
 
 
-@pytest.mark.parametrize("question,lang", [("How much did I save on pharmacy last month?", "en"),
-                                           ("How much did I spend on doctor visits last month?", "en"),
+@pytest.mark.parametrize("question,lang", [("How much did I spend on doctor visits last month?", "en"),
                                            ("How much did I spend on the pharmacy last month?", "en"),
                                            ("Paljonko käytin lääkkeisiin viime kuussa?", "fi"),
                                            ("Paljonko käytin apteekissa viime kuussa?", "fi"),
                                            ("how much did I spend on doctor visits in July", "en")])
-def test_a_spending_question_on_health_is_declined(question, lang):
-    # The coordinator's decision in the review of #443 (reversing #384's "still plans spending"): never the
-    # unfiltered total for a health word; the same out-of-scope decline as the health what-if (R9).
+def test_a_plain_health_total_is_the_health_filter(question, lang):
+    # Renat's decision of 14 Nov (#571), for plain totals in place of the review of #443's decline: the Health
+    # category's total for the period asked, never the unfiltered total (R9: nothing beyond the total).
     result = plan(question, lang)
-    assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "out_of_scope"}
+    assert [c.name for c in result.calls] == ["get_spending", "finish"]
+    assert result.calls[0].args["filter"] == {"categories": ["Health"]}
+
+
+def test_what_was_saved_at_the_pharmacy_is_left_to_the_planner():
+    assert claimed_rule("How much did I save on pharmacy last month?") == NOT_CLAIMED   # #571: no total, no refusal
 
 
 @pytest.mark.parametrize("question,lang,args", [
