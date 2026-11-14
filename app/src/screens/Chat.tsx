@@ -201,7 +201,8 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           className={
             voice
               ? 'flex min-w-0 flex-1 items-center'
-              : 'flex h-12 min-w-0 flex-1 items-center rounded-pill border border-line-strong bg-surface pr-px'
+              : // The focus ring goes around the whole pill, mic included, not just the typing area.
+                'flex h-12 min-w-0 flex-1 items-center rounded-pill border border-line-strong bg-surface pr-px has-[input:focus-visible]:[outline:var(--focus-ring-width)_solid_var(--color-brand)] has-[input:focus-visible]:outline-offset-2'
           }
         >
           <label htmlFor="chat-input" className="sr-only">
@@ -221,7 +222,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
             placeholder={s.placeholder}
             enterKeyHint="send"
             autoComplete="off"
-            className={`${voice ? 'hidden' : ''} h-full min-w-0 flex-1 rounded-pill bg-transparent pr-1 pl-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted last:pr-[min(1.25rem,20px)]`}
+            className={`${voice ? 'hidden' : ''} h-full min-w-0 flex-1 rounded-pill bg-transparent outline-none pr-1 pl-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted last:pr-[min(1.25rem,20px)]`}
           />
           <ComposerMicButton
             onText={(text) => {
