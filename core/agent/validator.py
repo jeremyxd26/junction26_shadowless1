@@ -616,8 +616,14 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
 _CAUSE = re.compile(r"\b(?:because(?:\s+of)?|based\s+on|due\s+to|driven\s+by|comes?\s+from|set\s+by|limited\s+by"
                     r"|capped\s+by|depends?\s+on|thanks\s+to|koska|perustuu|johtuu)\b", re.I)
 _SIDE_WORD = re.compile(
-    r"\b(?:(?P<budget>budget\w*|goals?|set(?:ting)?\s+aside|\w*budjet\w*|\w*tavoit\w*|sivuun)"
+    r"\b(?:(?P<budget>budget\w*|goals?|set(?:ting)?\s+aside|aside|sav(?:e|es|ing|ings)\b|\w*budjet\w*|\w*tavoit\w*"
+    r"|sivuun|\w*s[aä][aä]st[oöaä]\w*)"
     r"|(?P<balance>balance|bills?|reserves?|account|\w*saldo\w*|\w*lasku\w*|varau\w*|tili\w*))", re.I)
+# A concessive clause up to its comma ("although your balance is X, …", "vaikka saldosi on X, …"): its side word
+# is not the cause (review of #574)
+_CONCESSIVE = re.compile(r"\b(?:although|though|while|even\s+if|even\s+though|vaikka)\b[^,;]*[,;]?", re.I)
+# A sentence that refers back to the one before ("This is based on …", "Se johtuu …")
+_BACK_REFERENCE = re.compile(r"^\W*(?:this|that|it|the\s+reason|se|tämä|tuo|syy)\b", re.I)
 _BALANCE_KEYS = ("balance_limit", "free_until_payday")
 _BUDGET_KEYS = ("budget_limit", "savings_goal", "usual_week")
 
@@ -660,8 +666,12 @@ def safe_to_spend_problems(text: str, views: Iterable[Any] = ()) -> list[str]:
             problems.append(f"safe to spend is set by the {binding} limit: cite it, not only the other side's figures")
         other = "balance" if binding == "budget" else "budget"
         for sentence in re.split(r"(?<=[.!?])\s+", text):
-            for m in _CAUSE.finditer(sentence):
-                side = _SIDE_WORD.search(sentence, m.end())
+            tokens = set(TOKEN.findall(sentence))
+            if tokens and _node_id(safe) not in tokens and not _BACK_REFERENCE.search(sentence):
+                continue   # a statement about other figures ("Your bills of X are covered because …")
+            masked = _CONCESSIVE.sub(lambda c: " " * len(c.group(0)), sentence)
+            for m in _CAUSE.finditer(masked):
+                side = _SIDE_WORD.search(masked, m.end())
                 if side and side.lastgroup == other:
                     problems.append(f"'{sentence[m.start():side.end()]}': safe to spend is set by the {binding} limit, "
                                     f"not the {other}; name the {binding} limit as the reason")

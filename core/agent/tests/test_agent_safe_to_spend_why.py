@@ -54,6 +54,61 @@ def test_other_why_questions_are_not_the_safe_to_spend_answer(question):
     assert ask(question).rule != "safe_to_spend_why"
 
 
+# The review of #574: the why answer is decided where the safe-to-spend rule is, after every decline and guard.
+# Kept on purpose: the safe-to-spend question with a why and a low word, and the bare whole message with no
+# subject noun ("why so low?", "miksi niin vähän?").
+KEEP = WHY + [("Why is my safe to spend lower than last week?", "en"), ("why is my safe to spend so low", "en"),
+              ("Why is the amount I can safely spend this week so small?", "en"),
+              ("why is my limit lower this week?", "en"), ("Why is my weekly budget so low?", "en"),
+              ("why so low?", "en"), ("why is it lower?", "en"), ("miksi se on pieni?", "fi"),
+              ("miksi voin käyttää niin vähän tällä viikolla?", "fi"),
+              ("miksi turvallisesti käytettävä summa on alhainen?", "fi")]
+
+
+@pytest.mark.parametrize("question,lang", KEEP)
+def test_the_kept_why_questions_are_the_template_answer(question, lang):
+    assert ask(question, lang).rule == "safe_to_spend_why" and plan(question, lang).template_answer
+
+
+DECLINED = ("decline", "", ("decline",))
+NOT_CLAIMED = (None, "", ())
+BOTH = ("safe_to_spend+recurring_bills", "", ("get_safe_to_spend", "get_recurring_bills", "finish"))
+# The rows the first version of #574 took from another rule: each has dev's outcome (rule, reason, calls).
+AS_ON_DEV = [
+    ("why pharmacy spending lower?", "en", DECLINED),
+    ("miksi apteekkikulut ovat pienemmät?", "fi", DECLINED),
+    ("why is my health spending so low?", "en", DECLINED),
+    ("why is my budget so low, what if I cut doctor visits by 10%?", "en", ("what_if", "", ("decline",))),
+    ("miksi budjettini on pieni, mitä jos vähennän lääkärikäyntejä 10 %?", "fi", ("what_if", "", ("decline",))),
+    ("why is salary lower?", "en", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
+    ("why is income lower?", "en", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
+    ("miksi palkka on pieni?", "fi", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
+    ("why is balance low?", "en", NOT_CLAIMED),
+    ("why is spending lower?", "en", (None, "period", ())),
+    ("why is spending less?", "en", (None, "what_if_which", ())),
+    ("miksi kulutus on pienempi?", "fi", (None, "period", ())),
+    ("why so little interest?", "en", NOT_CLAIMED),
+    ("why only 3 purchases?", "en", NOT_CLAIMED),
+    ("Why is my overdraft limit so low?", "en", NOT_CLAIMED),
+    ("why is my card limit lower?", "en", NOT_CLAIMED),
+    ("Why is my credit card limit so low?", "en", NOT_CLAIMED),
+    ("Why is my monthly budget lower than last month?", "en", ("spending", "", ("get_spending", "finish"))),
+    ("why will my safe to spend be lower next week", "en", ("future", "", ("get_spending", "finish"))),
+    ("why was my safe to spend lower in August?", "en", (None, "competing", ())),
+    ("Why is my safe to spend lower, and what is my salary?", "en", BOTH),
+    ("Why is my safe to spend lower? Also show my largest bills.", "en", BOTH),
+    ("Why is my safe to spend lower? And what are my bills?", "en", BOTH),
+    ("Why is my safe to spend lower and when is my next payday?", "en", BOTH),
+]
+
+
+@pytest.mark.parametrize("question,lang,expected", AS_ON_DEV)
+def test_declines_guards_other_rules_and_two_questions_keep_their_outcome(question, lang, expected):
+    found = ask(question, lang)
+    assert (found.rule, found.reason, tuple(c.name for c in found.calls)) == expected
+    assert not plan(question, lang).template_answer
+
+
 @pytest.mark.parametrize("v,lang,expected,cited", [
     (SANNA, "en", "This week {{n6}} is safe to spend because your monthly budget sets the limit, after setting aside "
                   "{{n10}} first. Your balance alone would allow {{n8}}.", ["n6", "n10", "n8"]),
@@ -92,3 +147,18 @@ def test_the_plain_answer_names_the_goal_even_without_the_usual_pace():
     v = dict(SANNA, usual_week=None)
     text, ids = template.goal_sentence(v, "en")
     assert ids == ["n6", "n10"] and "{{n10}}" in text
+
+
+@pytest.mark.parametrize("v,lang,expected,ids", [   # the exact plain answer, English and Finnish (review of #574)
+    (SANNA, "en", "To keep setting aside {{n10}}, about {{n6}} a week is safe to spend, below your usual {{n11}}.",
+     ["n10", "n6", "n11"]),
+    (SANNA, "fi", "Jotta voit laittaa sivuun {{n10}}, turvallisesti käytettävissä on noin {{n6}} viikossa, alle "
+                  "tavallisen {{n11}}.", ["n10", "n6", "n11"]),
+    (dict(SANNA, usual_week=None), "en", "You can spend about {{n6}} this week, after setting aside about {{n10}}.",
+     ["n6", "n10"]),
+    (dict(SANNA, usual_week=None), "fi", "Voit käyttää tällä viikolla noin {{n6}}, kun ensin laitat sivuun noin "
+                                         "{{n10}}.", ["n6", "n10"]),
+])
+def test_the_plain_answer_text_in_both_languages(v, lang, expected, ids):
+    assert template.goal_sentence(v, lang) == (expected, ids)
+    assert safe_to_spend_problems(expected, [v]) == []

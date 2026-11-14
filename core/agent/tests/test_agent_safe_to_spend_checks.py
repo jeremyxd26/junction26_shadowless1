@@ -80,6 +80,30 @@ def test_a_draft_written_by_the_prompt_lines_passes(draft):
     assert problems(draft) == []
 
 
+@pytest.mark.parametrize("draft", [   # true drafts the first version rejected (review of #574)
+    "{{n6}} is safe to spend this week because you set {{n10}} aside first, before any bills.",
+    "{{n6}} is safe to spend because you save {{n10}} a month first; your balance is not the limit.",
+    "{{n6}} is safe to spend, because although your balance is {{n8}}, your monthly budget after {{n10}} limits it.",
+    "Voit käyttää {{n6}}, koska laitat ensin {{n10}} säästöön ennen laskuja.",
+    "About {{n6}} is safe to spend after setting aside {{n10}} first. Your bills of {{n2}} are covered because your "
+    "balance is high.",
+])
+def test_true_drafts_with_aside_save_a_concession_or_another_statement_pass(draft):
+    assert problems(draft) == []
+
+
+@pytest.mark.parametrize("draft", [
+    "About {{n6}} is safe to spend after setting aside {{n10}} first. That is because of your balance and bills.",
+    "About {{n6}} is safe to spend after setting aside {{n10}} first. This is because your bills of {{n2}} come "
+    "before payday.",
+    "Although you save {{n10}} first, {{n6}} is safe to spend because of your bills.",
+    "Vaikka laitat sivuun {{n10}}, voit käyttää {{n6}}, koska laskusi ovat suuret.",
+])
+def test_a_balance_cause_is_still_rejected_after_a_concession_or_in_a_sentence_that_refers_back(draft):
+    found = problems(draft)
+    assert any("set by the budget limit, not the balance" in p for p in found), found
+
+
 def test_when_the_balance_binds_the_balance_is_the_cause_and_the_goal_is_not_required():
     good = "This week {{n6}} is safe to spend because your balance sets the limit, after the bills before payday."
     assert problems(good, BALANCE_BINDS) == []
