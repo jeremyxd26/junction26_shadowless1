@@ -379,7 +379,7 @@ def test_saying_a_failed_part_could_not_be_calculated_is_fine(make_pipeline):
 
 @pytest.mark.parametrize("text", [
     "In August 2026 you spent {{n1}} on health, which includes your gym visits.",   # the stand, #395
-    "August 2026 cost {{n1}}, including your gym membership.",
+    "Restaurants took {{n1}} in August 2026, including your gym membership.",
 ])
 def test_a_draft_saying_what_a_category_contains_is_rejected(make_pipeline, text):
     bad = {"language": "en", "text": text, "cited": ["n1"], "lesson_key": None}

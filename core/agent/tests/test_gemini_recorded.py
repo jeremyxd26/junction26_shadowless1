@@ -172,9 +172,12 @@ def test_a_spending_question_without_a_period_is_asked_back_with_options_the_rul
     assert fixture["expect"]["outcome"] == "clarify" and fixture["expect"]["tool_calls"] == ["ask_clarifying_question"]
     call = fixture["exchanges"][0]["response"]["candidates"][0]["content"]["parts"][0]["function_call"]
     rules = RuleModel()
+    # As the pipeline checks them (Pipeline._options_work): a tapped option is the next message of this
+    # conversation, so the question stands before it ("Last month" after "How much did I spend?", #384).
+    after = [{"question": fixture["question"], "calls": [], "results": []}]
     for option in call["args"]["options"]:
         plan = rules.plan(PlanInput(question=option, language="en", as_of=fixture["as_of"],
-                                    tools=default_registry().schemas()))
+                                    tools=default_registry().schemas(), history=after))
         assert plan.recognised and plan.calls[0].name != "ask_clarifying_question", option
 
 
