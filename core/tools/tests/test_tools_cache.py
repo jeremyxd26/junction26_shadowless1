@@ -237,6 +237,22 @@ def test_only_core_tools_results_go_to_disk(tmp_path):
         assert db.execute("SELECT count(*) FROM tool_cache").fetchone()[0] == 0
 
 
+def test_a_changed_config_file_changes_the_code_version(tmp_path, monkeypatch):
+    """A rules file a tool reads (core/config/s_group_benefits.yaml for the S-Bonus) is part of the code
+    version, so new rules never serve results of the old ones (Codex on #260)."""
+    from core.tools import cache as cache_mod
+
+    for folder, name, text in (("core/tools", "tool.py", "x = 1\n"), ("core/metrics", "01.sql", "SELECT 1;\n"),
+                               ("core/config", "s_group_benefits.yaml", "rate: 1\n")):
+        (tmp_path / folder).mkdir(parents=True)
+        (tmp_path / folder / name).write_text(text, encoding="utf-8")
+    monkeypatch.setattr(cache_mod, "ROOT", tmp_path)
+    before = cache_mod.code_version.__wrapped__()
+    (tmp_path / "core/config/s_group_benefits.yaml").write_text("rate: 2\n", encoding="utf-8")
+    assert cache_mod.code_version.__wrapped__() != before
+    assert ("core/config", "*.yaml") in cache_mod.SOURCES
+
+
 def test_code_version_is_part_of_the_key(mem, tool, monkeypatch):
     mem.run("fake", FakeArgs, tool, ctx_for(), {})
     monkeypatch.setattr(cache_mod, "code_version", lambda: "another-deploy")
@@ -542,3 +558,165 @@ def test_prepare_many_never_uses_one_connection_from_two_threads(mem):
     tool = SlowTool(0.0)
     prepared = mem.prepare_many(many(tool), ctx, extra_connection=same_connection)
     assert [p.source for p in prepared] == ["tool"] * 3 and set(tool.conns) == {"request-connection"}
+
+
+# ---- single-flight: concurrent misses of one key compute once ------------------------------------------
+
+def _concurrently(n, target):
+    import threading
+
+    barrier = threading.Barrier(n)
+    results, errors = [None] * n, [None] * n
+
+    def run(i):
+        barrier.wait()
+        try:
+            results[i] = target(i)
+        except Exception as exc:  # noqa: BLE001
+            errors[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return results, errors
+
+
+def test_ten_concurrent_misses_of_one_key_run_the_tool_once():
+    c = ToolCache(mode="memory", wait_s=5.0)
+    tool = SlowTool(0.3)
+    ctxs = [ctx_for() for _ in range(10)]
+    results, errors = _concurrently(10, lambda i: apply(c.prepare("slow", FakeArgs, tool, ctxs[i], {}).entry, ctxs[i]))
+    assert errors == [None] * 10 and tool.calls == 1
+    assert c.stats.misses == 1 and c.stats.waits == 9
+    assert len({dump(r) for r in results}) == 1                       # every caller got the same result
+
+
+def test_when_the_owner_fails_each_waiter_computes_itself():
+    import time
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    calls = []
+
+    def flaky(ctx, args):
+        calls.append(1)
+        if len(calls) == 1:
+            time.sleep(0.2)
+            raise RuntimeError("the first computation fails")
+        return FakeTool()(ctx, args)
+
+    results, errors = _concurrently(3, lambda i: c.prepare("flaky", FakeArgs, flaky, ctx_for(), {}).source)
+    assert sum(isinstance(e, RuntimeError) for e in errors) == 1       # only the owner sees its own failure
+    assert sorted(r for r in results if r) in (["memory", "tool"], ["tool", "tool"], ["inflight", "tool"])
+    assert len(calls) >= 2
+
+
+class Cancelled(BaseException):
+    """A cancelled request (or a KeyboardInterrupt): not an Exception, so a broad handler does not catch it."""
+
+
+def test_an_owner_that_raises_a_base_exception_never_hands_it_to_a_waiter():
+    """Review of #260: the owner's BaseException is its own; the waiter gets the failure marker and computes."""
+    import threading
+    import time
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    calls = []
+
+    def cancelled_first(ctx, args):
+        calls.append(1)
+        if len(calls) == 1:
+            time.sleep(0.2)          # the second caller arrives while this one is in flight
+            raise Cancelled()
+        return FakeTool()(ctx, args)
+
+    barrier = threading.Barrier(2)
+    outcomes = [None, None]
+
+    def run(i):
+        barrier.wait()
+        try:
+            outcomes[i] = c.prepare("cancelled", FakeArgs, cancelled_first, ctx_for(), {}).source
+        except BaseException as exc:  # noqa: BLE001 - recorded for the assertions
+            outcomes[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sum(isinstance(o, Cancelled) for o in outcomes) == 1         # only the owner sees its own failure
+    assert [o for o in outcomes if not isinstance(o, BaseException)] == ["tool"]   # the other one computed
+    assert len(calls) == 2 and c.stats.waits == 0 and c._inflight == {}
+
+
+def test_a_waiters_own_interrupt_is_not_swallowed():
+    """The waiter catches only a timeout around the owner's result, so its own interrupt reaches it."""
+    from concurrent.futures import Future
+
+    class Interrupted(Future):
+        def result(self, timeout=None):
+            raise Cancelled()
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    ctx = ctx_for()
+    c.ensure_labels_key(ctx)
+    from core.tools.cache import args_json
+
+    c._inflight[ToolCache.key(ctx, "fake", args_json(FakeArgs, {})[1])] = Interrupted()   # another caller owns it
+    tool = FakeTool()
+    with pytest.raises(Cancelled):
+        c.prepare("fake", FakeArgs, tool, ctx, {})
+    assert tool.calls == 0
+
+
+def test_a_caller_that_missed_while_the_owner_finished_finds_the_stored_result():
+    """Codex on #260: the memory layer is checked again under the lock before a caller claims the key."""
+    c = ToolCache(mode="memory")
+    tool = FakeTool()
+    c.run("fake", FakeArgs, tool, ctx_for(), {})                     # the owner stored its result
+    c.get = lambda key, customer_id: None                            # this caller's first look came too early
+    prepared = c.prepare("fake", FakeArgs, tool, ctx_for(), {})
+    assert prepared.source == "memory" and prepared.hit and tool.calls == 1 and c._inflight == {}
+
+
+def test_a_waiter_that_times_out_computes_itself():
+    c = ToolCache(mode="memory", wait_s=0.05)
+    tool = SlowTool(0.4)
+    results, errors = _concurrently(2, lambda i: c.prepare("slow", FakeArgs, tool, ctx_for(), {}).source)
+    assert errors == [None, None] and sorted(results) == ["tool", "tool"] and tool.calls == 2
+
+
+def test_an_owner_never_waits_and_a_finished_key_is_not_in_flight():
+    c = ToolCache(mode="memory")
+    tool = FakeTool()
+    c.run("fake", FakeArgs, tool, ctx_for(), {})
+    assert c._inflight == {}                                          # nothing left behind
+    c.run("fake", FakeArgs, tool, ctx_for(), {})
+    assert tool.calls == 1 and c.stats.waits == 0
+
+
+@pytest.mark.parametrize("raw, expected", [("2.5", 2.5), ("abc", 5.0), ("", 5.0), ("-1", 0.0)])
+def test_wait_seconds_are_parsed_defensively(raw, expected):
+    assert ToolCache.from_env({"TOOL_CACHE_WAIT_S": raw}).wait_s == expected
+
+
+
+def test_a_peer_result_from_incomplete_marts_is_served_but_never_stored(mem):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def peer(source):
+        def tool(ctx, args):
+            calls.append(source)
+            return ToolResult(tool="get_peer_benchmark", data=SimpleNamespace(peer_source=source), model_view={})
+        return tool
+
+    mem.run("get_peer_benchmark", FakeArgs, peer("range"), ctx_for(), {})     # marts not built for as_of
+    mem.run("get_peer_benchmark", FakeArgs, peer("range"), ctx_for(), {})
+    assert calls == ["range", "range"] and len(mem) == 0                     # computed each time, not pinned
+    mem.run("get_peer_benchmark", FakeArgs, peer("marts"), ctx_for(), {})     # the build is complete now
+    mem.run("get_peer_benchmark", FakeArgs, peer("marts"), ctx_for(), {})
+    assert calls == ["range", "range", "marts"] and len(mem) == 1

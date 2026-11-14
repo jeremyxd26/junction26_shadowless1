@@ -8,10 +8,6 @@
  "exchanges": [
   {
    "kind": "plan",
-   "error": "timeout"
-  },
-  {
-   "kind": "plan",
    "response": {
     "candidates": [
      {

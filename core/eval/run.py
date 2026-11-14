@@ -105,7 +105,12 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
                                                dates=dates, periods=periods):
         fails.append(f"R1: {problem}")
 
-    if case["expect"] in ("refused", "no_data"):
+    if case["expect"] == "meta":  # an introduction offers the four brief questions as chips (#287)
+        if ans.follow_ups is None:
+            fails.append("unverified: the source did not report its chips")
+        elif len(ans.follow_ups) < 4:
+            fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
+    if case["expect"] in ("refused", "no_data", "meta"):
         for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")
     else:
@@ -127,6 +132,11 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
         # - any other number passes only if a tool call of this same answer returned it (the audit's
         #   model views), and its value is checked against SQL wherever the case can derive it.
         typed = answer_text.scan_numbers(question, lang)
+        # A share the user gave as a word counts as typed (#216): "half" is 50 %, "all" 100 %.
+        if re.search(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b", question, re.I):
+            typed.append((50.0, "pct"))
+        if re.search(r"\ball\b|\bkaikki\w*", question, re.I):
+            typed.append((100.0, "pct"))
         for x in declared:
             if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"], x.get("method"))
                    for n in wanted):
