@@ -108,12 +108,12 @@ describe('lesson 1: the reveal', () => {
   it('a right pick, a wrong pick in kind words, and each other option by its label', () => {
     const en = lessonStrings('en')
     expect(revealOf(lesson, 'hero').verdict).toBe('right')
-    expect(en.one.right.week('€138.79')).toBe('Right: €138.79 is your safe amount this week.')
+    expect(en.one.right.week('€138.79')).toBe("Right: €138.79 is what's left to spend this week.")
     expect(revealOf(lesson, 'weekly').verdict).toBe('close')
-    expect(en.one.close.week('€138.79')).toBe('Close. €138.79 is your safe amount this week.')
+    expect(en.one.close.week('€138.79')).toBe("Close. €138.79 is what's left to spend this week.")
     const others = revealOf(lesson, 'essentials').others.map((option) => en.isLabel(option.number.display, inSentence(option.number.label)))
     expect(others).toEqual(['€83.78 a week is typically left each week.', '€1,889.04 a month is regular essentials.'])
-    expect(en.one.concept).toBe('Safe to spend is the money left for you after your regular bills and your saving are taken care of.')
+    expect(en.one.concept).toBe('Left to spend is the money that stays yours after your regular bills and your saving are taken care of.')
   })
 
   it('keeps an acronym or a name at the start of a label', () => {
@@ -166,7 +166,7 @@ describe('the lesson turn (#703)', () => {
     const html = render(only)
     expect(html).not.toContain('role="group"')
     expect(html).toContain('data-step-heading="" tabindex="-1"')
-    expect(html).toContain('>€138.79 is your safe amount this week.</h3>')
+    expect(html).toContain(">€138.79 is what&#x27;s left to spend this week.</h3>")
     expect(html).toMatch(/<button type="button" aria-label="Safe to spend: €138\.79\. Show how it was calculated" class="[^"]*min-h-11[^"]*">€138\.79<\/button>/)
     only.hero!.primary = { ...only.hero!.primary, evidence_ref: null }
     const plain = render(only)
