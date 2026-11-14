@@ -64,11 +64,25 @@ Every message is `{"type": "...", "v": 1, "payload": {...}}`.
 | module → host | `sentti.close` | `{}` | The customer leaves the module: the back button on the overview. The host closes the WebView. Today's `{ type: 'close' }` becomes this message. |
 | module → host | `sentti.openTransaction` | `{"transaction_id": "tx_606016"}` | The customer taps a transaction in an evidence sheet. The host opens it in its own transaction view; the host maps the id. |
 | module → host | `sentti.handoff` | `{"action": "transfer_to_savings", "amount": {"value": 50.0, "unit": "eur", "display": "€50.00"}, "label": "Move to savings"}` | The module suggests an action, for example "set up a transfer to savings". **S-mobiili carries it out with its own confirmation**; Sentti never moves money, changes settings or contacts anyone (R6). |
+| module → host | `sentti.openHostScreen` | `{"target": "monthly_saving"}` | The customer taps "See monthly saving in S-mobiili" on the safe-to-save card, or "See Bonus to fund in S-mobiili" on the S-Bonus estimate. The host opens its own screen for the target (below). |
 | host → module | `host.context` | `{"language": "fi", "theme": {"color-brand": "#007841"}}` | Language and theme, section 4. |
 | host → module | `host.session` | `{"token": "<short-lived token>"}` | Identity, section 2. |
 | host → module | `host.back` | `{}` | The Android back button: the module goes back one step (closes a sheet or leaves the chat), or answers `sentti.close` on the overview. |
 
 The amount in a handoff is a Number object of the API contract (`contracts/api.md` section 2.1), so the host shows the same `display` the customer saw.
+
+**`sentti.openHostScreen`** (contract 0.3.1, section 3, the action `open_host_screen`; core #267, app #268). It is one step from a card into the bank's own app.
+- The payload is `{target}` and nothing else: no amount, no customer data, no fund or product name.
+- `target` comes from a closed list:
+
+| `target` | Sent from | The host opens |
+|---|---|---|
+| `monthly_saving` | the safe-to-save card, when the monthly figure is above 0 | its monthly saving screen |
+| `bonus_to_fund` | the S-Bonus estimate, when an estimate is offered | its Bonus to fund screen |
+
+- The host shows its own screen, with its own figures and terms; the customer decides everything there. Sentti recommends nothing there, says nothing about returns and moves no money.
+- **The host ignores a target it does not know**, so a newer module never makes an older host fail. No answer from the host is defined.
+- The message uses the envelope above, which the app adopted in PR #175. The API's action type stays `open_host_screen`; the host message name is camelCase like `sentti.openTransaction`.
 
 ## 4. Language and theme from the host
 
@@ -133,7 +147,8 @@ final class SenttiViewController: UIViewController, WKScriptMessageHandler {
         switch type {
         case "sentti.ready": send(["type": "host.session", "v": 1, "payload": ["token": BankSession.senttiToken()]])
         case "sentti.close", "close": dismiss(animated: true)                     // "close": today's message
-        case "sentti.openTransaction", "sentti.handoff": HostRouter.handle(body)   // S-mobiili's own screens
+        case "sentti.openTransaction", "sentti.handoff", "sentti.openHostScreen":
+            HostRouter.handle(body)                                                  // S-mobiili's own screens; an unknown target is ignored
         default: break
         }
     }
@@ -176,7 +191,8 @@ class SenttiActivity : AppCompatActivity() {
                 "sentti.ready" -> send(JSONObject(mapOf("type" to "host.session", "v" to 1,
                     "payload" to mapOf("token" to BankSession.senttiToken()))))
                 "sentti.close" -> finish()
-                "sentti.openTransaction", "sentti.handoff" -> HostRouter.handle(this, msg)  // S-mobiili's own screens
+                "sentti.openTransaction", "sentti.handoff", "sentti.openHostScreen" ->
+                    HostRouter.handle(this, msg)   // S-mobiili's own screens; an unknown target is ignored
             }
         }
         // Back: to the module once it has spoken, otherwise (not loaded yet) close the screen.

@@ -551,6 +551,8 @@ SAFE_TO_SAVE_NUMBERS = (  # (key, output column, unit value)
 SENSITIVE_CATEGORIES = frozenset({"Health"})   # never named by the safe-to-save reason (R9)
 
 SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
+    # #267: the step into the bank's own app; names the destination only (no fund, no advice, no returns)
+    "host_monthly_saving": ("See monthly saving in S-mobiili", "Katso kuukausisäästäminen S-mobiilissa"),
     "title": ("Safe to save", "Turvallisesti säästettävissä"),
     "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
     "estimate_text": (
@@ -694,6 +696,8 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.
 BONUS_TEXT: dict[str, tuple[str, str]] = {
+    # #267: the step into the bank's own app; names the destination only (no fund, no advice, no returns)
+    "host_bonus_to_fund": ("See Bonus to fund in S-mobiili", "Katso Bonus rahastoon S-mobiilissa"),
     "title": ("S-Bonus estimate", "S-Bonus-arvio"),
     "scenario": ("If {share} of your grocery spending went to S-Group stores",
                  "Jos {share} ruokaostoksistasi tehtäisiin S-ryhmän kaupoissa"),

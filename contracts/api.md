@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.0 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.1 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.0. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.1. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -142,7 +142,7 @@ Card-specific fields:
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{alias, label}` or null (no merchant id; the label has no digits), `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now. While the review is pending this is always `unclassified` ("Waiting for your answer"): the purchase is in no basket total and not in the reserve.<br>- `question` `{en, fi}`: the question in both languages, with the purchase's amount (its display), category and date filled in, for example "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?".<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` ("Needed" / "Välttämätön") and `everyday_spending` ("My choice" / "Oma valinta"). The three basket keys stay the only answer options; `unclassified` is never one.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response_pending` |
-| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
 
 Actions:
 
@@ -151,6 +151,36 @@ Actions:
 | `open_evidence` | `label`, `evidence_ref` | Open the evidence sheet. |
 | `ask` | `label`, `prompt` | Send `prompt` to `/api/ask` in the same conversation. |
 | `open_whatif` | `label`, `scenario` (same shape as the `scenario` of a `/api/whatif` request, section 8.1) | Open the what-if screen with this scenario. |
+| `open_host_screen` | `label`, `target`: `monthly_saving` or `bonus_to_fund` | Send the host message `sentti.openHostScreen` with `{target}`; the host opens its own screen (below). |
+
+**`open_host_screen`** (since 0.3.1, #267) leads from a card to a screen of the host app (S-mobiili). It is one step into the bank's own app: Sentti recommends nothing there and moves no money.
+- `target` comes from a closed list, and no other value is ever sent:
+  - `monthly_saving`: the host's monthly saving screen. Carried by the `safe_to_save` card when `monthly` is above 0; when `monthly` is 0 the card has no such action.
+  - `bonus_to_fund`: the host's Bonus to fund screen. Carried by the S-Bonus estimate, a `metric` card titled "S-Bonus estimate" in answers to the S-Bonus question, only when the estimate is offered. When the Bonus would be 0 because spending is below the lowest level of the table, the card has no such action.
+- `label` names the destination only, for example "See monthly saving in S-mobiili" / "Katso kuukausisäästäminen S-mobiilissa" and "See Bonus to fund in S-mobiili" / "Katso Bonus rahastoon S-mobiilissa". It has no digits, no fund or product name, nothing about returns and no "you should".
+- The action carries no amount, no evidence ref and no customer data. The app sends the host only `{target}`: the message `sentti.openHostScreen` in the app's `sentti.<name>` envelope (`docs/integration.md` section 3; the envelope of PR #175). The host shows its own screen with its own figures and terms. The service expects no answer and stores nothing.
+- The host ignores a target it does not know. The app renders an action whose target it does not know as nothing. In the demo build, which has no host, the app opens a mock host sheet for the target instead (#268).
+- Issues #267 and #268 wrote the message name as `sentti.open_host_screen`. It follows the camelCase names of the app's envelope, as `sentti.openTransaction` and `sentti.paymentDraft` (section 11.3) do, so it is `sentti.openHostScreen`. The action type in this API stays `open_host_screen`.
+
+<!-- example: action.open_host_screen -->
+```json
+{
+  "type": "open_host_screen",
+  "label": "See monthly saving in S-mobiili",
+  "target": "monthly_saving"
+}
+```
+
+The host message it sends:
+
+<!-- example: host.open_host_screen -->
+```json
+{
+  "type": "sentti.openHostScreen",
+  "v": 1,
+  "payload": { "target": "monthly_saving" }
+}
+```
 
 <!-- example: card.peer -->
 ```json
@@ -587,7 +617,8 @@ The `safe_to_save` card of the overview for Sanna after she answered "needed" (v
   ],
   "reason": null,
   "actions": [
-    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sn3m5o7n9t1h" }
+    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sn3m5o7n9t1h" },
+    { "type": "open_host_screen", "label": "See monthly saving in S-mobiili", "target": "monthly_saving" }
   ]
 }
 ```
@@ -669,7 +700,8 @@ For Aleksi (CUST00849, values from the dataset), a tight but positive month: no 
   ],
   "reason": null,
   "actions": [
-    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_al1m3o5n7t9h" }
+    { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_al1m3o5n7t9h" },
+    { "type": "open_host_screen", "label": "See monthly saving in S-mobiili", "target": "monthly_saving" }
   ]
 }
 ```
@@ -1145,7 +1177,8 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     ],
     "reason": null,
     "actions": [
-      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_ai2m4o6n8t0h" }
+      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_ai2m4o6n8t0h" },
+      { "type": "open_host_screen", "label": "See monthly saving in S-mobiili", "target": "monthly_saving" }
     ]
   },
   "cards": [
@@ -1483,6 +1516,11 @@ The same overview when safe to spend cannot be computed for a known reason: `her
         "type": "open_evidence",
         "label": "How is this calculated?",
         "evidence_ref": "ev_ai2m4o6n8t0h"
+      },
+      {
+        "type": "open_host_screen",
+        "label": "See monthly saving in S-mobiili",
+        "target": "monthly_saving"
       }
     ]
   },
@@ -1813,7 +1851,8 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
     ],
     "reason": null,
     "actions": [
-      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sa6m8o0n2t4h" }
+      { "type": "open_evidence", "label": "How is this calculated?", "evidence_ref": "ev_sa6m8o0n2t4h" },
+      { "type": "open_host_screen", "label": "See monthly saving in S-mobiili", "target": "monthly_saving" }
     ]
   },
   "cards": [
@@ -3543,11 +3582,12 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
 
 ### 11.3 The payment draft
 
-**Sentti does not pay.** When the customer taps `add_to_payments`, the app sends the draft to the host app (S-mobiili) in the `sentti.<name>` envelope of the app (PR #175, not yet merged), whose message names are camelCase, like `sentti.openTransaction`. The host shows the payment in its own payment screen, the customer checks and confirms it there, and the host executes it. The service does nothing with the draft and stores nothing; no answer from the host is defined.
+**Sentti does not pay.** When the customer taps `add_to_payments`, the app sends the draft to the host app (S-mobiili) in the `sentti.<name>` envelope of the app (PR #175), whose message names are camelCase, like `sentti.openTransaction`. The host shows the payment in its own payment screen, the customer checks and confirms it there, and the host executes it. The service does nothing with the draft and stores nothing; no answer from the host is defined.
 
 | Direction | `type` | `payload` |
 |---|---|---|
 | module → host | `sentti.paymentDraft` | The action's `draft`: `{payee, iban, reference, amount, due_date}`. `amount` is a Number object (section 2.1), so the host shows the same `display` the customer saw. `payee` can be `null`; the host then asks for it. |
+| module → host | `sentti.openHostScreen` | `{target}` and nothing else, `target` being `monthly_saving` or `bonus_to_fund`: from the action `open_host_screen` (since 0.3.1; section 3, Actions; example `host.open_host_screen`). The host opens its own screen for the target and ignores a target it does not know. |
 
 <!-- example: host.payment_draft -->
 ```json
@@ -3619,3 +3659,4 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.2.1 | No change of shape. The method ids `safe_to_spend.bill_due_eur@1` (#44) and `safe_to_spend.safe_to_save_monthly_eur@1`, `.everyday_month_eur@1`, `.safe_to_save_eur@1`, `.everyday_until_payday_eur@1`, `.essentials_shortfall_month_eur@1`, `.save_reason_month_eur@1` (#53) are real SQL outputs now; the pending notes are removed. The bills card states that its items, each rounded on its own, may differ from `total` by up to 0.01 per item. |
 | 0.2.2 | Documents what the service already returns or what was decided (#134); nothing new is built.<br><br>1. Evidence rows carry `display`, the amount formatted like a Number's display; `amount` stays the exact decimal string (section 9; #106).<br>2. Evidence kinds: `metric` (a re-run of the metric definition, `reconciles`, `rows` always a list) and the shape of `peer_aggregate` (group statistics as parts with `evidence_ref: null`, the level in the group size's label); new examples `evidence.response_metric` and `evidence.response_peer` (sections 2.1 and 9; #73, #106, #95).<br>3. Errors: `not_found` (404) for an unknown route; a wrong method is 405 `invalid_request` with `Allow` (section 4; #106).<br>4. `POST /api/whatif`: every refused selection answers 422 `invalid_scenario` with the same body; `language` defaults to `en`; `cut_pct` is a JSON integer; a merchant alias is accepted and the merchant id echoed; `unexpected_necessities` is allowed; new example `whatif.error` (section 8.1; #106).<br>5. Only the persona customers are served; any other id answers 404 `customer_not_found` (sections 1, 4, 5 and 9; #125).<br>6. `hero` is `null` when safe to spend cannot be computed for a known reason; the app hides the card (section 6; #106).<br>7. The hero subtitle shows the period's dates, "1–7 Oct 2026" / "1.–7.10.2026" (section 6; #113, #133).<br>8. The display rules of the one formatter (section 2.1; #111).<br>9. The review card texts as decided on #68: the question with the amount, category and date filled in, the buttons "Needed" / "My choice" ("Välttämätön" / "Oma valinta"), and the Finnish effect texts with "turvallisesti käytettävissä" (sections 3 and 6).<br><br>Also: error messages follow `?lang` for a GET, the body's `language` for a POST, and the detected language for `/api/ask` with `auto`. A POST body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` in English (sections 1, 4, 7.1, 8.1 and 10.1).<br><br>Facts added after the first draft:<br>10. The first overview creates the review (with #196, also the first `/api/ask` answer); an undo after the 7 days closes it (section 6, as in 10.1).<br>11. With #144 (PR #199, not yet merged): the per-viewer cookie `sentti_viewer` set by the overview, and a rate limit on the label write, answered with 429 `rate_limited` and `Retry-After` (sections 6 and 10).<br>12. `safe_to_save`: when free until payday is negative, `stock` is 0 and `stock_components` is empty (section 3; #165).<br>13. The reason text of `card.safe_to_save_everyday` names the category in a form that works for every everyday category (#165).<br>14. The "My choice" button's text in sections 10.1 and 10.2; the `metric` rows are always a list; the `peer_aggregate` shape as #69 builds it; which hero number opens as which evidence kind (section 9).<br>15. New example `overview.response_no_hero`: the overview when safe to spend cannot be computed (section 6). |
 | 0.3.0 | The bill explanation (#243; built in #242).<br><br>New:<br>- Section 11, `POST /api/bill/explain`: a bill as a virtual barcode or as typed fields. The response carries `bill`, `checks`, `match`, `comparison`, `basket`, `safe_to_spend`, `glossary`, `actions`, `warnings` and `signals`. Examples `bill.request`, `bill.request_fields`, `bill.response`, `bill.response_unknown` and `bill.error`.<br>- The payee is matched exactly against the recurring bills' labels and a fixed table of fictional payee names, which stands in for the counterparty history a real bank has.<br>- `safe_to_spend`: the bill is applied to the balance side like a bill due before payday, and the hero's own computation runs again: `free_until_payday` and safe to spend, each before and after.<br>- `signals`: warning signs with the codes `iban_check_failed`, `reference_check_failed`, `new_payee`, `amount_above_usual` and `short_term`, never a verdict (#242, decision 10).<br>- The action `add_to_payments` and the host message `sentti.paymentDraft` (section 11.3, example `host.payment_draft`): the host shows, confirms and executes the payment; Sentti does not pay.<br>- Section 11.4, decided and not implemented yet: `GET /api/bill/samples` and `POST /api/bill/read` with `sample_id`; a reading is a proposal of fields marked `checked` or `unchecked` that the user confirms (#249, #250; example `bill.read_response`).<br>- Section 1: a bill reading is the third exception of the Number rule; its fields are strings.<br>- Error codes 422 `invalid_bill`, whose body adds `reason`, and, with the reading, 503 `model_unavailable` (section 4).<br>- Method `bill_barcode@1`, a value read from a bill's virtual barcode, with no evidence ref (sections 2.1 and 9), and the `bill.*` methods of the numbers the bill explanation computes, whose composite evidence has a bill part without a ref.<br><br>The changelog is now section 12. |
+| 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |

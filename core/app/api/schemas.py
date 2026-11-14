@@ -86,7 +86,16 @@ class OpenWhatifAction(Model):
     scenario: dict
 
 
-Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction], Field(discriminator="type")]
+class OpenHostScreenAction(Model):
+    """Open a screen of the host app (contract 0.3.1, #267). The app sends the host message
+    `sentti.openHostScreen` with `{target}` only; the target list is closed."""
+    type: Literal["open_host_screen"]
+    label: str
+    target: Literal["monthly_saving", "bonus_to_fund"]
+
+
+Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction, OpenHostScreenAction],
+                   Field(discriminator="type")]
 
 
 class CardBase(Model):

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 
 from core.app.api import errors, schemas, texts
 from core.tools import config as tools_config
+from core.tools import models as tool_models
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "api.md"
 EXAMPLE = re.compile(r"<!-- example: ([\w.]+) -->\s*```json\n(.*?)\n```", re.S)
@@ -56,6 +57,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.response_unknown": schemas.BillExplainResponse,
     # bill.error joins with #242, which adds invalid_bill and its `reason` (PENDING_ERROR_CODES);
     # bill.read_response with #250 (section 11.4, not implemented yet)
+    "action.open_host_screen": schemas.OpenHostScreenAction,   # contract 0.3.1 (#267)
 }
 
 # Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
@@ -225,6 +227,10 @@ def test_enums_match_the_contract_text():
     request_fields = {"customer_id", "scenario", "language"}
     kinds_table = set(re.findall(r"^\| `([a-z_]+)` \| ", whatif, re.M)) - request_fields
     assert set(typing.get_args(schemas.SelectionKind)) == kinds_table
+    # #267: the closed target list of open_host_screen, in the API schema, the tool model and the Actions table
+    host_row = backticked(r"^\| `open_host_screen` \|") - {"open_host_screen", "label", "target",
+                                                           "sentti.openHostScreen", "{target}"}
+    assert literal_values(schemas.OpenHostScreenAction, "target") == set(tool_models.HOST_SCREEN_TARGETS) == host_row
 
 
 # ---- every method id a tool can emit has a name and a unit (texts.METHODS) ---------------------------
