@@ -66,7 +66,8 @@ export function LessonTurn({ onStep }: ClientTurnProps) {
                 disabled={revealed}
                 aria-pressed={revealed ? picked === option.source : undefined}
                 onClick={() => pick(option.source)}
-                className={`${ANSWER} ${revealed && picked === option.source ? 'border-brand' : ''}`}
+                // After the reveal the picked answer keeps a ring; the others step back (disabled).
+                className={`${ANSWER} ${revealed ? (picked === option.source ? 'ring-2 ring-brand' : 'opacity-60') : ''}`}
               >
                 {option.number.display}
               </button>
