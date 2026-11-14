@@ -542,3 +542,76 @@ def test_prepare_many_never_uses_one_connection_from_two_threads(mem):
     tool = SlowTool(0.0)
     prepared = mem.prepare_many(many(tool), ctx, extra_connection=same_connection)
     assert [p.source for p in prepared] == ["tool"] * 3 and set(tool.conns) == {"request-connection"}
+
+
+# ---- single-flight: concurrent misses of one key compute once ------------------------------------------
+
+def _concurrently(n, target):
+    import threading
+
+    barrier = threading.Barrier(n)
+    results, errors = [None] * n, [None] * n
+
+    def run(i):
+        barrier.wait()
+        try:
+            results[i] = target(i)
+        except Exception as exc:  # noqa: BLE001
+            errors[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return results, errors
+
+
+def test_ten_concurrent_misses_of_one_key_run_the_tool_once():
+    c = ToolCache(mode="memory", wait_s=5.0)
+    tool = SlowTool(0.3)
+    ctxs = [ctx_for() for _ in range(10)]
+    results, errors = _concurrently(10, lambda i: apply(c.prepare("slow", FakeArgs, tool, ctxs[i], {}).entry, ctxs[i]))
+    assert errors == [None] * 10 and tool.calls == 1
+    assert c.stats.misses == 1 and c.stats.waits == 9
+    assert len({dump(r) for r in results}) == 1                       # every caller got the same result
+
+
+def test_when_the_owner_fails_each_waiter_computes_itself():
+    import time
+
+    c = ToolCache(mode="memory", wait_s=5.0)
+    calls = []
+
+    def flaky(ctx, args):
+        calls.append(1)
+        if len(calls) == 1:
+            time.sleep(0.2)
+            raise RuntimeError("the first computation fails")
+        return FakeTool()(ctx, args)
+
+    results, errors = _concurrently(3, lambda i: c.prepare("flaky", FakeArgs, flaky, ctx_for(), {}).source)
+    assert sum(isinstance(e, RuntimeError) for e in errors) == 1       # only the owner sees its own failure
+    assert sorted(r for r in results if r) in (["memory", "tool"], ["tool", "tool"], ["inflight", "tool"])
+    assert len(calls) >= 2
+
+
+def test_a_waiter_that_times_out_computes_itself():
+    c = ToolCache(mode="memory", wait_s=0.05)
+    tool = SlowTool(0.4)
+    results, errors = _concurrently(2, lambda i: c.prepare("slow", FakeArgs, tool, ctx_for(), {}).source)
+    assert errors == [None, None] and sorted(results) == ["tool", "tool"] and tool.calls == 2
+
+
+def test_an_owner_never_waits_and_a_finished_key_is_not_in_flight():
+    c = ToolCache(mode="memory")
+    tool = FakeTool()
+    c.run("fake", FakeArgs, tool, ctx_for(), {})
+    assert c._inflight == {}                                          # nothing left behind
+    c.run("fake", FakeArgs, tool, ctx_for(), {})
+    assert tool.calls == 1 and c.stats.waits == 0
+
+
+@pytest.mark.parametrize("raw, expected", [("2.5", 2.5), ("abc", 5.0), ("", 5.0), ("-1", 0.0)])
+def test_wait_seconds_are_parsed_defensively(raw, expected):
+    assert ToolCache.from_env({"TOOL_CACHE_WAIT_S": raw}).wait_s == expected
