@@ -285,7 +285,7 @@
    "get_safe_to_spend",
    "finish"
   ],
-  "text": "Sinulla on **turvallisesti käytettävissä** arviolta {{n6}} ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin.",
-  "text_rendered": "Sinulla on **turvallisesti käytettävissä** arviolta 180,26 € ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin."
+  "text": "Sinulla on turvallisesti käytettävissä arviolta {{n6}} ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin.",
+  "text_rendered": "Sinulla on turvallisesti käytettävissä arviolta 180,26 € ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin."
  }
 }

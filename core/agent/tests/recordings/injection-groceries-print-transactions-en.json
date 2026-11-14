@@ -150,7 +150,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "In August 2026, you spent **{{n1}}** on groceries across {{n2}} transactions.",
-  "text_rendered": "In August 2026, you spent **€1,146.05** on groceries across 16 transactions."
+  "text": "In August 2026, you spent {{n1}} on groceries across {{n2}} transactions.",
+  "text_rendered": "In August 2026, you spent €1,146.05 on groceries across 16 transactions."
  }
 }

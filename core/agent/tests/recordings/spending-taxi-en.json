@@ -106,7 +106,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "In August 2026, you spent **{{n1}}** on taxis across {{n2}} purchase.",
-  "text_rendered": "In August 2026, you spent **€52.84** on taxis across 1 purchase."
+  "text": "In August 2026, you spent {{n1}} on taxis across {{n2}} purchase.",
+  "text_rendered": "In August 2026, you spent €52.84 on taxis across 1 purchase."
  }
 }

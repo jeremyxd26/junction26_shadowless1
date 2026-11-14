@@ -112,6 +112,8 @@ def test_a_recorded_exchange_replays_without_network(path):
     assert replay.exchanges == []                       # every recorded response was used
     for marker in RAW_ROW_MARKERS:                      # R3: no raw rows, ids or balances in the answer
         assert marker not in done["text_rendered"]
+    for text in (done["text"], done["text_rendered"]):   # #302: plain text, even when the model wrote markdown
+        assert not any(mark in text for mark in ("*", "`", "__", "](", "\n#"))
 
 
 def test_the_recordings_cover_the_required_exchanges():
@@ -135,3 +137,12 @@ def test_recordings_hold_no_key_and_no_http_headers():
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"A[I]za[0-9A-Za-z_-]{30,}", text)          # the shape of a Google API key
         assert "x-goog-api-key" not in text.lower() and "headers" not in text and "key=" not in text
+
+
+def test_some_recorded_responses_hold_markdown_that_the_answer_drops():
+    """#302: real composer responses with **bold** (recorded before the prompt asked for plain text); the
+    replay above proves their answers come out without it."""
+    drafts = [json.loads(json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["response"]["candidates"][0]
+                         ["content"]["parts"][-1]["text"])["text"]
+              for p in RECORDINGS if json.loads(p.read_text(encoding="utf-8"))["exchanges"][-1]["kind"] == "compose"]
+    assert any("**" in d for d in drafts)

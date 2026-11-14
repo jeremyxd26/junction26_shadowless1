@@ -243,6 +243,30 @@ def allowed_from(numbers: Iterable[Number], model_views: Iterable[dict[str, Any]
     return Allowed(frozenset(dates), frozenset(periods))
 
 
+# Markdown a model may write although its prompt asks for plain text (#302). The contract defines no
+# emphasis: if the answer ever needs it, it will be a structured field the app draws, never markdown.
+_MD_LINK_DEFINITION = re.compile(r"(?m)^[ \t]*\[[^\]\n]+\]:[ \t]*\S+[^\n]*\n?")
+_MD_IMAGE = re.compile(r"!\[([^\]\n]*)\]\([^)\n]*\)")
+_MD_LINK = re.compile(r"\[([^\]\n]+)\]\([^)\n]*\)")
+_MD_REFERENCE_LINK = re.compile(r"\[([^\]\n]+)\][ \t]?\[[^\]\n]*\]")
+_MD_HEADING = re.compile(r"(?m)^[ \t]*#{1,6}[ \t]+")
+_MD_BULLET = re.compile(r"(?m)^[ \t]*(?:[-*+\u2022]|\d{1,2}[.)])[ \t]+")
+_MD_EMPHASIS = re.compile(r"\*+|__+|`+")
+
+
+def plain_text(text: str) -> str:
+    """The text without markdown (#302): bold and italic asterisks, double underscores, backticks,
+    heading marks and list bullets at a line start, and links or images (their text stays, the target
+    goes; a link definition line goes entirely). Words and number tokens are left as they are."""
+    text = _MD_LINK_DEFINITION.sub("", text)
+    text = _MD_IMAGE.sub(r"\1", text)
+    text = _MD_LINK.sub(r"\1", text)
+    text = _MD_REFERENCE_LINK.sub(r"\1", text)
+    text = _MD_HEADING.sub("", text)
+    text = _MD_BULLET.sub("", text)
+    return _MD_EMPHASIS.sub("", text).strip()
+
+
 def check_text(text: str, allowed: Allowed) -> list[str]:
     """Rules 3, 5 and 6 on any text the model wrote (answer text, clarify question or options)."""
     errors = answer_text.leftover_digits(TOKEN.sub(" ", text), dates=allowed.dates, periods=allowed.periods)
@@ -287,6 +311,9 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
         draft = AnswerDraft.model_validate(payload)
     except ValidationError as exc:
         return None, [f"schema: {'.'.join(str(p) for p in e['loc']) or 'draft'}: {e['type']}" for e in exc.errors()]
+    # The service returns plain text (#302): markdown is removed before the checks, so it never reaches
+    # the app and a draft is never rejected only for markup that is dropped anyway.
+    draft = draft.model_copy(update={"text": plain_text(draft.text)})
 
     errors = []
     words = len(draft.text.split())

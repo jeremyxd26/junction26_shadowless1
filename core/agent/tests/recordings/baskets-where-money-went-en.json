@@ -479,7 +479,7 @@
    "get_basket_breakdown",
    "finish"
   ],
-  "text": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. **Regular essentials** took {{n6}} or {{n1}} of your spending. Everyday spending accounted for {{n17}} or {{n11}}, while unexpected necessities made up {{n10}} or {{n7}}.",
-  "text_rendered": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. **Regular essentials** took €1,645.05 a month or 77.4% of your spending. Everyday spending accounted for €334.44 a month or 15.7%, while unexpected necessities made up €144.60 a month or 6.8%."
+  "text": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. Regular essentials took {{n6}} or {{n1}} of your spending. Everyday spending accounted for {{n17}} or {{n11}}, while unexpected necessities made up {{n10}} or {{n7}}.",
+  "text_rendered": "During 1 Apr – 30 Sep 2026, your spending split across three main areas. Regular essentials took €1,645.05 a month or 77.4% of your spending. Everyday spending accounted for €334.44 a month or 15.7%, while unexpected necessities made up €144.60 a month or 6.8%."
  }
 }

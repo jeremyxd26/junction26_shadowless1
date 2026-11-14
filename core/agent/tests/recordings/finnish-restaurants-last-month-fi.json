@@ -151,7 +151,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "Käytit ravintoloihin elokuussa 2026 yhteensä **{{n1}}**. Summa koostui {{n2}} maksutapahtumasta.",
-  "text_rendered": "Käytit ravintoloihin elokuussa 2026 yhteensä **138,94 €**. Summa koostui 10 maksutapahtumasta."
+  "text": "Käytit ravintoloihin elokuussa 2026 yhteensä {{n1}}. Summa koostui {{n2}} maksutapahtumasta.",
+  "text_rendered": "Käytit ravintoloihin elokuussa 2026 yhteensä 138,94 €. Summa koostui 10 maksutapahtumasta."
  }
 }
