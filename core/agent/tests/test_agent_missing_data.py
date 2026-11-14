@@ -357,3 +357,17 @@ def test_the_pipeline_answers_a_what_if_with_nothing_to_cut_and_no_compose_reque
     assert done["outcome"] == "answered" and model.compose_inputs == [] and done["cited"] == []
     assert done["text"] == "Between 1 Apr and 30 Sep 2026 you made no public transport purchases, so there is nothing to cut."
     assert "could not be computed" not in done["text"]
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_a_single_purchase_total_says_why_no_monthly_habit_is_shown(language):
+    # #527: the human sentence keeps the too-few note as its second sentence (the tool's other notes stay on the card)
+    from core.agent import answer_sentences
+    note = config.label(config.TEXT["note_too_few"], language)
+    view = {"total": {"id": "n1", "value": 155.98, "unit": "eur", "label": "Travel"},
+            "tx_count": {"id": "n2", "value": 1, "unit": "count", "label": "x"}, "period": "1 Apr \u2013 30 Sep 2026",
+            "direction": "out", "comparison": None, "notes": [note], "filter_labels": ["Travel"]}
+    sentences, ids = answer_sentences.spending(view, language, lambda s, **kw: True)
+    assert sentences[-1] == note and len(sentences) == 2 and ids == ["n1", "n2"]
+    view["notes"] = []
+    assert len(answer_sentences.spending(view, language, lambda s, **kw: True)[0]) == 1

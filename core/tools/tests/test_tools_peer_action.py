@@ -41,41 +41,57 @@ def test_a_categorys_offer_is_the_what_if_itself():
 
 # ---- review of #379 part B: a card never offers a what-if that answers "no monthly habit to cut" ---------
 
-class _Result:
-    def __init__(self, status):
-        self.data = type("D", (), {"status": status})()
+def _rows(spec):
+    """Classified rows: (day, category, basket, one_off) each, all purchases of 10 euros."""
+    from datetime import datetime
+    from decimal import Decimal
+
+    from core.tools.classify import CTx
+    from core.tools.db import Tx
+    out = []
+    for i, (d, category, basket, one_off) in enumerate(spec, start=1):
+        t = Tx(i, d, datetime.combine(d, datetime.min.time()), category, "purchase", None, None, Decimal("-10.00"))
+        out.append(CTx(tx=t, flow="spend", is_one_off=one_off, is_subscription=False, basket=basket, mcc_group=None))
+    return out
 
 
-@pytest.mark.parametrize("outcome,offered", [("estimate", True), ("estimate_with_caveat", True),
-                                             ("not_offered", False), ("missing", False), ("refused", False)])
-def test_the_offer_needs_the_what_if_to_offer_a_cut(monkeypatch, outcome, offered):
-    from core.tools.missing import MissingData
-    from core.tools.what_if import WhatIfRefused
-    seen = []
-
-    def fake(ctx, args, too_few="raise"):
-        seen.append((args["selection"], too_few))
-        if outcome == "missing":
-            raise MissingData("too_few_transactions", what="travel", period="x", n=1)
-        if outcome == "refused":
-            raise WhatIfRefused("invalid_scenario")
-        return _Result(outcome)
-
-    monkeypatch.setattr(peer, "run_what_if", fake)
+def _ctx():
     from core.tools.context import ToolContext
-    ctx = ToolContext(customer_id="CUST00849", as_of=date(2026, 9, 30), conn=None)
-    assert peer.what_if_offered(ctx, "Travel") is offered
-    assert seen == [({"kind": "category", "value": "Travel"}, "not_offered")]   # the structured mode
-    assert ctx.numbers.all() == {}                                               # a private registry
+    return ToolContext(customer_id="CUST00849", as_of=date(2026, 9, 30), conn=None)
 
 
-def test_a_basket_offer_asks_the_basket_what_if_and_the_total_asks_none(monkeypatch):
-    seen = []
-    monkeypatch.setattr(peer, "run_what_if", lambda ctx, args, too_few="raise": seen.append(args) or _Result("estimate"))
-    from core.tools.context import ToolContext
-    ctx = ToolContext(customer_id="CUST00849", as_of=date(2026, 9, 30), conn=None)
-    assert peer.what_if_offered(ctx, "everyday_spending") and peer.what_if_offered(ctx, "spend_total")
-    assert [a["selection"] for a in seen] == [{"kind": "basket", "value": "everyday_spending"}]
+IN = date(2026, 6, 14)        # inside the window of the last 6 complete months (1 Apr - 30 Sep 2026)
+OUT = date(2026, 2, 14)       # before it
+
+
+@pytest.mark.parametrize("spec,offered", [
+    ([(IN, "Travel", "everyday_spending", False)], False),                                   # one trip: no habit
+    ([(IN, "Travel", "everyday_spending", False)] * 2, False),
+    ([(IN, "Travel", "everyday_spending", False)] * 3, True),                                # three: a cut
+    ([(IN, "Travel", "everyday_spending", False)] * 2 + [(IN, "Travel", "everyday_spending", True)], False),  # one-off
+    ([(IN, "Travel", "everyday_spending", False)] * 2 + [(IN, "Travel", "regular_essentials", False)], False),
+    ([(IN, "Travel", "everyday_spending", False)] * 2 + [(OUT, "Travel", "everyday_spending", False)], False),
+])
+def test_the_offer_needs_three_cuttable_purchases_in_the_window(spec, offered):
+    # #527: the what-if metric's own rule (04_what_if.sql n_tx >= 3), from the rows the peer tool has already
+    assert peer.what_if_offered(_ctx(), "Travel", _rows(spec)) is offered
+
+
+def test_a_basket_counts_its_purchases_and_the_total_needs_none():
+    rows = _rows([(IN, "Restaurants", "everyday_spending", False), (IN, "Lifestyle", "everyday_spending", False),
+                  (IN, "Travel", "everyday_spending", False)])
+    assert peer.what_if_offered(_ctx(), "everyday_spending", rows) is True
+    assert peer.what_if_offered(_ctx(), "spend_total", []) is True
+
+
+def test_any_failure_drops_only_the_offer_with_a_warning(monkeypatch, caplog):
+    def boom(*args, **kwargs):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(peer, "cuttable_purchases", boom)
+    with caplog.at_level("WARNING"):
+        assert peer.what_if_offered(_ctx(), "Travel", []) is False
+    assert "peer offer check failed (RuntimeError)" in caplog.text and "unexpected" not in caplog.text
 
 
 def test_the_card_and_the_view_follow_the_tools_decision():

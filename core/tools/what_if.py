@@ -135,6 +135,17 @@ def _purchases_of(sel: WhatIfSelection, what: str, language: str) -> str:
     return what
 
 
+def cuttable_purchases(rows: list, kind: str, value: str, window: Period) -> list:
+    """The selection's purchases a what-if baseline would average: spending in the window, without one-offs and
+    regular essentials, as 04_what_if.sql counts them (its n_tx). From classified rows (core.tools.classify), so a
+    caller that has them already needs no query (#379, #527)."""
+    codes = set(value.split(","))
+    return [c.tx for c in rows if c.flow == "spend" and window.start <= c.tx.tx_date <= window.end
+            and not c.is_one_off and c.basket != "regular_essentials"
+            and (c.tx.category == value if kind == "category" else c.tx.mcc in codes if kind == "mcc"
+                 else c.basket == value if kind == "basket" else c.tx.merchant_id == value)]
+
+
 def caveats_for(status: str, language: str) -> list[str]:
     """The caveats a what-if result carries for its status (contracts/api.md section 8.1)."""
     out = [_t("caveat_estimate", language)]
@@ -198,12 +209,7 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "ra
         # A purchase or two is no monthly habit (#379): the SQL gives not_offered with every saving 0; the answer
         # shows the purchases the baseline would have averaged (the selection's cuttable ones, as in the SQL).
         rows = classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
-        codes = set(sql_value.split(","))
-        bought = [c.tx for c in rows if c.flow == "spend" and window.start <= c.tx.tx_date <= window.end
-                  and not c.is_one_off and c.basket != "regular_essentials"
-                  and (c.tx.category == sql_value if sel.kind == "category" else c.tx.mcc in codes
-                       if sel.kind == "mcc" else c.basket == sql_value if sel.kind == "basket"
-                       else c.tx.merchant_id == sql_value)]
+        bought = cuttable_purchases(rows, sel.kind, sql_value, window)
         txb = NumberBuilder(ctx, rows)
         exact = Selection(direction="out", start=window.start, end=window.end, tx_ids=tuple(t.id for t in bought))
         total = txb.transactions(exact, config.METHODS["total"], window,

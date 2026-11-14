@@ -198,3 +198,24 @@ def test_more_than_the_plain_question_is_not_claimed_even_in_two_clauses(questio
 def test_the_plain_question_and_its_save_more_keep_their_rules(question, lang, tools):
     assert names(plan(question, lang)) == tools
 
+
+
+@pytest.mark.parametrize("question,lang", [
+    # #527: every compound question with the plain small-purchases question is unclaimed, whatever the other part
+    ("what are my small purchases and what bills are coming?", "en"),
+    ("what are my small purchases? and how could I save more?", "en"),
+    ("what are my small purchases, and where did my money go?", "en"),
+    ("Mihin pienet ostokset menevät ja mitä laskuja on tulossa?", "fi"),
+])
+def test_every_compound_with_the_plain_question_is_unclaimed(question, lang):
+    result = plan(question, lang)
+    assert not result.recognised and not [n for n in names(result) if n.startswith("get_")]
+
+
+@pytest.mark.parametrize("question,tool", [
+    # a what-if or a comparison ABOUT the small purchases, in one clause, goes on to its own rule
+    ("How could I save on small purchases?", "get_safe_to_save"),
+    ("how do my small purchases compare with other people like me?", "get_peer_benchmark"),
+])
+def test_one_clause_about_the_small_purchases_keeps_its_rule(question, tool):
+    assert tool in names(plan(question, "en"))
