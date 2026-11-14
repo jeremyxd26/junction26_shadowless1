@@ -25,6 +25,9 @@ DEFAULT_UNITS = {
     config.METHODS["typical_month"]: Unit.EUR_PER_MONTH,
     config.METHODS["bill_due"]: Unit.EUR,
     config.METHODS["bills_due"]: Unit.EUR,
+    config.METHODS["small_count"]: Unit.COUNT,
+    config.METHODS["small_total"]: Unit.EUR,
+    config.METHODS["small_flexible"]: Unit.EUR,
 }
 
 

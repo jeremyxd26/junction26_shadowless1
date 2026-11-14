@@ -78,6 +78,13 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # get_small_purchases (#256; metrics.md section 12, 08_small_purchases.sql: the output columns)
+    "small_count": "small_purchases.count@1",
+    "small_total": "small_purchases.total_eur@1",
+    "small_avg": "small_purchases.avg_eur@1",
+    "small_share": "small_purchases.share_pct@1",
+    "small_flexible": "small_purchases.flexible_total_eur@1",
+    "small_max": "small_purchases.max_amount_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -728,3 +735,25 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+
+# ---- small purchases (#256, metrics.md section 12, 08_small_purchases.sql) --------------------------
+# The flexible everyday categories whose small purchases are counted: the everyday_spending basket's
+# categories except Travel (classify.basket_of). The default limit is a setting; the tool allows 1..25.
+SMALL_PURCHASE_CATEGORIES: tuple[str, ...] = ("Entertainment", "Lifestyle", "Restaurants")
+SMALL_PURCHASE_MAX_EUR = "10.00"     # euros, the default of max_amount (and 08's app.small_max)
+SMALL_PURCHASE_MAX_RANGE = (1, 25)   # the allowed max_amount, in euros
+SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (decision 5 of #256)
+SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Small purchases", "Pienet ostokset"),
+    "count": ("Small purchases", "Pieniä ostoksia"),
+    "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
+    "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
+    "flexible": ("Everyday spending", "Arjen kulutus"),
+    "max_amount": ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),
+    "category_share": ("Share of small purchases", "Osuus pienistä ostoksista"),
+    "show": ("Show the purchases", "Näytä ostokset"),
+    # The what-if question for the largest category, with no amount: the user says how much (#142).
+    "action_label": ("What if I cut {what}?", "Kokeile vähentää: {what}"),
+    "action_prompt": ("What if I cut {what}?", "Mitä jos vähentäisin kulutusta luokassa {what}?"),
+}

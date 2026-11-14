@@ -155,8 +155,9 @@ def _monthly_totals(rows: list[CTx]) -> list[Decimal]:
     return list(by_month.values())
 
 
-SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"]}
-COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"]}
+SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"], config.METHODS["small_total"],
+               config.METHODS["small_flexible"]}
+COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"], config.METHODS["small_count"]}
 MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"],
                      config.METHODS["peer_you"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}
