@@ -460,7 +460,8 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return [pick(PEER_SAME[kind], language).format(metric=metric)], []   # within the margin either way
     if value < 0:
         return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
-    offer = config.peer_offers_cut(view.get("metric") or "", value)
+    # the tool's decision when it states it (the what-if's own count included, #379 part B), else the rule
+    offer = bool(view["offers_cut"]) if "offers_cut" in view else config.peer_offers_cut(view.get("metric") or "", value)
     return [pick((PEER if offer else PEER_PLAIN)[kind], language).format(vs=vs, metric=metric)], _ids(vs)
 
 

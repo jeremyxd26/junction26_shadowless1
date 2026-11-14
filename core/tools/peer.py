@@ -16,6 +16,7 @@ the card says so (R13). The customer and as_of come from ctx only (R4, R5).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import logging
 from decimal import Decimal
@@ -26,10 +27,12 @@ from pydantic import BaseModel, field_validator
 
 from core.tools import baskets, config, evidence, labels, metric_sql, periods
 from core.tools.classify import classify
-from core.tools.context import ToolContext
+from core.tools.context import NumberRegistry, ToolContext
+from core.tools.missing import MissingData
 from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
+from core.tools.what_if import WhatIfRefused, run_what_if
 
 TOOL = "get_peer_benchmark"
 METRIC = "peer_benchmark"
@@ -192,8 +195,28 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     )
     evidence.write(ctx.conn, nb.specs)
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
-    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang) if shown else None, notes=notes,
-                      evidence=list(nb.specs), model_view=_model_view(data, estimate, notes))
+    # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
+    offered = shown and config.peer_offers_cut(metric, data.vs_median.value if data.vs_median is not None else None) \
+        and what_if_offered(ctx, metric)
+    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang, offered) if shown else None,
+                      notes=notes, evidence=list(nb.specs), model_view=_model_view(data, estimate, notes, offered))
+
+
+def what_if_offered(ctx: ToolContext, metric: str) -> bool:
+    """The what-if a category or basket card would offer answers with a cut: 3 or more cuttable purchases in the
+    window, by the what-if metric's own count (04_what_if.sql, its not_offered). Never an offer that answers
+    "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is "How could I
+    save more?", no what-if. On a private registry: the peer answer cites none of the what-if's numbers."""
+    if metric == "spend_total":
+        return True
+    kind = "basket" if metric in config.BASKET_LABELS else "category"
+    private = dataclasses.replace(ctx, numbers=NumberRegistry())
+    try:
+        result = run_what_if(private, {"selection": {"kind": kind, "value": metric}, "cut_pct": 20},
+                             too_few="not_offered")
+    except (WhatIfRefused, MissingData, ValueError):
+        return False
+    return result.data.status != "not_offered"
 
 
 def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: Decimal, unit: Unit,
@@ -219,12 +242,13 @@ def cut_prompt(metric: str, language: str, label: str | None = None) -> str:
     return _t("action_prompt", language, what=label.lower() if language == "en" else label)
 
 
-def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> Card:
+def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str, cut_offered: bool | None = None) -> Card:
     ref = data.peer_median.evidence_ref
     prompt = cut_prompt(data.metric, language, data.metric_label)
     # A cut is offered only above the median and for spending that can be cut (#418); the text says the
     # same offer (answer_sentences.peer), so the two always appear together.
-    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None)
+    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None) \
+        if cut_offered is None else cut_offered   # the tool's decision, the what-if's own included
     actions = [Action(type="ask", label=_t("action_label", language), prompt=prompt)] if offered else []
     dump = lambda n: n.model_dump() if n is not None else None  # noqa: E731
     return Card(
@@ -240,7 +264,8 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
     )
 
 
-def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str]) -> dict[str, Any]:
+def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str],
+                offers_cut: bool = False) -> dict[str, Any]:
     """Compact view for the model: group statistics only; no rows, customer id or evidence refs (R3)."""
     return {
         "tool": TOOL,
@@ -259,4 +284,5 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
                        "size": model_number(data.peer_group.size), "comparable": data.peer_group.comparable},
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
+        "offers_cut": offers_cut,   # the card offers a cut, and the answer says the same (#418, #379 part B)
     }

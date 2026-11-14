@@ -47,11 +47,13 @@ def baskets_card():
 
 @pytest.fixture
 def fake(monkeypatch):
-    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate", baskets_calls=[])
+    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate", baskets_calls=[],
+                            modes=set())
 
-    def run_what_if(ctx, args):
+    def run_what_if(ctx, args, too_few="raise"):
         category, pct = args["selection"]["value"], args["cut_pct"]
         state.calls.append((category, pct))
+        state.modes.add(too_few)
         result = state.what_ifs.get(category)
         if result is None:
             raise WhatIfRefused("no spending")
@@ -274,3 +276,25 @@ def test_a_share_without_words_is_a_number_only(fake, monkeypatch):
     other = result.model_view["levers"][1]
     assert other["cut_words"] is None and other["cut"]["value"] == 15 and result.data.levers[1].cut.display == "15.0%"
     assert result.card.items[1]["label"] == "Lifestyle, less than usual"     # the card row stays in words
+
+
+def test_the_plan_asks_the_what_if_for_its_structured_mode(fake):
+    # #379 part B: in the chat's mode a category with 1-2 purchases raises MissingData, which would end the plan;
+    # the structured mode answers not_offered, so it is no lever
+    plan()
+    assert fake.modes == {"not_offered"}
+
+
+def test_a_what_if_that_reports_too_few_purchases_never_ends_the_plan(fake, monkeypatch):
+    # the crash part B's bridge check found: a MissingData for one "other" category; the plan is still made
+    from core.tools.missing import MissingData
+    real = sp.run_what_if
+
+    def raising(ctx, args, too_few="raise"):
+        if args["selection"]["value"] == "Travel":
+            raise MissingData("too_few_transactions", what="travel", period="1 Apr \u2013 30 Sep 2026", n=1)
+        return real(ctx, args, too_few)
+
+    monkeypatch.setattr(sp, "run_what_if", raising)
+    d = plan()[0].data
+    assert [lv.key for lv in d.levers] and d.total_month is not None and "Travel" not in [lv.key for lv in d.levers]

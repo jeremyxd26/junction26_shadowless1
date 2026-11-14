@@ -190,6 +190,8 @@ TEXT: dict[str, tuple[str, str]] = {
         "Jakso rajattiin saatavilla olevaan dataan: {label}.",
     ),
     "note_empty": ("No transactions in this period.", "Ei tapahtumia tällä jaksolla."),
+    "note_too_few": ("Only a few purchases in this period, so this is no monthly habit.",
+                     "Tällä jaksolla on vain muutama ostos, joten tämä ei ole kuukausittainen tapa."),
     "note_typical": (
         "A comparison with a typical period is not defined yet, so none is shown.",
         "Vertailua tyypilliseen jaksoon ei ole vielä määritelty, joten sitä ei näytetä.",
@@ -235,6 +237,8 @@ BILL_SHORT_TERM_DAYS = 7                   # due fewer than 7 days after as_of (
 # A matched bill is the regular bill only when it fits it (#400): a once-a-month series and at least half of its
 # typical month. Otherwise it is a bill from the same payee category (a quarterly water bill among utilities).
 BILL_FIT_MIN_RATIO = Decimal("0.5")
+# The forecast on the due date (#421): below this balance after the bill, it is `tight`; below zero `not_covered`.
+BILL_FORECAST_MARGIN_EUR = Decimal("100")
 
 BILL_TEXT: dict[str, tuple[str, str]] = {
     "amount": ("Amount due", "Maksettava summa"),
@@ -263,15 +267,27 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                             "ennen sitä."),
     # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
     # free until payday, then at most one sts_* sentence on the weekly number.
-    "effect_excess": ("{reserved} is already set aside for your {label} payments before payday on {payday}, so "
-                      "only the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
-                      "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+    # Your regular bill (it fits, #400) is "your {label} bill"; a bill of the same payee category is set against
+    # "your {label} payments" (review of #425).
+    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
+                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
                       "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("{reserved} is already set aside for your {label} payments before payday on {payday}, "
-                       "which covers this one, so nothing changes.",
-                       "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
+                       "covers this one, so nothing changes.",
+                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
                        "tämän laskun, joten mikään ei muutu."),
+    "effect_excess_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                               "{payday}, so only the extra {counted} is added: free until payday goes from "
+                               "{free_before} to {free_after}.",
+                               "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                               "joten vain ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+                               "(ennen laskua {free_before})."),
+    "effect_covered_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                                "{payday}, which covers this one, so nothing changes.",
+                                "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                                "mikä kattaa tämän laskun, joten mikään ei muutu."),
     "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
                     "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
@@ -302,12 +318,34 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     # #400: a bill of the same payee category is compared with the category's whole month, and says so
     "sig_above_category": ("This bill is {amount}, much more than all your {label} payments in a usual month "
                            "({typical}).",
-                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi ({label}) tavallisena "
-                           "kuukautena ({typical})."),
+                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi luokassa {label} "
+                           "tavallisena kuukautena: {typical}."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),
     "action": ("Add to payments", "Lisää maksuihin"),
+    # The forecast on the due date (#421): one sentence for each status, never advice to borrow (#419).
+    "forecast_before": ("Forecast balance on the due date", "Ennustettu saldo eräpäivänä"),
+    "forecast_already": ("Already in the forecast for this bill by the due date",
+                         "Tälle laskulle jo ennusteessa eräpäivään mennessä"),
+    "forecast_counted": ("Taken from the forecast by this bill", "Lasku vie ennusteesta"),
+    "forecast_after": ("Forecast balance after this bill", "Ennustettu saldo laskun jälkeen"),
+    "forecast_shortfall": ("Short of this bill", "Laskusta puuttuu"),
+    "forecast_covered": ("Your forecast balance on {due} covers this bill: {after} would be left after it.",
+                         "Ennustettu saldosi {due} riittää tähän laskuun: sen jälkeen jäisi {after}."),
+    "forecast_tight": ("Your forecast balance on {due} covers this bill, but only {after} would be left after it.",
+                       "Ennustettu saldosi {due} riittää tähän laskuun, mutta sen jälkeen jäisi vain {after}."),
+    "forecast_not_covered": ("Your forecast balance on {due} does not cover this bill: it is {shortfall} short.",
+                             "Ennustettu saldosi {due} ei riitä tähän laskuun: siitä puuttuu {shortfall}."),
+    "forecast_beyond": ("Due on {due}, beyond your balance forecast, which runs until the day before your payday "
+                        "on {payday}.",
+                        "Eräpäivä {due} on saldoennusteen ulkopuolella: ennuste ulottuu palkkapäivää {payday} "
+                        "edeltävään päivään."),
+    "forecast_past": ("The due date {due} has passed, so your balance forecast does not include it.",
+                      "Eräpäivä {due} on jo mennyt, joten saldoennuste ei sisällä sitä."),
+    # the chip of `not_covered`: the forecast question as the rules know it (core/agent/rules.py)
+    "forecast_chip": ("See your balance forecast", "Katso saldoennusteesi"),
+    "forecast_prompt": ("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
 }
 # The message of a 422 invalid_bill, by reason (contracts/api.md section 11.1).
 BILL_REFUSAL_TEXT: dict[str, tuple[str, str]] = {
@@ -440,6 +478,10 @@ def peer_offers_cut(metric: str, value) -> bool:
     """The peer answer offers a cut (the text and the card's action together, #418): above the median by more
     than the margin, for spending that can be cut."""
     return value is not None and metric not in PEER_NO_CUT_ACTION and peer_gap_shown(value) > PEER_ACTION_MARGIN_PCT
+
+
+# Fewer purchases than this behind a figure: the figure is marked, and a what-if derives no monthly habit (#379).
+TOO_FEW_TRANSACTIONS = 3
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
@@ -877,6 +919,17 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
     "cut": ("Cut you chose", "Valitsemasi leikkaus"),
+    "selection_total": ("{what} in the period", "{what} jaksolla"),   # too few purchases (#379)
+    # Too few purchases for a monthly habit (#379): the chat's answer and the what-if screen's caveat.
+    "too_few_one": ("{span} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
+                    "{span} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "too_few_none": ("{span} you made no {what} purchases, so there is nothing to cut.",
+                     "{span} luokassa {what} ei ollut yhtään ostosta, joten leikattavaa ei ole."),
+    "too_few_few": ("{span} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to "
+                    "cut.",
+                    "{span} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "
+                    "ei ole."),
+    "purchases": ("Purchases", "Ostoksia"),
     "baseline_per_month": ("{what} in a typical month", "{what} tavallisena kuukautena"),
     "saving_per_month": ("You would save", "Säästäisit"),
     "saving_per_week": ("Per week", "Viikossa"),
