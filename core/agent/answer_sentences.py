@@ -76,10 +76,17 @@ _KNOWN_LABELS = {lab for table in (config.CATEGORY_LABELS, config.BASKET_LABELS,
                  for pair in table.values() for lab in pair}
 
 
-def _subject(label: str, language: str) -> str | None:
-    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat")."""
+def _subject(label: str, language: str, parts: list[str] | None = None) -> str | None:
+    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat",
+    and for a filter of two or more parts "housing and restaurants", "luokissa Asuminen ja ravintolat", #399). A
+    filter of several parts is built from its parts, never by re-reading the joined label (review of #496)."""
     if label in (pick(config.TEXT["spending"], language), pick(config.TEXT["income"], language)):
         return None
+    if parts and len(parts) > 1:
+        if language == "fi":
+            return "luokissa " + _join(parts, language)
+        return _join([p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+                      for p in parts], language)
     if language == "fi":
         return f"luokassa {label}"
     return label.lower() if label in _KNOWN_LABELS else label
@@ -136,7 +143,8 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if not total or not isinstance(period, str) or not ok(period):
         return None
     label = (view.get("total") or {}).get("label") or ""
-    what = _subject(label, language)
+    parts = view.get("filter_labels")
+    what = _subject(label, language, [p for p in parts if isinstance(p, str)] if isinstance(parts, list) else None)
     lang = 1 if language == "fi" else 0
     phrase = in_period(period, language)
     fmt = {"total": total, "count": count, "what": what or "", "period": phrase, "Period": _cap(phrase)}
