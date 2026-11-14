@@ -179,9 +179,11 @@ def test_the_evidence_title_of_a_filter_across_dimensions_equals_the_number_labe
 
 
 def test_the_tool_and_the_evidence_name_a_category_and_a_basket_alike():
-    result, store = run({"filter": {"categories": ["Housing"], "baskets": ["regular_essentials"]}})
+    # the history's groceries row is a regular essential (its housing row awaits review, in no basket), so the filter
+    # has a real number and not the missing-data answer (#379)
+    result, store = run({"filter": {"categories": ["Groceries"], "baskets": ["regular_essentials"]}})
     label = result.data.total.label
-    assert label == "Housing within regular essentials" and result.card.title == label
+    assert label == "Groceries within regular essentials" and result.card.title == label
     assert evidence_api._label_of(store.rows[result.data.total.evidence_ref], "en") == label
 
 
