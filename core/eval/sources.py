@@ -105,6 +105,8 @@ SAVINGS_PLAN_METHODS = {   # the savings plan's own method ids (core/tools/savin
 def method_of(src: dict) -> str:
     """The method id of a number a source spec produces, as the tool that makes it names it. A source with
     `plus:` parts (a sum a confused coach would give, #411) is named by its first part."""
+    if "literal" in src:   # a number the question itself states (a forbid item, #539): the user's own input
+        return "user_input@1"
     if "metric" in src:
         return f"{src['metric']}.{src['column']}@1"
     if src.get("query") == "bonus":  # the tool's own method ids (core/tools/bonus.py, #216)
