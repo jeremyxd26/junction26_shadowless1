@@ -281,12 +281,16 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
 # #540: "what does <bill> cost a month / a year?" for a regular bill's category: the bills tool's typical month, or
 # the last 12 months of that category from the spending tool (never a month multiplied by twelve). Word boundaries
-# throughout; a named month ("tässä kuussa", "this month") is no "per month".
+# throughout; a named month ("tässä kuussa", "this month") is no "per month", and "for a month" is a duration ("to
+# rent a car for a month").
 BILL_COST = (r"\b(cost|costs|maksaa|maksavat)\b|"
              r"\bhow much (is|are) (my |the )?(rent|electricity|utilities|housing|water bills?)\b")
-BILL_COST_MONTH = (r"\b(a|per|each|every) month\b|\bmonthly\b|\bkuukaudessa\b|\bkuukausittain\b|"
+BILL_COST_MONTH = (r"(?<!for )\b(a|per|each|every) month\b|\bmonthly\b|\bkuukaudessa\b|\bkuukausittain\b|"
                    r"(?<!tassa )(?<!ensi )(?<!viime )\bkuussa\b")
-BILL_COST_YEAR = r"\b(a|per|each|every) year\b|\byearly\b|\bannually\b|\bvuodessa\b|\bvuosittain\b"
+BILL_COST_YEAR = r"(?<!for )\b(a|per|each|every) year\b|\byearly\b|\bannually\b|\bvuodessa\b|\bvuosittain\b"
+# Not a question about the customer's own bill: a number ("rent 900 a month"), renting something ("to rent a car").
+# A scenario ("what if", "would", "jos", a conditional verb) is rules.HYPOTHETICAL, checked in bill_cost.
+BILL_COST_NOT = r"\d|\bto rent\b|\brent(ing|ed|al)\b"
 BILL_COST_CATEGORIES = ("Housing", "Utilities")
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
@@ -299,9 +303,11 @@ SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS = (fold_pattern(rx) for rx in 
 
 def bill_cost(q: str) -> tuple[str, str] | None:
     """(category, "month" or "year") for a folded question that asks what a regular bill costs a month or a year,
-    else None: a cost word, exactly one category named, a bill category, and one of the two periods (#540)."""
-    from core.agent.rules import CATEGORY_WORDS   # the category words in one place (rules imports this module)
-    if not re.search(BILL_COST, q):
+    else None: a cost word, exactly one category named, a bill category, and one of the two periods (#540). A
+    scenario, a number or renting something is never one."""
+    # the category and scenario words in one place (rules imports this module)
+    from core.agent.rules import CATEGORY_WORDS, HYPOTHETICAL
+    if not re.search(BILL_COST, q) or re.search(BILL_COST_NOT, q) or re.search(HYPOTHETICAL, q):
         return None
     categories = {category for rx, category in CATEGORY_WORDS if re.search(rx, q)}
     month, year = bool(re.search(BILL_COST_MONTH, q)), bool(re.search(BILL_COST_YEAR, q))

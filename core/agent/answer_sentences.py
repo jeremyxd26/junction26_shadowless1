@@ -279,7 +279,10 @@ def bills(view: dict[str, Any], language: str, ok: Ok, mode: str, only: str | No
         return ([pick(NEXT_PAYDAY, language).format(date=when)], []) if when else None
 
     if mode == "typical" and only:
-        mine = next((b for b in view.get("bills") or [] if b.get("bill_id") == f"bill_{only.lower()}_payment"), None)
+        # the model view has no bill id (#487): the category's bill is the one with its series label
+        pair = config.SERIES_LABELS.get(f"{only.lower()}_payment")
+        want = config.label(pair, language) if pair else None
+        mine = next((b for b in view.get("bills") or [] if want and b.get("label") == want), None)
         amount = _tok(mine.get("typical_month")) if mine else None
         if amount and isinstance(mine.get("label"), str) and ok(mine["label"]):
             name = mine["label"] if language == "fi" else _bill_name(mine["label"], language)
