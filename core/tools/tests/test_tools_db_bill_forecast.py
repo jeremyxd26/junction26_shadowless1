@@ -86,7 +86,7 @@ def test_the_tight_persona_on_her_lowest_day(conn, lang):
     assert fc["status"] == "not_covered" and d(fc["shortfall"]) == Decimal("58.57") and fc["chip"]["type"] == "ask"
     assert fc["shortfall"]["display"] in fc["text"]
     opens_and_reconciles(conn, "CUST00849", fc["shortfall"], lang)
-    assert [a["type"] for a in short["actions"]] == ["add_to_payments"]
+    assert [a["type"] for a in short["actions"]][0] == "add_to_payments"   # contact_bank (#453) may follow
 
 
 def test_a_bill_due_after_payday_is_outside_the_forecast(conn):

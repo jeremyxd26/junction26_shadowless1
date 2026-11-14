@@ -119,7 +119,7 @@ def test_not_covered_names_the_shortfall_and_the_date_and_offers_the_forecast(fa
     assert fc["text"] == "Your forecast balance on 10 Oct 2026 does not cover this bill: it is €50.00 short."
     assert fc["chip"] == {"type": "ask", "label": "See your balance forecast", "prompt": "Will my money last until payday?"}
     # the status never removes the draft (decision 3)
-    assert [a["type"] for a in out["actions"]] == ["add_to_payments"]
+    assert [a["type"] for a in out["actions"]][0] == "add_to_payments"   # contact_bank (#453) may follow
 
 
 @pytest.mark.parametrize("lang", ["en", "fi"])
