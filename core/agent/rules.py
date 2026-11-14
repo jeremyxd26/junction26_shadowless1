@@ -180,17 +180,22 @@ MAY_MONTH = (r"\b(in|of|for|during|since|from|until|till|to|through|and|or|vs|ve
 PRESETS = [
     # the singular and the plural genitive, with the digit or the word (#543, #651): "viimeisten kolmen kuukauden".
     # Each month alternative ends on the whole word, "aikana" optional, so a bare message full-matches it (#673).
+    # The number before "viimeisen" is the same period ("kolmen viimeisen kuukauden", #665).
     (r"last (3|three) months|past (3|three) months|viimeis(en|ten) (3|kolmen) kuukauden( aikana)?\b|"
-     r"viimeiset (3|kolme) kuukautta", "last_3_months"),
-    (r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|\bkeskimäärin kuukaudessa\b",
+     r"\b(3|kolmen) viimeisen kuukauden( aikana)?\b|viimeiset (3|kolme) kuukautta", "last_3_months"),
+    (AVERAGE_MONTHLY := r"\baverage monthly\b|\ba month on average\b|\bper month on average\b|"
+                        r"\bkeskimäärin kuukaudessa\b",
      "last_6_months"),   # the metric's window (#395 row 14)
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
-    (r"last (6|six) months|past (6|six) months|viimeis(en|ten) (6|kuuden) kuukauden( aikana)?\b", "last_6_months"),
+    (r"last (6|six) months|past (6|six) months|viimeis(en|ten) (6|kuuden) kuukauden( aikana)?\b|"
+     r"\b(6|kuuden) viimeisen kuukauden( aikana)?\b", "last_6_months"),
     # the plural genitive and the number in words are the same period (#543, #651): "viimeisten 12 kuukauden aikana",
-    # "viimeisen kahdentoista kuukauden" (the answers' own wording)
-    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)|"
-     r"viimeis(en|ten) (12|kahdentoista) kuukauden( aikana)?\b", "last_12_months"),
+    # "viimeisen kahdentoista kuukauden" (the answers' own wording). "12" and "vuoden" are whole words: "viimeisen
+    # 120 päivän" and "viimeisen vuodenvaihteen" are not twelve months (#665).
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12 kk|vuoden)\b|"
+     r"viimeis(en|ten) (12|kahdentoista) kuukauden( aikana)?\b|\b(12|kahdentoista) viimeisen kuukauden( aikana)?\b",
+     "last_12_months"),
     (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
@@ -229,6 +234,16 @@ LAST_YEARS = (r"\b(?:last|past) " + _N + r" years\b|\bviimeisen " + _N + r" vuod
               r" vuotta\b")
 YEAR_BEFORE_LAST = r"\byear before last\b|\btoissa ?vuonna\b|\btoissa ?vuoden\b|\btoissavuo\w*"
 YEARS_AGO = r"\b" + _N + r" years? ago\b|\b" + _N + r" (?:vuotta|vuosi) sitten\b"
+# A whole number of months or days counted back from the data's last day (#665): "the last 36 months", "viimeisen 120
+# päivän", "kahden viimeisen kuukauden". 3, 6 and 12 months are the presets (PRESETS reads them); any other count is
+# the custom range it names, never another period. A number before "viimeisen" is never "the past month".
+COUNT_WORDS = {**NUMBER_WORDS, "twelve": 12, "kahdentoista": 12}
+_C = r"(\d{1,4}|" + "|".join(sorted(COUNT_WORDS, key=len, reverse=True)) + r")"
+MONTHS_BACK = (r"\b(?:last|past) " + _C + r" months\b|\bviimeis(?:en|ten) " + _C + r" kuukauden\b|\b" + _C +
+               r" viimeisen kuukauden\b")
+DAYS_BACK = (r"\b(?:last|past) " + _C + r" days\b|\bviimeis(?:en|ten) " + _C + r" paivan\b|\b" + _C +
+             r" viimeisen paivan\b")
+NUMBER_BEFORE_LAST = r"\b(\d+|\w+toista|\w+kymmenen|" + "|".join(COUNT_WORDS) + r") viimeis"
 
 
 def _last_complete_months(n: int, as_of: date) -> tuple[date, date]:
@@ -245,9 +260,43 @@ def _number(word: str) -> int:
     return int(word) if word.isdigit() else NUMBER_WORDS[word]
 
 
+def _counts(q: str) -> list[tuple[str, int]]:
+    """Every "last N months / days" in a folded message, as (unit, N), months first (#665)."""
+    found = []
+    for rx, unit in ((MONTHS_BACK, "months"), (DAYS_BACK, "days")):
+        for m in re.finditer(rx, q):
+            word = next(g for g in m.groups() if g)
+            found.append((unit, int(word) if word.isdigit() else COUNT_WORDS[word]))
+    return found
+
+
+def _counted_range(unit: str, n: int, as_of: date) -> tuple[date, date] | str:
+    """The dates of one count; "preset" for 3, 6 or 12 months (PRESETS reads those), "unread" out of range."""
+    if unit == "months" and n in (3, 6, 12):
+        return "preset"
+    if not 0 < n <= (120 if unit == "months" else 3660):
+        return "unread"
+    if unit == "months":
+        return _last_complete_months(n, as_of)
+    return date.fromordinal(as_of.toordinal() - n + 1), as_of
+
+
+def _counted_back(q: str, as_of: date) -> tuple[date, date] | str | None:
+    """#665: the dates of the message's first "last N months / days" count for a count no preset has; "preset" or
+    "unread" (see _counted_range); None when the message counts no months or days."""
+    counts = _counts(q)
+    return _counted_range(*counts[0], as_of) if counts else None
+
+
 def _relative_period(q: str, as_of: date, months: list[tuple[int, int]]) -> tuple[date, date] | None:
-    """The dates of "the past month", "over the last 5 years", "the year before last", "two years ago"."""
-    if re.search(PAST_MONTH, q):
+    """The dates of "the past month", "over the last 5 years", "the year before last", "two years ago", and of "the
+    last N months / days" (#665)."""
+    counted = _counted_back(q, as_of)
+    if isinstance(counted, tuple):
+        return counted
+    if counted is not None:
+        return None                        # a preset's count, or one out of range: never another period
+    if re.search(PAST_MONTH, q) and not re.search(NUMBER_BEFORE_LAST, q):
         return _last_complete_months(1, as_of)
     if m := re.search(LAST_YEARS, q):
         n = _number(next(g for g in m.groups() if g))
@@ -348,9 +397,15 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     between = re.search(r"between (\d{1,2}) and (\d{1,2}) " + MONTH_RX + r"\s+(\d{4})", q)
     year_only = re.search(r"\b(?:in|vuonna|vuoden)\s+(\d{4})\b", q)
     presets = [p for rx, p in PRESETS if re.search(rx, q)]
-    preset = presets[0] if presets else None
+    named = named_periods(q, as_of)
+    # a narrowing word never outranks the period it narrows (#665): "so far this year" is the year, "lately, in the
+    # last six months" the six months; alone, "so far" or "lately" keeps its own preset
+    preset = next((p for p in named if not p.startswith("counted")), presets[0] if presets else None)
     if compare and {"this_month", "last_month"} <= set(presets):
         preset = "this_month"   # "compare this month with last month": this month, against the one before
+    elif later := adjacent_pair(named):
+        # "this month and last month" (#665): both, as the comparison of the later one with the one before it
+        preset, compare = later, True
 
     named_range = None if compare else _named_range(q, as_of)
     if named_range:
@@ -964,6 +1019,33 @@ MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
 MONTHS = {fold(k): v for k, v in MONTHS.items()}
 MONTH_RX = fold_pattern(MONTH_RX)
 PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
+# Words that narrow a period and never name a second one (#665): "so far this year", "average monthly over the last 3
+# months", "lately, in the last six months".
+PERIOD_MODIFIERS = fold_pattern(r"\bso far\b|\btähän mennessä\b|" + AVERAGE_MONTHLY + "|" + RECENTLY)
+ADJACENT_PAIRS = (("this_month", "last_month"), ("this_week", "last_week"))
+
+
+def named_periods(q: str, as_of: date) -> list[str]:
+    """The different periods a folded message names (#665): its presets, and "counted" for a "last N months / days"
+    range no preset has. A narrowing word (PERIOD_MODIFIERS) is not a period."""
+    bare = re.sub(PERIOD_MODIFIERS, " ", q)
+    found = list(dict.fromkeys(p for rx, p in PRESETS if re.search(rx, bare)))
+    ranges = {_counted_range(unit, n, as_of) for unit, n in _counts(bare)}
+    found += [f"counted {r[0]}" for r in sorted(r for r in ranges if isinstance(r, tuple))]
+    return found
+
+
+def adjacent_pair(named: list[str]) -> str | None:
+    """The later period of "this month and last month" or "this week and last week" (#665): the comparison answers
+    both. None for any other set."""
+    return next((later for later, earlier in ADJACENT_PAIRS if set(named) == {later, earlier}), None)
+
+
+def two_periods(q: str, as_of: date) -> bool:
+    """A folded message that names two or more different periods no rule answers together (#665): the period
+    question back, never one of them chosen by the table's order."""
+    named = named_periods(q, as_of)
+    return len(named) >= 2 and adjacent_pair(named) is None
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
@@ -1634,6 +1716,11 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f != "spending"]
         if not found:
             return Claim(None, reason="to_person")
+    if found and set(found) <= {"spending", "where_money_went", "basket_contents"} and two_periods(q, as_of):
+        # "viimeisten 12 kuukauden ja viimeisten 3 kuukauden" (#665): two different periods, so the period question
+        # back, never the one the table lists first; "this month and last month" is the comparison (adjacent_pair).
+        # Beside another rule's question the message keeps the question of which one is meant, as before.
+        return Claim(None, reason="period")
     dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
@@ -1813,6 +1900,10 @@ def _follow_up(request: PlanInput, q: str, as_of: date, tools: set[str]) -> Clai
         args = plan_spending(before + ". " + question, as_of) if asked.reason == "period" else None
         if not args:
             return not_claimed
+        if stated.get("period"):
+            # the answer's own period, never the first the table finds in the joined text: the question may have
+            # named two (#665)
+            args = {**args, "period": stated["period"]}
         return Claim("follow_up", (FunctionCall("get_spending", args), FunctionCall("finish")))
     if len(calls) != 1 or calls[0].get("name") not in FOLLOW_TOOLS or "get_spending" not in tools:
         return not_claimed
