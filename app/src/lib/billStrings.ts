@@ -38,6 +38,23 @@ const en = {
     date_format: 'Pick the due date.',
   },
   noCustomer: 'Pick a demo persona first.',
+  vsUsualTitle: 'This bill vs usual',
+  thisBillTitle: 'This bill',
+  vsUsualWord: { worse: 'more than usual', better: 'less than usual', neutral: 'the same as usual' } as Record<string, string>,
+  safeTitle: 'Safe to spend after this bill',
+  estimate: {
+    label: 'Estimate',
+    text: 'Safe to spend is an estimate: it uses your balance, the bills due before payday and your usual spending.',
+  },
+  before: 'Before this bill',
+  after: 'After this bill',
+  detailsTitle: 'On this bill',
+  termsHint: 'Tap an underlined word to see what it means.',
+  noPayee: 'Not on the barcode',
+  fromBarcode: 'Read from the barcode',
+  typedDetails: 'Not used: you confirmed the details',
+  latePayment: 'Late-payment interest',
+  latePaymentHint: 'If a bill is paid after its due date',
 }
 
 type BillStrings = typeof en
@@ -78,6 +95,23 @@ const fi: BillStrings = {
     date_format: 'Valitse eräpäivä.',
   },
   noCustomer: 'Valitse ensin demohenkilö.',
+  vsUsualTitle: 'Lasku verrattuna tavalliseen',
+  thisBillTitle: 'Tämä lasku',
+  vsUsualWord: { worse: 'tavallista enemmän', better: 'tavallista vähemmän', neutral: 'sama kuin tavallisesti' },
+  safeTitle: 'Käyttövara tämän laskun jälkeen',
+  estimate: {
+    label: 'Arvio',
+    text: 'Käyttövara on arvio: siinä huomioidaan saldosi, ennen palkkapäivää erääntyvät laskut ja tavallinen kulutuksesi.',
+  },
+  before: 'Ennen tätä laskua',
+  after: 'Tämän laskun jälkeen',
+  detailsTitle: 'Laskussa',
+  termsHint: 'Napauta alleviivattua sanaa, niin näet sen merkityksen.',
+  noPayee: 'Ei viivakoodissa',
+  fromBarcode: 'Luettu viivakoodista',
+  typedDetails: 'Ei käytetty: vahvistit tiedot itse',
+  latePayment: 'Viivästyskorko',
+  latePaymentHint: 'Jos lasku maksetaan eräpäivän jälkeen',
 }
 
 export function billStrings(lang: Language): BillStrings {

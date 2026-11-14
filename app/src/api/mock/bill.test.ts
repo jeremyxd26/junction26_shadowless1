@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BillApiError } from '../bill.ts'
 import type { BillErrorEnvelope, BillExplainRequest, BillExplainResponse, BillReadResponse } from '../billTypes.ts'
 import { createMockBillApi } from './bill.ts'
+import { createMockClient } from './mockClient.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as Record<string, unknown>
@@ -63,6 +64,17 @@ describe('bill mock', () => {
     for (const sample of samples) {
       expect(sample.image_url.startsWith('data:image/svg+xml')).toBe(true)
       expect(sample.title).toMatch(/Esimerkki/)
+    }
+  })
+
+  it('opens the evidence of the bill numbers for any persona', async () => {
+    const response = examples['bill.response'] as BillExplainResponse
+    const client = createMockClient()
+    for (const customer of ['CUST00860', 'CUST00042']) {
+      const after = await client.evidence(response.safe_to_spend!.after!.evidence_ref!, customer, 'en')
+      expect(after.number).toEqual(response.safe_to_spend!.after)
+      const change = await client.evidence(response.comparison!.change.evidence_ref!, customer, 'en')
+      expect(change.number).toEqual(response.comparison!.change)
     }
   })
 })
