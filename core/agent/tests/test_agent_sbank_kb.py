@@ -10,6 +10,7 @@ import pytest
 from agent_fakes import audit_records, run
 
 from core.agent import sbank_kb
+from core.agent.guard import detect_language
 from core.agent.rules import RuleModel
 
 ENTRIES = sbank_kb.ENTRIES
@@ -30,6 +31,16 @@ def has_contact(done):
 
 # ---- the file ----
 
+def test_only_the_contact_and_step_entries_may_carry_digits():
+    assert {e.id for e in ENTRIES if e.digits} == set(PUBLISHED_DIGITS)
+
+
+@pytest.mark.parametrize("entry", ENTRIES, ids=lambda e: e.id)
+def test_every_entry_has_an_english_and_a_finnish_answer_in_that_language(entry):
+    assert detect_language(entry.answer_en) == "en", entry.answer_en
+    assert detect_language(entry.answer_fi) == "fi", entry.answer_fi
+
+
 def test_the_file_has_between_thirty_and_sixty_entries_with_every_field():
     assert 30 <= len(ENTRIES) <= 60
     assert len({e.id for e in ENTRIES}) == len(ENTRIES)
@@ -39,10 +50,21 @@ def test_the_file_has_between_thirty_and_sixty_entries_with_every_field():
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.retrieved_at)
 
 
+# The only texts with digits (#808): the published contact numbers and postal address, and step numbers.
+PUBLISHED_DIGITS = {"contact": {"09 6964 6820", "020 333", "77", "00088"}, "e_invoice_order": {"1.", "2.", "3.", "4."}}
+
+
 @pytest.mark.parametrize("entry", ENTRIES, ids=lambda e: e.id)
 def test_no_answer_has_a_digit_a_euro_sign_or_speaks_as_the_bank(entry):
     for text in (entry.answer_en, entry.answer_fi):
-        assert not re.search(r"\d|€|%", text), text
+        assert not re.search(r"€|%", text), text
+        if entry.digits:
+            published = PUBLISHED_DIGITS[entry.id]
+            found = set(re.findall(r"\d[\d ]*\d\.?|\d\.?", text))
+            assert {f.strip() for f in found} <= published | {d.rstrip(".") for d in published}, (entry.id, found)
+            assert re.sub(r"\d[\d ]*\d|\d", "", text).count("€") == 0
+        else:
+            assert not re.search(r"\d", text), text
     assert not re.search(r"\b(we|our|us)\b", entry.answer_en, re.I), entry.answer_en
     assert not re.search(r"\b(me|meidän|meille|meillä|meiltä|meitä|tarjoamme|autamme)\b", entry.answer_fi, re.I)
     assert not re.search(r"\b(free|recommend|should choose|best)\b", entry.answer_en, re.I)
@@ -110,9 +132,9 @@ def test_no_match_but_clearly_about_s_bank_is_the_dont_know_line():
 
 # ---- the route ----
 
-# The rule model claims these as its own data questions on dev ("e-lasku" is a bills word): they keep that route.
-RULES_CLAIM = {("e_invoice", "fi"), ("e_invoice_edit", "fi"), ("e_invoice_notice", "fi"), ("e_invoice_move", "fi"),
-               ("e_invoice_not_working", "fi")}
+# The rule model claims this one for its bills rule ("e-lasku" is a bills word) and it keeps that route; the
+# e-invoice how-to entries (sbank_kb.OVER_BILLS_RULE) answer before the bills rule (#808).
+RULES_CLAIM = {("e_invoice", "fi")}
 
 
 @pytest.mark.parametrize("lang", ["en", "fi"])
@@ -175,3 +197,56 @@ def test_no_knowledge_base_text_enters_a_money_answer(make_pipeline):
     assert not kb_turns(pipeline)
     texts = [e.answer_en for e in ENTRIES] + [e.answer_fi for e in ENTRIES]
     assert "s-pankki.fi" not in done["text"] and not any(t in done["text"] for t in texts)
+
+
+# ---- #808: Renat's wordings, the question's language, contact, e-invoice steps ----
+
+@pytest.mark.parametrize("question, request_lang, entry_id, answer_lang", [
+    ("How do I contact S-Bank?", "en", "contact", "en"),
+    ("How do I contact S-Bank?", "fi", "contact", "en"),
+    ("Miten otan yhteyttä S-Pankkiin?", "fi", "contact", "fi"),
+    ("Miten otan yhteyttä S-Pankkiin?", "en", "contact", "fi"),     # the app asked in English
+    ("Miten tilaan e-laskun?", "fi", "e_invoice_order", "fi"),
+    ("Miten tilaan e-laskun?", "en", "e_invoice_order", "fi"),
+    ("How do I order an e-invoice?", "en", "e_invoice_order", "en"),
+    ("Miten suljen korttini?", "en", "lost_card", "fi"),
+    ("Mikä on S-Pankin BIC-tunnus?", "en", "bic", "fi"),
+])
+def test_renats_wordings_get_their_entry_in_the_questions_language(make_pipeline, question, request_lang, entry_id,
+                                                                     answer_lang):
+    pipeline = make_pipeline(RuleModel())
+    done = done_of(run(pipeline, question, language=request_lang))
+    entry = sbank_kb.BY_ID[entry_id]
+    line = sbank_kb.SOURCE_LINE[1 if answer_lang == "fi" else 0].format(url=entry.source_url)
+    assert done["outcome"] == "answered" and done["text"] == f"{entry.answer(answer_lang)} {line}"
+    assert has_contact(done)
+    label = [a["label"] for a in done["actions"] if a.get("target") == "contact_bank"][0]
+    from core.tools import config
+    assert label == config.contact_bank_action(answer_lang)["label"]
+    assert kb_turns(pipeline)[0]["sbank_kb"] == entry_id
+
+
+def test_the_contact_answer_carries_the_published_numbers():
+    entry = sbank_kb.BY_ID["contact"]
+    for text in (entry.answer_en, entry.answer_fi):
+        assert "09 6964 6820" in text and "020 333" in text
+    assert entry.source_url == "https://www.s-pankki.fi/fi/asiakaspalvelu/"
+
+
+def test_the_e_invoice_order_answer_is_numbered_steps():
+    entry = sbank_kb.BY_ID["e_invoice_order"]
+    for text in (entry.answer_en, entry.answer_fi):
+        assert [m for m in re.findall(r"(\d)\. ", text)] == ["1", "2", "3", "4"]
+
+
+@pytest.mark.parametrize("question, lang", [("How do I order a new card in S-mobiili?", "en"),
+                                            ("Miten tilaan uuden kortin S-mobiilissa?", "fi")])
+def test_ordering_a_new_card_is_not_the_card_validity_answer(question, lang):
+    found = sbank_kb.find_bank_entry(question, lang)
+    assert found is None or found.id != "card_expiry"
+
+
+def test_an_own_bills_question_about_e_invoices_keeps_the_bills_rule(make_pipeline):
+    pipeline = make_pipeline(RuleModel())
+    run(pipeline, "Mitkä e-laskuni ovat tulossa?", language="fi")
+    assert not kb_turns(pipeline)

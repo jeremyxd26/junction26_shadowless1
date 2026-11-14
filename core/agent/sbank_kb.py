@@ -23,7 +23,7 @@ from pathlib import Path
 
 import yaml
 
-from core.agent.guard import fold
+from core.agent.guard import detect_language, fold
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ class Entry:
     retrieved_at: str
     keywords_en: tuple[str, ...] = ()
     keywords_fi: tuple[str, ...] = ()
+    digits: bool = False   # the text may carry digits: published phone numbers and hours, or step numbers (#808)
 
     def answer(self, lang: str) -> str:
         return self.answer_fi if lang == "fi" else self.answer_en
@@ -62,7 +63,8 @@ def _load(path: Path = KB_PATH) -> tuple[Entry, ...]:
                          questions_fi=tuple(raw.get("questions_fi") or ()),
                          answer_en=str(raw["answer_en"]).strip(), answer_fi=str(raw["answer_fi"]).strip(),
                          source_url=str(raw["source_url"]), retrieved_at=str(raw["retrieved_at"]),
-                         keywords_en=tuple(keywords.get("en") or ()), keywords_fi=tuple(keywords.get("fi") or ())))
+                         keywords_en=tuple(keywords.get("en") or ()), keywords_fi=tuple(keywords.get("fi") or ()),
+                         digits=bool(raw.get("digits", False))))
     return tuple(out)
 
 
@@ -139,11 +141,33 @@ def find_bank_entry(question: str, lang: str) -> Entry | None:
     return best
 
 
+# The e-invoice how-to entries answer before the rule model's bills rule, which claims any "e-lasku" message
+# (#808: "Miten tilaan e-laskun?"); a message about the customer's own bills never reaches an entry here.
+OVER_BILLS_RULE = frozenset({"e_invoice_order", "e_invoice_edit", "e_invoice_notice", "e_invoice_move",
+                             "e_invoice_not_working"})
+
+
+def answer_language(question: str, lang: str) -> str:
+    """The language of the answer (#808): the question's own, as the core's detector reads it; when the detector
+    is unsure, the language whose phrases match the question; else the request's language."""
+    detected = detect_language(question)
+    if detected in ("en", "fi"):
+        return detected
+    en, fi = find_bank_entry(question, "en"), find_bank_entry(question, "fi")
+    if fi is not None and en is None:
+        return "fi"
+    if en is not None and fi is None:
+        return "en"
+    return "fi" if lang == "fi" else "en"
+
+
 @dataclass(frozen=True)
 class KbAnswer:
     entry_id: str | None   # None: the "I don't know that one" line
     body: str              # the entry's answer (or the line): what the validator checks
     source: str = ""       # "From S-Bank's public help pages: <url>", fixed here from the file's source_url
+    lang: str = "en"       # the answer's language: the question's own (answer_language)
+    digits: bool = False   # the entry's text carries published digits (phone numbers, hours, step numbers)
 
     @property
     def text(self) -> str:
@@ -157,10 +181,11 @@ def answer_for(question: str, lang: str) -> KbAnswer | None:
     a recommendation, a loan, credit, investment or insurance question, or a message with more than one line."""
     if not question.strip() or "\n" in question.strip() or own_figures(question) or asks_advice(question):
         return None
+    lang = answer_language(question, lang)
     i = 1 if lang == "fi" else 0
     entry = find_bank_entry(question, lang)
     if entry is not None:
-        return KbAnswer(entry.id, entry.answer(lang), SOURCE_LINE[i].format(url=entry.source_url))
+        return KbAnswer(entry.id, entry.answer(lang), SOURCE_LINE[i].format(url=entry.source_url), lang, entry.digits)
     if about_sbank(question) and not re.search(OWN_THINGS, _norm(question)):
-        return KbAnswer(None, UNKNOWN[i])
+        return KbAnswer(None, UNKNOWN[i], lang=lang)
     return None
