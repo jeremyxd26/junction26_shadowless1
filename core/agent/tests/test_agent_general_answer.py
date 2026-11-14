@@ -18,7 +18,7 @@ from core import answer_text
 from core.agent import template
 from core.agent.gemini import compose_text
 from core.agent.model import ComposeInput, FunctionCall, PlanInput, ScriptedModel
-from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.registry import CONTROL, GENERAL_CONTROL, CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.toolset import KNOWN_TOOLS
 
@@ -212,14 +212,31 @@ def test_a_general_answer_is_one_turn_of_the_conversation(make_pipeline):
 
 # ---- the pieces ---------------------------------------------------------------------------------------------
 
-def test_answer_in_words_is_a_declared_control_function_with_no_arguments():
-    assert "answer_in_words" in CONTROL
+def test_answer_in_words_is_declared_with_no_arguments_only_while_the_route_is_on():
+    # dev's three control functions stay as they were; answer_in_words is declared only with general=True, the
+    # switch read once per answer (review of #618, pass 3)
+    assert list(CONTROL) == ["decline", "ask_clarifying_question", "finish"] and "answer_in_words" in GENERAL_CONTROL
     reg = Registry()
-    names = [s["name"] for s in reg.schemas()]
-    assert names[-1] == "answer_in_words" and names.index("finish") < names.index("answer_in_words")
-    assert reg.parse("answer_in_words", {})[0] == "control"
-    with pytest.raises(CallRejected):
-        reg.parse("answer_in_words", {"topic": "budget"})
+    assert "answer_in_words" not in [s["name"] for s in reg.schemas()]
+    names = [s["name"] for s in reg.schemas(general=True)]
+    assert names[-1] == "answer_in_words" and names[:-1] == [s["name"] for s in reg.schemas()]
+    with pytest.raises(CallRejected) as exc:   # never a data or control call of dev's kind: the pipeline routes it
+        reg.parse("answer_in_words", {})
+    assert exc.value.code == "unknown_function"
+    args_model = GENERAL_CONTROL["answer_in_words"][0]
+    assert args_model.model_json_schema().get("properties", {}) == {}
+    with pytest.raises(ValueError):
+        args_model.model_validate({"topic": "budget"})
+
+
+def test_answer_in_words_with_arguments_is_not_followed(make_pipeline):
+    model = ScriptedModel(plans=[[FunctionCall("answer_in_words", {"topic": "budget"}), FunctionCall("finish")]],
+                          drafts=[GOOD])
+    pipe = make_pipeline(model)
+    d = done(run(pipe, BUFFER))
+    assert d["text"] != GOOD["text"] and not any(c.general for c in model.compose_inputs)
+    turns = audit_records(pipe)[-1]["planner_turns"]
+    assert any(t.get("error") == "answer_in_words: invalid arguments" for t in turns), turns
 
 
 def test_only_a_general_compose_request_carries_the_kind_block():
@@ -295,15 +312,25 @@ def test_the_switch_is_read_per_answer_with_no_restart(make_pipeline, general_on
     assert done(run(pipe, BUFFER))["outcome"] == "refused"
 
 
-def test_the_switch_changes_neither_the_declarations_nor_the_compose_request():
-    # off or on, the planner sees the same tool list and a non-general compose request is byte for byte the same,
-    # so no model cache empties when the switch file is created or removed
+def test_the_planner_is_offered_answer_in_words_only_while_the_switch_is_on(make_pipeline, general_on):
+    # the declarations the planner gets follow the switch, read once per answer; test_agent_general_switch.py pins
+    # the switched-off request to dev's, byte for byte
     from core.agent import orchestrator
-    names = [s["name"] for s in Registry().schemas()]
-    assert "answer_in_words" in names
     from pathlib import Path
     source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert 'GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"' in source
+    seen = []
+
+    class Recording(ScriptedModel):
+        def plan(self, request):
+            seen.append([t["name"] for t in request.tools])
+            return super().plan(request)
+
+    pipe = make_pipeline(Recording(plans=[WORDS, WORDS], drafts=[GOOD]))
+    run(pipe, BUFFER)
+    general_on.unlink()
+    run(pipe, BUFFER)
+    assert seen[0][-1] == "answer_in_words" and "answer_in_words" not in seen[1] and seen[0][:-1] == seen[1]
 
 
 # ---- the review of #618: each class closed ----------------------------------------------------------------

@@ -664,14 +664,44 @@ def test_a_plain_words_case_needs_the_answer_and_no_tool():
     assert run.check(_words_case(), with_data, "en", question) == ["data tools called: ['get_safe_to_spend']"]
 
 
-def test_with_the_general_route_switched_off_devs_decline_passes_a_plain_words_case():
-    # var/general-on absent (the default): the answer is dev's out_of_scope decline, which the case accepts (#572)
+@pytest.mark.parametrize("kind", ["out_of_scope", "investment_advice"])
+def test_a_refusal_never_passes_a_plain_words_case(kind):
+    # the plain-words check holds whatever the switch: a decline is not plain words (review of #618, pass 3)
     question = _words_case()["question"]["en"]
-    off = Answer(text="That's outside my lane.", outcome="refused", refusal_kind="out_of_scope", labels=[], tool_calls=[])
-    assert run.check(_words_case(), off, "en", question) == []
-    other = Answer(text="I can't give investment advice.", outcome="refused", refusal_kind="investment_advice",
-                   labels=[], tool_calls=[])
-    assert "outcome refused, expected answered" in run.check(_words_case(), other, "en", question)
+    refused = Answer(text="That's outside my lane.", outcome="refused", refusal_kind=kind, labels=[], tool_calls=[])
+    assert "outcome refused, expected answered" in run.check(_words_case(), refused, "en", question)
+
+
+def _asked_cases(monkeypatch, tmp_path, *argv):
+    """The case ids run.main asks, with the check stubbed (no database) and no switch file unless a test makes one."""
+    asked = []
+    monkeypatch.setattr(run, "GENERAL_ON", tmp_path / "general-on")
+    monkeypatch.setattr(run, "make_source", lambda args, doc: lambda persona, question, lang: Answer(
+        text="", outcome="answered", labels=[], tool_calls=[]))
+    monkeypatch.setattr(run, "check", lambda case, ans, lang, question="", deriver=None: asked.append(case["id"]) or [])
+    monkeypatch.setattr(sys, "argv", ["run.py", "--lang", "en", *argv])
+    with pytest.raises(SystemExit):
+        run.main()
+    return asked
+
+
+def test_with_the_switch_off_the_eval_asks_exactly_the_cases_without_the_general_tag(monkeypatch, tmp_path):
+    import expected
+    cases = expected.load(expected.CASES)["cases"]
+    general = [c["id"] for c in cases if "general" in c["tags"]]
+    assert len(general) == 10 and all(c["expect"] in ("words", "refused") for c in cases if c["id"] in general)
+    off = _asked_cases(monkeypatch, tmp_path)                      # auto: no var/general-on
+    assert off == [c["id"] for c in cases if "general" not in c["tags"]]
+    assert _asked_cases(monkeypatch, tmp_path, "--general", "off") == off
+    on = _asked_cases(monkeypatch, tmp_path, "--general", "on")
+    assert on == [c["id"] for c in cases]
+    (tmp_path / "general-on").write_text("", encoding="utf-8")   # auto with the switch file
+    assert _asked_cases(monkeypatch, tmp_path) == on
+
+
+def test_the_eval_reads_the_same_switch_file_as_the_pipeline():
+    from core.agent import orchestrator
+    assert run.GENERAL_ON == orchestrator.GENERAL_ON
 
 
 def test_a_plain_words_case_must_say_no_data_tool_call():

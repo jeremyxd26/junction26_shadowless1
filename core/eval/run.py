@@ -65,6 +65,11 @@ DENY = {
 }
 
 ANY_OUTCOMES = ("answered", "refused", "clarify")
+# The general route's switch (#572), the same file as core.agent.orchestrator.GENERAL_ON: the cases tagged `general`
+# (expect: words, and the general-sounding questions that stay declined) run only while the route is on, so with it
+# off the eval asks exactly dev's cases (review of #618, pass 3). `--general on|off` overrides the local file, for a
+# source whose switch lives elsewhere (--source api).
+GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"
 
 
 def _iso(value) -> date | None:
@@ -86,13 +91,10 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
     # `any`: the outcome may differ by source (the rules ask back, a model may answer), so any of the three
     # real outcomes passes; every other check still applies, the "returned by a tool" check among them (#419,
     # review of #437). Only the expected numbers are skipped: such a case has none.
-    # `words` with the general route switched off (var/general-on absent, the default): dev's out_of_scope decline is
-    # the expected answer, as before #572; the plain-words checks then have nothing to check
-    switched_off = case["expect"] == "words" and ans.outcome == "refused" and ans.refusal_kind == "out_of_scope"
     if case["expect"] == "any":
         if ans.outcome not in ANY_OUTCOMES:
             fails.append(f"outcome {ans.outcome}, expected one of {', '.join(ANY_OUTCOMES)}")
-    elif ans.outcome != want and not switched_off:
+    elif ans.outcome != want:
         fails.append(f"outcome {ans.outcome}, expected {want}")
     if case["expect"] == "refused" and ans.refusal_kind not in case.get("refusal_kinds", []):
         fails.append(f"refusal kind {ans.refusal_kind}, expected one of {case.get('refusal_kinds')}")
@@ -131,7 +133,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
     if case["expect"] == "no_data" and ans.follow_ups is not None and not ans.follow_ups:
         fails.append("chips: a period without data offers what Sentti can answer instead (#379)")
-    if case["expect"] == "words" and not switched_off:   # plain words (#572); no tool: no_data_tool_call
+    if case["expect"] == "words":   # plain words (#572); no tool: no_data_tool_call
         for problem in answer_text.general_problems(ans.text or "") + \
                 answer_text.general_language_problems(ans.text or "", lang):
             fails.append(f"plain words: {problem}")
@@ -247,6 +249,9 @@ def main() -> None:
     ap.add_argument("--tag", action="append", help="only cases with this tag (repeatable)")
     ap.add_argument("--persona", action="append", help="only this customer_id (repeatable)")
     ap.add_argument("--case", action="append", help="only this case id (repeatable)")
+    ap.add_argument("--general", choices=["auto", "on", "off"], default="auto",
+                    help="the general route (#572): cases tagged general run only when it is on; auto reads "
+                         "var/general-on in this checkout")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Finnish text on any console
 
@@ -259,6 +264,12 @@ def main() -> None:
              if (not args.tag or set(args.tag) & set(c["tags"]))
              and (not args.persona or c["persona"] in args.persona)
              and (not args.case or c["id"] in args.case)]
+    general_on = args.general == "on" or (args.general == "auto" and GENERAL_ON.exists())
+    held = [c["id"] for c in cases if "general" in c["tags"] and not general_on]
+    if held:
+        print(f"SKIP  {len(held)} cases tagged general: the general route is off (var/general-on absent; "
+              f"--general on runs them): {', '.join(held)}", flush=True)
+        cases = [c for c in cases if c["id"] not in held]
     source = make_source(args, doc)
 
     deriver = Deriver(str(doc["as_of"]))

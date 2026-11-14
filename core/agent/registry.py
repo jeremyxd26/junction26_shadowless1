@@ -86,8 +86,12 @@ CONTROL = {
     "decline": (DeclineArgs, "End the turn with the fixed refusal template of this kind. Reads no data."),
     "ask_clarifying_question": (ClarifyArgs, "Ask the user one short question back, with up to 3 short options."),
     "finish": (FinishArgs, "Data collection is complete; go on to write the answer."),
-    # #572: a general money question (budgeting, a buffer, saving habits, how a bill, an e-invoice, a due date or a
-    # reference number works) is answered in plain words, with no tool data and no number
+}
+# #572: a general money question (budgeting, a buffer, saving habits, how a bill, an e-invoice, a due date or a
+# reference number works) is answered in plain words, with no tool data and no number. Declared to the planner only
+# while the general route is switched on (orchestrator.GENERAL_ON, read once per answer); switched off, the planner's
+# declarations are exactly dev's CONTROL, so its model cache and routes stay as they were (review of #618, pass 3).
+GENERAL_CONTROL = {
     "answer_in_words": (AnswerInWordsArgs, "Answer a general money question in plain words, with no data and no "
                                            "number: budgeting, a buffer, saving habits, how a bill, an e-invoice, a "
                                            "due date or a reference number works. Never for the user's own figures. "
@@ -137,7 +141,7 @@ class Registry:
     tools: dict[str, ToolSpec] = field(default_factory=dict)
 
     def register(self, spec: ToolSpec) -> None:
-        if spec.name in self.tools or spec.name in CONTROL:
+        if spec.name in self.tools or spec.name in CONTROL or spec.name in GENERAL_CONTROL:
             raise RegistryError(f"{spec.name}: already registered")
         if not spec.read_only:
             raise RegistryError(f"{spec.name}: only read and simulate tools may be registered (R6)")
@@ -153,12 +157,16 @@ class Registry:
     def is_data_tool(self, name: str) -> bool:
         return name in self.tools
 
-    def schemas(self) -> list[dict[str, Any]]:
-        """Function declarations for the planner: data tools, then the control functions."""
+    def schemas(self, general: bool = False) -> list[dict[str, Any]]:
+        """Function declarations for the planner: data tools, then the control functions; `general` (the general
+        route switched on, #572) adds answer_in_words at the end, and only then."""
         out = [{"name": s.name, "description": s.description,
                 "parameters_json_schema": s.args_model.model_json_schema()} for s in self.tools.values()]
         out += [{"name": name, "description": desc, "parameters_json_schema": model.model_json_schema()}
                 for name, (model, desc) in CONTROL.items()]
+        if general:
+            out += [{"name": name, "description": desc, "parameters_json_schema": model.model_json_schema()}
+                    for name, (model, desc) in GENERAL_CONTROL.items()]
         return out
 
     def parse(self, name: str, args: Any) -> tuple[str, BaseModel]:

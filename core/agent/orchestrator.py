@@ -48,7 +48,7 @@ from core.agent import glossary, guard, offers, rules, template, validator, why_
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.registry import CONTROL, GENERAL_CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
@@ -66,9 +66,11 @@ from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 log = logging.getLogger("uvicorn.error")
 
 MAX_ROUNDS = 2
-# The general route's switch (#572): only while this file exists does a planned answer_in_words get a plain-words
-# answer; without it (the default, in code and on the stand) the answer is dev's out_of_scope decline, so the route is
-# off with no change to the tool declarations or the prompts (their model caches stay). Checked per answer, no restart.
+# The general route's switch (#572): read once per answer (no restart). Only while this file exists is answer_in_words
+# declared to the planner and a planned one answered in plain words. Without it (the default, in code and on the
+# stand) the planner's declarations and the prompts are exactly dev's, so no model cache empties (review of #618,
+# pass 3), and an answer_in_words call (which no declaration then offers) still gets dev's out_of_scope decline.
+# Creating the file adds one declaration, so the planner's model cache empties once.
 GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"
 # The rules' verdict that leaves a message to a plain-words answer (#572): not claimed with no reason (their general
 # question back). Their period question ("How much do I spend on takeaway?") is an own-figures question, and a flagged,
@@ -377,6 +379,7 @@ class _Answer:
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary, why, general (#572)
     general_fallback: bool = False       # a general answer's fixed text with its fixed offer went out (#572)
+    general_on: bool = False             # the general route's switch, read once at the start of the answer (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
     health_dropped: str | None = None
@@ -452,6 +455,7 @@ class Pipeline:
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
         a.kind = answer_kind(message)   # a why/how answer may be longer (#572); "general" on the general route
+        a.general_on = GENERAL_ON.exists()   # once per answer, so the declarations and the route agree (#572)
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -495,9 +499,9 @@ class Pipeline:
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
             plan_in = PlanInput(
-                question=message, language=lang, as_of=self.as_of.isoformat(), tools=self.registry.schemas(),
-                history=history, responses=list(responses), model_turns=list(model_turns), guard_flags=a.flags,
-                round=rnd)
+                question=message, language=lang, as_of=self.as_of.isoformat(),
+                tools=self.registry.schemas(general=a.general_on), history=history, responses=list(responses),
+                model_turns=list(model_turns), guard_flags=a.flags, round=rnd)
             plan, source = self._plan(plan_in, a)
             if rnd == 1 and source == "model" and plan.calls and all(c.name == "finish" for c in plan.calls):
                 # The model planned a question with no data call (#341): the composer could then only
@@ -507,8 +511,8 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            if any(c.name == "answer_in_words" for c in plan.calls) and not GENERAL_ON.exists():
-                # the general route is switched off: dev's answer to a general question, the out_of_scope decline
+            if any(c.name == "answer_in_words" for c in plan.calls) and not a.general_on:
+                # the general route is switched off, so no declaration offered it: dev's out_of_scope decline
                 a.planner_turns.append({"round": rnd, "source": source, "error": "answer_in_words: switched off",
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 return self._refuse("out_of_scope", lang, emit, a)
@@ -1031,6 +1035,13 @@ class Pipeline:
             return "not the first round"
         if any(c.name not in ("answer_in_words", "finish") for c in calls):
             return "not alone"
+        args_model = GENERAL_CONTROL["answer_in_words"][0]
+        try:
+            for c in calls:
+                if c.name == "answer_in_words":
+                    args_model.model_validate(c.args or {})
+        except ValueError:   # pydantic's ValidationError: the function takes no arguments
+            return "invalid arguments"
         if a.flags:
             return "flagged"
         folded = guard.fold(plan_in.question)
