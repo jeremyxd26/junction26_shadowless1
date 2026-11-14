@@ -95,11 +95,17 @@ CLARIFY_GENERAL = {
 }
 # "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
 # the card's own "why" text; {amount} is the card amount's token.
-REVIEW_PURCHASE = (
+REVIEW_PURCHASE = (   # "what was that €1,080?": two sentences (the answer-length rule)
     "That was your {category} purchase on {date}: {amount}. It is the large purchase I asked you about: "
-    "was it needed, or your choice? {why}",
+    "was it needed, or your choice?",
     "Se oli ostoksesi {date} luokassa {category}: {amount}. Tästä isosta ostoksesta kysyin sinulta: oliko se "
-    "välttämätön hankinta vai oma valinta? {why}",
+    "välttämätön hankinta vai oma valinta?",
+)
+REVIEW_WHY = (   # "why are you asking me about 1080 euros?": the answer opens with the why (#398)
+    "I asked because {amount} on {category} on {date} stands out from your usual purchases in that category: "
+    "was it needed, or your choice? Your answer only changes how your own spending is grouped.",
+    "Kysyin, koska {amount} luokassa {category} {date} erottuu tavallisista ostoksistasi tässä luokassa: oliko "
+    "se välttämätön hankinta vai oma valinta? Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
 )
 # Before the rules' clarifying question when the model could not plan the question (#341).
 NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
