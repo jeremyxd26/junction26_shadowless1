@@ -346,6 +346,24 @@ METHODS["savings_plan.cut_pct@1"] = MethodInfo(
     ("How much of a category's usual spending the plan cuts, a setting of the plan.",
      "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
     PLAN_DOC)
+# What already goes to savings, beside the plan (#560): never part of the plan's total.
+METHODS["savings_plan.already_share_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Share of your income", "Osuus tuloistasi"),
+    ("The typical month of the regular transfer to savings or investments, as a share of the typical monthly "
+     "income; both are the recurring series' own typical months.",
+     "Säännöllisen säästö- tai sijoitussiirron tavallinen kuukausi osuutena tavallisen kuukauden tuloista; "
+     "molemmat ovat toistuvien sarjojen omia tavallisia kuukausia."),
+    PLAN_DOC)
+METHODS["savings_plan.already_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Already goes to savings, a month", "Säästöihin menee jo kuukaudessa"),
+    ("The sum of the typical months of the regular transfers to savings or investments, when there are several.",
+     "Säännöllisten säästö- tai sijoitussiirtojen tavallisten kuukausien summa, kun niitä on useita."),
+    PLAN_DOC)
+METHODS["savings_plan.income_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Your income, a typical month", "Tulosi tavallisena kuukautena"),
+    ("The sum of the typical months of the income series, when there are several.",
+     "Tulosarjojen tavallisten kuukausien summa, kun niitä on useita."),
+    PLAN_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

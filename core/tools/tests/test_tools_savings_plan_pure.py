@@ -274,7 +274,8 @@ def test_the_model_view_gives_every_number_as_a_number(fake, language):
     so the composer never copies bare digits; each cut share is a Number and, for the default shares, words."""
     view = plan(language)[0].model_view
     assert "ev_" not in repr(view) and "CUST" not in repr(view)
-    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "savings_goal", "follow_up"}
+    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "savings_goal", "follow_up",
+                         "already_saving", "already_share", "saving_seen"}   # what already goes to savings (#560)
     assert view["kind"] == "plan" and [lv["key"] for lv in view["levers"]] == ["Restaurants", "Lifestyle"]
     assert all(set(lv) == {"key", "category", "cut", "cut_words", "saving"} for lv in view["levers"])
     assert [lv["cut"]["value"] for lv in view["levers"]] == [20, 10]
