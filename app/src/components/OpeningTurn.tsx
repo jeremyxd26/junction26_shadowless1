@@ -6,13 +6,20 @@ import { ApiError } from '../api/errors.ts'
 import type { OverviewResponse } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { prefersReducedMotion } from '../lib/motion.ts'
-import { OpeningContext, type Opening, type ShownReview } from '../lib/openingContext.ts'
+import { OpeningContext, type AnsweredReview, type Opening, type ShownReview } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Loaded } from '../lib/useLoad.ts'
 import { Overview } from '../screens/Overview.tsx'
 import { ErrorBlock, LoadingBlock } from './States.tsx'
 
 const noop = () => {}
+
+/** The same card in the same state (and, once answered, the same basket): nothing to re-render. */
+function sameReview(a: ShownReview | null, b: ShownReview | null): boolean {
+  if (!a || !b) return a === b
+  if (a.txRef !== b.txRef || a.phase !== b.phase) return false
+  return a.phase === 'asking' || (b.phase === 'answered' && a.basketKey === b.basketKey && a.basketLabel === b.basketLabel)
+}
 
 /** The review card for `txRef`: the opening's first, else the one a thread turn shows (#450). */
 function scrollToReview(txRef: string) {
@@ -35,9 +42,15 @@ export function OpeningProvider({ overview, children }: { overview: Loaded<Overv
   const [shownReview, setShownReview] = useState<ShownReview | null>(null)
   const [threadReviews, setThreadReviews] = useState<Record<string, string>>({})
   const reportReview = useCallback(
-    (next: ShownReview | null) =>
-      setShownReview((current) => (current?.txRef === next?.txRef && current?.phase === next?.phase ? current : next)),
+    (next: ShownReview | null) => setShownReview((current) => (sameReview(current, next) ? current : next)),
     [],
+  )
+  const answered = useMemo<AnsweredReview | null>(
+    () =>
+      shownReview?.phase === 'answered'
+        ? { txRef: shownReview.txRef, basketKey: shownReview.basketKey, basketLabel: shownReview.basketLabel }
+        : null,
+    [shownReview],
   )
   const claimThreadReview = useCallback(
     (txRef: string, owner: string) => setThreadReviews((current) => (current[txRef] ? current : { ...current, [txRef]: owner })),
@@ -54,8 +67,18 @@ export function OpeningProvider({ overview, children }: { overview: Loaded<Overv
     [],
   )
   const value = useMemo<Opening>(
-    () => ({ reviewTxRef, shownReview, reportReview, threadReviews, claimThreadReview, releaseThreadReview, refresh, scrollToReview }),
-    [reviewTxRef, shownReview, reportReview, threadReviews, claimThreadReview, releaseThreadReview, refresh],
+    () => ({
+      reviewTxRef,
+      shownReview,
+      reportReview,
+      answered,
+      threadReviews,
+      claimThreadReview,
+      releaseThreadReview,
+      refresh,
+      scrollToReview,
+    }),
+    [reviewTxRef, shownReview, reportReview, answered, threadReviews, claimThreadReview, releaseThreadReview, refresh],
   )
   return <OpeningContext.Provider value={value}>{children}</OpeningContext.Provider>
 }
