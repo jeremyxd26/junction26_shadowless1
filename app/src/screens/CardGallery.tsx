@@ -1,8 +1,9 @@
 // Mock mode only (`/cards`): every card example of the contract on one page, so each card
 // renderer can be checked at 375 px without a persona that happens to have that card.
 // A live build does not include this page (see App.tsx).
-import type { BreakdownCard, Card, OverviewResponse, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, OverviewResponse, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BasketStrip } from '../components/BasketStrip.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
@@ -11,6 +12,13 @@ import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
+
+/** An opening that asks about the `card.review` purchase, for the pointer's "Show" state. */
+const ASKING_OPENING: Opening = {
+  reviewTxRef: (examples['card.review'] as ReviewCard).tx_ref,
+  refresh: () => {},
+  scrollToReview: () => {},
+}
 
 /** The contract has no standalone `bills` example; it is a card of `overview.response`. */
 const OVERVIEW_CARDS = (examples['overview.response'] as { cards: Card[] }).cards
@@ -98,10 +106,18 @@ export default function CardGallery() {
           <AnswerCard key={card.card_id} card={card} />
         ))}
       </section>
-      {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
+      {/* A review card inside a chat answer (#318): no second question, a pointer to the opening's.
+          Outside the thread there is no opening, so only the line; with an opening that asks about
+          the same purchase, also the "Show" button. */}
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">card.review → in an answer</p>
+        <p className="font-mono text-xs text-muted">card.review → in an answer (no opening)</p>
         <AnswerCard card={examples['card.review'] as Card} />
+      </section>
+      <section id="card.review-in-answer-asking" aria-label="card.review in an answer, opening asks" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">card.review → in an answer (the opening asks about it)</p>
+        <OpeningContext.Provider value={ASKING_OPENING}>
+          <AnswerCard card={examples['card.review'] as Card} />
+        </OpeningContext.Provider>
       </section>
       <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">bill flow (section 11, mock)</p>
