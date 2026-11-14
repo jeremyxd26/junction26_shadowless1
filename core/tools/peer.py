@@ -230,8 +230,9 @@ def _national(nb: NumberBuilder, reg, metric: str, level: str, peer_group: str, 
         return None
     start, end = date(fig.survey_year, 1, 1), date(fig.survey_year, 12, 31)
     year = Period(start=start, end=end, label=periods.period_label(start, end, lang))
+    # params.period: the evidence view names the survey year, not the day of the answer
     amount, _ = nb.composite(config.METHODS["national_month"], "rule_value", {}, Unit.EUR_PER_MONTH, year,
-                             _t("national_label", lang), params=fig.params())
+                             _t("national_label", lang), params={**fig.params(), "period": evidence.period_param(year)})
     return NationalContext(amount=reg(amount), age_group=fig.age_group, survey_year=fig.survey_year,
                            source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang))
 

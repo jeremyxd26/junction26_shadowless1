@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import pytest
 
+from core.app.api import evidence as evidence_api
 from core.tools import evidence, national
 from core.tools.context import ToolContext
 from core.tools.peer import get_peer_benchmark
@@ -39,6 +40,9 @@ def test_a_kept_category_carries_the_table_value_of_the_age_group_with_its_cited
     assert spec["formula"] == "rule_value" and spec["params"]["table"] == "StatFin/ktutk/14q4.px"
     assert spec["params"]["age_group"] == PERSONAS[customer] and spec["params"]["survey_year"] == 2022
     assert "selection" not in spec                            # cites the table, never transactions
+    body = evidence_api.build(conn, res, customer, "en")       # the evidence view the app opens
+    assert body.title.endswith("1 Jan – 31 Dec 2022") and body.parts == [] and body.rows == []
+    assert "Statistics Finland" in body.method.summary and "14q4" in body.method.summary
     view = result.model_view["national"]
     assert view["amount"]["id"] == nat.amount.id and view["context_only"] is True and "age" not in view
 
