@@ -260,6 +260,7 @@ WHAT_IF_MCC_WORDS = [(fold_pattern(rx), codes) for rx, codes in [
     (BAR_WORDS, config.MCC_SUBGROUPS["bars"]),
     (CINEMA_WORDS, config.MCC_SUBGROUPS["cinemas"]),
 ]]
+SUBGROUP_CATEGORY_OF_CODES = {config.MCC_SUBGROUPS[g]: c for g, c in config.MCC_SUBGROUP_CATEGORY.items()}
 # A named place, not a whole group (#497): a capitalised word right before a group noun ("the Barbarian pub", not
 # at the start of a sentence), or a capitalised name after "at" / "from" that no filter maps ("at Barsa", "at
 # Cinemax"). Read on the message as typed. The what-if asks back; the spending rule never answers it with a total.
@@ -273,14 +274,16 @@ GROUP_THEN_NAME = re.compile(r"\b(?:Pubs?|Bars?|Cinemas?|Takeaways?|Tax(?:i|is)|
 def named_object(question: str) -> bool:
     """The message names a place (a merchant, a club) or a thing (a parking fine) rather than a group or category
     (#497)."""
-    if NAMED_PLACE.search(question) or re.search(COMPOUND_OBJECT, fold(question)):
+    if NAMED_PLACE.search(question):
         return True
+    if re.search(COMPOUND_OBJECT, fold(question)) and not _filter_of(fold(question)):
+        return True   # "parking fines" with no other filter; "I got a parking fine. ... on restaurants?" is no name
     if any(fold(m.group(1)) not in MONTHS for m in GROUP_THEN_NAME.finditer(question)):
         return True
     for m in AT_NAME.finditer(question):
-        word = fold(m.group(1))
-        if word in MONTHS or any(re.search(rx, word) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
-            continue   # "at Restaurants", "in August": a known filter or a period, no name
+        word, rest = fold(m.group(1)), fold(question[m.start(1):])
+        if word in MONTHS or any(re.search(rx, word) or re.match(rx, rest) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            continue   # "at Restaurants", "at Home & Tech", "in August": a known filter or a period, no name
         return True
     return False
 # The baskets a what-if can cut (#403: the peer card's buttons for them); regular essentials are never cut.
@@ -316,8 +319,10 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
-    categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
-    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q)}
+    named = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    categories = set(named) & config.WHAT_IF_CATEGORIES
+    # a sub-group named with the category that holds it is that category ("restaurants and bars", review of #514)
+    codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q) and SUBGROUP_CATEGORY_OF_CODES.get(c) not in named}
     baskets = {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, q)}
     selections = len(categories) + len(codes) + len(baskets)
     if codes and named_object(question):
@@ -329,7 +334,7 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     if not selections and re.search(WHOLE_SPENDING, q) and not re.search(SELECTION_CODE, q):
         return "which", None
     if (selections != 1 or re.search(SELECTION_CODE, q)
-            or (not codes and any(re.search(rx, q) for rx, _ in MCC_GROUP_WORDS))):
+            or (not codes and _groups(q, named))):
         return "unmapped", None
     if pct:
         value = float(pct.group(1).replace(",", "."))
@@ -599,6 +604,7 @@ COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOT
 PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE = (
     fold_pattern(rx) for rx in (PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE))
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
+BILLS_INTENT = dict(INTENTS)["recurring_bills"]
 BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_CONTENTS_BASKETS]
 
 
@@ -864,13 +870,15 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
-    if named_object(question):
-        # a named place is never answered with a group's or the whole total (#497), and a parking fine never with
-        # the user's bills (review of #514)
-        dropped = [f for f in found
-                   if f == "spending" or (f == "recurring_bills" and re.search(COMPOUND_OBJECT, q))]
+    dropped = []
+    if "spending" in found and named_object(question):
+        dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
+    if "recurring_bills" in found and any(re.search(COMPOUND_OBJECT, s) and re.search(BILLS_INTENT, s)
+                                          for s in re.split(r"(?<=[.!?])\s+", q)):
+        dropped.append("recurring_bills")   # "is my parking fine a bill?": not the user's bills (review of #514)
+    if dropped:
         found = [f for f in found if f not in dropped]
-        if dropped and not found:
+        if not found:
             return Claim(None, reason="named_object")   # the model, or the general question back (not the period)
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads

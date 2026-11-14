@@ -294,6 +294,30 @@ def test_spending_on_a_compound_or_a_name_after_a_group_noun_is_left_unclaimed(q
     assert found.rule is None and not found.calls and found.reason == "named_object", (question, found)
 
 
+@pytest.mark.parametrize("question,lang,expected", [   # a compound beside another question names nothing
+    ("I got a parking fine. How much did I spend on restaurants last month?", "en",
+     ("spending", {"categories": ["Restaurants"]})),
+    ("How much did I spend on parking last month? Not the parking fines, just parking.", "en",
+     ("spending", {"mcc_groups": ["parking"]})),
+    ("how much did I spend at Home & Tech last month", "en", ("spending", {"categories": ["Home & Tech"]})),
+    ("Which bills are coming up? I also got a parking ticket.", "en", ("recurring_bills", None)),
+])
+def test_a_compound_or_a_category_after_at_beside_a_question_keeps_its_answer(question, lang, expected):
+    found = ask(question, lang)
+    assert (found.rule, first(found).args.get("filter")) == expected, (question, found)
+
+
+@pytest.mark.parametrize("question,lang,category", [   # the what-if too: the category holds its sub-group
+    ("what if I cut restaurants and bars by 10%", "en", "Restaurants"),
+    ("Entä jos vähentäisin ravintoloita ja baareja 10 %?", "fi", "Restaurants"),
+    ("what if I cut entertainment and cinemas by 10%", "en", "Entertainment"),
+])
+def test_a_what_if_on_a_category_and_its_sub_group_cuts_the_category(question, lang, category):
+    found = ask(question, lang)
+    assert found.rule == "what_if", (question, found)
+    assert first(found).args["selection"] == {"kind": "category", "value": category}, (question, found)
+
+
 def test_a_what_if_on_a_name_after_a_group_noun_asks_back():
     found = ask("what if I cut Bar Loose by 10%")
     assert found.rule is None and "run_what_if" not in [c.name for c in found.calls], found
