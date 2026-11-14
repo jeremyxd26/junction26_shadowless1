@@ -201,6 +201,10 @@ class _Answer:
     # "no_model" (no key), "off", "budget", "pause" (decided before planning by
     # Pipeline._model_unavailable), or "error" (it was asked and failed).
     model_unavailable: str | None = None
+    # Per role (#383): the account-level reason above, or the role's own ("role_paused", "model_refused").
+    # The planner's decides whether the model plans; the composer's whether it writes.
+    planner_unavailable: str | None = None
+    composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
@@ -298,6 +302,8 @@ class Pipeline:
         planner_fallback = False
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
+        a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
+        a.composer_unavailable = a.model_unavailable or self._role_unavailable("compose")
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -340,7 +346,7 @@ class Pipeline:
                                           "status": "ok" if kind == "control" else "not_run"})
                 # The rules answered in the model's place: after a planner error, or for a question
                 # they do not recognise while the model may not be used (#244).
-                in_place = source == "fallback" or (a.model_unavailable is not None
+                in_place = source == "fallback" or (a.planner_unavailable is not None
                                                     and not getattr(plan, "recognised", True))
                 if in_place or (model_failed and "decline" not in controls):   # a rules refusal carries none
                     # An empty plan the rules replaced carries the warning like a failed one: the note and the
@@ -392,7 +398,7 @@ class Pipeline:
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
                                              skip_model=planner_fallback
-                                             or a.model_unavailable not in (None, "no_model"), a=a)
+                                             or a.composer_unavailable not in (None, "no_model"), a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
         # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
@@ -400,7 +406,7 @@ class Pipeline:
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
         if used_template:
-            a.model_unavailable = a.model_unavailable or "error"
+            a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
@@ -502,14 +508,27 @@ class Pipeline:
             log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
             return "error"
 
+    def _role_unavailable(self, kind: str) -> str | None:
+        """A role's own reason ("role_paused", "model_refused") or None; a model without roles has none."""
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe(kind)
+        except TypeError:          # a scripted model whose unavailable_reason takes no role
+            return None
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model role state unreadable (%s)", type(exc).__name__)
+            return None
+
     @staticmethod
     def _warn_llm_unavailable(a: _Answer) -> None:
         if "llm_unavailable" not in a.warnings:
             a.warnings.append("llm_unavailable")
 
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
-        if a.model_unavailable is not None and a.model_unavailable != "no_model":
-            # The model may not be used: the rules plan, with no model request (#244).
+        if a.planner_unavailable is not None and a.planner_unavailable != "no_model":
+            # The planner may not be used: the rules plan, with no model request (#244, #383).
             return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
@@ -826,6 +845,8 @@ class Pipeline:
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
             "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
+            "planner_unavailable": a.planner_unavailable,     # per role (#383)
+            "composer_unavailable": a.composer_unavailable,
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

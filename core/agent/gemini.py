@@ -215,9 +215,10 @@ class GeminiModel:
         self.composer_prompt = self.composer.version
         self.schema = answer_schema()
 
-    def unavailable_reason(self) -> str | None:
-        """Why the model may not be used now ("off", "budget", "pause"), or None (#244)."""
-        return self.client.unavailable_reason()
+    def unavailable_reason(self, kind: str | None = None) -> str | None:
+        """Why the model may not be used now ("off", "budget", "pause"; with a role, also "role_paused",
+        "model_refused"), or None (#244, #383)."""
+        return self.client.unavailable_reason(kind)
 
     def plan(self, request: PlanInput) -> PlanResult:
         if request.round == 1:
@@ -295,7 +296,23 @@ class GeminiSettings(BaseSettings):
     gemini_composer_thinking: Literal["default", "minimal", "low", "medium", "high"] = DEFAULT_THINKING
     gemini_planner_timeout_s: float = Field(default=DEFAULT_PLANNER_TIMEOUT_S, gt=0, le=15)
     gemini_composer_timeout_s: float = Field(default=DEFAULT_COMPOSER_TIMEOUT_S, gt=0, le=15)
-    gemini_model_refusal_s: float = Field(default=600.0, ge=60, le=3600)   # a refused id's probe after (#383)
+    gemini_model_refusal_s: float = 600.0   # a refused id's probe after; 60 to 3600, else 600 (#383)
+
+    @field_validator("gemini_model_refusal_s", mode="before")
+    @classmethod
+    def _refusal_s(cls, value: Any) -> float:
+        """A bad value (not a number, or outside 60-3600 s) is the default, with one log line per process:
+        it must not turn the whole model off."""
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            seconds = -1.0
+        if 60 <= seconds <= 3600:
+            return seconds
+        if "gemini_model_refusal_s" not in _BLANK_LOGGED:
+            _BLANK_LOGGED.add("gemini_model_refusal_s")
+            log.warning("GEMINI_MODEL_REFUSAL_S must be a number of seconds from 60 to 3600; using 600")
+        return 600.0
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
     daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
@@ -412,8 +429,8 @@ class RulesFirstModel:
         self.planner_prompt = f"rules-first: {model.planner_prompt}"
         self.composer_prompt = model.composer_prompt
 
-    def unavailable_reason(self) -> str | None:
-        return self.model.unavailable_reason()
+    def unavailable_reason(self, kind: str | None = None) -> str | None:
+        return self.model.unavailable_reason(kind)
 
     def plan(self, request: PlanInput) -> PlanResult:
         if request.round == 1:

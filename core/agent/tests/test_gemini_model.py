@@ -370,3 +370,18 @@ def test_a_blank_gemini_model_is_the_pinned_default_and_is_logged_once(monkeypat
 def test_fallback_none_in_any_case_turns_it_off():
     c = make_model(settings(gemini_api_key="test-key-not-real", gemini_fallback_model="NONE")).client
     assert c.fallback_model is None and c.compose_fallback_model is None
+
+
+
+@pytest.mark.parametrize("value", ["abc", "10", "99999", "-5"])
+def test_a_bad_refusal_time_is_the_default_and_keeps_the_model_on(monkeypatch, caplog, value):
+    """Review of #446: GEMINI_MODEL_REFUSAL_S out of 60-3600 or not a number is 600, with one log line."""
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+
+    gemini._BLANK_LOGGED.discard("gemini_model_refusal_s")
+    monkeypatch.setenv("GEMINI_MODEL_REFUSAL_S", value)
+    assert gemini.GeminiSettings().gemini_model_refusal_s == 600.0
+    model = make_agent_model(settings(gemini_api_key="test-key-not-real"))
+    assert not isinstance(model, RuleModel) and model.client.refusal_s == 600.0
+    assert sum("GEMINI_MODEL_REFUSAL_S" in r.getMessage() for r in caplog.records) == 1

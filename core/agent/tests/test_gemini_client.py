@@ -709,7 +709,7 @@ def test_a_refused_model_without_a_fallback_fails_its_role_only():
     with pytest.raises(GeminiError) as exc:
         c.compose("s", "u", {"type": "object"})
     assert exc.value.code == "http_404"
-    assert c.unavailable_reason() == "model_refused"   # the pipeline then answers from the rules (review of #422)
+    assert c.unavailable_reason("compose") == "model_refused" and c.unavailable_reason("plan") is None
     assert c.plan(*PLAN_ARGS).calls                       # the planner's own model is not touched
 
 
@@ -725,7 +725,7 @@ def test_a_failure_streak_pauses_only_its_own_role():
     with pytest.raises(GeminiError):
         c.compose("s", "u", {"type": "object"})                     # the composer pauses briefly
     assert c.plan(*PLAN_ARGS).calls                       # the planner's calls still go out
-    assert c.unavailable_reason() == "role_paused"      # the pipeline does not try the model (review of #422)
+    assert c.unavailable_reason("compose") == "role_paused" and c.unavailable_reason("plan") is None
 
 
 @pytest.mark.parametrize("name", ["ReadError", "WriteError", "RemoteProtocolError", "LocalProtocolError",
@@ -804,8 +804,8 @@ def test_a_paused_role_or_a_role_without_a_model_makes_the_model_unavailable():
     c = client(FakeTransport(blocked))
     for _ in range(3):
         c.compose("s", "u", {"type": "object"})
-    assert c.unavailable_reason() == "role_paused"
+    assert c.unavailable_reason("compose") == "role_paused" and c.unavailable_reason() is None
     d = GeminiClient(LITE, FakeTransport(api_error(404)), cache="off", sleep=lambda s: None)
     with pytest.raises(GeminiError):
         d.plan(*PLAN_ARGS)
-    assert d.unavailable_reason() == "model_refused"
+    assert d.unavailable_reason("plan") == "model_refused" and d.unavailable_reason() is None
