@@ -5,7 +5,7 @@ Gemini (any model id, any thinking level):
     MODEL_DAILY_BUDGET=80 M169_OUT=var/m169/flash-lite.jsonl \\
     python core/eval/run.py --source core.eval.model_compare:make_source --case <id> ...
 Nemotron on NVIDIA Build, reasoning off (the composer only; the rules plan):
-    SPIKE_REVIEWS=off NVIDIA_CAP=60 M169_OUT=var/m169/nemotron.jsonl \\
+    SPIKE_REVIEWS=off NVIDIA_CAP=72 M169_OUT=var/m169/nemotron.jsonl \\
     python core/eval/run.py --source core.eval.model_compare:make_nemotron_source --case <id> ...
 Then: python core/eval/model_compare.py var/m169/flash-lite.jsonl   (validator outcomes and latency)
 
@@ -140,6 +140,8 @@ def _recording_source_class():
             n_calls = len(self.model.client.calls)
             n_log = len(self.transport.log) if self.transport else 0
             answer = super().__call__(customer_id, question, language)
+            if any(c.error == "rate_limited" for c in self.model.client.calls[n_calls:]):
+                sys.exit("stopping: the model answered 429 (rate limited); no retry")
             if self.out:
                 record = self.audit.records[-1] if self.audit.records else {}
                 row = self.rows[-1]
@@ -172,6 +174,8 @@ def make_source(doc: dict, args: Any) -> Any:
     answered questions the rules plan every one, so only the composer is asked."""
     from core.agent.gemini import make_agent_model
 
+    if not os.environ.get("MODEL_DAILY_BUDGET"):
+        sys.exit("set MODEL_DAILY_BUDGET: every comparison run needs an explicit request cap")
     thinking = os.environ.get("M169_THINKING", "minimal")
     model = make_agent_model(plan_thinking=thinking, compose_thinking=thinking)
     source = _recording_source_class()(doc["as_of"], model=model, out=os.environ.get("M169_OUT"),
@@ -200,10 +204,12 @@ def make_nemotron_source(doc: dict, args: Any) -> Any:
     key = nvidia_key()
     if not key:
         sys.exit("NVIDIA_API_KEY is not set")
+    if not os.environ.get("NVIDIA_CAP"):
+        sys.exit("set NVIDIA_CAP: every comparison run needs an explicit request cap")
     transport = NvidiaTransport(key)
     client = GeminiClient(os.environ.get("NEMOTRON_MODEL", NEMOTRON_MODEL), transport, fallback_model=None,
                           cache="on", cache_dir=ROOT / "var" / "nvidia-cache",
-                          ledger=Ledger(ROOT / "var" / "nvidia-requests.jsonl", int(os.environ.get("NVIDIA_CAP", "60"))))
+                          ledger=Ledger(ROOT / "var" / "nvidia-requests.jsonl", int(os.environ["NVIDIA_CAP"])))
     model = RulesFirstModel(RuleModel(), GeminiModel(client))
     model.client = client
     source = _recording_source_class()(doc["as_of"], model=model, out=os.environ.get("M169_OUT"), transport=transport,
@@ -223,6 +229,8 @@ def violation_kind(problem: str) -> str:
     for kind, words in (("model call failed", ("model call failed",)), ("number word", ("number word", "in words")),
                         ("markdown", ("markdown",)), ("link", ("link", "url")),
                         ("two number tokens side by side", ("words must stand between",)),
+                        ("cited list differs from the tokens", ("cited must list",)),
+                        ("malformed number token", ("malformed number token",)),
                         ("digits not from a tool", ("digits", "date '")),
                         ("unknown number id", ("unknown number",))):
         if any(w in p for w in words):
