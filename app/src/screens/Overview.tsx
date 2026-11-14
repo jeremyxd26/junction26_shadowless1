@@ -377,14 +377,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       )}
 
       {view.suggested_questions.length > 0 && (
-        // The first three questions as sent, stacked; each is asked in this thread.
-        <ul aria-label={t.questionsLabel} className="flex flex-col items-start gap-2">
+        // The first three questions as sent, side by side and wrapping; each is asked in this thread.
+        <ul aria-label={t.questionsLabel} className="flex flex-wrap gap-2">
           {view.suggested_questions.slice(0, 3).map((question) => (
             <li key={question}>
               <button
                 type="button"
                 onClick={() => askInThread(question)}
-                className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-medium text-ink hover:bg-mint"
+                className="min-h-11 rounded-pill border border-mint-line bg-mint-tint px-3 py-1.5 text-left text-[15px] font-medium leading-5 text-ink hover:bg-mint"
               >
                 {question}
               </button>
