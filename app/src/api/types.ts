@@ -1,5 +1,6 @@
 // Types for the parts of contracts/api.md (0.2.1) the app uses so far:
-// sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask), 8 (what-if) and 9 (evidence).
+// sections 1-6 (conventions, shared objects, cards, errors, personas, overview), 7 (ask), 8 (what-if), 9 (evidence)
+// and 10 (labels).
 // The app ignores fields it does not know (contract section 1), so these types list only what it reads.
 
 export type Language = 'en' | 'fi'
@@ -233,6 +234,37 @@ export interface EvidenceResponse {
 
 export interface ErrorEnvelope {
   error: { code: string; message: string; retryable: boolean }
+}
+
+/** Contract section 10: `POST /api/baskets/label`. `basket: null` undoes the answer. */
+export interface LabelRequest {
+  customer_id: string
+  tx_ref: string
+  basket: BasketKey | null
+  language: Language
+}
+
+/** One overview number that moved because of the answer (contract section 10.1). */
+export interface LabelChange {
+  key: string
+  label: string
+  before: Num
+  after: Num
+}
+
+export type ReviewState = 'answered' | 'pending' | 'closed'
+
+export interface LabelResponse {
+  customer_id: string
+  as_of: string
+  language: Language
+  tx_ref: string
+  label: { basket: BasketKey; label: string; labelled_at: string } | null
+  review_state: ReviewState
+  changed: boolean
+  message: { text: string; text_rendered: string; numbers: Record<string, Num> }
+  changes: LabelChange[]
+  refetch: string[]
 }
 
 // POST /api/ask (contract section 7).

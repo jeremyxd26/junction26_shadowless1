@@ -3,6 +3,7 @@
 // A live build does not include this page (see App.tsx).
 import type { Card, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
@@ -33,6 +34,11 @@ export default function CardGallery() {
       <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
+      </section>
+      {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
+      <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">card.review → in an answer</p>
+        <AnswerCard card={examples['card.review'] as Card} />
       </section>
     </div>
   )
