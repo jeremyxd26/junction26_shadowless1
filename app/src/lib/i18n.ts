@@ -38,7 +38,12 @@ const en = {
   was: (display: string) => `was ${display}`,
   staysSame: 'stays the same',
   // The opening turn (#310 decision: one thought per screen). Captions stay under 8 words.
-  heroCaption: 'safe to spend this week',
+  // By `hero.status`, no numbers in the words (#408 review).
+  heroCaption: {
+    ok: 'safe to spend this week',
+    below_usual: 'less room than usual this week',
+    nothing_free: 'nothing free to spend this week',
+  } as Record<string, string>,
   movedTo: 'Moved to',
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
@@ -99,7 +104,11 @@ const fi: Strings = {
   retryIn: (seconds: number) => `Yritä uudelleen ${seconds} s kuluttua`,
   was: (display: string) => `aiemmin ${display}`,
   staysSame: 'pysyy ennallaan',
-  heroCaption: 'turvallisesti käytettävissä tällä viikolla',
+  heroCaption: {
+    ok: 'turvallisesti käytettävissä tällä viikolla',
+    below_usual: 'tällä viikolla tavallista vähemmän',
+    nothing_free: 'tällä viikolla ei vapaata käytettävää',
+  },
   movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',

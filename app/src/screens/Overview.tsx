@@ -82,7 +82,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   // The answer's own confirmation (`effect`, contract 0.3.2), shown in the reply when the core sends it.
   const [replyNote, setReplyNote] = useState<{ text: string; numbers: Record<string, Num> } | null>(null)
   const replyRef = useRef<HTMLDivElement>(null)
-  const openingRef = useRef<HTMLDivElement>(null)
 
   const seq = useRef(0)
   const timers = useRef<number[]>([])
@@ -299,9 +298,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     later(prefersReducedMotion() ? 0 : tokenMs('--duration-base', 250), () => {
       setClosing(false)
       setPhase({ kind: 'not_sure' })
-      openingRef.current
-        ?.querySelector<HTMLElement>('[data-opening-part="hero"] button, ul[aria-label] button')
-        ?.focus({ preventScroll: true })
+      // The card is gone: the next thing on the screen is the first question chip.
+      document.querySelector<HTMLElement>('[data-turn="opening"] ul[aria-label] button')?.focus({ preventScroll: true })
     })
   }
 
@@ -310,11 +308,11 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const replyLabel = reply ? baskets?.items.find((item) => item.key === reply)?.label : undefined
 
   return (
-    <div ref={openingRef} className="flex flex-col gap-4 pb-4">
+    <div className="flex flex-col gap-3">
       {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
-      <p className="text-2xl font-bold text-ink">{view.greeting}</p>
+      <p className="text-xl font-semibold leading-7 text-ink">{view.greeting}</p>
       {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
 
       {card && phase.kind === 'asking' && (
@@ -335,7 +333,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           card={card}
           basket={phase.basket}
           onUndo={busy === null ? () => void send(null) : undefined}
-          explain={!(reply && baskets)}
         />
       )}
 
