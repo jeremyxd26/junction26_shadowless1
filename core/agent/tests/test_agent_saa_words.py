@@ -35,8 +35,8 @@ def first_call(question: str):
     "Mitä vuokra maksaa vuodessa?",
     "Paljonko laskut maksaa ennen palkkapäivää?",
     "Kuinka paljon kahvi maksaa minulle kuukaudessa?",
-    # folded decline words inside ordinary words (lääke in lääkäri, vaali in vaatteisiin): answered on dev too
-    "Paljonko käytin lääkäriin viime kuussa?",
+    # a folded decline word inside an ordinary word (vaali in vaatteisiin): answered on dev too. No health row:
+    # health spending is declined everywhere (#443's health rule wins)
     "Paljonko käytin vaatteisiin viime kuussa?",
 ])
 def test_a_word_that_ends_in_saa_is_not_refused_as_the_weather(question):

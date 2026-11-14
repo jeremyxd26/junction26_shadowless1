@@ -84,9 +84,8 @@
        "parts": [
         {
          "function_call": {
-          "id": "call_7611504090714302330",
+          "id": "call_4814856754955697903",
           "args": {
-           "direction": "out",
            "period": {
             "preset": "last_month"
            },
@@ -94,15 +93,16 @@
             "categories": [
              "Groceries"
             ]
-           }
+           },
+           "direction": "out"
           },
           "name": "get_spending"
          },
-         "thought_signature": "EmAKXgFpFH0TAN6_oS1-59xHS5Ygf5NVXjJC-yLNut5zJIJ1pYbsJNpCYhm5X9u-v4P1FxUOPYvrUe27LpxudzP91B-DiqSHlUPmu4Wqn1HCSiWoz-pqM2E93QwHlZR0YKg="
+         "thought_signature": "EmAKXgFpFH0T5G1A1iJxZDPlp8e08zVpTAFBFoFvWUgdMXs5NKipipI6rYIO3hSCpHM15tq6wWbu8ogi4PgrGaW2egrP5XrCG_eW8tEdkHIbqmBcWBHmtqVflmRA05ZiMKg="
         },
         {
          "function_call": {
-          "id": "call_7611504090714303541",
+          "id": "call_4814856754955698042",
           "args": {},
           "name": "finish"
          }
@@ -114,7 +114,7 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 3813,
+     "prompt_token_count": 3894,
      "thoughts_token_count": 0,
      "candidates_token_count": 43
     }
@@ -128,8 +128,8 @@
       "content": {
        "parts": [
         {
-         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026, you spent {{n1}} across {{n2}}.\",\n  \"cited\": [\n    \"n1\",\n    \"n2\"\n  ],\n  \"lesson_key\": null\n}",
-         "thought_signature": "EmAKXgFpFH0TNGMtcpRbu5r0AYSGiUFAp6eXYSKYX5HbZt5N6pR3H2A50B9-gKbYaOi9osbWadS1j3_L8DNoQKbz6OAc_Tz_7RuuPurvcGoWBsngoEMepuijfFYjs_rCVc8="
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} across {{n2}} transactions.\",\n  \"cited\": [\n    \"n1\",\n    \"n2\"\n  ],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0TvSdVV-gOcR8SueHFS2MycwdXspwe--J1RVrJfpn2QLRaTQX9DB6p9B6A9fbkg7HaDVDyVg-Ri-MUpWHmonoT4iaiAwhLVz7Cn8bkXv79IewzTSrvf3hnoxs="
         }
        ],
        "role": "model"
@@ -138,7 +138,7 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 2685,
+     "prompt_token_count": 3014,
      "thoughts_token_count": 0,
      "candidates_token_count": 66
     }
@@ -152,7 +152,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "In August 2026, you spent {{n1}} across {{n2}}.",
-  "text_rendered": "In August 2026, you spent €1,146.05 across 16."
+  "text": "In August 2026 you spent {{n1}} across {{n2}} transactions.",
+  "text_rendered": "In August 2026 you spent €1,146.05 across 16 transactions."
  }
 }
