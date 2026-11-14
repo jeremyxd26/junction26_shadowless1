@@ -33,6 +33,10 @@ describe('BillFieldsCard: a 429 with Retry-After', () => {
     expect(button).not.toBeNull()
     expect(Number(button![1])).toBeGreaterThanOrEqual(29)
     expect(button![0]).toContain('disabled=""')
+    // Only the message is the alert: the ticking countdown is outside it, so it is not announced every second.
+    const alert = /<p role="alert"[^>]*>([\s\S]*?)<\/p>/.exec(html)
+    expect(alert?.[1]).toBe('Too many tries.')
+    expect(html.match(/role="alert"/g)).toHaveLength(1)
     // A wait that is over leaves the plain, enabled Try again.
     expect(card({ message: 'Too many tries.', retryable: true, until: Date.now() - 1000 })).toContain(`>${retry}</button>`)
   })
