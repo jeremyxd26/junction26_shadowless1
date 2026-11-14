@@ -42,14 +42,17 @@ export function BasketStrip({ card, motion, keys, title, flight = false }: Baske
       tabIndex={heading === null && flight ? -1 : undefined}
       aria-labelledby={heading !== null ? headingId : undefined}
       aria-label={heading === null ? card.title : undefined}
-      className="outline-none"
+      className="@container outline-none"
     >
       {heading !== null && (
         <h2 id={headingId} tabIndex={flight ? -1 : undefined} className="mb-2 text-base leading-5 font-semibold text-ink outline-none">
           {heading}
         </h2>
       )}
-      <ul className="grid grid-cols-1 gap-x-3 gap-y-2 min-[350px]:grid-cols-2">
+      {/* Two columns when the strip is at least 18.75rem wide (as before at 375 px, in a card or the
+          sheet), else one. The rem grows with large text, so narrow columns never have to hold a
+          long label or amount (#493). */}
+      <ul className="grid grid-cols-1 gap-x-3 gap-y-2 @min-[18.75rem]:grid-cols-2">
         {items.map((item) => {
           const look = BASKETS[item.key]
           const was = motion?.was[item.key]
@@ -63,19 +66,20 @@ export function BasketStrip({ card, motion, keys, title, flight = false }: Baske
                 highlighted ? look.tint.split(' ')[0] : ''
               } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
             >
-              <p className={`flex min-w-0 items-start gap-1.5 text-sm leading-5 font-semibold ${look.color}`}>
+              <p className={`flex max-w-full min-w-0 items-start gap-1.5 text-sm leading-5 font-semibold ${look.color}`}>
                 <span
                   aria-hidden="true"
                   className={`inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-xs font-bold ${look.tint}`}
                 >
                   {look.icon}
                 </span>
-                <span className="min-w-0 break-words">{item.label}</span>
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item.label}</span>
               </p>
               <span data-amount-key={flight ? item.key : undefined} className="max-w-full">
                 <NumberChip
                   number={item.amount}
                   size="inline"
+                  wrap
                   tone={item.key === 'unclassified' ? 'neutral' : 'mint'}
                   count={motion?.counts[item.key]}
                 />

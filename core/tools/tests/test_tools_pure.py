@@ -26,7 +26,7 @@ def test_valid_args_and_defaults():
 @pytest.mark.parametrize("payload", [
     {"period": {"preset": "next_month"}},                                        # unknown preset
     {"period": {"preset": "last_month"}, "filter": {"categories": ["Taxi"]}},    # unknown category
-    {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["bars"]}},    # unknown MCC group
+    {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["casinos"]}},  # unknown MCC group ("bars" is one, #497)
     {"period": {"preset": "last_month"}, "group_by": "day"},
     {"period": {"preset": "last_month"}, "compare_to": "last_decade"},
     {"period": {"preset": "last_month"}, "direction": "sideways"},

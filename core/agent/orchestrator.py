@@ -385,7 +385,7 @@ class Pipeline:
         emit("meta", {"answer_id": a.answer_id, "conversation_id": conv.conversation_id, "language": lang,
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
-        a.flags = guard.flags(message)
+        a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -416,6 +416,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        template_answer = False   # the rule planner asked for its own template answer (#552)
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
         a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
@@ -439,6 +440,8 @@ class Pipeline:
             calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
+            template_answer = template_answer or getattr(plan, "template_answer", False)
             model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
@@ -525,7 +528,7 @@ class Pipeline:
 
         numbers = ctx.numbers.all()
         # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
-        # may be named too, exactly as returned (#379 part B, found by r-w5)
+        # may be named too, exactly as returned (#379 part B)
         allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
                                self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
@@ -546,7 +549,7 @@ class Pipeline:
         # into a verdict. No prompt change; no model request, so no warning either (the model did not fail).
         national = any(isinstance(v, dict) and v.get("tool") == "get_peer_benchmark" and v.get("national")
                        for v in views)
-        unavailable = planner_fallback or a.composer_unavailable is not None
+        unavailable = planner_fallback or template_answer or a.composer_unavailable is not None
         draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or national, a=a)
         if national and not unavailable:
             a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "national_context": True})
@@ -868,7 +871,7 @@ class Pipeline:
                     # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
                     # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
                     errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
-                                             labels=_labels_in(request.data))
+                                             labels=_labels_in(request.data), views=request.data)
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

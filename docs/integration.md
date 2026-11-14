@@ -105,7 +105,7 @@ Every amount in a message is a Number object of the API contract (`contracts/api
   - Inputs are at least 16 px, so iOS does not zoom into them (`app/src/index.css`).
   - Tap targets are at least 44 × 44 px (`--tap-min`, `app/DESIGN.md` section 1).
 - **Text size:** WKWebView ignores the system text size. The layout is designed to survive 200 % zoom; an in-app text-size switch is a follow-up (`app/DESIGN.md` section 5).
-- **Read aloud (planned, #252):** on-device `speechSynthesis` only. The speaker button is hidden when the device has no voice, and no text is sent anywhere.
+- **Read aloud (#252, `app/src/lib/speech.ts`, `SpeakButton.tsx`):** a speaker button next to each of Sentti's answers reads its `text_rendered` with the device's `speechSynthesis`. Only voices that run on the device are used (`localService: true`); a cloud voice, such as Chrome's "Google …" or Edge's "… Online (Natural)" voices, is never picked, so no text is sent anywhere. Without a local voice for the answer's language the button is hidden. Nothing plays without a tap; a second tap, another answer, a new question or leaving the chat stops it.
 
 ## 5. Security
 
@@ -236,5 +236,4 @@ class SenttiActivity : AppCompatActivity() {
   - answering the review card, the module's one write (#35, PR #157; the API is on main, PR #141);
   - the chat-first first screen (#311);
   - the persona button outside a host (#323);
-  - the demo page `/demo.html` (#325);
-  - reading answers aloud on the device (#252).
+  - the demo page `/demo.html` (#325).

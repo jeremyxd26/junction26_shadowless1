@@ -15,7 +15,14 @@ export type FlowState =
    * `reading: null` is the typed fallback; `notice` is then the server's 503 `model_unavailable`
    * message, shown above the empty fields.
    */
-  | { step: 'fields'; sampleId: string | null; reading: BillReadResponse | null; notice: string | null; error: FlowError | null }
+  | {
+      step: 'fields'
+      sampleId: string | null
+      reading: BillReadResponse | null
+      notice: string | null
+      /** The last explain error; the fields card shows it, and "Try again" re-sends the current fields. */
+      error: FlowError | null
+    }
   | {
       step: 'explaining'
       sampleId: string | null
@@ -60,7 +67,13 @@ export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
       return { step: 'explanation', request: state.request, response: event.response }
     case 'explain_failed':
       if (state.step !== 'explaining') return state
-      return { step: 'fields', sampleId: state.sampleId, reading: state.reading, notice: state.notice, error: event.error }
+      return {
+        step: 'fields',
+        sampleId: state.sampleId,
+        reading: state.reading,
+        notice: state.notice,
+        error: event.error,
+      }
     case 'back':
       return initialFlow
   }

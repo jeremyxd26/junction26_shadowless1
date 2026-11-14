@@ -258,6 +258,7 @@ MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), U
 
 @pytest.mark.parametrize("text, lang", [
     ("In August 2026 you spent {{n1}} a month.", "en"),             # live: "€3,010.59 a month a month"
+    ("Cutting back on eating out could save you {{n1}} a month.", "en"),   # the stand, 14.11: "€63.17 a month a month"
     ("In August 2026 you spent {{n1}} per month on average.", "en"),
     ("In August 2026 you spent {{n1}} monthly.", "en"),
     ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
