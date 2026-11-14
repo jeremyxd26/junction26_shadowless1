@@ -4812,6 +4812,273 @@
         }
       ]
     },
+    "bill.response_not_covered": {
+      "customer_id": "CUST00849",
+      "as_of": "2026-09-30",
+      "language": "en",
+      "bill": {
+        "source": "fields",
+        "payee": "Esimerkki Remontti Oy",
+        "iban": "FI71 1234 5600 0098 76",
+        "reference": "12344",
+        "amount": {
+          "value": 700,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-14",
+            "end": "2026-10-14",
+            "label": "14 Oct 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Amount due",
+          "display": "€700.00"
+        },
+        "due_date": "2026-10-14"
+      },
+      "checks": {
+        "iban": "pass",
+        "reference": "pass",
+        "due_date": "pass"
+      },
+      "match": {
+        "status": "not_matched",
+        "bill_id": null,
+        "label": null,
+        "text": "This payee is not one of your regular bills."
+      },
+      "comparison": null,
+      "basket": {
+        "key": "unexpected_necessities",
+        "label": "Unexpected necessities",
+        "text": "It is not one of your regular bills, so it would count as an unexpected necessity. Nothing is saved."
+      },
+      "safe_to_spend": {
+        "effect": "full",
+        "next_payday": "2026-10-15",
+        "reserved": null,
+        "counted": {
+          "value": 700,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "bill.counted_eur@1",
+          "evidence_ref": "ev_fa842817d5f6",
+          "label": "Added to the bills before payday",
+          "display": "€700.00"
+        },
+        "free_until_payday_before": {
+          "value": 819.62,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.free_until_payday_eur@1",
+          "evidence_ref": "ev_ef509d0e7ccb",
+          "label": "Free until payday",
+          "display": "€819.62"
+        },
+        "free_until_payday_after": {
+          "value": 119.62,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "bill.free_until_payday_after_eur@1",
+          "evidence_ref": "ev_ee61b33a3f53",
+          "label": "Free until payday after this bill",
+          "display": "€119.62"
+        },
+        "before": {
+          "value": 123.15,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+          "evidence_ref": "ev_b947397749c0",
+          "label": "Safe to spend",
+          "display": "€123.15"
+        },
+        "after": {
+          "value": 55.82,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "bill.safe_to_spend_after_eur@1",
+          "evidence_ref": "ev_a50e19ad3a3b",
+          "label": "Safe to spend after this bill",
+          "display": "€55.82"
+        },
+        "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Your weekly safe to spend goes from €123.15 to €55.82."
+      },
+      "forecast": {
+        "status": "not_covered",
+        "before": {
+          "value": 641.43,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-14",
+            "end": "2026-10-14",
+            "label": "14 Oct 2026"
+          },
+          "method": "balance_forecast.balance_eur@1",
+          "evidence_ref": "ev_e556874c14c9",
+          "label": "Forecast balance on the due date",
+          "display": "€641.43"
+        },
+        "already_counted": null,
+        "counted": {
+          "value": 700,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-14",
+            "end": "2026-10-14",
+            "label": "14 Oct 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Amount due",
+          "display": "€700.00"
+        },
+        "after": {
+          "value": -58.57,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-14",
+            "end": "2026-10-14",
+            "label": "14 Oct 2026"
+          },
+          "method": "bill.forecast_after_eur@1",
+          "evidence_ref": "ev_c3153e0e6d7c",
+          "label": "Forecast balance after this bill",
+          "display": "-€58.57"
+        },
+        "shortfall": {
+          "value": 58.57,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-14",
+            "end": "2026-10-14",
+            "label": "14 Oct 2026"
+          },
+          "method": "bill.forecast_shortfall_eur@1",
+          "evidence_ref": "ev_91c833639e58",
+          "label": "Short of this bill",
+          "display": "€58.57"
+        },
+        "chip": {
+          "type": "ask",
+          "label": "See your balance forecast",
+          "prompt": "Will my money last until payday?"
+        },
+        "text": "Your forecast balance on 14 Oct 2026 does not cover this bill: it is €58.57 short."
+      },
+      "glossary": [
+        {
+          "term": "reference_number",
+          "label": "Reference number (viitenumero)",
+          "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught."
+        },
+        {
+          "term": "due_date",
+          "label": "Due date (eräpäivä)",
+          "text": "The last day to pay the bill without a late-payment charge."
+        },
+        {
+          "term": "virtual_barcode",
+          "label": "Virtual barcode (virtuaaliviivakoodi)",
+          "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them."
+        },
+        {
+          "term": "late_payment_interest",
+          "label": "Late-payment interest (viivästyskorko)",
+          "text": "Interest the payee may charge for each day a bill is paid after its due date."
+        }
+      ],
+      "actions": [
+        {
+          "type": "add_to_payments",
+          "label": "Add to payments",
+          "draft": {
+            "payee": "Esimerkki Remontti Oy",
+            "iban": "FI7112345600009876",
+            "reference": "12344",
+            "amount": {
+              "value": 700,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-14",
+                "end": "2026-10-14",
+                "label": "14 Oct 2026"
+              },
+              "method": "user_input@1",
+              "evidence_ref": null,
+              "label": "Amount due",
+              "display": "€700.00"
+            },
+            "due_date": "2026-10-14"
+          }
+        },
+        {
+          "type": "open_host_screen",
+          "label": "Contact S-Pankki",
+          "target": "contact_bank"
+        }
+      ],
+      "warnings": [],
+      "signals": [
+        {
+          "code": "new_payee",
+          "text": "This payee is not one of your regular bills.",
+          "numbers": []
+        },
+        {
+          "code": "amount_above_usual",
+          "text": "This bill is €700.00, more than your largest regular bill (€613.93 a month).",
+          "numbers": [
+            {
+              "value": 700,
+              "unit": "eur",
+              "period": {
+                "start": "2026-10-14",
+                "end": "2026-10-14",
+                "label": "14 Oct 2026"
+              },
+              "method": "user_input@1",
+              "evidence_ref": null,
+              "label": "Amount due",
+              "display": "€700.00"
+            },
+            {
+              "value": 613.93,
+              "unit": "eur_per_month",
+              "period": {
+                "start": "2026-04-01",
+                "end": "2026-09-30",
+                "label": "1 Apr – 30 Sep 2026"
+              },
+              "method": "recurring.typical_month_eur@1",
+              "evidence_ref": "ev_523fbc172441",
+              "label": "Usual amount",
+              "display": "€613.93 a month"
+            }
+          ]
+        }
+      ]
+    },
     "host.payment_draft": {
       "type": "sentti.paymentDraft",
       "v": 1,
