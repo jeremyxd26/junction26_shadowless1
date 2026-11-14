@@ -220,7 +220,7 @@ def test_a_whole_run_gives_a_breakdown_card_and_an_answer_the_validator_accepts(
     items = card.model_dump(mode="json")["items"]
     assert [i["key"] for i in items] == sorted(i["key"] for i in items) and "regular_essentials" not in str(items)
     assert items[0]["amount"]["value"] == 900.0 and card.total.id == data.lowest.id
-    assert card.estimate and data.daily_pace.display in card.estimate["text"]
+    assert card.estimate and data.daily_pace.display in card.estimate.text
     assert [a.type for a in card.actions] == ["open_evidence", "ask"]   # below zero: the what-if question
     assert "evidence_ref" not in str(view) and "CUST" not in str(view)
     assert list(view).index("lowest_balance") < list(view).index("balance_now")   # the lowest point leads

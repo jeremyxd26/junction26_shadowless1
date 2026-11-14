@@ -75,6 +75,9 @@ class PlanResult:
     # True only when the rule planner chose its "I can't answer that one yet" answer: the answer then
     # offers the way to a human at the bank (#420). No model adapter sets it.
     offer_contact: bool = False
+    # True only when the rule planner's answer is the template's own words, never the composer model's: "why is
+    # my safe to spend lower?" names the limit that binds from the data (#552). No model adapter sets it.
+    template_answer: bool = False
 
 
 @dataclass(frozen=True)

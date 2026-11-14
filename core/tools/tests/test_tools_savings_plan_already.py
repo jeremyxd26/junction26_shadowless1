@@ -71,7 +71,8 @@ def test_no_saving_series_gives_no_numbers(state, flows):
     assert (d.saving_seen, d.already_saving, d.already_share) == (False, None, None)
     view = result.model_view
     assert (view["saving_seen"], view["already_saving"], view["already_share"]) == (False, None, None)
-    assert len(ctx.numbers.all()) == 7                                     # the plan's own numbers only
+    # the plan's own numbers only: dev's seven and the two lever baselines of #503's estimate
+    assert len(ctx.numbers.all()) == 9
 
 
 def test_a_failing_read_leaves_the_plan_and_no_line(state, monkeypatch):

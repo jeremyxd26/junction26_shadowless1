@@ -308,6 +308,7 @@ class Resolution:
     parts: list[dict[str, Any]] = field(default_factory=list)  # role, ref, method, value, spec
     next_cursor: str | None = None
     spec: dict[str, Any] | None = None  # the stored spec, for callers that rebuild the Number
+    merchant_label: str | None = None   # the selection's merchant by its alias, for the title (#501)
 
 
 def _row(c, alias_map: aliases.AliasMap, language: str) -> dict[str, Any]:
@@ -437,6 +438,12 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
     page = rows[offset:offset + limit]
     alias_map = aliases.build(history, as_of)
     next_cursor = f"cur_{offset + limit}" if offset + limit < len(rows) else None
+    merchant_label = None
+    if sel.merchant_id is not None:
+        try:
+            merchant_label = alias_map.for_merchant(sel.merchant_id).label(language)
+        except KeyError:
+            merchant_label = None
     return Resolution(
         ref, "transactions", spec["method"], value,
         rows=[_row(c, alias_map, language) for c in page],
@@ -444,4 +451,5 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         reconciles=reconciles,
         next_cursor=next_cursor,
         spec=spec,
+        merchant_label=merchant_label,
     )

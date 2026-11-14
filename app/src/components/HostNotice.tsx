@@ -8,12 +8,16 @@ export const NOTICE_MS = 4000
 
 /**
  * The notice itself. The `role="status"` live region is always rendered, so screen readers
- * announce the text once when it appears.
+ * announce the text once when it appears. `data-sheet-keep`: an open bottom sheet leaves it live
+ * (#440), so a notice over a sheet is tappable and still announced.
  */
 export function HostNoticeView({ open, text, onClose }: { open: boolean; text: string; onClose: () => void }) {
   return (
     // Above the composer (88 px over the safe area) and above any open sheet (z-50).
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[60] mx-auto flex max-w-[480px] justify-center px-4">
+    <div
+      data-sheet-keep=""
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[60] mx-auto flex max-w-[480px] justify-center px-4"
+    >
       <div role="status" aria-live="polite">
         {open && (
           <button

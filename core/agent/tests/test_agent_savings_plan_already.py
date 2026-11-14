@@ -103,8 +103,11 @@ def test_when_it_cannot_be_read_the_answer_is_as_before(fake, monkeypatch):  # n
 def test_the_card_is_the_same_in_every_state(fake, monkeypatch):  # noqa: F811
     cards = [json.dumps(answer(monkeypatch, flows)[2].card.model_dump(mode="json"), sort_keys=True)
              for flows in (FLOW, NONE_SEEN, None)]
+    # with the read failed (None) the card is dev's: the plan's card with #503's estimate part (its lever baselines,
+    # registered right after the plan's own Numbers); what already goes to savings changes nothing on it
     assert cards[0] == cards[1] == cards[2]
     card = json.loads(cards[0])
+    assert [n["method"] for n in card["estimate"]["observed"]] == ["what_if.baseline_month_eur@1"] * 2
     assert [a["type"] for a in card["actions"]] == ["open_evidence", "open_host_screen"]   # the existing action only
 
 
