@@ -95,7 +95,7 @@ def test_russian_gets_the_language_line(make_pipeline):
 @pytest.mark.parametrize("message,intent", [
     ("can you help me?", "help"), ("what can you help me with?", "capabilities"),
     ("what else can you do?", "capabilities"), ("hello? are you there?", "greeting"),
-    ("are you an AI or a human advisor?", "identity"), ("hey there, how are you?", "greeting"),
+    ("are you an AI or a human advisor?", "identity"), ("hey there, how are you?", "how_are_you"),
     ("who made you?", "identity"), ("is my data safe with you?", "privacy"),
     ("thanks, that helps a lot", "thanks"), ("ty", "thanks"), ("mitä sä osaat tehdä?", "capabilities"),
     ("thank you very much", "thanks"), ("ok thanks", "thanks"), ("what is Sentti", "identity"),
