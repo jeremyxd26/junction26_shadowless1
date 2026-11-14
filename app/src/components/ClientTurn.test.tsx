@@ -37,12 +37,12 @@ describe('a client turn in the thread (#319)', () => {
     expect(html).not.toContain('>AI<')
   })
 
-  it('has its own status region and no speaker, stages or retry, also when it is not the latest turn', () => {
+  it('has its own status region, is not busy at first, and has no speaker, stages or retry, latest or not', () => {
     clientTurns.probe = { chip: () => 'Show Sentti a probe', visible: () => true, Component: Probe }
     for (const latest of [true, false]) {
       const html = render(turn, latest)
       expect(html.match(/role="status"/g)).toHaveLength(1)
-      expect(html).not.toContain('aria-busy')
+      expect(html).toContain('aria-busy="false"')
       expect(html.match(/<button/g)).toBeNull()
     }
   })
@@ -64,18 +64,21 @@ describe('the opening\'s client-turn chips (#319)', () => {
       </OpeningContext.Provider>,
     )
 
+  const registered = [...openingChips]
   afterEach(() => {
     delete clientTurns.probe
-    openingChips.length = 0
+    openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('renders nothing while openingChips is empty', () => {
-    expect(openingChips).toEqual([])
-    expect(chips()).toBe('')
+  it('shows "Show Sentti a bill" in a mock build (#332), apart from the question chips', () => {
+    expect(openingChips).toEqual(['bill'])
+    const html = chips()
+    expect(html).toContain('data-opening-part="client-chips"')
+    expect(html).toContain('>Show Sentti a bill</button>')
   })
 
-  it('shows a visible chip, apart from the question chips, and hides one that is not visible', () => {
-    openingChips.push('probe')
+  it('shows a visible chip and hides one that is not visible', () => {
+    openingChips.splice(0, openingChips.length, 'probe')
     clientTurns.probe = { chip: (lang) => (lang === 'fi' ? 'Näytä koe' : 'Show a probe'), visible: () => true, Component: Probe }
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')

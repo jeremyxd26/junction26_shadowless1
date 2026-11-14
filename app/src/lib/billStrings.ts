@@ -3,7 +3,7 @@
 import type { Language } from '../api/types.ts'
 
 const en = {
-  /** The `/bill` screen's title and the opening's link to it (#332). */
+  /** The `/bill` screen's title and the opening's chip that shows the bill flow in the thread (#332). */
   screenTitle: 'Show Sentti a bill',
   galleryTitle: 'Pick a sample bill',
   galleryHint: 'Sentti reads the bill, then you check what it found.',

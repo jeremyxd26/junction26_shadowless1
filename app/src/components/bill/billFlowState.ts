@@ -58,6 +58,34 @@ export type FlowEvent =
 
 export const initialFlow: FlowState = { step: 'gallery', error: null, lastSampleId: null }
 
+/** The step titles the flow reports, in the UI language (`billStrings`). */
+export interface StepTitles {
+  galleryTitle: string
+  reading: string
+  confirmTitle: string
+  typeTitle: string
+  explaining: string
+}
+
+/**
+ * What a client turn hears about the step (#332): its title, announced once and the text of the
+ * focused heading, and whether it waits for the API (the turn's `aria-busy`).
+ */
+export function flowStep(state: FlowState, s: StepTitles): { title: string; waiting: boolean } {
+  switch (state.step) {
+    case 'gallery':
+      return { title: s.galleryTitle, waiting: false }
+    case 'reading':
+      return { title: s.reading, waiting: true }
+    case 'fields':
+      return { title: state.reading ? s.confirmTitle : s.typeTitle, waiting: false }
+    case 'explaining':
+      return { title: s.explaining, waiting: true }
+    case 'explanation':
+      return { title: state.response.match.text, waiting: false }
+  }
+}
+
 export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
   switch (event.type) {
     case 'pick':

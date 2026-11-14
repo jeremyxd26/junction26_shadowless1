@@ -21,7 +21,7 @@ export function BillGallery({ onPick }: Props) {
   return (
     <section aria-labelledby="bill-gallery-title" className="flex flex-col gap-3">
       <div>
-        <h2 id="bill-gallery-title" className="text-card-title font-bold text-brand">
+        <h2 id="bill-gallery-title" data-step-heading tabIndex={-1} className="text-card-title font-bold text-brand">
           {s.galleryTitle}
         </h2>
         <p className="mt-0.5 text-sm text-muted">{s.galleryHint}</p>
