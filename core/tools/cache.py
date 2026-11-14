@@ -18,7 +18,9 @@ a stale entry is never served, whichever process wrote it. `invalidate_customer`
 Layers: an LRU in memory (bounded by entries) and, in mode `disk`, a small sqlite file under var/cache
 that the warm-up command (core/tools/warmup.py) fills and the service reads. Setting `TOOL_CACHE` is
 `off`, `memory` or `disk` (default); `TOOL_CACHE_MAX_ENTRIES` and `TOOL_CACHE_DIR` tune it. Settings
-come from the environment, else from the repository's .env. In the service container the repository
+come from the environment, else from the repository's .env. `TOOL_CACHE_WAIT_S` (default 5) limits how
+long a caller waits for another caller's computation of the same key (single-flight) before it computes
+itself. In the service container the repository
 root is /srv and /srv/var is the persistent bind mount (#78), so the default directory is the right
 one there; the warm-up runs inside that container, so both processes share one sqlite file. If the
 directory cannot be written, the disk layer logs a warning and the memory layer still works.
@@ -47,7 +49,8 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -67,9 +70,12 @@ MODES = ("off", "memory", "disk")
 DEFAULT_MODE = "disk"
 DEFAULT_MAX_ENTRIES = 512
 DEFAULT_MAX_DISK_ENTRIES = 5000
+DEFAULT_WAIT_S = 5.0   # a waiter's limit: a little above the slowest tool (03 is about 0.5 s on a busy db)
 DEFAULT_DIR = ROOT / "var" / "cache"
 DB_FILE = "tools.sqlite3"
-SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"))   # not recursive: tests are not code
+# Not recursive: tests are not code. core/config holds rules some tools read at import (the S-Bonus
+# rules file of core/tools/bonus.py), so a changed rule is a new code version, never a stale hit.
+SOURCES = (("core/tools", "*.py"), ("core/metrics", "*.sql"), ("core/config", "*.yaml"))
 RESULT_MODULE_PREFIX = "core.tools."
 
 Connector = Callable[[], AbstractContextManager[Any]]
@@ -138,6 +144,16 @@ def args_json(args_model: type[BaseModel], args: Any) -> tuple[BaseModel, str]:
     return parsed, json.dumps(parsed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
+# Results that must not be stored, by tool: they depend on a state outside the key that is about to
+# change. The peer benchmark reads the marts only when their build for as_of is complete and otherwise
+# falls back to the customer's range (no group, "not shown"); such a result is served but never cached,
+# so a warm-up during a mart build cannot pin "not shown" until the next deploy. A rebuild of complete
+# marts with other data for the same as_of is a data reload, which the cache-reset runbook covers.
+DO_NOT_STORE: dict[str, Callable[[ToolResult], bool]] = {
+    "get_peer_benchmark": lambda result: getattr(result.data, "peer_source", "marts") != "marts",
+}
+
+
 # ---- entries --------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -150,11 +166,20 @@ class Entry:
     registered: tuple[tuple[str, Number], ...]
 
 
+class _OwnerFailed:
+    """What a failed owner hands the callers waiting for its key, in place of a result. Never the owner's
+    own exception: a cancelled request's BaseException (or a KeyboardInterrupt) belongs to that request
+    alone. A waiter that receives this computes itself."""
+
+
+OWNER_FAILED = _OwnerFailed()
+
+
 @dataclass(frozen=True)
 class Prepared:
     entry: Entry
     hit: bool          # served from memory or disk
-    source: str        # "memory", "disk", "tool" or "off"
+    source: str        # "memory", "disk", "inflight" (another caller's computation), "tool" or "off"
     seconds: float
     key: str | None = None
 
@@ -237,6 +262,7 @@ class Stats:
     hits: int = 0
     misses: int = 0
     disk_hits: int = 0
+    waits: int = 0        # served by another caller's computation of the same key (single-flight)
 
 
 @dataclass
@@ -245,9 +271,11 @@ class ToolCache:
     max_entries: int = DEFAULT_MAX_ENTRIES
     directory: Path = DEFAULT_DIR
     max_disk_entries: int = DEFAULT_MAX_DISK_ENTRIES
+    wait_s: float = DEFAULT_WAIT_S
     stats: Stats = field(default_factory=Stats)
     _memory: OrderedDict[str, Entry] = field(default_factory=OrderedDict, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _inflight: dict[str, Future] = field(default_factory=dict, repr=False)
     _disk_ready: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -272,7 +300,13 @@ class ToolCache:
         path = Path(directory) if directory else DEFAULT_DIR
         if not path.is_absolute():
             path = ROOT / path
-        return cls(mode=mode, max_entries=max_entries, directory=path)
+        raw_wait = setting("TOOL_CACHE_WAIT_S", environ)
+        try:
+            wait_s = max(0.0, float(raw_wait)) if raw_wait else DEFAULT_WAIT_S
+        except ValueError:      # never fail the service's import over a typo
+            log.error("TOOL_CACHE_WAIT_S must be a number of seconds; using %.1f", DEFAULT_WAIT_S)
+            wait_s = DEFAULT_WAIT_S
+        return cls(mode=mode, max_entries=max_entries, directory=path, wait_s=wait_s)
 
     @property
     def enabled(self) -> bool:
@@ -338,17 +372,59 @@ class ToolCache:
             entry, source = found
             return Prepared(entry, True, source, time.perf_counter() - t0, key)
 
-        # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
-        # which the key was made. A label write during the call cannot slip a result of other labels
-        # under this key; the next request reads the new labels and gets a new key.
-        with _connected(private, connection):
-            result = fn(private, parsed)
-        if ctx._history is None and private._history is not None:
-            ctx._history = private._history   # the transactions read by this call serve the next one
-        entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
-        self.put(key, entry)
+        # Single-flight: of the callers that miss the same key at once, the first computes and the others
+        # wait for its result (ten cold overviews run the metric SQL once). A waiter whose owner fails or
+        # takes longer than wait_s computes itself. No deadlock: a caller waits only here, before it owns
+        # anything, and an owner computes without waiting on another key; every wait is also bounded.
+        # The owner stores its result before it leaves _inflight, so a caller that missed above while an
+        # owner was finishing finds the result in memory here and does not compute it again.
         with self._lock:
-            self.stats.misses += 1
+            stored = self._memory.get(key)
+            if stored is not None and stored.customer_id == ctx.customer_id:
+                self._memory.move_to_end(key)
+                self.stats.hits += 1
+                return Prepared(stored, True, "memory", time.perf_counter() - t0, key)
+            flight = self._inflight.get(key)
+            owner = flight is None
+            if owner:
+                flight = self._inflight[key] = Future()
+        if not owner:
+            try:
+                entry = flight.result(timeout=self.wait_s)
+            except (FutureTimeout, CancelledError):   # the owner is slow: compute here instead
+                entry = None
+            # Only these two: the owner never sets an exception, and the waiter's own interrupt must
+            # reach it. OWNER_FAILED (the owner raised) also makes the waiter compute.
+            if isinstance(entry, Entry) and entry.customer_id == ctx.customer_id:   # checked anyway
+                with self._lock:
+                    self.stats.hits += 1
+                    self.stats.waits += 1
+                return Prepared(entry, True, "inflight", time.perf_counter() - t0, key)
+
+        try:
+            # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
+            # which the key was made. A label write during the call cannot slip a result of other labels
+            # under this key; the next request reads the new labels and gets a new key.
+            with _connected(private, connection):
+                result = fn(private, parsed)
+            if ctx._history is None and private._history is not None:
+                ctx._history = private._history   # the transactions read by this call serve the next one
+            entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
+            skip = DO_NOT_STORE.get(tool)
+            if skip is None or not skip(result):
+                self.put(key, entry)
+            with self._lock:
+                self.stats.misses += 1
+        except BaseException:
+            if owner:
+                flight.set_result(OWNER_FAILED)   # never the exception itself: it is this caller's alone
+            raise
+        finally:
+            if owner:
+                with self._lock:
+                    self._inflight.pop(key, None)
+        if owner:
+            flight.set_result(entry)
         return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
