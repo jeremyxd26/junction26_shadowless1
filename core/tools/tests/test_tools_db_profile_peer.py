@@ -375,8 +375,8 @@ def test_a_labelled_customer_is_classified_alike_in_profile_peer_and_baskets(con
 
 
 # ---- #235: the four review states of the lead persona, labels injected through the context ----------------
-# No database write and no spike-review table is read: the context's labels (what labels.for_context
-# returns) are set directly. Values: profile, one_off_share, everyday_share_pct, unexpected_share_pct.
+# Nothing touches the spike-review tables (the tools still write their evidence rows): the context's
+# labels (what labels.for_context returns) are set directly. Values: profile, one_off_share, everyday_share_pct, unexpected_share_pct.
 
 LABEL_STATES = {
     "no review": ({}, "big_ticket", "6.0", "19.9", "17.3"),
