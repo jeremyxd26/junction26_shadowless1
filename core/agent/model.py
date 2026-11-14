@@ -1,11 +1,13 @@
 """The AI model behind two calls (agent-core.md sections 7.1 and 7.2). FROZEN INTERFACE: a Gemini
 adapter (issue #66) implements `Model`; change these shapes only together with it.
 
-- plan(PlanInput) -> PlanResult: the planner. It sees the question as data, the masked history, the
-  tool declarations (Registry.schemas()) and, from round 2 on, the function responses of this
-  answer. Mode ANY: it must return at least one FunctionCall (data tool or control function).
+- plan(PlanInput) -> PlanResult: the planner. It sees the question as data, the history (the earlier
+  questions, its earlier function calls and their model views, numbers not masked), the tool
+  declarations (Registry.schemas()) and, from round 2 on, the function responses of this answer.
+  Mode ANY: it must return at least one FunctionCall (data tool or control function).
 - compose(ComposeInput) -> ComposeResult: the composer, a fresh tool-free call that returns the JSON
-  text of an AnswerDraft (validator.py) and cites numbers only as {{nK}} tokens.
+  text of an AnswerDraft (validator.py) and cites numbers only as {{nK}} tokens. Of the history it
+  sees only the previous question and the previous answer with its numbers masked as [number].
 
 Both inputs hold model views only, never tool data, cards, evidence refs or the customer id (R3, R4).
 A call that fails raises ModelError (or any exception): the pipeline retries once, then falls back.
@@ -73,6 +75,9 @@ class PlanResult:
     # True only when the rule planner chose its "I can't answer that one yet" answer: the answer then
     # offers the way to a human at the bank (#420). No model adapter sets it.
     offer_contact: bool = False
+    # True only when the rule planner's answer is the template's own words, never the composer model's: "why is
+    # my safe to spend lower?" names the limit that binds from the data (#552). No model adapter sets it.
+    template_answer: bool = False
 
 
 @dataclass(frozen=True)

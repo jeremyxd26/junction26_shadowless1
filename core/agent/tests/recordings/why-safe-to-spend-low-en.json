@@ -1,0 +1,243 @@
+{
+ "question": "why is my safe to spend so low?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [
+  {
+   "name": "get_safe_to_spend",
+   "args": {},
+   "numbers": [
+    {
+     "value": 1902.64,
+     "unit": "eur",
+     "period": {
+      "start": "2026-09-30",
+      "end": "2026-09-30",
+      "label": "30 Sep 2026"
+     },
+     "method": "safe_to_spend.balance_eur@1",
+     "evidence_ref": "ev_c17bf197fcd6",
+     "label": "Balance",
+     "display": "€1,902.64",
+     "id": "n1"
+    },
+    {
+     "value": 662.59,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.bills_due_eur@1",
+     "evidence_ref": "ev_4f7aba3b3a4a",
+     "label": "Bills before payday",
+     "display": "€662.59",
+     "id": "n2"
+    },
+    {
+     "value": 259.2,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.essentials_reserve_eur@1",
+     "evidence_ref": "ev_6bd3bf74a92f",
+     "label": "Essentials reserve",
+     "display": "€259.20",
+     "id": "n3"
+    },
+    {
+     "value": 61.22,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.irregular_reserve_eur@1",
+     "evidence_ref": "ev_cb4c1215d4cc",
+     "label": "Irregular reserve",
+     "display": "€61.22",
+     "id": "n4"
+    },
+    {
+     "value": 100.0,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.cushion_eur@1",
+     "evidence_ref": "ev_61936c7a438d",
+     "label": "Cushion",
+     "display": "€100.00",
+     "id": "n5"
+    },
+    {
+     "value": 166.84,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Next 7 days"
+     },
+     "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+     "evidence_ref": "ev_18ec35a73ed3",
+     "label": "Safe to spend",
+     "display": "€166.84",
+     "id": "n6"
+    },
+    {
+     "value": 819.62,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.free_until_payday_eur@1",
+     "evidence_ref": "ev_ef509d0e7ccb",
+     "label": "Free until payday",
+     "display": "€819.62",
+     "id": "n7"
+    },
+    {
+     "value": 382.49,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Next 7 days"
+     },
+     "method": "safe_to_spend.balance_limit_7d_eur@1",
+     "evidence_ref": "ev_da26bef877f9",
+     "label": "Your balance allows",
+     "display": "€382.49",
+     "id": "n8"
+    },
+    {
+     "value": 166.84,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Next 7 days"
+     },
+     "method": "safe_to_spend.budget_limit_7d_eur@1",
+     "evidence_ref": "ev_cb66f9175345",
+     "label": "Your monthly budget allows",
+     "display": "€166.84",
+     "id": "n9"
+    }
+   ],
+   "model_view": {
+    "tool": "get_safe_to_spend",
+    "period": "Next 7 days",
+    "safe_to_spend": {
+     "id": "n6",
+     "value": 166.84,
+     "unit": "eur",
+     "label": "Safe to spend"
+    },
+    "status": "ok",
+    "binding_limit": "budget",
+    "free_until_payday": {
+     "id": "n7",
+     "value": 819.62,
+     "unit": "eur",
+     "label": "Free until payday"
+    },
+    "balance_limit": {
+     "id": "n8",
+     "value": 382.49,
+     "unit": "eur",
+     "label": "Your balance allows"
+    },
+    "budget_limit": {
+     "id": "n9",
+     "value": 166.84,
+     "unit": "eur",
+     "label": "Your monthly budget allows"
+    },
+    "components": [
+     {
+      "key": "balance",
+      "label": "Money on your account",
+      "operation": "add",
+      "amount": {
+       "id": "n1",
+       "value": 1902.64,
+       "unit": "eur",
+       "label": "Balance"
+      }
+     },
+     {
+      "key": "bills_due",
+      "label": "Bills due before payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n2",
+       "value": 662.59,
+       "unit": "eur",
+       "label": "Bills before payday"
+      }
+     },
+     {
+      "key": "essentials_reserve",
+      "label": "Usual essentials until payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n3",
+       "value": 259.2,
+       "unit": "eur",
+       "label": "Essentials reserve"
+      }
+     },
+     {
+      "key": "irregular_reserve",
+      "label": "Reserve for unexpected necessities",
+      "operation": "subtract",
+      "amount": {
+       "id": "n4",
+       "value": 61.22,
+       "unit": "eur",
+       "label": "Irregular reserve"
+      }
+     },
+     {
+      "key": "cushion",
+      "label": "Cushion",
+      "operation": "subtract",
+      "amount": {
+       "id": "n5",
+       "value": 100.0,
+       "unit": "eur",
+       "label": "Cushion"
+      }
+     }
+    ],
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_safe_to_spend",
+   "finish"
+  ],
+  "text": "This week {{n6}} is safe to spend because your monthly budget sets the limit. Your balance alone would allow {{n8}}.",
+  "text_rendered": "This week €166.84 is safe to spend because your monthly budget sets the limit. Your balance alone would allow €382.49."
+ }
+}

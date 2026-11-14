@@ -38,24 +38,25 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template
+from core.agent import glossary, guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel, human_request, meta_intent
-from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, plain_text,
-                                  render, repeated_period, unavailable_claim, validate)
+from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
+                                  plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
+from core.tools.missing import MissingData
 from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 
 log = logging.getLogger("uvicorn.error")
@@ -96,14 +97,71 @@ SENTTI_QUESTION = re.compile(
 # After the question phrase and the amount, only these may be left, or the message asks something else
 # ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
 REVIEW_FILLER = re.compile(
-    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
-    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euro|euros|euroa|eurosta|euron|eur|tulee|iso"
+    r"|isosta|minulta|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*)", re.I)
+# The euro words are their exact forms: "eurobonds" or "eurojackpot" is not filler (#447).
 # A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
 # nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
 REVIEW_BARE = re.compile(r"(?:about|me|this|that|it|minulta|sitä|tätä|siitä|tästä|sita|tata|siita|tasta)", re.I)
 _AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
+# The #368 path ("what was that €1,080?", "mikä se 1080 euron ostos oli?") also answers only a message about that
+# purchase and nothing else (#424): after the purchase reference, the amount and the purchase's own date, only the
+# #402 fillers and these purchase-question words may be left ("…and also what is my balance" takes the normal path).
+PURCHASE_FILLER = re.compile(
+    r"(?:was|is|were|oli|on|se|tämä|tuo|tama|what|again|exactly|hey|hi|so|ok|okay|oh|hmm|um|uh|sorry|wait|please|"
+    r"pls|really|actually|just|now|hei|no|siis|taas|nyt|vielä|viela|oikein|tarkalleen|kiitos|mikä|mika)", re.I)
+# The small words of a plain question about the purchase, on both paths (review of #519): "the purchase of €1,080",
+# "what was that €1,080 charge for?", "a purchase at its own store". A closed list of whole words, as the others.
+LINK_FILLER = re.compile(r"(?:of|for|a|an|at|from)", re.I)
+# A question about Sentti's question may call the purchase a charge or a payment as well (review of #519): a list of
+# its own, so the #402 list keeps the same lines as #437's. The #368 path has these in PURCHASE_REFERENCE.
+REVIEW_PURCHASE_WORDS = re.compile(
+    r"(?:charge|charges|payment|payments|maksu|maksun|maksua|maksusta|maksuun|maksut|maksuista)", re.I)
+# A day and month without a year ("… on 3.5.") and a date with slashes ("28/9/2026", "28/9") are named dates as well,
+# read day first: each must be the purchase's own (review of #519). Not inside a longer number or after a currency or
+# a letter, so "€1,080.42." or "EUR10.12." stays an amount.
+PARTIAL_DATE = re.compile(
+    r"(?<![\w.,/€$£])(\d{1,2})(?:\.(\d{1,2})\.(?![\d,])|/(\d{1,2})(?:/(\d{4}))?(?![\d/]))")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
+
+
+class _Rest(NamedTuple):
+    """What a review-amount message leaves after its question words (#424, review of #519)."""
+
+    alone: bool                   # nothing but filler words is left
+    dates: list[date]             # the dates it names: each must be the purchase's
+    days: list[tuple[int, int, int | None]]   # "3.5.", "28/9/2026": (day, month, year or None), the purchase's own
+    numbers: list[float]          # every number in it, dates aside: each must be the purchase's amount
+
+
+def _partial_dates(text: str) -> tuple[list[tuple[int, int, int | None]], str]:
+    """The dates find_dates leaves ("3.5.", "28/9/2026", "28/9") as (day, month, year or None), and the text with
+    them blanked."""
+    found: list[tuple[int, int, int | None]] = []
+
+    def blank(m: re.Match) -> str:
+        day, month = int(m.group(1)), int(m.group(2) or m.group(3))
+        if 1 <= day <= 31 and 1 <= month <= 12:
+            found.append((day, month, int(m.group(4)) if m.group(4) else None))
+            return " "
+        return m.group(0)
+
+    return found, PARTIAL_DATE.sub(blank, text)
+
+
+def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
+    """The pending purchase's own category (in both languages) and merchant label as whole-phrase patterns,
+    longest first: naming them points at that purchase, like its own date (review of #519). Another category
+    or store is another clause."""
+    category = card.get("category") or ""
+    labels = {category, *tool_config.CATEGORY_LABELS.get(category, ()), ((card.get("merchant") or {}).get("label") or "")}
+    out = []
+    for label in sorted((x for x in labels if x), key=len, reverse=True):
+        words = re.findall(r"\w+", label)
+        if words:
+            out.append(re.compile(r"\b" + r"(?:\W+(?:and|ja)\W+|\W+)".join(map(re.escape, words)) + r"\b", re.I))
+    return out
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -139,6 +197,31 @@ class _InCallOrder(NumberRegistry):
         return self._shared.all()
 
 
+HEALTH_MERCHANT = tuple(f"{kind.lower()} " for kind in tool_config.MERCHANT_KIND_BY_CATEGORY["Health"])
+
+
+def _health_spending(call: FunctionCall) -> bool:
+    """A get_spending call filtered on Health, on the health MCC group or on a health merchant's alias ("Health
+    service A", "Terveyspalvelu A") (#598)."""
+    flt = (call.args or {}).get("filter") or {}
+    return call.name == "get_spending" and ("Health" in (flt.get("categories") or [])
+                                            or "health" in (flt.get("mcc_groups") or [])
+                                            or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
+
+
+def _health_what_if(call: FunctionCall) -> bool:
+    """A planned what-if on Health or on a code of the health MCC group, alone or in a list (R9, #510)."""
+    if call.name != "run_what_if":
+        return False
+    sel = (call.args or {}).get("selection") or {}
+    value = str(sel.get("value") or "")
+    if sel.get("kind") == "category":
+        return value.strip().lower() == "health"
+    if sel.get("kind") == "mcc":
+        return bool({c.strip() for c in value.split(",")} & set(tool_config.MCC_GROUPS["health"]))
+    return False
+
+
 class DataUnavailable(RuntimeError):
     """The database cannot be reached or is too slow (503 data_unavailable / `error` event)."""
 
@@ -150,6 +233,24 @@ class DataAccess(Protocol):
 
     # Optional: `connection_if_free(wait)` gives a connection only if one is free within `wait`
     # seconds and raises DataUnavailable otherwise. Without it, a turn's calls run one by one.
+
+
+def _labels_in(views: Any) -> list[str]:
+    """Every label in the tools' model views: the user's own words for their data (#419)."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("label"), str):
+                found.append(node["label"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(views)
+    return found
 
 
 def error_envelope(code: str, language: str) -> dict[str, Any]:
@@ -226,6 +327,9 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
+    # thing is answered as an unknown one. The user's word, "" when there is none to quote.
+    health_dropped: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -296,7 +400,7 @@ class Pipeline:
         emit("meta", {"answer_id": a.answer_id, "conversation_id": conv.conversation_id, "language": lang,
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
-        a.flags = guard.flags(message)
+        a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -320,6 +424,8 @@ class Pipeline:
         # review card, with no plan and no model request.
         if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
             return lang
+        if self._answer_glossary(ctx, review, message, lang, emit, a):   # "What is a buffer?" (#568)
+            return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -327,6 +433,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        template_answer = False   # the rule planner asked for its own template answer (#552)
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
         a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
@@ -347,14 +454,20 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            calls = plan.calls
+            guarded_calls = self._health_filter_guard(message, plan.calls, source, a)
+            calls = guarded_calls if guarded_calls is not plan.calls else self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
+            template_answer = template_answer or getattr(plan, "template_answer", False)
             model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
+            if calls is not plan.calls:
+                # the planned unfiltered total became the breakdown (B3), or a planned Health total was dropped (#598)
+                turn["guard"] = "health_filter" if guarded_calls is not plan.calls else "unknown_object"
             a.planner_turns.append(turn)
 
             parsed, rejected = [], []
@@ -365,6 +478,12 @@ class Pipeline:
                 except CallRejected as exc:
                     rejected.append((call, exc))
             controls = {call.name: args for call, kind, args in parsed if kind == "control"}
+            if any(_health_what_if(call) for call in calls):
+                # A what-if on Health or on any health MCC is declined everywhere, whatever the customer's own
+                # history (R9; the coordinator's standing decision, #510): nothing of this turn runs.
+                for call in calls:
+                    turn["calls"].append({"name": call.name, "args": call.args, "status": "not_run: health"})
+                return self._refuse("out_of_scope", lang, emit, a)
 
             if "decline" in controls or "ask_clarifying_question" in controls:
                 # The turn ends at once: no data tool of this turn runs (R6).
@@ -390,7 +509,7 @@ class Pipeline:
                     clarify = self._rules_clarify(plan_in, lang)
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
-                # question is the normal answer (#341, r-coord's decision).
+                # question is the normal answer (#341).
                 a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
@@ -418,21 +537,39 @@ class Pipeline:
                     views.append(record.pop("view"))
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
-                    errors.append({"tool": call.name, "error": record["error"]})
+                    errors.append({"tool": call.name, "error": record["error"],
+                                   **({"reason": record["reason"]} if record.get("reason") else {}),
+                                   **({"details": record["details"]} if record.get("details") else {})})
                     responses.append(FunctionResponse(call.name, {"error": record["error"]}, call.id))
             ran_data = any(k == "data" for _, k, _ in parsed)
             if "finish" in controls or data_calls >= MAX_DATA_CALLS or not (ran_data or rejected):
                 break
 
         numbers = ctx.numbers.all()
-        allowed = allowed_from(numbers.values(), views, self.as_of)
+        # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
+        # may be named too, exactly as returned (#379 part B)
+        allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
+                               self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
             self._attach_review(ctx, review, emit, a)
+        # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
+        # total as the answer (#379, review of #443).
+        unfiltered = bool(a.calls) and all(c["name"] == "get_spending" and not (c.get("args") or {}).get("filter")
+                                           for c in a.calls)
+        missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message),
+                                               unfiltered_spending=unfiltered)
+        if missing is not None:
+            return self._missing(missing, numbers, lang, emit, a)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
+        # #598: the model planned a Health total, which was dropped before it ran: the template says the thing can't be
+        # seen on its own, then answers the other question; the composer never writes such an answer
+        guarded = a.health_dropped is not None
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
+                                             skip_model=planner_fallback or template_answer or guarded
+                                             or a.composer_unavailable is not None, a=a,
+                                             lead=template.unknown_lead(a.health_dropped, lang) if guarded else None)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -442,7 +579,14 @@ class Pipeline:
         # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
-        if used_template:
+        # "Why is my safe to spend lower?" (#552): the template is the designed writer, with the model on, off, over
+        # budget or paused alike; no model was going to write it, so no warning, and the planner turns record the
+        # template (the same way as the peer answer with the national line, #569)
+        designed = (template_answer or guarded) and not a.template_failed
+        if designed:
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template",
+                                    "designed": "rule_template" if template_answer else "health_filter_dropped"})
+        elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
@@ -679,8 +823,12 @@ class Pipeline:
             raise
         except (psycopg.OperationalError, PoolTimeout):
             raise DataUnavailable() from None
-        except PeriodOutOfRange:
-            record.update(status="error", error="period_out_of_range")
+        except PeriodOutOfRange as exc:
+            record.update(status="error", error="period_out_of_range", reason=exc.reason,
+                          **({"details": exc.details} if getattr(exc, "details", None) else {}))
+        except MissingData as exc:   # a category never used, too few purchases (#379)
+            # its Numbers are registered here, in call order, whether or not the tool cache ran the tool
+            record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.register(ctx.numbers))
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning
@@ -706,7 +854,7 @@ class Pipeline:
         return record
 
     def _compose(self, request: ComposeInput, numbers, allowed: Allowed, *, skip_model: bool,
-                 a: _Answer) -> tuple[AnswerDraft, bool]:
+                 a: _Answer, lead: str | None = None) -> tuple[AnswerDraft, bool]:
         lang = request.language
         if not skip_model:
             errors: list[str] = []
@@ -736,11 +884,24 @@ class Pipeline:
                         # "€3,010.59 a month a month": model drafts only. A template that trips it would be
                         # replaced by the "nothing found" text; templates are checked by tests instead.
                         errors.append(f"'{repeated}': the number's display already says how often; write it once")
+                    joined = validator.amount_with_bank_product(draft.text, numbers)
+                    if joined:
+                        # #417: an amount next to the bank's screen or product reads as advice to put it
+                        # there. Model drafts only, like the checks above; templates are checked by tests.
+                        errors.append(f"'{joined}': never tell the user to put an amount into the bank's "
+                                      "screen or product (S-mobiili, monthly saving, a fund); state the amount "
+                                      "alone, the card's button opens the screen")
+                    # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
+                    # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
+                    errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
+                                             labels=_labels_in(request.data), views=request.data)
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
                     return draft, False
         fallback = template.template_draft(request.data, request.errors, lang, allowed, request.question)
+        if lead:   # #598: the sentence on the thing that can't be seen on its own, before the other answer
+            fallback = {**fallback, "text": f"{lead} {fallback['text']}".strip()}
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
@@ -790,6 +951,57 @@ class Pipeline:
                       "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _unknown_object_guard(self, message: str, calls: list[FunctionCall]) -> list[FunctionCall]:
+        """A planner may plan the unfiltered total for a thing no category maps ("how much do I spend on the
+        gym?"), alone or beside another tool ("...on Netflix and what is safe to spend?"). Before anything runs,
+        the unfiltered totals become one category breakdown for the same period, the other calls stay, and the
+        turn finishes: no unfiltered total goes out as the answer to that thing. Alone, the answer is the rule
+        path's: the thing named, the customer's largest categories, their chips (#379 part B, review B3; #510)."""
+        unfiltered = [c for c in calls if c.name == "get_spending" and not (c.args or {}).get("filter")]
+        if not unfiltered or "get_basket_breakdown" not in self.registry.tools or unknown_object(message) is None:
+            return calls
+        period = (unfiltered[0].args or {}).get("period") or {"preset": "last_6_months"}
+        others = [c for c in calls if c not in unfiltered and c.name != "finish"
+                  and not (c.name == "get_basket_breakdown" and (c.args or {}).get("period") == period)]
+        return [FunctionCall("get_basket_breakdown", {"period": period}, unfiltered[0].id), *others,
+                FunctionCall("finish")]
+
+    def _health_filter_guard(self, message: str, calls: list[FunctionCall], source: str,
+                             a: _Answer) -> list[FunctionCall]:
+        """#598: a Health total the model planned never runs, whatever the question (health stays declined as the rules
+        decline it; "the gym", "yoga", "a massage" are no health spending). The call is dropped before anything runs
+        and the thing is answered as the rules answer an unknown thing: beside another question, the other calls
+        still run and the template says Sentti can't see the thing on its own; alone, the call becomes the category
+        breakdown of the same period, the rule path's answer. Never a Health card from the model's plan."""
+        health = [c for c in calls if _health_spending(c)]
+        if source != "model" or not health:
+            return calls
+        a.health_dropped = unknown_object(message) or ""
+        others = [c for c in calls if c not in health]
+        if any(c.name not in CONTROL for c in others) or "get_basket_breakdown" not in self.registry.tools:
+            return others or [FunctionCall("finish")]
+        period = (health[0].args or {}).get("period") or {"preset": "last_6_months"}
+        return [FunctionCall("get_basket_breakdown", {"period": period}, health[0].id),
+                *[c for c in others if c.name != "finish"], FunctionCall("finish")]
+
+    def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
+                 a: _Answer) -> str:
+        """An answer that is only a missing-data reason (#379, the coordinator's decision A): the template
+        writes it, whoever planned the tool, with the model on or off; no compose request. Outcome
+        "answered"; it cites only numbers the tool registered (too few purchases: the purchases themselves);
+        the chips are questions the rules answer for this customer."""
+        text = self._deliver(missing[0], numbers, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "missing_data": True})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
+                      "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": a.calls, "views": [], "answer": text})
         return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
@@ -858,22 +1070,38 @@ class Pipeline:
             return None
 
     @staticmethod
-    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> tuple[bool, list[date]]:
+    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool, lang: str) -> _Rest:
         """The message asks only about Sentti's question: after the question phrase, the amount and any date,
         nothing is left but filler words and punctuation (a confident full match, as the other rules).
         Without an amount it also needs an anchor (a purchase word or "this question", in the phrase or
-        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Returns the
-        dates it removed: the caller checks they are the purchase's own date."""
+        after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Also returns the
+        dates and numbers it found: the caller checks they are the purchase's."""
         spans, rest = find_dates(message[:phrase.start()] + " " + message[phrase.end():], blank_all=True)
+        days, rest = _partial_dates(rest)
         words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
-        dates = [span.start for span in spans]
-        if any(not REVIEW_FILLER.fullmatch(w) for w in words):
-            return False, dates
+        found = ([span.start for span in spans], days, [v for v, _ in scan_numbers(rest, lang)])
+        if any(not (REVIEW_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w) or REVIEW_PURCHASE_WORDS.fullmatch(w))
+               for w in words):
+            return _Rest(False, *found)
         if has_amount:
-            return True, dates
-        anchored = (any(REVIEW_ANCHOR.fullmatch(w) for w in words) or re.search(r"question|kysym", phrase.group(0), re.I)
-                    or all(REVIEW_BARE.fullmatch(w) for w in words))
-        return bool(anchored), dates
+            return _Rest(True, *found)
+        anchored = (any(REVIEW_ANCHOR.fullmatch(w) or REVIEW_PURCHASE_WORDS.fullmatch(w) for w in words)
+                    or re.search(r"question|kysym", phrase.group(0), re.I) or all(REVIEW_BARE.fullmatch(w) for w in words))
+        return _Rest(bool(anchored), *found)
+
+    @staticmethod
+    def _only_about_the_purchase(message: str, own: list[re.Pattern], lang: str) -> _Rest:
+        """The #368 path's message asks only about the purchase (#424): after the purchase's own category and
+        merchant label (`own`), every purchase reference, the amounts and any date, nothing is left but filler
+        words. Also returns the dates and numbers it found (the caller checks they are the purchase's)."""
+        for name in own:
+            message = name.sub(" ", message)
+        spans, rest = find_dates(PURCHASE_REFERENCE.sub(" ", message), blank_all=True)
+        days, rest = _partial_dates(rest)
+        words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
+        alone = all(REVIEW_FILLER.fullmatch(w) or PURCHASE_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w)
+                    for w in words)
+        return _Rest(alone, [span.start for span in spans], days, [v for v, _ in scan_numbers(rest, lang)])
 
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
@@ -884,8 +1112,8 @@ class Pipeline:
         (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
         phrase = SENTTI_QUESTION.search(message)
-        about_question, named_dates = (self._only_about_the_review(message, phrase, bool(asked)) if phrase
-                                       else (False, []))
+        rest = self._only_about_the_review(message, phrase, bool(asked), lang) if phrase else None
+        about_question = bool(rest and rest.alone)
         if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
@@ -901,12 +1129,20 @@ class Pipeline:
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
         if probe is None:
             return False
+        if not about_question:
+            rest = self._only_about_the_purchase(message, _own_names(probe), lang)
+            if not rest.alone:
+                return False   # "what was that €1,080 and how much did I spend?": the normal path (#424)
         # Any amount in the question must be the purchase's; a question about Sentti's question may name none.
-        if (asked or not about_question) and not any(
-                abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
+        amount = float(probe["amount"]["value"])
+        if (asked or not about_question) and not any(abs(v - amount) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
-        if about_question and any(d != date.fromisoformat(probe["date"]) for d in named_dates):
-            return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
+        if any(abs(v - amount) > REVIEW_AMOUNT_TOLERANCE_EUR for v in rest.numbers):
+            return False   # "what is 10% of that €1,080?", "the €500 from the €1,080 purchase": a second number
+        bought = date.fromisoformat(probe["date"])
+        if any(d != bought for d in rest.dates) or any(
+                (day, month, year or bought.year) != (bought.day, bought.month, bought.year) for day, month, year in rest.days):
+            return False   # "… my purchase on 3 May 2026" or "… on 3.5.": another purchase than Sentti's
         card = self._review_card(ctx, review)
         if card is None:
             return False
@@ -934,6 +1170,65 @@ class Pipeline:
                       "cited": [number_id], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [],
+                                             "answer": TOKEN.sub("[number]", text)})
+        return True
+
+    def _answer_glossary(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """Answer "What is a buffer?" / "Mitä tarkoittaa eräpäivä?" (#568): our fixed definition of one term and,
+        when an existing Number means exactly what its sentence says, the customer's own Number from the existing
+        tool (its method id and evidence, through the tool cache as for any call). No plan, no composer, no model
+        request. False (the normal path answers) unless the whole message asks about exactly one term, no guard
+        flag is set and no refusal rule of the rule model (people included) declines it."""
+        term = glossary.match(message)
+        if term is None or a.flags:
+            return False
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
+        rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        if any(c.name == "decline" for c in rules.calls):
+            return False
+        calls: list[dict[str, Any]] = []
+        views: list[dict[str, Any]] = []
+        number_id = None
+        own = glossary.OWN.get(term.key)
+        if own is not None:
+            call = FunctionCall(own.tool, dict(own.args))
+            try:
+                records = self._run_tools(ctx, [(call, self.registry.parse(call.name, call.args)[1])], lang, emit, a)
+            except (DataUnavailable, CallRejected, ValueError):
+                records = []   # the definition alone: it needs no data
+            calls.append({"name": call.name, "args": call.args})
+            for record in records:
+                if record.get("status") == "ok":
+                    views.append(record["view"])
+                    a.ok_calls.append({"name": call.name, "args": call.args})   # for the review card, below
+                    number_id = glossary.own_number_id(term.key, record["view"])
+        numbers = ctx.numbers.all()
+        allowed = allowed_from(numbers.values(), views, self.as_of)
+        draft = None
+        for nid in dict.fromkeys([number_id, None]):   # with the Number, else the definition alone
+            text = glossary.answer_text(term.key, lang, nid)
+            draft, errors = validate({"language": lang, "text": text, "cited": [nid] if nid else [], "lesson_key": None},
+                                     language=lang, numbers=numbers, allowed=allowed)
+            if not errors and draft is not None and repeated_period(draft.text, numbers) is None:
+                break
+            log.warning("glossary answer %s failed the validator (%d problems)", term.key, len(errors))
+            draft = None
+        if draft is None:
+            return False
+        a.calls = calls
+        a.planner_turns.append({"round": 1, "source": "rules", "glossary": term.key, "calls": calls})
+        if review is not None:  # the pending review's card, as on the normal path (#581 review)
+            self._attach_review(ctx, review, emit, a)
+        text = self._deliver(draft.text, numbers, emit)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": template.brief_questions(lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})
         return True
 

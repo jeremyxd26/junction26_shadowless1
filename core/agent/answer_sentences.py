@@ -76,10 +76,43 @@ _KNOWN_LABELS = {lab for table in (config.CATEGORY_LABELS, config.BASKET_LABELS,
                  for pair in table.values() for lab in pair}
 
 
-def _subject(label: str, language: str) -> str | None:
-    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat")."""
+def _lower_known(p: str) -> str:
+    return p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+
+
+def _dims_subject(dims: list[dict[str, Any]], language: str) -> str | None:
+    """A filter across dimensions, or one counted from FILTER_LABEL_CAP parts, as the sentence names it: "restaurants
+    at Grocery store A", "luokassa Ravintolat kauppiaalla Grocery store A", "housing within everyday spending",
+    "several categories" (#501). None when the parts alone say it (one dimension, few parts)."""
+    clean = [(d.get("kind"), [p for p in d.get("labels") or [] if isinstance(p, str)]) for d in dims
+             if isinstance(d, dict)]
+    clean = [(k, ps) for k, ps in clean if k in ("categories", "mcc_groups", "baskets", "merchant") and ps]
+    many = [k for k, ps in clean if k != "merchant" and len(ps) >= config.FILTER_LABEL_CAP]
+    # the label's own renderer in its sentence form (review of #528): the same order, brackets and counts
+    from core.tools.spending import card_group_names, render_filter
+    # a group named like a category is its card purchases, also alone: "on restaurants (card purchases)" (#528)
+    carded = any(k == "mcc_groups" and set(ps) & card_group_names(language) for k, ps in clean)
+    if not clean or (len(clean) == 1 and not many and clean[0][0] != "merchant" and not carded):
+        return None
+    return render_filter(clean, language, sentence=True)
+
+
+def _subject(label: str, language: str, parts: list[str] | None = None,
+             dims: list[dict[str, Any]] | None = None) -> str | None:
+    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat",
+    and for a filter of two or more parts "housing and restaurants", "luokissa Asuminen ja ravintolat", #399). A
+    filter of several parts is built from its parts, never by re-reading the joined label (review of #496)."""
     if label in (pick(config.TEXT["spending"], language), pick(config.TEXT["income"], language)):
         return None
+    if dims:
+        across = _dims_subject(dims, language)
+        if across:
+            return across
+    if parts and len(parts) > 1:
+        if language == "fi":
+            return "luokissa " + _join_filter(parts, language)
+        return _join_filter([p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+                             for p in parts], language)
     if language == "fi":
         return f"luokassa {label}"
     return label.lower() if label in _KNOWN_LABELS else label
@@ -124,6 +157,13 @@ LARGEST_GROUPS = ("The largest parts were {items}.", "Suurimmat osat olivat {ite
 TIME_GROUPS = ("By period: {items}.", "Jaksoittain: {items}.")
 
 
+def _join_filter(parts: list[str], language: str) -> str:
+    """A filter's parts joined as its label joins them (spending.join_names): "sekä" / a serial comma when a part
+    itself contains the joiner (#501)."""
+    from core.tools.spending import join_names
+    return join_names(parts, language)
+
+
 def _join(items: list[str], language: str) -> str:
     if len(items) <= 1:
         return "".join(items)
@@ -136,7 +176,10 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if not total or not isinstance(period, str) or not ok(period):
         return None
     label = (view.get("total") or {}).get("label") or ""
-    what = _subject(label, language)
+    parts = view.get("filter_labels")
+    dims = view.get("filter_dims") if isinstance(view.get("filter_dims"), list) else None
+    what = _subject(label, language, [p for p in parts if isinstance(p, str)] if isinstance(parts, list) else None,
+                    dims)
     lang = 1 if language == "fi" else 0
     phrase = in_period(period, language)
     fmt = {"total": total, "count": count, "what": what or "", "period": phrase, "Period": _cap(phrase)}
@@ -176,7 +219,11 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     key = ("income_count" if income else "count") if count else ("income" if income else "plain")
     if count and _value(view.get("tx_count")) == 1:
         key += "_one"
-    return [SPENT[key][lang][1 if what else 0].format(**fmt)], _ids(total, count)
+    first = SPENT[key][lang][1 if what else 0].format(**fmt)
+    few = pick(config.TEXT["note_too_few"], language)
+    if few in (view.get("notes") or []):
+        return [first, few], _ids(total, count)   # why no monthly habit is shown (#379, #527)
+    return [first], _ids(total, count)
 
 
 # ---- baskets --------------------------------------------------------------------------------------------
@@ -452,7 +499,8 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return [pick(PEER_SAME[kind], language).format(metric=metric)], []   # within the margin either way
     if value < 0:
         return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
-    offer = config.peer_offers_cut(view.get("metric") or "", value)
+    # the tool's decision when it states it (the what-if's own count included, #379 part B), else the rule
+    offer = bool(view["offers_cut"]) if "offers_cut" in view else config.peer_offers_cut(view.get("metric") or "", value)
     return [pick((PEER if offer else PEER_PLAIN)[kind], language).format(vs=vs, metric=metric)], _ids(vs)
 
 

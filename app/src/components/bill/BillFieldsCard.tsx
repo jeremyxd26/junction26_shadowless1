@@ -6,17 +6,32 @@
 // - Typed fallback (no reading, the reader is unavailable): empty inputs without marks.
 // Confirm builds the explain request with lib/billRequest.ts. Nothing here formats a number, and
 // nothing typed leaves this component except in the request handed to the flow.
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { BillExplainRequest, BillReadField, BillReadResponse } from '../../api/billTypes.ts'
-import { buildExplainRequest, FIELD_KEYS, initialInputs, type FieldInputs } from '../../lib/billRequest.ts'
+import {
+  buildExplainRequest,
+  FIELD_KEYS,
+  firstProblemField,
+  initialInputs,
+  problemOnReadField,
+  type FieldInputs,
+  type FieldKey,
+} from '../../lib/billRequest.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { CARD_TITLE, CardShell } from '../cards.tsx'
+import { ErrorBlock } from '../States.tsx'
+import type { FlowError } from './billFlowState.ts'
 
 interface Props {
   reading: BillReadResponse | null
   /** True while the explanation is on its way: the buttons wait. */
   busy: boolean
+  /**
+   * The last explain error (already localised). "Try again", offered only when it is retryable,
+   * confirms again with the fields as they are now, so edits made after the error are sent.
+   */
+  error: FlowError | null
   onConfirm: (request: BillExplainRequest) => void
 }
 
@@ -27,7 +42,7 @@ const PRIMARY =
 const SECONDARY =
   'inline-flex min-h-12 w-full items-center justify-center rounded-pill border border-line-strong bg-surface px-5 text-base font-semibold text-ink-2 hover:bg-sunken'
 
-export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
+export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
   const { lang, customerId } = useSettings()
   const s = billStrings(lang)
   const id = useId()
@@ -35,6 +50,8 @@ export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
   const [inputs, setInputs] = useState<FieldInputs>(initial)
   const [editingAll, setEditingAll] = useState(reading === null)
   const [attempted, setAttempted] = useState(false)
+  // The field to focus after a confirm that found problems; `at` makes a repeated confirm refocus.
+  const [focusTarget, setFocusTarget] = useState<{ key: FieldKey; at: number } | null>(null)
 
   const result = buildExplainRequest({ customerId, language: lang, reading, inputs })
   const problems = attempted && !result.ok ? result.problems : {}
@@ -42,11 +59,24 @@ export function BillFieldsCard({ reading, busy, onConfirm }: Props) {
 
   const confirm = () => {
     setAttempted(true)
-    if (result.ok && !busy) onConfirm(result.request)
+    if (result.ok) {
+      if (!busy) onConfirm(result.request)
+      return
+    }
+    // A read value that fails validation sits on a read-only row: open the fields for editing, so
+    // its problem shows, and move focus to the first field with a problem.
+    if (problemOnReadField(result.problems, reading)) setEditingAll(true)
+    const key = firstProblemField(result.problems)
+    if (key) setFocusTarget({ key, at: Date.now() })
   }
+
+  useEffect(() => {
+    if (focusTarget) document.getElementById(`${id}-${focusTarget.key}`)?.focus()
+  }, [focusTarget, id])
 
   return (
     <div className="flex flex-col gap-3">
+      {error && <ErrorBlock message={error.message} onRetry={error.retryable ? confirm : undefined} />}
       <CardShell>
         <h3 className={CARD_TITLE}>{s.cardTitle}</h3>
         {reading && <p className="text-sm text-muted">{s.cardSubtitle}</p>}

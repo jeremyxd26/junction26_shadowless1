@@ -27,9 +27,10 @@ from pydantic import BaseModel, field_validator
 from core.tools import baskets, config, evidence, labels, metric_sql, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, PeerMetric, PeriodArg, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
+from core.tools.what_if import cuttable_purchases
 
 TOOL = "get_peer_benchmark"
 METRIC = "peer_benchmark"
@@ -149,7 +150,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     what = metric_label(metric, lang)
 
     history = ctx.history()
-    nb = NumberBuilder(ctx, classify(history, ctx.as_of, labels.for_context(ctx)))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
+    nb = NumberBuilder(ctx, rows)
     reg = ctx.numbers.register
 
     # ---- you: the customer's own rows ----
@@ -192,8 +194,31 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     )
     evidence.write(ctx.conn, nb.specs)
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
-    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang) if shown else None, notes=notes,
-                      evidence=list(nb.specs), model_view=_model_view(data, estimate, notes))
+    # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
+    offered = shown and config.peer_offers_cut(metric, data.vs_median.value if data.vs_median is not None else None) \
+        and what_if_offered(ctx, metric, rows)
+    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang, offered) if shown else None,
+                      notes=notes, evidence=list(nb.specs), model_view=_model_view(data, estimate, notes, offered))
+
+
+def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
+    """The what-if a category or basket card would offer answers with a cut: 3 or more cuttable purchases in the
+    metric's window (the last 6 complete months), the same count as 04_what_if.sql's not_offered. Never an offer
+    that answers "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is
+    "How could I save more?", no what-if. From the rows the peer tool has classified already: no second query and no
+    evidence row (#527). Any failure only drops the offer, never the card."""
+    if metric in config.SENSITIVE_CATEGORIES or metric in config.PEER_SENSITIVE:
+        return False   # a health what-if is never offered (R9; the coordinator, review of #534)
+    if metric == "spend_total":
+        return True
+    try:
+        kind = "basket" if metric in config.BASKET_LABELS else "category"
+        rows = rows if rows is not None else classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
+        window = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of).period
+        return len(cuttable_purchases(rows, kind, metric, window)) >= config.TOO_FEW_TRANSACTIONS
+    except Exception as exc:  # noqa: BLE001 - the class name is logged; the card goes out without the offer
+        log.warning("peer offer check failed (%s); the card goes without the offer", type(exc).__name__)
+        return False
 
 
 def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: Decimal, unit: Unit,
@@ -219,19 +244,23 @@ def cut_prompt(metric: str, language: str, label: str | None = None) -> str:
     return _t("action_prompt", language, what=label.lower() if language == "en" else label)
 
 
-def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> Card:
+def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str, cut_offered: bool | None = None) -> Card:
     ref = data.peer_median.evidence_ref
     prompt = cut_prompt(data.metric, language, data.metric_label)
     # A cut is offered only above the median and for spending that can be cut (#418); the text says the
     # same offer (answer_sentences.peer), so the two always appear together.
-    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None)
+    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None) \
+        if cut_offered is None else cut_offered   # the tool's decision, the what-if's own included
     actions = [Action(type="ask", label=_t("action_label", language), prompt=prompt)] if offered else []
     dump = lambda n: n.model_dump() if n is not None else None  # noqa: E731
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],
         type="peer", title=_t("title", language, what=data.metric_label),
         subtitle=_t("subtitle", language, label=data.period.label),
-        evidence_ref=ref, estimate=estimate, actions=actions,
+        evidence_ref=ref, actions=actions,
+        # #380: observed is the user's own figure; assumed is the comparison group, its size as the value
+        estimate=Estimate(**estimate, observed=[data.you] if data.you is not None else [],
+                          assumptions=[assumption("peer.peer_group", language, data.peer_group.size)]),
         you=dump(data.you), peer_median=dump(data.peer_median), peer_p25=dump(data.peer_p25),
         peer_p75=dump(data.peer_p75), percentile=dump(data.percentile), vs_median=dump(data.vs_median),
         peer_group={"level": data.peer_group.level, "label": data.peer_group.label,
@@ -240,7 +269,8 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
     )
 
 
-def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str]) -> dict[str, Any]:
+def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str],
+                offers_cut: bool = False) -> dict[str, Any]:
     """Compact view for the model: group statistics only; no rows, customer id or evidence refs (R3)."""
     return {
         "tool": TOOL,
@@ -261,4 +291,5 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
                        "comparable": data.peer_group.comparable},
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
+        "offers_cut": offers_cut,   # the card offers a cut, and the answer says the same (#418, #379 part B)
     }

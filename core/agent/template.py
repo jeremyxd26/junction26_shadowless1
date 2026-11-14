@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+import calendar
 import re
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from core import answer_text
@@ -89,6 +92,45 @@ NO_DATA = ("There are no transactions for that period in your data.",
 TOOL_FAILED = ("Some of the data could not be computed right now.",
                "Osaa tiedoista ei voitu laskea juuri nyt.")
 NOTHING = ("I could not find data for that question.", "En löytänyt tietoja tähän kysymykseen.")
+# Missing data (#379): what is missing, then what Sentti can answer instead, as chips the rules recognise.
+# The future names the last day of the data (a returned date); the past names no date, the chip does.
+MISSING = {
+    "period_in_future": ("My data ends on {end}, so I can't see future months. I can show what you typically have "
+                         "left each month, or whether your money lasts until payday.",
+                         "Tietoni ulottuvat {end} asti, joten en näe tulevia kuukausia. Voin näyttää, paljonko "
+                         "sinulle tavallisesti jää kuukaudessa tai riittävätkö rahasi palkkapäivään."),
+    "period_before_data": ("My data does not reach back that far, so I can't see that period. I can show any month "
+                           "since my data starts, or the past year.",
+                           "Tietoni eivät ulotu niin kauas taaksepäin, joten en näe sitä jaksoa. Voin näyttää minkä "
+                           "tahansa kuukauden aineiston alusta lähtien tai viimeisen vuoden."),
+}
+MISSING_CHIPS = {
+    "period_in_future": (("How could I save more?", "Will my money last until payday?"),
+                         ("Miten voisin säästää enemmän?", "Riittävätkö rahani palkkapäivään?")),
+    "period_before_data": (("How much did I spend in {month_en}?", "How much did I spend over the past year?"),
+                           ("Paljonko käytin {month_fi}?", "Paljonko käytin viimeisen vuoden aikana?")),
+}
+# A category never used, an object no category maps, too few purchases (#379, part B). Chips name the
+# customer's own largest categories the rules can answer, Health never among them unless asked (R9).
+ABSENT = ("I can't find any spending on {what} in your data. Your largest categories are {categories}.",
+          "Tiedoistasi ei löydy kulutusta luokassa {what}. Suurimmat luokkasi ovat {categories}.")
+ABSENT_PLAIN = ("I can't find any spending on {what} in your data.", "Tiedoistasi ei löydy kulutusta luokassa {what}.")
+UNKNOWN_PLAIN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories.",
+                 "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin.")
+UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories, and your "
+           "largest are {categories}.",
+           "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat ovat "
+           "{categories}.")
+TOO_FEW = {"none": tools_config.WHAT_IF_TEXT["too_few_none"], "one": tools_config.WHAT_IF_TEXT["too_few_one"],
+           "few": tools_config.WHAT_IF_TEXT["too_few_few"]}
+CATEGORY_CHIP = ("How much did I spend on {category} last month?", "Paljonko käytin luokkaan {category} viime kuussa?")
+# The categories the rules map from words (rules.CATEGORY_WORDS): a chip must be a question they answer.
+CHIP_CATEGORIES = ("Groceries", "Restaurants", "Entertainment", "Housing", "Utilities", "Travel", "Lifestyle",
+                   "Home & Tech")
+# "Kodin laskut" would read as the bills question in Finnish: no chip for it.
+FI_NO_CHIP = frozenset({"Utilities"})
+FI_MONTH_STEMS = ("tammi", "helmi", "maalis", "huhti", "touko", "kesä", "heinä", "elo", "syys", "loka", "marras",
+                  "joulu")
 CLARIFY_GENERAL = {
     "question": ("What would you like to know about your money?", "Mitä haluaisit tietää raha-asioistasi?"),
     "options": (("Where did my money go?", "What can I safely spend this week?", "How could I save more?"),
@@ -241,6 +283,110 @@ def follow_ups(question: str, language: str, refused: bool = False, views: list 
                and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
     out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
+
+
+def _listed(labels: list[str], language: str) -> str:
+    joiner = " ja " if language == "fi" else " and "
+    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + joiner + labels[-1]
+
+
+def _chip_categories(categories: list[dict[str, Any]], language: str) -> list[str]:
+    """The labels of up to three of the customer's categories, largest first, that a chip can ask about."""
+    keys = CHIP_CATEGORIES if language == "en" else tuple(k for k in CHIP_CATEGORIES if k not in FI_NO_CHIP)
+    return [c["label"].lower() if language == "en" else c["label"] for c in categories
+            if c.get("key") in keys and isinstance(c.get("label"), str)
+            and not re.search(r"\d", c["label"])][:3]
+
+
+def _category_chips(labels: list[str], language: str) -> list[str]:
+    return [pick(CATEGORY_CHIP, language).format(category=label) for label in labels] or list(brief_questions(language)[:2])
+
+
+def _iso_day(raw: Any) -> date | None:
+    try:
+        return date.fromisoformat(raw) if isinstance(raw, str) else None
+    except ValueError:
+        return None
+
+
+def _quotable(word: str) -> bool:
+    """A thing the user named, safe to quote back: up to four words of letters ("Café Müller", "gym")."""
+    return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
+
+
+UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
+                   "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
+
+
+def unknown_lead(word: str, language: str) -> str:
+    """#598: the sentence for a thing no category maps, before the answer to the other question; the user's word is
+    quoted when it is safe to quote, and never with a digit (the answer's text has no digits of its own)."""
+    quote = bool(word) and _quotable(word) and not re.search(r"\d", word)
+    return pick(UNKNOWN_PLAIN, language).format(word=word) if quote else pick(UNKNOWN_NO_WORD, language)
+
+
+def _first_month(details: dict[str, Any]) -> date:
+    """The customer's own first day of data from the tool's error (#379), else the dataset's first day."""
+    first = _iso_day(details.get("first"))
+    return max(first, tools_config.DATA_START) if first else tools_config.DATA_START
+
+
+def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
+                        as_of: date, unknown: str | None = None,
+                        unfiltered_spending: bool = False) -> tuple[str, list[str]] | None:
+    """The answer and its chips when the tools found nothing but a missing-data reason (#379): no view, and
+    every error carries a reason this module writes; or an object no category maps, answered with the
+    breakdown of the customer's categories only. None for anything else (the composer writes)."""
+    if unknown and views and not errors and all(v.get("tool") == "get_basket_breakdown" for v in views):
+        found = sorted((c for v in views for b in v.get("baskets") or [] for c in b.get("categories") or []
+                        if c.get("key") != "Health"),
+                       key=lambda c: -float(((c.get("amount") or {}).get("value")) or 0))
+        labels = _chip_categories(found, language)
+        word = unknown if _quotable(unknown) else None
+        if labels and word:
+            return pick(UNKNOWN, language).format(word=word, categories=_listed(labels, language)), \
+                _category_chips(labels, language)
+        return None
+    if unknown and views and not errors and unfiltered_spending and \
+            _quotable(unknown):
+        # the model planned the unfiltered total for it: the thing is named, the total is not given
+        return pick(UNKNOWN_PLAIN, language).format(word=unknown), list(brief_questions(language)[:2])
+    if views or not errors or not all(e.get("reason") in (*MISSING, "category_absent", "too_few_transactions")
+                                      for e in errors):
+        return None
+    by_reason = {e["reason"]: e.get("details") or {} for e in errors}
+    if "too_few_transactions" in by_reason:
+        d = by_reason["too_few_transactions"]
+        kind = {0: "none", 1: "one"}.get(d.get("n"), "few")   # none: nothing in the window to cut (#498)
+        what = str(d.get("what") or "")
+        if re.search(r"\d", what + str(d.get("period") or "x")) and not d.get("period"):
+            return None
+        span = d.get("span") or (("Jaksolla " if language == "fi" else "In ") + str(d.get("period")))
+        text = pick(TOO_FEW[kind], language).format(span=span, what=what,
+                                                   total="{{" + str(d.get("total")) + "}}",
+                                                   count="{{" + str(d.get("count")) + "}}")
+        return text, list(brief_questions(language)[:2])
+    if "category_absent" in by_reason:
+        d = by_reason["category_absent"]
+        what = str(d.get("what") or "")
+        if re.search(r"\d", what):
+            return None
+        labels = _chip_categories(d.get("top") or [], language)
+        what = what.lower() if language == "en" else what
+        if labels:
+            return pick(ABSENT, language).format(what=what, categories=_listed(labels, language)), \
+                _category_chips(labels, language)
+        return pick(ABSENT_PLAIN, language).format(what=what), list(brief_questions(language)[:2])
+    reasons = set(by_reason)
+    reason = "period_in_future" if "period_in_future" in reasons else "period_before_data"
+    last = min(_iso_day((by_reason.get("period_in_future") or {}).get("last")) or as_of, as_of)   # the tool's last day
+    end = f"{last.day}.{last.month}.{last.year}" if language == "fi" else \
+        f"{last.day} {calendar.month_name[last.month]} {last.year}"
+    first = _first_month(by_reason.get("period_before_data") or {})
+    chips = [c.format(month_en=f"{calendar.month_name[first.month]} {first.year}",
+                      month_fi=f"{FI_MONTH_STEMS[first.month - 1]}kuussa {first.year}")
+             for c in pick(MISSING_CHIPS[reason], language)]
+    return pick(MISSING[reason], language).format(end=end), chips
 
 
 def lesson(key: str | None, language: str) -> dict[str, str] | None:
@@ -414,9 +560,10 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return f"{{{{{node['id']}}}}}"
     if tool == "get_safe_to_spend":
         safe, usual = view.get("safe_to_spend"), view.get("usual_week")
-        if view.get("binding_limit") != "budget" or not (_id(safe) and _id(usual)):
+        if view.get("binding_limit") != "budget" or not _id(safe):
             return None
-        if _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
+        # without the usual pace the goal is still said (#552): the plain goal sentence
+        if _id(usual) and _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
             text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["below_usual_with_goal"], language)
             return text.format(goal=tok(goal), safe=tok(safe), usual=tok(usual)), [goal["id"], safe["id"], usual["id"]]
         text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["with_goal"], language)
@@ -429,6 +576,40 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return text.format(goal=tok(goal), weekly=tok(weekly)), [goal["id"], weekly["id"]]
     text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language)
     return text.format(goal=tok(goal), monthly=tok(monthly)), [goal["id"], monthly["id"]]
+
+
+# "Why is my safe to spend lower / so low / so little", "miksi vähemmän / niin vähän" (#552): a rule answer from the
+# safe-to-spend view (why_lower_sentence), never a model guess. Matched on the folded question; the rule planner
+# also wants the safe-to-spend words, or a short bare question, and no category.
+WHY_LOWER = (r"\b(why|how come)\b.*\b(lower|low|so little|less|smaller|so small|only)\b"
+             r"|\bmiksi\b.*\b(vahemman|vahan|pieni\w*|pienempi|pienemp\w*|alhai\w*|matala\w*)\b")
+
+
+def why_lower(q: str) -> bool:
+    return bool(re.search(WHY_LOWER, q))
+
+
+def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The answer to "why is my safe to spend lower?" (#552): the limit that binds by name (the view's
+    binding_limit), with the budget side the savings goal set aside first, and the other side's figure. None when
+    a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    safe, goal, balance, budget = (view.get(k) for k in ("safe_to_spend", "savings_goal", "balance_limit",
+                                                         "budget_limit"))
+    if not (_id(safe) and _id(balance) and _id(budget)):
+        return None
+    if _value(balance) == _value(budget):
+        key, cited = "why_equal", [safe]
+    elif view.get("binding_limit") == "budget":
+        key, cited = ("why_budget_goal", [safe, goal, balance]) if _value(goal) > 0 and _id(goal) else \
+            ("why_budget", [safe, balance])
+    else:
+        key, cited = "why_balance", [safe, budget]
+    tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
+              (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
+    text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
+    return text.format(**{**{"goal": ""}, **tokens}), [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
@@ -456,15 +637,19 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
 # period in words. The limit stays on the card. Words always stand between a count and a date, so a count
 # never reads as a day of a month. No advice, no judgement.
 SMALL_SENTENCE = {
-    "summary": ("You spent {total} on {count} small purchases {period}{month}, {where_part}.",
-                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{month}, {where_part}."),
-    "few": ("Only {count} {noun} {period}, {total} in all: not much to see here.",
-            "Vain {count} {noun} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
-    "none": ("No small purchases {period}.", "Ei yhtään pientä ostosta {period}."),
+    "summary": ("You spent {total} on {count} small purchases{limit} {period}{month}, {where_part}.",
+                "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{limit}{month}, {where_part}."),
+    "few": ("Only {count} {noun}{limit} {period}, {total} in all: not much to see here.",
+            "Vain {count} {noun} {period}{limit}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases{limit} {period}.", "Ei yhtään pientä ostosta {period}{limit}."),
     # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
     "month": (", about {month}", ", noin {month}"),
-    "most": ("most of them at {where}", "suurin osa {where}"),
-    "largest": ("the largest part at {where}", "eniten {where}"),
+    # a limit other than the default (#465): its Number, in the place of the monthly average. Finnish says
+    # "enintään" ("at most"); "rajalla" read as "right at the limit" (review of #476)
+    "limit": (" of {limit} or less", ", enintään {limit}"),
+    # SMALL_PURCHASE_WHERE carries each category's preposition ("at restaurants and cafés", "on entertainment")
+    "most": ("most of them {where}", "suurin osa {where}"),
+    "largest": ("the largest part {where}", "eniten {where}"),
     "noun_one": ("small purchase", "pieni ostos"),
     "noun_many": ("small purchases", "pientä ostosta"),
     "label": ("in {label}", "jaksolla {label}"),
@@ -498,7 +683,7 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     or the period is missing."""
     if view.get("tool") != "get_small_purchases":
         return None
-    nums = {k: view.get(k) for k in ("count", "total", "per_month")}
+    nums = {k: view.get(k) for k in ("count", "total", "per_month", "max_amount")}
 
     def has(key: str) -> bool:
         return isinstance(nums[key], dict) and isinstance(nums[key].get("id"), str)
@@ -509,33 +694,41 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     token = {k: f"{{{{{nums[k]['id']}}}}}" for k in nums if has(k)}
     kind = (view.get("takeaway") or {}).get("kind")
     s = lambda key: pick(SMALL_SENTENCE[key], language)  # noqa: E731
+    # The limit is named only when it is not the default (#465); then it takes the monthly average's place.
+    other_limit = has("max_amount") and \
+        Decimal(str(nums["max_amount"].get("value"))) != Decimal(tools_config.SMALL_PURCHASE_MAX_EUR)
+    limit = s("limit").format(limit=token["max_amount"]) if other_limit else ""
+    limit_ids = [nums["max_amount"]["id"]] if other_limit else []
     if kind == "none":
-        text, ids = s("none").format(period=when), []
+        text, ids = s("none").format(period=when, limit=limit), limit_ids
     elif kind == "few":
         noun = s("noun_one") if nums["count"].get("value") == 1 else s("noun_many")
-        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"])
-        ids = [nums[k]["id"] for k in ("count", "total")]
+        text = s("few").format(count=token["count"], noun=noun, period=when, total=token["total"], limit=limit)
+        ids = [nums["count"]["id"]] + limit_ids + [nums["total"]["id"]]
     else:
         categories = view.get("categories") or []
         largest = categories[0] if categories else {}
         key, label = largest.get("key"), largest.get("label") or ""
         where = (pick(tools_config.SMALL_PURCHASE_WHERE[key], language) if key in tools_config.SMALL_PURCHASE_WHERE
-                 else (label.lower() if language == "en" else label))
+                 else pick(tools_config.SMALL_PURCHASE_WHERE_OTHER, language).format(
+                     label=label.lower() if language == "en" else label))
         share = (largest.get("share") or {}).get("value")
-        if re.search(r"\d", where):
+        if not label and key not in tools_config.SMALL_PURCHASE_WHERE or re.search(r"\d", where):
             return None
         where_part = s("most" if isinstance(share, (int, float)) and share > 50 else "largest").format(where=where)
-        month = s("month").format(month=token["per_month"]) if has("per_month") else ""
+        month = s("month").format(month=token["per_month"]) if has("per_month") and not other_limit else ""
         text = s("summary").format(total=token["total"], count=token["count"], period=when, month=month,
-                                   where_part=where_part)
-        ids = [nums[k]["id"] for k in ("total", "count")] + ([nums["per_month"]["id"]] if month else [])
+                                   where_part=where_part, limit=limit)
+        ids = ([nums[k]["id"] for k in ("total", "count")] + limit_ids
+               + ([nums["per_month"]["id"]] if month else []))
     return text[:1].upper() + text[1:], ids
 
 
 # The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
-# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
-# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
-# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# (coordinator, #411): the total and the total a year with the cuts, then the savings goal set aside first, the
+# same Number the safe-to-spend answer cites (#468; never added in, left out at 0). A cut share is said in words
+# when the setting has them (the view's `cut_words`), else cited as its Number; a cited cut share takes the
+# place of the year, then of the goal, so the answer never cites more than three
 # numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
 # amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
 # to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
@@ -544,15 +737,16 @@ PLAN_SENTENCE = {
              "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
     "plan_no_year": ("These changes could add about {total}: {cuts}.",
                      "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
-    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "goal": ("That is on top of the about {goal} you set aside first.",
+             "Tämä on sen lisäksi, että laitat ensin sivuun noin {goal}."),
     "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
     "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
     "each": ("eating out and spending on {other}, each {cut} less",
              "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
     "and": (" and ", " ja "),
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
-    "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
-                  "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
+    "none_goal": ("None of the usual cuts would add much here; you already set aside about {goal} first.",
+                  "Tavalliset vähennykset eivät lisäisi tässä paljon; laitat jo ensin sivuun noin {goal}."),
 }
 PLAN_MAX_NUMBERS = 3
 
@@ -566,12 +760,12 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     def num(node: Any) -> dict[str, Any] | None:
         return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
 
-    save = num(view.get("safe_to_save"))
-    save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
+    goal = num(view.get("savings_goal"))
+    goal = goal if goal and isinstance(goal.get("value"), (int, float)) and goal["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
     if view.get("kind") != "plan":
-        return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
+        return (s("none_goal").format(goal=tok(goal)), [goal["id"]]) if goal else (s("none"), [])
     total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
     if not (total and year and levers):
@@ -601,9 +795,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
     else:
         cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
                ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
-    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
-    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
-    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    # The total and any cited cut share first, then the goal, then the year, within three numbers.
+    with_goal = bool(goal) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_goal <= PLAN_MAX_NUMBERS
     if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
     cuts_text = s("and").join(cuts)
@@ -611,9 +805,9 @@ def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, lis
         sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
     else:
         sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
-    if with_save:
-        sentences.append(s("save").format(save=tok(save)))
-    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    if with_goal:
+        sentences.append(s("goal").format(goal=tok(goal)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([goal["id"]] if with_goal else [])
     return " ".join(sentences), ids
 
 
@@ -692,7 +886,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = (safe_to_spend_sentence(view, language)
+        custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
+                  or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:

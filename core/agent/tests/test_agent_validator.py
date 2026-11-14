@@ -258,6 +258,7 @@ MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), U
 
 @pytest.mark.parametrize("text, lang", [
     ("In August 2026 you spent {{n1}} a month.", "en"),             # live: "€3,010.59 a month a month"
+    ("Cutting back on eating out could save you {{n1}} a month.", "en"),   # the stand, 14.11: "€63.17 a month a month"
     ("In August 2026 you spent {{n1}} per month on average.", "en"),
     ("In August 2026 you spent {{n1}} monthly.", "en"),
     ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
@@ -322,3 +323,59 @@ def test_a_period_word_that_starts_a_new_phrase_is_no_repeat(text):
     from core.agent.validator import repeated_period
 
     assert repeated_period(text, {"n1": MONTHLY}) is None
+
+
+
+# ---- #418: no ranking words next to a peer comparison ---------------------------------------------------------
+
+PEER_GAP = Number(id="n5", value=1.2, unit=Unit.PERCENT, period=AUG, method="peer_benchmark.vs_median_pct@1",
+                  evidence_ref="ev_p", label="Compared with typical", display="1.2% more")
+
+
+@pytest.mark.parametrize("text, ranked", [
+    ("You spend {{n5}} than the median of people like you, putting you near the top.", True),
+    ("You spend {{n5}} than the median of people like you, and a what-if can show what a cut would save.", False),
+])
+def test_ranking_words_next_to_a_peer_number_are_found(text, ranked):
+    from core.agent.validator import draft_problems
+
+    problems = draft_problems(text, {"n5": PEER_GAP}, has_data=True)
+    assert any("ranking words" in p for p in problems) is ranked
+
+
+def test_top_is_fine_without_a_peer_number():
+    from core.agent.validator import draft_problems
+
+    assert not any("ranking" in p for p in draft_problems("The top restaurant took {{n1}}.", {"n1": N1}, has_data=True))
+
+
+
+# ---- the reviewer's optional gaps of #401 ------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, rejected", [
+    ("Terveysmenot sisältävät kuntosalikäynnit.", True),
+    ("Terveyteen meni {{n1}}, mikä sisältää kuntosalin.", True),
+    ("Spending on fitness, which includes your gym visits.", True),
+    ("You spent {{n1}}, which includes your gym visits.", True),
+    ("Your bills are {{n1}}, including the {{n7}} for housing.", False),
+    ("Summa {{n7}} sisältää kaikki ostosi tällä viikolla.", False),
+    ("You keep an amount that still covers your bills until payday.", False),
+    ("Restaurants took {{n1}}, which covers your lunches.", True),
+])
+def test_composition_claims_wherever_they_stand(text, rejected):
+    from core.agent.validator import contents_claim
+
+    assert bool(contents_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text", ["I was unable to calculate this.", "Calculation is not possible here.",
+                                  "I don't have that figure."])
+def test_more_not_available_forms_are_found(text):
+    from core.agent.validator import unavailable_claim
+
+    assert unavailable_claim(text)
+
+
+def test_a_lone_list_number_before_a_token_is_stripped():
+    assert plain_text("1. {{n7}} is safe to spend.") == "{{n7}} is safe to spend."
+    assert plain_text("15. lokakuuta 2026 on palkkapäiväsi.") == "15. lokakuuta 2026 on palkkapäiväsi."

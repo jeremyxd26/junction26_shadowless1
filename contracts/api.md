@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.3 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #267, #382, #420 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.9 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #417, #420, #421, #433, #511 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.3. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.9. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -123,7 +123,7 @@ Fields common to all cards:
 | `title` | string | Localised. |
 | `subtitle` | string or null | Localised. |
 | `evidence_ref` | string or null | Evidence for the card as a whole. |
-| `estimate` | object or null | `{label, text}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, and the `bills` (pro rata amounts), `peer`, `whatif` and `stores` cards. The app must show `label` (for example "Estimate") and make `text` (the assumption in plain words) reachable. |
+| `estimate` | object or null | `{label, text, observed, assumptions}`. Set when the card shows an estimate rather than a fact: the safe-to-spend `metric` card, the S-Bonus `metric` card, the balance forecast, and the `safe_to_save`, `bills` (pro rata amounts), `peer` and `whatif` cards (and the savings plan's `breakdown` card). The app must show `label` (for example "Estimate") and make `text` (the estimate in plain words) reachable. `observed` and `assumptions` (since 0.3.6, #380) separate what was observed from what is assumed: see Estimates below. |
 | `actions` | Action[] | Buttons, at most 2. See below. |
 
 Card-specific fields:
@@ -142,7 +142,263 @@ Card-specific fields:
 | `profile` | `profile` `{key, label, description}`; `traits` `{key, label, note}`[]; `features` `{key, decides_label: bool, value: Number}`[]. `profile.key` is `not_enough_income_data`, `stretched`, `big_ticket`, `everyday_heavy`, `saver` or `steady`. `not_enough_income_data` means the account shows too little income for a verdict. `traits[].key` is any of `salary_moved_elsewhere`, `went_below_zero`, `regular_investor`, `weekend_spender` or `frequent_small_purchases`. `features[].key` is a profile feature from `metrics.md` section 5, using the exact names from there, for example `keep_rate`, `one_off_share`, `everyday_share_pct`, `everyday_weekend_pct` or `everyday_tx_month`. | `card.profile` |
 | `whatif` | `result`: `{scenario, status, baseline_per_month, saving_per_month, saving_per_week, saving_per_year, one_off_excluded, regular_excluded, assumptions, caveats}`. That is the `POST /api/whatif` body without `customer_id`, `as_of` and `language`, and without `estimate` and `evidence_ref`, which sit on the card itself. `estimate` is always set. | `card.whatif` |
 | `review` | The coach asks about one spending spike (design doc, section 7.8). Fields:<br>- `tx_ref`: an opaque token for this question. It is not the transaction id; send it to section 10.<br>- `date`, `category`, `merchant` `{alias, label}` or null (no merchant id; the label has no digits), `amount` (Number).<br>- `current_basket` `{key, label}`: where the purchase sits now. While the review is pending this is always `unclassified` ("Waiting for your answer"): the purchase is in no basket total and not in the reserve.<br>- `question` `{en, fi}`: the question in both languages, with the purchase's amount (its display), category and date filled in, for example "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?".<br>- `options`: exactly two, `{basket, label: {en, fi}, effect: {en, fi}}`, for `unexpected_necessities` ("Needed" / "Välttämätön") and `everyday_spending` ("My choice" / "Oma valinta"). The three basket keys stay the only answer options; `unclassified` is never one.<br>- `why`: why the coach asks, in the request language.<br><br>Tapping an option sends `POST /api/baskets/label` with its `basket`. Question and option texts are fixed templates, never written by the AI model. | `card.review`, `overview.response_pending` |
-| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+| `safe_to_save` | Fields (`metrics.md` section 3.1; `estimate` is always set):<br>- `monthly` (Number, the headline): what a typical month leaves, never below 0.<br>- `weekly`, `daily` (Numbers, #417): the same headline a week and a day, `monthly` × 7 / 30.4375 (`safe_to_save.week_eur@1`) and `monthly` / 30.4375 (`safe_to_save.day_eur@1`), each a composite whose evidence opens `monthly`. When `monthly` is 0 both are present with 0.00. Each is rounded to cents on its own, so `daily` × 30.4375 can differ from `monthly` by up to about 0.15, and seven times `daily` need not equal `weekly` on screen.<br>- `monthly_components` `{key, label, operation, amount}`[]: no amount is ever negative. The app renders them as listed:<br>&nbsp;&nbsp;- when free month ≥ 0: `free_month` add and `everyday_month` subtract; `monthly` is their difference, or 0 when it is negative;<br>&nbsp;&nbsp;- when free month < 0: only `essentials_shortfall` (the shortfall as a positive amount, subtract), and `monthly` is 0.<br>- `stock` (Number): money in the account beyond what is needed until payday.<br>- `stock_explanation`: one sentence, never a call to action. Nothing on the card says where to put money (R7).<br>- `stock_components`: `free_until_payday` add, `everyday_until_payday` subtract. `stock` is their sum, or 0 when negative. When free until payday itself is negative, `stock` is 0 and `stock_components` is empty, so no amount is ever negative.<br>- `subtitle` (#391): with a savings goal, the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when `monthly` is below the goal, the goal against `monthly` ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."); with no goal "What a typical month leaves".<br>- `reason`: `null` unless `monthly` is 0. Then it is `{kind, category, amount: Number, text}`:<br>&nbsp;&nbsp;- The rule is on the sign of free month.<br>&nbsp;&nbsp;- `essentials_exceed_income` (free month < 0): bills, the saving the customer set up, usual essentials and the reserve already exceed income, so even no everyday spending would leave nothing. `category` is `null`, and `amount` is the monthly shortfall.<br>&nbsp;&nbsp;- `largest_everyday_category` (free month ≥ 0, but everyday spending uses it up). `category` `{key, label}` is the `everyday_spending` category with the largest share of the everyday month, and `amount` is that category's figure on the same basis as `everyday_month`: one-offs left out, window total ÷ window days × 30.4375. A sensitive category is never named (R9); `everyday_spending` holds none today.<br>&nbsp;&nbsp;- `text` carries no digits; the app shows `amount` next to it.<br><br>Method ids: `safe_to_spend.safe_to_save_monthly_eur`, `.everyday_month_eur`, `.safe_to_save_eur`, `.everyday_until_payday_eur`, `.essentials_shortfall_month_eur`, `.save_reason_month_eur`, `.free_month_eur` and `.free_until_payday_eur`, all output columns of `03_safe_to_spend.sql`. The reason's `kind` and `category` are its columns `save_reason` and `save_reason_category`.<br><br>`actions`: `open_evidence`, and when `monthly` is above 0 also `open_host_screen` with the target `monthly_saving` (#267). That action only leads to the host's own screen; it names no product, fund or amount, so R7 still holds. No answer text puts an amount into the bank's screen or product (since 0.3.5, #417). | `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response`, `overview.response_pending` |
+
+Estimates (since 0.3.6, #380). Every `estimate` separates what was observed in the customer's transactions from what is assumed, so the app can show "Based on …" and "We assume …" from the structure; the answer text does not list them.
+- `observed` (Number[]): the Numbers the estimate is built from, each with its evidence ref. The Numbers inside an estimate (in `observed` and in each assumption's `value`) are complete Number objects: the app reads them from the estimate and never looks them up by id in the answer's `numbers` map, which holds only the Numbers the text cites. Some appear nowhere else in the response (the forecast's daily pace). Where the same Number is on the card too, it has the same value and evidence ref.
+- `assumptions` (`{code, text, value}`[]): what the estimate assumes. `code` is from the closed list below; `text` is one plain sentence in the request language with no digits; `value` is a Number when the assumption uses one (for example the savings goal), else `null`. A `value` with `method` `user_input@1` (the what-if's own cut) has no evidence ref.
+- Every card that sets `estimate` has at least one assumption. The app ignores a code it does not know.
+
+| `code` | Used by | Meaning (`value`) |
+|---|---|---|
+| `spending_as_usual` | safe to spend; balance forecast | Spending goes on at the recent pace: usual essentials until payday (the essentials reserve); for the forecast, the usual everyday spending and essentials at the daily pace, with unexpected costs not counted (the pace). |
+| `reserve_for_unexpected` | safe to spend | A reserve for unexpected costs is kept, as large as recent months needed (the irregular reserve). |
+| `cushion` | safe to spend | A small cushion is kept aside until payday (the cushion). |
+| `savings_goal_first` | safe to spend | A monthly amount for saving, worked out from a typical month, is put aside first (the goal, `safe_to_spend.savings_goal_eur@1`). |
+| `next_months_like_last` | `safe_to_save`; `whatif`; savings plan | The coming months are like the last six (no value). |
+| `cut_share` | `whatif` | The customer's own cut of the selected spending, the rest unchanged (the cut, `user_input@1`). |
+| `bonus_all_at_s_group` | S-Bonus | All grocery shopping is at S Group stores: a what-if, not a fact (the share, 100%). |
+| `bonus_share` | S-Bonus | The given share of grocery shopping is at S Group stores (the share). |
+| `bonus_level` | S-Bonus | The Bonus level is the one that monthly spending reaches (the Bonus percentage). |
+| `bills_pro_rata` | `bills` | Bills paid several times a month count pro rata until payday (no value). |
+| `peer_group` | `peer` | The comparison group; only group statistics are shown (the group size). |
+| `bills_on_usual_days` | safe to spend; balance forecast | Bills come on their usual days, at their usual amounts (no value). |
+| `no_income_before_payday` | balance forecast | Salary and other money coming in before payday are not counted (no value). |
+| `cuts_as_shown` | savings plan | The plan's cut happens as shown and the rest of spending stays as it is; one per lever (the cut share). |
+| `budget_from_usual_month` | safe to spend | Income, regular bills and usual essentials of a typical month repeat, as in the last months: the budget limit (no value). |
+| `bonus_household` | S-Bonus | The customer is the only shopper in a co-op household (no value). |
+| `bonus_table` | S-Bonus | The default Bonus table applies, not the KPO or Koillismaa table (no value). |
+| `bonus_payment_card` | S-Bonus | Payment with an S-Etukortti Visa, which adds the payment benefit (no value). |
+| `bonus_goods` | S-Bonus | None of it is alcohol, tobacco or lottery, which earn no Bonus (no value). |
+
+Examples for the estimate kinds that have no card example here:
+
+The S-Bonus estimate's `estimate` for Sanna (the `metric` card of `get_bonus_estimate`):
+
+<!-- example: estimate.bonus -->
+```json
+{
+  "label": "Estimate",
+  "text": "A what-if on your own grocery spending, not a statement about where you shop. Assumes you are the only shopper in a co-op household. Assumes the default Bonus table, not the KPO or Koillismaa table. Assumes payment with an S-Etukortti Visa, which adds the payment benefit. Assumes none of it is alcohol, tobacco or lottery, which earn no Bonus. Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop.",
+  "observed": [
+    {
+      "value": 628.86,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "spender_profile.spend_month_eur@1",
+      "evidence_ref": "ev_51a5025d7a8c",
+      "label": "Your grocery spending a month",
+      "display": "€628.86 a month"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "bonus_all_at_s_group",
+      "text": "All your grocery shopping is at S Group stores; it is a what-if, not a fact about where you shop.",
+      "value": {
+        "value": 100.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.share_pct@1",
+        "evidence_ref": "ev_1372e65d9b6b",
+        "label": "Assumed share at S-Group stores",
+        "display": "100%"
+      }
+    },
+    {
+      "code": "bonus_household",
+      "text": "You are the only shopper in a co-op household.",
+      "value": null
+    },
+    {
+      "code": "bonus_table",
+      "text": "The default Bonus table applies, not the KPO or Koillismaa table.",
+      "value": null
+    },
+    {
+      "code": "bonus_payment_card",
+      "text": "You pay with an S-Etukortti Visa, which adds the payment benefit.",
+      "value": null
+    },
+    {
+      "code": "bonus_goods",
+      "text": "None of it is alcohol, tobacco or lottery, which earn no Bonus.",
+      "value": null
+    },
+    {
+      "code": "bonus_level",
+      "text": "The Bonus level is the one your monthly purchases at S Group reach.",
+      "value": {
+        "value": 3.5,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "bonus_estimate.bonus_percent@1",
+        "evidence_ref": "ev_d68dd599f0df",
+        "label": "Bonus level",
+        "display": "3.5%"
+      }
+    }
+  ]
+}
+```
+
+The balance forecast's `estimate` for Sanna (the `breakdown` card of `get_balance_forecast`):
+
+<!-- example: estimate.forecast -->
+```json
+{
+  "label": "Estimate",
+  "text": "If you spend as usual: about €66.79 a day, the middle one of your last three full months' daily averages of everyday spending and essentials, bills left out. Bills come on their usual days. Salary and other money coming in before payday are not counted.",
+  "observed": [
+    {
+      "value": 14276.35,
+      "unit": "eur",
+      "period": {
+        "start": "2026-09-30",
+        "end": "2026-09-30",
+        "label": "30 Sep 2026"
+      },
+      "method": "safe_to_spend.balance_eur@1",
+      "evidence_ref": "ev_bb521762fd8b",
+      "label": "Balance today",
+      "display": "€14,276.35"
+    },
+    {
+      "value": 928.5,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.bills_due_eur@1",
+      "evidence_ref": "ev_e6923f27178b",
+      "label": "Bills before payday",
+      "display": "€928.50"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "spending_as_usual",
+      "text": "Your usual everyday spending and essentials continue, at the middle one of your last three full months' daily averages; unexpected costs are not counted.",
+      "value": {
+        "value": 66.79,
+        "unit": "eur_per_day",
+        "period": {
+          "start": "2026-07-01",
+          "end": "2026-09-30",
+          "label": "1 Jul – 30 Sep 2026"
+        },
+        "method": "balance_forecast.daily_pace_eur@1",
+        "evidence_ref": "ev_d75230f1a1f0",
+        "label": "Usual spending",
+        "display": "€66.79 a day"
+      }
+    },
+    {
+      "code": "bills_on_usual_days",
+      "text": "Bills come on their usual days.",
+      "value": null
+    },
+    {
+      "code": "no_income_before_payday",
+      "text": "Salary and other money coming in before payday are not counted.",
+      "value": null
+    }
+  ]
+}
+```
+
+The savings plan's `estimate` for Sanna (the `breakdown` card of `get_savings_plan`, #369): `observed` are the levers' baselines (`what_if.baseline_month_eur@1`), the spending each cut applies to; each lever's cut share is the value of a `cuts_as_shown` assumption.
+
+<!-- example: estimate.savings_plan -->
+```json
+{
+  "label": "Estimate",
+  "text": "About, if you cut these as shown and the rest of your spending stays as it is.",
+  "observed": [
+    {
+      "value": 229.56,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_1833132fc943",
+      "label": "Restaurants in a typical month",
+      "display": "€229.56 a month"
+    },
+    {
+      "value": 172.58,
+      "unit": "eur_per_month",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "1 Apr – 30 Sep 2026"
+      },
+      "method": "what_if.baseline_month_eur@1",
+      "evidence_ref": "ev_7b6c78c00ec6",
+      "label": "Lifestyle in a typical month",
+      "display": "€172.58 a month"
+    }
+  ],
+  "assumptions": [
+    {
+      "code": "next_months_like_last",
+      "text": "The coming months are like the average of your last six full months.",
+      "value": null
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 20.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_de73cb569d75",
+        "label": "Cut in Restaurants",
+        "display": "20.0%"
+      }
+    },
+    {
+      "code": "cuts_as_shown",
+      "text": "You cut this spending by the share shown, and the rest of your spending stays as it is.",
+      "value": {
+        "value": 10.0,
+        "unit": "percent",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "1 Apr – 30 Sep 2026"
+        },
+        "method": "savings_plan.cut_pct@1",
+        "evidence_ref": "ev_8ff96819e08c",
+        "label": "Cut in Lifestyle",
+        "display": "10.0%"
+      }
+    }
+  ]
+}
+```
 
 Actions:
 
@@ -193,7 +449,41 @@ The host message it sends:
   "evidence_ref": "ev_q1s3u5w7y9a1",
   "estimate": {
     "label": "Estimate",
-    "text": "Compared with at least 20 other customers of your age band and area. Only group statistics are shown."
+    "text": "Compared with at least 20 other customers of your age band and area. Only group statistics are shown.",
+    "observed": [
+      {
+        "value": 271.3,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "peer_benchmark.you_month_eur@1",
+        "evidence_ref": "ev_q6s8u0w2y4a6",
+        "label": "You",
+        "display": "€271.30 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "peer_group",
+        "text": "You are compared with other customers of your group; only group statistics are shown.",
+        "value": {
+          "value": 23,
+          "unit": "count",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "peer_benchmark.peer_n@1",
+          "evidence_ref": "ev_q5s7u9w1y3a5",
+          "label": "Other people in the group",
+          "display": "23"
+        }
+      }
+    ]
   },
   "you": {
     "value": 271.3, "unit": "eur_per_month",
@@ -257,10 +547,7 @@ The host message it sends:
   "title": "Your grocery stores",
   "subtitle": "Price level per visit, last 12 months",
   "evidence_ref": "ev_p5r7t9v1x3z5",
-  "estimate": {
-    "label": "Estimate",
-    "text": "The data has receipt totals, not shelf prices. A higher level means people pay more per visit there, which mixes prices with basket size."
-  },
+  "estimate": null,
   "items": [
     {
       "merchant": { "id": "MRC-GRO-0035", "label": "Grocery store A" },
@@ -429,7 +716,49 @@ The host message it sends:
   "title": "Spend 20% less on restaurants",
   "subtitle": "Based on your last 6 full months",
   "evidence_ref": "ev_w3y5a7c9e1g3",
-  "estimate": { "label": "Estimate", "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%." },
+  "estimate": {
+    "label": "Estimate",
+    "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%.",
+    "observed": [
+      {
+        "value": 268.4,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.baseline_month_eur@1",
+        "evidence_ref": "ev_w1y3a5c7e9g1",
+        "label": "Restaurants in a typical month",
+        "display": "€268.40 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
+      {
+        "code": "cut_share",
+        "text": "You cut this spending by the share you chose, and the rest stays as it is.",
+        "value": {
+          "value": 20,
+          "unit": "percent",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Cut you chose",
+          "display": "20%"
+        }
+      }
+    ]
+  },
   "result": {
     "scenario": {
       "selection": { "kind": "category", "value": "Restaurants" },
@@ -553,13 +882,60 @@ The `safe_to_save` card of the overview for Sanna after she answered "needed" (v
   "evidence_ref": "ev_sn3m5o7n9t1h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 783.79,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_sn5f7m9o1n3t",
+        "label": "Free in a typical month",
+        "display": "€783.79 a month"
+      },
+      {
+        "value": 599.18,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_sn6e8v0m2o4n",
+        "label": "Everyday spending in a typical month",
+        "display": "€599.18 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 184.61, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sn3m5o7n9t1h",
     "label": "Typically left each month", "display": "€184.61 a month"
+  },
+  "weekly": {
+    "value": 42.46, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_749abec0592c",
+    "label": "Typically left each week", "display": "€42.46 a week"
+  },
+  "daily": {
+    "value": 6.07, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_889b8f0ab767",
+    "label": "Typically left each day", "display": "€6.07 a day"
   },
   "monthly_components": [
     {
@@ -636,13 +1012,60 @@ For Aleksi (CUST00849, values from the dataset), a tight but positive month: no 
   "evidence_ref": "ev_al1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 725.47,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_al2f4m6o8n0t",
+        "label": "Free in a typical month",
+        "display": "€725.47 a month"
+      },
+      {
+        "value": 525.52,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_al3e5v7m9o1n",
+        "label": "Everyday spending in a typical month",
+        "display": "€525.52 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 199.95, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_al1m3o5n7t9h",
     "label": "Typically left each month", "display": "€199.95 a month"
+  },
+  "weekly": {
+    "value": 45.98, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_05799f6c2369",
+    "label": "Typically left each week", "display": "€45.98 a week"
+  },
+  "daily": {
+    "value": 6.57, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_7a45a12c7293",
+    "label": "Typically left each day", "display": "€6.57 a day"
   },
   "monthly_components": [
     {
@@ -719,13 +1142,47 @@ When a typical month leaves nothing, the headline is 0 and `reason` says why. Fi
   "evidence_ref": "ev_zr1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 1.59,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.essentials_shortfall_month_eur@1",
+        "evidence_ref": "ev_zr2s4h6o8r0t",
+        "label": "Bills, essentials and the reserve above income",
+        "display": "€1.59 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 0.0, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_zr1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_522c23d671c0",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_4a8389c56043",
+    "label": "Typically left each day", "display": "€0.00 a day"
   },
   "monthly_components": [
     {
@@ -800,13 +1257,60 @@ Second, CUST00019 of the metrics sample (dataset values): free month is positive
   "evidence_ref": "ev_ev1m3o5n7t9h",
   "estimate": {
     "label": "Estimate",
-    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+    "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+    "observed": [
+      {
+        "value": 398.89,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.free_month_eur@1",
+        "evidence_ref": "ev_ev2f4m6o8n0t",
+        "label": "Free in a typical month",
+        "display": "€398.89 a month"
+      },
+      {
+        "value": 585.33,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "safe_to_spend.everyday_month_eur@1",
+        "evidence_ref": "ev_ev3e5v7m9o1n",
+        "label": "Everyday spending in a typical month",
+        "display": "€585.33 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like a typical month of your last six.",
+        "value": null
+      }
+    ]
   },
   "monthly": {
     "value": 0.0, "unit": "eur_per_month",
     "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
     "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ev1m3o5n7t9h",
     "label": "Typically left each month", "display": "€0.00 a month"
+  },
+  "weekly": {
+    "value": 0.00, "unit": "eur_per_week",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_ffef639a75e4",
+    "label": "Typically left each week", "display": "€0.00 a week"
+  },
+  "daily": {
+    "value": 0.00, "unit": "eur_per_day",
+    "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+    "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_04893f26096a",
+    "label": "Typically left each day", "display": "€0.00 a day"
   },
   "monthly_components": [
     {
@@ -901,7 +1405,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
-| 503 | `model_unavailable` | A bill reading cannot use the model; the app offers typing the fields (section 11.4, not implemented yet). |
+| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -1013,7 +1517,128 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     "evidence_ref": "ev_s2t4w6y8a0c2",
     "estimate": {
       "label": "Estimate",
-      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first."
+      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first.",
+      "observed": [
+        {
+          "value": 1640.15,
+          "unit": "eur",
+          "period": {
+            "start": "2026-09-30",
+            "end": "2026-09-30",
+            "label": "30 Sep 2026"
+          },
+          "method": "safe_to_spend.balance_eur@1",
+          "evidence_ref": "ev_b4l6n8p0r2t4",
+          "label": "Balance",
+          "display": "€1,640.15"
+        },
+        {
+          "value": 842.19,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.bills_due_eur@1",
+          "evidence_ref": "ev_u6b8d0f2h4j6",
+          "label": "Bills before payday",
+          "display": "€842.19"
+        },
+        {
+          "value": 248.5,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_s5t7w9y1a3c5",
+          "label": "Your monthly budget allows",
+          "display": "€248.50"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "spending_as_usual",
+          "text": "Your usual essentials continue until payday, at the pace of recent months.",
+          "value": {
+            "value": 134.76,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.essentials_reserve_eur@1",
+            "evidence_ref": "ev_e1s3r5v7e9a1",
+            "label": "Essentials reserve",
+            "display": "€134.76"
+          }
+        },
+        {
+          "code": "reserve_for_unexpected",
+          "text": "A reserve for unexpected costs is kept, as large as recent months needed.",
+          "value": {
+            "value": 167.46,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.irregular_reserve_eur@1",
+            "evidence_ref": "ev_i1r3r5v7e9a2",
+            "label": "Irregular reserve",
+            "display": "€167.46"
+          }
+        },
+        {
+          "code": "cushion",
+          "text": "A small cushion is kept aside until payday.",
+          "value": {
+            "value": 100.0,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.cushion_eur@1",
+            "evidence_ref": "ev_f8h0j2l4n6p8",
+            "label": "Cushion",
+            "display": "€100.00"
+          }
+        },
+        {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
+          "code": "savings_goal_first",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
+          "value": {
+            "value": 430.0,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "safe_to_spend.savings_goal_eur@1",
+            "evidence_ref": "ev_got7w9y1a3c5",
+            "label": "Set aside first each month",
+            "display": "€430.00 a month"
+          }
+        }
+      ]
     },
     "status": "ok",
     "primary": {
@@ -1119,13 +1744,60 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     "evidence_ref": "ev_ai2m4o6n8t0h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 1080.55,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month",
+          "display": "€1,080.55 a month"
+        },
+        {
+          "value": 648.97,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month",
+          "display": "€648.97 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 431.58, "unit": "eur_per_month",
       "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month", "display": "€431.58 a month"
+    },
+    "weekly": {
+      "value": 99.25, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week", "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day", "display": "€14.18 a day"
     },
     "monthly_components": [
       {
@@ -1272,7 +1944,29 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
       "evidence_ref": "ev_u6b8d0f2h4j6",
       "estimate": {
         "label": "Estimate",
-        "text": "Utilities are paid about three times a month, so the amount until payday is pro rata."
+        "text": "Utilities are paid about three times a month, so the amount until payday is pro rata.",
+        "observed": [
+          {
+            "value": 842.19,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.bills_due_eur@1",
+            "evidence_ref": "ev_u6b8d0f2h4j6",
+            "label": "Bills before payday",
+            "display": "€842.19"
+          }
+        ],
+        "assumptions": [
+          {
+            "code": "bills_pro_rata",
+            "text": "Bills paid several times a month count pro rata until payday.",
+            "value": null
+          }
+        ]
       },
       "total": {
         "value": 842.19, "unit": "eur",
@@ -1412,7 +2106,42 @@ The same overview when safe to spend cannot be computed for a known reason: `her
     "evidence_ref": "ev_ai2m4o6n8t0h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 1080.55,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_ai4f6m8o0n2t",
+          "label": "Free in a typical month",
+          "display": "€1,080.55 a month"
+        },
+        {
+          "value": 648.97,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_ai5e7v9m1o3n",
+          "label": "Everyday spending in a typical month",
+          "display": "€648.97 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 431.58,
@@ -1426,6 +2155,32 @@ The same overview when safe to spend cannot be computed for a known reason: `her
       "evidence_ref": "ev_ai2m4o6n8t0h",
       "label": "Typically left each month",
       "display": "€431.58 a month"
+    },
+    "weekly": {
+      "value": 99.25,
+      "unit": "eur_per_week",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.week_eur@1",
+      "evidence_ref": "ev_89416e5c4ff7",
+      "label": "Typically left each week",
+      "display": "€99.25 a week"
+    },
+    "daily": {
+      "value": 14.18,
+      "unit": "eur_per_day",
+      "period": {
+        "start": "2026-04-01",
+        "end": "2026-09-30",
+        "label": "Apr-Sep 2026"
+      },
+      "method": "safe_to_save.day_eur@1",
+      "evidence_ref": "ev_b9f13f3707bc",
+      "label": "Typically left each day",
+      "display": "€14.18 a day"
     },
     "monthly_components": [
       {
@@ -1694,7 +2449,128 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
     "evidence_ref": "ev_sa4s6t8s0p2d",
     "estimate": {
       "label": "Estimate",
-      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first."
+      "text": "Your balance minus bills, usual essentials and a small cushion until payday, spread over the days to payday. It is also capped by your usual monthly budget after your savings goal is set aside first.",
+      "observed": [
+        {
+          "value": 14276.35,
+          "unit": "eur",
+          "period": {
+            "start": "2026-09-30",
+            "end": "2026-09-30",
+            "label": "30 Sep 2026"
+          },
+          "method": "safe_to_spend.balance_eur@1",
+          "evidence_ref": "ev_pn9b1a3l5a7n",
+          "label": "Balance",
+          "display": "€14,276.35"
+        },
+        {
+          "value": 928.5,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-15",
+            "label": "Until payday on 15 Oct"
+          },
+          "method": "safe_to_spend.bills_due_eur@1",
+          "evidence_ref": "ev_pn0b2i4l6l8s",
+          "label": "Bills before payday",
+          "display": "€928.50"
+        },
+        {
+          "value": 138.79,
+          "unit": "eur",
+          "period": {
+            "start": "2026-10-01",
+            "end": "2026-10-07",
+            "label": "Next 7 days"
+          },
+          "method": "safe_to_spend.budget_limit_7d_eur@1",
+          "evidence_ref": "ev_pn8b0u2d4g6t",
+          "label": "Your monthly budget allows",
+          "display": "€138.79"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "spending_as_usual",
+          "text": "Your usual essentials continue until payday, at the pace of recent months.",
+          "value": {
+            "value": 423.99,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.essentials_reserve_eur@1",
+            "evidence_ref": "ev_pn2e4s6s8e0n",
+            "label": "Essentials reserve",
+            "display": "€423.99"
+          }
+        },
+        {
+          "code": "reserve_for_unexpected",
+          "text": "A reserve for unexpected costs is kept, as large as recent months needed.",
+          "value": {
+            "value": 167.74,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.irregular_reserve_eur@1",
+            "evidence_ref": "ev_sa3i5r7r9e1g",
+            "label": "Irregular reserve",
+            "display": "€167.74"
+          }
+        },
+        {
+          "code": "cushion",
+          "text": "A small cushion is kept aside until payday.",
+          "value": {
+            "value": 100.0,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-15",
+              "label": "Until payday on 15 Oct"
+            },
+            "method": "safe_to_spend.cushion_eur@1",
+            "evidence_ref": "ev_sn7c9u1s3h5n",
+            "label": "Cushion",
+            "display": "€100.00"
+          }
+        },
+        {
+          "code": "bills_on_usual_days",
+          "text": "Bills come on their usual days, at their usual amounts.",
+          "value": null
+        },
+        {
+          "code": "budget_from_usual_month",
+          "text": "Your income, regular bills and usual essentials of a typical month repeat, as in the last months.",
+          "value": null
+        },
+        {
+          "code": "savings_goal_first",
+          "text": "A monthly amount for saving is put aside first, worked out from a typical month.",
+          "value": {
+            "value": 360.0,
+            "unit": "eur_per_month",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-09-30",
+              "label": "Apr-Sep 2026"
+            },
+            "method": "safe_to_spend.savings_goal_eur@1",
+            "evidence_ref": "ev_go8b0u2d4g6t",
+            "label": "Set aside first each month",
+            "display": "€360.00 a month"
+          }
+        }
+      ]
     },
     "status": "ok",
     "primary": {
@@ -1799,13 +2675,60 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
     "evidence_ref": "ev_sa6m8o0n2t4h",
     "estimate": {
       "label": "Estimate",
-      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending."
+      "text": "A typical month of your last six: income minus bills, saving you set up, usual essentials, a reserve for unexpected costs and your usual everyday spending.",
+      "observed": [
+        {
+          "value": 963.49,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.free_month_eur@1",
+          "evidence_ref": "ev_pn5f7m9o1n3t",
+          "label": "Free in a typical month",
+          "display": "€963.49 a month"
+        },
+        {
+          "value": 599.18,
+          "unit": "eur_per_month",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "safe_to_spend.everyday_month_eur@1",
+          "evidence_ref": "ev_pn6e8v0m2o4n",
+          "label": "Everyday spending in a typical month",
+          "display": "€599.18 a month"
+        }
+      ],
+      "assumptions": [
+        {
+          "code": "next_months_like_last",
+          "text": "The coming months are like a typical month of your last six.",
+          "value": null
+        }
+      ]
     },
     "monthly": {
       "value": 364.31, "unit": "eur_per_month",
       "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
       "method": "safe_to_spend.safe_to_save_monthly_eur@1", "evidence_ref": "ev_sa6m8o0n2t4h",
       "label": "Typically left each month", "display": "€364.31 a month"
+    },
+    "weekly": {
+      "value": 83.78, "unit": "eur_per_week",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.week_eur@1", "evidence_ref": "ev_0e9e53429269",
+      "label": "Typically left each week", "display": "€83.78 a week"
+    },
+    "daily": {
+      "value": 11.97, "unit": "eur_per_day",
+      "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "Apr-Sep 2026" },
+      "method": "safe_to_save.day_eur@1", "evidence_ref": "ev_dd7a337adc06",
+      "label": "Typically left each day", "display": "€11.97 a day"
     },
     "monthly_components": [
       {
@@ -2716,7 +3639,49 @@ A store switch is not a what-if scenario. It is shown in the `stores` card with 
     "The rest of your spending stays as it is."
   ],
   "caveats": ["This is an estimate, not a promise. Prices and habits change."],
-  "estimate": { "label": "Estimate", "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%." },
+  "estimate": {
+    "label": "Estimate",
+    "text": "Average of your last 6 full months (one-off purchases left out), cut by 20%.",
+    "observed": [
+      {
+        "value": 268.4,
+        "unit": "eur_per_month",
+        "period": {
+          "start": "2026-04-01",
+          "end": "2026-09-30",
+          "label": "Apr-Sep 2026"
+        },
+        "method": "what_if.baseline_month_eur@1",
+        "evidence_ref": "ev_w1y3a5c7e9g1",
+        "label": "Restaurants in a typical month",
+        "display": "€268.40 a month"
+      }
+    ],
+    "assumptions": [
+      {
+        "code": "next_months_like_last",
+        "text": "The coming months are like the average of your last six full months.",
+        "value": null
+      },
+      {
+        "code": "cut_share",
+        "text": "You cut this spending by the share you chose, and the rest stays as it is.",
+        "value": {
+          "value": 20,
+          "unit": "percent",
+          "period": {
+            "start": "2026-04-01",
+            "end": "2026-09-30",
+            "label": "Apr-Sep 2026"
+          },
+          "method": "user_input@1",
+          "evidence_ref": null,
+          "label": "Cut you chose",
+          "display": "20%"
+        }
+      }
+    ]
+  },
   "evidence_ref": "ev_w3y5a7c9e1g3"
 }
 ```
@@ -2991,7 +3956,7 @@ The customer's answer to a `review` card. **The app calls it when the customer t
 - `changes`: the overview numbers that moved, each `{key, label, before: Number, after: Number}`. It is empty when `changed` is false. Before and after have different `evidence_ref`s, because evidence keeps resolving to the numbers as they were.
 - `effect` (#382): `{items, text, text_rendered, numbers}`, or `null` when `changed` is false.
   - `items`: the headline numbers, each `{key, label, before: Number, after: Number}` with ids: `safe_to_spend`, `safe_to_save` (the overview's monthly figure, when the overview shows it), `irregular_reserve`, and the basket the purchase moved into (`unclassified` after an undo while open). Every item is listed even when its value did not move, so the app can show "no change". `before` and `after` are exactly the overview's numbers before and after, with their evidence refs.
-  - `text`, `text_rendered`, `numbers`: the effect as one or two sentences with number tokens (section 2.4), the same text as `message`. The app shows it in the card's confirmation.
+  - `text`, `text_rendered`, `numbers`: the effect as one or two sentences with number tokens (section 2.4), the same text as `message`. The app shows it in the card's confirmation. `numbers` holds only the numbers the text cites (its tokens), not every Number of `items`.
   - An undo returns the same structure with the sides swapped.
 - **Rounding:** derived figures are computed from unrounded values and rounded once, so a figure can differ by 0.01 from the same sum of displayed figures (for example 12,360.83 against 12,656.12 − 295.28 = 12,360.84).
 - `refetch`: what to reload for everything else.
@@ -3719,14 +4684,15 @@ A barcode whose reference fails its check:
 |---|---|
 | `bill` | The bill as the service read it:<br>- `source`: `barcode` or `fields`.<br>- `payee`: the name as sent, or `null` for a barcode without one.<br>- `iban` and `reference`: formatted for display (the IBAN in groups of four; a national reference in groups of five from the right, an `RF` reference in groups of four).<br>- `amount` (Number): `method` is `bill_barcode@1` for a barcode and `user_input@1` for `fields`; `evidence_ref` is `null`, because the number does not come from the customer's data; the period is the due date.<br>- `due_date`. |
 | `checks` | `{iban, reference, due_date}`: `iban` and `reference` are `pass` or `fail` (the IBAN's mod-97 check; the reference's check digit, national or `RF`); `due_date` is `pass`, or `past` when it is before `as_of`. A barcode always gives `pass` for both, because a barcode that fails a check is 422. |
-| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only (the table below). There is no fuzzy matching. No match is a normal outcome. |
-| `comparison` | A [Comparison](#23-comparison), only when `matched`, else `null`:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`), `null` when the typical amount is 0.<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
+| `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence: the regular bill ("This is your regular Housing bill."), a bill from the same payee category when the matched bill does not fit it ("This bill is from the same payee category as your regular Utilities payments.", #400), or why there is no match.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only (the table below). There is no fuzzy matching. No match is a normal outcome. |
+| `comparison` | A [Comparison](#23-comparison), only when the bill is the customer's regular bill, else `null`. A matched bill is the regular bill when it fits it: the series is paid once a month (not `spread`) and the amount is at least half of its typical month (#400). A matched bill that does not fit (another billing rhythm, or less than half a typical month, like a quarterly water bill among utilities) has `comparison` `null`, and `match.text` names the payee category instead (example `bill.response_category`). The fields:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`).<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
 | `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €138.79: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
+| `forecast` | The forecast balance on the bill's due date, before and after the bill (since 0.3.4, #421), or `null` when the balance forecast cannot be computed for a known reason: no transactions, no balance, the bills due of the two paths differ (as `safe_to_spend`), or a failed consistency check of the forecast. The rest of the explanation is unchanged. Fields:<br>- `status`: `covered`; `tight`, when the balance after the bill is below a margin (a server constant, €100); `not_covered`, when it is below zero; or `outside_forecast`, when the due date is before `as_of` or on or after the next payday (the forecast covers today up to the day before payday).<br>- `before`: the balance forecast's own Number for the due date (`balance_forecast.balance_eur@1`), with the same `evidence_ref` as that day of the forecast. For a bill due today it is the balance now (`safe_to_spend.balance_eur@1`).<br>- `already_counted`: what the forecast already subtracts for the matched bill's series by the due date (`balance_forecast.bills_to_date_eur@1` for that series), or `null` when nothing is. This is the part of the forecast's bills up to the due date, not `safe_to_spend.reserved` (up to payday): a monthly bill expected after the due date is not in the balance on the due date yet.<br>- `counted`: what the bill takes from the forecast: the bill's `amount` Number, or, with `already_counted`, only the excess `max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`). So a bill already among the forecast's bills is never subtracted twice.<br>- `after`: `before - counted` (`bill.forecast_after_eur@1`).<br>- `shortfall`: for `not_covered`, `counted - before` (`bill.forecast_shortfall_eur@1`), else `null`.<br>- `text`: one sentence. For `not_covered` it names the shortfall and the date. No text suggests borrowing.<br>- `chip`: for `not_covered`, an `ask` action with the forecast question ("Will my money last until payday?"), else `null`.<br>For `outside_forecast` the Numbers are `null`. The status never removes the payment draft. The due date is taken as printed, with no shift to a banking day, as in `safe_to_spend.effect`. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
 | `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank, when `signals` holds `iban_check_failed` or `reference_check_failed`, or `new_payee` together with another sign; `new_payee`, `short_term` or `amount_above_usual` alone do not bring it. Pick an action by its `type`, never by its index: with a failed check, `contact_bank` is the only action. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
 | `warnings` | Sentences the app may show as a small note, as `warnings` are elsewhere in this contract; empty when there is nothing to note. A warning never repeats a signal. Today there is one: a due date in the past, that the payee may charge late-payment interest, without an amount. |
-| `signals` | Warning signs, `{code, text, numbers}`[], empty when there are none, in the order of the codes below. This is what the app shows as "warning signs", never as a verdict: no text says that a bill is a fraud. `text` is one plain sentence in the request language, or two for a failed check (what failed and what to do); `numbers` are the Number objects whose `display` it cites, in order (empty when it cites none). The codes:<br>- `iban_check_failed`, `reference_check_failed`: the check digit does not pass (`checks`), for example "This reference number does not pass its check. Compare it with the paper bill before paying."<br>- `new_payee`: the payee matches no regular bill, by label or by known payee name (`match.status` `not_matched` or `no_payee`).<br>- `amount_above_usual`: for a matched bill, the amount is at least 150% of its typical monthly amount; for any other bill, it is above the largest typical monthly amount of the customer's regular bills. Both thresholds are server settings with these defaults.<br>- `short_term`: the due date is fewer than 7 days after `as_of` and not before it (a past due date is in `checks` and `warnings`).<br>Only the two failed checks remove the payment draft; the other signs do not. |
+| `signals` | Warning signs, `{code, text, numbers}`[], empty when there are none, in the order of the codes below. This is what the app shows as "warning signs", never as a verdict: no text says that a bill is a fraud. `text` is one plain sentence in the request language, or two for a failed check (what failed and what to do); `numbers` are the Number objects whose `display` it cites, in order (empty when it cites none). The codes:<br>- `iban_check_failed`, `reference_check_failed`: the check digit does not pass (`checks`), for example "This reference number does not pass its check. Compare it with the paper bill before paying."<br>- `new_payee`: the payee matches no regular bill, by label or by known payee name (`match.status` `not_matched` or `no_payee`).<br>- `amount_above_usual`: for a matched bill, the amount is at least 150% of its typical monthly amount. A matched bill without a `comparison` (a category match) is measured against the category's whole typical month, and the text names it ("much more than all your Utilities payments in a usual month"). For any other bill, it is above the largest typical monthly amount of the customer's regular bills. Both thresholds are server settings with these defaults.<br>- `short_term`: the due date is fewer than 7 days after `as_of` and not before it (a past due date is in `checks` and `warnings`).<br>Only the two failed checks remove the payment draft; the other signs do not. |
 
 The known payee names of the demo (fictional companies; the sample bills of #249 use the same strings):
 
@@ -3735,9 +4701,9 @@ The known payee names of the demo (fictional companies; the sample bills of #249
 | Housing (`bill_housing_payment`) | Housing / Asuminen | Esimerkki Asunnot Oy |
 | Utilities (`bill_utilities_payment`) | Utilities / Kodin laskut | Esimerkki Energia Oy, Esimerkki Vesi Oy |
 
-**Evidence of the computed numbers.** `comparison.change`, `comparison.change_pct`, `safe_to_spend.counted` and `safe_to_spend.free_until_payday_after` open as `composite` (section 9). Their parts are the numbers they are computed from; the bill's amount is a part without an `evidence_ref`. `safe_to_spend.after` opens as a `composite` like the hero's `primary`: the smaller of the two limits, each a part. The budget limit is the hero's own. The balance limit after the bill opens as `metric`: a re-run of `03_safe_to_spend.sql` whose stored settings hold the counted amount (`app.extra_bill_due_eur`, a typed and bounded setting), so it reconciles. The `bill.*` methods are defined in the design documents (#242).
+**Evidence of the computed numbers.** `comparison.change`, `comparison.change_pct`, `safe_to_spend.counted` and `safe_to_spend.free_until_payday_after` open as `composite` (section 9). Their parts are the numbers they are computed from; the bill's amount is a part without an `evidence_ref`. `safe_to_spend.after` opens as a `composite` like the hero's `primary`: the smaller of the two limits, each a part. The budget limit is the hero's own. The balance limit after the bill opens as `metric`: a re-run of `03_safe_to_spend.sql` whose stored settings hold the counted amount (`app.extra_bill_due_eur`, a typed and bounded setting), so it reconciles. `forecast.before` and `forecast.already_counted` open as the balance forecast's own numbers do: `before` as a `composite` of the balance, the bills by that day and the daily pace, and `already_counted` as `transactions`. `forecast.counted` (with `already_counted`), `forecast.after` and `forecast.shortfall` open as `composite`, and the bill's amount is a part without an `evidence_ref` (#421). The `bill.*` methods are defined in the design documents (#242).
 
-**Sentences embed displays.** The texts of `match`, `basket`, `safe_to_spend`, `signals` and `warnings` are fixed server templates that embed the `display` of the numbers they cite, not number tokens (section 2.4): no model writes them.
+**Sentences embed displays.** The texts of `match`, `basket`, `safe_to_spend`, `forecast`, `signals` and `warnings` are fixed server templates that embed the `display` of the numbers they cite, not number tokens (section 2.4): no model writes them.
 
 A matched bill, read from the barcode of section 11.1: the payee is a known payee name of the housing bill. The amount is higher than usual and due before payday, and €780.00 of it is already counted in the bills due before payday, so only the excess of €32.40 is added. It is due tomorrow, so it carries the warning sign `short_term`:
 
@@ -3835,6 +4801,36 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
     },
     "text": "Due before your payday on 15 Oct. €780.00 is already counted for your Housing bill, so only the extra €32.40 is added: free until payday goes from €395.74 to €363.34, and your weekly safe to spend from €184.68 to €169.56."
   },
+  "forecast": {
+    "status": "covered",
+    "before": {
+      "value": 825.63, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "balance_forecast.balance_eur@1", "evidence_ref": "ev_f2c4a6s8t0b2",
+      "label": "Forecast balance on the due date", "display": "€825.63"
+    },
+    "already_counted": {
+      "value": 780.0, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "balance_forecast.bills_to_date_eur@1", "evidence_ref": "ev_f3h5o7u9s1e3",
+      "label": "Already in the forecast for this bill by the due date", "display": "€780.00"
+    },
+    "counted": {
+      "value": 32.4, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "bill.forecast_counted_eur@1", "evidence_ref": "ev_f4k6m8p0r2t4",
+      "label": "Taken from the forecast by this bill", "display": "€32.40"
+    },
+    "after": {
+      "value": 793.23, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-01", "label": "1 Oct 2026" },
+      "method": "bill.forecast_after_eur@1", "evidence_ref": "ev_f5k7m9p1r3t5",
+      "label": "Forecast balance after this bill", "display": "€793.23"
+    },
+    "shortfall": null,
+    "text": "Your forecast balance on 1 Oct 2026 covers this bill: €793.23 would be left after it.",
+    "chip": null
+  },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
     { "term": "due_date", "label": "Due date (eräpäivä)", "text": "The last day to pay the bill without a late-payment charge." },
@@ -3862,6 +4858,136 @@ A matched bill, read from the barcode of section 11.1: the payee is a known paye
   "warnings": [],
   "signals": [
     { "code": "short_term", "text": "The due date is less than a week away.", "numbers": [] }
+  ]
+}
+```
+
+A matched bill of the same payee category (#400): the gallery's water sample (sample_4, typed fields) for Sanna. Its payee is a known payee name of the utilities bill, but utilities are paid several times a month (`spread`), so the bill is not the regular bill: `comparison` is `null` and `match.text` names the payee category. Its reference fails its check, so there is no payment draft, and the way to a human (`contact_bank`, section 3) is the only action.
+
+<!-- example: bill.response_category -->
+```json
+{
+  "customer_id": "CUST00860",
+  "as_of": "2026-09-30",
+  "language": "en",
+  "bill": {
+    "source": "fields",
+    "payee": "Esimerkki Vesi Oy",
+    "iban": "FI25 1234 5600 0010 04",
+    "reference": "551 90324",
+    "amount": {
+      "value": 42.75,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-20",
+        "end": "2026-10-20",
+        "label": "20 Oct 2026"
+      },
+      "method": "user_input@1",
+      "evidence_ref": null,
+      "label": "Amount due",
+      "display": "€42.75"
+    },
+    "due_date": "2026-10-20"
+  },
+  "checks": {
+    "iban": "pass",
+    "reference": "fail",
+    "due_date": "pass"
+  },
+  "match": {
+    "status": "matched",
+    "bill_id": "bill_utilities_payment",
+    "label": "Utilities",
+    "text": "This bill is from the same payee category as your regular Utilities payments."
+  },
+  "comparison": null,
+  "basket": {
+    "key": "regular_essentials",
+    "label": "Regular essentials",
+    "text": "It counts as regular essentials, like your other Utilities payments."
+  },
+  "safe_to_spend": {
+    "effect": "after_payday",
+    "next_payday": "2026-10-15",
+    "reserved": null,
+    "counted": null,
+    "free_until_payday_before": {
+      "value": 12656.12,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-15",
+        "label": "Until payday on 15 Oct"
+      },
+      "method": "safe_to_spend.free_until_payday_eur@1",
+      "evidence_ref": "ev_d22d6fd467e0",
+      "label": "Free until payday",
+      "display": "€12,656.12"
+    },
+    "free_until_payday_after": null,
+    "before": {
+      "value": 138.79,
+      "unit": "eur",
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-07",
+        "label": "Next 7 days"
+      },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+      "evidence_ref": "ev_61150a8cc692",
+      "label": "Safe to spend",
+      "display": "€138.79"
+    },
+    "after": null,
+    "text": "Due on 20 Oct 2026, after your payday on 15 Oct 2026, so it changes nothing before then."
+  },
+  "forecast": {
+    "status": "outside_forecast",
+    "before": null,
+    "already_counted": null,
+    "counted": null,
+    "after": null,
+    "shortfall": null,
+    "text": "Due on 20 Oct 2026, beyond your balance forecast, which runs until the day before your payday on 15 Oct 2026.",
+    "chip": null
+  },
+  "glossary": [
+    {
+      "term": "reference_number",
+      "label": "Reference number (viitenumero)",
+      "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught."
+    },
+    {
+      "term": "due_date",
+      "label": "Due date (eräpäivä)",
+      "text": "The last day to pay the bill without a late-payment charge."
+    },
+    {
+      "term": "virtual_barcode",
+      "label": "Virtual barcode (virtuaaliviivakoodi)",
+      "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them."
+    },
+    {
+      "term": "late_payment_interest",
+      "label": "Late-payment interest (viivästyskorko)",
+      "text": "Interest the payee may charge for each day a bill is paid after its due date."
+    }
+  ],
+  "actions": [
+    {
+      "type": "open_host_screen",
+      "label": "Contact S-Pankki",
+      "target": "contact_bank"
+    }
+  ],
+  "warnings": [],
+  "signals": [
+    {
+      "code": "reference_check_failed",
+      "text": "This reference number does not pass its check. Compare it with the paper bill before paying.",
+      "numbers": []
+    }
   ]
 }
 ```
@@ -3921,6 +5047,16 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
     "after": null,
     "text": "Due on 20 Oct, after your payday on 15 Oct, so it changes nothing before then."
   },
+  "forecast": {
+    "status": "outside_forecast",
+    "before": null,
+    "already_counted": null,
+    "counted": null,
+    "after": null,
+    "shortfall": null,
+    "text": "Due on 20 Oct 2026, beyond your balance forecast, which runs until the day before your payday on 15 Oct 2026.",
+    "chip": null
+  },
   "glossary": [
     { "term": "reference_number", "label": "Reference number (viitenumero)", "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught." },
     { "term": "due_date", "label": "Due date (eräpäivä)", "text": "The last day to pay the bill without a late-payment charge." },
@@ -3934,6 +5070,188 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
   "signals": [
     { "code": "reference_check_failed", "text": "This reference number does not pass its check. Compare it with the paper bill before paying.", "numbers": [] },
     { "code": "new_payee", "text": "This payee is not one of your regular bills.", "numbers": [] }
+  ]
+}
+```
+
+A bill the forecast does not cover, typed by CUST00849, the persona whose forecast is tightest: €700.00 to an unknown payee, due on 14 Oct, the forecast's lowest day (€641.43). Nothing of it is in the forecast yet, so it takes the whole amount and is €58.57 short: `forecast.status` is `not_covered`, with the `shortfall` and the forecast question as the `chip`. The payment draft stays, and the way to the bank follows it (a new payee with another sign, section 3, `contact_bank`):
+
+<!-- example: bill.response_not_covered -->
+```json
+{
+  "customer_id": "CUST00849",
+  "as_of": "2026-09-30",
+  "language": "en",
+  "bill": {
+    "source": "fields",
+    "payee": "Esimerkki Remontti Oy",
+    "iban": "FI71 1234 5600 0098 76",
+    "reference": "12344",
+    "amount": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "user_input@1", "evidence_ref": null,
+      "label": "Amount due", "display": "€700.00"
+    },
+    "due_date": "2026-10-14"
+  },
+  "checks": {
+    "iban": "pass",
+    "reference": "pass",
+    "due_date": "pass"
+  },
+  "match": {
+    "status": "not_matched",
+    "bill_id": null,
+    "label": null,
+    "text": "This payee is not one of your regular bills."
+  },
+  "comparison": null,
+  "basket": {
+    "key": "unexpected_necessities",
+    "label": "Unexpected necessities",
+    "text": "It is not one of your regular bills, so it would count as an unexpected necessity. Nothing is saved."
+  },
+  "safe_to_spend": {
+    "effect": "full",
+    "next_payday": "2026-10-15",
+    "reserved": null,
+    "counted": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.counted_eur@1", "evidence_ref": "ev_fa842817d5f6",
+      "label": "Added to the bills before payday", "display": "€700.00"
+    },
+    "free_until_payday_before": {
+      "value": 819.62, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "safe_to_spend.free_until_payday_eur@1", "evidence_ref": "ev_ef509d0e7ccb",
+      "label": "Free until payday", "display": "€819.62"
+    },
+    "free_until_payday_after": {
+      "value": 119.62, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-15", "label": "Until payday on 15 Oct" },
+      "method": "bill.free_until_payday_after_eur@1", "evidence_ref": "ev_ee61b33a3f53",
+      "label": "Free until payday after this bill", "display": "€119.62"
+    },
+    "before": {
+      "value": 123.15, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_b947397749c0",
+      "label": "Safe to spend", "display": "€123.15"
+    },
+    "after": {
+      "value": 55.82, "unit": "eur",
+      "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+      "method": "bill.safe_to_spend_after_eur@1", "evidence_ref": "ev_a50e19ad3a3b",
+      "label": "Safe to spend after this bill", "display": "€55.82"
+    },
+    "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Your weekly safe to spend goes from €123.15 to €55.82."
+  },
+  "forecast": {
+    "status": "not_covered",
+    "before": {
+      "value": 641.43, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "balance_forecast.balance_eur@1", "evidence_ref": "ev_e556874c14c9",
+      "label": "Forecast balance on the due date", "display": "€641.43"
+    },
+    "already_counted": null,
+    "counted": {
+      "value": 700.0, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "user_input@1", "evidence_ref": null,
+      "label": "Amount due", "display": "€700.00"
+    },
+    "after": {
+      "value": -58.57, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "bill.forecast_after_eur@1", "evidence_ref": "ev_c3153e0e6d7c",
+      "label": "Forecast balance after this bill", "display": "-€58.57"
+    },
+    "shortfall": {
+      "value": 58.57, "unit": "eur",
+      "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+      "method": "bill.forecast_shortfall_eur@1", "evidence_ref": "ev_91c833639e58",
+      "label": "Short of this bill", "display": "€58.57"
+    },
+    "chip": {
+      "type": "ask",
+      "label": "See your balance forecast",
+      "prompt": "Will my money last until payday?"
+    },
+    "text": "Your forecast balance on 14 Oct 2026 does not cover this bill: it is €58.57 short."
+  },
+  "glossary": [
+    {
+      "term": "reference_number",
+      "label": "Reference number (viitenumero)",
+      "text": "The number that tells the payee which bill a payment is for; its last digit is a check digit, so most typing errors are caught."
+    },
+    {
+      "term": "due_date",
+      "label": "Due date (eräpäivä)",
+      "text": "The last day to pay the bill without a late-payment charge."
+    },
+    {
+      "term": "virtual_barcode",
+      "label": "Virtual barcode (virtuaaliviivakoodi)",
+      "text": "A 54-digit code that holds the account, amount, reference number and due date, so the bill can be paid without typing them."
+    },
+    {
+      "term": "late_payment_interest",
+      "label": "Late-payment interest (viivästyskorko)",
+      "text": "Interest the payee may charge for each day a bill is paid after its due date."
+    }
+  ],
+  "actions": [
+    {
+      "type": "add_to_payments",
+      "label": "Add to payments",
+      "draft": {
+        "payee": "Esimerkki Remontti Oy",
+        "iban": "FI7112345600009876",
+        "reference": "12344",
+        "amount": {
+          "value": 700.0, "unit": "eur",
+          "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+          "method": "user_input@1", "evidence_ref": null,
+          "label": "Amount due", "display": "€700.00"
+        },
+        "due_date": "2026-10-14"
+      }
+    },
+    {
+      "type": "open_host_screen",
+      "label": "Contact S-Pankki",
+      "target": "contact_bank"
+    }
+  ],
+  "warnings": [],
+  "signals": [
+    {
+      "code": "new_payee",
+      "text": "This payee is not one of your regular bills.",
+      "numbers": []
+    },
+    {
+      "code": "amount_above_usual",
+      "text": "This bill is €700.00, more than your largest regular bill (€613.93 a month).",
+      "numbers": [
+        {
+          "value": 700.0, "unit": "eur",
+          "period": { "start": "2026-10-14", "end": "2026-10-14", "label": "14 Oct 2026" },
+          "method": "user_input@1", "evidence_ref": null,
+          "label": "Amount due", "display": "€700.00"
+        },
+        {
+          "value": 613.93, "unit": "eur_per_month",
+          "period": { "start": "2026-04-01", "end": "2026-09-30", "label": "1 Apr – 30 Sep 2026" },
+          "method": "recurring.typical_month_eur@1", "evidence_ref": "ev_523fbc172441",
+          "label": "Usual amount", "display": "€613.93 a month"
+        }
+      ]
+    }
   ]
 }
 ```
@@ -3967,25 +5285,25 @@ The typed bill of section 11.1: the payee matches no regular bill, the reference
 }
 ```
 
-### 11.4 Reading a sample bill (not implemented yet)
+### 11.4 Reading a sample bill
 
-**Not implemented yet** (#249, #250). The two endpoints below are decided but not built, and this subsection stays marked until they are on the dev environment. The demo reads only the sample bills of a gallery; a visitor's own file is not sent anywhere.
+(#249, #250.) The demo reads only the sample bills of a gallery. There is no upload: a visitor's own file is not sent anywhere.
 
 **`GET /api/bill/samples?lang=en`** lists the sample bills: `{samples: [{sample_id, title, language, image_url}]}`. `language` is the bill's own language, and `image_url` is a static image. The true fields of a sample are never in this response.
 
 **`POST /api/bill/read`** with `{customer_id, language, sample_id}` reads one sample bill: a language model reads the image, and code checks what it read. The response is a proposal, not an explanation: `{sample_id, language, fields, needs_confirmation}`, where `language` is the request's language (the bill's own language is in the samples list).
-- `fields` has the keys `payee`, `iban`, `reference`, `amount`, `due_date` and `barcode`. Each is `{value, display, status, source, note}`, or `null` when it was not found or failed its format check (it is dropped, never repaired):
+- `fields` has the keys `payee`, `iban`, `reference`, `amount`, `due_date` and `barcode`. Each is `{value, display, status, source, note}`, or `null` when it was not found or failed its format or plausibility check (it is dropped, never repaired). Plausible means a due date within two years of today and an amount more than 0 and at most 100 000.00; an amount such as "12.345", whose one separator could mean thousands or decimals, is dropped.
   - `value`: the normalised string, for example `"FI2112345600000785"` or `"812.40"`; `display`: the same, formatted for display.
-  - `status`: `checked` or `unchecked`. `checked` means code checked it: a barcode that parses, the fields taken from that barcode, or an IBAN or reference that passes its check digit. Without a barcode, `amount`, `due_date` and `payee` are always `unchecked`.
+  - `status`: `checked` or `unchecked`. Only an IBAN or a reference can be `checked`: code checked its own check digits, whether it was read from the barcode or printed. A language model transcribes the barcode from the image, and the Finnish virtual barcode has no check digit over the amount or the due date. So `amount`, `due_date`, `payee` and `barcode` are always `unchecked`, also when the barcode and the printed value agree. An IBAN or a reference that fails its check digits is kept as `unchecked`, with a note, so the user can correct a misread digit; only a field that fails its format is dropped.
   - `source`: `barcode` or `printed`.
-  - `note`: a sentence or `null`, for example when the amount in the barcode and the printed amount differ.
+  - `note`: a sentence or `null`. A value from the barcode that disagrees with the printed one keeps the barcode's value, `unchecked`, with a note ("The amount in the barcode and the printed amount differ.").
 - `needs_confirmation` is always `true`. A reading contains no Number objects.
 
 The user then confirms or corrects every field. The app sends the confirmed `barcode`, or the confirmed fields as `fields`, to `POST /api/bill/explain` (section 11.1), where the methods are `bill_barcode@1` and `user_input@1`. **Unconfirmed fields never reach an answer.**
 
-When the model may not be used (switched off, out of budget, paused, an error, or an answer that does not fit the schema), the reading is 503 `model_unavailable`, with no retry; the app then offers typing the fields.
+Readings have their own window: 6 a minute per address and 30 an hour per viewer; over it, 429 `rate_limited` with `Retry-After`. A reading in the cache is served even while the model may not be used: it costs no model request. A reading not in the cache needs the model. When the model may not be used (switched off, out of budget, paused, an error, or an answer that does not fit the schema or has no usable field), the reading is 503 `model_unavailable`, with no retry; the app then offers typing the fields.
 
-A reading of a sample with a barcode (not implemented yet):
+A reading of a sample with a barcode:
 
 <!-- example: bill.read_response -->
 ```json
@@ -3996,9 +5314,9 @@ A reading of a sample with a barcode (not implemented yet):
     "payee": { "value": "Esimerkki Asunnot Oy", "display": "Esimerkki Asunnot Oy", "status": "unchecked", "source": "printed", "note": null },
     "iban": { "value": "FI2112345600000785", "display": "FI21 1234 5600 0007 85", "status": "checked", "source": "barcode", "note": null },
     "reference": { "value": "1232", "display": "1232", "status": "checked", "source": "barcode", "note": null },
-    "amount": { "value": "812.40", "display": "812,40 €", "status": "checked", "source": "barcode", "note": null },
-    "due_date": { "value": "2026-10-01", "display": "1.10.2026", "status": "checked", "source": "barcode", "note": null },
-    "barcode": { "value": "421123456000007850008124000000000000000000001232261001", "display": "421123456000007850008124000000000000000000001232261001", "status": "checked", "source": "barcode", "note": null }
+    "amount": { "value": "812.40", "display": "812,40 €", "status": "unchecked", "source": "barcode", "note": null },
+    "due_date": { "value": "2026-10-01", "display": "1.10.2026", "status": "unchecked", "source": "barcode", "note": null },
+    "barcode": { "value": "421123456000007850008124000000000000000000001232261001", "display": "421123456000007850008124000000000000000000001232261001", "status": "unchecked", "source": "barcode", "note": null }
   },
   "needs_confirmation": true
 }
@@ -4020,3 +5338,8 @@ A reading of a sample with a barcode (not implemented yet):
 | 0.3.1 | After 0.3.0. One step from a card into the host app's own screens (#267).<br><br>New:<br>- Action `open_host_screen` with `label` and `target` from the closed list `monthly_saving` and `bonus_to_fund` (section 3, Actions; example `action.open_host_screen`).<br>- The `safe_to_save` card carries it with `monthly_saving` when `monthly` is above 0. The S-Bonus estimate's `metric` card carries it with `bonus_to_fund` when the estimate is offered.<br>- Host message `sentti.openHostScreen` with the payload `{target}` and nothing else (example `host.open_host_screen`; a row in the host-message table of section 11.3; `docs/integration.md` section 3). The host opens its own screen and ignores a target it does not know. The envelope is the app's, from PR #175.<br><br>Changed examples: the safe-to-save cards whose `monthly` is above 0 carry the new action, in `card.safe_to_save`, `card.safe_to_save_aleksi`, `overview.response`, `overview.response_pending` and `overview.response_no_hero`. `card.safe_to_save_zero` and `card.safe_to_save_everyday` (`monthly` 0) do not. |
 | 0.3.2 | The effect of an answer to a review card (#382). New: `effect` in the response of section 10 (`POST /api/baskets/label`), `{items, text, text_rendered, numbers}` or `null`: the headline numbers before and after (safe to spend, safe to save, the reserve, the basket the purchase moved into), exactly as the overview shows them, and the effect text built from their real difference. `message` now carries the same text, never a fixed promise. An undo returns the sides swapped. Examples `label.response`, `label.response_wanted` and `label.response_undo` gain `effect`. |
 | 0.3.3 | The way to a human and the AI disclosure (#420).<br><br>New:<br>- Target `contact_bank` in the closed list of `open_host_screen` (section 3), label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin"; the host message `sentti.openHostScreen` carries it as `{target}` only.<br>- `done.actions` (Action[]): every refusal, the "I can't answer that one yet" answer and the "nothing found" fallback carry the `contact_bank` action; other answers `[]`.<br>- `done.ai_disclosure` (string or null): the overview's disclosure text on the first answer of a conversation unless it is the introduction; `null` afterwards.<br>- The bill explanation's `actions` holds at most two: the payment draft, then `contact_bank` with a failed check or an unknown payee together with another sign.<br><br>Examples `ask.sse.done`, `ask.json.response_fi`, `ask.json.response_refusal`, `ask.json.response_clarify` and `bill.response_unknown` gain the fields; new pair `ask.json.request_refusal_first` / `ask.json.response_refusal_first`. No refusal text changes. |
+| 0.3.4 | After 0.3.3. The forecast balance on a bill's due date (#421).<br><br>New:<br>- `forecast` in the response of section 11 (`POST /api/bill/explain`): `{status, before, already_counted, counted, after, shortfall, text, chip}`, or `null`. It is `null` when the balance forecast cannot be computed: no transactions, no balance, the bills due of the two paths differ, or a failed consistency check of the forecast; the rest of the explanation is unchanged. `status` is one of `covered`, `tight` (below a server constant, €100), `not_covered` and `outside_forecast`. `before` is the balance forecast's own Number for the due date. A bill already among the forecast's bills takes only its excess over what the forecast subtracts for it by the due date. `chip` is an `ask` action with the forecast question, for `not_covered` only. The status never removes the payment draft.<br>- Methods `bill.forecast_counted_eur@1`, `bill.forecast_after_eur@1` and `bill.forecast_shortfall_eur@1`, which open as `composite`.<br><br>Changed examples: `bill.response` (`covered`, with €780.00 already in the forecast for the housing bill on 1 Oct) and `bill.response_unknown` (`outside_forecast`, due after payday). New example `bill.response_not_covered` (CUST00849, €700.00 due on 14 Oct: €58.57 short, with the `shortfall` and the `chip`). |
+| 0.3.5 | Safe to save at three scales, and the amount kept apart from the bank's screen (#417).<br><br>New:<br>- `weekly` and `daily` (Numbers) on the `safe_to_save` card: the headline `monthly` a week (`monthly` × 7 / 30.4375, method `safe_to_save.week_eur@1`) and a day (`monthly` / 30.4375, method `safe_to_save.day_eur@1`). Both are composites whose evidence opens `monthly`, so they reconcile with it to the cent.<br>- Rule: no answer text puts an amount into the bank's screen or product (S-mobiili, monthly saving, a fund) in one sentence: moving, putting, sending, setting, adding, starting, opening or investing into, to or in it. A plain statement of a figure passes. The `open_host_screen` labels name the screen only: one label per target, no digit, no currency sign, no action verb such as "start saving", "put", "move" or "invest".<br><br>Changed examples: every `safe_to_save` card gains `weekly` and `daily`: `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, and the cards in `overview.response`, `overview.response_no_hero` and `overview.response_pending`. No label text changes. |
+| 0.3.6 | Estimates separate what was observed from what is assumed (#380).<br><br>New:<br>- `estimate` gains `observed` (Number[]: the Numbers the estimate is built from, Numbers the tool already computed, with their evidence refs) and `assumptions` (`{code, text, value}`[]: what it assumes; `text` is one plain sentence without digits, `value` a Number or `null`). The Numbers inside an estimate are complete objects: the app reads them from the estimate, never by id from the answer's `numbers` map. Section 3, Estimates.<br>- A closed list of assumption codes in one table (section 3, Estimates): `spending_as_usual`, `reserve_for_unexpected`, `cushion`, `savings_goal_first`, `budget_from_usual_month`, `bills_on_usual_days`, `next_months_like_last`, `cut_share`, `bonus_all_at_s_group`, `bonus_share`, `bonus_household`, `bonus_table`, `bonus_payment_card`, `bonus_goods`, `bonus_level`, `bills_pro_rata`, `peer_group`, `no_income_before_payday`, `cuts_as_shown`. The app ignores a code it does not know.<br>- Every card that sets `estimate` has at least one assumption: the safe-to-spend card (both limbs: the balance and the bills, and the budget limit of a typical month), the S-Bonus card (every fixed assumption), the balance forecast, `safe_to_save`, `bills`, `peer`, `whatif` and the savings plan. The `POST /api/whatif` response's `estimate` carries the same fields. The `stores` example has `estimate: null` until a tool builds that card.<br>- Nothing is computed differently: the hero's Numbers and evidence refs are unchanged.<br><br>Changed examples: every example with an `estimate` gains the two fields: `card.peer`, `card.whatif`, `card.safe_to_save`, `card.safe_to_save_aleksi`, `card.safe_to_save_zero`, `card.safe_to_save_everyday`, `overview.response` (hero, safe to save, bills), `overview.response_no_hero`, `overview.response_pending` and `whatif.response`; `card.stores` has `estimate: null`. New examples for the kinds without a card example: `estimate.bonus`, `estimate.forecast` and `estimate.savings_plan`. |
+| 0.3.7 | Reading a sample bill is implemented (#250).<br><br>Changed:<br>- Section 11.4 is no longer marked "not implemented yet".<br>- Only an IBAN or a reference can be `checked`, by its own check digits. A language model transcribes the barcode, which has no check digit over the amount or the due date, so `amount`, `due_date`, `payee` and `barcode` are always `unchecked`. The example `bill.read_response` shows this.<br>- A field is also dropped when it is implausible: a due date more than two years from today, an amount of 0 or above 100 000.00, an amount such as "12.345".<br>- A cached reading is served even while the model may not be used; only a reading not in the cache answers 503 `model_unavailable` (sections 4 and 11.4). A reading with no usable field is 503 too.<br>- Section 11.4 also says that an IBAN or a reference failing its check digits is kept as `unchecked` with a note, that a barcode value disagreeing with the printed one keeps the barcode's value as `unchecked` with a note, and that readings have their own rate window (429) (#511). |
+| 0.3.9 | A clarification, no new field (#433). Section 11.2: a matched bill has a `comparison` only when it fits the customer's regular bill (paid once a month, at least half of its typical month; #400). A matched bill that does not fit has `comparison` `null`, and `match.text` names the payee category ("This bill is from the same payee category as your regular Utilities payments."). New example `bill.response_category`: the gallery's water sample for Sanna, with its `forecast` (0.3.4) as the service returns it. `signals`: for a category match, `amount_above_usual` is measured against the category's whole month and says so. `comparison.change_pct` is never `null` (a comparison needs a typical amount above 0). |

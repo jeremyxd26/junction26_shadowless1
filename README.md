@@ -68,6 +68,7 @@ Model settings:
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
 - Per role (#341): `GEMINI_PLANNER_MODEL` and `GEMINI_COMPOSER_MODEL` choose a model for the planner or the composer, for example the faster `gemini-3.5-flash-lite` for the composer. Both default to `GEMINI_MODEL`. Each role's fallback is `GEMINI_FALLBACK_MODEL`, or else the model's usual partner (flash-lite falls back to flash). `GEMINI_PLANNER_THINKING` and `GEMINI_COMPOSER_THINKING` take `default`, `minimal`, `low` (the default), `medium` or `high`. A level the model rejects is sent as `low`: `gemini-3.8-flash` has no `minimal`. `GEMINI_PLANNER_TIMEOUT_S` (default 9) and `GEMINI_COMPOSER_TIMEOUT_S` (default 5) are seconds per call, at most 15. The start-up line shows every role's model, thinking level, timeout and fallback. The cache key holds the model and the thinking level, so a switch never serves another model's saved text. Like `GEMINI_MODEL`, set the model ids as process variables, not in `.env`.
+- Bill readings (#250) have their own role: `GEMINI_EXTRACT_MODEL` (default the pinned default model, never the planner's setting), `GEMINI_EXTRACT_THINKING` (default `low`) and `GEMINI_EXTRACT_TIMEOUT_S` (default 15, at most 30), so changing the planner or composer never changes a reading's cache key. `BILL_READ_DAILY_BUDGET` (default 50) is the readings' share of the daily budget. A bad value of these is the default, with one log line; it never turns the model off. A reading in the cache is served even while the model may not be used (budget, pause, switch file); only a reading not in the cache needs the model and answers 503 `model_unavailable` without it.
 
 ```
 curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \
@@ -217,9 +218,10 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
-- Two lying sources prove the checks catch invented numbers (`core/eval/liars.py`); both must fail every answer:
+- Lying sources prove the checks catch invented numbers and borrowing suggestions (`core/eval/liars.py`); each must fail every answer:
   - `--source liars:invented_text` adds an invented amount to each answer's text;
-  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it.
+  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it;
+  - `--source liars:borrowing` adds a borrowing suggestion, which the borrowing rule must catch in every answer.
 - The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.

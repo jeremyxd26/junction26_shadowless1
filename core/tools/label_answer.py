@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -26,7 +27,7 @@ from core.tools.models import Number
 from core.tools.numbers import NumberBuilder
 from core.tools.review_card import amount_number, purchase
 from core.tools.safe_to_save import get_safe_to_save
-from core.tools.safe_to_spend import NoTransactions, get_safe_to_spend
+from core.tools.safe_to_spend import NoTransactions, binding_limit, get_safe_to_spend
 from core.tools.selection import Selection
 
 BASKET_KEYS = ("unclassified", *config.BASKETS)
@@ -118,7 +119,8 @@ def effect_text(before: dict[str, tuple[str, Number]], after: dict[str, tuple[st
                                                    after=token("safe_to_save", "after"))
     else:
         limits = after if "balance_limit" in after else before
-        binding = "balance" if value(limits, "balance_limit") <= value(limits, "budget_limit") else "budget"
+        binding = binding_limit(Decimal(str(value(limits, "balance_limit"))),
+                                Decimal(str(value(limits, "budget_limit"))))
         second = _e("same_balance" if binding == "balance" else "same_budget", language)
     return f"{first} {second}"
 
@@ -166,22 +168,9 @@ def _timestamp(moment: datetime | None) -> str | None:
 
 
 def _message(ctx: ToolContext, outcome: reviews.Outcome) -> dict[str, Any]:
-    lang = ctx.language
-    numbers: dict[str, Any] = {}
-    if not outcome.changed:
-        text = rendered = _t("unchanged" if outcome.review.basket else "still_pending", lang)
-    elif outcome.review.basket == "everyday_spending":
-        found = purchase(ctx, outcome.review)
-        n1 = amount_number(ToolContext(ctx.customer_id, ctx.as_of, ctx.conn, lang, NumberRegistry(),
-                                       _history=ctx.history(), _labels=ctx._labels, viewer=ctx.viewer), *found)
-        text = _t("done_everyday_spending", lang, amount="{{" + n1.id + "}}")
-        rendered = _t("done_everyday_spending", lang, amount=n1.display)
-        numbers[n1.id] = n1.model_dump(mode="json")
-    elif outcome.review.basket == "unexpected_necessities":
-        text = rendered = _t("done_unexpected_necessities", lang)
-    else:
-        text = rendered = _t("undone_pending" if outcome.state == reviews.PENDING else "undone_closed", lang)
-    return {"text": text, "text_rendered": rendered, "numbers": numbers}
+    """The message of an answer that changed nothing; an answer that changes something carries its effect."""
+    text = _t("unchanged" if outcome.review.basket else "still_pending", ctx.language)
+    return {"text": text, "text_rendered": text, "numbers": {}}
 
 
 def answer(conn: psycopg.Connection, customer_id: str, as_of: date, tx_ref: str, basket: str | None,

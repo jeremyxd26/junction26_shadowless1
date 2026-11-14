@@ -251,32 +251,52 @@ run_rates AS (   -- daily averages over the 6 complete months (or the customer's
     WHERE c.tx_date <= p.win_end
     GROUP BY c.customer_id, p.win_start, p.win_end
 ),
-review_purchase AS (   -- #391: the purchase a spike review asks about, for a customer with no review yet
-                       -- (core/tools/reviews.py `candidates`): a one-off of the spend flow in the window, in
-                       -- unexpected_necessities or everyday_spending, not Health and not a health MCC (R9);
-                       -- the most recent day first, then the largest, then the id.
+cls_rules AS (   -- #459: the rules' basket of every row, labels ignored, for the savings goal. The CASE below is a
+                 -- copy of the rule CASE of `cls`, byte for byte: the shared classification block stays untouched
+                 -- in the six files that carry it, and core/tools/tests/test_tools_safe_to_spend_goal_pure.py
+                 -- checks that the copy equals it.
+    SELECT x.*,
+               CASE
+                   WHEN x.flow <> 'spend'                                    THEN NULL
+                   WHEN x.tx_type IN ('housing_payment', 'utilities_payment') THEN 'regular_essentials'
+                   WHEN x.is_subscription                                     THEN 'regular_essentials'
+                   WHEN x.category IN ('Health', 'Home & Tech')               THEN 'unexpected_necessities'
+                   WHEN x.category = 'Transportation' AND x.mcc = '4121'      THEN 'everyday_spending'   -- taxi
+                   WHEN x.category IN ('Groceries', 'Transportation') AND x.is_one_off
+                                                                              THEN 'unexpected_necessities'
+                   WHEN x.category IN ('Groceries', 'Transportation')         THEN 'regular_essentials'
+                   WHEN x.category IN ('Restaurants', 'Entertainment', 'Lifestyle', 'Travel')
+                                                                              THEN 'everyday_spending'
+                   ELSE 'unclassified'
+               END AS rule_basket
+    FROM cls x
+),
+review_purchase AS (   -- #391, #459: the purchase the first spike review asks about (core/tools/reviews.py
+                       -- `candidates`), by the rules, whatever the labels say: a one-off of the spend flow in the
+                       -- window, in unexpected_necessities or everyday_spending, not Health and not a health MCC
+                       -- (R9); the most recent day first, then the largest, then the id. The same purchase in
+                       -- every review state.
     SELECT DISTINCT ON (c.customer_id) c.customer_id, c.id AS tx_id
-    FROM cls c, params p
+    FROM cls_rules c, params p
     WHERE c.flow = 'spend' AND c.is_one_off AND c.tx_date BETWEEN p.win_start AND p.win_end
-      AND c.basket IN ('unexpected_necessities', 'everyday_spending')
+      AND c.rule_basket IN ('unexpected_necessities', 'everyday_spending')
       AND c.category <> 'Health' AND (c.mcc IS NULL OR c.mcc NOT IN ('5912', '8011', '8021', '8099'))
-      AND NOT EXISTS (SELECT 1 FROM cls l WHERE l.customer_id = c.customer_id AND l.overridden)
     ORDER BY c.customer_id, c.tx_date DESC, c.out_eur DESC, c.id
 ),
-run_rates_before AS (   -- #391: the run rates for the savings goal, with the spike review's purchase left out
-                        -- in every state: the labelled purchases once a review exists, else the purchase a
-                        -- review would ask about. So the goal is one figure for the month: it does not move
-                        -- when a review appears or is answered.
+run_rates_before AS (   -- #391, #459: the run rates for the savings goal, computed as with no labels at all: every
+                        -- row in its rules' basket, and only the first review's purchase left out. So the goal is
+                        -- one figure for the month in every review state: it does not move when a review
+                        -- appears, is answered or expires, or when a later review asks about another purchase.
     SELECT c.customer_id,
-           sum(c.out_eur) FILTER (WHERE c.basket = 'regular_essentials' AND c.tx_type = 'purchase'
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'regular_essentials' AND c.tx_type = 'purchase'
                                     AND NOT c.is_subscription AND c.tx_date >= p.win_start)        AS essentials_eur,
-           sum(c.out_eur) FILTER (WHERE c.basket = 'unexpected_necessities' AND c.tx_date >= p.win_start) AS irregular_eur,
-           sum(c.out_eur) FILTER (WHERE c.basket = 'everyday_spending' AND NOT c.is_one_off
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'unexpected_necessities' AND c.tx_date >= p.win_start) AS irregular_eur,
+           sum(c.out_eur) FILTER (WHERE c.rule_basket = 'everyday_spending' AND NOT c.is_one_off
                                     AND c.tx_date >= p.win_start)                                   AS everyday_eur
-    FROM cls c
+    FROM cls_rules c
     CROSS JOIN params p
     LEFT JOIN review_purchase rp USING (customer_id)
-    WHERE c.tx_date <= p.win_end AND NOT c.overridden AND c.id IS DISTINCT FROM rp.tx_id
+    WHERE c.tx_date <= p.win_end AND c.id IS DISTINCT FROM rp.tx_id
     GROUP BY c.customer_id
 ),
 -- Safe to save (metrics.md 3.1): the everyday_spending category with the largest window total,

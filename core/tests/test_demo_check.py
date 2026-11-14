@@ -32,7 +32,8 @@ class Stub:
     """The service's demo path, with switches for the failure cases."""
 
     def __init__(self, saving=45.91, off=(), hero_after_needed=97.46, undo="ok", reconciles=True, ask_429=False,
-                 malformed_whatif=False, needed_delay=0.0, label_list=False):
+                 malformed_whatif=False, needed_delay=0.0, label_list=False, effect="absent"):
+        self.effect = effect               # absent | null | match | mismatch | no_text (#382, #485)
         self.needed_delay = needed_delay   # a slow "Needed", applied after the delay (maybe after the undo)
         self.label_list = label_list
         self.saving = saving
@@ -97,8 +98,16 @@ class Stub:
                 import time
                 time.sleep(self.needed_delay)
             self.state = "answered"
-            return 200, {"review_state": "answered",
-                         "changes": [{"key": "safe_to_spend", "before": num(138.79), "after": num(97.46)}]}
+            body = {"review_state": "answered",
+                    "changes": [{"key": "safe_to_spend", "before": num(138.79), "after": num(97.46)}]}
+            if self.effect == "null":
+                body["effect"] = None
+            elif self.effect != "absent":
+                after = 999.0 if self.effect == "mismatch" else 97.46
+                text = "" if self.effect == "no_text" else "Your safe to spend this week goes from €138.79 to €97.46."
+                body["effect"] = {"items": [{"key": "safe_to_spend", "before": num(138.79), "after": num(after)}],
+                                  "text": text, "text_rendered": text, "numbers": {}}
+            return 200, body
         if path == "/api/ask" and method == "POST" and self.ask_429:
             return 429, {"error": {"code": "rate_limited", "message": "Too many requests."}}
         if path == "/api/ask" and method == "POST" and "ask" not in self.off:
@@ -301,3 +310,20 @@ def test_the_ask_checks_require_answered_and_the_warning_follows_expect_model(se
     asks = [row for row in lines if row.startswith("ask:")]
     assert len(asks) == 4 and all((" PASS " in row) == passes for row in asks), "\n".join(lines)
     assert (code == 0) == passes
+
+
+# ---- #485: the effect branch of the spike review (#382) -----------------------------------------------------
+
+@pytest.mark.parametrize("effect,passes,why", [
+    ("absent", True, ""), ("null", True, ""),                         # no effect: the branch is skipped
+    ("match", True, ""),                                              # the overview's number and a text
+    ("mismatch", False, "effect safe_to_spend after Needed"),        # another number than the hero
+    ("no_text", False, "effect text after Needed"),
+])
+def test_the_effect_is_checked_when_present_and_the_undo_still_runs(serve, effect, passes, why):
+    stub = Stub(effect=effect)
+    code, lines = run(serve(stub), "--no-ask")
+    row = line(lines, "spike review")
+    assert (" PASS " in row) is passes and (code == 0) is passes, row
+    assert why in row
+    assert stub.state == "pending" and stub.paths.count("POST /api/baskets/label") == 2   # the undo ran
