@@ -98,7 +98,7 @@ export function BillFlow({ onDone, onAsk, onStep, onBusy }: Props) {
           <p data-step-heading tabIndex={-1} className="mb-3 text-base text-ink-2">
             {s.reading}
           </p>
-          <LoadingBlock lines={5} />
+          <LoadingBlock lines={5} announce={!onStep} />
         </CardShell>
       )
     case 'fields':
@@ -127,7 +127,7 @@ export function BillFlow({ onDone, onAsk, onStep, onBusy }: Props) {
               <p data-step-heading tabIndex={-1} className="mb-3 text-base text-ink-2">
                 {s.explaining}
               </p>
-              <LoadingBlock lines={5} />
+              <LoadingBlock lines={5} announce={!onStep} />
             </CardShell>
           )}
           <BackButton label={s.backToSamples} onClick={back} />

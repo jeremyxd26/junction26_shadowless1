@@ -26,6 +26,8 @@ export interface ClientTurnEntry {
   chip: (lang: Language) => string
   /** Whether the chip shows, for example only in mock mode or behind a flag. */
   visible: () => boolean
+  /** The same content as a screen of its own; the turn links to it when its code fails to load. */
+  screen?: string
   Component: ComponentType<ClientTurnProps>
 }
 
@@ -35,8 +37,9 @@ export const clientTurns: Record<string, ClientTurnEntry> = {
   // thread. Only where the bills match the persona: in mock mode, or live with the core's bills on.
   // The flow's code loads with the first bill turn, as `/bill` and `/cards` load it.
   bill: {
-    chip: (lang) => billStrings(lang).screenTitle,
+    chip: (lang) => billStrings(lang).chip,
     visible: () => api.mode === 'mock' || BILL_LIVE,
+    screen: '/bill',
     Component: lazy(() => import('./bill/BillFlow.tsx').then((module) => ({ default: module.BillFlow }))),
   },
 }
