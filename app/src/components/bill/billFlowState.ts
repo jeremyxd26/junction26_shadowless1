@@ -15,7 +15,15 @@ export type FlowState =
    * `reading: null` is the typed fallback; `notice` is then the server's 503 `model_unavailable`
    * message, shown above the empty fields.
    */
-  | { step: 'fields'; sampleId: string | null; reading: BillReadResponse | null; notice: string | null; error: FlowError | null }
+  | {
+      step: 'fields'
+      sampleId: string | null
+      reading: BillReadResponse | null
+      notice: string | null
+      error: FlowError | null
+      /** The request that failed, kept for "Try again" when the error is retryable. */
+      failed: BillExplainRequest | null
+    }
   | {
       step: 'explaining'
       sampleId: string | null
@@ -34,6 +42,8 @@ export type FlowEvent =
   | { type: 'explain_ok'; response: BillExplainResponse }
   /** Any explain error: back to the fields with the message (a 422 `invalid_bill` included). */
   | { type: 'explain_failed'; error: FlowError }
+  /** Sends the failed request again (only offered when the error was retryable). */
+  | { type: 'retry_explain' }
   | { type: 'back' }
 
 export const initialFlow: FlowState = { step: 'gallery', error: null, lastSampleId: null }
@@ -45,10 +55,10 @@ export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
     case 'read_ok':
       // A late answer for a sample the user has left is ignored.
       if (state.step !== 'reading' || state.sampleId !== event.sampleId) return state
-      return { step: 'fields', sampleId: event.sampleId, reading: event.reading, notice: null, error: null }
+      return { step: 'fields', sampleId: event.sampleId, reading: event.reading, notice: null, error: null, failed: null }
     case 'read_unavailable':
       if (state.step !== 'reading' || state.sampleId !== event.sampleId) return state
-      return { step: 'fields', sampleId: event.sampleId, reading: null, notice: event.message, error: null }
+      return { step: 'fields', sampleId: event.sampleId, reading: null, notice: event.message, error: null, failed: null }
     case 'read_failed':
       if (state.step !== 'reading' || state.sampleId !== event.sampleId) return state
       return { step: 'gallery', error: event.error, lastSampleId: event.sampleId }
@@ -60,7 +70,17 @@ export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
       return { step: 'explanation', request: state.request, response: event.response }
     case 'explain_failed':
       if (state.step !== 'explaining') return state
-      return { step: 'fields', sampleId: state.sampleId, reading: state.reading, notice: state.notice, error: event.error }
+      return {
+        step: 'fields',
+        sampleId: state.sampleId,
+        reading: state.reading,
+        notice: state.notice,
+        error: event.error,
+        failed: state.request,
+      }
+    case 'retry_explain':
+      if (state.step !== 'fields' || !state.failed || !state.error?.retryable) return state
+      return { step: 'explaining', sampleId: state.sampleId, reading: state.reading, notice: state.notice, request: state.failed }
     case 'back':
       return initialFlow
   }
