@@ -4,7 +4,7 @@
 // - `bill.read_response`, `bill.response`, `bill.response_unknown` and `bill.error`.
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
-// - the readings of the other two samples.
+// - the readings of the other samples (sample_4 has a misread amount over the explain limit).
 // The housing sample returns the contract's `bill.read_response` unchanged, in both languages (its
 // displays are Finnish, as in the contract).
 // Every company is fictional (the contract's own "Esimerkki" names); the IBANs are test numbers.
@@ -92,6 +92,14 @@ const SAMPLES: SampleSpec[] = [
     printed: { amount: '38,90 €', due: '12.10.2026' },
     accent: '#2B5C8A',
   },
+  {
+    sample_id: 'sample_4',
+    title: { en: 'Electricity bill', fi: 'Sähkölasku' },
+    language: 'fi',
+    payee: 'Esimerkki Energia Oy',
+    printed: { amount: '150,00 €', due: '12.10.2026' },
+    accent: '#6B4FA0',
+  },
 ]
 
 function escapeXml(text: string): string {
@@ -145,7 +153,8 @@ const REFERENCE_NOTE: Record<Language, string> = {
 }
 
 function readSample(sampleId: string, lang: Language): BillReadResponse {
-  if (sampleId === 'sample_2') return clone(examples['bill.read_response'])
+  // The contract example, answered in the request's language (contract 11.4); its displays stay.
+  if (sampleId === 'sample_2') return { ...clone(examples['bill.read_response']), language: lang }
   if (sampleId === 'sample_1') {
     // The typed bill of the contract (bill.request_fields), as a reader would see it on paper.
     return {
@@ -157,6 +166,23 @@ function readSample(sampleId: string, lang: Language): BillReadResponse {
         reference: field('12345', '12345', 'unchecked', 'printed', REFERENCE_NOTE[lang]),
         amount: field('145.00', lang === 'fi' ? '145,00 €' : '€145.00', 'unchecked', 'printed'),
         due_date: field('2026-10-20', lang === 'fi' ? '20.10.2026' : '20 Oct 2026', 'unchecked', 'printed'),
+        barcode: null,
+      },
+      needs_confirmation: true,
+    }
+  }
+  if (sampleId === 'sample_4') {
+    // A misread amount: the bill prints 150,00 €, the reader proposes 150000.00, which is over the
+    // explain limit. Without a barcode, "Looks right" must open the fields and show the problem.
+    return {
+      sample_id: sampleId,
+      language: lang,
+      fields: {
+        payee: field('Esimerkki Energia Oy', 'Esimerkki Energia Oy', 'unchecked', 'printed'),
+        iban: field('FI7112345600009876', 'FI71 1234 5600 0098 76', 'checked', 'printed'),
+        reference: field('45609', '45609', 'checked', 'printed'),
+        amount: field('150000.00', lang === 'fi' ? '150 000,00 €' : '€150,000.00', 'unchecked', 'printed'),
+        due_date: field('2026-10-12', lang === 'fi' ? '12.10.2026' : '12 Oct 2026', 'unchecked', 'printed'),
         barcode: null,
       },
       needs_confirmation: true,

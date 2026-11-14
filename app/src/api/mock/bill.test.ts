@@ -47,10 +47,10 @@ describe('bill mock', () => {
     expect(short.reason).toBe('barcode_length')
   })
 
-  it('reads the housing sample as the unchanged contract reading in both languages, and the third sample as unavailable', async () => {
+  it('reads the housing sample as the contract reading in the language of the request, and the third sample as unavailable', async () => {
     for (const language of ['fi', 'en'] as const) {
       const reading = await api.read({ customer_id: 'CUST00042', language, sample_id: 'sample_2' })
-      expect(reading).toEqual(examples['bill.read_response'] as BillReadResponse)
+      expect(reading).toEqual({ ...(examples['bill.read_response'] as BillReadResponse), language })
     }
     const unavailable = await rejection(api.read({ customer_id: 'CUST00042', language: 'en', sample_id: 'sample_3' }))
     expect(unavailable.status).toBe(503)
