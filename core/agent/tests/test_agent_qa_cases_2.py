@@ -247,9 +247,7 @@ def _live_draft(text: str):
     return draft
 
 
-@pytest.mark.xfail(strict=True, reason="the composer's safe-to-spend text drops the savings goal (ans_ikwbmgxs, "
-                                       "ans_3q8wb3l4); issue #552")
-@pytest.mark.parametrize("question,draft_text", [
+@pytest.mark.parametrize("question,draft_text", [   # #552: live these drafts were delivered without the goal
     ("What can I safely spend this week?",
      "For the next seven days, you have {safe} that is safe to spend. This is an estimate based on past months."),
     ("why is my safe to spend lower than it was?",
