@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse
 
 from core.tools import label_answer, reviews
 
-from .deps import connection, require_customer
-from .errors import ApiError, envelope
+from .deps import customer_connection
+from .errors import envelope
 from .schemas import LabelRequest, LabelResponse
 
 log = logging.getLogger("uvicorn.error")
@@ -29,11 +29,10 @@ router = APIRouter()
 
 @router.post("/api/baskets/label", response_model=LabelResponse)
 def post_label(request: Request, body: LabelRequest) -> LabelResponse | JSONResponse:
-    with connection(request) as conn:
-        try:
-            require_customer(conn, body.customer_id)
-        except ApiError as exc:
-            return envelope(exc.code, body.language)
+    request.state.language = body.language  # every error from here on is in the body's language
+    # The allowlist first, with no database (#101): a customer who is not served gets 404
+    # customer_not_found, as on the overview, never tx_ref_not_found.
+    with customer_connection(request, body.customer_id) as conn:
         try:
             result = label_answer.answer(conn, body.customer_id, request.app.state.settings.demo_today,
                                          body.tx_ref, body.basket, body.language)
