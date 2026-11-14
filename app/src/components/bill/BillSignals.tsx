@@ -26,9 +26,9 @@ export function BillSignals({ signals }: { signals: BillSignal[] }) {
             <li key={`${signal.code}-${index}`} className="text-base text-ink-2">
               {signal.text}
               {signal.numbers.length > 0 && (
-                <span className="ml-1.5 inline-flex flex-wrap gap-1.5 align-middle">
+                <span className="ml-1.5 inline-flex max-w-full flex-wrap gap-1.5 align-middle">
                   {signal.numbers.map((number, at) => (
-                    <NumberChip key={`${number.evidence_ref ?? number.method}-${at}`} number={number} size="inline" tone="warning" />
+                    <NumberChip key={`${number.evidence_ref ?? number.method}-${at}`} number={number} size="inline" tone="warning" wrap />
                   ))}
                 </span>
               )}
