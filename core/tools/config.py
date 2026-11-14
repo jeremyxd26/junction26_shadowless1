@@ -970,6 +970,17 @@ LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
                      "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
                      "ja tämä ostos näkyy siinä jo."),
 }
+# ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------
+# The label of the `open_host_screen` action with target `contact_bank`: the bank's own contact screen,
+# carried by every refusal and by a bill explanation with warning signs. It names the destination only.
+HOST_CONTACT_BANK: tuple[str, str] = ("Contact S-Pankki", "Ota yhteyttä S-Pankkiin")
+
+
+def contact_bank_action(language: str) -> dict[str, str]:
+    """The action as the API sends it: type, label and target, nothing else (contracts/api.md section 3)."""
+    return {"type": "open_host_screen", "label": label(HOST_CONTACT_BANK, language), "target": "contact_bank"}
+
+
 # ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.

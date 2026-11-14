@@ -70,6 +70,9 @@ class PlanResult:
     # False when a rule planner did not recognise the question: its calls are then only a default
     # (a clarifying question), and a rules-first wrapper should ask the model's planner instead.
     recognised: bool = True
+    # True only when the rule planner chose its "I can't answer that one yet" answer: the answer then
+    # offers the way to a human at the bank (#420). No model adapter sets it.
+    offer_contact: bool = False
 
 
 @dataclass(frozen=True)

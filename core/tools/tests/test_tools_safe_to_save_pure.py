@@ -303,7 +303,7 @@ def test_the_host_screen_target_list_is_closed():
 
     from core.tools.models import HOST_SCREEN_TARGETS, Action
 
-    assert HOST_SCREEN_TARGETS == ("monthly_saving", "bonus_to_fund")
+    assert HOST_SCREEN_TARGETS == ("monthly_saving", "bonus_to_fund", "contact_bank")   # contact_bank: #420
     with pytest.raises(ValidationError):
         Action(type="open_host_screen", label="x", target="some_fund")       # not in the list
     with pytest.raises(ValidationError):

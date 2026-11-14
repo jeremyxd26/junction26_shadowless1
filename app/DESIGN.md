@@ -3,7 +3,7 @@
 The design foundation for the Sentti money-coach module: an embeddable web module for S-mobiili, 375 px, inside a WebView. Its first screen is one chat thread that Sentti opens (section 3, "Thread"). Every screen uses these tokens and rules.
 
 - Tokens: [`design/tokens.css`](design/tokens.css). These are CSS custom properties. Colour, type, radius, shadow and easing tokens use Tailwind v4 theme namespaces; spacing, durations, `--gutter` and `--tap-min` are mapped by hand.
-- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.3.0 (draft, on `dev`). This file never redefines a field; it only says how to show one.
+- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.3.2 (draft, on `dev`). This file never redefines a field; it only says how to show one.
 - The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. Colour values follow that look closely (the greens, neutrals and page tint of S-mobiili); the components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
 
 Component code and screens are built in their own issues and follow these rules. Section 8 lists what is still owed by other issues.
