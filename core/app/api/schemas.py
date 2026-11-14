@@ -14,11 +14,12 @@ in core/tests/test_api_contract.py.
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 
 class Model(BaseModel):
@@ -437,6 +438,20 @@ class LabelResponse(Model):
 
 BILL_AMOUNT = r"^[0-9]{1,6}(\.[0-9]{1,2})?$"   # euros with at most two decimals, ASCII digits only
 BILL_AMOUNT_MAX = Decimal("100000.00")
+ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def _iso_date(value: object) -> object:
+    """Only `YYYY-MM-DD` (then a real date, checked by pydantic): the lax date type would take 0 as
+    1970-01-01 or accept a timestamp."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not ISO_DATE.fullmatch(value):
+        raise ValueError("a date must be written YYYY-MM-DD")
+    return value
+
+
+IsoDate = Annotated[date, BeforeValidator(_iso_date)]
 
 
 class BillFieldsRequest(Model):
@@ -446,7 +461,7 @@ class BillFieldsRequest(Model):
     iban: str = Field(min_length=1, max_length=42)
     reference: str = Field(min_length=1, max_length=35)
     amount: str = Field(pattern=BILL_AMOUNT)   # a decimal string: more than 0, at most 100000.00
-    due_date: date
+    due_date: IsoDate
 
     @field_validator("amount")
     @classmethod
