@@ -96,12 +96,17 @@ def settings_for(ctx: ToolContext) -> dict[str, str]:
     return {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR, **labels.metric_settings_for(ctx)}
 
 
+def row_key(ctx: ToolContext, settings: dict[str, str]) -> tuple:
+    """The key of 03's row in ctx.shared: the file, the customer, as_of and the settings (labels included)."""
+    return (config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, tuple(sorted(settings.items())))
+
+
 def metric_row(ctx: ToolContext) -> tuple[dict[str, str], dict[str, Any]]:
     """The settings and the one row of 03_safe_to_spend.sql for this customer, read once per context:
     the safe-to-spend and the safe-to-save tools of one request share it (#165). NoTransactions when
     03 returns no row."""
     settings = settings_for(ctx)
-    key = (config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, tuple(sorted(settings.items())))
+    key = row_key(ctx, settings)
     if key not in ctx.shared:
         ctx.shared[key] = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of,
                                              settings)

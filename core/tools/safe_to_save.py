@@ -125,10 +125,12 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
     free_month = value("free_month_eur")
     free_until_payday = value("free_until_payday_eur")
     monthly = shown("monthly")
-    if free_month >= 0:
-        monthly_components = [component("free_month", "add"), component("everyday_month", "subtract")]
-    else:
+    # By 03's own reason, which follows the sign of the unrounded free month: a free month between -0.005
+    # and 0 rounds to 0.00 but is still a shortfall (review of #191).
+    if row.get("save_reason") == "essentials_exceed_income":
         monthly_components = [component("essentials_shortfall", "subtract")]
+    else:
+        monthly_components = [component("free_month", "add"), component("everyday_month", "subtract")]
     stock = shown("stock")
     stock_components = ([component("free_until_payday", "add"), component("everyday_until_payday", "subtract")]
                         if free_until_payday >= 0 else [])

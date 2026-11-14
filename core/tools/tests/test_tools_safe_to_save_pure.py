@@ -132,6 +132,16 @@ def test_essentials_exceed_income():
     assert (reason["kind"], reason["category"], reason["amount"]["value"]) == ("essentials_exceed_income", None, 1.59)
 
 
+def test_a_free_month_just_below_zero_is_a_shortfall():
+    """#191 review: -0.004 rounds to 0.00, but 03's reason follows the unrounded sign; the components follow
+    the reason, not the rounded value."""
+    result, _ = run(row(free_month_eur="0.00", essentials_shortfall_month_eur="0.00", safe_to_save_monthly_eur="0.00",
+                        save_reason="essentials_exceed_income", save_reason_month_eur="0.00"))
+    card = result.card.model_dump(mode="json")
+    assert [(c["key"], c["operation"]) for c in card["monthly_components"]] == [("essentials_shortfall", "subtract")]
+    assert card["reason"]["kind"] == "essentials_exceed_income"
+
+
 def test_no_stock_when_free_until_payday_is_negative():
     result, _ = run(row(free_until_payday_eur="-40.00", safe_to_save_eur="0.00"))
     card = result.card.model_dump(mode="json")

@@ -239,10 +239,13 @@ SANNA_03_ROW = {
 }
 
 
-def _ctx(row: dict | None = None) -> ToolContext:
+NO_ROW = object()   # 03 returns no row for the customer (no transactions up to as_of)
+
+
+def _ctx(row: dict | object = SANNA_03_ROW) -> ToolContext:
     ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=_FakeStore(), _history=_history())
-    settings = safe_to_spend.settings_for(ctx)
-    ctx.shared[(config.SAFE_TO_SPEND_FILE, tuple(sorted(settings.items())))] = SANNA_03_ROW if row is None else row
+    ctx._labels = {}   # no labels: the context reads no reviews table
+    ctx.shared[safe_to_spend.row_key(ctx, safe_to_spend.settings_for(ctx))] = None if row is NO_ROW else row
     return ctx
 
 
@@ -279,6 +282,33 @@ def test_any_other_hero_failure_is_not_hidden():
 
     with pytest.raises(RuntimeError):
         overview.build(_ctx(), hero_tool=bug)
+
+
+def test_the_save_tool_failing_leaves_the_hero_and_the_rest(caplog):
+    """#191 review: a known failure of the safe-to-save tool gives a null card, not a 500."""
+    def failing(ctx, args):
+        raise safe_to_spend.NoTransactions("no transactions up to as_of for this customer")
+
+    caplog.set_level(logging.DEBUG)
+    body = overview.build(_ctx(), hero_tool=_stub_hero, save_tool=failing)
+    assert body.safe_to_save is None and body.hero is not None and body.hero.primary.value == 184.68
+    assert [c.type for c in body.cards] == ["breakdown", "bills"]
+    assert "safe to save unavailable (NoTransactions)" in caplog.text and "as_of" not in caplog.text
+
+
+def test_no_row_of_03_gives_a_null_hero_and_a_null_card():
+    """Both tools read the same row: when 03 returns none, both sections are null and the rest stays."""
+    body = overview.build(_ctx(NO_ROW))   # the real get_safe_to_spend and get_safe_to_save
+    assert body.hero is None and body.safe_to_save is None
+    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna"
+    OverviewResponse.model_validate(body.model_dump(mode="json"))
+
+
+def test_the_save_card_comes_from_the_real_tool_on_the_shared_row():
+    body = overview.build(_ctx(), hero_tool=_stub_hero)
+    card = body.safe_to_save
+    assert (card.monthly.value, card.stock.value, card.reason) == (184.61, 12272.28, None)
+    assert [c.key for c in card.monthly_components] == ["free_month", "everyday_month"]
 
 
 def test_the_hero_comes_from_get_safe_to_spend():
