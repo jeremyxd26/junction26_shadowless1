@@ -332,7 +332,7 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value, spec=spec)
 
     if spec["kind"] == "peer_aggregate":  # #69: re-run 06 for this customer; statistics only, no rows
-        from core.tools import metric_sql
+        from core.tools import config, metric_sql
 
         source = spec["source"]
         if source["file"] != config.PEER_FILE:  # the file is fixed in code, never taken from a stored spec

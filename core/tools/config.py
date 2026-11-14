@@ -261,6 +261,8 @@ METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
 PROFILE_FILE = "05_spender_profile.sql"
 PEER_FILE = "06_peer_benchmark.sql"
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
+# The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
+METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
 
 PROFILE_KEYS = ("not_enough_income_data", "stretched", "big_ticket", "everyday_heavy", "saver", "steady")
 PROFILE_TRAITS = ("salary_moved_elsewhere", "went_below_zero", "regular_investor", "weekend_spender",
