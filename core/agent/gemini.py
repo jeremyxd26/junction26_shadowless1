@@ -62,6 +62,9 @@ DEFAULT_COMPOSER_TIMEOUT_S = 5.0
 # requests today in the ledger, answers use the template.
 DEFAULT_DAILY_BUDGET = 300
 OFF_SWITCH = ROOT / "var" / "model-off"   # while this file exists, no request is sent
+DEFAULT_BILL_READ_BUDGET = 50              # bill readings' share of the daily budget (#250)
+DEFAULT_EXTRACT_TIMEOUT_S = 15.0           # one bill reading (#250)
+THINKING_CHOICES = ("default", "minimal", "low", "medium", "high")
 
 
 @dataclass(frozen=True)
@@ -259,7 +262,12 @@ class GeminiSettings(BaseSettings):
       low (default), medium or high, as the model accepts; GEMINI_PLANNER_TIMEOUT_S (default 9),
       GEMINI_COMPOSER_TIMEOUT_S (default 5): seconds per call, inside the answer's 15 s (#341);
     - GEMINI_CACHE: on (default), off, or replay; GEMINI_CACHE_DIR: default var/gemini-cache;
-    - MODEL_DAILY_BUDGET: requests to the Gemini API a UTC day, counted in var/gemini-requests.jsonl
+    - BILL_READ_DAILY_BUDGET: the bill readings' share of that budget (default 50, #250);
+    - GEMINI_EXTRACT_MODEL (default DEFAULT_MODEL, never the planner's setting), GEMINI_EXTRACT_THINKING
+      (default low), GEMINI_EXTRACT_TIMEOUT_S (default 15, at most 30): the bill reading's own role, so the
+      planner's or composer's settings never change a reading's cache key (#250). A bad value of these or
+      of BILL_READ_DAILY_BUDGET is the default, with one log line; it never turns the model off;
+    - MODEL_DAILY_BUDGET: requests to the Gemini API in any rolling 24 hours, counted in var/gemini-requests.jsonl
       (cache hits do not count); 0 turns the model off. While the file var/model-off exists, no request
       is sent either: create it to stop the model at once, without a restart or a redeploy."""
 
@@ -316,6 +324,65 @@ class GeminiSettings(BaseSettings):
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
     daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
+    bill_read_budget: int = Field(default=DEFAULT_BILL_READ_BUDGET, validation_alias="BILL_READ_DAILY_BUDGET")
+    gemini_extract_model: str | None = None
+    gemini_extract_thinking: str = DEFAULT_THINKING
+    gemini_extract_timeout_s: float = DEFAULT_EXTRACT_TIMEOUT_S
+
+    @field_validator("bill_read_budget", mode="before")
+    @classmethod
+    def _bill_read_budget(cls, value: Any) -> int:
+        try:
+            number = int(str(value).strip())
+        except (TypeError, ValueError):
+            number = -1
+        return number if number >= 0 else _bad_setting("BILL_READ_DAILY_BUDGET", DEFAULT_BILL_READ_BUDGET,
+                                                       "a whole number of requests, 0 or more")
+
+    @field_validator("gemini_extract_model", mode="before")
+    @classmethod
+    def _extract_model(cls, value: Any) -> str | None:
+        return (str(value).strip() or None) if value is not None else None
+
+    @field_validator("gemini_extract_thinking", mode="before")
+    @classmethod
+    def _extract_thinking(cls, value: Any) -> str:
+        level = str(value).strip().lower() if value is not None else ""
+        if level in THINKING_CHOICES:
+            return level
+        return _bad_setting("GEMINI_EXTRACT_THINKING", DEFAULT_THINKING, "default, minimal, low, medium or high")
+
+    @field_validator("gemini_extract_timeout_s", mode="before")
+    @classmethod
+    def _extract_timeout(cls, value: Any) -> float:
+        try:
+            seconds = float(str(value).strip())
+        except (TypeError, ValueError):
+            seconds = -1.0
+        if 0 < seconds <= 30:
+            return seconds
+        return _bad_setting("GEMINI_EXTRACT_TIMEOUT_S", DEFAULT_EXTRACT_TIMEOUT_S, "seconds, more than 0, at most 30")
+
+
+_BAD_SETTING_LOGGED: set[str] = set()
+
+
+def _bad_setting(name: str, default: Any, wanted: str) -> Any:
+    """A setting with a bad value is its default, with one log line per process (#250, decision C)."""
+    if name not in _BAD_SETTING_LOGGED:
+        _BAD_SETTING_LOGGED.add(name)
+        log.warning("%s must be %s; using the default", name, wanted)
+    return default
+
+
+def extract_settings(s: Any, env: Any | None = None) -> dict[str, Any]:
+    """The bill reading's role (#250, decision B): its model (GEMINI_EXTRACT_MODEL, else DEFAULT_MODEL),
+    thinking level as sent and timeout. Nothing here depends on the planner's or composer's settings."""
+    env = env or GeminiSettings()
+    model = getattr(s, "gemini_extract_model", None) or env.gemini_extract_model or DEFAULT_MODEL
+    level = getattr(s, "gemini_extract_thinking", None) or env.gemini_extract_thinking
+    timeout = getattr(s, "gemini_extract_timeout_s", None) or env.gemini_extract_timeout_s
+    return {"model": model, "thinking": effective_thinking(model, level), "timeout_s": float(timeout)}
 
 
 def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGER, off_switch: Path = OFF_SWITCH,
@@ -337,16 +404,21 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     cache_dir = getattr(s, "gemini_cache_dir", env.gemini_cache_dir)
     budget = getattr(s, "daily_budget", env.daily_budget)
     roles = role_settings(s, env)
+    extract = extract_settings(s, env)
     secret = key.get_secret_value() if isinstance(key, SecretStr) else str(key)
     transport = None if cache == "replay" else SdkTransport(secret)
     options = {"plan_thinking": roles["planner"]["thinking"], "compose_thinking": roles["composer"]["thinking"],
                "plan_timeout_s": roles["planner"]["timeout_s"], "compose_timeout_s": roles["composer"]["timeout_s"],
                "refusal_s": float(getattr(s, "gemini_model_refusal_s", None) or env.gemini_model_refusal_s),
+               "extract_model": extract["model"], "extract_thinking": extract["thinking"],
+               "extract_timeout_s": extract["timeout_s"],
                **client_options}
     client = GeminiClient(roles["planner"]["model"], transport, fallback_model=roles["planner"]["fallback"],
                           compose_model=roles["composer"]["model"], compose_fallback_model=roles["composer"]["fallback"],
                           cache=cache, cache_dir=None if cache == "off" else Path(cache_dir),
-                          ledger=Ledger(ledger_path, budget, off_switch), **options)
+                          ledger=Ledger(ledger_path, budget, off_switch,
+                                        kind_caps={"extract": getattr(s, "bill_read_budget", env.bill_read_budget)}),
+                          **options)
     return GeminiModel(client)
 
 

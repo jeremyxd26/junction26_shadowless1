@@ -385,3 +385,11 @@ def test_a_bad_refusal_time_is_the_default_and_keeps_the_model_on(monkeypatch, c
     model = make_agent_model(settings(gemini_api_key="test-key-not-real"))
     assert not isinstance(model, RuleModel) and model.client.refusal_s == 600.0
     assert sum("GEMINI_MODEL_REFUSAL_S" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_bill_readings_get_their_share_from_the_setting(monkeypatch, tmp_path):
+    monkeypatch.setenv("BILL_READ_DAILY_BUDGET", "7")
+    assert gemini.GeminiSettings(_env_file=None).bill_read_budget == 7
+    m = make_model(settings(gemini_api_key="test-key-not-real", gemini_cache="off", bill_read_budget=3),
+                   ledger_path=tmp_path / "requests.jsonl", off_switch=tmp_path / "off")
+    assert m.client.ledger.kind_caps == {"extract": 3}

@@ -95,8 +95,12 @@ def test_two_levers_their_total_and_twelve_times_it(fake):
     assert [(lv.cut.value, lv.cut.method, lv.cut.unit.value) for lv in d.levers] == [
         (20, "savings_plan.cut_pct@1", "percent"), (10, "savings_plan.cut_pct@1", "percent")]
     assert all(fake.specs[lv.cut.evidence_ref]["formula"] == "rule_value" for lv in d.levers)
-    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save
-    assert len(ctx.numbers.all()) == 7
+    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save; then
+    # (#380, #503 review) the two levers' baselines for the card's estimate, after all of them, so n1..n7 stay
+    registered = ctx.numbers.all()
+    assert len(registered) == 9
+    assert [registered[f"n{i}"].method for i in (8, 9)] == ["what_if.baseline_month_eur@1"] * 2
+    assert [n.id for n in result.card.estimate.observed] == ["n8", "n9"]
 
 
 def test_the_two_cut_levers_are_always_different_categories(fake):
@@ -221,7 +225,7 @@ def test_the_card_is_a_breakdown_with_the_levers_in_words(fake):
     assert card.total.method == "savings_plan.total_month_eur@1"
     assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle"]
     assert [i["label"] for i in card.items] == ["Restaurants, a fifth less", "Lifestyle, a tenth less"]
-    assert card.estimate["text"] == "About, if you cut these as shown and the rest of your spending stays as it is."
+    assert card.estimate.text == "About, if you cut these as shown and the rest of your spending stays as it is."
     show, host = card.actions
     assert (show.type, host.type, host.target, host.label) == ("open_evidence", "open_host_screen", "monthly_saving",
                                                                "See monthly saving in S-mobiili")
@@ -274,7 +278,8 @@ def test_the_model_view_gives_every_number_as_a_number(fake, language):
     so the composer never copies bare digits; each cut share is a Number and, for the default shares, words."""
     view = plan(language)[0].model_view
     assert "ev_" not in repr(view) and "CUST" not in repr(view)
-    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "savings_goal", "follow_up"}
+    assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "savings_goal", "follow_up",
+                         "already_saving", "already_share", "saving_seen"}   # what already goes to savings (#560)
     assert view["kind"] == "plan" and [lv["key"] for lv in view["levers"]] == ["Restaurants", "Lifestyle"]
     assert all(set(lv) == {"key", "category", "cut", "cut_words", "saving"} for lv in view["levers"])
     assert [lv["cut"]["value"] for lv in view["levers"]] == [20, 10]

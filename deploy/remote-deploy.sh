@@ -361,4 +361,12 @@ if ! timeout 300 docker exec shadowless1-core timeout 280 python -m core.tools.w
   echo "warm-up did not finish; the service computes those results on the first request instead" >&2
 fi
 
+# Read the four sample bills (#250) the same way: each once with the model (a sample already in the
+# reading cache costs no request), then again from the cache, compared with the answer key. Counts only,
+# never a field value. It never fails the deploy: bounded by a timeout, its exit code ignored.
+echo "reading the sample bills"
+if ! timeout 150 docker exec shadowless1-core timeout 130 python -m core.bills.warmup 2>&1 | mask; then
+  echo "sample bill reading did not finish; a sample is read on its first request instead" >&2
+fi
+
 echo "deployed $sha; local /healthz: $(curl -fsS --max-time 2 http://127.0.0.1:8000/healthz)"

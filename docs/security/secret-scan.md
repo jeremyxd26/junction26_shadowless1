@@ -27,7 +27,7 @@ What it reads:
 - added lines only, binary files read as text.
 
 What it reports:
-- common key shapes, and values assigned to a key, secret, password or token name, quoted or not (`export API_TOKEN=...`, `password: ...`);
+- common key shapes (Google, GitHub, OpenAI or Anthropic, AWS, NVIDIA, private key blocks, Slack, JWT), and values assigned to a key, secret, password or token name, quoted or not (`export API_TOKEN=...`, `password: ...`);
 - database URLs with a password that the allowlist does not cover (path and value together). The allowlist is the base's copy of `.gitleaks.toml`, so a branch cannot allowlist its own value; a branch that edits `.gitleaks.toml` or `.gitleaksignore` gets a note;
 - literal values of the local `.env`;
 - added env files: `.env`, `.env.*`, `*.env`, except `*.example`.
