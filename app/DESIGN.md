@@ -280,7 +280,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - the title and the total;
   - "N transactions · reconciles ✓";
   - a "How it was counted" box in plain words, built from `method` and `query`;
-  - transaction rows: merchant label, date and time, and the amount. Until #135 the app formats this amount itself (section 4); after it, the row's `display`;
+  - transaction rows: merchant label, date and time, and the amount as the row's `display`, as sent (section 4);
   - "Show all N";
   - `privacy_note` with a lock icon.
 
@@ -335,7 +335,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 ## 4. Numbers and language
 - **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
 - **The one exception: counter frames.** When a number changes after a review answer (#35), it counts from one API `display` to the next. The frames in between are computed by `src/lib/motion.ts` (#157); the first and the last frame are the API's `display` strings. The frames are `aria-hidden`, and the accessible text is the final `display`. The chip cannot be tapped while it counts. With reduced motion there are no frames: the number cross-fades to the new `display`.
-- **Until #135: evidence rows.** In `GET /api/evidence/{ref}` a row's `amount` is a raw decimal string in the bank sign (for example `"-24.50"`, contract section 9). The app formats it with `Intl.NumberFormat` for the current language (`en-GB` or `fi-FI`, style `currency`, currency `EUR`). A negative amount is money out and keeps its minus sign: `-€24.50` in EN, `−24,50 €` in FI. A positive amount shows no plus sign. Contract 0.2.2 adds `rows[].display`; #135 switches the app to it and removes this exception.
+- **Evidence rows** are no exception: each row of `GET /api/evidence/{ref}` carries `display`, its amount written by the server in the request language with the bank sign (`-€24.50`, FI `-24,50 €`; contract section 9), and the app shows it as sent. The row's `amount` stays the exact decimal string and is never formatted by the app.
 - **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 

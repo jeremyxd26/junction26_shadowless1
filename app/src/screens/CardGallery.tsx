@@ -85,6 +85,19 @@ export default function CardGallery() {
         <p className="font-mono text-xs text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
       </section>
+      {/* Answer cards with their own renderers (#264): profile, peer, and bills inside an answer. */}
+      {(['card.profile', 'card.peer'] as const).map((name) => (
+        <section key={name} id={`${name}-answer`} aria-label={`${name} in an answer`} className="flex flex-col gap-2">
+          <p className="font-mono text-xs text-muted">{name} → in an answer</p>
+          <AnswerCard card={examples[name] as Card} />
+        </section>
+      ))}
+      <section id="bills-answer" aria-label="bills in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">overview.response → cards[type=bills] → in an answer</p>
+        {OVERVIEW_CARDS.filter((card) => card.type === 'bills').map((card) => (
+          <AnswerCard key={card.card_id} card={card} />
+        ))}
+      </section>
       {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">card.review → in an answer</p>

@@ -119,13 +119,6 @@ export function parseLanguage(value: string | null): Language {
   return value === 'fi' ? 'fi' : 'en'
 }
 
-/** Raw evidence rows carry a signed decimal string; this only formats it for reading. */
-export function formatRowAmount(amount: string, currency: string, lang: Language): string {
-  const value = Number(amount)
-  if (!Number.isFinite(value)) return `${amount} ${currency}`
-  return new Intl.NumberFormat(lang === 'fi' ? 'fi-FI' : 'en-IE', { style: 'currency', currency }).format(value)
-}
-
 export function formatDate(date: string, lang: Language): string {
   const parsed = new Date(`${date}T12:00:00`)
   if (Number.isNaN(parsed.getTime())) return date
