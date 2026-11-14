@@ -155,6 +155,12 @@ TABLE = [
     ("fi", "Kuinka monta päivää on jäljellä palkkapäivään?", "recurring_bills"),
     ("fi", "Paljonko rahaa on jäljellä tilillä?", NOT_CLAIMED),
     ("en", "What if I cut my restaurant budget by 20%?", "what_if"),
+    # #483: the Finnish indicative "vähennän" / "vähennä" / "vähennetään" is a what-if too
+    ("fi", "Entä jos vähennän matkailua 20 %?", "what_if"),
+    ("fi", "Entä jos vähennän ravintoloita 20 %?", "what_if"),
+    ("fi", "vähennä ravintoloita 10 %", "what_if"),
+    ("fi", "Entä jos ravintoloita vähennetään 20 %?", "what_if"),
+    ("fi", "Mitä jos vähentäisin matkustamista 20 prosenttia?", "what_if"),
     ("en", "What's my card limit?", NOT_CLAIMED),
     ("en", "Can you raise my limit?", NOT_CLAIMED),
     ("en", "Should I take a loan to afford a car?", NOT_CLAIMED),
