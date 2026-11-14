@@ -120,9 +120,13 @@ export function closeWhatIf() {
   else setParams({ whatif: null, cut: null })
 }
 
-/** Opens the overview sheet as a history entry (`?overview=1`), so Back closes it (#321). */
+/**
+ * Opens the overview sheet as a history entry (`?overview=1`), so Back closes it (#321). When it is
+ * open already, nothing happens: no second entry, no URL change (#513).
+ */
 export function openOverview() {
   const url = new URL(window.location.href)
+  if (overviewFromParams(url.searchParams)) return
   url.searchParams.set('overview', '1')
   go(url, 'push', { sheet: true })
 }

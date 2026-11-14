@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { trapTarget } from './focusTrap.ts'
+import { escapeCloses, trapTarget } from './focusTrap.ts'
 
 const panel = 'panel'
 const items = ['close', 'chip', 'link']
@@ -26,5 +26,27 @@ describe('trapTarget', () => {
   it('keeps the focus on the panel when nothing in the sheet is focusable', () => {
     expect(trapTarget([], null, false, panel)).toBe(panel)
     expect(trapTarget([], panel, true, panel)).toBe(panel)
+  })
+})
+
+describe('escapeCloses (#513)', () => {
+  const overview = { name: 'overview' }
+  const whatIf = { name: 'what-if' }
+  const escape = (defaultPrevented = false) => ({ key: 'Escape', defaultPrevented })
+
+  it('closes only the top sheet', () => {
+    expect(escapeCloses(escape(), [overview, whatIf], whatIf)).toBe(true)
+    expect(escapeCloses(escape(), [overview, whatIf], overview)).toBe(false)
+  })
+
+  it('ignores an Escape that another sheet handled, even if this sheet is now the top one', () => {
+    // The what-if sheet closed first; the late overview listener then sees itself on top.
+    expect(escapeCloses(escape(true), [overview], overview)).toBe(false)
+  })
+
+  it('ignores other keys and a sheet without a panel', () => {
+    expect(escapeCloses({ key: 'Enter', defaultPrevented: false }, [overview], overview)).toBe(false)
+    expect(escapeCloses(escape(), [overview], null)).toBe(false)
+    expect(escapeCloses(escape(), [], overview)).toBe(false)
   })
 })
