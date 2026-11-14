@@ -1204,6 +1204,14 @@
   [
    "How much is Netflix's price?",
    "en"
+  ],
+  [
+   "Paljonko maksoin heille kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoivat vuokrat kesäkuussa?",
+   "fi"
   ]
  ],
  "declined": [
@@ -1689,6 +1697,22 @@
   ],
   [
    "Does Marja pay S-Bonus? How much did she get?",
+   "en"
+  ],
+  [
+   "Paljonko he maksoivat vuokraa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he ostivat kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienasivat he kesäkuussa?",
+   "fi"
+  ],
+  [
+   "how much did they pay for rent in June",
    "en"
   ]
  ],
@@ -3408,6 +3432,34 @@
   [
    "Mikä on Prisman palkka?",
    "fi"
+  ],
+  [
+   "Paljonko he maksoivat minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he maksoivat minulle?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoivat he minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he antoivat minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko he lähettivät minulle kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko vanhempani maksoivat minulle elokuussa?",
+   "fi"
+  ],
+  [
+   "how much did they pay me in June",
+   "en"
   ]
  ]
 }
