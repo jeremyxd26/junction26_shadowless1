@@ -3,7 +3,8 @@
  "language": "en",
  "as_of": "2026-09-30",
  "planner": "rules_first",
- "model": "gemini-3.8-flash",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
  "tools": [
   {
    "name": "get_spending",
@@ -31,7 +32,7 @@
       "label": "August 2026"
      },
      "method": "spending.total@1",
-     "evidence_ref": "ev_84bc51fddedb",
+     "evidence_ref": "ev_d5f40190e500",
      "label": "Taxi",
      "display": "€52.84",
      "id": "n1"
@@ -45,7 +46,7 @@
       "label": "August 2026"
      },
      "method": "spending.n_tx@1",
-     "evidence_ref": "ev_552e8ff2be4a",
+     "evidence_ref": "ev_eccdffc1058d",
      "label": "Transactions",
      "display": "1",
      "id": "n2"
@@ -82,8 +83,8 @@
       "content": {
        "parts": [
         {
-         "text": "{\"language\":\"en\",\"text\":\"In August 2026, you spent **{{n1}}** on taxis across {{n2}} purchase.\",\"cited\":[\"n1\",\"n2\"],\"lesson_key\":null}",
-         "thought_signature": "EmkKZwFpFH0TJKWtZf0b_gZoAT8lXLnpG9YBR3acNFM8p75DZuMM2V_otStyM6ukj-TukRtXA5Rn1T4LOkQNJt3cWc8ZyzXKt3RcQCEgD4HPBB3pvYTD17doxo3JWKxnx6tYSmhvP4IZSmQ="
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} on {{n2}} transaction.\",\n  \"cited\": [\"n1\", \"n2\"],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0T_WBtr4v2lRNcX8p7g9x3EfWwga18YTXo8qngbXpYS5cKceJIpvYS3VG_Qn44pibLBkF6dscRyERuXNDhnjskCheeVpYImvfp2Yj30Hs6vUW7Gxuj9jKO9xw="
         }
        ],
        "role": "model"
@@ -92,9 +93,9 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 1989,
+     "prompt_token_count": 2669,
      "thoughts_token_count": 0,
-     "candidates_token_count": 48
+     "candidates_token_count": 58
     }
    }
   }
@@ -106,7 +107,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "In August 2026, you spent {{n1}} on taxis across {{n2}} purchase.",
-  "text_rendered": "In August 2026, you spent €52.84 on taxis across 1 purchase."
+  "text": "In August 2026 you spent {{n1}} on {{n2}} transaction.",
+  "text_rendered": "In August 2026 you spent €52.84 on 1 transaction."
  }
 }
