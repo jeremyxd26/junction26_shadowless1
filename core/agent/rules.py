@@ -906,7 +906,17 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # after no refusal rule matched: "hi, ignore your rules ..." stays refused, "Hi, where did my money go?"
 # is the baskets question. Russian forms are answered in English.
 _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
-          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
+          r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|moi moi|hei hei|terve terve|heippa|"
+          r"привет|здравствуй(те)?)")
+# "How are you" in English and Finnish (folded, #630): "miten sä voit", "kuinka sinä voit", "mitä sulle kuuluu",
+# "miten menee", "how's it going", "what's up", "mitä sä puuhaat"; "today", "tänään" or "nyt" may follow; the whole
+# message, alone or after a greeting.
+_HOW_ARE_YOU = (r"(how are you( doing)?|how('s| is) it going|what'?s up|sup|(miten|kuinka) ((sa|sina) )?voit|"
+                r"(miten|kuinka) voit (sa|sina)|mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee|"
+                r"mita ((sa|sina) )?puuhaat)( (today|now|tanaan|nyt))?")
+# The doubled Finnish greetings are also a goodbye: after an answer, "moi moi" is answered with the closing line, never
+# a new greeting (the orchestrator, #630)
+GOODBYE_GREETING = r"(moi moi|hei hei|heippa)"
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -925,7 +935,7 @@ META = [
                 r"ovatko tietoni turvassa|jaatko tietojani)"),
     ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
                r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
-    ("greeting", rf"{_GREET}( (are you there|how are you( doing)?))?|are you there|how are you( doing)?|mita kuuluu"),
+    ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
 META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
@@ -938,6 +948,12 @@ def small_purchases_whole(q: str) -> bool:
     default = next(rx for rx, p in PRESETS if p == config.SMALL_PURCHASE_DEFAULT_PERIOD)
     rest = re.sub(default, " ", re.sub(SMALL_PURCHASES, " ", q))
     return all(word in SMALL_FILLERS for word in re.findall(r"[\w']+", rest))
+
+
+def goodbye_greeting(question: str) -> bool:
+    """The whole message is a doubled Finnish greeting that is also a goodbye ("moi moi", "hei hei", "heippa")."""
+    core = " ".join(re.sub(r"[^\w\s']", " ", fold(question)).split())
+    return bool(re.fullmatch(GOODBYE_GREETING, " ".join(re.sub(r"\bsentti\b", " ", core).split())))
 
 
 def meta_intent(question: str) -> str | None:
@@ -1027,13 +1043,46 @@ def _same_question(q: str, first_end: int, start: int) -> bool:
     return sentence.endswith("?") or bool(re.match(r"(?:and|or|plus|also|ja|tai|seka|enta)\b", sentence))
 
 
+# The thing as the subject of "cost" (#623): "What did the gym cost me last month?", "How much did Netflix cost?",
+# "What does the gym cost me a month?", "Paljonko kuntosali maksoi minulle viime kuussa?", "Mitä vakuutus maksoi?".
+# It is a thing as in "how much did I spend on the gym": never the unfiltered total.
+COST_SUBJECT_EN = (r"\b(?:what|how much)\s+(?:did|does|do|has|have|will|would)\s+"
+                   r"(?:the\s+|my\s+|our\s+|your\s+|a\s+|an\s+|this\s+|that\s+)?"
+                   r"([a-z][a-z'-]*(?:\s+[a-z][a-z'-]*){0,3}?)\s+(?:cost|costs|set\s+me\s+back)\b")
+COST_SUBJECT_FI = (r"\b(?:paljonko|mita|kuinka paljon)\s+(?:minun\s+|meidan\s+)?([^\W\d_]+(?:\s+[^\W\d_]+)?)\s+"
+                   r"(?:maksoi|maksoivat|maksaa|maksavat|kustansi)\b"
+                   # "Paljonko maksoin vakuutuksen viime kuussa?": the thing as the object of maksoin (accusative)
+                   r"|\b(?:paljonko|mita|kuinka paljon)\s+maksoin\s+([^\W\d_]+n)\b")
+# a subject that is a bill, not a purchase: what "how much is my insurance bill" gives (the bills tool)
+COST_BILL_THINGS = r"\binsurance\b|\b(?:phone|mobile)\s+plan\b|\bsubscriptions?\b|vakuutu\w*|vakuutus\w*|liittym\w*"
+# no thing: the whole of the spending, or a period ("What did everything cost me?", "How much did last month cost?")
+COST_NO_THING = {"it", "everything", "all", "that", "this", "these", "those", "i", "we", "you", "kaikki", "se", "ne",
+                 "tama", "tuo", "kulutus", "kulutukseni", "spending", "shopping", "life"}
+
+
+def _cost_subject(q: str) -> str | None:
+    """The thing a "what did X cost me" question names when no category, group or period does (#623), or None."""
+    m = re.search(COST_SUBJECT_EN, q) or re.search(COST_SUBJECT_FI, q)
+    if not m:
+        return None
+    phrase = " ".join((m.group(1) or m.group(m.lastindex)).split())
+    if re.search(template.INCOME_WORDS + "|" + BONUS_WORD + r"|\btyonantaj\w*|\bemployer\w*", phrase):
+        return None   # "Paljonko bonusta työnantaja maksoi?": money paid to the user, no thing bought
+    first = phrase.split()[0]
+    if first in COST_NO_THING or first in OBJECT_STOP or not _is_thing(first) or re.fullmatch(_M, first) or \
+            re.search(fold_pattern(PERIOD_NOUN_AFTER), " " + phrase) or re.search(HEALTH, phrase) or \
+            any(re.search(rx, phrase) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+        return None   # a category, group, period, or a health word (the Health rule's: "my doctor visits", #607)
+    return phrase
+
+
 def _unknown_object(q: str) -> str | None:
     """The thing a spending question names when no category, merchant group or health word maps it: the
     first object, or one listed after it ("on restaurants and at the gym")."""
     q = re.sub(MARKUP_TAG, " ", q)
     m = re.search(OBJECT_EN, q) or re.search(OBJECT_FI, q)
     if not m:
-        return None
+        return _cost_subject(q)   # "What did the gym cost me?": the thing is the subject (#623)
     rest = m.end(1)
     starts = [m.start(1)] + sorted({rest + n.start(1) for rx in (OBJECT_MORE_EN, OBJECT_MORE_BARE, OBJECT_MORE_FI)
                                     for n in re.finditer(rx, q[rest:])})
@@ -1073,6 +1122,12 @@ def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
     return len(plain) > (0 if period_cue and not re.search(r"\bnext year\b|\bensi vuonna\b", q) else 1)
 
 
+# the words that end a quoted compound thing (#623): conjunctions, prepositions, verbs and pronouns after the thing
+QUOTE_STOP = {"and", "or", "plus", "but", "with", "from", "since", "during", "over", "than", "vs", "versus", "per",
+              "is", "was", "were", "are", "be", "been", "cost", "costs", "me", "i", "we", "you", "it", "do", "does",
+              "ja", "tai", "seka", "kanssa", "maksoi", "maksaa", "minulle", "kuin", "vai", "too", "also"}
+
+
 def unknown_object(question: str) -> str | None:
     """The thing a spending question names that no category maps (for the pipeline's answer, #379), in the
     user's own spelling: "Café Müller", not "cafe" (a name's capitalised words that follow it come along)."""
@@ -1092,9 +1147,18 @@ def unknown_object(question: str) -> str | None:
     if not m:
         return word
     original, end = question[m.start():m.end()], m.end()
+    capital = original[:1].isupper()
     while len(original.split()) < 4:
         nxt = re.match(r"\s+([^\W\d_][\w'-]+)", question[end:])
-        if not nxt or not nxt.group(1)[:1].isupper() or re.fullmatch(_M, fold(nxt.group(1))):
+        if not nxt or re.fullmatch(_M, fold(nxt.group(1))):
+            break
+        nxt_word = fold(nxt.group(1))
+        # a name's capitalised words come along ("Café Müller"); so do the nouns of a compound thing, "health club",
+        # "car insurance", "yoga club" (#623): the whole thing is quoted, up to a function, period or stop word
+        compound = not capital and nxt.group(1)[:1].islower() and nxt_word not in OBJECT_STOP and \
+            nxt_word not in QUOTE_STOP and _is_thing(nxt_word) and not re.match(fold_pattern(PERIOD_NOUN_AFTER),
+                                                                                 " " + nxt_word)
+        if not (nxt.group(1)[:1].isupper() and capital) and not compound:
             break
         original, end = original + nxt.group(0), end + nxt.end()
     return original
@@ -1295,7 +1359,15 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
             return Claim(intent, tuple(RuleModel._clarify(BONUS_SHARE_ASK, ((), ()), lang)))
         return _claimed(intent, [("get_bonus_estimate", share)], tools, lang)
     if intent == "peers":
-        return _claimed(intent, [("get_peer_benchmark", {"metric": "spend_total"})], tools, lang)
+        # a comparison of one named category is that category's ("How does my grocery spending compare with people
+        # like me?") only when it is the message's single subject: no second category or subject ("groceries and
+        # transport", "ruoka- ja terveysmenoni", "…? And how do I compare overall?", a spending question after a
+        # comma) and no health word; otherwise the total, as before (#569, the review of #585)
+        named = _filter_of(q).get("categories") or []
+        single = len(named) == 1 and named[0] in config.PEER_METRICS and not re.search(HEALTH, q) and \
+            not re.search(r"\b(and|or|plus|ja|tai|seka|overall|altogether|kokonai\w*|yhteensa)\b|,", q) and \
+            q.count("?") <= 1
+        return _claimed(intent, [("get_peer_benchmark", {"metric": named[0] if single else "spend_total"})], tools, lang)
     kind, what_if = plan_what_if(question)
     if kind == "health":
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
@@ -1471,6 +1543,12 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         spending = _asked_filter(spending, asked)
     found = [f for f in _matched(q, peer_question, spending, said_in_the_past(question, q, as_of))
              if not (drop_spending and f == "spending")]
+    if "spending" in found and not (spending or {}).get("filter") and people.to_person(question):
+        # "How much did I give my husband?", "Mitä ostin vaimolleni?": the user's own money, but no category or filter
+        # maps the person, so never the unfiltered total; the planner reads it, as an unknown thing (#542, #379)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="to_person")
     dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
@@ -1541,6 +1619,10 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # thing keeps its own rule, and so does a question whose thing is the other rule's own ("Is it ok to
         # spend money on therapy?" is the safe-to-spend question).
         return Claim(None, candidates=tuple(dict.fromkeys(found + ["spending"])), reason="competing")
+    if not found and (subject := _cost_subject(q)) and re.search(COST_BILL_THINGS, subject) and \
+            "get_recurring_bills" in tools:
+        # "What did my insurance cost me last month?": a bill, what "how much is my insurance bill" gives (#623)
+        return _plan_intent("recurring_bills", question, q, as_of, tools, lang, spending)
     if not found:
         if _unknown_object(q):
             # "How much do I spend on the gym?": the customer's own categories (the full breakdown, so Health

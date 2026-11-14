@@ -340,6 +340,22 @@ METHODS["peer_benchmark.you_month_eur@1"] = MethodInfo(
     ("Your own spending in the compared group, divided by the months with history.",
      "Oma kulutuksesi vertailtavassa ryhmässä jaettuna kuukausilla, joilta on tietoja."),
     METRICS_DOC + "#6-peer-benchmark")
+# National context beside the peer comparison (#569): a cited value of a public table, not computed from the
+# customer's transactions (core/config/national_context.yaml).
+METHODS["national_context.monthly_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Households' spending per consumption unit", "Kotitalouksien kulutus kulutusyksikköä kohti"),
+    ("Statistics Finland, households' consumption, table 14q4, survey year 2022: the yearly consumption expenditure "
+     "per consumption unit (an adult-equivalent of the household) of households whose reference person is in this "
+     "age group, divided by 12; for transport, buying a vehicle is left out. A public statistic, not computed from "
+     "your transactions.",
+     "Tilastokeskus, kotitalouksien kulutus, taulukko 14q4, tutkimusvuosi 2022: kulutusmenot vuodessa "
+     "kulutusyksikköä (aikuista vastaavaa henkilöä) kohti kotitalouksissa, joiden viitehenkilö on tässä ikäryhmässä, "
+     "jaettuna 12:lla; liikenteestä on jätetty pois ajoneuvojen osto. Julkinen tilasto, ei laskettu "
+     "tapahtumistasi."),
+    "README.md#national-context")
+# its label in the opened evidence view: the table's age band and the survey's category (no answer text: digits fine)
+NATIONAL_LABEL = ("Households with a reference person aged {band}: {what}, per consumption unit",
+                  "Kotitaloudet, joiden viitehenkilö on {band}-vuotias: {what}, kulutusyksikköä kohti")
 
 # S-Bonus what-if estimate (#158): composites of the grocery month average and the rules file.
 BONUS_DOC = "docs/domain/s-group-benefits.md#4-how-the-coach-can-estimate-s-bonus-a-what-if-only"
