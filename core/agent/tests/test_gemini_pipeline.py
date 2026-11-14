@@ -346,3 +346,13 @@ def test_when_even_the_template_fails_the_outcome_is_fallback(tmp_path, monkeypa
     done = ask(p)
     assert done["outcome"] == "fallback" and "llm_unavailable" in done["warnings"]
     assert "1146" not in done["text_rendered"] and transport.requests == []
+
+
+def test_without_a_key_the_rule_models_answer_carries_the_warning():
+    p, audit = pipeline(FakeTransport(call_response()))
+    p.model = RuleModel()                                 # the service without GEMINI_API_KEY
+    done = ask(p)
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert "€1,146.05" in done["text_rendered"] and audit.records[-1]["model_unavailable"] == "no_model"
+    refusal = ask(p, "Should I put my savings into tech stocks?")
+    assert refusal["outcome"] == "refused" and "llm_unavailable" not in refusal["warnings"]

@@ -47,7 +47,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pool.open(wait=False)  # start even if the database is down; /readyz reports it
             log.info("database pool opened (max %d connections)", settings.db_pool_max)
         app.state.pool = pool
-        log.info(model_state(settings))  # on with its budget, or off and why (#244); no key material
+        try:
+            log.info(model_state(settings))  # on with its budget, or off and why (#244); no key material
+        except Exception as exc:  # noqa: BLE001 - a bad model setting must not stop the service
+            # The model is built the same way on the first ask (make_agent_model), and it falls back to
+            # the rule model on the same error, so the service runs with the model off.
+            log.warning("language model: off (model settings invalid: %s); the rules plan and the templates write",
+                        type(exc).__name__)
         try:
             yield
         finally:
