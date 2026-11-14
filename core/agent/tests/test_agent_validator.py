@@ -322,3 +322,27 @@ def test_a_period_word_that_starts_a_new_phrase_is_no_repeat(text):
     from core.agent.validator import repeated_period
 
     assert repeated_period(text, {"n1": MONTHLY}) is None
+
+
+
+# ---- #418: no ranking words next to a peer comparison ---------------------------------------------------------
+
+PEER_GAP = Number(id="n5", value=1.2, unit=Unit.PERCENT, period=AUG, method="peer_benchmark.vs_median_pct@1",
+                  evidence_ref="ev_p", label="Compared with typical", display="1.2% more")
+
+
+@pytest.mark.parametrize("text, ranked", [
+    ("You spend {{n5}} than the median of people like you, putting you near the top.", True),
+    ("You spend {{n5}} than the median of people like you, and a what-if can show what a cut would save.", False),
+])
+def test_ranking_words_next_to_a_peer_number_are_found(text, ranked):
+    from core.agent.validator import draft_problems
+
+    problems = draft_problems(text, {"n5": PEER_GAP}, has_data=True)
+    assert any("ranking words" in p for p in problems) is ranked
+
+
+def test_top_is_fine_without_a_peer_number():
+    from core.agent.validator import draft_problems
+
+    assert not any("ranking" in p for p in draft_problems("The top restaurant took {{n1}}.", {"n1": N1}, has_data=True))
