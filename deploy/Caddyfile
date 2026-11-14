@@ -26,6 +26,11 @@ __SITE__ {
 
 	handle_errors {
 		header -Server
+		# An API body over the limit (request_body below): Caddy 2.6 reports it as 413 only for a chunked
+		# body; with a Content-Length the proxy wraps it in a 502. Both become 413. Other errors keep
+		# their status (a 502 when the core is down stays 502).
+		@too_large expression `{http.error.message}.contains("request body too large")`
+		respond @too_large "" 413
 		respond "" {err.status_code}
 	}
 
