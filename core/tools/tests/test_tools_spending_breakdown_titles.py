@@ -75,3 +75,13 @@ def test_the_values_and_methods_do_not_change():
     for g in result.data.groups:
         spec = store.rows[g.amount.evidence_ref]
         assert spec["method"] == g.amount.method and Decimal(spec["value"]) == Decimal(str(g.amount.value))
+
+
+@pytest.mark.parametrize("language, expected", [("en", "Groceries (card purchases, Restaurants)"),
+                                                ("fi", "Ruokaostokset (korttiostot, Ravintolat)")])
+def test_a_card_purchase_group_within_another_category_has_one_bracket(language, expected):
+    """A group named like a category, filtered with ANOTHER category (an empty intersection only a model plan
+    reaches): one bracket, never "Groceries (card purchases) (Restaurants)" (#567)."""
+    from core.tools.spending import filter_label
+    assert filter_label(["Restaurants"], ["groceries"], [], None, language) == expected
+    assert filter_label(["Groceries"], ["groceries"], [], None, language).count("(") == 1
