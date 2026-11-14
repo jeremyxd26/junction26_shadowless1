@@ -1,6 +1,6 @@
 // One answer of the chat, built event by event from the /api/ask stream (contract section 7.2).
 // Pure functions, so the screen and the tests share them.
-import type { AskDone, AskEvent, AskMeta, Card, Num } from '../api/types.ts'
+import type { Action, AskDone, AskEvent, AskMeta, Card, Num } from '../api/types.ts'
 
 export type AnswerStatus = 'streaming' | 'done' | 'error' | 'stopped'
 
@@ -102,6 +102,20 @@ export function splitTakeaway(text: string): { takeaway: string; rest: string } 
 }
 
 /** The card actions shown as action chips under the explanation: at most 2 per card, no repeats. */
+/**
+ * The actions of `done` (contract 0.3.3): every refusal, the "not yet" answer and the fallback
+ * carry `contact_bank`. Entries without a string `type` and `label` are dropped; the chip renders
+ * only the types and targets it knows.
+ */
+export function doneActions(done: AskDone | null): Action[] {
+  const list = done?.actions
+  if (!Array.isArray(list)) return []
+  return list.filter(
+    (action): action is Action =>
+      typeof action === 'object' && action !== null && typeof action.type === 'string' && typeof action.label === 'string',
+  )
+}
+
 export function actionsOf(cards: Card[]): Card['actions'] {
   const seen = new Set<string>()
   const actions: Card['actions'] = []
