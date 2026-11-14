@@ -43,11 +43,11 @@ AI_DISCLOSURE: Pair = (
 )
 GREETING: Pair = ("Hi {name}", "Hei {name}")
 GREETING_NO_NAME: Pair = ("Hi", "Hei")
-SUGGESTED_QUESTIONS: list[Pair] = [  # the partner's four questions
-    ("Where did my money go?", "Mihin rahani menivät?"),
-    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
+SUGGESTED_QUESTIONS: list[Pair] = [  # the partner's four questions; the app shows the first three (#662)
     ("What can I safely spend this week?", "Paljonko voin turvallisesti käyttää tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
+    ("Where did my money go?", "Mihin rahani menivät?"),
+    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
 ]
 
 PRIVACY_TRANSACTIONS: Pair = (

@@ -12,7 +12,7 @@ from typing import Any
 from core.tools import aliases, config, evidence, labels, periods
 from core.tools.classify import CTx, classify
 from core.tools.context import ToolContext
-from core.tools.formatting import display
+from core.tools.formatting import DATE_SPACE, display
 from core.tools.models import Number, Period, Unit
 from core.tools.numbers import NumberBuilder
 from core.tools.reviews import ANSWER_BASKETS, Review
@@ -28,7 +28,8 @@ def _t(key: str, language: str, **kw: Any) -> str:
 def long_date(d, language: str) -> str:
     if language == "fi":
         return f"{d.day}.{d.month}.{d.year}"
-    return f"{d.day} {periods.MONTHS_EN[d.month - 1]} {d.year}"
+    # "28 September 2026" joined by no-break spaces (#662); the Finnish "28.9.2026" has no space to break at
+    return f"{d.day}{DATE_SPACE}{periods.MONTHS_EN[d.month - 1]}{DATE_SPACE}{d.year}"
 
 
 def purchase(ctx: ToolContext, review: Review) -> tuple[CTx, list[CTx]] | None:
