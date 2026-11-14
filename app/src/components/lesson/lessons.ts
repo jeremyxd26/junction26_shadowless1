@@ -126,6 +126,17 @@ export function lessonsFor(overview: OverviewResponse | null): Lesson[] {
   return [lessonOne(overview), lessonTwo(overview), lessonThree(overview)].filter((lesson): lesson is Lesson => lesson !== null)
 }
 
+/** The lesson's id in the Learn tab's progress ("money-1" …). */
+export function lessonKey(lesson: Lesson): string {
+  return `money-${lesson.id}`
+}
+
+/** The first lesson not done yet, or the first one when all are done (going through again). */
+export function startIndex(lessons: Lesson[], done: string[]): number {
+  const index = lessons.findIndex((lesson) => !done.includes(lessonKey(lesson)))
+  return index < 0 ? 0 : index
+}
+
 /** With fewer than two options there is nothing to choose: the lesson opens on its reveal. */
 export function opensOnReveal(lesson: Lesson): boolean {
   return lesson.kind === 'pick' && lesson.options.length < 2
