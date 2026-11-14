@@ -28,8 +28,10 @@ from psycopg_pool import PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
+from core.agent import guard
 from core.agent.audit import AuditLog
 from core.app.api import deps
+from core.app.api.errors import envelope
 from core.agent.conversation import ConversationStore
 from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
 from core.agent.rules import RuleModel
@@ -41,12 +43,6 @@ PING_S = 10.0
 MAX_MESSAGE = 500
 CONNECTION_TIMEOUT_S = 5.0
 CUSTOMER_SQL = "SELECT 1 FROM customers WHERE customer_id = %s"
-
-ERROR_TEXT = {
-    "invalid_request": "The request is not valid.",
-    "customer_not_found": "We couldn't find this customer.",
-    "rate_limited": "Too many questions at once. Please wait a moment.",
-}
 
 
 class AskBody(BaseModel):
@@ -186,11 +182,6 @@ def get_agent(app) -> Agent:
     return agent
 
 
-def _error(status: int, code: str, message: str, retryable: bool = False, headers: dict | None = None) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message, "retryable": retryable}}, status_code=status,
-                        headers=headers)
-
-
 def _sse(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
@@ -244,8 +235,8 @@ def _collect(pipeline: Pipeline, req: AskRequest) -> tuple[int, dict[str, Any]]:
 
     pipeline.run(req, emit)
     if error is not None or done is None:
-        envelope = (error or {}).get("error") or error_envelope("internal", meta.get("language", "en"))
-        return (503 if envelope["code"] == "data_unavailable" else 500), {"error": envelope}
+        failure = (error or {}).get("error") or error_envelope("internal", meta.get("language", "en"))
+        return (503 if failure["code"] == "data_unavailable" else 500), {"error": failure}
     body = {**meta, **done, "numbers": {k: v for k, v in numbers.items() if k in done["cited"]}, "cards": cards}
     return 200, body
 
@@ -256,20 +247,24 @@ async def ask(request: Request):
     try:
         body = AskBody.model_validate(await request.json())
     except (ValidationError, ValueError, TypeError):
-        return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
+        return envelope("invalid_request", "en")  # a body that cannot be read has no language
+    # Every error from here on is in the request's language (as /api/whatif): the body's `language`,
+    # else the question's detected language.
+    lang = body.language if body.language in ("en", "fi") else guard.detect_language(guard.clean(body.message)) or "en"
+    request.state.language = lang
     message = body.message.strip()
     if not message or len(body.message) > MAX_MESSAGE:
-        return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
+        return envelope("invalid_request", lang)
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
     allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
     if not allowed:
-        return _error(429, "rate_limited", ERROR_TEXT["rate_limited"], True, {"Retry-After": str(retry_after)})
+        return envelope("rate_limited", lang, headers={"Retry-After": str(retry_after)})
     try:
         exists = await run_in_threadpool(agent.data.customer_exists, body.customer_id)
     except DataUnavailable:
-        return JSONResponse({"error": error_envelope("data_unavailable", "en")}, status_code=503)
+        return envelope("data_unavailable", lang)
     if not exists:
-        return _error(404, "customer_not_found", ERROR_TEXT["customer_not_found"])
+        return envelope("customer_not_found", lang)
 
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
                      conversation_id=body.conversation_id)
@@ -281,18 +276,23 @@ async def ask(request: Request):
 
 
 def audit_api_enabled() -> bool:
-    """The audit read endpoint is off unless AUDIT_API=1 (meant for local eval runs): on the dev service
-    /api/* is public, and a record holds a customer's question, tool calls and model views."""
+    """The audit read endpoint exists only with AUDIT_API=1 (meant for local eval runs): on the dev
+    service /api/* is public, and a record holds a customer's question, tool calls and model views."""
     return os.environ.get("AUDIT_API", "").strip() == "1"
 
 
-@router.get("/api/audit/{answer_id}")
+# Registered by core/app/main.py only when audit_api_enabled() at start-up (issue #189): with the switch
+# off, /api/audit/... is an ordinary unknown path, so nobody can tell that the route exists.
+audit_router = APIRouter()
+
+
+@audit_router.get("/api/audit/{answer_id}")
 async def audit_record(answer_id: str, request: Request):
     """Internal: the audit record of one answer (agent-core.md section 9.1). Not part of the app contract.
-    Answers 404 unless AUDIT_API=1. The audit files are written either way."""
-    if not audit_api_enabled() or not answer_id.startswith("ans_") or len(answer_id) > 32:
-        return _error(404, "not_found", "No such answer.")
+    The audit files are written whether or not the route exists."""
+    if not answer_id.startswith("ans_") or len(answer_id) > 32:
+        return envelope("not_found", "en")
     record = await run_in_threadpool(get_agent(request.app).audit.find, answer_id)
     if record is None:
-        return _error(404, "not_found", "No such answer.")
+        return envelope("not_found", "en")
     return JSONResponse(record)

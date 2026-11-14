@@ -43,7 +43,7 @@ curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "A
 
 Answer pipeline settings:
 - `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
-- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
+- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is read when the service starts. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs. When it is off, the route does not exist, and the path answers like any unknown path.
 - Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
   - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
   - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.

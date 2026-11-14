@@ -300,3 +300,23 @@ def test_data_access_without_connection_if_free_runs_the_calls_one_by_one(make_p
     assert inner.most_in_use == 1 and inner.connections == 2
     assert [p["card"]["primary"]["id"] for e, p in events if e == "card"] == ["n1", "n2"]
     assert dict(events)["done"]["outcome"] == "answered"
+
+
+def test_no_later_card_before_the_error_when_a_call_finds_the_database_down(make_pipeline):
+    # Issue #168: calls [ok, db down (slow), ok (fast)]: the first card is sent, the third call's card
+    # is not (it finished first, but the answer ends with an `error` event).
+    import time
+
+    from agent_fakes import db_down_tool
+
+    def slow_down(ctx, args):
+        time.sleep(0.2)
+        return db_down_tool(ctx, args)
+
+    reg = registry(_tool("tool0", 0.0), ToolSpec("down", "down", FakeArgs, slow_down, ("x", "x")),
+                   _tool("tool2", 0.0))
+    model = ScriptedModel(plans=[[FunctionCall("tool0", {}), FunctionCall("down", {}), FunctionCall("tool2", {}),
+                                  FunctionCall("finish")]], drafts=[GOOD])
+    events = run(make_pipeline(model, reg=reg, data=FakeData()))
+    order = [e if e != "card" else p["card"]["card_id"] for e, p in events if e in ("card", "error", "done")]
+    assert order == ["card_tool0", "error"]

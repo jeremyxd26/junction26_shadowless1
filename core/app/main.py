@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
+from core.agent.api import audit_api_enabled, audit_router
 from core.agent.api import router as ask_router
 
 from . import api, health
@@ -59,4 +60,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     api.register(app)  # /api/personas, /api/evidence, /api/overview and the error envelope (#64)
     app.include_router(ask_router)  # POST /api/ask (core/agent)
+    if audit_api_enabled():  # GET /api/audit/{id} exists only for local eval runs (#189)
+        app.include_router(audit_router)
     return app

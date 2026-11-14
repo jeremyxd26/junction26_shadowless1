@@ -340,6 +340,7 @@ class Pipeline:
         queue = deque(range(len(pending)))
         lock = threading.Lock()
         failures: list[BaseException] = []
+        failed_at: set[int] = set()  # the calls that failed, by index
 
         def take() -> int | None:
             with lock:
@@ -350,25 +351,33 @@ class Pipeline:
                 with lock:
                     if not queue or failures:
                         return
-                taken = False
                 try:
                     with (self.data.connection_if_free(SPARE_WAIT_S) if spare else self.data.connection()) as conn:
                         i = take()
                         if i is None:
                             return
-                        taken = True
+                        call, args = pending[i]
+                        before = done[i - 1] if i else None
                         try:
-                            call, args = pending[i]
-                            before = done[i - 1] if i else None
                             own = dataclasses.replace(ctx, conn=conn, numbers=_InCallOrder(ctx.numbers, before))
-                            records[i] = self._run_tool(own, call, args, lang, emit, a, before)
+                            records[i] = self._run_tool(own, call, args, lang, emit, a, before,
+                                                        lambda i=i: any(j < i for j in failed_at))
                             with a.lock:  # later calls reuse the customer's loaded history
                                 if ctx._history is None and own._history is not None:
                                     ctx._history = own._history
+                        except BaseException as exc:  # noqa: BLE001 - re-raised by the caller below
+                            # Recorded BEFORE done[i] is set, so a later call that waits for this one
+                            # sees the failure and sends no card before the `error` event (#168).
+                            with lock:
+                                failures.append(exc)
+                                failed_at.add(i)
+                            return
                         finally:
+                            if before is not None:
+                                before.wait()  # done[i] means that every earlier call has finished too
                             done[i].set()
                 except DataUnavailable as exc:
-                    if not spare or taken:
+                    if not spare:
                         with lock:
                             failures.append(exc)
                     return  # a spare lane without a free connection: the first lane runs the rest
@@ -391,9 +400,11 @@ class Pipeline:
         return [r for r in records if r is not None]
 
     def _run_tool(self, ctx: ToolContext, call: FunctionCall, args: Any, lang: str, emit: Emit, a: _Answer,
-                  before: threading.Event | None = None) -> dict[str, Any]:
+                  before: threading.Event | None = None,
+                  failed: Callable[[], bool] = lambda: False) -> dict[str, Any]:
         """Run one call on ctx.conn. Its card and audit entry are recorded only after the calls before
-        it (`before`), so the three surviving cards and the audit keys follow the call order."""
+        it (`before`), so the three surviving cards and the audit keys follow the call order. When an
+        earlier call failed (`failed`), the answer ends with an `error` event, so this call sends no card."""
         spec = self.registry.tools[call.name]
         emit("status", {"stage": "tool", "tool": call.name, "label": template.pick(spec.status_label, lang)})
         t = self.clock()
@@ -417,9 +428,10 @@ class Pipeline:
             card = spec.card_builder(result)
             if before is not None:
                 before.wait()
+            stopped = failed()  # an earlier call found the database down: the answer ends with `error`
             with a.lock:
                 a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
-                send = card is not None and len(a.cards) < MAX_CARDS
+                send = card is not None and not stopped and len(a.cards) < MAX_CARDS
                 if send:
                     a.cards.append(card.card_id)
             if send:  # once the tool and the calls before it have finished, before the composer starts

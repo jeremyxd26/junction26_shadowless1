@@ -146,17 +146,55 @@ def test_database_down_before_the_stream_is_503(client):
     assert r.status_code == 503 and r.json()["error"]["code"] == "data_unavailable"
 
 
-def test_audit_endpoint_is_off_by_default(client, monkeypatch):
+def test_the_audit_route_does_not_exist_when_it_is_off(client):
+    # Issue #189: with AUDIT_API off the route is not registered, so /api/audit/<id> answers exactly
+    # like any unknown path and nobody can tell that it exists.
     client.install()
     answer_id = client.post("/api/ask", json=BODY).json()["answer_id"]
-    assert client.get(f"/api/audit/{answer_id}").status_code == 404
-    monkeypatch.setenv("AUDIT_API", "1")
-    r = client.get(f"/api/audit/{answer_id}")
-    assert r.status_code == 200
-    record = r.json()
-    assert record["answer_id"] == answer_id and record["outcome"] == "answered"
-    assert [c["name"] for c in record["planner_turns"][0]["calls"]] == ["fake_spending", "finish"]
-    assert client.get("/api/audit/ans_unknown").status_code == 404
+    audit, unknown = client.get(f"/api/audit/{answer_id}"), client.get("/api/no-such-route")
+    assert audit.status_code == unknown.status_code == 404
+    assert audit.content == unknown.content and audit.headers["content-type"] == unknown.headers["content-type"]
+
+
+def test_the_audit_route_with_audit_api_on(tmp_path, monkeypatch):
+    for name in ("DATABASE_URL", "ASK_RATE_LIMIT_PER_MIN", "TRUSTED_PROXIES"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AUDIT_API", "1")  # read once, when the app is created
+    app = create_app(Settings(_env_file=None))
+    audit = AuditLog(tmp_path / "audit")
+    data = FakeData()
+    app.state.agent = Agent(pipeline=Pipeline(registry(), ScriptedModel(plans=[SPEND], drafts=[GOOD]), data,
+                                              as_of=AS_OF, audit=audit),
+                            data=data, audit=audit, limits=AskLimits(0, 0, 0))
+    with TestClient(app) as c:
+        answer_id = c.post("/api/ask", json=BODY).json()["answer_id"]
+        r = c.get(f"/api/audit/{answer_id}")
+        assert r.status_code == 200
+        record = r.json()
+        assert record["answer_id"] == answer_id and record["outcome"] == "answered"
+        assert [call["name"] for call in record["planner_turns"][0]["calls"]] == ["fake_spending", "finish"]
+        assert c.get("/api/audit/ans_unknown").status_code == 404
+
+
+@pytest.mark.parametrize("body,code", [
+    ({**BODY, "message": "", "language": "fi"}, "invalid_request"),
+    ({**BODY, "customer_id": "CUST00002", "language": "fi"}, "customer_not_found"),       # not a persona
+    ({**BODY, "customer_id": "CUST00002", "message": "Paljonko kulutin viime kuussa?"}, "customer_not_found"),
+])
+def test_errors_are_in_the_language_of_the_request(client, body, code):
+    # Review of PR #186: the body's language, else the question's detected language, as /api/whatif does.
+    client.install()
+    r = client.post("/api/ask", json=body)
+    assert r.json()["error"]["code"] == code
+    assert r.json()["error"]["message"] in ("Pyyntö ei ole kelvollinen.", "Asiakasta ei löytynyt.")
+
+
+def test_a_finnish_rate_limit_answer(client):
+    client.install(plans=[SPEND, SPEND], drafts=[GOOD, GOOD], per_minute=1)
+    assert client.post("/api/ask", json={**BODY, "language": "fi"}).status_code == 200
+    r = client.post("/api/ask", json={**BODY, "language": "fi"})
+    assert r.status_code == 429 and r.json()["error"]["message"].startswith("Liian monta")
+    assert int(r.headers["Retry-After"]) > 0 and r.json()["error"]["retryable"] is True
 
 
 def test_the_real_wiring_without_a_database_answers_503(tmp_path, monkeypatch):
