@@ -41,6 +41,7 @@ from core.tools.context import NumberRegistry, ToolContext
 from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.safe_to_save import get_safe_to_save
+from core.tools.missing import MissingData
 from core.tools.what_if import WhatIfRefused, run_what_if
 
 TOOL = "get_savings_plan"
@@ -79,10 +80,12 @@ def _value(n: Number) -> Decimal:
 
 
 def _what_if(ctx: ToolContext, category: str, pct: int):
-    """The what-if result of cutting this category, or None when the tool refuses it (no spending)."""
+    """The what-if result of cutting this category, or None when the tool refuses it (no spending). The
+    structured mode: a category with fewer than 3 purchases is `not_offered`, so it is no lever (#379 part B)."""
     try:
-        return run_what_if(ctx, {"selection": {"kind": "category", "value": category}, "cut_pct": pct}).data
-    except WhatIfRefused:
+        return run_what_if(ctx, {"selection": {"kind": "category", "value": category}, "cut_pct": pct},
+                           too_few="not_offered").data
+    except (WhatIfRefused, MissingData):   # a reason, never the end of the plan (#379 part B)
         return None
 
 
