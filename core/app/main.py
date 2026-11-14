@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from core.agent.api import audit_api_enabled, audit_router
 from core.agent.api import router as ask_router
+from core.agent.gemini import model_state
 
 from . import api, health
 from .db import MALFORMED, NOT_SET, create_pool, valid_database_url
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pool.open(wait=False)  # start even if the database is down; /readyz reports it
             log.info("database pool opened (max %d connections)", settings.db_pool_max)
         app.state.pool = pool
+        log.info(model_state(settings))  # on with its budget, or off and why (#244); no key material
         try:
             yield
         finally:

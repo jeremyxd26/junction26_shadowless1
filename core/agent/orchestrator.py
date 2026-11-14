@@ -1,8 +1,15 @@
 """The answer pipeline, steps 1 to 7 of agent-core.md section 7.1 (step 0 is in api.py).
 
 1  meta: answer id, conversation (bound to one customer), language.   1a  input guard.
-2  plan: the model chooses functions (mode ANY). Planner errors: retry once, then the keyword
-   planner (rules.py) and a template answer with outcome "fallback".
+2  plan: the model chooses functions (mode ANY); the service's model plans with the rules first
+   (gemini.RulesFirstModel). Planner errors: retry once, then the keyword planner (rules.py).
+   Whether the language model may be used at all is decided once, before planning, by
+   _model_unavailable (#244): a used-up ask window (#232), the switch file, the daily budget, a pause.
+   When it may not, the rules plan and the template of the question writes, with no model request.
+   Outcome (#244): "answered" whenever a plan was made, the tools ran and the text passed the
+   validator, whoever wrote the text; the warning `llm_unavailable` when the model would have been
+   used and was not. A question the rules do not recognise, with the model unavailable, gets the
+   rules' general clarifying question (outcome "clarify").
 3  tools: arguments are validated by the registry; a customer key at any depth, an unknown function
    or bad arguments go back to the model as {"error": code}. Valid calls run with a database
    connection held only for the tool, two at a time when a second connection is free at once (else
@@ -143,6 +150,9 @@ class _Answer:
     refusal: dict[str, str] | None = None
     clarify: dict[str, Any] | None = None
     text: str | None = None
+    # Why the language model was not used although it would have been (#244): "model_window" (#232),
+    # "off", "budget", "pause" (decided before planning), or "error" (it was asked and failed).
+    model_unavailable: str | None = None
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
@@ -225,6 +235,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        a.model_unavailable = self._model_unavailable(req)
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -235,6 +246,8 @@ class Pipeline:
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            if source == "fallback":
+                a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
             a.planner_turns.append(turn)
@@ -253,6 +266,10 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
+                # The rules answered in the model's place: after a planner error, or for a question
+                # they do not recognise while the model may not be used (#244).
+                if source == "fallback" or (source == "rules" and not getattr(plan, "recognised", True)):
+                    self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -291,12 +308,16 @@ class Pipeline:
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=planner_fallback, a=a)
+        draft, used_template = self._compose(compose_in, numbers, allowed,
+                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
-        if a.outcome == "fallback":
-            a.warnings.append("llm_unavailable")
+        # A plan was made and the tools ran; the text passed the validator (the template's always does):
+        # "answered", whoever wrote it. The template in the model's place carries the warning (#244).
+        a.outcome = "answered"
+        if used_template:
+            a.model_unavailable = a.model_unavailable or "error"
+            self._warn_llm_unavailable(a)
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
@@ -310,7 +331,34 @@ class Pipeline:
                                    "answer": TOKEN.sub("[number]", text)})
         return lang
 
+    def _model_unavailable(self, req: AskRequest) -> str | None:
+        """Why the language model may not be used for this answer, or None when it may. The one place
+        that decides it, before planning (#244); the planner, the composer, the outcome and the warning
+        follow from a.model_unavailable:
+        - "model_window": the request's model window is used up (AskRequest.model_allowed, #232);
+        - the model's own state (Model.unavailable_reason): "off" (switch file), "budget" (daily budget
+          0 or used up), "pause" (after a 429, a refused key or model, or failures in a row).
+        A model without unavailable_reason (the rule model, a scripted model) is always available."""
+        if not getattr(req, "model_allowed", True):
+            return "model_window"
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe()
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
+            return "error"
+
+    @staticmethod
+    def _warn_llm_unavailable(a: _Answer) -> None:
+        if "llm_unavailable" not in a.warnings:
+            a.warnings.append("llm_unavailable")
+
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
+        if a.model_unavailable is not None:
+            # The model may not be used: the rules plan, with no model request (#244).
+            return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:
@@ -534,6 +582,7 @@ class Pipeline:
             "text_rendered": a.text_rendered,
             "cards": a.cards,
             "warnings": a.warnings,
+            "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},

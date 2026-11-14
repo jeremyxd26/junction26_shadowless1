@@ -189,7 +189,7 @@ def test_composer_cannot_state_a_number_in_digits(make, text):
     draft = {"language": "en", "text": text, "cited": ["n1"] if "{{n1}}" in text else [], "lesson_key": None}
     model = ScriptedModel(plans=[[FunctionCall("spend", {}), FunctionCall("finish")]], drafts=[draft, draft])
     d = done(run(make(model)))
-    assert d["outcome"] == "fallback"                           # retried once, then the template (R12)
+    assert d["outcome"] == "answered" and "llm_unavailable" in d["warnings"]  # retried, then the template (R12, #244)
     for bad in ("1,000,000", "1000", "\u0661", "15%", "147.640", "-\u20ac147.64", "2027"):
         assert bad not in d["text_rendered"]
 

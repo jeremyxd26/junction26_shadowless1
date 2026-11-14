@@ -375,6 +375,20 @@ class GeminiClient:
             return None, None
         return MAX_REQUESTS_PER_ANSWER - self._answer.requests, self._answer.deadline - self.clock()
 
+    def unavailable_reason(self) -> str | None:
+        """Why no request may be sent now, or None: "off" (the switch file), "budget" (the daily budget is
+        0 or used up in the rolling 24 hours), "pause" (after a 429, a refused key or model, an outage or
+        failures in a row). The pipeline asks this once per answer before planning (#244)."""
+        if self.ledger is not None:
+            if self.ledger.disabled():
+                return "off"
+            if self.ledger.daily_cap is not None and self.ledger.count() >= self.ledger.daily_cap:
+                return "budget"
+        with self._lock:
+            if self.clock() < self._paused_until:
+                return "pause"
+        return None
+
     # ---- the two calls ---------------------------------------------------------------------------
 
     def plan(self, system: str, contents: list[dict[str, Any]], declarations: list[dict[str, Any]]) -> Reply:
