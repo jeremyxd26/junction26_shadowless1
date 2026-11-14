@@ -5,7 +5,7 @@ import contract from '../../api/mock/contract-examples.json'
 import { strings } from '../../lib/i18n.ts'
 import { OpeningContext, type Opening } from '../../lib/openingContext.ts'
 import { SettingsContext } from '../../lib/settings.ts'
-import { clientTurns, openingChips } from '../clientTurns.tsx'
+import { clientTurns, openingChips, type ClientTurnProps } from '../clientTurns.tsx'
 import { inSentence, lessonOne, opensOnReveal, periodSpan, revealOf } from './lessons.ts'
 import { lessonStrings } from './lessonStrings.ts'
 import { LessonTurn } from './LessonTurn.tsx'
@@ -29,12 +29,15 @@ const noHero = examples['overview.response_no_hero']
 const clone = (overview: OverviewResponse): OverviewResponse => JSON.parse(JSON.stringify(overview))
 const displays = (overview: OverviewResponse | null) => lessonOne(overview)?.options.map((option) => [option.source, option.number.display])
 
+// The props a client turn gets; `onBusy` arrives with #694, so the object fits with and without it.
+const props = { turnId: 3, onStep: () => {}, onBusy: () => {} } as unknown as ClientTurnProps
+
 function render(overview: OverviewResponse | null, lang: Language = 'en') {
   const opening = { overview } as unknown as Opening
   return renderToStaticMarkup(
     <SettingsContext.Provider value={{ lang, customerId: 'CUST00860', t: strings(lang) }}>
       <OpeningContext.Provider value={opening}>
-        <LessonTurn turnId={3} onStep={() => {}} />
+        <LessonTurn {...props} />
       </OpeningContext.Provider>
     </SettingsContext.Provider>,
   )
