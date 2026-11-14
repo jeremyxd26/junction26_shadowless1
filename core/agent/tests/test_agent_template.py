@@ -224,3 +224,44 @@ def test_safe_to_spend_is_one_sentence_with_the_binding_limit(binding, lang, rea
     assert sorted(draft["cited"]) == ["n6", "n8", "n9"]
     assert draft["text"].startswith(("Safe to spend in the coming week: {{n6}}", "Turvallisesti")) and reason in draft["text"]
     assert not any(c.isdigit() for c in draft["text"].replace("{{n6}}", "").replace("{{n8}}", "").replace("{{n9}}", ""))
+
+
+# ---- #391: pay yourself first: the goal is quoted next to safe to spend ------------------------------------
+
+def _hero(safe, goal, usual=137.8, binding="budget"):
+    return {"tool": "get_safe_to_spend", "safe_to_spend": n(1, safe), "balance_limit": n(2, 5864.86),
+            "budget_limit": n(3, safe), "savings_goal": n(4, goal, "eur_per_month"),
+            "usual_week": n(5, usual, "eur_per_week"), "binding_limit": binding}
+
+
+@pytest.mark.parametrize("language, text", [
+    ("en", "You can spend about {{n1}} this week, after setting aside about {{n4}}."),
+    ("fi", "Voit käyttää tällä viikolla noin {{n1}}, kun ensin laitat sivuun noin {{n4}}."),
+])
+def test_safe_to_spend_with_a_goal_says_both(language, text):
+    draft = template_draft([_hero(138.79, 360.0)], [], language, None)
+    assert draft["text"] == text and set(draft["cited"]) == {"n1", "n4"}
+
+
+def test_below_the_usual_pace_by_more_than_the_margin_names_the_usual_pace():
+    below = template_draft([_hero(97.46, 360.0)], [], "en", None)
+    assert below["text"] == ("To keep setting aside {{n4}}, about {{n1}} a week is safe to spend, below your "
+                             "usual {{n5}}.") and set(below["cited"]) == {"n1", "n4", "n5"}
+    within = template_draft([_hero(133.0, 360.0)], [], "en", None)   # 4.80 under: within the 5 euro margin
+    assert within["text"].startswith("You can spend about {{n1}} this week")
+
+
+def test_without_a_goal_or_on_the_balance_side_the_sentence_is_as_before():
+    for view in (_hero(180.26, 0.0), _hero(180.26, 360.0, binding="balance")):
+        assert "setting aside" not in template_draft([view], [], "en", None)["text"]
+
+
+@pytest.mark.parametrize("monthly, text", [
+    (364.31, "You could set aside about {{n4}} on top of spending about {{n6}} a week."),
+    (184.61, "Your goal is {{n4}}; at your usual pace about {{n2}} would be left."),
+])
+def test_safe_to_save_quotes_the_goal_next_to_safe_to_spend(monthly, text):
+    view = {"tool": "get_safe_to_save", "monthly": n(2, monthly, "eur_per_month"),
+            "stock": n(3, 12272.28), "savings_goal": n(4, 360.0, "eur_per_month"), "safe_to_spend_week": n(6, 138.79)}
+    # the goal sentence leads; the stock may follow as the second sentence (answer_sentences, #342)
+    assert template_draft([view], [], "en", None)["text"].startswith(text)

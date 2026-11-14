@@ -147,10 +147,10 @@ def overview(client) -> dict:
 def test_the_first_answer_shows_the_pending_state_like_the_overview_that_follows(client):
     first = ask(client)                                  # the very first request: no review exists yet
     number = safe_number(first)
-    assert number["value"] == 221.58
+    assert number["value"] == 138.79
     review = next(c for c in first["cards"] if c["type"] == "review")
     hero = overview(client)["hero"]["primary"]
-    assert (hero["value"], hero["evidence_ref"]) == (221.58, number["evidence_ref"])   # the same Number
+    assert (hero["value"], hero["evidence_ref"]) == (138.79, number["evidence_ref"])   # the same Number
     assert overview(client)["reviews"][0]["tx_ref"] == review["tx_ref"]                 # created once
 
     r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": review["tx_ref"],
@@ -158,9 +158,9 @@ def test_the_first_answer_shows_the_pending_state_like_the_overview_that_follows
     assert r.status_code == 200, r.text
     after = ask(client)
     number = safe_number(after)
-    assert number["value"] == 180.26 and not [c for c in after["cards"] if c["type"] == "review"]
+    assert number["value"] == 97.46 and not [c for c in after["cards"] if c["type"] == "review"]
     hero = overview(client)["hero"]["primary"]
-    assert (hero["value"], hero["evidence_ref"]) == (180.26, number["evidence_ref"])
+    assert (hero["value"], hero["evidence_ref"]) == (97.46, number["evidence_ref"])
 
 
 def run(pipeline, question="How much can I safely spend?"):
