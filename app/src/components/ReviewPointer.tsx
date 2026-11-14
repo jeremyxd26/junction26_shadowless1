@@ -137,7 +137,8 @@ function ThreadReviewCard({
     }
   }
 
-  if (state.kind === 'answered') return <ReviewAnswered card={card} basket={state.basket} />
+  // The answer card's look in the thread (#696); the opening keeps its own.
+  if (state.kind === 'answered') return <ReviewAnswered card={card} basket={state.basket} inAnswer />
   if (state.kind === 'not_sure') return null
   return (
     <ReviewAsking
@@ -145,6 +146,7 @@ function ThreadReviewCard({
       busy={state.busy}
       error={state.error}
       leaving={false}
+      inAnswer
       onAnswer={(basket) => void send(basket)}
       onNotSure={() => dispatch({ type: 'not_sure' })}
       onRetry={() => {

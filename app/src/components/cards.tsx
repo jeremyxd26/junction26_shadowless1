@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
-import { BASKETS } from '../lib/baskets.ts'
+import type { Action, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
 import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
@@ -248,85 +247,6 @@ export function HeroPending() {
       <div aria-hidden="true" className="mt-3 h-12 w-44 animate-pulse rounded-pill bg-on-hero/15" />
       <p className="mt-3 text-base text-on-hero">{t.heroPending}</p>
     </section>
-  )
-}
-
-/**
- * The three baskets, always icon + label + colour; a pending purchase shows as a fourth, neutral
- * row. Rows follow DESIGN.md "Basket row": tile, label, the amount on the right, a 6 px bar under it.
- */
-export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: NumberMotion }) {
-  const { t } = useSettings()
-  // The waiting row is shown only while something waits (or while it fades out after an answer).
-  const items = card.items.filter(
-    (item) => item.key in BASKETS && !(item.key === 'unclassified' && item.amount.value <= 0 && !motion?.waiting),
-  )
-  const estimate = useEstimateToggle()
-  return (
-    <CardShell>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id="baskets-title" tabIndex={-1} className={`${CARD_TITLE} outline-none`}>
-            {card.title}
-          </h2>
-          {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
-        </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} control={estimate.control} />}
-      </div>
-      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
-
-      <ul className="mt-3 flex flex-col">
-        {items.map((item) => {
-          const look = BASKETS[item.key]
-          const was = motion?.was[item.key]
-          const highlighted = motion?.highlight === item.key
-          const leaving = item.key === 'unclassified' && motion?.waiting === 'leave'
-          return (
-            <li
-              key={item.key}
-              data-basket-row={item.key}
-              className={`@container -mx-2 rounded-md border-b border-line px-2 py-2.5 transition-colors duration-500 last:border-b-0 ${
-                highlighted ? look.tint.split(' ')[0] : ''
-              } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
-            >
-              {/* With large text the amount moves under the label instead of running past the card (#493). */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
-                >
-                  {look.icon}
-                </span>
-                {/* The label column never shrinks below its longest word, so when that word does not fit
-                    beside the amount, the amount moves under the label instead of covering it, and only
-                    then (#493). In a very narrow row (large text) the label first takes a full line under
-                    the icon, and only then hyphenates (#680); at normal size neither applies. */}
-                <div className="flex-1 basis-0 @max-[15rem]:basis-full">
-                  <p className={`break-words font-semibold leading-5 @max-[15rem]:hyphens-auto ${look.color}`}>{item.label}</p>
-                  {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
-                </div>
-                <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">
-                  <NumberChip number={item.amount} size="inline" wrap count={motion?.counts[item.key]} />
-                </span>
-              </div>
-              {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
-              <div aria-hidden="true" className="ml-[52px] mt-2 h-1.5 overflow-hidden rounded-pill bg-sunken">
-                <div
-                  className={`h-full rounded-pill transition-[width] duration-500 ${look.bar}`}
-                  style={{ width: `${Math.max(0, Math.min(100, item.share?.value ?? 0))}%` }}
-                />
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
-        <span className="min-w-[min(5rem,100%)] flex-1 basis-0">{card.total.label}</span>
-        <span className="ml-auto max-w-full shrink-0">
-          <NumberChip number={card.total} size="inline" wrap />
-        </span>
-      </div>
-    </CardShell>
   )
 }
 

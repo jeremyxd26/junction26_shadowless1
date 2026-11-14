@@ -70,7 +70,7 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain(peer.peer_median.display)
   })
 
-  it('bills: the bills card with its bills and total', () => {
+  it('bills: its bills and total', () => {
     const html = render(bills)
     const items = (bills as unknown as { items: { label: string; typical_month: { display: string } }[] }).items
     expect(items.length).toBeGreaterThan(0)
@@ -140,6 +140,67 @@ describe('AnswerCard: profile, peer and bills', () => {
     const html = render({ ...profile, estimate: null } as ProfileData)
     expect(html).not.toContain('From your transactions')
     expect(render({ ...profile, type: 'stores', estimate: null } as unknown as Card)).not.toContain('From your transactions')
+  })
+
+  const basketsOf = (name: string) =>
+    (examples[name] as { cards: Card[] }).cards.find(
+      (card) => card.type === 'breakdown' && (card as unknown as { items: { key: string }[] }).items.some((item) => item.key === 'regular_essentials'),
+    ) as Card & { total: { display: string }; items: { label: string }[]; comparison: unknown }
+
+  it('baskets breakdown (#696): the total large, every basket as a row, no green pills', () => {
+    const baskets = basketsOf('overview.response')
+    const html = render(baskets)
+    expect(html).toContain('data-answer-main')
+    expect(html).toContain(baskets.total.display)
+    const rows = html.split('data-figure-row').slice(1)
+    expect(rows.length).toBe(baskets.items.length + (baskets.comparison ? 1 : 0))
+    baskets.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+    expect(html).not.toContain('bg-mint')
+    expect(html).not.toContain(`<h3`)
+  })
+
+  it('baskets with a review pending (#696 ruling): all four parts of the total, "Waiting for your answer" included', () => {
+    const pending = basketsOf('overview.response_pending')
+    expect(pending.items.length).toBe(4)
+    const rows = render(pending).split('data-figure-row').slice(1)
+    expect(rows.length).toBeGreaterThanOrEqual(4)
+    pending.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+  })
+
+  it('bills (#696): the total due before payday large, every bill as a row (no part of the total is cut)', () => {
+    const html = render(bills)
+    expect(html).toContain('data-answer-main')
+    const rows = html.split('data-figure-row').slice(1)
+    const items = (bills as unknown as { items: { label: string }[] }).items
+    expect(rows.length).toBe(items.length)
+    const four = { ...bills, items: [...items, ...items].slice(0, 4).map((item, index) => ({ ...item, bill_id: `b${index}` })) } as unknown as Card
+    expect(render(four).split('data-figure-row').length - 1).toBe(4)
+    expect(html).not.toContain('bg-mint')
+  })
+
+  it('what-if with a caveat (#696): its caveats under the numbers, as the sheet shows them; a plain estimate shows none', () => {
+    const whatif = examples['card.whatif'] as Card & { result: Record<string, unknown> }
+    const caveat = 'Your restaurant spending changes a lot from month to month.'
+    const withCaveat = render({ ...whatif, result: { ...whatif.result, status: 'estimate_with_caveat', caveats: [caveat] } } as unknown as Card)
+    expect(withCaveat).toContain('data-answer-caveats')
+    expect(withCaveat).toContain(escape(caveat))
+    expect(withCaveat).toContain('data-answer-main')
+    const notOffered = render({ ...whatif, result: { ...whatif.result, status: 'not_offered', caveats: [caveat] } } as unknown as Card)
+    expect(notOffered).toContain(escape(caveat))
+    expect(notOffered).not.toContain('data-answer-main')
+    const plain = render({ ...whatif, result: { ...whatif.result, status: 'estimate', caveats: [caveat] } } as unknown as Card)
+    expect(plain).not.toContain('data-answer-caveats')
+  })
+
+  it('review in an answer (#696): the white frame of the answer card, the amount once in the question (no large repeat), answer buttons kept', () => {
+    const review = examples['card.review'] as Card & { amount: { display: string }; options: { label: { en: string } }[] }
+    const html = render(review)
+    expect(html).not.toContain('data-answer-main')
+    // Visible text only: the number's button also names the amount in its accessible label.
+    expect(html.replace(/<[^>]*>/g, '').split(review.amount.display).length - 1).toBe(1)
+    expect(html).not.toContain('bg-deep')
+    expect(html).toContain(review.amount.display)
+    for (const option of review.options) expect(html).toContain(escape(option.label.en))
   })
 
   it('bills and safe to save in an answer draw no action of their own (the chat shows them as chips)', () => {

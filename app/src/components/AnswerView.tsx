@@ -171,9 +171,9 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   const streaming = answer.status === 'streaming'
   const outcome = done?.outcome
   const hasContent = answer.cards.length > 0 || answer.text.length > 0
-  // At most one next step, from what the response carries; a follow-up only on the latest answer.
-  const picked = nextStep(done, answer.cards)
-  const step = picked?.kind === 'question' && !latest ? null : picked
+  // At most one next step, from what the response carries; a follow-up only on the latest answer
+  // (nextStep falls back to the way to a human on an older one).
+  const step = nextStep(done, answer.cards, latest)
 
   let body
   if (done && outcome === 'refused') {

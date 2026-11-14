@@ -39,3 +39,55 @@ describe('the one next step (#684)', () => {
     expect(nextStep(done({ outcome: 'clarify' }), [card([whatif])])).toBeNull()
   })
 })
+
+describe("Maxim's decision on the way to a human (#696)", () => {
+  it('a refusal keeps only the way to a human, even with follow-ups', () => {
+    expect(nextStep(done({ outcome: 'refused', actions: [bank] }), [card([whatif])])).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('a fallback offers its first follow-up, and the way to a human only without one', () => {
+    expect(nextStep(done({ outcome: 'fallback', actions: [bank] }), [])).toEqual({ kind: 'question', question: 'How could I save more?' })
+    expect(nextStep(done({ outcome: 'fallback', actions: [bank], follow_ups: ['  '] }), [])).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('so does the "not yet" answer (a clarification with the way to a human); the general clarification still offers nothing', () => {
+    expect(nextStep(done({ outcome: 'clarify', actions: [bank] }), [])).toEqual({ kind: 'question', question: 'How could I save more?' })
+    expect(nextStep(done({ outcome: 'clarify', actions: [bank], follow_ups: [] }), [])).toEqual({ kind: 'action', action: bank })
+    expect(nextStep(done({ outcome: 'clarify' }), [])).toBeNull()
+  })
+})
+
+describe('the next step after the review of #710', () => {
+  // The "not yet" answer as the core sends it (orchestrator `_clarify`, rules NOT_YET_OPTIONS):
+  // `clarify` with options, `follow_ups: []`, and the way to a human in `actions`.
+  const notYet = (over: Partial<AskDone> = {}) =>
+    done({
+      outcome: 'clarify',
+      follow_ups: [],
+      clarify: { question: "I can't answer that one yet. Try one of these:", options: ['How much did I spend last month?', 'How much did I spend on restaurants last month?'] },
+      actions: [bank],
+      ...over,
+    })
+
+  it('a "not yet" answer with options: the options are its follow-ups, so no "Contact S-Pankki" on the latest answer', () => {
+    expect(nextStep(notYet(), [])).toBeNull()
+  })
+
+  it('a "not yet" answer without options offers the way to a human', () => {
+    expect(nextStep(notYet({ clarify: { question: 'Not yet.', options: [] } }), [])).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('on an older turn the questions are hidden, so a fallback or a "not yet" answer keeps the way to a human', () => {
+    expect(nextStep(done({ outcome: 'fallback', actions: [bank] }), [], false)).toEqual({ kind: 'action', action: bank })
+    expect(nextStep(notYet(), [], false)).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('an older answered turn still shows no follow-up (as before)', () => {
+    expect(nextStep(done(), [card([evidence])], false)).toBeNull()
+  })
+
+  it('a refusal without the way to a human offers nothing, not a follow-up', () => {
+    expect(nextStep(done({ outcome: 'refused' }), [card([whatif])])).toBeNull()
+  })
+})
+
