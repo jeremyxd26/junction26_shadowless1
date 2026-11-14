@@ -126,7 +126,20 @@ def test_the_allowlist_comes_from_the_base_so_a_change_cannot_allowlist_itself(r
     code, out = main_out(capsys, "--repo", str(repo), "--base", "main")
     assert code == 1
     assert "postgres_url_with_password in app.py" in out
-    assert "note: this change edits .gitleaks.toml" in out
+    assert "note: this change edits .gitleaks.toml; the scan uses the base's allowlist, not these edits" in out
+
+
+def test_with_a_given_config_the_note_names_that_file(repo, capsys, tmp_path):
+    """#604: with --gitleaks-config the scan reads that file, so the note names it, not the base's copy."""
+    widened = ALLOWLIST.format(path=r"^app\.py$", value=FAKE_PASSWORD)
+    commit(repo, {".gitleaks.toml": widened, "app.py": f"URL = '{FAKE_URL}'\n"})
+    given = tmp_path / "given-gitleaks.toml"
+    given.write_text(ALLOWLIST.format(path=r"^tests/fixture\.py$", value=SYNTHETIC), encoding="utf-8")
+    code, out = main_out(capsys, "--repo", str(repo), "--base", "main", "--gitleaks-config", str(given))
+    assert code == 1 and "postgres_url_with_password in app.py" in out
+    assert f"  allowlist: {given}" in out
+    assert f"note: this change edits .gitleaks.toml; the scan uses {given}, not these edits" in out
+    assert "the base's allowlist" not in out
 
 
 def test_key_shapes_and_assignments_are_found(repo):
