@@ -22,8 +22,8 @@ What it reports:
   (`export API_TOKEN=...`, `password: ...`);
 - postgres URLs with a password, unless the `postgres-url-password` allowlist of `.gitleaks.toml`
   covers it (path AND value, as gitleaks applies that allowlist). The allowlist is read from the base's
-  copy of `.gitleaks.toml`, so a change cannot allowlist its own secret; a change that edits
-  `.gitleaks.toml` or `.gitleaksignore` gets a note;
+  copy of `.gitleaks.toml` (or from the file `--gitleaks-config` names), so a change cannot allowlist its own
+  secret; a change that edits `.gitleaks.toml` or `.gitleaksignore` gets a note naming the allowlist used;
 - literal values of the local `.env` of 12 or more characters (skipped, with a note, without one);
 - added env files: `.env`, `.env.*` and `*.env`, except `*.example`.
 
@@ -371,7 +371,8 @@ def run(args: argparse.Namespace) -> int:
         print("  note: no .env values loaded, so the literal check was skipped")
     edited = sorted(p for p in patch.touched if p.rsplit("/", 1)[-1] in (".gitleaks.toml", ".gitleaksignore"))
     if edited:
-        print(f"  note: this change edits {', '.join(edited)}; the scan uses the base's allowlist, not these edits")
+        used = args.gitleaks_config or "the base's allowlist"   # the file the scan read, never the edits (#604)
+        print(f"  note: this change edits {', '.join(edited)}; the scan uses {used}, not these edits")
     if patch.binary:
         print(f"  skipped {len(patch.binary)} binary files: {', '.join(sorted(patch.binary))}")
     for (kind, path), wheres in groups.items():

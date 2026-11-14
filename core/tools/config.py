@@ -565,9 +565,11 @@ PROFILE_DESCRIPTIONS: dict[str, tuple[str, str]] = {
         "Over your last six full months you spent more than came in.",
         "Kuuden viimeisen täyden kuukauden aikana kulutit enemmän kuin sait tuloja.",
     ),
+    # No size of share (#687): at the threshold one-offs are a twentieth of spending, often one purchase,
+    # beside many small ones. The text says what the one-off rule measures: far above the usual purchase.
     "big_ticket": (
-        "Large one-off purchases make up a notable part of your spending.",
-        "Isot kertaostokset ovat merkittävä osa kulutustasi.",
+        "A large one-off purchase stands out in your spending, well above what you usually pay in its category.",
+        "Kulutuksessasi erottuu iso kertaostos, selvästi suurempi kuin tavalliset ostoksesi samassa luokassa.",
     ),
     "everyday_heavy": (
         "A large share of your money goes to everyday spending, such as eating out and entertainment.",

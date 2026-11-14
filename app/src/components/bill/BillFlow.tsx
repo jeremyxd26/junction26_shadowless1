@@ -16,7 +16,7 @@ import { BillExplanationCard } from './BillExplanationCard.tsx'
 import { BillFieldsCard } from './BillFieldsCard.tsx'
 import { BillGallery } from './BillGallery.tsx'
 import { BillSignals } from './BillSignals.tsx'
-import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
+import { flowReducer, initialFlow, toFlowError } from './billFlowState.ts'
 
 interface Props {
   /** Called when the user is finished with an explained bill. */
@@ -26,11 +26,6 @@ interface Props {
    * `askInThread` opens the thread with the question and replaces the history entry (no new one).
    */
   onAsk?: (question: string) => void
-}
-
-function toFlowError(error: unknown, fallback: string): FlowError {
-  if (error instanceof ApiError) return { message: error.message, retryable: error.retryable }
-  return { message: fallback, retryable: true }
 }
 
 export function BillFlow({ onDone, onAsk }: Props) {
@@ -80,6 +75,7 @@ export function BillFlow({ onDone, onAsk }: Props) {
             <ErrorBlock
               message={state.error.message}
               onRetry={state.error.retryable && retrySample ? () => dispatch({ type: 'pick', sampleId: retrySample }) : undefined}
+              until={state.error.until ?? null}
             />
           )}
           <BillGallery onPick={(sampleId) => dispatch({ type: 'pick', sampleId })} />
