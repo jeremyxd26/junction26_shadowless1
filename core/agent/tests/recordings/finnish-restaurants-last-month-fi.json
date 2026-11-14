@@ -1,0 +1,157 @@
+{
+ "question": "Paljonko käytin ravintoloihin viime kuussa?",
+ "language": "fi",
+ "as_of": "2026-09-30",
+ "planner": "model",
+ "model": "gemini-3.8-flash",
+ "tools": [
+  {
+   "name": "get_spending",
+   "args": {
+    "period": {
+     "preset": "last_month"
+    },
+    "filter": {
+     "categories": [
+      "Restaurants"
+     ]
+    },
+    "direction": "out",
+    "group_by": "none",
+    "compare_to": "none",
+    "top_n": 5
+   },
+   "numbers": [
+    {
+     "value": 138.94,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "elokuu 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_f7339294f16e",
+     "label": "Ravintolat",
+     "display": "138,94 €",
+     "id": "n1"
+    },
+    {
+     "value": 10,
+     "unit": "count",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "elokuu 2026"
+     },
+     "method": "spending.n_tx@1",
+     "evidence_ref": "ev_313c710a9750",
+     "label": "Tapahtumat",
+     "display": "10",
+     "id": "n2"
+    }
+   ],
+   "model_view": {
+    "tool": "get_spending",
+    "period": "elokuu 2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 138.94,
+     "unit": "eur",
+     "label": "Ravintolat"
+    },
+    "tx_count": {
+     "id": "n2",
+     "value": 10,
+     "unit": "count",
+     "label": "Tapahtumat"
+    },
+    "comparison": null,
+    "groups": [],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_8828510349728423425",
+          "args": {
+           "period": {
+            "preset": "last_month"
+           },
+           "filter": {
+            "categories": [
+             "Restaurants"
+            ]
+           },
+           "direction": "out"
+          },
+          "name": "get_spending"
+         },
+         "thought_signature": "EmkKZwFpFH0TzLMOjpEcdroscP1YUiSX91qrgf0WibGmxyJvOZFTgPW7XF0nuhxR3HvKP74JzZzxmQE-QJ4dkfMabU5XI4pNDVqU-tEGaVllrHqEUMaVE1raudY3VhuC5_dKr2qznZvR-Dg="
+        },
+        {
+         "function_call": {
+          "id": "call_8828510349728420998",
+          "args": {},
+          "name": "finish"
+         }
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2947,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 42
+    }
+   }
+  },
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"fi\",\n  \"text\": \"Käytit ravintoloihin elokuussa 2026 yhteensä **{{n1}}**. Summa koostui {{n2}} maksutapahtumasta.\",\n  \"cited\": [\"n1\", \"n2\"],\n  \"lesson_key\": \"small_amounts_add_up\"\n}",
+         "thought_signature": "EmkKZwFpFH0T6x88caUcipF9wJ2f110Ae5YUIcSTMg126IHPUgYurpo4sfCIuB6jYwlQp4pvY1X6QSmLhVmvY-4ne1EjWDLN4kOam32o28qhL76QD3vHz9dv8efvWCu0GbXrmOgC1t7Tj5U="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2111,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 84
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_spending",
+   "finish"
+  ],
+  "text": "Käytit ravintoloihin elokuussa 2026 yhteensä **{{n1}}**. Summa koostui {{n2}} maksutapahtumasta.",
+  "text_rendered": "Käytit ravintoloihin elokuussa 2026 yhteensä **138,94 €**. Summa koostui 10 maksutapahtumasta."
+ }
+}
