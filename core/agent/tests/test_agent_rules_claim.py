@@ -595,6 +595,8 @@ def test_what_if_save_more_and_bills_win_over_the_future(question, lang, tools):
     "How much did I spend in August and next month?",
     "how much did I spend by Christmas last year?",
     "could I afford a holiday in March last year?",
+    "how much will I spend next month compared to this month?",
+    "will I spend more next year than this year?",
     # an unknown object next to a category is not answered for the category alone
     "how much did I spend on the gym and restaurants last month?",
 ])
@@ -610,6 +612,18 @@ def test_a_future_with_another_period_or_an_unknown_object_with_a_category_is_no
 def test_savings_and_income_are_never_compared_with_other_people(question, lang):
     # #418: no peer number for savings or income; the user's own figures at most.
     assert "get_peer_benchmark" not in [c.name for c in plan(question, lang).calls]
+
+
+@pytest.mark.parametrize("question", [
+    # the same in Finnish: "this month / this year" in its other cases is a second period too
+    "paljonko kulutan ensi kuussa verrattuna tähän kuuhun?",
+    "kulutanko ensi kuussa enemmän kuin tätä kuuta?",
+    "paljonko kulutan ensi vuonna verrattuna tähän vuoteen?",
+    "paljonko kulutan ensi kuussa verrattuna viime kuuhun?",
+    "paljonko käytin elokuussa ja paljonko kulutan ensi kuussa?",
+])
+def test_a_finnish_future_with_another_period_is_not_claimed(question):
+    assert not plan(question, "fi").recognised
 
 
 

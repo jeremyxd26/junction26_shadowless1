@@ -432,7 +432,9 @@ PAST_PERIOD = (r"\blast (week|month|year|summer|winter|spring|autumn|christmas)\
 # a verb ("will I spend") or "afford" carries its own month ("will I spend in March?", review of #443 D1).
 FUTURE_PERIOD = (r"\bnext (month|year|week)\b|\bby (christmas|new year|the end of the year)\b|"
                  r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bjouluun\b")
-THIS_PERIOD = r"\bthis (month|year|week)\b|\btässä kuussa\b|\btämän kuun\b|\btänä vuonna\b"
+THIS_PERIOD = (r"\bthis (month|year|week)\b|\btässä kuussa\b|\btämän kuun\b|\btähän kuuhun\b|\btätä kuuta\b|"
+               r"\btänä vuonna\b|\btämän vuoden\b|\btähän vuoteen\b|\btätä vuotta\b|\btällä viikolla\b|"
+               r"\btämän viikon\b")
 # A thing the user names that no category or merchant group maps ("the gym", "Netflix", "flurbles",
 # "kuntosaliin"): the rules never answer it with the unfiltered total (#395). Health keeps its spending plan.
 OBJECT_EN = (r"\b(?:spen[dt]\w*|paid|pay|bought|buy|cost\w*)\b(?:\s+\S+){0,3}?\s+(?:on|at|for)\s+"
