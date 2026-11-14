@@ -1124,6 +1124,46 @@
   [
    "Maksaako Ruohonjuuri S-Bonusta?",
    "fi"
+  ],
+  [
+   "Paljonko kulutin kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulla meni rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulle jäi rahaa?",
+   "fi"
+  ],
+  [
+   "Paljonko minulle kertyi bonusta?",
+   "fi"
+  ],
+  [
+   "Paljonko käytin ruokaan?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Netflix kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko talouteni kulutti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko taloutemme kulutti kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Does Ruohonjuuri give me S-Bonus?",
+   "en"
+  ],
+  [
+   "Does Ruohonjuuri give me S-Bonus points?",
+   "en"
   ]
  ],
  "declined": [
@@ -1489,6 +1529,86 @@
   ],
   [
    "Do I spend more than other parents?",
+   "en"
+  ],
+  [
+   "Paljonko kulutti vaimoni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti mieheni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienaa vaimoni?",
+   "fi"
+  ],
+  [
+   "Paljonko vaimollani kului rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti vaimoni ruokaan?",
+   "fi"
+  ],
+  [
+   "Kuinka paljon käytti veljeni kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko kulutti Jani elokuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko tienaa Marja?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalle jäi rahaa kesäkuun jälkeen?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalla meni rahaa kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjalle kertyi bonusta kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko Marjaa kohden on käytetty kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko käytti Marja?",
+   "fi"
+  ],
+  [
+   "Mitä osti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "Paljonko maksoi Marja vuokraa?",
+   "fi"
+  ],
+  [
+   "Montako euroa kulutti Marja kesäkuussa?",
+   "fi"
+  ],
+  [
+   "How much does May earn?",
+   "en"
+  ],
+  [
+   "What does May earn?",
+   "en"
+  ],
+  [
+   "How much did May earn in June?",
    "en"
   ]
  ],

@@ -63,7 +63,8 @@ PERSON_FI = {
     "isoaiti", "isoisa", "tati", "seta", "eno", "serkku", "serkkuni",
 }
 # The user's own household: "our household", "our family", "perheemme" (review of #458).
-HOUSEHOLD = {"household", "family", "home", "perhe", "perheeni", "perheemme", "perheen", "kotitalous",
+HOUSEHOLD = {"household", "family", "home", "perhe", "perheeni", "perheemme", "perheen", "kotitalous", "talouteni",
+             "taloutemme",
              "kotitalouteni", "kotitaloutemme", "kotitalouden"}
 PRONOUN = {"she", "he", "they", "her", "his", "their", "him", "them", "han", "hanen", "heidan"}
 TITLE = {"mr", "mrs", "ms", "miss", "dr", "rouva", "herra", "neiti", "tohtori"}
@@ -171,6 +172,10 @@ PATTERNS = {
     "about": re.compile(rf"^(?:and )?(?:what|how) about {_NP1}", re.I),
     "and_name": re.compile(rf"^and {_NP1}$", re.I),
     "fi_has": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}(?:lla|llani)) on\b", re.I),
+    "fi_verb_first": re.compile(rf"\b(?P<verb>{FI_VERB}) (?P<np>{_TOKEN})\b", re.I),
+    "fi_experiencer": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}(?:lla|llani|lle|lleni)) (?P<verb>kului|kuluu|meni|menee|jai|jaa|"
+                                 rf"kertyi|kertyy|tuli|tulee)\b", re.I),
+    "fi_per": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}) kohden\b", re.I),
     "spender": re.compile(rf"\b(?:what (?:kind|type|sort) of (?:spender|saver|consumer) (?:is|was|are) {_NP1}|"
                           rf"is (?P<np3>{_TOKEN}) an? (?:big |small |good |bad )?(?:spender|saver)|"
                           rf"millainen (?:kuluttaja|saastaja) (?P<np2>{_TOKEN}) on\b)", re.I),
@@ -245,7 +250,7 @@ def kind_of(np: str) -> str:
     """person, crowd, unknown or thing, for the words of a subject or owner (case and accents as typed)."""
     tokens = [t for t in re.findall(_TOKEN, np)]
     words = [re.sub(r"['’]s?$", "", fold(t).strip(".")) for t in tokens]
-    words = [w if w in PERSON_FI else re.sub(r"(?<=\w\w\w)ll(?:a|ani)$", "", w) for w in words]
+    words = [w if w in PERSON_FI else re.sub(r"(?<=\w\w\w)(?:ll(?:a|ani)|lle(?:ni)?)$", "", w) for w in words]
     content = [(t, w) for t, w in zip(tokens, words) if w not in DETERMINER]
     if content and (all(w in FIRST for _, w in content) or content[-1][1] in FIRST):
         return "first"                               # "I", "help me (save)": the user
@@ -284,6 +289,8 @@ def kind_of(np: str) -> str:
 FI_STOP = {"miten", "kuinka", "paljonko", "milloin", "mihin", "mista", "missa", "mika", "mita", "ennen",
            "on", "kun", "niin", "jos", "nyt", "sen", "taman", "tan", "sinun", "kaiken", "koko", "jokaisen", "oman",
            "minun", "meidan", "kuin"}
+FI_MODAL = (r"voin|voit|voi|voimme|voitte|voivat|voisin|voisit|voisi|haluan|haluat|haluaa|pitaa|pitaisi|"
+            r"saan|saat|kannattaa|kannattaisi|pystyn|pystyt|pystyy|aion|aiot|aikoo|taytyy|tarvitsee")
 ADVERBS = {"safely", "really", "actually", "usually", "probably", "roughly", "approximately", "exactly", "only",
            "mostly", "nearly", "likely", "just", "even", "still", "also", "totally", "completely", "certainly",
            "definitely", "normally", "typically", "generally", "recently", "lately", "finally", "already", "often"}
@@ -303,11 +310,11 @@ def _head(np: str) -> str | None:
         return None                                   # the coach's "you" ("what you'd save")
     if any(fold(tok) in FIRST for tok in tokens):
         return None                                   # the user in the subject: "i safly spend", "me and my wife"
-    tokens = [tok for tok in tokens if tok.lower() not in ADVERBS]     # "can safely spend"
+    tokens = [tok for tok in tokens if tok.lower() not in ADVERBS and not re.fullmatch(r"\w{4,}sti", fold(tok))]
     owned = [i for i, tok in enumerate(tokens) if tok.endswith(("'s", "’s", "'", "’"))]
     if owned:
         tokens = tokens[owned[-1] + 1:]               # "Marja's husband" spends: the husband
-    if not tokens or fold(tokens[-1]) in _BE:
+    if not tokens or (fold(tokens[-1]) in _BE and not tokens[-1][:1].isupper()):
         return None
     return " ".join(tokens)
 
@@ -359,9 +366,10 @@ def classify(question: str, peer_question: bool = False) -> str | None:
         judge(m.group("np"), unclaim=not first)
     for m in PATTERNS["spender"].finditer(plain):
         judge(m.group("np") or m.group("np2") or m.group("np3"), unclaim=True)
-    for name in ("compare", "compare_to", "me_or", "or_me", "about", "and_name", "fi_has"):
+    for name in ("compare", "compare_to", "me_or", "or_me", "about", "and_name", "fi_has", "fi_experiencer", "fi_per"):
         for m in PATTERNS[name].finditer(plain):
-            judge(m.group("np"), unclaim=False)       # "more than usual" is no one; "than my wife" is
+            # an experiencer ("Marjalle kertyi bonusta") gets, never pays: a name stays a person
+            judge(m.group("np"), unclaim=False, verb=m.groupdict().get("verb") or "")       # "more than usual" is no one; "than my wife" is
     for m in PATTERNS["fi_owner"].finditer(plain):
         if fold(m.group("np")) in FI_STOP:
             continue                                  # "Miten kulutukseni", "on palkka": no owner
@@ -371,18 +379,22 @@ def classify(question: str, peer_question: bool = False) -> str | None:
 
     # Subjects: only when the user is not the subject, or a question clause asks about someone else.
     for name in ("aux_subject", "subject", "subject_base", "what_if", "is_spending", "group_of", "fi_subject",
+                 "fi_verb_first",
                  "fi_question", "fi_what_if", "fi_onko", "fi_lead"):
         for m in PATTERNS[name].finditer(plain):
             if ME_AFTER_VERB.match(plain[m.end():]):
                 verb = m.groupdict().get("verb") or ""
-                if PAY_TO_ME.fullmatch(verb) and kind_of(_head(m.group("np")) or "") in ("person", "name"):
+                payer = kind_of(_head(m.group("np")) or "")
+                if PAY_TO_ME.fullmatch(verb) and (payer == "person" or (payer == "name" and not COMPANY_TALK.search(plain))):
                     verdicts.append(UNCLAIMED)        # money paid TO the user by a person: not get_spending
                 continue                              # "did Prisma pay me bonus": the user's own
             if re.search(r"\b(?:i|me|we|us|mina|me) (?:and|ja) $", plain[:m.start()], re.I):
                 continue                              # "me and my wife spend": the user's own
+            if name == "fi_verb_first" and re.search(rf"\b(?:{FI_MODAL})\s*$", plain[:m.start()], re.I):
+                continue                              # "Voit käyttää": an infinitive after a modal, no subject
             if name == "group_of" and first:
                 continue                              # "I spent on one of my friends"
-            if first and name in ("aux_subject", "subject", "subject_base", "fi_subject"):
+            if first and name in ("aux_subject", "subject", "subject_base", "fi_subject", "fi_verb_first"):
                 before = plain[:m.start()].lower().strip()
                 np_lead = m.group("np").split()[0].lower()
                 if not (re.search(rf"\b(?:{_QUESTION})$", before) or fold(np_lead) in _LEAD):
@@ -390,7 +402,9 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             verb = m.groupdict().get("verb") or ""
             person_verb = (bool(re.fullmatch(VERB_PERSON, verb, re.I)) if not name.startswith("fi")
                            else bool(FI_VERB_PERSON.fullmatch(verb)) if verb else True)
-            judge(_head(m.group("np")), unclaim=person_verb and not first, spends=person_verb and not first,
+            # a word after a Finnish verb may be a time ("kulutti kesäkuussa"): the calendar-name rule is English
+            judge(_head(m.group("np")), unclaim=person_verb and not first,
+                  spends=person_verb and not first and name != "fi_verb_first",
                   subject=True, person_verb=person_verb, verb=verb)
     if not first:
         m = PATTERNS["lead_name"].match(plain)
