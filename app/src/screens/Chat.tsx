@@ -59,6 +59,10 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // the view (DESIGN.md: no autoscroll while streaming). Under an opening even the first one is.
   const lastId = turns.at(-1)?.id
   const many = turns.length > 1 || Boolean(opening)
+  // Follow-ups and the answer's announcement belong to the last ask turn, even when a client turn
+  // (#319) came after it while it was still streaming (#332).
+  let lastAskId: number | undefined
+  for (const turn of turns) if (turn.kind === 'ask') lastAskId = turn.id
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -128,12 +132,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
       )}
 
       {turns.map((turn, index) => {
-        const latest = index === turns.length - 1
+        const last = index === turns.length - 1
         return (
-          <div key={turn.id} className={latest && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
+          <div key={turn.id} className={last && many ? 'min-h-[calc(100dvh-180px)]' : undefined}>
             <TurnView
               turn={turn}
-              latest={latest}
+              latest={turn.id === lastAskId}
               suggestions={suggestions}
               onAsk={send}
               onRetry={() => retry(turn.id, turn.question)}
