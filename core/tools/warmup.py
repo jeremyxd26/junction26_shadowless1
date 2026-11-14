@@ -84,6 +84,8 @@ CALLS: tuple[WarmCall, ...] = (
              "GetBalanceForecastArgs", {}),
     WarmCall("Where do my small purchases go? (#256)", "core.tools.small_purchases", "get_small_purchases",
              "GetSmallPurchasesArgs", {}),
+    WarmCall("How could I save more? (the savings plan, #369)", "core.tools.savings_plan", "get_savings_plan",
+             "GetSavingsPlanArgs", {}),
 )
 
 # The partner's four questions (the same pairs as SUGGESTED_QUESTIONS in core/app/api/texts.py).

@@ -66,7 +66,10 @@ SANNA = {"free_month_eur": "783.79", "everyday_month_eur": "599.18", "safe_to_sa
          "essentials_shortfall_month_eur": "0.00", "free_until_payday_eur": "12567.56",
          "everyday_until_payday_eur": "295.28", "safe_to_save_eur": "12272.28", "save_reason": None,
          "save_reason_category": None, "save_reason_month_eur": None,
-         "next_payday": date(2026, 10, 15), "salary_status": "received_this_month"}
+         "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+         # the weekly figure after the savings goal (#391), from the same row
+         "week_start": date(2026, 10, 1), "week_end": date(2026, 10, 7), "balance_limit_7d_eur": "5864.86",
+         "budget_limit_7d_eur": "97.46", "safe_to_spend_7d_eur": "97.46", "savings_goal_eur": "360.00"}
 # Everyday spending uses the free month up: monthly 0, with the largest everyday category as the reason.
 ZERO = {**SANNA, "everyday_month_eur": "900.00", "safe_to_save_monthly_eur": "0.00",
         "save_reason": "largest_everyday_category", "save_reason_category": "Restaurants",

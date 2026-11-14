@@ -169,8 +169,14 @@ for _col, _unit, _en, _fi in [
     ("essentials_reserve_eur", Unit.EUR, "Essentials reserve", "Välttämättömien varaus"),
     ("irregular_reserve_eur", Unit.EUR, "Irregular reserve", "Odottamattomien varaus"),
     ("cushion_eur", Unit.EUR, "Cushion", "Puskuri"),
+    ("savings_goal_eur", Unit.EUR_PER_MONTH, "Savings goal set aside first", "Ensin sivuun laitettava säästötavoite"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+METHODS["safe_to_spend.usual_week_eur@1"] = MethodInfo(
+    Unit.EUR_PER_WEEK, ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),
+    ("Usual everyday spending in a typical month of the last six, per week (x 7 / 30.4375).",
+     "Tavallinen arkikulutus kuuden viime kuukauden tavallisessa kuukaudessa viikkoa kohden (x 7 / 30,4375)."),
+    METRICS_DOC + "#3-safe-to-spend")
 # Safe to save (#165), output columns of the same file (metrics.md section 3.1).
 for _col, _unit, _en, _fi in [
     ("safe_to_save_monthly_eur", Unit.EUR_PER_MONTH, "Typically left each month", "Tavallisesti jää kuukaudessa"),
@@ -305,6 +311,22 @@ for _id, _unit, _name, _summary in [
      ("The limit a purchase must not exceed to count as small.", "Raja, jota pieneksi laskettu ostos ei ylitä.")),
 ]:
     METHODS[f"small_purchases.{_id}@1"] = MethodInfo(_unit, _name, _summary, SMALL_DOC)
+
+# The savings plan (#369, metrics.md section 13): the sum of its cut levers, each a what-if saving.
+PLAN_DOC = METRICS_DOC + "#13-savings-plan-369"
+METHODS["savings_plan.total_month_eur@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
+    ("The sum of the plan's cuts, each the what-if saving of a different category, so nothing is counted twice.",
+     "Suunnitelman vähennysten summa; kukin on eri luokan mitä jos -säästö, joten mitään ei lasketa kahdesti."),
+    PLAN_DOC)
+METHODS["savings_plan.total_year_eur@1"] = MethodInfo(
+    Unit.EUR_PER_YEAR, ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
+    ("The monthly total times twelve.", "Kuukausisumma kertaa kaksitoista."), PLAN_DOC)
+METHODS["savings_plan.cut_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Cut share", "Vähennyksen osuus"),
+    ("How much of a category's usual spending the plan cuts, a setting of the plan.",
+     "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
+    PLAN_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

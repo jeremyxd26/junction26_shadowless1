@@ -167,13 +167,14 @@ It is never a Health purchase or a health MCC (5912, 8011, 8099, 8021). Those sp
 | Irregular reserve (15 days) | 256.30 | 167.74 | 167.74 |
 | Free until payday | 12,567.56 | 12,656.12 | 12,656.12 |
 | Irregular spending per month (budget limit input) | 520.08 | 340.38 | 340.38 |
-| Budget limit 7d | 180.26 | 221.58 | 221.58 |
-| **Safe to spend 7d** (binding: budget) | **180.26** | **221.58** | **221.58** |
+| Savings goal (#391, the same in every state) | 360 | 360 | 360 |
+| Budget limit 7d (after the goal) | 97.46 | 138.79 | 138.79 |
+| **Safe to spend 7d** (binding: budget) | **97.46** | **138.79** | **138.79** |
 | Usual everyday spending per 7 days | 137.80 | 137.80 | 137.80 (the purchase is still a one-off) |
 | Safe to save (3.1) | 12,272.28 | 12,360.83 | 12,360.83 |
 | Safe to save monthly (3.1) | 184.61 | 364.31 | 364.31 |
 
-From pending, "needed" moves 1,080.42 into unexpected necessities and grows the reserve by 1,080.42 / 183 × 15 = 88.56. Irregular spending per month rises by 1,080.42 / 183 × 30.4375 = 179.70, so the budget limit and safe to spend fall from 221.58 to 180.26. "I chose it" moves 1,080.42 into everyday spending and changes no limit. Both basket totals move by exactly the labelled amount. Shares are rounded on their own, so a column may add up to 99.9%.
+From pending, "needed" moves 1,080.42 into unexpected necessities and grows the reserve by 1,080.42 / 183 × 15 = 88.56. Irregular spending per month rises by 1,080.42 / 183 × 30.4375 = 179.70, so the free month falls by 179.70 and, with the goal fixed at 360, the budget limit and safe to spend fall from 138.79 to 97.46 (before #391: from 221.58 to 180.26). "I chose it" moves 1,080.42 into everyday spending and changes no limit. Both basket totals move by exactly the labelled amount. Shares are rounded on their own, so a column may add up to 99.9%.
 
 **How the columns were computed.**
 - `02_baskets.sql` and `03_safe_to_spend.sql` were run for the range `CUST00860` … `CUST00861`:
@@ -253,12 +254,25 @@ A. balance limit
    free_until_payday = balance - bills_due - (essentials/day + irregular/day) * N - cushion
    balance_limit_7d  = max(free_until_payday, 0) / N * min(7, N)
 
-B. budget limit
+B. budget limit, after the savings goal (pay yourself first, #391)
    free_month       = income/month - sweep/month - committed/month - (essentials/day + irregular/day) * 30.4375
-   budget_limit_7d  = max(free_month, 0) * 7 / 30.4375
+   savings_goal     = app.savings_goal_eur if set (a Python-level parameter only, #447), else
+                      floor10( max(free_month' - everyday/day' * 30.4375, 0) )       never below 0
+   budget_limit_7d  = max(free_month - savings_goal, 0) * 7 / 30.4375
 
 safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 ```
+
+**The savings goal (#391, product decision).** Safe to spend is computed after a monthly savings goal, so the money Sentti says can be spent and the money it says can be set aside are different euros and add up.
+- **The default goal** is safe to save monthly (section 3.1), rounded down to a multiple of 10 €.
+  - It is computed with the spike review's purchase left out of the run rates (the primed terms above), in every state: the labelled purchases once a review exists, else the purchase a review would ask about (`core/tools/reviews.py` `candidates`).
+  - So it is one figure per customer for the month. It does not move when a review appears or is answered: with no review it equals the pending state's goal (Sanna 360, not 180).
+- **"Needed"** grows the irregular reserve, so safe to spend falls (Sanna 138.79 → 97.46) while the goal stays 360. **"My choice"** changes nothing.
+- **Safe to save keeps its own formula** (section 3.1). After "Needed" it can be below the goal (Sanna 184.61 against 360), and the safe-to-save card then says so.
+- **The figure quoted next to safe to spend is the goal** (hero, answers): "You can spend about €138.79 this week, after setting aside about €360.00 a month." When safe to spend is more than `USUAL_PACE_MARGIN_EUR` (5 €) a week under the usual everyday pace: "To keep setting aside €360.00 a month, about €97.46 a week is safe to spend, below your usual €137.80 a week." With a goal of 0 the sentences stay as before.
+- **Invariant**, asserted for the four personas in every review state (`core/tools/tests/test_tools_db_pay_yourself_first.py`): safe_to_spend_7d × 30.4375/7 + savings_goal ≤ free_month, with equality within 5 cents when the budget side sets the limit (the residual of cent rounding reaches 0.02). There is no overlap any more (the #381 finding).
+- **Evidence:** the goal is `safe_to_spend.savings_goal_eur@1`, an output column of 03. The safe-to-spend composite (`minimum_after_goal`) lists it as a part next to the two limits.
+- **Method ids stay `@1`.** The definition of `safe_to_spend.safe_to_spend_7d_eur@1` changed with #391, before the first public release, so no published figure carries the earlier definition.
 
 - `balance`: the last `balance_after` on or before today, summed over the customer's accounts (`balance_tx_id`).
 - `bills_due`: every recurring outflow except Salary Sweep, due after today and on or before payday. A once-a-month bill counts its typical amount at its typical day in each month of the horizon. This month's unpaid bill counts as due tomorrow if at most 7 days late, and is taken as skipped if later. A bill paid several times a month counts `typical_month * N / 30.4375`. A recurring investment deposit counts too (team-lead decision): it is the customer's own saving plan, and the explanation says so ("your monthly saving of X € is set aside").
@@ -330,7 +344,7 @@ else:                reason = largest_everyday_category, amount = that category'
 **Not the same as the down-payment capacity.** `safe_to_save_monthly` uses the planning income of section 3 (`income_month_eur`, the median of the recurring income series) and keeps both reserves. The down-payment capacity of section 11 uses the average income that actually arrived (`net_income_month_eur`, see "Two income figures" in section 5) and no reserves. The two numbers differ on purpose: for Sanna, 184.61 against 547.79 a month.
 
 - **What it means.** Free until payday is what is left after the bills due before payday, both reserves and the cushion. Safe to save also keeps the usual everyday spending until payday. If the customer moves the whole amount, what is left still covers bills, reserves, the cushion and a normal everyday spending pace until payday.
-- **Not additive with safe to spend.** Both come out of the same free money. Moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday. The coach never presents the two as separate pots.
+- **Pay yourself first (#391).** Safe to spend is computed after the savings goal (section 3), whose default is this figure before the review's answer, rounded down to 10 €. So safe to spend × 30.4375/7 + goal is the free month, and the two never overlap. Safe to save keeps this formula. The card's subtitle quotes the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when safe to save is below the goal, compares the two ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."). The stock figure is unchanged: moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday.
 - **R13 and R7.** It is an estimate, shown with its formula in plain words. It is not investment advice: the coach never says where to put the money (no product, no instrument).
 - **Edge cases.**
   - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
@@ -706,7 +720,7 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
 7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
 8. **Spike labels. Decided** (owner, on issue #33):
    - A spike with a pending review is `unclassified`: in no basket and not in the reserve.
-   - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 221.58 → 180.26).
+   - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 138.79 → 97.46 after the savings goal of #391; 221.58 → 180.26 before it).
    - "I chose it" leaves safe to spend unchanged.
    - No answer raises safe to spend above the value shown while the question was pending, and an expired review cannot be answered.
    - A customer without a pending review keeps every published number (section 1.1).
@@ -772,6 +786,52 @@ The card's second action asks the what-if question for the largest category with
 | CUST00493 | 31 | 156.04 | 52.01 | summary: restaurants 60.4 %, entertainment 39.6 %; the persona that shows the feature best |
 | CUST00349 | 13 | 94.25 | 31.42 | summary: restaurants 69.2 %, entertainment 30.8 % |
 | CUST00849 | 1 | 8.64 | 2.88 | few (at a restaurant) |
+
+## 13. Savings plan (#369)
+
+"How could I save more?" The tool is `get_savings_plan` (`core/tools/savings_plan.py`). It composes existing tools and adds no formula of its own.
+
+**The levers**, in this order. Each counts only when the what-if offers the cut (status not `not_offered`) and saves at least €5.00 a month (`config.SAVINGS_PLAN_MIN_EUR`):
+1. **Eating out:** `Restaurants` cut by 20% (`config.SAVINGS_PLAN_FIRST`).
+2. **The largest other flexible everyday category:** among `Entertainment`, `Lifestyle` and `Travel` (`config.SAVINGS_PLAN_OTHER_CATEGORIES`), the one with the highest monthly baseline (ties by name), cut by 10% (`config.SAVINGS_PLAN_OTHER_CUT_PCT`).
+
+**Each lever is the what-if tool itself** (section 4, `run_what_if`): the same window and baseline, so the plan's first row and an answer to "What if I cut restaurants by 20%?" are the same number to the cent (a database test).
+
+**Nothing is counted twice:** the two cut levers are always different categories. The tool itself skips the first lever's category when it picks the second, whatever the settings list (review of #411). A category's what-if saving counts only that category. Small purchases are no lever: in the data they are restaurant visits, which the first lever covers.
+
+**The numbers** (`savings_plan.<name>@1`; the totals are estimates):
+
+| Method | Formula | Evidence |
+|---|---|---|
+| `savings_plan.total_month_eur@1` | the sum of the levers' monthly savings | composite `sum` whose parts are the levers' own refs, one role per category (`restaurants`, `lifestyle`) |
+| `savings_plan.total_year_eur@1` | twelve times the monthly total | composite `scale` |
+| `savings_plan.cut_pct@1` | a lever's cut share, a setting (20, 10) | composite `rule_value`, so an answer cites it as a number, never as bare digits |
+
+**These are savings from spending below the usual pace.** They add to what can be set aside, never to safe to spend. Next to the plan:
+- safe to save a month (section 3.1) is shown as it is today, never added in. It is the safe-to-save tool's own headline (its `monthly`), the same Number and ref;
+- the S-Bonus is never shown with the plan: no amount on the card, in the model view or in the answer, so nothing can put it next to the total (coordinator, #411). When the estimate is offered, the answer's first follow-up is its own question, "How much S-Bonus could I get?" ("Paljonko S-Bonusta voisin saada?"), which the bonus rule answers with its own Number and evidence. The view's `follow_up` carries it, and `template.follow_ups` puts it first;
+- nothing in the plan quotes safe to spend;
+- a failure of safe to save or the S-Bonus leaves that extra out; the plan still stands.
+
+**The answer**, at most two sentences and three numbers, the plan's total a month first (review of #411):
+- "These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and spending a tenth less on lifestyle."
+- "You could already set aside about €184.61 a month."
+- **The cut shares** are said in words from the setting (`config.SAVINGS_PLAN_CUT_WORDS`: 10 a tenth, 20 a fifth, 25 a quarter, 50 half). Any other share is cited as its `savings_plan.cut_pct@1` Number ("spending 15.0% less on lifestyle"). A cited share takes the year's place, then safe to save's, so the answer never cites more than three numbers. Two equal shares are one Number, said once ("eating out and spending on lifestyle, each 15.0% less").
+- **The card:** the levers' own amounts are its rows, each keyed by its category and labelled in words ("Restaurants, a fifth less"; "Lifestyle, less than usual" for a share without words). The estimate text is the assumption in words. The card has no digit outside a Number or the period.
+- **No lever:** "None of the usual cuts would add much here; you could already set aside about €184.61 a month." The card is then the baskets card (section 1, the last 6 months), so the user sees where the money goes (coordinator, #411).
+- **The bank button:** the card's action is `open_host_screen` with `monthly_saving`, labelled "See monthly saving in S-mobiili", the one label of #267. No amount is joined to the bank screen.
+- **The model view** gives every number as a Number: each lever's cut share as a Number and, for the shares above, in words. No label carries digits.
+
+**The personas** (as of 2026-09-30, the what-if window 2026-04 to 2026-09):
+
+| Customer | Eating out −20% | Second lever −10% | Total a month | A year | Safe to save a month |
+|---|---|---|---|---|---|
+| CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 184.61 |
+| CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 429.16 |
+| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 546.87 |
+| CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 199.95 |
+
+**Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.
 
 ## Rule references
 
