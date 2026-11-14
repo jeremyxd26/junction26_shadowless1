@@ -458,7 +458,7 @@ class Pipeline:
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
                     return draft, False
-        fallback = template.template_draft(request.data, request.errors, lang, allowed)
+        fallback = template.template_draft(request.data, request.errors, lang, allowed, request.question)
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:

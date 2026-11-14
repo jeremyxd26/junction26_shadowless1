@@ -85,7 +85,7 @@ bash deploy/dev.sh <commit-sha>             # an exact commit, e.g. to roll back
 2. `deploy/remote-deploy.sh` from that commit:
    - builds the image `shadowless1-core:<sha>`;
    - refuses an image that contains `.env`, `.git` or tests;
-   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
+   - **completeness check**: every tracked non-test file of the checkout under `core/app`, `core/tools`, `core/agent` (`*.py`), the model prompts `core/agent/prompts/*.md`, `core/answer_text.py`, `core/metrics/*.sql` and `core/config/*.yaml` must be in the image. The expectation comes from the checkout, so a path left out of `.dockerignore` is caught even if nothing imports it yet. If git cannot list the files, or the list lacks `core/app/main.py`, the deploy is refused as well;
    - **import check**: runs the image once without network. It must import and build the application (`core.app.main.create_app()`) and import every module of `core/tools` and `core/agent` (when present);
    - if either check fails, the deploy stops here, the refused image is removed and the running version stays untouched;
    - **app build** (when the commit has `app/package.json`; see "The app" below). It runs in a throwaway `node:22.21.1-slim` container from the commit's tracked files and is checked for secrets. A failed build or a secret match stops the deploy here too, with nothing switched;
@@ -121,6 +121,34 @@ deployed c64837975d8c75f7438fdba08412482122fbfb80; local /healthz: {"status":"ok
 public check: https://sentti.jeremyxd.dev/healthz
 GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
+
+### Check the demo path after a deploy
+
+After `bash deploy/dev.sh` (and before the demo), run:
+
+```
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --no-ask   # no model calls
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all            # plus the four brief questions
+```
+
+Every stage is live on dev now, so use `--require-all`: a stage that answers NOT DEPLOYED then fails the check.
+
+The script checks, against the reference values at its top (`docs/design/personas.md`, `contracts/api.md`):
+- health;
+- the personas;
+- Sanna's overview, and that its evidence refs resolve and reconcile;
+- the persona allowlist;
+- the what-if;
+- the spike review ("Needed", then undo);
+- optionally `/api/ask`.
+
+It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED (with the route and status). It exits 1 on any FAIL.
+
+It uses the standard library only and needs no secrets. It never retries, and the whole run ends within `--time-limit` seconds (default 60).
+
+The only writes are the label answer and its undo. The undo always runs and is always checked. If it fails, the script prints `UNDO FAILED - CUST00860 may be left answered`, with the `tx_ref` and the repair. The reliable repair is `python core/scripts/reset_reviews.py CUST00860`: with per-viewer answers, a bare curl acts as another viewer.
+
+Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
 
 ## The app
 
@@ -282,6 +310,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   - `core/config/*.yaml` (personas and benefit rules).
 
   Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new file of a kind the completeness check already lists (`*.py` under `core/app`, `core/tools` or `core/agent`, `core/metrics/*.sql`, `core/config/*.yaml`) only needs its path in `.dockerignore`, and the check catches a forgotten one before the switch. A new **kind** of run-time file (for example `core/data/*.csv`) must be added to `.dockerignore` **and** to the `git ls-files` patterns of the completeness check in `deploy/remote-deploy.sh`; otherwise the check cannot see it.
+- **Request size** (`deploy/Caddyfile`, #210): the API routes accept bodies up to 65536 bytes, 64 KiB (`request_body { max_size 64KiB }`; Caddy reads `KB` as 1000 bytes). The largest legitimate body is a question of 500 characters in a small JSON envelope. A larger request gets 413 from Caddy itself, with the security headers below and no `Server` header. A request whose `Content-Length` is over 65536 (leading zeros included) is refused before any byte goes to the service. A body without a `Content-Length` (HTTP/1.1 chunked, or an HTTP/2 or HTTP/3 stream) is cut off at 65536 bytes by `request_body`; the service then sees a client disconnect, and the client gets 413. Caddy 2.6 reports that case as a 502 inside the proxy, and `handle_errors` maps it to 413, while other 502s (the core down) stay 502.
 - **Response headers** (`deploy/Caddyfile`, #102):
 
   | Applies to | Header |
