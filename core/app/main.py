@@ -16,8 +16,10 @@ from starlette.concurrency import run_in_threadpool
 
 from core.agent.api import audit_api_enabled, audit_router
 from core.agent.api import router as ask_router
+from core.agent.gemini import model_state
 
 from . import api, health, secret_mask
+from .api import bill_samples
 from .db import MALFORMED, NOT_SET, create_pool, valid_database_url
 from .settings import Settings
 
@@ -47,6 +49,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.info("database pool opened (max %d connections)", settings.db_pool_max)
         app.state.pool = pool
         try:
+            log.info(model_state(settings))  # on with its budget, or off and why (#244); no key material
+        except Exception as exc:  # noqa: BLE001 - a bad model setting must not stop the service
+            # The model is built the same way on the first ask (make_agent_model), and it falls back to
+            # the rule model on the same error, so the service runs with the model off.
+            log.warning("language model: off (model settings invalid: %s); the rules plan and the templates write",
+                        type(exc).__name__)
+        try:
             yield
         finally:
             if pool is not None:
@@ -69,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(health.router)
     api.register(app)  # /api/personas, /api/evidence, /api/overview and the error envelope (#64)
+    app.include_router(bill_samples.router)  # GET /api/bill/samples and its images (#249)
     app.include_router(ask_router)  # POST /api/ask (core/agent)
     if audit_api_enabled():  # GET /api/audit/{id} exists only for local eval runs (#189)
         app.include_router(audit_router)

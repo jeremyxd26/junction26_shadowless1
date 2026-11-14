@@ -77,7 +77,7 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused")
+EXPECTS = ("answered", "no_data", "refused", "meta")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 
@@ -173,6 +173,18 @@ def evaluate(db: Db, cid: str, src: dict):
             value = 100 * (cur - prev) / prev if prev else None
         else:
             raise ValueError(f"unknown column {src['column']}")
+    elif src.get("query") == "bonus":
+        # The S-Bonus estimate (#216): the grocery base from SQL (the 6-month window's Groceries average,
+        # cents), then the rules file's formula (core/config/s_group_benefits.yaml) the tool applies.
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools.bonus import RULES, estimate
+        from core.tools.formatting import money
+
+        total = db.spending(cid, src["start"], src["end"], ["Groceries"], None)["total_eur"]
+        grocery = money(Decimal(str(total)) / 6)
+        share = int(src.get("share_pct") or RULES.default_share_pct)
+        value = getattr(estimate(grocery, share), src["column"])
     else:
         raise ValueError(f"unknown source {src}")
     if "multiply" in src and value is not None:

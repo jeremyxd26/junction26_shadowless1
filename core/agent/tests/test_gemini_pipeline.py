@@ -1,8 +1,9 @@
 """The answer pipeline with the Gemini model when Gemini fails: the demo must still answer.
 
 Every failure of the adapter (timeout, 429, 503 everywhere, an empty or cut response, invalid JSON
-from the composer) must end in an answer from the rule planner and the template (outcome
-"fallback"), never in an error or an empty answer. No network, no database: a fake transport and a
+from the composer) must end in an answer from the rule planner and the template, never in an error
+or an empty answer. Since #244 such an answer has the outcome "answered" and the warning
+`llm_unavailable`. No network, no database: a fake transport and a
 fake get_spending tool with fixed numbers.
 """
 
@@ -16,7 +17,7 @@ import pytest
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import GeminiModel, RulesFirstModel, not_recognised
 from core.agent import gemini_client as gc
-from core.agent.gemini_client import GeminiClient, Ledger
+from core.agent.gemini_client import CallUsage, GeminiClient, Ledger
 from core.agent.model import PlanInput
 from core.agent.orchestrator import AskRequest, Pipeline
 from core.agent.registry import Registry, ToolSpec
@@ -117,7 +118,7 @@ def test_a_planner_failure_answers_from_the_rule_planner_and_the_template(failur
     transport = FakeTransport(failure)
     p, audit = pipeline(transport)
     done = ask(p)
-    assert done["outcome"] == "fallback"
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
     assert "€1,146.05" in done["text_rendered"]       # the rule planner ran the tool; the template cites it
     record = audit.records[-1]
     assert any(t.get("source") == "fallback" for t in record["planner_turns"])
@@ -127,8 +128,8 @@ def test_a_planner_failure_answers_from_the_rule_planner_and_the_template(failur
 def test_429_sends_one_request_and_no_retry():
     transport = FakeTransport(api_error(429))
     p, _ = pipeline(transport)
-    assert ask(p)["outcome"] == "fallback"
-    assert ask(p)["outcome"] == "fallback"             # the next question, still inside the pause
+    assert ask(p)["outcome"] == "answered"
+    assert ask(p)["outcome"] == "answered"             # the next question, still inside the pause
     assert len(transport.requests) == 1
 
 
@@ -143,7 +144,7 @@ def test_a_composer_failure_answers_from_the_template(compose):
     transport = ByKind(PLAN_OK, compose)
     p, audit = pipeline(transport)
     done = ask(p)
-    assert done["outcome"] == "fallback"
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
     assert "€1,146.05" in done["text_rendered"] and "1146 euros" not in done["text_rendered"]
     assert len(audit.records[-1]["composer_attempts"]) == 3   # two model drafts, then the template
 
@@ -161,7 +162,7 @@ def test_the_daily_budget_stops_requests_and_the_fallback_answers(tmp_path):
     p, _ = budget_pipeline(tmp_path, transport, budget=2)
     assert ask(p)["outcome"] == "answered"             # planner + composer: 2 requests
     done = ask(p)
-    assert done["outcome"] == "fallback" and "€1,146.05" in done["text_rendered"]
+    assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
     assert len(transport.requests) == 2
 
 
@@ -171,7 +172,7 @@ def test_a_restart_keeps_the_days_count(tmp_path):
     ask(p)
     restarted, _ = budget_pipeline(tmp_path, transport, budget=3)  # a new process, the same ledger file
     assert restarted.model.client.ledger.today() == 2
-    assert ask(restarted)["outcome"] == "fallback"     # one request left: the planner; the composer is refused
+    assert ask(restarted)["outcome"] == "answered"     # one request left: the planner; the composer is refused
     assert len(transport.requests) == 3
 
 
@@ -179,7 +180,7 @@ def test_the_off_switch_stops_requests_without_a_restart(tmp_path):
     transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
     p, _ = budget_pipeline(tmp_path, transport, budget=100)
     (tmp_path / "model-off").touch()
-    assert ask(p)["outcome"] == "fallback"
+    assert ask(p)["outcome"] == "answered"
     assert transport.requests == []
     (tmp_path / "model-off").unlink()
     assert ask(p)["outcome"] == "answered"
@@ -235,14 +236,14 @@ def test_a_hanging_provider_costs_at_most_three_requests_then_pauses():
     p, _ = pipeline(transport)
     p.model.client.fallback_model = None
     for _ in range(3):
-        assert ask(p)["outcome"] == "fallback"
+        assert ask(p)["outcome"] == "answered"
     assert len(transport.requests) == 3                   # the failure streak pause stopped the rest
 
 
 def test_a_503_storm_with_a_fallback_costs_two_requests_then_pauses():
     transport = FakeTransport(api_error(503))
     p, _ = pipeline(transport)
-    assert ask(p)["outcome"] == "fallback" and ask(p)["outcome"] == "fallback"
+    assert ask(p)["outcome"] == "answered" and ask(p)["outcome"] == "answered"
     assert len(transport.requests) == 2                   # flash, then pro once; then the overload pause
 
 
@@ -252,3 +253,106 @@ def test_the_rules_first_model_starts_the_answer_for_the_composer_too():
     for _ in range(gc.MAX_REQUESTS_PER_ANSWER + 2):       # many answers, one composer request each
         assert ask(p)["outcome"] == "answered"
     assert len(transport.compose.requests) == gc.MAX_REQUESTS_PER_ANSWER + 2
+
+
+# ---- #244: the model may not be used; outcome and warning decided in one place -------------------------
+
+def off_pipeline(tmp_path, transport, reason):
+    """A rules-first pipeline whose model may not be used for `reason`."""
+    p, audit = rules_first(transport)
+    client = p.model.client
+    client.ledger = Ledger(tmp_path / "requests.jsonl", 0 if reason == "budget0" else 2, tmp_path / "model-off")
+    if reason == "off":
+        (tmp_path / "model-off").touch()
+    elif reason == "budget_used":
+        for _ in range(2):                                # two requests already sent in the last 24 hours
+            client.ledger.add("plan", "gemini-3.8-flash", "ok", 1, CallUsage())
+    elif reason == "pause":
+        client._pause(300, "rate_limited")
+    return p, audit
+
+
+@pytest.mark.parametrize("reason, code", [("off", "off"), ("budget0", "budget"), ("budget_used", "budget"),
+                                          ("pause", "pause")])
+def test_a_recognised_question_is_answered_by_the_template_when_the_model_may_not_be_used(tmp_path, reason, code):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = off_pipeline(tmp_path, transport, reason)
+    done = ask(p)                                         # "How much did I spend on groceries last month?"
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert "€1,146.05" in done["text_rendered"]           # the template of the recognised question
+    assert transport.requests == []                       # no model request at all
+    assert audit.records[-1]["model_unavailable"] == code
+
+
+def test_a_used_up_model_window_works_the_same_way():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = rules_first(transport)
+    events = []
+    req = AskRequest(customer_id="CUST00860", message=QUESTION, language="en")
+    req.model_allowed = False                             # the field #237 adds to AskRequest (#232)
+    p.run(req, lambda e, d: events.append((e, d)))
+    done = dict(events)["done"]
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert transport.requests == [] and audit.records[-1]["model_unavailable"] == "model_window"
+
+
+def test_the_template_answer_is_the_same_text_as_the_rule_models():
+    off, _ = rules_first(ByKind(PLAN_OK, text_response(DRAFT_OK)))
+    off.model.client._pause(300, "rate_limited")
+    rules_only, _ = pipeline(FakeTransport(call_response()))
+    rules_only.model = RuleModel()
+    assert ask(off)["text"] == ask(rules_only)["text"]
+
+
+def test_a_recognised_question_makes_no_planning_request_when_the_model_is_on():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = rules_first(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and "llm_unavailable" not in done["warnings"]
+    assert transport.plan.requests == [] and len(transport.compose.requests) == 1
+    assert audit.records[-1]["model_unavailable"] is None
+
+
+def test_an_unrecognised_question_with_the_model_off_gets_the_general_clarifying_question(tmp_path):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = off_pipeline(tmp_path, transport, "off")
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and done["clarify"] is not None
+    assert "llm_unavailable" in done["warnings"] and transport.requests == []
+
+
+def test_a_rules_refusal_needs_no_warning_when_the_model_is_off(tmp_path):
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = off_pipeline(tmp_path, transport, "off")
+    done = ask(p, "Should I put my savings into tech stocks?")
+    assert done["outcome"] == "refused" and "llm_unavailable" not in done["warnings"]
+
+
+def test_a_failed_model_still_answers_with_the_warning_and_the_reason_error():
+    transport = ByKind(PLAN_OK, TimeoutError())
+    p, audit = rules_first(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert audit.records[-1]["model_unavailable"] == "error"
+
+
+def test_when_even_the_template_fails_the_outcome_is_fallback(tmp_path, monkeypatch):
+    from core.agent import template as tmpl
+
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = off_pipeline(tmp_path, transport, "off")
+    monkeypatch.setattr(tmpl, "template_draft", lambda *a, **k: {"language": "en", "text": "You spent 1146 euros.",
+                                                                   "cited": [], "lesson_key": None})
+    done = ask(p)
+    assert done["outcome"] == "fallback" and "llm_unavailable" in done["warnings"]
+    assert "1146" not in done["text_rendered"] and transport.requests == []
+
+
+def test_without_a_key_the_rule_models_answer_carries_the_warning():
+    p, audit = pipeline(FakeTransport(call_response()))
+    p.model = RuleModel()                                 # the service without GEMINI_API_KEY
+    done = ask(p)
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert "€1,146.05" in done["text_rendered"] and audit.records[-1]["model_unavailable"] == "no_model"
+    refusal = ask(p, "Should I put my savings into tech stocks?")
+    assert refusal["outcome"] == "refused" and "llm_unavailable" not in refusal["warnings"]

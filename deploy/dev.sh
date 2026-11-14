@@ -67,3 +67,24 @@ if [[ -n $missing ]]; then
   exit 1
 fi
 echo "security headers present: Strict-Transport-Security, X-Content-Type-Options, Cache-Control: no-store"
+
+# The sample bill images (#249) are the one API path cached for long: the listing stays no-store, and an
+# image URL from it (with the image's hash) answers immutable for a year, with the security headers.
+# A commit without the gallery has no listing (404), and the check is skipped.
+listing=$(curl -sS -D - --max-time 10 "$url/api/bill/samples" 2>/dev/null | tr -d '\r' || true)
+if grep -q '^HTTP/[0-9.]* 200' <<<"$listing"; then
+  image=$(grep -o '"image_url":"[^"]*"' <<<"$listing" | head -1 | cut -d'"' -f4)
+  image_headers=$(curl -sS -D - -o /dev/null --max-time 10 "$url$image" 2>/dev/null | tr -d '\r' || true)
+  missing=""
+  grep -qi '^cache-control: no-store' <<<"$listing" || missing+=" listing:Cache-Control:no-store"
+  [[ -n $image ]] || missing+=" listing:image_url"
+  grep -qi '^cache-control: public, max-age=31536000, immutable' <<<"$image_headers" || missing+=" image:Cache-Control"
+  grep -qi '^x-content-type-options: nosniff' <<<"$image_headers" || missing+=" image:X-Content-Type-Options"
+  if [[ -n $missing ]]; then
+    echo "sample bill caching wrong:$missing" >&2
+    exit 1
+  fi
+  echo "sample bills: listing no-store; $image cached for a year (immutable)"
+else
+  echo "no /api/bill/samples in this commit: sample image cache check skipped"
+fi

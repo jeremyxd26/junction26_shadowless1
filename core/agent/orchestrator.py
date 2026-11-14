@@ -1,8 +1,15 @@
 """The answer pipeline, steps 1 to 7 of agent-core.md section 7.1 (step 0 is in api.py).
 
 1  meta: answer id, conversation (bound to one customer), language.   1a  input guard.
-2  plan: the model chooses functions (mode ANY). Planner errors: retry once, then the keyword
-   planner (rules.py) and a template answer with outcome "fallback".
+2  plan: the model chooses functions (mode ANY); the service's model plans with the rules first
+   (gemini.RulesFirstModel). Planner errors: retry once, then the keyword planner (rules.py).
+   Whether the language model may be used at all is decided once, before planning, by
+   _model_unavailable (#244): a used-up ask window (#232), the switch file, the daily budget, a pause.
+   When it may not, the rules plan and the template of the question writes, with no model request.
+   Outcome (#244): "answered" whenever a plan was made, the tools ran and the text passed the
+   validator, whoever wrote the text; the warning `llm_unavailable` when the model would have been
+   used and was not. A question the rules do not recognise, with the model unavailable, gets the
+   rules' general clarifying question (outcome "clarify").
 3  tools: arguments are validated by the registry; a customer key at any depth, an unknown function
    or bad arguments go back to the model as {"error": code}. Valid calls run with a database
    connection held only for the tool, two at a time when a second connection is free at once (else
@@ -41,7 +48,7 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
-from core.agent.rules import RuleModel
+from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.app.api import texts as api_texts
 from core.tools.cache import TOOL_CACHE
@@ -68,6 +75,7 @@ UNCLASSIFIED = "unclassified"   # the basket of a purchase whose review is pendi
 ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
+CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -179,10 +187,11 @@ class _Answer:
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
     ok_calls: list[dict[str, Any]] = field(default_factory=list)  # the data calls that returned a result
-    # Why the model may not be used for this answer (#232: "model_window"; the adapter's own reasons come
-    # with #244). Set at one place before planning (Pipeline._model_unavailable); it decides the
-    # `llm_unavailable` warning, and a plan by the rules then still makes an "answered" outcome.
+    # Why the language model was not used although it would have been (#244): "model_window" (#232),
+    # "no_model" (no key), "off", "budget", "pause" (decided before planning by
+    # Pipeline._model_unavailable), or "error" (it was asked and failed).
     model_unavailable: str | None = None
+    template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -253,6 +262,11 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message)
+        # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
+        # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
+        meta = meta_intent(message)
+        if meta is not None:
+            return self._introduce(meta, "en" if CYRILLIC.search(message) else lang, emit, a)
 
         # The customer is bound here, from the request, and never from model output (R4).
         # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
@@ -279,6 +293,8 @@ class Pipeline:
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            if source == "fallback":
+                a.model_unavailable = a.model_unavailable or "error"
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
             a.planner_turns.append(turn)
@@ -297,10 +313,10 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
-                # The rules asked back in the model's place: say so. A rules decline is a refusal either way.
-                if "decline" not in controls and (planner_fallback or a.model_unavailable) \
-                        and "llm_unavailable" not in a.warnings:
-                    a.warnings.append("llm_unavailable")
+                # The rules answered in the model's place: after a planner error, or for a question
+                # they do not recognise while the model may not be used (#244).
+                if source == "fallback" or (a.model_unavailable is not None and not getattr(plan, "recognised", True)):
+                    self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -343,17 +359,19 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
+                                             skip_model=planner_fallback
+                                             or a.model_unavailable not in (None, "no_model"), a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        if a.model_unavailable is not None:
-            # The model may not be used: the rules planned, the tools ran and the template wrote. That is an
-            # answer, with the warning (the rule agreed for #232 and #244).
-            a.outcome = "answered"
-        else:
-            a.outcome = "fallback" if (used_template or planner_fallback) else "answered"
-        if (a.outcome == "fallback" or a.model_unavailable is not None) and "llm_unavailable" not in a.warnings:
-            a.warnings.append("llm_unavailable")
+        # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
+        # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
+        # template in the model's place carries the warning (#244).
+        a.outcome = "fallback" if a.template_failed else "answered"
+        if used_template:
+            a.model_unavailable = a.model_unavailable or "error"
+            self._warn_llm_unavailable(a)
+        elif a.model_unavailable == "no_model":
+            self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
@@ -429,17 +447,38 @@ class Pipeline:
         a.cards.append(card["card_id"])
         emit("card", {"card": card})
 
+    def _model_unavailable(self, req: AskRequest) -> str | None:
+        """Why the language model may not be used for this answer, or None when it may. The one place
+        that decides it, before planning (#244); the planner, the composer, the outcome and the warning
+        follow from a.model_unavailable:
+        - "model_window": the request's model window is used up (AskRequest.model_allowed, #232);
+        - "no_model": the service runs the rule model alone (no key); the rule model's own template
+          writes, and the answer carries llm_unavailable like any template answer (#244, decision a);
+        - the model's own state (Model.unavailable_reason): "off" (switch file), "budget" (daily budget
+          0 or used up), "pause" (after a 429, a refused key or model, or failures in a row).
+        Another model without unavailable_reason (a scripted model in tests) is always available."""
+        if not getattr(req, "model_allowed", True):
+            return "model_window"
+        if isinstance(self.model, RuleModel):
+            return "no_model"   # no language model configured (no key): the rules plan, the template writes
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe()
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
+            return "error"
+
     @staticmethod
-    def _model_unavailable(req: AskRequest) -> str | None:
-        """The one place that decides whether the model may be used for this answer (#232; #244 adds the
-        adapter's reasons: an off-switch, the budget, a pause)."""
-        return "model_window" if not getattr(req, "model_allowed", True) else None
+    def _warn_llm_unavailable(a: _Answer) -> None:
+        if "llm_unavailable" not in a.warnings:
+            a.warnings.append("llm_unavailable")
 
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
-        if a.model_unavailable is not None:  # the rules plan, no model request
-            plan = self.fallback.plan(request)
-            a.planner_turns.append({"round": request.round, "source": "rules", "model_unavailable": a.model_unavailable})
-            return plan, "rules" if plan.recognised else "fallback"
+        if a.model_unavailable is not None and a.model_unavailable != "no_model":
+            # The model may not be used: the rules plan, with no model request (#244).
+            return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:
@@ -600,15 +639,30 @@ class Pipeline:
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
+            a.template_failed = True
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
+
+    def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
+        """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
+        which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        text = self._deliver(template.meta_text(intent, lang), {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
+                      "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
         text, refusal = template.refusal(kind, lang)
         text = self._deliver(text, {}, emit)
         a.outcome, a.refusal, a.text, a.text_rendered = "refused", refusal, text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "refused", "text": text, "text_rendered": text, "cited": [],
-                      "follow_ups": template.follow_ups(a.question, lang, refused=True), "lesson": None,
+                      # The generic decline offers the four brief questions as chips (#287).
+                      "follow_ups": template.brief_questions(lang) if kind == "out_of_scope"
+                      else template.follow_ups(a.question, lang, refused=True), "lesson": None,
                       "refusal": refusal, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
@@ -675,7 +729,7 @@ class Pipeline:
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
-            "model_unavailable": a.model_unavailable,  # why the model was not used (#232, #244)
+            "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:
