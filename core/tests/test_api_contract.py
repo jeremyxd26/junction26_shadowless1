@@ -54,6 +54,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.request": schemas.BillExplainRequest,             # contract 0.3.0 (#243); endpoint with #242
     "bill.request_fields": schemas.BillExplainRequest,
     "bill.response": schemas.BillExplainResponse,
+    "bill.response_category": schemas.BillExplainResponse,   # #433: matched, a category match (#400)
     "bill.response_unknown": schemas.BillExplainResponse,
     "bill.response_not_covered": schemas.BillExplainResponse,
     "bill.error": schemas.BillErrorResponse,                # #242: invalid_bill with its `reason`
