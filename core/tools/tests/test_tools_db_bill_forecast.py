@@ -77,11 +77,14 @@ def test_a_utilities_bill_takes_only_its_excess_and_every_number_reconciles(conn
 
 @pytest.mark.parametrize("lang", ["en", "fi"])
 def test_the_tight_persona_on_her_lowest_day(conn, lang):
-    """CUST00849's forecast is lowest on 14 Oct (641.43): EUR 600 leaves 41.43 (tight), EUR 700 is 58.57 short
-    (not covered, with the chip); the draft stays in both."""
-    tight = explain(conn, "CUST00849", be.read_fields(*REMONTTI, "600.00", date(2026, 10, 14)), lang)
+    """CUST00849's forecast is tightest (641.43 on 14 Oct when written): a bill leaving 41.43 then is tight, one
+    58.57 above it is not covered, with the chip; the draft stays in both. The amounts come from the forecast
+    tool, not literals."""
+    forecast = get_balance_forecast(ctx(conn, "CUST00849", lang), {}).data
+    lowest, on = Decimal(str(forecast.lowest.value)), forecast.lowest_date
+    tight = explain(conn, "CUST00849", be.read_fields(*REMONTTI, f"{lowest - Decimal('41.43'):.2f}", on), lang)
     assert tight["forecast"]["status"] == "tight" and d(tight["forecast"]["after"]) == Decimal("41.43")
-    short = explain(conn, "CUST00849", be.read_fields(*REMONTTI, "700.00", date(2026, 10, 14)), lang)
+    short = explain(conn, "CUST00849", be.read_fields(*REMONTTI, f"{lowest + Decimal('58.57'):.2f}", on), lang)
     fc = short["forecast"]
     assert fc["status"] == "not_covered" and d(fc["shortfall"]) == Decimal("58.57") and fc["chip"]["type"] == "ask"
     assert fc["shortfall"]["display"] in fc["text"]
