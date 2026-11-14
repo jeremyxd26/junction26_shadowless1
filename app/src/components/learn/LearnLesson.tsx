@@ -5,7 +5,8 @@ import { learnStrings } from './learnStrings.ts'
 import type { LessonIcon, TeachLesson } from './teachLessons.ts'
 import { learnMore, peopleLine } from './peopleLikeYou.ts'
 
-const OPTION = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink'
+// A word longer than the button (a long Finnish word at 200 % text) breaks instead of running past it (#789).
+const OPTION = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink [overflow-wrap:anywhere]'
 
 /** The lesson's line icon (own drawings), brand green. */
 function Icon({ name }: { name: LessonIcon }) {
@@ -93,9 +94,10 @@ export function LearnLesson({
       </div>
 
       <section className="card-enter flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-        <div className="flex items-center gap-3">
+        {/* The title goes under the icon when its longest word doesn't fit beside it (large text, #789). */}
+        <div className="flex flex-wrap items-center gap-3">
           <Icon name={lesson.icon} />
-          <h3 ref={heading} tabIndex={-1} className="scroll-mt-32 text-lg font-semibold leading-7 text-ink outline-none">
+          <h3 ref={heading} tabIndex={-1} className="flex-1 scroll-mt-32 text-lg font-semibold leading-7 text-ink outline-none">
             {lesson.title}
           </h3>
         </div>
@@ -201,7 +203,7 @@ export function LearnLesson({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-11 flex-wrap items-center gap-x-1.5 text-base font-semibold text-brand underline underline-offset-4"
+                  className="inline-flex min-h-11 flex-wrap items-center gap-x-1.5 text-base font-semibold text-brand underline underline-offset-4 [overflow-wrap:anywhere]"
                 >
                   {link.title}
                   <span className="text-sm font-normal text-muted no-underline">· {link.publisher}</span>

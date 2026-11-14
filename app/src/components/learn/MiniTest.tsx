@@ -5,7 +5,8 @@ import { learnStrings } from './learnStrings.ts'
 import { miniTest } from './miniTests.ts'
 
 /** An answer; its colour comes only from its state, so no background class competes with another. */
-const ANSWER = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink'
+// A word longer than the button (a long Finnish word at 200 % text) breaks instead of running past it (#789).
+const ANSWER = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink [overflow-wrap:anywhere]'
 /** A pass is at least this many right answers out of three. */
 export const PASS_SCORE = 2
 
