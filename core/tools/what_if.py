@@ -121,7 +121,9 @@ def _what(sel: WhatIfSelection, alias_label: str | None, language: str) -> str:
     elif sel.kind == "basket":
         text = config.label(config.BASKET_LABELS[sel.value], language)
     elif sel.kind == "mcc":
-        return _t("mcc", language, codes=sel.value.replace(",", ", "))
+        # a known group or everyday word in words ("taxis"), any other code list by its codes (#377)
+        named = config.WHAT_IF_MCC_NAMES.get(tuple(sorted(sel.value.split(","))))
+        return config.label(named, language) if named else _t("mcc", language, codes=sel.value.replace(",", ", "))
     else:
         return alias_label or sel.value
     return text[:1].lower() + text[1:] if language != "fi" else text.lower()
