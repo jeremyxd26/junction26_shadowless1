@@ -477,3 +477,32 @@ def test_a_planned_what_if_on_any_health_code_is_declined_before_anything_runs(m
 def test_the_between_phrase_is_a_returned_period(text, ok):
     allowed = Allowed(frozenset({AS_OF}), frozenset({(date(2026, 4, 1), date(2026, 9, 30))}))
     assert (check_text(text, allowed) == []) is ok
+
+
+@pytest.mark.parametrize("question,word", [
+    ("How much did I spend on food delivery last month?", "food delivery"),
+    ("How much did I spend on pet food last month?", "pet food"),
+])
+def test_the_rule_path_answers_a_food_compound_with_the_breakdown_and_quotes_it_whole(make_pipeline, question, word):
+    # #551 (the coordinator, after #534 in dev): dev's plan back for a spending question on a food compound, the
+    # customer's categories, never the unfiltered total and never Groceries; the answer quotes the compound whole
+    from core.tools.models import ToolResult
+
+    ran: list[str] = []
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        view = basket_view()
+        view["tool"] = "get_basket_breakdown"
+        return ToolResult(tool="get_basket_breakdown", data={}, card=None, evidence=[], model_view=view)
+
+    specs = (ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson")),
+             ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson")))
+    events = run(make_pipeline(RuleModel(), registry(*specs)), question, language="en")
+    done = dict(events)["done"]
+    assert ran == ["get_basket_breakdown"] and done["outcome"] == "answered"
+    assert f"\u201c{word}\u201d" in done["text"] and "147" not in done["text"]
