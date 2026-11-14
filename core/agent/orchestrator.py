@@ -95,8 +95,9 @@ SENTTI_QUESTION = re.compile(
 # After the question phrase and the amount, only these may be left, or the message asks something else
 # ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
 REVIEW_FILLER = re.compile(
-    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
-    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euro|euros|euroa|eurosta|euron|eur|tulee|iso"
+    r"|isosta|minulta|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*)", re.I)
+# The euro words are their exact forms: "eurobonds" or "eurojackpot" is not filler (#447).
 # A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
 # nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)
@@ -107,8 +108,42 @@ _AMOUNT_TEXT = re.compile(r"€?\s?\d[\d\s.,]*\s?€?")
 # #402 fillers and these purchase-question words may be left ("…and also what is my balance" takes the normal path).
 PURCHASE_FILLER = re.compile(
     r"(?:was|is|were|oli|on|se|tämä|tuo|tama|what|again|exactly|hey|hi|so|ok|okay|oh|hmm|um|uh|sorry|wait|please|"
-    r"pls|really|actually|just|now|hei|no|siis|taas|nyt|vielä|viela|oikein|tarkalleen|kiitos)", re.I)
+    r"pls|really|actually|just|now|hei|no|siis|taas|nyt|vielä|viela|oikein|tarkalleen|kiitos|mikä|mika)", re.I)
+# The small words of a plain question about the purchase, on both paths (review of #519): "the purchase of €1,080",
+# "what was that €1,080 charge for?", "a purchase at its own store". A closed list of whole words, as the others.
+LINK_FILLER = re.compile(r"(?:of|for|a|an|at|from)", re.I)
+# A day and month without a year ("… on 3.5.") is a named date as well: it must be the purchase's own day (review of
+# #519). Not inside a longer number or after a currency or a letter, so "€1,080.42." or "EUR10.12." stays an amount.
+PARTIAL_DATE = re.compile(r"(?<![\w.,€$£])(\d{1,2})\.(\d{1,2})\.(?![\d,])")
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
+
+
+def _partial_dates(text: str) -> tuple[list[tuple[int, int]], str]:
+    """The day.month. dates without a year in `text` as (day, month), and the text with them blanked."""
+    found: list[tuple[int, int]] = []
+
+    def blank(m: re.Match) -> str:
+        day, month = int(m.group(1)), int(m.group(2))
+        if 1 <= day <= 31 and 1 <= month <= 12:
+            found.append((day, month))
+            return " "
+        return m.group(0)
+
+    return found, PARTIAL_DATE.sub(blank, text)
+
+
+def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
+    """The pending purchase's own category (in both languages) and merchant label as whole-phrase patterns,
+    longest first: naming them points at that purchase, like its own date (review of #519). Another category
+    or store is another clause."""
+    category = card.get("category") or ""
+    labels = {category, *tool_config.CATEGORY_LABELS.get(category, ()), ((card.get("merchant") or {}).get("label") or "")}
+    out = []
+    for label in sorted((x for x in labels if x), key=len, reverse=True):
+        words = re.findall(r"\w+", label)
+        if words:
+            out.append(re.compile(r"\b" + r"(?:\W+(?:and|ja)\W+|\W+)".join(map(re.escape, words)) + r"\b", re.I))
+    return out
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -748,31 +783,39 @@ class Pipeline:
             return None
 
     @staticmethod
-    def _only_about_the_review(message: str, phrase: re.Match, has_amount: bool) -> tuple[bool, list[date]]:
+    def _only_about_the_review(message: str, phrase: re.Match,
+                               has_amount: bool) -> tuple[bool, list[date], list[tuple[int, int]]]:
         """The message asks only about Sentti's question: after the question phrase, the amount and any date,
         nothing is left but filler words and punctuation (a confident full match, as the other rules).
         Without an amount it also needs an anchor (a purchase word or "this question", in the phrase or
         after it) or only a pointer left ("why do you ask?", "why are you asking about it?"). Returns the
-        dates it removed: the caller checks they are the purchase's own date."""
+        dates it removed, and the day.month. ones without a year: the caller checks they are the purchase's."""
         spans, rest = find_dates(message[:phrase.start()] + " " + message[phrase.end():], blank_all=True)
+        partial, rest = _partial_dates(rest)
         words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
         dates = [span.start for span in spans]
-        if any(not REVIEW_FILLER.fullmatch(w) for w in words):
-            return False, dates
+        if any(not (REVIEW_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w)) for w in words):
+            return False, dates, partial
         if has_amount:
-            return True, dates
+            return True, dates, partial
         anchored = (any(REVIEW_ANCHOR.fullmatch(w) for w in words) or re.search(r"question|kysym", phrase.group(0), re.I)
                     or all(REVIEW_BARE.fullmatch(w) for w in words))
-        return bool(anchored), dates
+        return bool(anchored), dates, partial
 
     @staticmethod
-    def _only_about_the_purchase(message: str) -> tuple[bool, list[date]]:
-        """The #368 path's message asks only about the purchase (#424): after every purchase reference, the amounts
-        and any date, nothing is left but filler words. Returns the dates it removed (the caller checks them)."""
+    def _only_about_the_purchase(message: str,
+                                 own: list[re.Pattern]) -> tuple[bool, list[date], list[tuple[int, int]]]:
+        """The #368 path's message asks only about the purchase (#424): after the purchase's own category and
+        merchant label (`own`), every purchase reference, the amounts and any date, nothing is left but filler
+        words. Returns the dates it removed and the day.month. ones without a year (the caller checks them)."""
+        for name in own:
+            message = name.sub(" ", message)
         spans, rest = find_dates(PURCHASE_REFERENCE.sub(" ", message), blank_all=True)
+        partial, rest = _partial_dates(rest)
         words = re.findall(r"[\w']+", _AMOUNT_TEXT.sub(" ", rest))
-        alone = all(REVIEW_FILLER.fullmatch(w) or PURCHASE_FILLER.fullmatch(w) for w in words)
-        return alone, [span.start for span in spans]
+        alone = all(REVIEW_FILLER.fullmatch(w) or PURCHASE_FILLER.fullmatch(w) or LINK_FILLER.fullmatch(w)
+                    for w in words)
+        return alone, [span.start for span in spans], partial
 
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
@@ -783,16 +826,12 @@ class Pipeline:
         (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
         phrase = SENTTI_QUESTION.search(message)
-        about_question, named_dates = (self._only_about_the_review(message, phrase, bool(asked)) if phrase
-                                       else (False, []))
+        about_question, named_dates, partial_dates = (self._only_about_the_review(message, phrase, bool(asked))
+                                                      if phrase else (False, [], []))
         if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
         if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
             return False
-        if not about_question:
-            alone, named_dates = self._only_about_the_purchase(message)
-            if not alone:
-                return False   # "what was that €1,080 and how much did I spend?": the normal path (#424)
         # A refusal rule always wins, as for the introduction (#287): "should I invest €1,080 in bitcoin?"
         # or "will the bank approve my €1,080 loan?" is refused on the normal path.
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
@@ -804,12 +843,17 @@ class Pipeline:
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
         if probe is None:
             return False
+        if not about_question:
+            alone, named_dates, partial_dates = self._only_about_the_purchase(message, _own_names(probe))
+            if not alone:
+                return False   # "what was that €1,080 and how much did I spend?": the normal path (#424)
         # Any amount in the question must be the purchase's; a question about Sentti's question may name none.
         if (asked or not about_question) and not any(
                 abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
-        if any(d != date.fromisoformat(probe["date"]) for d in named_dates):
-            return False   # "… my purchase on 3 May 2026": another purchase than the one Sentti asks about
+        bought = date.fromisoformat(probe["date"])
+        if any(d != bought for d in named_dates) or any(dm != (bought.day, bought.month) for dm in partial_dates):
+            return False   # "… my purchase on 3 May 2026" or "… on 3.5.": another purchase than Sentti's
         card = self._review_card(ctx, review)
         if card is None:
             return False
