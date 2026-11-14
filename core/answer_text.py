@@ -303,7 +303,7 @@ _GENERAL_JUDGING = re.compile(
     r"|\bwaste\w*\s+(?:your\s+)?money\b|\bspendthrift\w*|\bwallet\s+is\s+crying|\bclowns?\b|\bhilarious\b"
     r"|\bha(?:ha)+\b|\blol\b|\broast\w*|\bshame\s+on\s+you\b"
     r"|\bhuono\w*\s+rahan|\btuhlaat\b|\btuhlari\w*|\btuhlaavai\w*|\btuhlaajat?\b|\btyhm\w*|\btyper\w*|\bholtito\w*"
-    r"|\blaiska\w*|\bvastuuto\w*|\bnolo\w*|[\U0001F300-\U0001FAFF☀-➿]", re.I)
+    r"|\blaiska\w*|\bvastuuto\w*|\bnolo\w*|[\U0001F300-\U0001FAFF\u2600-\u27BF]", re.I)
 # Borrowing in any form in a general answer, and in the question that may take the general route (#572 B3, B7, D8;
 # review of #618): never a suggestion and never a mention ("Take a car loan.", "A payday lender can bridge the gap",
 # "Pikavippi auttaa palkkaan asti", "Osamaksu jakaa kulun", "Käytä tilinylitysoikeutta").
