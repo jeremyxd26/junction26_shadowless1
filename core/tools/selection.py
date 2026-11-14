@@ -22,6 +22,11 @@ from core.tools.periods import month_key, week_start
 NONE_KEY = "_none"  # group key for rows without a merchant or without an MCC group
 
 
+def in_mcc_groups(c: CTx, groups: tuple[str, ...]) -> bool:
+    """A row is in a group by its one MCC group, or in a sub-group by its code (#497: takeaway, bars, cinemas)."""
+    return c.mcc_group in groups or any(c.tx.mcc in config.MCC_SUBGROUPS.get(g, ()) for g in groups)
+
+
 @dataclass(frozen=True)
 class Selection:
     direction: str                      # "out" | "in"
@@ -136,7 +141,7 @@ def select(rows: list[CTx], sel: Selection) -> list[CTx]:
             continue
         if sel.baskets and c.basket not in sel.baskets:
             continue
-        if sel.mcc_groups and c.mcc_group not in sel.mcc_groups:
+        if sel.mcc_groups and not in_mcc_groups(c, sel.mcc_groups):
             continue
         if sel.merchant_id is not None and c.tx.merchant_id != sel.merchant_id:
             continue
@@ -162,8 +167,9 @@ def _monthly_totals(rows: list[CTx]) -> list[Decimal]:
     return list(by_month.values())
 
 
-SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"]}
-COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"]}
+SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"], config.METHODS["small_total"],
+               config.METHODS["small_flexible"]}
+COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"], config.METHODS["small_count"]}
 MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"],
                      config.METHODS["peer_you"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}

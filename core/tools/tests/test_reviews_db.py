@@ -48,7 +48,7 @@ def test_pending_needed_wanted_undo(tx):
     conn = tx
     now = reviews.utcnow()
     rule = numbers(conn)  # no review: the published numbers (the same as after "needed")
-    assert (rule["safe_to_spend"], rule["unexpected_necessities"], rule["unclassified"]) == (180.26, 521.15, 0.0)
+    assert (rule["safe_to_spend"], rule["unexpected_necessities"], rule["unclassified"]) == (97.46, 521.15, 0.0)
 
     history = load_transactions(conn, LEAD, AS_OF)
     pending = reviews.ensure_pending(conn, LEAD, AS_OF, history, now)
@@ -61,7 +61,7 @@ def test_pending_needed_wanted_undo(tx):
     ctx = ToolContext(LEAD, AS_OF, conn)
     before = label_answer.overview_numbers(ctx)
     got = {k: n.value for k, (_, n) in before.items()}
-    assert got["safe_to_spend"] == 221.58
+    assert got["safe_to_spend"] == 138.79
     assert got["unclassified"] == 180.07                       # 1,080.42 / 6 months
     assert got["unexpected_necessities"] == 341.08
     assert got["everyday_spending"] == 600.41
@@ -74,13 +74,13 @@ def test_pending_needed_wanted_undo(tx):
     assert [o["label"]["en"] for o in card["options"]] == ["Needed", "My choice"]
     pending_refs = [n.evidence_ref for _, n in before.values()] + [card["amount"]["evidence_ref"]]
 
-    # "Needed": the reserve grows by 88.56 and safe to spend goes down to the published 180.26.
+    # "Needed": the reserve grows by 88.56 and safe to spend goes down to 97.46 (#391: the goal stays 360).
     needed = label_answer.answer(conn, LEAD, AS_OF, pending.tx_ref, "unexpected_necessities", "en", now)
     assert (needed["review_state"], needed["changed"], needed["label"]["basket"]) == (
         "answered", True, "unexpected_necessities")
     moved = {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in needed["changes"]}
     assert moved == {"unclassified": (180.07, 0.0), "unexpected_necessities": (341.08, 521.15),
-                     "irregular_reserve": (167.74, 256.3), "safe_to_spend": (221.58, 180.26)}
+                     "irregular_reserve": (167.74, 256.3), "safe_to_spend": (138.79, 97.46)}
     assert all(c["before"]["evidence_ref"] != c["after"]["evidence_ref"] for c in needed["changes"])
     assert numbers(conn) == rule
 
@@ -92,10 +92,15 @@ def test_pending_needed_wanted_undo(tx):
     wanted = label_answer.answer(conn, LEAD, AS_OF, pending.tx_ref, "everyday_spending", "en", now)
     moved = {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in wanted["changes"]}
     assert moved == {"unexpected_necessities": (521.15, 341.08), "everyday_spending": (600.41, 780.48),
-                     "irregular_reserve": (256.3, 167.74), "safe_to_spend": (180.26, 221.58)}
-    n1 = wanted["message"]["numbers"]["n1"]
-    assert (n1["value"], "{{n1}}" in wanted["message"]["text"]) == (1080.42, True)
-    assert "€1,080.42 higher than usual" in wanted["message"]["text_rendered"]
+                     "irregular_reserve": (256.3, 167.74), "safe_to_spend": (97.46, 138.79)}
+    # #382: the confirmation is the real effect, built from the numbers that moved.
+    amount = next((i, n) for i, n in wanted["message"]["numbers"].items() if n["method"] == "spending.total@1")
+    assert (amount[1]["value"], "{{" + amount[0] + "}}" in wanted["message"]["text"]) == (1080.42, True)
+    sts = next(c for c in wanted["changes"] if c["key"] == "safe_to_spend")
+    assert wanted["message"]["text_rendered"] == (f"Your safe to spend this week goes from {sts['before']['display']} "
+                                                  f"to {sts['after']['display']}: {amount[1]['display']} now counts "
+                                                  f"as everyday spending.")
+    assert wanted["effect"]["text"] == wanted["message"]["text"]
 
     # Undo within 7 days: pending again, with exactly the pending numbers.
     undone = label_answer.answer(conn, LEAD, AS_OF, pending.tx_ref, None, "en", now)
@@ -106,7 +111,7 @@ def test_pending_needed_wanted_undo(tx):
     for body in (needed, wanted, undone):
         for c in body["changes"]:
             if c["key"] == "safe_to_spend":
-                assert c["after"]["value"] <= 221.58
+                assert c["after"]["value"] <= 138.79
 
     # Refs issued while pending still reconcile after the label changed (labels are in the spec).
     label_answer.answer(conn, LEAD, AS_OF, pending.tx_ref, "unexpected_necessities", "en", now)
@@ -190,7 +195,7 @@ def test_metric_sql_reads_the_labels_like_classify(tx):
     conn = tx
     pending_row = metric_sql.run_one(conn, "03_safe_to_spend.sql", LEAD, AS_OF,
                                      labels.metric_settings({SPIKE: "unclassified"}))
-    assert pending_row["safe_to_spend_7d_eur"] == Decimal("221.58")
+    assert pending_row["safe_to_spend_7d_eur"] == Decimal("138.79")
     for junk in ("not json", "[1,2]", '{"606016": "groceries"}', '{"abc": "unclassified"}'):
         row = metric_sql.run_one(conn, "03_safe_to_spend.sql", LEAD, AS_OF, {"tx_labels": junk})
-        assert row["safe_to_spend_7d_eur"] == Decimal("180.26"), junk
+        assert row["safe_to_spend_7d_eur"] == Decimal("97.46"), junk

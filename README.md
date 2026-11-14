@@ -56,7 +56,7 @@ With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prom
   - The pipeline retries a failed call once, and the adapter never retries the same model again. A 503 tries the fallback model once, and flash is then skipped for 3 minutes.
   - One answer sends at most 8 requests and gets 15 s for all its model calls: each planner call at most 9 s and each composer call at most 5 s, within those 15 s. A question the rules plan gives the composer its 5 s, not the rest of the 15 s, because the template writes the same answer at once.
   - A timeout, a network error or a 503 (on the fallback model too) fails only that call. It never pauses the model for other users, and the same answer sends no second request of that kind (#341).
-  - A 429, 401, 403 or 404 pauses model calls for 5 minutes, and three malformed, empty or blocked responses in a row pause them for 30 s.
+  - A 429, 401 or 403 pauses model calls for 5 minutes. A 404 (a model id the key cannot use) moves that role to its fallback and pauses nothing; the log says so, and after `GEMINI_MODEL_REFUSAL_S` seconds (default 600, between 60 and 3600) the id gets one probe. A role paused after a failure streak, or left with no usable model id, makes the model unavailable for the answer: the rules plan and the template writes, with no request tried. Three malformed, empty or blocked responses in a row pause that role (planner or composer) for 30 s, not the other one.
 
 The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
 
@@ -104,6 +104,12 @@ GEMINI_PLANNER=model python core/eval/run.py --source core.agent.gemini_eval:mak
 python core/agent/gemini_eval.py "What if I cut it a little?"     # free-form questions
 ```
 Every request counts against the team's daily model budget. Keep the cache on, and run each pass once. A repeated run is served from the cache. The offline tests replay recorded exchanges from `core/agent/tests/recordings/` and need no key and no network.
+
+To re-make a recording after a prompt change, record with the tool cache off, so every tool really runs and is written into the recording, and with the models the service runs, for example:
+```
+TOOL_CACHE=off GEMINI_PLANNER_MODEL=gemini-3.5-flash-lite GEMINI_PLANNER_THINKING=minimal GEMINI_COMPOSER_MODEL=gemini-3.5-flash-lite GEMINI_COMPOSER_THINKING=minimal python core/agent/gemini_eval.py "Where did my money go?" --record var/recordings
+```
+Add `GEMINI_PLANNER=model` for a question the rules would plan. Then copy the file from `var/recordings/` into `core/agent/tests/recordings/` under a descriptive name.
 
 ## Dev environment
 
@@ -178,6 +184,12 @@ To load it into an empty database:
    ```
    This creates the tables `transactions`, `customers`, `mortgage_applications` and `mortgage_events`, and prints the number of rows inserted into each.
 
+### National context
+
+Beside the peer comparison the coach can show one line of national context: what households of the customer's age group spent a month per consumption unit on the same category (groceries, transport without buying a vehicle). The figures come from Statistics Finland's household budget survey and are committed in `core/config/national_context.yaml`, with the table, the survey year, the query and the date they were retrieved. Nothing fetches them at run time.
+
+Source: Statistics Finland, households' consumption, table 14q4 (2022), CC BY 4.0.
+
 ### Metric marts
 
 The peer benchmark and the grocery store index read three small precomputed tables. Build them once after every data load, and again whenever `DEMO_TODAY` changes. This is safe on the shared database: it never drops anything, it only creates `metric_customer_month`, `metric_peer_flags` and `metric_grocery_cells` if they are missing, and it rewrites their rows one batch at a time.
@@ -212,9 +224,10 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
-- Two lying sources prove the checks catch invented numbers (`core/eval/liars.py`); both must fail every answer:
+- Lying sources prove the checks catch invented numbers and borrowing suggestions (`core/eval/liars.py`); each must fail every answer:
   - `--source liars:invented_text` adds an invented amount to each answer's text;
-  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it.
+  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it;
+  - `--source liars:borrowing` adds a borrowing suggestion, which the borrowing rule must catch in every answer.
 - The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.

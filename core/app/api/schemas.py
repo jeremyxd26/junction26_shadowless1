@@ -29,6 +29,13 @@ class Model(BaseModel):
 Language = Literal["en", "fi"]
 UnitName = Literal["eur", "eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year", "percent",
                    "percentile", "count", "days", "months"]
+# #380: the closed list of assumption codes (contracts/api.md section 3, Estimates); equal to
+# core.tools.models.ASSUMPTION_CODES (a test checks it).
+AssumptionCode = Literal[
+    "cut_share", "bonus_all_at_s_group", "bonus_share", "bonus_level", "spending_as_usual",
+    "reserve_for_unexpected", "next_months_like_last", "savings_goal_first", "cushion", "bills_pro_rata",
+    "peer_group", "bills_on_usual_days", "no_income_before_payday", "cuts_as_shown", "budget_from_usual_month",
+    "bonus_household", "bonus_table", "bonus_payment_card", "bonus_goods"]
 
 
 # ---- shared objects (section 2) --------------------------------------------------------------------
@@ -63,9 +70,19 @@ class Comparison(Model):
 
 # ---- cards (section 3) ------------------------------------------------------------------------------
 
+class Assumption(Model):
+    """#380: one assumption of an estimate; `code` from the closed list of contracts/api.md section 3."""
+    code: AssumptionCode
+    text: str
+    value: Number | None = None
+
+
 class Estimate(Model):
+    """`{label, text}` and, since #380, what the estimate observed and what it assumes."""
     label: str
     text: str
+    observed: list[Number] = []
+    assumptions: list[Assumption] = []
 
 
 class OpenEvidenceAction(Model):
@@ -87,11 +104,11 @@ class OpenWhatifAction(Model):
 
 
 class OpenHostScreenAction(Model):
-    """Open a screen of the host app (contract 0.3.1, #267). The app sends the host message
-    `sentti.openHostScreen` with `{target}` only; the target list is closed."""
+    """Open a screen of the host app (contract 0.3.1, #267; `contact_bank` since 0.3.3, #420). The app sends
+    the host message `sentti.openHostScreen` with `{target}` only; the target list is closed."""
     type: Literal["open_host_screen"]
     label: str
-    target: Literal["monthly_saving", "bonus_to_fund"]
+    target: Literal["monthly_saving", "bonus_to_fund", "contact_bank"]
 
 
 Action = Annotated[Union[OpenEvidenceAction, AskAction, OpenWhatifAction, OpenHostScreenAction],
@@ -220,6 +237,8 @@ class SafeToSaveCard(CardBase):
     """The overview's `safe_to_save` card (section 3; metrics.md section 3.1), from get_safe_to_save (#165)."""
     type: Literal["safe_to_save"]
     monthly: Number
+    weekly: Number      # #417: monthly x 7 / 30.4375
+    daily: Number       # #417: monthly / 30.4375
     monthly_components: list[Component]
     stock: Number
     stock_explanation: str
@@ -448,6 +467,21 @@ class Change(Model):
     after: Number
 
 
+class EffectItem(Model):
+    key: str  # safe_to_spend, safe_to_save, irregular_reserve, or the basket the purchase moved into
+    label: str
+    before: NumberWithId
+    after: NumberWithId
+
+
+class LabelEffect(Model):
+    """#382: the headline numbers before and after the answer, and the text built from their difference."""
+    items: list[EffectItem]
+    text: str
+    text_rendered: str
+    numbers: dict[str, NumberWithId]
+
+
 class LabelResponse(Model):
     customer_id: str
     as_of: date
@@ -458,6 +492,7 @@ class LabelResponse(Model):
     changed: bool
     message: LabelMessage
     changes: list[Change]
+    effect: LabelEffect | None = None  # null when nothing changed (#382)
     refetch: list[str]
 
 
@@ -579,6 +614,20 @@ class BillSafeToSpend(Model):
     text: str
 
 
+class BillForecast(Model):
+    """The forecast balance on the bill's due date, before and after the bill (contract 0.3.4, #421). Numbers are
+    null for `outside_forecast`; the status never removes the payment draft."""
+
+    status: Literal["covered", "tight", "not_covered", "outside_forecast"]
+    before: Number | None            # the balance forecast's own Number for the due date (same evidence ref)
+    already_counted: Number | None   # what the forecast already subtracts for the matched bill by then
+    counted: Number | None           # what the bill takes from it: the amount, or the excess over already_counted
+    after: Number | None             # before - counted
+    shortfall: Number | None         # not_covered: counted - before
+    text: str
+    chip: AskAction | None           # not_covered: the forecast question
+
+
 class BillSignal(Model):
     code: Literal["iban_check_failed", "reference_check_failed", "new_payee", "amount_above_usual", "short_term"]
     text: str
@@ -615,7 +664,10 @@ class BillExplainResponse(Model):
     comparison: Comparison | None
     basket: BillBasket
     safe_to_spend: BillSafeToSpend | None  # null when safe to spend cannot be computed (as the hero)
+    forecast: BillForecast | None          # null when the forecast cannot be computed (#421, contract 0.3.4)
     glossary: list[GlossaryEntry]
-    actions: list[AddToPaymentsAction] = Field(max_length=1)
+    # The payment draft when the checks pass; the way to the bank (contact_bank) when there are warning signs.
+    actions: list[Annotated[Union[AddToPaymentsAction, OpenHostScreenAction], Field(discriminator="type")]] = (
+        Field(max_length=2))
     warnings: list[str]
     signals: list[BillSignal]   # warning signs, never a verdict (#242, decision 10)

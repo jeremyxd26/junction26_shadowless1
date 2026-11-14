@@ -46,6 +46,7 @@ METRIC_FILES = {
     "what_if": "04_what_if.sql",
     "spender_profile": "05_spender_profile.sql",
     "peer_benchmark": "06_peer_benchmark.sql",   # reads the marts of core/marts/build.py
+    "small_purchases": "08_small_purchases.sql",  # #256: the last 3 complete months, EUR 10 (the tool's defaults)
 }
 
 # MCC groups of agent-core.md section 6.1, with the codes metrics.md section 1 names.
@@ -77,7 +78,7 @@ UNIT_FAMILY = {"eur": "money", "eur_per_day": "money", "eur_per_week": "money", 
                "eur_per_year": "money", "percent": "percent", "percentile": "percent", "count": "count",
                "days": "count", "months": "count", "date": "date"}
 ITEM_KINDS = ("numbers", "dates", "labels", "forbid")
-EXPECTS = ("answered", "no_data", "refused", "meta")
+EXPECTS = ("answered", "no_data", "refused", "meta", "any")
 REFUSAL_KINDS = ("investment_advice", "credit_decision", "out_of_scope", "other_person_data", "unsafe")
 
 
@@ -173,6 +174,13 @@ def evaluate(db: Db, cid: str, src: dict):
             value = 100 * (cur - prev) / prev if prev else None
         else:
             raise ValueError(f"unknown column {src['column']}")
+    elif src.get("query") == "national":
+        # #569: Statistics Finland's table value for an age group, from the committed file; no database, no network
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools.national import figure
+
+        value = figure(src["category"], src["age_band"]).monthly
     elif src.get("query") == "bonus":
         # The S-Bonus estimate (#216): the grocery base from SQL (the 6-month window's Groceries average,
         # cents), then the rules file's formula (core/config/s_group_benefits.yaml) the tool applies.
@@ -185,10 +193,36 @@ def evaluate(db: Db, cid: str, src: dict):
         grocery = money(Decimal(str(total)) / 6)
         share = int(src.get("share_pct") or RULES.default_share_pct)
         value = getattr(estimate(grocery, share), src["column"])
+    elif src.get("query") == "savings_plan":
+        # The savings plan (#369): the what-if savings of the plan's levers, from 04_what_if.sql with the
+        # tool's settings (config.SAVINGS_PLAN_*): Restaurants at its cut, then the other category with the
+        # largest baseline at the other cut; a lever counts from the threshold; the year is twelve months.
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools import config as tools_config
+
+        def what_if(category: str, pct: int) -> dict | None:
+            rows = db.metric("what_if", cid, {"whatif": f"category:{category}", "whatif_pct": pct})
+            return next((r for r in rows if r.get("customer_id") == cid), None)
+
+        first_cat, first_pct = tools_config.SAVINGS_PLAN_FIRST
+        others = {c: what_if(c, tools_config.SAVINGS_PLAN_OTHER_CUT_PCT) for c in tools_config.SAVINGS_PLAN_OTHER_CATEGORIES
+                  if c != first_cat}   # never the first lever's category again, as the tool
+        offered = sorted((-Decimal(str(r["baseline_month_eur"])), c) for c, r in others.items()
+                         if r is not None and r["status"] != "not_offered")
+        levers = {"first": what_if(first_cat, first_pct), "other": others[offered[0][1]] if offered else None}
+        savings = {k: Decimal(str(r["saving_month_eur"])) for k, r in levers.items()
+                   if r is not None and r["status"] != "not_offered"
+                   and Decimal(str(r["saving_month_eur"])) >= tools_config.SAVINGS_PLAN_MIN_EUR}
+        month = sum(savings.values(), Decimal("0"))
+        value = {"total_month_eur": month, "total_year_eur": month * 12,
+                 "first_saving_eur": savings.get("first"), "other_saving_eur": savings.get("other")}[src["column"]]
     else:
         raise ValueError(f"unknown source {src}")
     if "multiply" in src and value is not None:
         value = Decimal(str(value)) * Decimal(str(src["multiply"]))
+    if "plus" in src and value is not None:   # a sum a confused coach would give (forbid), e.g. plan + safe to save
+        value = Decimal(str(value)) + sum((Decimal(str(evaluate(db, cid, s))) for s in src["plus"]), Decimal("0"))
     return value
 
 
@@ -257,6 +291,14 @@ def validate(doc: dict) -> list[str]:
                     errors.append(f"{cid}: {item.get('name')}: no tolerance")
             if kind == "dates" and item.get("unit") != "date":
                 errors.append(f"{cid}: {item.get('name')}: dates need unit date")
+        for item in c.get("forbid_text") or []:
+            if not item.get("name") or not item.get("pattern"):
+                errors.append(f"{cid}: forbid_text item needs a name and a pattern")
+                continue
+            try:
+                re.compile(item["pattern"])
+            except re.error:
+                errors.append(f"{cid}: forbid_text {item['name']}: the pattern does not compile")
     return errors
 
 

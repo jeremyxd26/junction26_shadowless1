@@ -408,3 +408,113 @@ def test_after_a_planner_failure_the_clarifying_question_says_it_was_not_worked_
     assert done["clarify"]["question"].startswith("I could not work that out right now. ")
     done = ask(p, "Kerro jotain hyödyllistä ruokaostoksistani", language="fi")
     assert done["clarify"]["question"].startswith("En pystynyt selvittämään tätä juuri nyt. ")
+
+
+# ---- #304, #302: a model-written clarifying question ------------------------------------------------------
+
+def clarify_response(question, options):
+    return call_response("ask_clarifying_question", {"question": question, "options": options})
+
+
+def test_clarify_options_the_rules_do_not_recognise_are_replaced_by_the_rules_question():
+    """On dev the model asked back with fragments ("Where did money go"): tapped, they are not recognised,
+    so with the model off the user got a second clarifying question (#304)."""
+    transport = ByKind(clarify_response("What do you want to know?",
+                                        ["Where did money go", "Safe to spend", "Recurring bills"]), text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    done = ask(p, "money?")
+    assert done["outcome"] == "clarify" and done["clarify"]["options"] != ["Where did money go", "Safe to spend",
+                                                                           "Recurring bills"]
+    rules = RuleModel()
+    for option in done["clarify"]["options"]:
+        plan = rules.plan(PlanInput(question=option, language="en", as_of="2026-09-30",
+                                    tools=p.registry.schemas()))
+        assert plan.recognised, option
+    assert audit.records[-1]["planner_turns"][-1]["error"] == "clarify options not recognised"
+
+
+def test_clarify_options_the_rules_recognise_are_kept_and_markdown_is_dropped():
+    # Full questions: a bare "Last month" counts only after a spending question (#384), and "money?" is not one.
+    options = ["How much did I spend last month?", "How much did I spend this month?"]
+    transport = ByKind(clarify_response("**Which** of these do you mean?", options), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "money?")
+    assert done["clarify"] == {"question": "Which of these do you mean?", "options": options}
+
+
+
+def test_without_a_key_the_template_writes_with_no_model_draft_attempt():
+    """Review of #401: with no key the rule model's own template is not run through the model-draft checks;
+    composer_attempts holds only the template, and the text is the same."""
+    from core.agent.rules import RuleModel
+
+    p, audit = pipeline(FakeTransport(call_response()))
+    p.model = RuleModel()
+    done = ask(p)
+    attempts = audit.records[-1]["composer_attempts"]
+    assert [a["raw"] for a in attempts] == ["template"] and "llm_unavailable" in done["warnings"]
+    assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
+
+def test_an_empty_plan_answered_by_the_rules_clarify_carries_the_warning_with_the_note():
+    """#383 (from the review of #368): the note "I could not work that out" and llm_unavailable come together."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and done["clarify"]["question"].startswith("I could not")
+    assert "llm_unavailable" in done["warnings"]
+
+
+
+def test_a_rules_refusal_after_an_empty_plan_carries_no_warning():
+    """Review of #422: the empty-plan warning is for the clarifying question only."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Should I put my savings into tech stocks?")
+    assert done["outcome"] == "refused" and "llm_unavailable" not in done["warnings"]
+
+
+def test_a_refused_planner_model_answers_on_its_fallback_without_a_warning():
+    def transport(model, contents, config, timeout_s):
+        if model == "gemini-3.8-flash" and "tools" in config:
+            raise api_error(404)
+        return PLAN_OK if "tools" in config else text_response(DRAFT_OK)
+
+    p, audit = pipeline(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+
+
+def test_a_composer_without_a_model_leaves_the_planner_asked():
+    """Review of #446: all composer ids refused, the planner healthy: an unrecognised question is still planned
+    by the model; the template writes, with the warning; the audit names the composer's reason."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    c = p.model.client
+    c.compose_model, c.compose_fallback_model = "gemini-3.5-flash-lite", None
+    c._refused["gemini-3.5-flash-lite"] = c.clock() + 600
+    done = ask(p, "Tell me something useful about my groceries")
+    assert len(transport.plan.requests) >= 1 and transport.compose.requests == []
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    record = audit.records[-1]
+    assert record["composer_unavailable"] == "model_refused" and record["planner_unavailable"] is None
+
+
+def test_a_paused_planner_leaves_the_composer_writing_a_recognised_question():
+    """Review of #446: the planner paused after its streak, the composer healthy: the rules plan a recognised
+    question and the model writes it, with no warning and no note."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._role_paused_until["plan"] = p.model.client.clock() + 30
+    done = ask(p)
+    assert transport.plan.requests == [] and len(transport.compose.requests) == 1
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+    assert audit.records[-1]["planner_unavailable"] == "role_paused"
+
+
+def test_both_roles_unavailable_is_as_before():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._pause(300, "rate_limited")
+    done = ask(p, "Tell me something useful about my groceries")
+    assert transport.requests == [] and "llm_unavailable" in done["warnings"]
+    assert not done["clarify"]["question"].startswith("I could not")

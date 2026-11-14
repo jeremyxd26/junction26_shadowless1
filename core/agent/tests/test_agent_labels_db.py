@@ -40,15 +40,25 @@ class StubPool:
         pass
 
 
+LABEL_READ = "to_regclass('spike_reviews')"   # the first statement of every read of the label state
+
+
 class Counting:
-    """The connection, counting every statement sent (execute calls on it and on its cursors)."""
+    """The connection, counting every statement sent (execute calls on it and on its cursors), and the reads
+    of the label state among them."""
 
     def __init__(self, conn) -> None:
         self._conn = conn
         self.statements = 0
+        self.label_reads = 0
+
+    def count(self, query) -> None:
+        self.statements += 1
+        if LABEL_READ in str(query):
+            self.label_reads += 1
 
     def execute(self, *args, **kwargs):
-        self.statements += 1
+        self.count(args[0] if args else "")
         return self._conn.execute(*args, **kwargs)
 
     def cursor(self, *args, **kwargs):
@@ -63,11 +73,11 @@ class _Cursor:
         self._owner, self._cur = owner, cur
 
     def execute(self, *args, **kwargs):
-        self._owner.statements += 1
+        self._owner.count(args[0] if args else "")
         return self._cur.execute(*args, **kwargs)
 
     def executemany(self, *args, **kwargs):
-        self._owner.statements += 1
+        self._owner.count(args[0] if args else "")
         return self._cur.executemany(*args, **kwargs)
 
     def __enter__(self):
@@ -121,8 +131,10 @@ def rolled_back(db_conn, monkeypatch, tmp_path):
 
 @pytest.fixture
 def client(rolled_back):
+    # https: the viewer cookie is Secure (viewer_cookie_secure), so over http the client never sends it back,
+    # and the answer after a label would read the shared state instead of this viewer's (#429).
     app = create_app(Settings(_env_file=None, database_url=None))
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
         app.state.pool = StubPool(rolled_back)
         yield c
 
@@ -147,10 +159,10 @@ def overview(client) -> dict:
 def test_the_first_answer_shows_the_pending_state_like_the_overview_that_follows(client):
     first = ask(client)                                  # the very first request: no review exists yet
     number = safe_number(first)
-    assert number["value"] == 221.58
+    assert number["value"] == 138.79
     review = next(c for c in first["cards"] if c["type"] == "review")
     hero = overview(client)["hero"]["primary"]
-    assert (hero["value"], hero["evidence_ref"]) == (221.58, number["evidence_ref"])   # the same Number
+    assert (hero["value"], hero["evidence_ref"]) == (138.79, number["evidence_ref"])   # the same Number
     assert overview(client)["reviews"][0]["tx_ref"] == review["tx_ref"]                 # created once
 
     r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": review["tx_ref"],
@@ -158,9 +170,9 @@ def test_the_first_answer_shows_the_pending_state_like_the_overview_that_follows
     assert r.status_code == 200, r.text
     after = ask(client)
     number = safe_number(after)
-    assert number["value"] == 180.26 and not [c for c in after["cards"] if c["type"] == "review"]
+    assert number["value"] == 97.46 and not [c for c in after["cards"] if c["type"] == "review"]
     hero = overview(client)["hero"]["primary"]
-    assert (hero["value"], hero["evidence_ref"]) == (180.26, number["evidence_ref"])
+    assert (hero["value"], hero["evidence_ref"]) == (97.46, number["evidence_ref"])
 
 
 def run(pipeline, question="How much can I safely spend?"):
@@ -170,7 +182,11 @@ def run(pipeline, question="How much can I safely spend?"):
 
 
 def test_statement_count_of_an_answer_with_two_tool_calls(rolled_back, tmp_path, capsys):
-    """Before: every tool call reads the labels itself. After: one read for the answer, shared."""
+    """Before: every tool call reads the labels itself. After: one read for the answer, shared.
+
+    The totals are no measure of that (#429): the warm path also attaches the pending review's card to the
+    answer (one evidence read and one evidence write), which the old way never did. So the label reads are
+    counted, and the total may not grow."""
     plan = [FunctionCall("get_safe_to_spend", {}),
             FunctionCall("get_basket_breakdown", {"period": {"preset": "last_6_months"}}), FunctionCall("finish")]
 
@@ -180,12 +196,13 @@ def test_statement_count_of_an_answer_with_two_tool_calls(rolled_back, tmp_path,
                         OneConnection(counting), as_of=AS_OF, audit=AuditLog(tmp_path / "a"), labels=steps)
         events = run(pipe)
         assert dict(events).get("done"), events
-        return counting.statements
+        return counting.statements, counting.label_reads
 
-    first = measure(label_steps())     # the first answer creates Sanna's pending review
-    after = measure(label_steps())     # the review exists: the warm path
-    before = measure(None)             # the old way: each call reads the labels
+    first, _ = measure(label_steps())          # the first answer creates Sanna's pending review
+    after, after_reads = measure(label_steps())   # the review exists: the warm path
+    before, before_reads = measure(None)          # the old way: each call reads the labels
     with capsys.disabled():
-        print(f"\nstatements, answer with two tool calls: before {before}, after {after} "
-              f"(first answer, creating the review: {first})")
-    assert after < before
+        print(f"\nstatements, answer with two tool calls: before {before} ({before_reads} label reads), "
+              f"after {after} ({after_reads} label reads; first answer, creating the review: {first})")
+    assert after_reads == 1 and before_reads == 2      # one read for the answer, against one per tool call
+    assert after <= before                             # the review card's two statements fit in what it saves

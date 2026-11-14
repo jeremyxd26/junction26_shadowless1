@@ -27,6 +27,9 @@ DEFAULT_UNITS = {
     config.METHODS["bills_due"]: Unit.EUR,
     config.METHODS["bills_to_date"]: Unit.EUR,
     config.METHODS["daily_pace"]: Unit.EUR_PER_DAY,
+    config.METHODS["small_count"]: Unit.COUNT,
+    config.METHODS["small_total"]: Unit.EUR,
+    config.METHODS["small_flexible"]: Unit.EUR,
 }
 
 

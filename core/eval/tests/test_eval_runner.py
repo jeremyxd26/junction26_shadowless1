@@ -300,11 +300,12 @@ def test_a_declared_count_inside_a_returned_range_does_not_break_the_date():
                         {"name": "n", "value": 30, "unit": "count", "tolerance": 0, "required": False}]}
     q3 = {"start": "2026-07-01", "end": "2026-09-30"}
     ans = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00. Transactions: 30.", outcome="answered",
-                 numbers=[num(1102.0, "eur", "€1,102.00", q3), num(30, "count", "30", q3)], labels=[], tool_calls=[])
+                 numbers=[num(1102.0, "eur", "€1,102.00", q3), num(30, "count", "30", q3)], labels=[], tool_calls=[],
+                 length_exempt=True)   # the reference source's format: one value per sentence (#288)
     assert run.check(case, ans, "en", case["question"]["en"]) == []
     # The count is optional: an answer without it passes too.
     ans2 = Answer(text="1 Jul – 30 Sep 2026. Restaurants: €1,102.00.", outcome="answered",
-                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+                  numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[], length_exempt=True)
     assert run.check(case, ans2, "en", case["question"]["en"]) == []
 
 
@@ -510,3 +511,104 @@ def test_a_tool_number_matches_only_by_a_non_empty_id_and_the_same_method():
                  tool_numbers=[{"id": "n2", "value": 45.91, "unit": "eur_per_month", "method": "what_if.saving_month_eur@1"},
                                {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "what_if.saving_year_eur@1"}])
     fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])
+
+
+# ---- #288: the answer-length rule --------------------------------------------------------------------------
+
+def _length_case():
+    return {"id": "t-len", "persona": "CUST00849", "intent": "spending", "expect": "answered",
+            "question": {"en": "How much did I spend on restaurants in the last 3 months?"}, "expected_tools": [],
+            "tags": ["t"], "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005}]}
+
+
+def test_an_answer_over_two_sentences_fails_the_length_rule():
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual.",
+                 outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(_length_case(), ans, "en") == ["length: too long: 3 sentences, at most 2"]
+
+
+def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_one_word():
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants.", outcome="answered",
+                 numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(_length_case(), ans, "en") == []
+
+
+# ---- review of #437: `any` is not vacuous; borrowing as for drafts; forbid_text --------------------------------
+
+ANY = {"id": "t-any", "persona": "CUST00849", "intent": "borrowing", "expect": "any",
+       "question": {"en": "Should I take an overdraft to get through the month?"}, "expected_tools": [], "tags": ["t"]}
+
+
+def any_answer(text="I can't predict whether a loan would be approved. I can show what you could save each month.",
+               outcome="refused", **kw):
+    fields = dict(text=text, outcome=outcome, refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
+    fields.update(kw)
+    return Answer(**fields)
+
+
+@pytest.mark.parametrize("outcome", ["answered", "refused", "clarify"])
+def test_an_any_case_passes_each_real_outcome(outcome):
+    assert run.check(ANY, any_answer(outcome=outcome), "en") == []
+
+
+@pytest.mark.parametrize("outcome", ["fallback", "error", None])
+def test_an_any_case_fails_another_outcome(outcome):
+    fails_with(ANY, any_answer(outcome=outcome), "en", "expected one of answered, refused, clarify")
+
+
+def test_an_any_case_with_an_empty_text_fails():
+    fails_with(ANY, any_answer(text="  "), "en", "empty text")
+
+
+def test_an_any_case_with_an_invented_declared_number_fails():
+    ans = any_answer(text="You have €99,999.00.", outcome="answered", tool_numbers=[],
+                     numbers=[{"id": "n1", "value": 99999.0, "unit": "eur", "display": "€99,999.00",
+                               "method": "spending.total@1", "period": None}])
+    fails_with(ANY, ans, "en", "was not returned by a tool")
+
+
+@pytest.mark.parametrize("text", ["You could take out a small loan for it.", "A credit card could cover the gap.",
+                                  "Voit ottaa lainaa siihen."])
+def test_a_borrowing_suggestion_fails_an_any_case(text):
+    fails_with(ANY, any_answer(text=text), "en", "R borrowing suggestion")
+
+
+@pytest.mark.parametrize("text", ["I can't recommend taking a loan.", "Älä ota lainaa tähän.",
+                                  "I can't predict whether a loan or mortgage would be approved, and I don't rate "
+                                  "creditworthiness. The bank's loan process gives that answer."])
+def test_a_negation_or_naming_a_loan_passes_the_borrowing_rule(text):
+    assert not any("borrowing" in f for f in run.check(ANY, any_answer(text=text), "en"))
+
+
+def test_a_forbidden_phrase_fails_and_its_absence_passes():
+    case = dict(ANY, forbid_text=[{"name": "change_invitation", "pattern": r"savings\s+plan|what-if"}])
+    fails_with(case, any_answer(text="A savings plan can show where to start."), "en",
+               "forbidden phrase change_invitation")
+    assert run.check(case, any_answer(text="That is already your saving."), "en") == []
+
+
+def test_a_forbid_text_item_needs_a_compiling_pattern():
+    import expected
+
+    doc = {"cases": [dict(ANY, forbid_text=[{"name": "x", "pattern": "("}, {"name": "y"}])]}
+    errors = expected.validate(doc)
+    assert any("does not compile" in e for e in errors) and any("needs a name and a pattern" in e for e in errors)
+
+
+def test_the_below_median_case_forbids_the_invitation_and_passes_its_own_sentence():
+    """#418: below the median the answer says "that is already your saving" and invites no change; the case's
+    forbid_text catches both invitations of the above-median sentence and not the below-median one."""
+    import re
+
+    import expected
+
+    from core.agent.answer_sentences import PEER, PEER_BELOW
+
+    case = next(c for c in expected.load(expected.CASES)["cases"] if c["id"] == "marja-peer-comparison")
+    pattern = case["forbid_text"][0]["pattern"]
+    below = [t.format(vs="40.5% less", metric="restaurants") for t in PEER_BELOW["total"] + PEER_BELOW["metric"]]
+    above = [t.format(vs="14.6% more", metric="restaurants") for t in PEER["total"] + PEER["metric"]]
+    assert not any(re.search(pattern, t, re.I) for t in below), below
+    assert all(re.search(pattern, t, re.I) for t in above), above

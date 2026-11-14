@@ -10,6 +10,8 @@
 // - Evidence: the two contract examples by ref. Other refs that appear in a mock overview get an
 //   evidence object built only from that overview's own data (see buildEvidence). The examples
 //   hold only a first page of rows, so a request with a cursor gets an empty last page.
+//   The numbers of the bill explanation examples (section 11) open placeholder evidence by ref for
+//   every persona (see BILL_EXAMPLES).
 // - Labels (POST /api/baskets/label): the contract's label examples. The mock remembers the answer
 //   for this page load, and the next overview carries the example's `after` numbers, no review and
 //   no waiting row. Undoing "I chose it" has no example: it is the "I chose it" example run backwards.
@@ -36,12 +38,14 @@ import type {
   WhatIfResponse,
   WhatIfScenarioRequest,
 } from '../types.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
   'personas.response': PersonasResponse
   'overview.response': OverviewResponse
   'overview.response_pending': OverviewResponse
+  'overview.response_no_hero': OverviewResponse
   'evidence.response': EvidenceResponse
   'evidence.response_composite': EvidenceResponse
   'error.response': ErrorEnvelope
@@ -54,6 +58,9 @@ const examples = contract.examples as unknown as {
   'card.safe_to_save_zero': SafeToSaveCard
   'card.safe_to_save_everyday': SafeToSaveCard
   'whatif.response': WhatIfResponse
+  'bill.response': unknown
+  'bill.response_unknown': unknown
+  'bill.response_not_covered': unknown
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -63,6 +70,13 @@ const CARD_EXAMPLES = [
   examples['card.safe_to_save_zero'],
   examples['card.safe_to_save_everyday'],
 ]
+
+/**
+ * The bill explanation examples (contract section 11). Their numbers open placeholder evidence by
+ * ref whatever the persona is: the `bill.*` numbers first, any other of their refs after the
+ * persona's own overview (so a hero ref still opens the hero's evidence for Aino).
+ */
+const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknown'], examples['bill.response_not_covered'], TIGHT_FORECAST]
 
 /** Sanna as in core/config/personas.yaml (lead persona of the demo). */
 const SANNA: Persona = {
@@ -163,6 +177,8 @@ function reviewEvidence(review: ReviewCard): EvidenceResponse {
         mcc: null,
         amount: (-review.amount.value).toFixed(2),
         currency: 'EUR',
+        // Money out: the purchase's own display with the bank sign, as the core writes rows.
+        display: `-${review.amount.display}`,
       },
     ],
     row_count: null,
@@ -234,9 +250,19 @@ function withShares(overview: OverviewResponse): OverviewResponse {
   }
 }
 
+/**
+ * `?mock=no_hero` in the page URL serves the contract's `overview.response_no_hero` for its
+ * customer (safe to spend cannot be computed, contract 0.2.2), to check that fallback.
+ */
+function noHero(customerId: string): OverviewResponse | undefined {
+  const example = examples['overview.response_no_hero']
+  const asked = new URLSearchParams(window.location.search).get('mock') === 'no_hero'
+  return asked && example.customer_id === customerId ? example : undefined
+}
+
 /** The overview as the core would serve it now: pending, or with the answer applied. */
 function currentOverview(customerId: string): OverviewResponse | undefined {
-  const base = OVERVIEWS[customerId]
+  const base = noHero(customerId) ?? OVERVIEWS[customerId]
   const basket = answers[customerId]
   if (!base || !basket) return base
   const answered = applyChanges(clone(base), answerExample(basket).changes)
@@ -247,6 +273,16 @@ function currentOverview(customerId: string): OverviewResponse | undefined {
       isBasketsCard(card) ? { ...card, items: card.items.filter((item) => item.key !== 'unclassified') } : card,
     ),
   })
+}
+
+/**
+ * The contract has no example for undoing "My choice" (`label.response_wanted`); its undo example
+ * (`label.response_undo`) is the undo of "Needed" and says safe to spend goes back up. Safe to spend
+ * never moved after "My choice", so its undo gets this neutral text, with no numbers (#521).
+ */
+const WANTED_UNDO_TEXT: Record<'en' | 'fi', string> = {
+  en: 'Undone: safe to spend stays the same, and the purchase is waiting for your answer again.',
+  fi: 'Kumottu: käyttövara pysyy ennallaan, ja ostos odottaa taas vastaustasi.',
 }
 
 const TX_REF_NOT_FOUND = {
@@ -272,7 +308,11 @@ function label(request: LabelRequest): LabelResponse {
   }
   if (request.basket === null && current) {
     delete answers[request.customer_id]
-    return { ...clone(examples['label.response_undo']), changes: reversed(answerExample(current).changes) }
+    const undo = { ...clone(examples['label.response_undo']), changes: reversed(answerExample(current).changes) }
+    if (current !== 'everyday_spending') return undo
+    // The undo of "My choice": its own changes reversed, and the neutral text above.
+    const text = WANTED_UNDO_TEXT[request.language === 'fi' ? 'fi' : 'en']
+    return { ...undo, message: { text, text_rendered: text, numbers: {} }, effect: null }
   }
   const basket = request.basket as BasketKey
   answers[request.customer_id] = basket
@@ -283,6 +323,9 @@ function label(request: LabelRequest): LabelResponse {
 
 function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   if (EVIDENCE[ref]) return clone(EVIDENCE[ref])
+  const billNumbers = collectNumbers(BILL_EXAMPLES).filter((candidate) => candidate.evidence_ref === ref)
+  const computedByBill = billNumbers.find((candidate) => candidate.method.startsWith('bill.'))
+  if (computedByBill) return placeholderEvidence(computedByBill)
   // The overview as served now first, then the pending one: refs from before an answer stay valid.
   const overviews = [currentOverview(customerId), OVERVIEWS[customerId]]
   for (const overview of overviews) {
@@ -297,6 +340,7 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   }
   const cardNumber = collectNumbers(CARD_EXAMPLES).find((candidate) => candidate.evidence_ref === ref)
   if (cardNumber) return placeholderEvidence(cardNumber)
+  if (billNumbers[0]) return placeholderEvidence(billNumbers[0])
   throw new ApiError(404, {
     code: 'evidence_not_found',
     message: 'We could not find how this number was built.',

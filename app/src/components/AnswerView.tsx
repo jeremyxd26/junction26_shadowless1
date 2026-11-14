@@ -2,18 +2,20 @@
 // (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
 // action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
 import type { Action } from '../api/types.ts'
-import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
+import { STAGES, actionsOf, doneActions, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
+import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
 import { TokenText } from './cards.tsx'
+import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
 
 type Strings = ReturnType<typeof chatStrings>
 
-const ACTION_CHIP =
+export const ACTION_CHIP =
   'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-left text-base font-semibold text-brand hover:bg-mint-tint'
 export const QUESTION_CHIP =
   'inline-flex min-h-11 items-center rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-semibold text-ink hover:bg-mint'
@@ -31,7 +33,7 @@ export function InfoIcon() {
   )
 }
 
-function SenttiLabel({ s }: { s: Strings }) {
+export function SenttiLabel({ s }: { s: Strings }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
@@ -111,6 +113,16 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
       </button>
     )
   }
+  if (action.type === 'open_host_screen') {
+    // Into the bank app's own screen (#268); a target the app does not know renders nothing.
+    const target = hostScreenTarget(action.target)
+    if (!target) return null
+    return (
+      <button type="button" className={ACTION_CHIP} onClick={() => openHostScreen(target)}>
+        {action.label}
+      </button>
+    )
+  }
   return null
 }
 
@@ -173,7 +185,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
     )
   } else {
     // Answered and fallback share one layout, so nothing changes its look when `done` arrives;
-    // a fallback only adds its quiet note. Until a card arrives, the text waits for `done`: an
+    // a fallback shows the service's short text as it is, with the cards. Until a card arrives, the text waits for `done`: an
     // answer without cards may still turn out to be a refusal or a clarification, which look
     // different, so the stages and the skeleton stay until then.
     const holdText = streaming && answer.cards.length === 0
@@ -194,17 +206,12 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
             <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} />
           </p>
         )}
-        {done && outcome === 'fallback' && (
-          <p className="flex gap-2 text-sm text-muted">
-            <InfoIcon />
-            {s.fallbackNote}
-          </p>
-        )}
       </>
     )
   }
 
-  const actions = done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : []
+  // The answer's own actions (`done.actions`, 0.3.3: the way to a human), then the cards' actions.
+  const actions = [...doneActions(done), ...(done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : [])]
 
   return (
     <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
@@ -212,9 +219,24 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
         {turn.question}
       </p>
 
-      {(hasContent || streaming || done) && <SenttiLabel s={s} />}
+      {(hasContent || streaming || done) && (
+        <div className="flex min-h-11 items-center justify-between gap-2">
+          <SenttiLabel s={s} />
+          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
+        </div>
+      )}
+      {/* The first answer of a conversation says once, in the API's words, that Sentti is an AI. */}
+      {done?.ai_disclosure && <p className="text-xs text-muted">{done.ai_disclosure}</p>}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
+      {/* Written from the template without the AI model (warning `llm_unavailable`, #282):
+          a quiet note under the answer, whatever the outcome. */}
+      {writtenByTemplate(done) && (
+        <p className="flex gap-2 text-sm text-muted">
+          <InfoIcon />
+          {s.templateNote}
+        </p>
+      )}
 
       {done?.lesson && (
         <aside className="rounded-md bg-sunken p-4">

@@ -2,27 +2,34 @@
 // `type` in the shared answer-card frame (DESIGN.md "Answer card"). Card `actions` are not
 // drawn here: the chat shows them as action chips under the explanation.
 import { Component, type ReactNode } from 'react'
-import type { BreakdownCard, Card, Comparison, MetricCard, Num, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
+import { BillsCards } from './BillsCard.tsx'
 import { BasketsCard, CARD_TITLE, CardShell } from './cards.tsx'
 import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
+import { PeerCard, type PeerData } from './PeerCard.tsx'
+import { ProfileCard, type ProfileData } from './ProfileCard.tsx'
+import { ReviewPointer } from './ReviewPointer.tsx'
 import { SafeToSaveCard } from './SafeToSaveCard.tsx'
 
 /** Title, subtitle and the fact or estimate marker, top right. */
 function CardHeader({ card }: { card: Card }) {
   const { lang } = useSettings()
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
+    // With large text the marker moves under the title instead of covering it (#541).
+    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+      <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
         <h3 className={CARD_TITLE}>{card.title}</h3>
         {card.subtitle && <p className="mt-0.5 text-sm text-muted">{card.subtitle}</p>}
       </div>
       {card.estimate ? (
-        <EstimateBadge estimate={card.estimate} />
+        <span className="ml-auto shrink-0">
+          <EstimateBadge estimate={card.estimate} />
+        </span>
       ) : (
-        <span className="max-w-[45%] shrink-0 pt-0.5 text-right text-xs text-muted">{chatStrings(lang).fact}</span>
+        <span className="ml-auto max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>
       )}
     </div>
   )
@@ -97,8 +104,9 @@ function BreakdownAnswer({ card }: { card: BreakdownCard }) {
       <ul className="mt-2 flex flex-col">
         {card.items.map((item) => (
           <li key={item.key} className="border-t border-line py-2.5">
-            <div className="flex min-h-11 items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {/* With large text the amount moves under the label instead of covering it (#541). */}
+            <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="flex min-w-[min(6rem,100%)] flex-1 basis-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-bold text-brand">{item.label}</span>
                 {item.flags.map((flag) =>
                   s.flags[flag] ? (
@@ -108,7 +116,9 @@ function BreakdownAnswer({ card }: { card: BreakdownCard }) {
                   ) : null,
                 )}
               </div>
-              <NumberChip number={item.amount} />
+              <span className="ml-auto max-w-full shrink-0">
+                <NumberChip number={item.amount} />
+              </span>
             </div>
             {(item.change || item.share) && (
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm leading-8">
@@ -145,8 +155,18 @@ function CardBody({ card }: { card: Card }) {
       return isBasketsBreakdown(breakdown) ? <BasketsCard card={breakdown} /> : <BreakdownAnswer card={breakdown} />
     }
     case 'safe_to_save':
-      return <SafeToSaveCard card={card as SafeToSaveData} />
-    // Any other type gets the generic card, `review` included: it is answered in "Sentti asks" (#35).
+      // Card actions show as chips under the answer (AnswerView), so the card itself draws none.
+      return <SafeToSaveCard card={{ ...(card as SafeToSaveData), actions: [] }} />
+    case 'profile':
+      return <ProfileCard card={card as ProfileData} header={<CardHeader card={card} />} />
+    case 'peer':
+      return <PeerCard card={card as PeerData} header={<CardHeader card={card} />} />
+    case 'bills':
+      return <BillsCards cards={[{ ...card, actions: [] }]} />
+    // A review is asked once, in the opening; the answer points there (#318).
+    case 'review':
+      return <ReviewPointer card={card as ReviewCard} />
+    // Any other type gets the generic card.
     default:
       return <GenericAnswer card={card} />
   }

@@ -1,9 +1,9 @@
 # Sentti design system
 
-The design foundation for the Sentti money-coach module: a mobile web app, 375 px wide, embedded in S-mobiili through a WebView. Every screen uses these tokens and rules.
+The design foundation for the Sentti money-coach module: an embeddable web module for S-mobiili, 375 px, inside a WebView. Its first screen is one chat thread that Sentti opens (section 3, "Thread"). Every screen uses these tokens and rules.
 
 - Tokens: [`design/tokens.css`](design/tokens.css). These are CSS custom properties. Colour, type, radius, shadow and easing tokens use Tailwind v4 theme namespaces; spacing, durations, `--gutter` and `--tap-min` are mapped by hand.
-- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.2.0. This file never redefines a field; it only says how to show one.
+- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.3.2 (draft, on `dev`). This file never redefines a field; it only says how to show one.
 - The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. Colour values follow that look closely (the greens, neutrals and page tint of S-mobiili); the components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
 
 Component code and screens are built in their own issues and follow these rules. Section 8 lists what is still owed by other issues.
@@ -115,12 +115,12 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
 | `--text-base` | 16 / 24 | 400 | Body text. **Inputs are never below 16 px** (iOS zooms otherwise). |
 | `--text-answer` | 16 / 26 | 400 | Coach answer text (looser leading for longer reading) |
 | `--text-lg` | 18 / 26 | 600–700 | Sheet titles |
-| `--text-xl` | 20 / 28 | 700 | The takeaway line |
+| `--text-xl` | 20 / 28 | 700 | The takeaway line; the greeting, one line (600) |
 | `--text-card-title` | 17 / 22 | 700, `--color-brand` | Card titles and row labels (bold green, as in S-mobiili) |
 | `--text-review-amount` | 30 / 34 | 700, tabular | The amount on the review card (#35) |
-| `--text-2xl` | 24 / 30 | 700 | Greeting, secondary big numbers |
+| `--text-2xl` | 24 / 30 | 700 | Secondary big numbers |
 | `--text-hero` | 40 / 44 | 700, −0.02em, `--color-on-hero` | Safe to spend, white on the green block |
-| `--text-stage` | 56 / 60 | 700 | Projector mode (`[data-stage]`) |
+| `--text-stage` | 56 / 60 | 700 | Reserved; no screen uses it yet |
 
 ### 2.4 Spacing, radii, elevation
 - **Spacing** has a 4 px base: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8` 32, `-10` 40. `--gutter` is 16 px, `--tap-min` is 44 px.
@@ -146,9 +146,87 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
 ## 3. Components
 
 ### Shell
-- **Header:** 52 px, with a back chevron (44 px target), the title "Sentti" with a small "AI" tag, and the EN/FI switch. The module has no logo and no bottom navigation, because it lives inside S-mobiili.
-- **Composer:** pinned to the bottom. The input is 48 px high with 16 px text; the send button is a 48 px circle in `--color-deep`. Bottom padding adds `env(safe-area-inset-bottom)`.
-- **Disclosure:** the overview's `ai_disclosure`, shown as is in `--text-xs` with an info icon. It is also the first message of an empty chat.
+- **Header:** 52 px, a grid of three cells. The module has no logo and no bottom navigation, because it lives inside S-mobiili.
+  - **Left cell:** the back chevron (44 px target) when there is somewhere to go: a host is listening, or the module has its own history (an inner screen or an open sheet) (#175, `canGoBack()` in `src/lib/url.ts`). Outside a host, when there is no chevron, the visible persona button takes this cell (#323); the chevron always wins it.
+  - **Centre:** the title "Sentti", a small visible **AI** tag next to it, and an ⓘ button (44 px target) that opens `ai_disclosure` as received in a small bottom sheet. The visible AI tag stays for transparency; the full sentence is behind ⓘ.
+  - **Right cell:** the overview button that opens the overview sheet (#322).
+  - There is no EN/FI switch in the header: the language comes from the host (`?lang=` now, `host.context` later) and, in the demo, from the persona sheet.
+- **Host messages:** every message to the host is `{type: 'sentti.<name>', v: 1, payload}` with a camelCase name: `close` (back on the first screen), `paymentDraft` and `openHostScreen`. iOS gets the object through `webkit.messageHandlers.sentti`, Android a JSON string through `window.sentti` (#175, `src/lib/hostBridge.ts`). Without a host nothing is sent and the module uses its own navigation.
+- **Composer:** pinned to the bottom ("Ask anything…"). The input is 48 px high with 16 px text; the send button is a 48 px circle in `--color-deep`. Bottom padding adds `env(safe-area-inset-bottom)`. The whole bar is 73 px high at 375 px with no inset (12 + 48 + 12 + border). A microphone appears only behind the voice flag (later).
+- **Toast:** sits above the composer, never over it: its bottom is 8 px above the composer's top, so the input and the send button stay reachable while Undo is shown. It closes when a question is sent, and the toast of a review answer also goes by itself after 6 s; a toast with an error and Retry stays until it is closed.
+- **No toast when the reply says it:** when Sentti's reply under the question already shows the answer's confirmation (the label response's `effect`, contract 0.3.2), no toast is shown, so nothing covers the reply. Undo is then the 44 px Undo on the answered card, and the live region reads `message.text_rendered` once. Without `effect`, the toast shows as above.
+
+### Thread
+- The first screen is **one thread on `/`** that Sentti opens. `/chat` redirects to `/` with `replace`, so Back never returns to it.
+- **Turn 0 is the opening** (see "Opening turn"); every question and answer after it is a later turn in the same thread.
+- **One thought per screen:** the opening shows one number and one question. Baskets, bills, safe to save, insights and the what-if entry come as Sentti's answers in the thread (for example after "Where did my money go?" or "How could I save more?") and in the overview sheet.
+- The thread scrolls with the **document** (window scroll). There is no inner scroll container, because the review flight (#35) measures window scroll.
+- The composer stays pinned to the bottom; the thread gets bottom padding equal to the composer's height, so the last turn is never under it.
+- The module has no navigation of its own. The overview is reached from the header button (#322) and opens as a bottom sheet (see "Overview sheet").
+
+### Opening turn
+The opening is a client template built only from `GET /api/overview` fields, until the contract has a server-written opening (#338). Top to bottom, under the header:
+1. **Greeting:** `greeting` as received, one line in `--text-xl` (20 / 28, 600), for example "Hi Sanna 👋". No second line; the AI disclosure is behind the header's ⓘ.
+2. **One big card (safe to spend):** the green block (`--color-hero`, `--radius-xl`). It shows:
+   - the hero's `primary.display` as sent, in `--text-hero` (40 / 44), white. No client rounding; a whole-euro display is a contract request (#338);
+   - one caption, a client string without a number, chosen by `hero.status`: "Safe to spend this week" (`ok`), "Less room than usual this week" (`below_usual`), "Nothing free this week" (`nothing_free`); FI from the app's strings;
+   - the Estimate badge in its on-green form, and a chevron ›.
+
+   The whole card is one button: a tap opens a bottom sheet with the hero's `components` ("how it is made"), each part a number chip.
+3. **One question card ("Sentti asks"):** `reviews[0]`'s question and its two answer buttons (see the "Sentti asks" review card below). The question already carries the amount (its `{{n1}}` token is a chip), so there is no separate amount line. `why` is behind an ⓘ on the card.
+4. **2–3 chips:** the first three `suggested_questions`, as sent, in server order. A tap sends the question as a new turn.
+5. **The composer**, pinned (see "Shell").
+
+**Text limits on the first screen:** a card title has at most 4 words, a caption at most 8; no paragraph anywhere.
+
+**No client sentence carries a number:** every number is an API `display`, and the template's own words never state or compare amounts.
+
+**Fallbacks:**
+- `hero: null`: no big card (contract 0.2.2 hides it for a known reason); the question card moves up.
+- `reviews` empty: no question card; the chips move up.
+- An overview error: the opening shows the error card (see "States"), and the composer offers 3 starter chips.
+
+### Fit budget
+**The check:** at 375 × 812 and at 375 × 768 (the demo frame's module iframe), everything from the header down to the last chip is on screen above the composer's top, with no scrolling. The #35 moment then also fits (below). The spike that led to this layout is in PR #355; its screenshots are kept outside the repository.
+
+**Measured** on a local build of PR #157 (`fab214d`, mock mode, Sanna with the review pending, Chromium; both sizes give the same block heights, only the bottom anchors move):
+
+| What | 375 × 812 | 375 × 768 |
+|---|---|---|
+| Header bottom | 52 | 52 |
+| Composer top (bar height 73) | 739 | 695 |
+| Toast height (3-line message) | 124 | 124 |
+| Greeting line | 28 | 28 |
+| Hero amount chip (`--text-hero`) | 64 high | 64 high |
+| Review answer buttons | 56 high | 56 high |
+| Review card collapsed after an answer | 144 | 144 |
+
+The dashboard stack of #157 (hero 313 and review card 390, each in full) did not fit: 703 px against 687 px between the header and the composer at 812. That is why the first screen holds one number and one question.
+
+**Expected heights of the new opening** (px; the thread starts at 60, the header plus an 8 px top padding):
+
+| Block | About |
+|---|---|
+| Greeting, one line | 28 |
+| Big card: 16 padding, 44 amount, 4, 20 caption, 16 padding | 100 |
+| Question card: 16 padding, a 24 header row ("Sentti asks", ⓘ), 8, a question of up to 3 lines (72), 12, 56 answer buttons, 16 padding | 204 |
+| 3 chips stacked, 44 each, 8 between | 148 |
+| Gaps | 12 between blocks |
+
+Sum: 28 + 12 + 100 + 12 + 204 + 12 + 148 = 516, so the last chip ends at 576: 163 px above the composer at 812 and 119 px at 768. Each building issue re-measures and reports against this check.
+
+**The #35 moment in this layout:** after "It was needed":
+1. The question card collapses to one line (a check, the chosen label).
+2. The big card counts from `changes[].before` to `after` (for example €221.58 → €180.26).
+3. Sentti answers right under the question with a short turn: a **mini basket row** where the amount (€1,080.42) flies from "Waiting for your answer" into the chosen basket, and under it `effect.text` with its tokens as chips. On a core without `effect`, a client sentence without a number comes first instead ("Moved to 🔧 Unexpected necessities", the basket label from the API).
+4. With `effect` there is no toast: Undo is on the answered card (see "Toast" in "Shell"). Without `effect`, the toast with Undo appears above the composer.
+
+The big card, the mini basket row and the reply's text are on screen together at both sizes, so the flight and the count can be seen without scrolling. If a size or setting breaks this (320 px wide, 200 % zoom, large text, a long Finnish question), the glide sequence built in #157 is the specified behaviour: the big card counts first, the page glides to the mini basket row, then the amount flies.
+
+### Overview sheet
+- Opens from the header's overview button (#322), as a bottom sheet and a history entry, so Back closes it.
+- **Contents:** the full hero with its reserve line and links (see "Safe-to-spend widget"), the baskets, bills, safe to save, insights and the what-if entry.
+- **No review card and no motion** in the sheet; the review lives only in the thread.
 
 ### Basket chip and basket row
 - **Chip:** a pill in the basket tint with a white circle holding the emoji, and the label in the strong colour (600).
@@ -203,7 +281,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - the title and the total;
   - "N transactions · reconciles ✓";
   - a "How it was counted" box in plain words, built from `method` and `query`;
-  - transaction rows: merchant label, date and time, and the amount. The amount is the one number the app formats itself (section 4);
+  - transaction rows: merchant label, date and time, and the amount as the row's `display`, as sent (section 4);
   - "Show all N";
   - `privacy_note` with a lock icon.
 
@@ -218,19 +296,18 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 
 ### "Sentti asks" review card (#35)
 - **Surface:** `--color-deep` (darker than the hero green), `--radius-xl`, a mint question icon and "Sentti asks". It must never look like an answer.
-- **Header row:** "Not sure" sits at the right. It only closes the card, with no API call.
-- **Contents:** the amount (`--text-review-amount`, 700, tabular); the date, category and merchant label; the question text. `question` is `{en, fi}`: show `question[language]`, the language of the request.
+- **Header row:** the question icon, "Sentti asks", an ⓘ that shows `why`, and "Not sure" at the right. "Not sure" only closes the card, with no API call.
+- **Contents:** the question text only: `question` is `{en, fi}`, shown as `question[language]`, the language of the request. Its `{{n1}}` (the amount) and `{{date}}` tokens become chips, so there is no separate amount line.
 - **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels are `options[].label[language]`.
-- **After a tap:**
-  1. The card collapses to one line: a check, the chosen label and `options[].effect[language]`.
-  2. The amount, as a pill, flies from the "Waiting for your answer" row to the chosen basket row: `--duration-flight` (600 ms) with `--ease-expressive`. Its border colour turns to the target basket's.
-  3. Every changed number counts from `changes[].before` to `after` (900 ms, tabular figures), and the bars resize.
-  4. The waiting row fades out. "was …" hints stay for 6 s.
-  5. A toast shows `message.text` with each `{{nN}}` token rendered as a number chip from `message.numbers`, and an Undo button. `message.text_rendered` (tokens already replaced) is only for screen readers (the toast's live region) and copying.
-  6. **Undo** sends `basket: null` and counts the changed numbers back. If the review is less than 7 days old, the purchase returns to "Waiting for your answer" and the question comes back. If it is older, the review closes and the purchase returns to the basket its rules give it; the card does not come back.
+- **After a tap** (the thread layout, see "Fit budget"):
+  1. The card keeps its header (with a 44 px Undo while the answer can be undone), the question in a compact size, and a check with the chosen label. It shows no effect line: what the answer did is Sentti's reply.
+  2. The big card's number counts from `changes[].before` to `after` (900 ms, tabular figures; see section 4).
+  3. Sentti answers right under the question with a short turn, mounted at the tap so it is on screen when the answer arrives: a **mini basket row**, and under it `effect.text` with its tokens as chips (on a core without `effect`, a client sentence without a number comes first instead, for example "Moved to 🔧 Unexpected necessities" with the basket label from the API). In the row the amount, as a pill, flies from "Waiting for your answer" to the chosen basket: `--duration-flight` (600 ms) with `--ease-expressive`; its border colour turns to the target basket's, and the waiting cell fades out. The flight looks for its cells only inside this reply and never scrolls the page.
+  4. With `effect`, no toast is shown; the live region reads `message.text_rendered` once, and Undo is on the card. Without `effect`, a toast above the composer shows `message.text` with each `{{nN}}` token rendered as a number chip from `message.numbers`, and an Undo button; `message.text_rendered` (tokens already replaced) is only for screen readers (the live region) and copying.
+  5. **Undo** sends `basket: null` and counts the changed numbers back. If the review is less than 7 days old, the purchase returns to "Waiting for your answer" and the question comes back. If it is older, the review closes and the purchase returns to the basket its rules give it; the card does not come back.
 - **No reload:** the overview is refetched in the background after the animation.
 - **Expiry:** a pending review expires 7 days after creation; after that its `tx_ref` returns 404 `tx_ref_not_found`. The app then removes the card quietly and shows no error.
-- **Direction of change:** "It was needed" lowers safe to spend, and the hero then shows a down arrow with "was €…" in `--color-on-hero-muted` (4.95:1 on the green block) and the reserve line. Grey `--color-muted` or `--color-down` are never used on the green block (1.03:1 and 1.11:1). "I chose it" leaves safe to spend unchanged ("stays the same"). Red is never used for this.
+- **What the big card shows after the answer:** "It was needed" lowers safe to spend. After counting, the big card shows the new `display`, and for 6 s a down arrow with "was <old display>" under it in `--color-on-hero-muted` (4.95:1 on the green block); the caption stays the client string of `hero.status`. "I chose it" leaves safe to spend unchanged: the number does not count, and the hint says "stays the same". Grey `--color-muted` or `--color-down` are never used on the green block (1.03:1 and 1.11:1), and red is never used for this.
 
 ### Guess first (#37)
 - The number is blurred (10 px) and hidden from screen readers. Four range chips (for example €50 / €100 / €200 / €300+), "Skip, just show me" and "Reveal".
@@ -238,19 +315,19 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - At most one per screen. Never used for safe to spend, Health or other sensitive categories.
 
 ### What-if slider
-- The track has a 44 px hit area, a 6 px line and a 28 px thumb, in steps of 5 %.
+- The track has a 44 px hit area, a 6 px line and a 28 px thumb, in whole percent from 1 to 100. The request is sent on the input's native `change` event, so VoiceOver and TalkBack update it too (#154).
 - The result is in `--text-2xl`, with per month, week and year below, and the "Estimate" badge.
 - The previous value stays until the new response arrives.
 
 ### Persona picker (demo only)
-- **Opens:** with a long-press (`--duration-long-press`, 600 ms) on the header title, or with `?persona=`.
-- **Contents:** a bottom sheet titled "Demo personas", plus a stage mode switch (`data-stage` on the root, which swaps in `--text-stage`) and "Reset reviews".
+- **Opens:** with a long-press (`--duration-long-press`, 600 ms) on the header title, or with `?persona=`. A visible button in the header's left cell opens it too, but only outside a host (neither `webkit.messageHandlers.sentti` nor `window.sentti` exists) and only while there is no back chevron: the chevron always wins the left cell (#323). Inside S-mobiili the customer comes from the bank, so there is no visible picker.
+- **Contents:** a bottom sheet titled "Demo personas" with the personas and the EN/FI language switch.
 
 ### States
 | State | Rule |
 |---|---|
 | Loading | Stage lines from `status` events, using their `label`. Done stages get a check, and the current one a spinner. A card skeleton appears at once. The send button becomes a stop button. |
-| Empty | An empty chat is never "Ask me anything". It says what Sentti can and can't do, shows the disclosure and 3 question chips, near the thumb. |
+| Opening (no "empty") | The thread is never empty: Sentti opens it (see "Opening turn"). On an overview error the opening shows the error card, and the composer offers 3 starter chips near the thumb. Never "Ask me anything". |
 | Error | A `--color-danger-tint` card with `error.message` as is. "Try again" appears only when `retryable` is true. |
 | Clarify | `clarify.question` in the takeaway style and `clarify.options` as chips that send at once. Typing still works. |
 | Off-topic / refusal | A normal bubble with a grey left rule, `refusal.label` in xs, the template text and the `follow_ups` chips. |
@@ -258,7 +335,8 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 
 ## 4. Numbers and language
 - **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
-- **One exception: evidence rows.** In `GET /api/evidence/{ref}` a row's `amount` is a raw decimal string in the bank sign (for example `"-24.50"`, contract section 9). The app formats it with `Intl.NumberFormat` for the current language (`en-GB` or `fi-FI`, style `currency`, currency `EUR`). A negative amount is money out and keeps its minus sign: `-€24.50` in EN, `−24,50 €` in FI. A positive amount shows no plus sign.
+- **The one exception: counter frames.** When a number changes after a review answer (#35), it counts from one API `display` to the next. The frames in between are computed by `src/lib/motion.ts` (#157); the first and the last frame are the API's `display` strings. The frames are `aria-hidden`, and the accessible text is the final `display`. The chip cannot be tapped while it counts. With reduced motion there are no frames: the number cross-fades to the new `display`.
+- **Evidence rows** are no exception: each row of `GET /api/evidence/{ref}` carries `display`, its amount written by the server in the request language with the bank sign (`-€24.50`, FI `-24,50 €`; contract section 9), and the app shows it as sent. The row's `amount` stays the exact decimal string and is never formatted by the app.
 - **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 

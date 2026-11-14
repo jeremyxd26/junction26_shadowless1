@@ -4,14 +4,23 @@
 // - `bill.read_response`, `bill.response`, `bill.response_unknown` and `bill.error`.
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
-// - the English displays of the housing reading and the readings of the other two samples.
+// - the readings of the other samples (sample_4 has a misread amount over the explain limit).
+// The housing sample returns the contract's `bill.read_response` in the request's language: for
+// Finnish exactly the example; for English the same values with English displays of the amount and
+// the due date (provisional, like sample_1's).
 // Every company is fictional (the contract's own "Esimerkki" names); the IBANs are test numbers.
 //
 // Explain rules of the mock:
 // - the contract's barcode → `bill.response`; any other 54-digit barcode → `bill.error`
 //   (`barcode_check`); a barcode that is not 54 digits → `barcode_length` or `barcode_chars`;
-// - any `fields` → `bill.response_unknown` with the typed payee, IBAN, reference and due date
-//   echoed into `bill`; its sentences, checks and numbers stay the example's.
+// - any `fields` → `bill.response_unknown` as an ECHO: the typed payee, IBAN, reference and due
+//   date are copied into `bill` as sent, unformatted and unchecked. Its amount, checks,
+//   sentences and numbers stay the example's, so they do not describe what was typed.
+// - `forecast` (contract 0.3.4) comes from the examples: the barcode → `covered`, typed fields →
+//   `outside_forecast`. A typed bill from Esimerkki Vesi Oy (the typed-fallback sample), or the
+//   contract's own typed request, gets `bill.response_not_covered` (the typed text fields echoed as
+//   above). Only `tight` has no contract example: a typed bill from Esimerkki Energia Oy gets the
+//   PROVISIONAL fixture of billForecast.ts.
 // Texts of the responses stay English in Finnish, as in the what-if mock.
 import type { BillApi } from '../bill.ts'
 import { BillApiError } from '../bill.ts'
@@ -25,6 +34,7 @@ import type {
   BillSamplesResponse,
 } from '../billTypes.ts'
 import type { Language } from '../types.ts'
+import { TIGHT_FORECAST } from './billForecast.ts'
 import contract from './contract-examples.json'
 
 const examples = contract.examples as unknown as {
@@ -32,6 +42,7 @@ const examples = contract.examples as unknown as {
   'bill.request_fields': BillExplainRequest
   'bill.response': BillExplainResponse
   'bill.response_unknown': BillExplainResponse
+  'bill.response_not_covered': BillExplainResponse
   'bill.error': BillErrorEnvelope
   'bill.read_response': BillReadResponse
 }
@@ -89,6 +100,14 @@ const SAMPLES: SampleSpec[] = [
     printed: { amount: '38,90 €', due: '12.10.2026' },
     accent: '#2B5C8A',
   },
+  {
+    sample_id: 'sample_4',
+    title: { en: 'Electricity bill', fi: 'Sähkölasku' },
+    language: 'fi',
+    payee: 'Esimerkki Energia Oy',
+    printed: { amount: '150,00 €', due: '12.10.2026' },
+    accent: '#6B4FA0',
+  },
 ]
 
 function escapeXml(text: string): string {
@@ -136,26 +155,18 @@ function field(
   return { value, display, status, source, note }
 }
 
-/** The contract's reading is Finnish; the English displays are provisional. */
-const HOUSING_EN_DISPLAY: Partial<Record<keyof BillReadResponse['fields'], string>> = {
-  amount: '€812.40',
-  due_date: '1 Oct 2026',
-}
-
 const REFERENCE_NOTE: Record<Language, string> = {
   en: 'This reference number does not pass its check. Compare it with the paper bill.',
   fi: 'Tämä viitenumero ei läpäise tarkistusta. Vertaa sitä paperilaskuun.',
 }
 
 function readSample(sampleId: string, lang: Language): BillReadResponse {
+  // The contract example, answered in the request's language (contract 11.4).
   if (sampleId === 'sample_2') {
-    const reading = clone(examples['bill.read_response'])
-    reading.language = lang
+    const reading = { ...clone(examples['bill.read_response']), language: lang }
     if (lang === 'en') {
-      for (const [key, display] of Object.entries(HOUSING_EN_DISPLAY)) {
-        const read = reading.fields[key as keyof BillReadResponse['fields']]
-        if (read && display) read.display = display
-      }
+      if (reading.fields.amount) reading.fields.amount.display = '€812.40'
+      if (reading.fields.due_date) reading.fields.due_date.display = '1 Oct 2026'
     }
     return reading
   }
@@ -170,6 +181,23 @@ function readSample(sampleId: string, lang: Language): BillReadResponse {
         reference: field('12345', '12345', 'unchecked', 'printed', REFERENCE_NOTE[lang]),
         amount: field('145.00', lang === 'fi' ? '145,00 €' : '€145.00', 'unchecked', 'printed'),
         due_date: field('2026-10-20', lang === 'fi' ? '20.10.2026' : '20 Oct 2026', 'unchecked', 'printed'),
+        barcode: null,
+      },
+      needs_confirmation: true,
+    }
+  }
+  if (sampleId === 'sample_4') {
+    // A misread amount: the bill prints 150,00 €, the reader proposes 150000.00, which is over the
+    // explain limit. Without a barcode, "Looks right" must open the fields and show the problem.
+    return {
+      sample_id: sampleId,
+      language: lang,
+      fields: {
+        payee: field('Esimerkki Energia Oy', 'Esimerkki Energia Oy', 'unchecked', 'printed'),
+        iban: field('FI7112345600009876', 'FI71 1234 5600 0098 76', 'checked', 'printed'),
+        reference: field('45609', '45609', 'checked', 'printed'),
+        amount: field('150000.00', lang === 'fi' ? '150 000,00 €' : '€150,000.00', 'unchecked', 'printed'),
+        due_date: field('2026-10-12', lang === 'fi' ? '12.10.2026' : '12 Oct 2026', 'unchecked', 'printed'),
         barcode: null,
       },
       needs_confirmation: true,
@@ -243,10 +271,30 @@ function explain(request: BillExplainRequest): BillExplainResponse {
   }
 
   const fields = request.fields!
+  const payee = fields.payee.trim()
+  if (payee === 'Esimerkki Vesi Oy' || sameFields(fields, examples['bill.response_not_covered'].bill)) {
+    const notCovered = clone(examples['bill.response_not_covered'])
+    notCovered.language = lang
+    notCovered.bill = { ...notCovered.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
+    return notCovered
+  }
   const response = clone(examples['bill.response_unknown'])
   response.language = lang
   response.bill = { ...response.bill, payee: fields.payee, iban: fields.iban, reference: fields.reference, due_date: fields.due_date }
+  // PROVISIONAL: no contract example has `tight`.
+  if (payee === 'Esimerkki Energia Oy') response.forecast = clone(TIGHT_FORECAST)
   return response
+}
+
+/** The typed fields of a contract example's bill (amount by its value string, as typed). */
+function sameFields(fields: NonNullable<BillExplainRequest['fields']>, bill: BillExplainResponse['bill']): boolean {
+  return (
+    fields.payee === bill.payee &&
+    noSpaces(fields.iban) === noSpaces(bill.iban) &&
+    noSpaces(fields.reference) === noSpaces(bill.reference) &&
+    fields.amount === bill.amount.value.toFixed(2) &&
+    fields.due_date === bill.due_date
+  )
 }
 
 export function createMockBillApi(): BillApi {

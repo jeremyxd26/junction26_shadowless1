@@ -1,10 +1,12 @@
-import { forwardRef, useId, type ReactNode } from 'react'
+import { forwardRef, useId, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { BasketKey, ReviewCard as ReviewCardData } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { formatDate } from '../lib/i18n.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useCountdown } from '../lib/useCountdown.ts'
 import { useSettings } from '../lib/settings.ts'
+import { BottomSheet } from './BottomSheet.tsx'
 import { Check } from './cards.tsx'
 import { NumberChip } from './NumberChip.tsx'
 import { RetryButton } from './RetryButton.tsx'
@@ -29,6 +31,116 @@ function fill(text: string, parts: Record<string, ReactNode>): ReactNode[] {
   return out
 }
 
+/** The purchase's evidence and its link label ("See the purchase"). */
+function purchaseOf(card: ReviewCardData, fallback: string) {
+  const ref = card.evidence_ref ?? card.amount.evidence_ref
+  const label = card.actions.find((action) => action.type === 'open_evidence')?.label ?? fallback
+  return { ref, label }
+}
+
+/** Category, date and merchant: the purchase's facts in one line. */
+function factsOf(card: ReviewCardData, date: string): string {
+  return [card.category, date, card.merchant?.label ?? null].filter((part): part is string => Boolean(part)).join(' · ')
+}
+
+/**
+ * The question as the API sends it, in the request language. The core fills it in (contract
+ * 0.2.2: "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?"); its amount,
+ * found as the API's own `display` string, becomes the amount chip, and `{{n1}}` / `{{date}}`
+ * tokens, if a question carries them, become chips too. A question that does not carry the
+ * amount gets the amount chip at its start: the amount is shown once, with no separate line.
+ * `compact` (after the answer, as context): 16px text and the smaller inline chip.
+ */
+function QuestionText({ card, compact = false }: { card: ReviewCardData; compact?: boolean }) {
+  const { lang, t } = useSettings()
+  const date = formatDate(card.date, lang)
+  const purchase = purchaseOf(card, t.reviewSeePurchase)
+  const question = card.question[lang]
+  const tokens = new Set([...question.matchAll(TOKEN)].map((match) => match[1]))
+  const dateChip = purchase.ref ? (
+    <button
+      type="button"
+      onClick={() => purchase.ref && openEvidence(purchase.ref)}
+      aria-label={`${date}. ${purchase.label}`}
+      className="relative inline-flex min-h-9 items-center rounded-pill border border-on-deep-muted/60 px-2.5 leading-6 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+    >
+      {date}
+    </button>
+  ) : (
+    date
+  )
+  const amountChip = <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
+  const sentence = tokens.has('n1')
+    ? fill(question, { n1: amountChip, date: dateChip })
+    : amountAt >= 0
+      ? [
+          question.slice(0, amountAt),
+          <span key="amount">{amountChip}</span>,
+          ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
+        ]
+      : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
+  // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
+  // touch area at 44px.
+  return compact ? (
+    <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
+  ) : (
+    <p className="mt-2 text-xl font-bold leading-[26px] text-on-deep">{sentence}</p>
+  )
+}
+
+function InfoGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** Why Sentti asks (`why`) and the purchase's facts, in a small sheet: no paragraph on the card. */
+function WhySheet({ card, onClose }: { card: ReviewCardData; onClose: () => void }) {
+  const { lang, t } = useSettings()
+  const purchase = purchaseOf(card, t.reviewSeePurchase)
+  // In a portal: the card animates with a transform, which would pin a fixed sheet to it.
+  return createPortal(
+    <BottomSheet title={t.reviewWhy} onClose={onClose}>
+      <p className="text-base text-ink-2">{card.why}</p>
+      <p className="mt-3 text-sm text-muted">{factsOf(card, formatDate(card.date, lang))}</p>
+      {purchase.ref && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose()
+            if (purchase.ref) openEvidence(purchase.ref)
+          }}
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-base font-semibold text-brand hover:bg-mint-tint"
+        >
+          {purchase.label}
+        </button>
+      )}
+    </BottomSheet>,
+    document.body,
+  )
+}
+
+/** "? Sentti asks", then the card's own controls on the right. */
+function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNode }) {
+  const { t } = useSettings()
+  return (
+    <div className="flex flex-wrap items-center gap-x-3">
+      <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-lg font-bold text-ink">
+        ?
+      </span>
+      {/* No min-w-0: the title keeps its longest word, so on a narrow screen the buttons wrap below. */}
+      <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
+        {t.reviewAsks}
+      </h2>
+      {children}
+    </div>
+  )
+}
+
 export interface ReviewError {
   message: string
   retryable: boolean
@@ -47,52 +159,19 @@ interface AskingProps {
   leaving: boolean
 }
 
-/** The question about one spending spike (contract `review` card). Texts are the API's, in the request language. */
+/**
+ * The question about one spending spike (contract `review` card), compact for the opening turn
+ * (#310 decision): the question with its amount chip and two answer buttons; `why` behind ⓘ.
+ */
 export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function ReviewAsking(
   { card, busy, error, onAnswer, onNotSure, onRetry, leaving },
   ref,
 ) {
   const { lang, t } = useSettings()
   const titleId = useId()
+  const [whyOpen, setWhyOpen] = useState(false)
   // While the server asked to wait (Retry-After), a second tap on an answer would be a retry too.
   const waiting = useCountdown(error?.until ?? null) > 0
-  const date = formatDate(card.date, lang)
-  const purchaseRef = card.evidence_ref ?? card.amount.evidence_ref
-  const seePurchase = card.actions.find((action) => action.type === 'open_evidence')?.label ?? t.reviewSeePurchase
-  const question = card.question[lang]
-  const tokens = new Set([...question.matchAll(TOKEN)].map((match) => match[1]))
-
-  const dateChip = purchaseRef ? (
-    <button
-      type="button"
-      onClick={() => openEvidence(purchaseRef)}
-      aria-label={`${date}. ${seePurchase}`}
-      className="relative inline-flex min-h-10 items-center rounded-pill border border-on-deep-muted/60 px-3 leading-7 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
-    >
-      {date}
-    </button>
-  ) : (
-    date
-  )
-  // The core fills the question in (contract 0.2.2: "€1,080.42 at Home & Tech on 28 September 2026 —
-  // needed, or your choice?"). Its amount, found as the API's own `display` string, becomes the
-  // amount chip; `{{n1}}` / `{{date}}` tokens, if a question carries them, become chips too.
-  const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
-  const inline = tokens.has('n1') || amountAt >= 0
-  const amountChip = <NumberChip number={card.amount} size="lead" />
-  const sentence = tokens.has('n1')
-    ? fill(question, { n1: amountChip, date: dateChip })
-    : [
-        question.slice(0, amountAt),
-        <span key="amount">{amountChip}</span>,
-        ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
-      ]
-  // What the sentence does not say itself: category and date (a filled-in question has them), merchant.
-  const meta = [
-    inline ? null : card.category,
-    inline || tokens.has('date') ? null : date,
-    card.merchant?.label ?? null,
-  ].filter((part): part is string => Boolean(part))
 
   return (
     <section
@@ -100,49 +179,34 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       tabIndex={-1}
       aria-labelledby={titleId}
       aria-busy={busy !== null}
+      data-review-card={card.tx_ref}
+      data-opening-part="review"
       className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
-      <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-lg font-bold text-ink"
-        >
-          ?
-        </span>
-        <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
-          {t.reviewAsks}
-        </h2>
+      <AsksHeader titleId={titleId}>
         {/* Client only: closes the card; the purchase keeps waiting for an answer. */}
         <button
           type="button"
           onClick={onNotSure}
           disabled={busy !== null}
-          className="-mr-1 min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
+          className="min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
         >
           {t.reviewNotSure}
         </button>
-      </div>
+        <button
+          type="button"
+          onClick={() => setWhyOpen(true)}
+          aria-label={t.reviewWhy}
+          className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-pill text-on-deep-muted hover:text-on-deep"
+        >
+          <InfoGlyph />
+        </button>
+      </AsksHeader>
 
-      {inline ? (
-        // The amount (and a date token) sit in the sentence as chips. On the 48px line each 40px chip
-        // keeps a touch area of about 46px (measured), with no overlap between lines.
-        <>
-          <p className="mt-3 text-xl font-bold leading-12 text-on-deep">{sentence}</p>
-          {meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
-        </>
-      ) : (
-        // A question without the amount (DESIGN.md order): the amount, then date, category and merchant,
-        // then the question.
-        <>
-          <div className="mt-3">
-            <NumberChip number={card.amount} size="lg" />
-          </div>
-          {meta.length > 0 && <p className="mt-1 text-sm text-on-deep-muted">{meta.join(' · ')}</p>}
-          <p className="mt-3 text-lg font-semibold text-on-deep">{fill(question, { date: dateChip })}</p>
-        </>
-      )}
+      <QuestionText card={card} />
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      {/* Two columns while each is at least 9rem wide, else one; labels wrap inside the buttons. */}
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-2">
         {card.options.map((option) => {
           const look = BASKETS[option.basket]
           const chosen = busy === option.basket
@@ -152,14 +216,19 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
               type="button"
               onClick={() => onAnswer(option.basket)}
               disabled={busy !== null || waiting}
-              className={`flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-lg border-t-4 bg-surface px-2 pb-3 pt-2 text-center text-base font-bold text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
+              className={`flex min-h-12 min-w-0 items-center gap-1.5 rounded-lg border-l-4 bg-surface py-1.5 pl-1.5 pr-2 text-left text-base font-bold leading-5 text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
-              <span aria-hidden="true" className={`inline-flex size-9 items-center justify-center rounded-md text-lg ${look.tint}`}>
+              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px. With large text the label
+                  hyphenates in the UI language ("Vält-tä-mä-tön", #541); breaking without a hyphen is
+                  only the last resort, where no hyphenation point fits. */}
+              <span aria-hidden="true" className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md text-base ${look.tint}`}>
                 {look.icon}
               </span>
-              {option.label[lang]}
+              <span lang={lang} className="min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
             </button>
           )
         })}
@@ -181,6 +250,8 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
           )}
         </div>
       )}
+
+      {whyOpen && <WhySheet card={card} onClose={() => setWhyOpen(false)} />}
     </section>
   )
 })
@@ -188,28 +259,50 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
 interface AnsweredProps {
   card: ReviewCardData
   basket: BasketKey
+  /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
+  onUndo?: () => void
 }
 
-/** After the tap: one line with a check, the chosen answer and what it does (`options[].effect`). */
-export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered({ card, basket }, ref) {
-  const { lang } = useSettings()
+/**
+ * After the tap: the header, the question and the chosen answer (reference 2-after-needed). What
+ * the answer does is Sentti's reply under the card (#317), never a line on the card.
+ */
+export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
+  { card, basket, onUndo },
+  ref,
+) {
+  const { lang, t } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
   return (
-    <section ref={ref} tabIndex={-1} aria-labelledby={titleId} className={`${SURFACE} card-enter`}>
-      <div className="flex items-center gap-3">
-        <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
-          <Check className="size-5" />
+    <section
+      ref={ref}
+      tabIndex={-1}
+      aria-labelledby={titleId}
+      data-review-card={card.tx_ref}
+      data-opening-part="review"
+      className={`${SURFACE} card-enter`}
+    >
+      <AsksHeader titleId={titleId}>
+        {onUndo && (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="min-h-11 min-w-11 px-1 text-sm font-semibold text-mint underline underline-offset-4 hover:text-on-deep"
+          >
+            {t.undo}
+          </button>
+        )}
+      </AsksHeader>
+      <QuestionText card={card} compact />
+      <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
+        <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
+          <Check className="size-4" />
         </span>
-        <span aria-hidden="true" className="text-lg">
-          {look?.icon}
-        </span>
-        <h2 id={titleId} className="text-lg font-bold text-on-deep">
-          {option?.label[lang]}
-        </h2>
-      </div>
-      {option && <p className="mt-2 text-base text-on-deep-muted">{option.effect[lang]}</p>}
+        <span aria-hidden="true">{look?.icon}</span>
+        {option?.label[lang]}
+      </p>
     </section>
   )
 })

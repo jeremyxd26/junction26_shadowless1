@@ -23,15 +23,22 @@ request is reserved, bounded and counted:
 - 5xx ("model overwhelmed"): one attempt on the fallback model (flash <-> pro), if one is set. When
   the fallback answers, the primary model is skipped for PRIMARY_SKIP_S, so an outage of the
   primary costs one request per call, not two. When both fail, that call fails; nothing is paused.
-- 429 (a spending or rate limit): no further request for RATE_LIMIT_COOLDOWN_S. 401, 403 and 404
-  (a key or model id the API refuses): the same pause; a refused fallback model only turns itself off.
+- 429 (a spending or rate limit): no further request for RATE_LIMIT_COOLDOWN_S. 401 and 403 (the key
+  is refused): the same pause, for every role. 404 (a model id the key cannot use): that id is refused
+  for REFUSAL_S (then it gets one probe) and its roles use their fallback, within the same call; nothing
+  is paused, and the log says so (#383). A fallback that answers a request with a refusal turns itself
+  off, also while it serves a skip window; a pause that sent no request drops nothing.
+- A role paused after a failure streak, or a role with no usable model id, makes the model unavailable
+  for the answer (unavailable_reason: "role_paused", "model_refused"): the rules plan, the template
+  writes, and no request is tried.
 - A timeout, a network error or a 5xx fails that one call and never pauses the model for other users
   (#341): it is usually one slow or unlucky question, not a broken model. The answer it belongs to
-  sends no second request of the same kind. Only 429, 401, 403 and 404 (and the failure streak below)
+  sends no second request of the same kind. Only 429, 401 and 403 (and the failure streak below)
   pause the model for everyone.
 - Any other failure (400, an empty or cut response, a malformed call, a composer safety block): after
-  FAILURE_STREAK_LIMIT failures in a row, a short pause of FAILURE_STREAK_COOLDOWN_S (a blocked
-  response is usually about one user's question, so it must not stop the model for long).
+  FAILURE_STREAK_LIMIT failures in a row in one role, a short pause of FAILURE_STREAK_COOLDOWN_S for that
+  role only (a blocked response is usually about one user's question, so it must not stop the model for
+  long, and never the other role).
 - The planner and the composer may run on different models with their own thinking level and
   timeout (GEMINI_PLANNER_* and GEMINI_COMPOSER_* in gemini.py), for example a fast composer. Each
   role has its own fallback; a fallback model gets the role's thinking level when it supports it,
@@ -101,6 +108,10 @@ FAILURE_STREAK_LIMIT = 3                # other failures in a row before a pause
 FAILURE_STREAK_COOLDOWN_S = 30.0        # short: the same harm to other users as a timeout (#341)
 TRANSIENT_CODES = {"timeout", "network"}   # slow or unreachable: fails one call, pauses no one (#341)
 NO_RETRY_CODES = TRANSIENT_CODES | {"server"}   # after these, no second request of the kind in the answer
+# The HTTP client's transport errors that the SDK lets through (#383): the connection broke, nothing to pause.
+NETWORK_ERROR_NAMES = {"ReadError", "WriteError", "RemoteProtocolError", "LocalProtocolError", "ProtocolError",
+                       "CloseError"}
+REFUSAL_S = 600.0                       # a refused model id gets one probe after this long (#383)
 MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner and composer together
 ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
 MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
@@ -318,7 +329,7 @@ def _error_code(exc: BaseException) -> tuple[str, int | None]:
     name = type(exc).__name__
     if "Timeout" in name or isinstance(exc, TimeoutError):
         return "timeout", None
-    if "Connect" in name or "Network" in name or isinstance(exc, ConnectionError):
+    if "Connect" in name or "Network" in name or name in NETWORK_ERROR_NAMES or isinstance(exc, ConnectionError):
         return "network", None
     return "error", None
 
@@ -400,7 +411,8 @@ class GeminiClient:
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  extract_model: str | None = None, extract_thinking: str = "low", extract_max_tokens: int = 4096,
-                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+                 refusal_s: float = REFUSAL_S) -> None:
         if cache not in ("on", "off", "replay"):
             raise ValueError("cache must be on, off or replay")
         if cache != "off" and cache_dir is None:
@@ -441,7 +453,10 @@ class GeminiClient:
         self._paused_until = 0.0         # set by a 429, a refused key or model, an outage or a failure streak
         self._pause_code = "rate_limited"
         self._skip_primary_until: dict[str, float] = {}   # per primary model: its fallback answered an outage
-        self._failures = 0               # failures in a row
+        self._failures: dict[str, int] = {}           # per call kind: failures in a row
+        self._role_paused_until: dict[str, float] = {}  # per call kind: a short pause after a failure streak
+        self._refused: dict[str, float] = {}   # model id -> until when a 404 refuses it (then one probe)
+        self.refusal_s = refusal_s
         self._answer = threading.local() # per answer (one answer runs in one thread): requests, deadline
 
     # ---- answers ---------------------------------------------------------------------------------
@@ -462,18 +477,25 @@ class GeminiClient:
             return None, None
         return MAX_REQUESTS_PER_ANSWER - self._answer.requests, self._answer.deadline - self.clock()
 
-    def unavailable_reason(self) -> str | None:
-        """Why no request may be sent now, or None: "off" (the switch file), "budget" (the daily budget is
-        0 or used up in the rolling 24 hours), "pause" (after a 429, a refused key or model, an outage or
-        failures in a row). The pipeline asks this once per answer before planning (#244)."""
+    def unavailable_reason(self, kind: str | None = None) -> str | None:
+        """Why no request may be sent now, or None. For every role: "off" (the switch file), "budget" (the
+        daily budget is 0 or used up in the rolling 24 hours), "pause" (after a 429 or a refused key). With a
+        call kind, also that role's own state: "role_paused" (after its failure streak) and "model_refused"
+        (no usable model id left for it); one role's problem never switches off the other (#383). The
+        pipeline asks this once per answer and role before planning (#244)."""
         if self.ledger is not None:
             if self.ledger.disabled():
                 return "off"
             if self.ledger.daily_cap is not None and self.ledger.count() >= self.ledger.daily_cap:
                 return "budget"
         with self._lock:
-            if self.clock() < self._paused_until:
+            now = self.clock()
+            if now < self._paused_until:
                 return "pause"
+            if kind is not None and now < self._role_paused_until.get(kind, 0.0):
+                return "role_paused"      # this role paused after its failure streak: no futile attempts
+        if kind is not None and self._is_refused(self.models_for(kind)[0]):
+            return "model_refused"        # no usable model id left for this role
         return None
 
     # ---- the two calls ---------------------------------------------------------------------------
@@ -542,7 +564,7 @@ class GeminiClient:
         }
         reply = self._call("compose", contents, config, self.compose_timeout_s)
         if reply.blocked and not reply.cached:
-            self._failed("blocked")      # a blocked composer leads to a retry: it counts as a failure
+            self._failed("blocked", "compose")   # a blocked composer leads to a retry: it counts as a failure
         return reply
 
     # ---- cache -----------------------------------------------------------------------------------
@@ -606,33 +628,58 @@ class GeminiClient:
         ops_log.error("gemini %s: model calls paused for %d s; answers use the rule planner and the template",
                       code, seconds)
 
-    def _failed(self, code: str) -> None:
+    def _failed(self, code: str, kind: str) -> None:
+        """A malformed, empty or blocked response: after a streak in one role, that role pauses briefly; the
+        other role is not touched (#383)."""
         with self._lock:
-            self._failures += 1
-            streak = self._failures
+            self._failures[kind] = self._failures.get(kind, 0) + 1
+            streak = self._failures[kind]
         if streak >= FAILURE_STREAK_LIMIT:
-            self._pause(FAILURE_STREAK_COOLDOWN_S, f"{code} ({streak} failures in a row)")
             with self._lock:
-                self._failures = 0
+                self._role_paused_until[kind] = self.clock() + FAILURE_STREAK_COOLDOWN_S
+                self._failures[kind] = 0
+            ops_log.error("gemini %s (%d failures in a row): %s calls paused for %d s", code, streak, kind,
+                          FAILURE_STREAK_COOLDOWN_S)
+
+    def _is_refused(self, model: str | None) -> bool:
+        until = self._refused.get(model) if model else None
+        return until is not None and self.clock() < until
+
+    def _refuse_model(self, model: str, kind: str) -> None:
+        """A model id the API refuses (404): for refusal_s its roles use their fallback, and nothing is
+        paused; then the id gets one probe, and a second 404 refuses it again (#383)."""
+        primary, fallback = self.models_for(kind)       # before the id is marked: what the role turns to
+        replacement = fallback if model == primary else (primary if model != primary else None)
+        if self._is_refused(replacement):
+            replacement = None
+        with self._lock:
+            self._refused[model] = self.clock() + self.refusal_s
+        ops_log.error("gemini model id %s refused (404); the %s uses %s for the next %d s", model, kind,
+                      replacement or "the rules and the template", self.refusal_s)
 
     def _give_up(self, kind: str, code: str) -> None:
         """After a timeout, a network error or a 5xx, this answer sends no second request of the kind."""
         if kind != "extract" and code in NO_RETRY_CODES and getattr(self._answer, "key", None) is not None:
             self._answer.given_up[kind] = code
 
-    def _succeeded(self) -> None:
+    def _succeeded(self, kind: str) -> None:
         with self._lock:
-            self._failures = 0
+            self._failures[kind] = 0
 
     # ---- one call --------------------------------------------------------------------------------
 
     def models_for(self, kind: str) -> tuple[str, str | None]:
-        """(model, fallback model) of a call kind: the composer's own pair, else the planner's."""
-        if kind == "compose":
-            return self.compose_model, self.compose_fallback_model
+        """(model, fallback model) of a call kind: the composer's own pair, else the planner's. A model the API
+        refused (404) gives way to the fallback (#383). A bill reading has its own model and no fallback (#250)."""
         if kind == "extract":
-            return self.extract_model, None     # a bill reading: its own model, no fallback (#250)
-        return self.model, self.fallback_model
+            return self.extract_model, None
+        primary, fallback = (self.compose_model, self.compose_fallback_model) if kind == "compose" \
+            else (self.model, self.fallback_model)
+        if self._is_refused(fallback):
+            fallback = None
+        if self._is_refused(primary) and fallback is not None:
+            return fallback, None
+        return primary, fallback
 
     def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float,
               allow_fallback: bool = True, accept: Callable[[Reply], bool] | None = None) -> Reply:
@@ -664,9 +711,16 @@ class GeminiClient:
             return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary,
                                  accept=accept)
         except GeminiError as exc:
-            if exc.code != "server" or skip_primary or fallback is None:
+            if skip_primary and getattr(exc, "sent", False) and exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
+                # The fallback serving the skip window is refused: drop it, so the next call goes back to the
+                # primary instead of calling a refused model for the rest of the window (#383).
+                self._drop_fallback(model)
+                with self._lock:
+                    self._skip_primary_until.pop(primary, None)
+            if exc.code not in ("server", "http_404") or skip_primary or fallback is None:
                 self._give_up(kind, exc.code)   # a 5xx with no fallback left fails this call only (#341)
                 raise
+            first_code = exc.code
         # The primary model is overwhelmed: one attempt on the fallback model, within the same deadline.
         config = _for_model(fallback, config)
         try:
@@ -679,10 +733,11 @@ class GeminiClient:
                 ops_log.error("gemini fallback model refused (%s); fallback turned off", exc.code)
                 self._drop_fallback(fallback)
             self._give_up(kind, "server")
-            raise GeminiError("server") from None   # both failed: this call fails, nothing is paused (#341)
-        with self._lock:
-            self._skip_primary_until[primary] = self.clock() + PRIMARY_SKIP_S
-        ops_log.warning("gemini %s overloaded; calling %s directly for %d s", primary, fallback, PRIMARY_SKIP_S)
+            raise GeminiError(first_code) from None   # both failed: this call fails, nothing is paused (#341)
+        if first_code == "server":
+            with self._lock:
+                self._skip_primary_until[primary] = self.clock() + PRIMARY_SKIP_S
+            ops_log.warning("gemini %s overloaded; calling %s directly for %d s", primary, fallback, PRIMARY_SKIP_S)
         return reply
 
     def _drop_fallback(self, model: str) -> None:
@@ -698,9 +753,17 @@ class GeminiClient:
         assert self.transport is not None
         with self._lock:
             paused, pause_code = self.clock() < self._paused_until, self._pause_code
+            role_paused = self.clock() < self._role_paused_until.get(kind, 0.0)
+            refused = kind != "extract" and self._is_refused(model)   # a reading: its own state
         if paused:
             self._record(kind, model, 0, CallUsage(), error=f"{pause_code} (paused)")
             raise GeminiError(pause_code.split(" ")[0])
+        if role_paused:
+            self._record(kind, model, 0, CallUsage(), error="failures (role paused)")
+            raise GeminiError("paused")
+        if refused:
+            self._record(kind, model, 0, CallUsage(), error="http_404 (refused id)")
+            raise GeminiError("http_404")
         if kind == "extract":
             with self._lock:
                 extract_paused, extract_code = self.clock() < self._extract_paused_until, self._extract_pause_code
@@ -739,14 +802,18 @@ class GeminiClient:
                 self._extract_failed(code, status)
                 raise GeminiError(code) from None
             if status == 429:
-                self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
+                self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")   # the account's limit: every role
+            elif status == 404:
+                self._refuse_model(model, kind)    # this model id only: its roles use the fallback (#383)
             elif status in CONFIG_ERROR_CODES and not fallback:
-                self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+                self._pause(CONFIG_ERROR_COOLDOWN_S, code)   # 401, 403: the key itself is refused
             elif code in TRANSIENT_CODES:
                 pass   # a timeout or network error fails this call only (#341)
             elif status not in SERVER_ERROR_CODES:
-                self._failed(code)
-            raise GeminiError(code) from None
+                self._failed(code, kind)
+            error = GeminiError(code)
+            error.sent = True   # this request reached the API (a pause or a refused id sends nothing)
+            raise error from None
         latency_ms = int((self.clock() - t) * 1000)
         try:
             reply = parse(model, raw, latency_ms)
@@ -757,7 +824,7 @@ class GeminiClient:
             if kind == "extract":
                 self._extract_failed(exc.code, None)
             else:
-                self._failed(exc.code)
+                self._failed(exc.code, kind)
             raise
         usable = accept is None or accept(reply)
         if usable:
@@ -770,7 +837,7 @@ class GeminiClient:
             else:
                 self._extract_failed("unusable", None)
         elif not reply.blocked:
-            self._succeeded()
+            self._succeeded(kind)
         return reply
 
     def _cached_reply(self, model: str, entry: dict[str, Any], accept: Callable[[Reply], bool] | None) -> Reply | None:

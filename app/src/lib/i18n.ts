@@ -12,7 +12,6 @@ const en = {
   personaTitle: 'Demo persona',
   personaHint: 'Demo personas are synthetic customers. Long press the header to come back here.',
   language: 'Language',
-  askTitle: 'Ask Sentti',
   insightsTitle: 'Worth a look',
   billsNext: (date: string) => `Next ${date}`,
   billsRounding: 'Each bill is rounded on its own, so together they can differ from the total by up to €0.01 per bill.',
@@ -37,6 +36,24 @@ const en = {
   retryIn: (seconds: number) => `Try again in ${seconds} s`,
   was: (display: string) => `was ${display}`,
   staysSame: 'stays the same',
+  // The opening turn (#310 decision: one thought per screen). Captions stay under 8 words.
+  // By `hero.status`, no numbers in the words (#408 review).
+  heroCaption: {
+    ok: 'safe to spend this week',
+    below_usual: 'less room than usual this week',
+    nothing_free: 'nothing free to spend this week',
+  } as Record<string, string>,
+  movedTo: 'Moved to',
+  heroHowMade: 'Show how it is made',
+  aboutSentti: 'About Sentti',
+  /** The accessible name of the header title ("Sentti" with its AI tag). */
+  titleLabel: 'Sentti, AI',
+  reviewWhy: 'Why Sentti asks',
+  questionsLabel: 'Questions to ask',
+  /** The overview sheet's title and the header button's name (#321, #322). */
+  overview: 'Overview',
+  /** The grey line under the overview row's title (#321). */
+  overviewHint: 'Baskets, bills and safe to save',
   mockBadge: 'Mock data',
   heroPendingTitle: 'Safe to spend this week',
   heroPending: 'Safe to spend is still being calculated. Check back soon.',
@@ -68,7 +85,6 @@ const fi: Strings = {
   personaTitle: 'Demohenkilö',
   personaHint: 'Demohenkilöt ovat synteettisiä asiakkaita. Pitkä painallus otsikkoon tuo sinut takaisin tänne.',
   language: 'Kieli',
-  askTitle: 'Kysy Senttiltä',
   insightsTitle: 'Huomioita',
   billsNext: (date: string) => `Seuraava ${date}`,
   billsRounding: 'Jokainen lasku pyöristetään erikseen, joten yhteensä ne voivat poiketa kokonaissummasta enintään 0,01 € laskua kohden.',
@@ -78,8 +94,8 @@ const fi: Strings = {
     nothing_free: 'Tällä viikolla ei vapaata rahaa',
   },
   keptAside: 'varattuna',
-  chipHint: 'Näytä, miten luku laskettiin',
-  howCalculated: 'Näin luku laskettiin',
+  chipHint: 'Näytä, miten luku lasketaan',
+  howCalculated: 'Näin luku lasketaan',
   madeOf: 'Mistä luku koostuu',
   transactions: 'Tapahtumat',
   reconciles: 'Nämä tapahtumat täsmäävät yllä olevaan lukuun.',
@@ -92,6 +108,19 @@ const fi: Strings = {
   retryIn: (seconds: number) => `Yritä uudelleen ${seconds} s kuluttua`,
   was: (display: string) => `aiemmin ${display}`,
   staysSame: 'pysyy ennallaan',
+  heroCaption: {
+    ok: 'turvallisesti käytettävissä tällä viikolla',
+    below_usual: 'tällä viikolla tavallista vähemmän',
+    nothing_free: 'tällä viikolla ei vapaata käytettävää',
+  },
+  movedTo: 'Siirretty:',
+  heroHowMade: 'Näytä, miten se lasketaan',
+  aboutSentti: 'Tietoa Senttistä',
+  titleLabel: 'Sentti, tekoäly',
+  reviewWhy: 'Miksi Sentti kysyy',
+  questionsLabel: 'Kysymyksiä',
+  overview: 'Yleiskatsaus',
+  overviewHint: 'Korit, laskut ja säästövara',
   mockBadge: 'Testidata',
   heroPendingTitle: 'Käyttövara tällä viikolla',
   heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',
@@ -117,13 +146,6 @@ export function strings(lang: Language): Strings {
 
 export function parseLanguage(value: string | null): Language {
   return value === 'fi' ? 'fi' : 'en'
-}
-
-/** Raw evidence rows carry a signed decimal string; this only formats it for reading. */
-export function formatRowAmount(amount: string, currency: string, lang: Language): string {
-  const value = Number(amount)
-  if (!Number.isFinite(value)) return `${amount} ${currency}`
-  return new Intl.NumberFormat(lang === 'fi' ? 'fi-FI' : 'en-IE', { style: 'currency', currency }).format(value)
 }
 
 export function formatDate(date: string, lang: Language): string {

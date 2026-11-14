@@ -27,7 +27,9 @@ from typing import Any, Literal
 
 from core.bills import parse as bill_parse
 from core.tools import config, evidence, metric_sql, periods
+from core.tools import forecast as forecast_tool
 from core.tools.bills import BillItem, get_recurring_bills
+from core.tools.bills import _bill_id as bill_id_of
 from core.tools.context import ToolContext
 from core.tools.formatting import display, money
 from core.tools.models import Number, Period, Unit
@@ -42,6 +44,11 @@ COUNTED = "bill.counted_eur@1"
 FREE_AFTER = "bill.free_until_payday_after_eur@1"
 AFTER = "bill.safe_to_spend_after_eur@1"
 BALANCE_LIMIT = "safe_to_spend.balance_limit_7d_eur@1"
+# The forecast on the due date (#421): what the bill takes from the forecast balance, the balance after it and,
+# below zero, the shortfall. The balance before is the forecast's own Number for that day.
+FORECAST_COUNTED = "bill.forecast_counted_eur@1"
+FORECAST_AFTER = "bill.forecast_after_eur@1"
+FORECAST_SHORTFALL = "bill.forecast_shortfall_eur@1"
 EXTRA_SETTING = "extra_bill_due_eur"   # 03_safe_to_spend.sql; typed and bounded in metric_sql.TYPED_SETTINGS
 # Safe to spend cannot be computed for these known reasons: then `safe_to_spend` is null (as the hero).
 HERO_KNOWN_FAILURES = (BillsDueMismatch, NoTransactions)
@@ -203,6 +210,16 @@ def bill_effect(due: date, next_payday: date, amount: Decimal, reserved: Decimal
     return "full", money(amount)
 
 
+def fits_regular(item: BillItem, amount: Decimal) -> bool:
+    """A matched bill is the customer's regular bill only when its rhythm and amount fit that bill (#400): the
+    series is paid once a month (not `spread` over several payments a month, which mixes payees and billing
+    periods, like utilities), and the amount is at least config.BILL_FIT_MIN_RATIO of its typical month.
+    Otherwise it is a bill from the same payee category: never "your regular bill", and no percentage
+    against a monthly total."""
+    typical = Decimal(str(item.typical_month.value))
+    return item.status != "spread" and typical > 0 and amount >= typical * config.BILL_FIT_MIN_RATIO
+
+
 def signal_codes(bill: BillInput, match_status: str, typical: Decimal | None, largest: Decimal | None,
                  as_of: date) -> list[str]:
     """The warning signs of decision 10 (#242), in a fixed order; never a verdict."""
@@ -221,6 +238,34 @@ def signal_codes(bill: BillInput, match_status: str, typical: Decimal | None, la
     if 0 <= (bill.due_date - as_of).days < config.BILL_SHORT_TERM_DAYS:
         codes.append("short_term")
     return codes
+
+
+def forecast_window(due: date, today: date, payday: date) -> str | None:
+    """None when the due date is inside the balance forecast (today up to the day before payday, the days the
+    forecast shows), else why not: `past` or `beyond` (on or after payday). The due date as printed: no shift
+    to a banking day, as the forecast's days, the bills due and safe to spend's effect use calendar dates."""
+    if due < today:
+        return "past"
+    if due >= payday:
+        return "beyond"
+    return None
+
+
+def forecast_status(after: Decimal) -> str:
+    """The forecast balance on the due date after the bill: below zero `not_covered`, below the margin (a
+    server constant, config.BILL_FORECAST_MARGIN_EUR) `tight`, else `covered` (#421)."""
+    if after < 0:
+        return "not_covered"
+    if after < config.BILL_FORECAST_MARGIN_EUR:
+        return "tight"
+    return "covered"
+
+
+def contact_bank_wanted(codes: list[str]) -> bool:
+    """The way to the bank (#420, decided in the review of #435): a failed IBAN or reference check, or an
+    unknown payee together with another sign. An unknown payee, a short term or a high amount alone do not
+    bring it."""
+    return bool({"iban_check_failed", "reference_check_failed"} & set(codes)) or ("new_payee" in codes and len(codes) > 1)
 
 
 def draft_allowed(bill: BillInput) -> bool:
@@ -256,15 +301,18 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
 
     items = get_recurring_bills(ctx, {"include_income": False}).data.bills
     status, item = match_bill(bill.payee, items)
-    if status == "matched":
+    is_regular = item is not None and fits_regular(item, bill.amount)
+    if is_regular:
         match_text = _t("match_matched", lang, label=item.label)
+    elif item is not None:   # the same payee category, not the regular bill (#400)
+        match_text = _t("match_category", lang, label=item.label)
     else:
         match_text = _t(f"match_{status}", lang)
     match = {"status": status, "bill_id": item.bill_id if item else None, "label": item.label if item else None,
              "text": match_text}
 
     comparison = None
-    if item is not None:
+    if is_regular:
         typical, typical_v = item.typical_month, _value(item.typical_month)
         parts = {"current": (amount_n, bill.amount), "baseline": (typical, typical_v)}
         # Each composite of the bill records its period: its first part can be the inline bill amount, which
@@ -279,6 +327,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         comparison = {"baseline": _dump(typical), "change": _dump(reg(change)), "change_pct": _dump(change_pct),
                       "tone": "worse" if change_v > 0 else "better" if change_v < 0 else "neutral",
                       "label": _t("comparison", lang, label=item.label)}
+    if item is not None:
         basket = {"key": "regular_essentials", "label": config.label(config.BASKET_LABELS["regular_essentials"], lang),
                   "text": _t("basket_regular", lang, label=item.label)}
     else:
@@ -291,13 +340,14 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
     except HERO_KNOWN_FAILURES as exc:
         log.warning("safe to spend unavailable for a bill (%s)", type(exc).__name__)
         hero = None
-    safe_to_spend = _safe_to_spend(ctx, nb, bill, item, amount_n, hero) if hero is not None else None
+    safe_to_spend = _safe_to_spend(ctx, nb, bill, item, amount_n, hero, is_regular) if hero is not None else None
+    forecast = _forecast(ctx, nb, bill, item, amount_n)
 
     regular = regular_bills(items)
     largest = max(regular, key=lambda i: _value(i.typical_month)).typical_month if regular else None
     codes = signal_codes(bill, status, _value(item.typical_month) if item else None,
                          _value(largest) if largest else None, ctx.as_of)
-    signals = [_signal(code, lang, amount_n, item, largest) for code in codes]
+    signals = [_signal(code, lang, amount_n, item, largest, is_regular) for code in codes]
 
     # a small note that never repeats a signal: a failed check is a signal, a past due date a warning
     warnings = [_t("warn_past", lang)] if due < ctx.as_of else []
@@ -307,6 +357,8 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         actions.append({"type": "add_to_payments", "label": _t("action", lang),
                         "draft": {"payee": bill.payee, "iban": bill.iban, "reference": bill.reference,
                                   "amount": _dump(amount_n), "due_date": due.isoformat()}})
+    if contact_bank_wanted(codes):   # #420: the way to a human at the bank
+        actions.append(config.contact_bank_action(lang))
 
     evidence.write(ctx.conn, nb.specs)
     return {
@@ -318,6 +370,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         "comparison": comparison,
         "basket": basket,
         "safe_to_spend": safe_to_spend,
+        "forecast": forecast,
         "glossary": [{"term": term, "label": config.label(config.BILL_GLOSSARY[term][0], lang),
                       "text": config.label(config.BILL_GLOSSARY[term][1], lang)} for term in GLOSSARY_TERMS],
         "actions": actions,
@@ -326,10 +379,13 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
     }
 
 
-def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, largest: Number | None) -> dict[str, Any]:
+def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, largest: Number | None,
+            regular: bool) -> dict[str, Any]:
     if code == "amount_above_usual" and item is not None:
-        return {"code": code, "text": _t("sig_above_usual", lang, amount=amount_n.display,
-                                         typical=item.typical_month.display),
+        # the basis is named: the regular bill's usual amount, or all payments of the category a month (#400)
+        key = "sig_above_usual" if regular else "sig_above_category"
+        return {"code": code, "text": _t(key, lang, amount=amount_n.display, typical=item.typical_month.display,
+                                         label=item.label),
                 "numbers": [_dump(amount_n), _dump(item.typical_month)]}
     if code == "amount_above_usual":
         return {"code": code, "text": _t("sig_above_largest", lang, amount=amount_n.display, largest=largest.display),
@@ -338,9 +394,10 @@ def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, large
 
 
 def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: BillItem | None, amount_n: Number,
-                   hero: Any) -> dict[str, Any]:
+                   hero: Any, regular: bool) -> dict[str, Any]:
     """The bill applied to the balance side like a bill due before payday, and the hero's own computation
-    (03) run again with it: free until payday and safe to spend, each before and after."""
+    (03) run again with it: free until payday and safe to spend, each before and after. `regular`: the bill
+    fits the matched regular bill (#400), so the texts say "your Housing bill", else "your Utilities payments"."""
     lang = ctx.language
     reg = ctx.numbers.register
     before, free_before, budget = hero.safe_to_spend, hero.free_until_payday, hero.budget_limit
@@ -391,10 +448,11 @@ def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: B
     out.update(counted=_dump(counted), free_until_payday_after=_dump(free_after), after=_dump(after))
 
     label = item.label if item is not None else ""
+    suffix = "" if regular else "_category"
     if effect == "excess_only" and counted_v == 0:
-        texts = [_t("effect_covered", lang, payday=payday, reserved=reserved.display, label=label)]
+        texts = [_t("effect_covered" + suffix, lang, payday=payday, reserved=reserved.display, label=label)]
     elif effect == "excess_only":
-        texts = [_t("effect_excess", lang, payday=payday, reserved=reserved.display, label=label,
+        texts = [_t("effect_excess" + suffix, lang, payday=payday, reserved=reserved.display, label=label,
                     counted=counted.display, free_before=free_before.display, free_after=free_after.display)]
     else:
         texts = [_t("effect_full", lang, payday=payday, free_before=free_before.display,
@@ -408,4 +466,80 @@ def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: B
     elif counted_v > 0 and budget_v <= balance_v:
         texts.append(_t("sts_budget", lang, before=before.display))
     out["text"] = " ".join(texts)
+    return out
+
+
+def forecast_series_key(ctx: ToolContext, item: BillItem | None, dues: list) -> str | None:
+    """The forecast's bill series that the matched bill belongs to (the bills card's id names it), or None."""
+    if item is None:
+        return None
+    return next((d.series.key for d in dues if bill_id_of(ctx, d.series) == item.bill_id), None)
+
+
+def _forecast(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: BillItem | None,
+              amount_n: Number) -> dict[str, Any] | None:
+    """The forecast balance on the bill's due date, before and after the bill (#421, metrics.md 3.4). None when
+    the forecast cannot be computed for a known reason (no transactions or balance, as safe to spend).
+
+    The forecast already subtracts the hero's bills on their expected days. When the bill belongs to one of
+    those series (any match, as `reserved` of safe to spend), what the forecast has subtracted for that series
+    by the due date is already in the balance before: only the excess over it is taken, so it is never
+    subtracted twice. That is the series' part of the forecast's bills by that day, not its whole amount until
+    payday: a monthly bill expected after the due date is not in the balance on the due date yet."""
+    lang = ctx.language
+    reg = ctx.numbers.register
+    try:
+        p = forecast_tool.projection(ctx)
+    except (forecast_tool.NoForecast, *HERO_KNOWN_FAILURES):
+        return None
+    except RuntimeError as exc:   # a consistency check of the forecast failed: no block, the explanation stands
+        log.warning("balance forecast unavailable for a bill (%s)", exc)
+        return None
+    due = bill.due_date
+    out: dict[str, Any] = {"status": "outside_forecast", "before": None, "already_counted": None, "counted": None,
+                           "after": None, "shortfall": None, "chip": None}
+    outside = forecast_window(due, p.today, p.pay.date)
+    if outside == "past":
+        out["text"] = _t("forecast_past", lang, due=_day(due, lang))
+        return out
+    if outside == "beyond":
+        out["text"] = _t("forecast_beyond", lang, due=_day(due, lang), payday=_day(p.pay.date, lang))
+        return out
+
+    # The forecast's own Number for the due date: today's row is the balance now, any later day its projection.
+    try:
+        before = p.balance if due == p.today else p.balance_on(p.by_date[due], _t("forecast_before", lang))
+    except RuntimeError as exc:   # the day's evidence differs from the projection: no block (review of #461)
+        log.warning("balance forecast unavailable for a bill (%s)", exc)
+        return None
+    before_v = _value(before)
+    due_period = Period(start=due, end=due, label=_day(due, lang))
+    on_due = {"period": evidence.period_param(due_period)}
+    key = forecast_series_key(ctx, item, p.dues)
+    already = p.bills_by(due, _t("forecast_already", lang), (key,)) if key is not None and due > p.today else None
+    if already is not None and already[1] > 0:
+        counted, counted_v = nb.composite(FORECAST_COUNTED, "excess", {"amount": (amount_n, bill.amount),
+                                                                        "reserved": already},
+                                          Unit.EUR, due_period, _t("forecast_counted", lang), params=on_due)
+        out["already_counted"] = _dump(reg(already[0]))
+        counted = reg(counted)
+    else:
+        counted, counted_v = amount_n, bill.amount    # nothing of it is in the forecast yet: the whole bill
+    after, after_v = nb.composite(FORECAST_AFTER, "difference", {"current": (before, before_v),
+                                                                  "baseline": (counted, counted_v)},
+                                  Unit.EUR, due_period, _t("forecast_after", lang), params=on_due)
+    status = forecast_status(after_v)
+    out.update(status=status, before=_dump(reg(before)), counted=_dump(counted), after=_dump(reg(after)))
+    when = _day(due, lang)
+    if status == "not_covered":
+        shortfall, _ = nb.composite(FORECAST_SHORTFALL, "difference", {"current": (counted, counted_v),
+                                                                        "baseline": (before, before_v)},
+                                    Unit.EUR, due_period, _t("forecast_shortfall", lang), params=on_due)
+        shortfall = reg(shortfall)
+        out.update(shortfall=_dump(shortfall),
+                   chip={"type": "ask", "label": _t("forecast_chip", lang), "prompt": _t("forecast_prompt", lang)},
+                   text=_t("forecast_not_covered", lang, due=when, shortfall=shortfall.display))
+    else:
+        out["text"] = _t(f"forecast_{status}", lang, due=when, after=after.display)
+    evidence.write(ctx.conn, p.nb.specs)   # the forecast's numbers, as the forecast tool writes them
     return out

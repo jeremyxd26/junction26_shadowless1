@@ -76,6 +76,10 @@ FORMULAS = {
     "scale": ("base",),                        # base * factor_num / factor_den, cents (params rounding: down)
     "sum": None,                               # sum of all parts, cents
     "minimum": ("a", "b"),                     # the smaller of two amounts, cents (safe to spend, #55)
+    "mean": ("total", "count"),                # total / count, cents (the average small purchase, #256)
+    # Safe to spend after the savings goal (#391): the smaller of the two limits; the goal is a part so its
+    # evidence shows it, and it is already inside the budget limit (03: (free month - goal) x 7 / 30.4375).
+    "minimum_after_goal": ("a", "b", "goal"),
     # S-Bonus estimate (#158). The rule's values and its source travel in params, so a ref names the
     # exact table row or rate it was computed with (core/config/s_group_benefits.yaml).
     # bonus_level, percent_of and rate_of work on the unrounded scaled base, base * share_num / share_den
@@ -119,8 +123,10 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
         return money(scaled)
     if formula == "sum":
         return money(sum(values.values(), Decimal("0")))
-    if formula == "minimum":
+    if formula in ("minimum", "minimum_after_goal"):
         return money(min(values["a"], values["b"]))
+    if formula == "mean":
+        return money(values["total"] / values["count"])
     if formula == "rule_value":
         return Decimal(str((params or {})["value"]))
     if formula == "bonus_level":
@@ -302,6 +308,7 @@ class Resolution:
     parts: list[dict[str, Any]] = field(default_factory=list)  # role, ref, method, value, spec
     next_cursor: str | None = None
     spec: dict[str, Any] | None = None  # the stored spec, for callers that rebuild the Number
+    merchant_label: str | None = None   # the selection's merchant by its alias, for the title (#501)
 
 
 def _row(c, alias_map: aliases.AliasMap, language: str) -> dict[str, Any]:
@@ -431,6 +438,12 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
     page = rows[offset:offset + limit]
     alias_map = aliases.build(history, as_of)
     next_cursor = f"cur_{offset + limit}" if offset + limit < len(rows) else None
+    merchant_label = None
+    if sel.merchant_id is not None:
+        try:
+            merchant_label = alias_map.for_merchant(sel.merchant_id).label(language)
+        except KeyError:
+            merchant_label = None
     return Resolution(
         ref, "transactions", spec["method"], value,
         rows=[_row(c, alias_map, language) for c in page],
@@ -438,4 +451,5 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         reconciles=reconciles,
         next_cursor=next_cursor,
         spec=spec,
+        merchant_label=merchant_label,
     )

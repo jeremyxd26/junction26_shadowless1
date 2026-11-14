@@ -18,18 +18,20 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
-from core.tools import baskets, config, evidence, labels, metric_sql, periods
+from core.tools import baskets, config, evidence, labels, metric_sql, national, periods
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, PeerMetric, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, PeerMetric, PeriodArg, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
+from core.tools.what_if import cuttable_purchases
 
 TOOL = "get_peer_benchmark"
 METRIC = "peer_benchmark"
@@ -37,7 +39,7 @@ log = logging.getLogger(__name__)
 
 # Metrics a what-if never cuts (regular essentials, metrics.md section 4): the card offers no
 # "spend less" follow-up for them.
-NO_CUT_ACTION = frozenset({"regular_essentials", "Housing", "Utilities", "Groceries"})
+NO_CUT_ACTION = config.PEER_NO_CUT_ACTION
 
 
 class PeerPeriod(str, Enum):
@@ -65,6 +67,17 @@ class PeerGroup(BaseModel):
     comparable: bool
 
 
+class NationalContext(BaseModel):
+    """#569: Statistics Finland's household budget survey for the customer's age group and the metric's category,
+    beside the comparison: a cited table value, never an input of any other number and never a cut offer."""
+    amount: Number          # EUR a month per consumption unit, national_context.monthly_eur@1
+    age_group: str          # the table's own band, "17-24"
+    survey_year: int
+    source: str             # "Statistics Finland" / "Tilastokeskus", in the request language
+    what: str               # what the survey's category holds, in the words of the line
+    what_short: str         # the same, short, when the long form would break the length rule
+
+
 class PeerBenchmarkData(BaseModel):
     metric: str
     metric_label: str
@@ -79,6 +92,7 @@ class PeerBenchmarkData(BaseModel):
     vs_median: Number | None     # None also when the group median is 0
     peer_group: PeerGroup
     peer_source: Literal["marts", "range"]
+    national: NationalContext | None = None   # #569: only for a kept category, a shown card and a table age group
 
 
 # ---- pure logic --------------------------------------------------------------------------------------
@@ -149,7 +163,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     what = metric_label(metric, lang)
 
     history = ctx.history()
-    nb = NumberBuilder(ctx, classify(history, ctx.as_of, labels.for_context(ctx)))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
+    nb = NumberBuilder(ctx, rows)
     reg = ctx.numbers.register
 
     # ---- you: the customer's own rows ----
@@ -190,10 +205,58 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
                              comparable=bool(row["comparable"])),
         peer_source=row["peer_source"],
     )
+    # #569: registered after every Number of the comparison, so their ids and refs do not change
+    data.national = _national(nb, reg, metric, level, row["peer_group"], lang) if shown else None
     evidence.write(ctx.conn, nb.specs)
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
-    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang) if shown else None, notes=notes,
-                      evidence=list(nb.specs), model_view=_model_view(data, estimate, notes))
+    # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
+    offered = shown and config.peer_offers_cut(metric, data.vs_median.value if data.vs_median is not None else None) \
+        and what_if_offered(ctx, metric, rows)
+    return ToolResult(tool=TOOL, data=data, card=_card(data, estimate, lang, offered) if shown else None,
+                      notes=notes, evidence=list(nb.specs), model_view=_model_view(data, estimate, notes, offered))
+
+
+def age_band_of(level: str, peer_group: str) -> str | None:
+    """The customer's age band of 06 ("35-44"), the first word of the peer group at every level with an age; None
+    for the level "all"."""
+    return peer_group.split(" ", 1)[0] if level.startswith("age_band") and peer_group else None
+
+
+def _national(nb: NumberBuilder, reg, metric: str, level: str, peer_group: str, lang: str) -> NationalContext | None:
+    """#569: the survey's monthly value for the customer's age group and the metric's category, as a Number whose
+    evidence cites the table (rule_value: no transactions). None for a category the file does not keep (Restaurants,
+    Health, Housing, any other) or without a table age group (75+, the level "all")."""
+    fig = national.figure(metric, age_band_of(level, peer_group))
+    if fig is None:
+        return None
+    start, end = date(fig.survey_year, 1, 1), date(fig.survey_year, 12, 31)
+    year = Period(start=start, end=end, label=periods.period_label(start, end, lang))
+    # params.period: the evidence view names the survey year, not the day of the answer
+    amount, _ = nb.composite(config.METHODS["national_month"], "rule_value", {}, Unit.EUR_PER_MONTH, year,
+                             _t("national_label", lang), params={**fig.params(), "period": evidence.period_param(year)})
+    return NationalContext(amount=reg(amount), age_group=fig.age_group, survey_year=fig.survey_year,
+                           source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang),
+                           what_short=config.label(config.NATIONAL_WHAT_SHORT[metric], lang))
+
+
+def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
+    """The what-if a category or basket card would offer answers with a cut: 3 or more cuttable purchases in the
+    metric's window (the last 6 complete months), the same count as 04_what_if.sql's not_offered. Never an offer
+    that answers "there is no monthly habit to cut" (the coordinator, review of #379 part B). The total's offer is
+    "How could I save more?", no what-if. From the rows the peer tool has classified already: no second query and no
+    evidence row (#527). Any failure only drops the offer, never the card."""
+    if metric in config.SENSITIVE_CATEGORIES or metric in config.PEER_SENSITIVE:
+        return False   # a health what-if is never offered (R9; the coordinator, review of #534)
+    if metric == "spend_total":
+        return True
+    try:
+        kind = "basket" if metric in config.BASKET_LABELS else "category"
+        rows = rows if rows is not None else classify(ctx.history(), ctx.as_of, labels.for_context(ctx))
+        window = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of).period
+        return len(cuttable_purchases(rows, kind, metric, window)) >= config.TOO_FEW_TRANSACTIONS
+    except Exception as exc:  # noqa: BLE001 - the class name is logged; the card goes out without the offer
+        log.warning("peer offer check failed (%s); the card goes without the offer", type(exc).__name__)
+        return False
 
 
 def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: Decimal, unit: Unit,
@@ -209,20 +272,33 @@ def _stat(nb: NumberBuilder, ctx: ToolContext, metric: str, column: str, value: 
     return n
 
 
-def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> Card:
+def cut_prompt(metric: str, language: str, label: str | None = None) -> str:
+    """The prompt of the card's action for a metric: the save-more question for all spending, else the what-if
+    of that metric (its label, the card's own when given), which the what-if rule claims and asks by how much
+    (#418, #403)."""
+    if metric == "spend_total":
+        return _t("action_prompt_total", language)
+    label = label if label is not None else metric_label(metric, language)
+    return _t("action_prompt", language, what=label.lower() if language == "en" else label)
+
+
+def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str, cut_offered: bool | None = None) -> Card:
     ref = data.peer_median.evidence_ref
-    if data.metric == "spend_total":
-        prompt = _t("action_prompt_total", language)
-    else:
-        prompt = _t("action_prompt", language, what=data.metric_label.lower() if language == "en" else data.metric_label)
-    actions = [] if data.metric in NO_CUT_ACTION else [Action(type="ask", label=_t("action_label", language),
-                                                              prompt=prompt)]
+    prompt = cut_prompt(data.metric, language, data.metric_label)
+    # A cut is offered only above the median and for spending that can be cut (#418); the text says the
+    # same offer (answer_sentences.peer), so the two always appear together.
+    offered = config.peer_offers_cut(data.metric, data.vs_median.value if data.vs_median is not None else None) \
+        if cut_offered is None else cut_offered   # the tool's decision, the what-if's own included
+    actions = [Action(type="ask", label=_t("action_label", language), prompt=prompt)] if offered else []
     dump = lambda n: n.model_dump() if n is not None else None  # noqa: E731
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],
         type="peer", title=_t("title", language, what=data.metric_label),
         subtitle=_t("subtitle", language, label=data.period.label),
-        evidence_ref=ref, estimate=estimate, actions=actions,
+        evidence_ref=ref, actions=actions,
+        # #380: observed is the user's own figure; assumed is the comparison group, its size as the value
+        estimate=Estimate(**estimate, observed=[data.you] if data.you is not None else [],
+                          assumptions=[assumption("peer.peer_group", language, data.peer_group.size)]),
         you=dump(data.you), peer_median=dump(data.peer_median), peer_p25=dump(data.peer_p25),
         peer_p75=dump(data.peer_p75), percentile=dump(data.percentile), vs_median=dump(data.vs_median),
         peer_group={"level": data.peer_group.level, "label": data.peer_group.label,
@@ -231,7 +307,8 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
     )
 
 
-def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str]) -> dict[str, Any]:
+def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes: list[str],
+                offers_cut: bool = False) -> dict[str, Any]:
     """Compact view for the model: group statistics only; no rows, customer id or evidence refs (R3)."""
     return {
         "tool": TOOL,
@@ -246,8 +323,17 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
         "peer_p75": model_number(data.peer_p75),
         "percentile": model_number(data.percentile),
         "vs_median": model_number(data.vs_median),
-        "peer_group": {"level": data.peer_group.level, "label": data.peer_group.label,
-                       "size": model_number(data.peer_group.size), "comparable": data.peer_group.comparable},
+        # No group label: the age band and the postal area stay on the card (#487); the sentence needs only
+        # the size and whether the group is comparable.
+        "peer_group": {"level": data.peer_group.level, "size": model_number(data.peer_group.size),
+                       "comparable": data.peer_group.comparable},
         "estimate": estimate["text"] if estimate else None,
         "notes": list(notes),
+        "offers_cut": offers_cut,   # the card offers a cut, and the answer says the same (#418, #379 part B)
+        # #569: only when there is a line, so the model view of every other peer answer stays as it was
+        # (no age digits: the answer may not state a digit that is no Number or returned period)
+        **({"national": {"amount": model_number(data.national.amount), "survey": data.national.amount.period.label,
+                         "source": data.national.source, "what": data.national.what,
+                         "what_short": data.national.what_short, "context_only": True}}
+           if data.national else {}),
     }

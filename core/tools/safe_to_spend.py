@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from core.tools import config, evidence, labels, metric_sql, periods, recurring
 from core.tools.classify import classify
 from core.tools.context import ToolContext
-from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Estimate, Number, Period, ToolResult, Unit, assumption
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "get_safe_to_spend"
@@ -34,6 +34,9 @@ METRIC = "safe_to_spend"
 log = logging.getLogger(__name__)
 
 
+# The savings goal (#391) is not an argument (#447): until the app has a control for it, neither the model
+# planner, the rules nor an endpoint can set it. A plan that passes it is rejected as an unknown argument
+# and the default goal holds. The class docstring is part of the planner's declaration, so it stays silent.
 class GetSafeToSpendArgs(Args):
     """No arguments: the customer and as_of come from the server-bound context."""
 
@@ -48,6 +51,8 @@ class Component(BaseModel):
 class SafeToSpendData(BaseModel):
     period: Period
     safe_to_spend: Number
+    savings_goal: Number          # set aside first each month (#391); inside the budget limit
+    usual_week: Number            # the usual everyday pace a week
     free_until_payday: Number
     balance_limit: Number
     budget_limit: Number
@@ -87,14 +92,17 @@ class NoTransactions(ValueError):
     callers that caught ValueError before keep working)."""
 
 
-def settings_for(ctx: ToolContext) -> dict[str, str]:
+def settings_for(ctx: ToolContext, savings_goal: Decimal | None = None) -> dict[str, str]:
     """The settings of 03_safe_to_spend.sql for this context, in one place for every tool that reads it.
     The cushion is passed explicitly (the documented default), so a session setting can never leak in
     and every evidence spec records it. The customer's labels (#68) go in as app.tx_labels, so the metric
     SQL classifies a reviewed purchase like the tools do, and every evidence spec records them; without
     labels metric_settings_for adds nothing, so specs and refs stay as they were. The hero and the
     safe-to-save card read the same row through metric_row, so they can never disagree."""
-    return {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR, **labels.metric_settings_for(ctx)}
+    settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR, **labels.metric_settings_for(ctx)}
+    if savings_goal is not None:   # only when given, so the default specs carry no setting (#391)
+        settings["savings_goal_eur"] = f"{savings_goal:.2f}"   # metric_sql.TYPED_SETTINGS: two decimals
+    return settings
 
 
 def row_key(ctx: ToolContext, settings: dict[str, str]) -> tuple:
@@ -102,11 +110,11 @@ def row_key(ctx: ToolContext, settings: dict[str, str]) -> tuple:
     return (config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, tuple(sorted(settings.items())))
 
 
-def metric_row(ctx: ToolContext) -> tuple[dict[str, str], dict[str, Any]]:
+def metric_row(ctx: ToolContext, savings_goal: Decimal | None = None) -> tuple[dict[str, str], dict[str, Any]]:
     """The settings and the one row of 03_safe_to_spend.sql for this customer, read once per context:
     the safe-to-spend and the safe-to-save tools of one request share it (#165). NoTransactions when
     03 returns no row."""
-    settings = settings_for(ctx)
+    settings = settings_for(ctx, savings_goal)
     key = row_key(ctx, settings)
     if key not in ctx.shared:
         # The answer pipeline runs tools in parallel lanes on copies of one context that share `shared`:
@@ -122,12 +130,52 @@ def metric_row(ctx: ToolContext) -> tuple[dict[str, str], dict[str, Any]]:
     return settings, row
 
 
-def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
-    GetSafeToSpendArgs.model_validate(args or {}) if not isinstance(args, GetSafeToSpendArgs) else args
+def month_period(ctx: ToolContext) -> Period:
+    """03's averaging window, the 6 complete months the monthly figures describe."""
+    first = (ctx.as_of + timedelta(days=1)).replace(day=1)
+    start, end = periods.add_months(first, -6), first - timedelta(days=1)
+    return Period(start=start, end=end, label=periods.period_label(start, end, ctx.language))
+
+
+def weekly_numbers(ctx: ToolContext, nb: NumberBuilder, settings: dict[str, str],
+                   row: dict[str, Any]) -> dict[str, tuple[Number, Decimal]]:
+    """The weekly figure as one builder makes it for every tool (the same specs, so the same refs): the
+    balance and budget limits, the savings goal (#391), the usual everyday pace a week, and safe to spend,
+    the smaller limit, whose evidence lists the goal."""
+    lang = ctx.language
+    week = Period(start=row["week_start"], end=row["week_end"], label=_t("next_7_days", lang))
+    month = month_period(ctx)
+    out: dict[str, tuple[Number, Decimal]] = {}
+    for key, column, period, unit in (("balance_limit", "balance_limit_7d_eur", week, Unit.EUR),
+                                      ("budget_limit", "budget_limit_7d_eur", week, Unit.EUR),
+                                      ("savings_goal", "savings_goal_eur", month, Unit.EUR_PER_MONTH),
+                                      ("everyday_month", "everyday_month_eur", month, Unit.EUR_PER_MONTH)):
+        value = metric_sql.decimal(row[column])
+        method = f"{METRIC}.{column}@1"
+        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.SAFE_TO_SPEND_FILE, column, settings,
+                                    value, evidence.period_param(period))
+        label = (config.label(config.SAFE_TO_SAVE_TEXT["everyday_month"], lang) if key == "everyday_month"
+                 else _t(key, lang))
+        out[key] = (nb.number(value, unit, period, method, spec, label), value)
+    out["usual_week"] = nb.composite(config.USUAL_WEEK_METHOD, "scale", {"base": out["everyday_month"]},
+                                     Unit.EUR_PER_WEEK, month, _t("usual_week", lang),
+                                     params={"factor_num": 7, "factor_den": "30.4375"})
+    out["safe_to_spend"] = nb.composite(
+        f"{METRIC}.safe_to_spend_7d_eur@1", "minimum_after_goal",
+        {"a": out["balance_limit"], "b": out["budget_limit"], "goal": out["savings_goal"]},
+        Unit.EUR, week, _t("safe_to_spend", lang), params={"period": evidence.period_param(week)})
+    return out
+
+
+def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None, *,
+                      savings_goal: Decimal | None = None) -> ToolResult:
+    """`savings_goal`: a monthly goal in place of the default, a Python-level parameter only (tests, a later
+    API field; #447). Its bounds are checked with the typed setting (metric_sql: 0 to 100,000, two decimals)."""
+    args = args if isinstance(args, GetSafeToSpendArgs) else GetSafeToSpendArgs.model_validate(args or {})
     lang = ctx.language
     notes: list[str] = []
 
-    settings, row = metric_row(ctx)
+    settings, row = metric_row(ctx, savings_goal)
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()
@@ -159,11 +207,8 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
         numbers[key] = nb.number(value, Unit.EUR, periods_by_key[key], method, spec, _t(key, lang))
         values[key] = value
 
-    safe_n, safe_value = nb.composite(
-        f"{METRIC}.safe_to_spend_7d_eur@1", "minimum",
-        {"a": (numbers["balance_limit"], values["balance_limit"]),
-         "b": (numbers["budget_limit"], values["budget_limit"])},
-        Unit.EUR, week, _t("safe_to_spend", lang), params={"period": evidence.period_param(week)})
+    weekly = weekly_numbers(ctx, nb, settings, row)   # the same limit specs as the loop above, plus the goal
+    safe_n, safe_value = weekly["safe_to_spend"]
     if safe_value != metric_sql.decimal(row["safe_to_spend_7d_eur"]):  # min of rounded = rounded min
         raise RuntimeError("safe to spend does not equal the smaller limit")
 
@@ -186,7 +231,8 @@ def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None =
         for key in config.SAFE_TO_SPEND_COMPONENTS
     ]
     data = SafeToSpendData(
-        period=week, safe_to_spend=reg(safe_n), free_until_payday=reg(numbers["free_until_payday"]),
+        period=week, safe_to_spend=reg(safe_n), savings_goal=reg(weekly["savings_goal"][0]),
+        usual_week=reg(weekly["usual_week"][0]), free_until_payday=reg(numbers["free_until_payday"]),
         balance_limit=reg(numbers["balance_limit"]), budget_limit=reg(numbers["budget_limit"]),
         binding_limit=binding, components=components, status=status,
         next_payday=row["next_payday"], salary_status=row["salary_status"],
@@ -206,17 +252,34 @@ def card_subtitle(period: Period, language: str) -> str:
     return periods.period_label(period.start, period.end, language)
 
 
+def _estimate(data: SafeToSpendData, language: str) -> Estimate:
+    """#380: both limbs of safe to spend, from the card's own Numbers (no new Number). The balance limb observes
+    the balance and the bills due before payday and assumes the usual essentials, the reserve for unexpected costs,
+    the cushion and the bills on their usual days; the budget limb (#503 review: it binds for every persona) is the
+    card's budget limit, from a typical month that repeats, after the monthly amount for saving is put aside."""
+    amount = {c.key: c.amount for c in data.components}
+    return Estimate(
+        label=_t("estimate_label", language), text=_t("estimate_text", language),
+        observed=[amount[key] for key in ("balance", "bills_due") if key in amount] + [data.budget_limit],
+        assumptions=[assumption("safe_to_spend.spending_as_usual", language, amount.get("essentials_reserve")),
+                     assumption("safe_to_spend.reserve_for_unexpected", language, amount.get("irregular_reserve")),
+                     assumption("safe_to_spend.cushion", language, amount.get("cushion")),
+                     assumption("safe_to_spend.bills_on_usual_days", language),
+                     assumption("safe_to_spend.budget_from_usual_month", language),
+                     assumption("safe_to_spend.savings_goal_first", language, data.savings_goal)])
+
+
 def _card(data: SafeToSpendData, language: str) -> Card:
     ref = data.safe_to_spend.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="metric", title=_t("title", language), subtitle=card_subtitle(data.period, language),
         evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": _t("estimate_text", language)},
+        estimate=_estimate(data, language),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref)],
         status=data.status,
         primary=data.safe_to_spend,
-        secondary=[data.free_until_payday, data.balance_limit, data.budget_limit],
+        secondary=[data.free_until_payday, data.balance_limit, data.budget_limit, data.savings_goal],
         comparison=None,
         components=[c.model_dump() for c in data.components],
     )
@@ -233,6 +296,8 @@ def _model_view(data: SafeToSpendData, notes: list[str]) -> dict[str, Any]:
         "free_until_payday": model_number(data.free_until_payday),
         "balance_limit": model_number(data.balance_limit),
         "budget_limit": model_number(data.budget_limit),
+        "savings_goal": model_number(data.savings_goal),
+        "usual_week": model_number(data.usual_week),
         "components": [{"key": c.key, "label": c.label, "operation": c.operation, "amount": model_number(c.amount)}
                        for c in data.components],
         "next_payday": data.next_payday.isoformat(),

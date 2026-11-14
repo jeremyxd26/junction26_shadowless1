@@ -1,6 +1,6 @@
 """explain_bill on the shared database (#242), for the lead persona CUST00860 only. Skipped without
 DATABASE_URL. Read only, except the evidence specs that every tool writes; SPIKE_REVIEWS is off (conftest),
-so no label is read. The bills are r-w1's sample bills 2 and 3 (#249): a utilities bill clearly higher than
+so no label is read. The bills are sample bills 2 and 3 (#249): a utilities bill clearly higher than
 usual, due before payday, and a bill from a payee that is not a regular bill, due in two days."""
 
 from __future__ import annotations
@@ -72,10 +72,11 @@ def test_a_matching_bill_higher_than_usual_due_before_payday(conn, lang):
                      if i.bill_id == "bill_utilities_payment")
     bill = be.read_fields("Esimerkki Energia Oy", "FI21 1234 5600 0007 85", "1232", "312.70", date(2026, 10, 13))
     out = explain(conn, bill, lang)
-    sts, cmp = out["safe_to_spend"], out["comparison"]
+    sts = out["safe_to_spend"]
     assert out["match"]["status"] == "matched" and out["match"]["bill_id"] == "bill_utilities_payment"
-    assert cmp["baseline"]["evidence_ref"] == utilities.typical_month.evidence_ref
-    assert d(cmp["change"]) == Decimal("312.70") - Decimal(str(utilities.typical_month.value))
+    # utilities is a `spread` series: a bill of the same payee category, no percentage against its month (#400)
+    assert utilities.status == "spread" and out["comparison"] is None
+    assert "regular utilities bill" not in out["match"]["text"].lower() and "tavallinen laskusi" not in out["match"]["text"]
     reserved = Decimal(str(utilities.due_until_payday.value))
     assert sts["effect"] == "excess_only" and d(sts["reserved"]) == reserved > 0
     assert d(sts["counted"]) == Decimal("312.70") - reserved
@@ -91,12 +92,11 @@ def test_a_matching_bill_higher_than_usual_due_before_payday(conn, lang):
     # "How?": every computed number reconciles; the balance limit with the bill re-runs 03 with the setting
     for key in ("counted", "free_until_payday_after"):
         reconciles(conn, sts[key]["evidence_ref"])
-    reconciles(conn, cmp["change"]["evidence_ref"])
     after = reconciles(conn, sts["after"]["evidence_ref"])
     balance = reconciles(conn, after.parts[0]["ref"])
     assert balance.kind == "metric" and balance.spec["source"]["settings"]["extra_bill_due_eur"] == f"{d(sts['counted']):.2f}"
     assert after.parts[1]["ref"] == hero.budget_limit.evidence_ref
-    assert every_number_opens(conn, out, lang) >= 9
+    assert every_number_opens(conn, out, lang) >= 7     # no comparison numbers for a category match
 
 
 def test_the_bill_setting_never_leaks_into_the_next_run_of_03_in_one_transaction(conn):
@@ -111,6 +111,33 @@ def test_the_bill_setting_never_leaks_into_the_next_run_of_03_in_one_transaction
         with_bill = free({**base, "extra_bill_due_eur": "145.00"})
         assert with_bill == alone - Decimal("145.00")
         assert free(base) == alone                     # the hero after a bill, in the same transaction
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_a_monthly_bill_that_fits_is_compared_with_its_usual_amount(conn, lang):
+    """Housing is paid once a month: a housing bill of a fitting amount is the regular bill, compared with its
+    typical month (#400 keeps this)."""
+    housing = next(i for i in get_recurring_bills(context(conn), {"include_income": False}).data.bills
+                   if i.bill_id == "bill_housing_payment")
+    bill = be.read_fields("Esimerkki Asunnot Oy", "FI21 1234 5600 0007 85", "1232", "900.00", date(2026, 10, 8))
+    out = explain(conn, bill, lang)
+    cmp = out["comparison"]
+    assert housing.status != "spread" and cmp is not None
+    assert cmp["baseline"]["evidence_ref"] == housing.typical_month.evidence_ref
+    assert d(cmp["change"]) == Decimal("900.00") - Decimal(str(housing.typical_month.value))
+    reconciles(conn, cmp["change"]["evidence_ref"])
+    assert every_number_opens(conn, out, lang) >= 3
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_the_quarterly_water_sample_is_not_your_regular_bill(conn, lang):
+    """#400, sample 4 (Esimerkki Vesi Oy, EUR 42.75, due 20 Oct 2026) for the lead persona."""
+    bill = be.read_fields("Esimerkki Vesi Oy", "FI21 1234 5600 0007 85", "1232", "42.75", date(2026, 10, 20))
+    out = explain(conn, bill, lang)
+    assert out["match"]["bill_id"] == "bill_utilities_payment" and out["comparison"] is None
+    assert out["match"]["text"] in ("This bill is from the same payee category as your regular Utilities payments.",
+                                    "Tämä lasku on samasta maksunsaajaluokasta kuin tavalliset maksusi: Kodin laskut.")
+    assert not [s for s in out["signals"] if s["code"] in ("amount_above_usual", "new_payee")]
 
 
 @pytest.mark.parametrize("lang", ["en", "fi"])

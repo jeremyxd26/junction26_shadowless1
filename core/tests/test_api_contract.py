@@ -54,7 +54,9 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.request": schemas.BillExplainRequest,             # contract 0.3.0 (#243); endpoint with #242
     "bill.request_fields": schemas.BillExplainRequest,
     "bill.response": schemas.BillExplainResponse,
+    "bill.response_category": schemas.BillExplainResponse,   # #433: matched, a category match (#400)
     "bill.response_unknown": schemas.BillExplainResponse,
+    "bill.response_not_covered": schemas.BillExplainResponse,
     "bill.error": schemas.BillErrorResponse,                # #242: invalid_bill with its `reason`
     "bill.read_response": schemas.BillReadResponse,           # contract 0.3.7 (#250)
     "action.open_host_screen": schemas.OpenHostScreenAction,   # contract 0.3.1 (#267)
@@ -82,6 +84,25 @@ def contract_text() -> str:
 
 def examples() -> dict[str, typing.Any]:
     return {name: json.loads(body) for name, body in EXAMPLE.findall(contract_text())}
+
+
+def test_a_first_ask_answer_carries_the_ai_disclosure():
+    """#420 (review of #435): in every `ask.json` example pair, a request without a conversation id is the first
+    answer of a conversation, so its response carries `ai_disclosure` (the overview's text in its language),
+    unless it is the introduction; a later answer has null. The ask examples have no model check, and the
+    app's mocks are generated from them."""
+    from core.agent import template
+
+    ex = examples()
+    pairs = [(n, n.replace("ask.json.request", "ask.json.response", 1)) for n in ex if n.startswith("ask.json.request")]
+    assert len(pairs) >= 4
+    for req, resp in pairs:
+        assert resp in ex, f"{req} has no {resp}"
+        r = ex[resp]
+        first = ex[req].get("conversation_id") is None
+        intro = r["text"] == template.pick(template.INTRO, r["language"])
+        expected = template.pick(texts.AI_DISCLOSURE, r["language"]) if first and not intro else None
+        assert r.get("ai_disclosure") == expected, (req, resp)
 
 
 def mismatches(inst: typing.Any, raw: typing.Any, path: str = "$") -> list[str]:

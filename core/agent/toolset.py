@@ -60,9 +60,11 @@ KNOWN_TOOLS = [
               "balance and its date, whether it goes below zero, the bills before payday and the usual spending a "
               "day. An estimate. Returns numbers with ids; cite them as {{id}}.",
               ("Projecting your balance until payday", "Ennustan saldosi palkkapäivään asti")),
-    KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
-              "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
-              "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",
+    KnownTool("core.tools.what_if", "run_what_if", "ModelWhatIfArgs",   # group names accepted (#346)
+              "Savings from cutting a selection by a percentage, from the last 6 complete months. The selection "
+              "is a spending category, a basket, a merchant-category group (kind mcc, value taxi, "
+              "public_transport, fuel, parking, restaurants, groceries or electronics_home) or a merchant alias. "
+              "An estimate. Returns numbers with ids; cite them as {{id}}.",
               ("Calculating the saving", "Lasken säästön")),
     # Issue #69: the spender profile and the peer benchmark (core/tools/profile.py, core/tools/peer.py).
     KnownTool("core.tools.profile", "get_spender_profile", "GetSpenderProfileArgs",
@@ -71,6 +73,19 @@ KNOWN_TOOLS = [
     KnownTool("core.tools.peer", "get_peer_benchmark", "GetPeerBenchmarkArgs",
               "Comparison with people of the same age band and area: median, quartiles and percentile.",
               ("Comparing with people like you", "Vertaan kaltaisiisi")),
+    # Issue #256: small everyday purchases (core/tools/small_purchases.py).
+    KnownTool("core.tools.small_purchases", "get_small_purchases", "GetSmallPurchasesArgs",
+              "Small everyday purchases (restaurants, entertainment, lifestyle) of at most max_amount euros in a "
+              "period, by default the last 3 complete months and 10 euros: count, total, average, a month, share "
+              "of everyday spending and the total per category. Pass max_amount or a period only if the user named "
+              "them. Returns numbers with ids; cite them as {{id}}.",
+              ("Adding up your small purchases", "Lasken pienet ostoksesi yhteen")),
+    # Issue #369: the savings plan for "How could I save more?" (core/tools/savings_plan.py).
+    KnownTool("core.tools.savings_plan", "get_savings_plan", "GetSavingsPlanArgs",
+              "A small savings plan: two cuts below the usual pace (eating out and the largest other everyday "
+              "category), each a what-if saving, with their total a month and a year; the savings goal set aside "
+              "first beside it, never added in. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              ("Putting together your savings plan", "Kokoan säästösuunnitelmaasi")),
 ]
 
 

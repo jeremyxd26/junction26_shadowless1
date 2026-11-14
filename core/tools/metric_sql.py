@@ -45,11 +45,17 @@ def _bill_amount(value: str) -> bool:
     return bool(BILL_AMOUNT.fullmatch(value)) and Decimal(0) < Decimal(value) <= BILL_AMOUNT_MAX
 
 
+def _goal_amount(value: str) -> bool:
+    """0 to 100,000.00, written with exactly two decimals (a savings goal of 0 is allowed)."""
+    return bool(BILL_AMOUNT.fullmatch(value)) and Decimal(0) <= Decimal(value) <= BILL_AMOUNT_MAX
+
+
 # Settings with a declared type and bound: their value is checked here before anything runs, for a tool's
 # settings and for a stored evidence spec alike, and a value that fails is refused, never repaired. The
 # value reaches PostgreSQL only as a bound parameter of set_config, never spliced into the SQL.
 # - extra_bill_due_eur (03_safe_to_spend.sql, #242): a bill the customer showed, due before payday.
-TYPED_SETTINGS = {"extra_bill_due_eur": _bill_amount}
+# - savings_goal_eur (03_safe_to_spend.sql, #391): a monthly savings goal set aside before safe to spend.
+TYPED_SETTINGS = {"extra_bill_due_eur": _bill_amount, "savings_goal_eur": _goal_amount}
 
 
 def check_settings(settings: dict[str, str] | None) -> None:

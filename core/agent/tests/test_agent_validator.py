@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from core.agent.registry import CallRejected, Registry, RegistryError, ToolSpec, property_names
 from core.agent.toolset import KNOWN_TOOLS, default_registry
-from core.agent.validator import Allowed, validate
+from core.agent.validator import Allowed, plain_text, validate
 from core.agent.validator import render as validator_render
 from core.tools.formatting import display
 from core.tools.models import Number, Unit
@@ -223,3 +223,159 @@ def test_default_registry_builds_with_the_tools_present():
     assert set(reg.names()) <= {k.function for k in KNOWN_TOOLS}
     for schema in reg.schemas():  # field names at any depth; descriptions may mention the customer
         assert not any("customer" in name.lower() for name in property_names(schema["parameters_json_schema"]))
+
+
+# ---- #302: plain text ------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("draft, plain", [
+    ("an estimated **{{n1}}** is safe to spend.", "an estimated {{n1}} is safe to spend."),
+    ("__September__ was *cheaper* than `August`.", "September was cheaper than August."),
+    ("## Your spending\n- Groceries: {{n1}}\n* Bills: {{n2}}\n1. Rest", "Your spending\nGroceries: {{n1}}\nBills: {{n2}}\n1. Rest"),
+    ("See [your card](https://example.org/x) and ![a chart](c.png).", "See your card and a chart."),
+    ("[ref]: https://example.org\nRead [the card][ref].", "Read the card."),
+    ("28.9.2026 you spent {{n1}}.", "28.9.2026 you spent {{n1}}."),
+])
+def test_plain_text_drops_markdown_and_keeps_words_and_tokens(draft, plain):
+    assert plain_text(draft) == plain
+
+
+def test_a_draft_with_markdown_passes_as_plain_text():
+    """The strip runs before the checks: a draft is not rejected only for markup that is dropped (a link
+    keeps its text), and the delivered text has none of it."""
+    numbers = {"n1": N1}
+    raw = {"language": "en", "text": "In August 2026 you spent **{{n1}}** on [groceries](https://example.org).",
+           "cited": ["n1"], "lesson_key": None}
+    draft, errors = validate(raw, language="en", numbers=numbers, allowed=ALLOWED)
+    assert errors == [] and draft.text == "In August 2026 you spent {{n1}} on groceries."
+
+
+# ---- #288: a period written again after a number that already carries it -----------------------------------
+
+MONTHLY = Number(id="n1", value=3010.59, unit=Unit.EUR_PER_MONTH, period=AUG, method="baskets.month_avg_eur@1",
+                 evidence_ref="ev_m", label="Total spending", display=display(Decimal("3010.59"), Unit.EUR_PER_MONTH, "en"))
+MONTHLY_FI = MONTHLY.model_copy(update={"display": display(Decimal("3010.59"), Unit.EUR_PER_MONTH, "fi")})
+
+
+@pytest.mark.parametrize("text, lang", [
+    ("In August 2026 you spent {{n1}} a month.", "en"),             # live: "€3,010.59 a month a month"
+    ("Cutting back on eating out could save you {{n1}} a month.", "en"),   # the stand, 14.11: "€63.17 a month a month"
+    ("In August 2026 you spent {{n1}} per month on average.", "en"),
+    ("In August 2026 you spent {{n1}} monthly.", "en"),
+    ("Elokuussa 2026 käytit {{n1}} kuukaudessa.", "fi"),
+    ("Elokuussa 2026 käytit {{n1}} / kk.", "fi"),
+])
+def test_a_period_after_a_number_that_carries_it_is_found(text, lang):
+    from core.agent.validator import repeated_period
+
+    assert repeated_period(text, {"n1": MONTHLY if lang == "en" else MONTHLY_FI})
+
+
+def test_the_same_number_without_the_repeated_period_is_fine():
+    from core.agent.validator import repeated_period
+
+    assert repeated_period("In August 2026 you spent {{n1}} on average.", {"n1": MONTHLY}) is None
+
+
+# ---- review of #401: ordinary drafts that must not be rejected ---------------------------------------------
+
+def test_abbreviations_end_no_sentence():
+    from core.answer_text import length_problems
+
+    assert length_problems("You spent approx. {{n1}} on groceries, e.g. {{n2}} on dairy.", 2) == []
+    assert length_problems("Käytit esim. ruokaan {{n1}}, mm. maitoon {{n2}}.", 2) == []
+
+
+def test_a_finnish_date_that_starts_a_line_is_no_list_number():
+    assert plain_text("15. lokakuuta 2026 on palkkapäiväsi.") == "15. lokakuuta 2026 on palkkapäiväsi."
+    assert plain_text("1. First point.\n2. Second point.") == "First point.\nSecond point."
+
+
+@pytest.mark.parametrize("text, rejected", [
+    ("You have no bills due, so {{n7}} is available to spend this week.", False),
+    ("I do not have a calculated safe-to-spend limit available for this week.", True),
+    ("That figure cannot be calculated right now.", True),
+    ("Tätä ei ole saatavilla.", True),
+    ("Summaa ei voitu laskea.", True),
+])
+def test_only_real_not_available_claims_are_found(text, rejected):
+    from core.agent.validator import unavailable_claim
+
+    assert bool(unavailable_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text, rejected", [
+    ("You spent {{n1}} on health, which includes your gym visits.", True),
+    ("Restaurants took {{n1}}, including your gym membership.", True),
+    ("Your bills are {{n1}}, including the {{n7}} for housing.", False),
+    ("You keep an amount that still covers your bills until payday.", False),
+    ("Your balance of {{n8}}, which covers the next week, is enough.", False),
+    ("Summa {{n7}} sisältää kaikki ostosi tällä viikolla.", False),
+])
+def test_a_contents_claim_is_about_a_category_only(text, rejected):
+    from core.agent.validator import contents_claim
+
+    assert bool(contents_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text", ["You saved {{n1}}, a year after you started.",
+                                  "You spent {{n1}}; a month earlier it was less."])
+def test_a_period_word_that_starts_a_new_phrase_is_no_repeat(text):
+    from core.agent.validator import repeated_period
+
+    assert repeated_period(text, {"n1": MONTHLY}) is None
+
+
+
+# ---- #418: no ranking words next to a peer comparison ---------------------------------------------------------
+
+PEER_GAP = Number(id="n5", value=1.2, unit=Unit.PERCENT, period=AUG, method="peer_benchmark.vs_median_pct@1",
+                  evidence_ref="ev_p", label="Compared with typical", display="1.2% more")
+
+
+@pytest.mark.parametrize("text, ranked", [
+    ("You spend {{n5}} than the median of people like you, putting you near the top.", True),
+    ("You spend {{n5}} than the median of people like you, and a what-if can show what a cut would save.", False),
+])
+def test_ranking_words_next_to_a_peer_number_are_found(text, ranked):
+    from core.agent.validator import draft_problems
+
+    problems = draft_problems(text, {"n5": PEER_GAP}, has_data=True)
+    assert any("ranking words" in p for p in problems) is ranked
+
+
+def test_top_is_fine_without_a_peer_number():
+    from core.agent.validator import draft_problems
+
+    assert not any("ranking" in p for p in draft_problems("The top restaurant took {{n1}}.", {"n1": N1}, has_data=True))
+
+
+
+# ---- the reviewer's optional gaps of #401 ------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, rejected", [
+    ("Terveysmenot sisältävät kuntosalikäynnit.", True),
+    ("Terveyteen meni {{n1}}, mikä sisältää kuntosalin.", True),
+    ("Spending on fitness, which includes your gym visits.", True),
+    ("You spent {{n1}}, which includes your gym visits.", True),
+    ("Your bills are {{n1}}, including the {{n7}} for housing.", False),
+    ("Summa {{n7}} sisältää kaikki ostosi tällä viikolla.", False),
+    ("You keep an amount that still covers your bills until payday.", False),
+    ("Restaurants took {{n1}}, which covers your lunches.", True),
+])
+def test_composition_claims_wherever_they_stand(text, rejected):
+    from core.agent.validator import contents_claim
+
+    assert bool(contents_claim(text)) is rejected
+
+
+@pytest.mark.parametrize("text", ["I was unable to calculate this.", "Calculation is not possible here.",
+                                  "I don't have that figure."])
+def test_more_not_available_forms_are_found(text):
+    from core.agent.validator import unavailable_claim
+
+    assert unavailable_claim(text)
+
+
+def test_a_lone_list_number_before_a_token_is_stripped():
+    assert plain_text("1. {{n7}} is safe to spend.") == "{{n7}} is safe to spend."
+    assert plain_text("15. lokakuuta 2026 on palkkapäiväsi.") == "15. lokakuuta 2026 on palkkapäiväsi."

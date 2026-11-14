@@ -3,7 +3,8 @@
  "language": "fi",
  "as_of": "2026-09-30",
  "planner": "model",
- "model": "gemini-3.8-flash",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
  "tools": [
   {
    "name": "get_spending",
@@ -31,7 +32,7 @@
       "label": "elokuu 2026"
      },
      "method": "spending.total@1",
-     "evidence_ref": "ev_f7339294f16e",
+     "evidence_ref": "ev_09aee32cd934",
      "label": "Ravintolat",
      "display": "138,94 €",
      "id": "n1"
@@ -45,7 +46,7 @@
       "label": "elokuu 2026"
      },
      "method": "spending.n_tx@1",
-     "evidence_ref": "ev_313c710a9750",
+     "evidence_ref": "ev_daa7be635e8e",
      "label": "Tapahtumat",
      "display": "10",
      "id": "n2"
@@ -83,8 +84,9 @@
        "parts": [
         {
          "function_call": {
-          "id": "call_8828510349728423425",
+          "id": "call_13451581947702314980",
           "args": {
+           "direction": "out",
            "period": {
             "preset": "last_month"
            },
@@ -92,19 +94,11 @@
             "categories": [
              "Restaurants"
             ]
-           },
-           "direction": "out"
+           }
           },
           "name": "get_spending"
          },
-         "thought_signature": "EmkKZwFpFH0TzLMOjpEcdroscP1YUiSX91qrgf0WibGmxyJvOZFTgPW7XF0nuhxR3HvKP74JzZzxmQE-QJ4dkfMabU5XI4pNDVqU-tEGaVllrHqEUMaVE1raudY3VhuC5_dKr2qznZvR-Dg="
-        },
-        {
-         "function_call": {
-          "id": "call_8828510349728420998",
-          "args": {},
-          "name": "finish"
-         }
+         "thought_signature": "EmAKXgFpFH0T4Ts4Xznb02EZ3dtbfHamPat7rrUGIO3eubnNguVshxezyna2C-AL2mfWPnNkh8Ho08j1s8Kkmq0yQPf3p0cVNWmMQEXQ9xl_DIITWN0VVrOn5rN-uCGxn2A="
         }
        ],
        "role": "model"
@@ -113,9 +107,37 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 2947,
+     "prompt_token_count": 3805,
      "thoughts_token_count": 0,
-     "candidates_token_count": 42
+     "candidates_token_count": 34
+    }
+   }
+  },
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_3904287005929644797",
+          "args": {},
+          "name": "finish"
+         },
+         "thought_signature": "EmAKXgFpFH0TE3FyT4S1I7-djzyVlSWh8KaqJxPXjjd8ggkIlpH8m6qUPTCd-VxP07oi1X894QJiFmZllnL3AdSvIBQiAqu5eT_C7QEQN02epEcuJLMOLsYjwGpIGzE4iYg="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3945,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 8
     }
    }
   },
@@ -127,8 +149,8 @@
       "content": {
        "parts": [
         {
-         "text": "{\n  \"language\": \"fi\",\n  \"text\": \"Käytit ravintoloihin elokuussa 2026 yhteensä **{{n1}}**. Summa koostui {{n2}} maksutapahtumasta.\",\n  \"cited\": [\"n1\", \"n2\"],\n  \"lesson_key\": \"small_amounts_add_up\"\n}",
-         "thought_signature": "EmkKZwFpFH0T6x88caUcipF9wJ2f110Ae5YUIcSTMg126IHPUgYurpo4sfCIuB6jYwlQp4pvY1X6QSmLhVmvY-4ne1EjWDLN4kOam32o28qhL76QD3vHz9dv8efvWCu0GbXrmOgC1t7Tj5U="
+         "text": "{\n  \"language\": \"fi\",\n  \"text\": \"Elokuussa 2026 käytit ravintoloihin {{n1}}, mikä koostui {{n2}} tapahtumasta.\",\n  \"cited\": [\n    \"n1\",\n    \"n2\"\n  ],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0TDcLeEKJobK7jLsKeu8d9fIztw_VNfr0hboptcuEZQWnkBQ_1A-fVUUjmDfi-blzIxv_MfHwEjPbOUc2fD_1Mw0drBT_HXoK6OXZlfsYhIVSln0zk6eAef-o="
         }
        ],
        "role": "model"
@@ -137,9 +159,9 @@
      }
     ],
     "usage_metadata": {
-     "prompt_token_count": 2111,
+     "prompt_token_count": 2682,
      "thoughts_token_count": 0,
-     "candidates_token_count": 84
+     "candidates_token_count": 75
     }
    }
   }
@@ -151,7 +173,7 @@
    "get_spending",
    "finish"
   ],
-  "text": "Käytit ravintoloihin elokuussa 2026 yhteensä **{{n1}}**. Summa koostui {{n2}} maksutapahtumasta.",
-  "text_rendered": "Käytit ravintoloihin elokuussa 2026 yhteensä **138,94 €**. Summa koostui 10 maksutapahtumasta."
+  "text": "Elokuussa 2026 käytit ravintoloihin {{n1}}, mikä koostui {{n2}} tapahtumasta.",
+  "text_rendered": "Elokuussa 2026 käytit ravintoloihin 138,94 €, mikä koostui 10 tapahtumasta."
  }
 }

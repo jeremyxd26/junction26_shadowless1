@@ -49,6 +49,8 @@ const VALID: Record<AskEvent['event'], (data: Json) => boolean> = {
     isString(d.text) &&
     isString(d.text_rendered) &&
     isStringArray(d.cited) &&
+    (d.actions === undefined || Array.isArray(d.actions)) &&
+    (d.ai_disclosure === undefined || d.ai_disclosure === null || isString(d.ai_disclosure)) &&
     isStringArray(d.follow_ups) &&
     isStringArray(d.warnings) &&
     (d.lesson === null || (isObject(d.lesson) && isString(d.lesson.title) && isString(d.lesson.text))) &&

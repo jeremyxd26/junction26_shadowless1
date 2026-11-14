@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
+import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
+import { stopSpeaking } from '../lib/speech.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -13,13 +15,32 @@ interface Props {
   disclosure: string
   /** Starter questions: the overview's suggestions, or the partner's questions. */
   suggestions: string[]
+  /**
+   * Sentti's opening turn (turn 0), shown before the question turns. With an opening there is no
+   * empty state and no separate disclosure line: the opening carries the disclosure.
+   */
+  opening?: ReactNode
+  /** Starter chips under the opening while nothing is asked yet (when the overview failed). */
+  starters?: string[]
 }
 
-/** The chat on POST /api/ask. The view never scrolls while an answer streams in. */
-export function Chat({ chat, question, disclosure, suggestions }: Props) {
+/**
+ * The thread on POST /api/ask, opened by Sentti's opening turn. It scrolls with the document (no
+ * inner scroll container), and the view never scrolls while an answer streams in.
+ */
+export function Chat({ chat, question, disclosure, suggestions, opening, starters: openingStarters }: Props) {
   const { lang, customerId } = useSettings()
   const s = chatStrings(lang)
-  const { turns, busy, send, retry, stop } = chat
+  const { turns, busy, retry, stop } = chat
+  // Every question goes through here, so the opening can close its Undo toast (#315).
+  const chatSend = chat.send
+  const send = useCallback(
+    (question: string) => {
+      notifyAsked()
+      chatSend(question)
+    },
+    [chatSend],
+  )
   const [draft, setDraft] = useState('')
   const input = useRef<HTMLInputElement>(null)
 
@@ -35,14 +56,19 @@ export function Chat({ chat, question, disclosure, suggestions }: Props) {
   }, [question, customerId, send])
 
   // A new question is brought to the top once; the answer then grows below it without moving
-  // the view (DESIGN.md: no autoscroll while streaming).
+  // the view (DESIGN.md: no autoscroll while streaming). Under an opening even the first one is.
   const lastId = turns.at(-1)?.id
-  const many = turns.length > 1
+  const many = turns.length > 1 || Boolean(opening)
   useEffect(() => {
     if (lastId === undefined || !many) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     document.querySelector(`[data-turn="${lastId}"]`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
   }, [lastId, many])
+
+  // Every new question stops an answer that is being read aloud, the latest one or an older one.
+  useEffect(() => {
+    if (lastId !== undefined) stopSpeaking()
+  }, [lastId])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -61,7 +87,22 @@ export function Chat({ chat, question, disclosure, suggestions }: Props) {
 
   return (
     <div className="flex flex-col gap-6 pb-4">
-      {empty ? (
+      {opening ? (
+        <>
+          {opening}
+          {empty && openingStarters && openingStarters.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {openingStarters.slice(0, 3).map((starter) => (
+                <li key={starter}>
+                  <button type="button" className={QUESTION_CHIP} onClick={() => send(starter)}>
+                    {starter}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : empty ? (
         // An empty chat says what Sentti can and can't do, near the thumb.
         <div className="flex min-h-[calc(100dvh-220px)] flex-col justify-end gap-4">
           <p className="flex gap-2 text-xs text-muted">

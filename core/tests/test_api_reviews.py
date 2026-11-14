@@ -126,13 +126,13 @@ def test_demo_path_overview_needed_overview_undo(client):
     assert str(SPIKE) not in str(card)                                       # no transaction id, no merchant id
     assert items(first) == {"regular_essentials": 1889.04, "unexpected_necessities": 341.08,
                             "everyday_spending": 600.41, "unclassified": 180.07}
-    assert first["hero"]["primary"]["value"] == 221.58                      # the hero sees the pending state
+    assert first["hero"]["primary"]["value"] == 138.79                      # the hero sees the pending state
     assert overview(client)["reviews"][0]["tx_ref"] == card["tx_ref"]       # served again, never created twice
 
     needed = label(client, card["tx_ref"], "unexpected_necessities")
     assert (needed["review_state"], needed["changed"]) == ("answered", True)
     moved = {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in needed["changes"]}
-    assert moved["safe_to_spend"] == (221.58, 180.26)
+    assert moved["safe_to_spend"] == (138.79, 97.46)
     assert moved["irregular_reserve"] == (167.74, 256.3)
     assert needed["refetch"] == [f"/api/overview/{LEAD}"]
 
@@ -140,14 +140,14 @@ def test_demo_path_overview_needed_overview_undo(client):
     assert after["reviews"] == []                                            # Sanna has no other spike
     assert items(after) == {"regular_essentials": 1889.04, "unexpected_necessities": 521.15,
                             "everyday_spending": 600.41}                     # the published numbers
-    assert after["hero"]["primary"]["value"] == 180.26
+    assert after["hero"]["primary"]["value"] == 97.46
     assert after["hero"]["primary"]["evidence_ref"] == moved_refs(needed)["safe_to_spend"]  # the same Number
 
     undone = label(client, card["tx_ref"], None)
     assert (undone["review_state"], undone["label"]) == ("pending", None)
     again = overview(client)
     assert again["reviews"][0]["tx_ref"] == card["tx_ref"]                   # pending again
-    assert again["hero"]["primary"]["value"] == 221.58
+    assert again["hero"]["primary"]["value"] == 138.79
 
 
 def evidence_of(client, ref: str) -> dict:
@@ -212,7 +212,8 @@ def test_label_errors(client):
     assert_error(client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST99999")), 404,
                  "customer_not_found")
     again = label(client, tx_ref, "everyday_spending", language="fi")
-    assert again["message"]["numbers"]["n1"]["value"] == 1080.42
+    # #382: the purchase amount is one of the effect text's numbers (its id follows the effect items)
+    assert 1080.42 in {n["value"] for n in again["message"]["numbers"].values() if n["method"] == "spending.total@1"}
 
 
 def test_switched_off_serves_no_review_and_labels_nothing(client, monkeypatch):
