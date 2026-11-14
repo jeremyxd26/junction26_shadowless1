@@ -17,14 +17,19 @@ from starlette.concurrency import run_in_threadpool
 from core.agent.api import audit_api_enabled, audit_router
 from core.agent.api import router as ask_router
 
-from . import api, health
+from . import api, health, secret_mask
 from .db import MALFORMED, NOT_SET, create_pool, valid_database_url
 from .settings import Settings
 
 log = logging.getLogger("uvicorn.error")
 
+# Mask secret setting values in every log record of the process (#198), as early as the app module is
+# imported: before the settings are validated, so even a start-up error cannot print a secret.
+secret_mask.install()
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    secret_mask.install()   # again: the environment may have changed since the import (tests, reloads)
     settings = settings if settings is not None else Settings()
 
     @asynccontextmanager
