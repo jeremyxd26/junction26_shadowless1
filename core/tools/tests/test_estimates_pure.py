@@ -224,3 +224,20 @@ def test_the_closed_list_is_one_list_in_the_tools_the_schema_and_the_contract():
     assert sorted(codes) == sorted(ASSUMPTION_CODES) and len(codes) == len(set(codes))
     used = {k.split(".", 1)[1] for k in config.ASSUMPTION_TEXT}
     assert used <= set(ASSUMPTION_CODES)
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_a_what_if_not_offered_never_observes_a_baseline_of_zero(language):
+    """Review of #520: Groceries are regular essentials, so the what-if is not offered and its baseline is 0; the
+    estimate lists what the card shows as left out instead, never a zero."""
+    result = what_if.WhatIfResult(
+        scenario=what_if.Scenario(selection={"kind": "category", "value": "Groceries"},
+                                  cut_pct=num("20", Unit.PERCENT, config.USER_INPUT_METHOD, None, "n7", language),
+                                  label="Groceries -20%"),
+        status="not_offered",
+        **{key: num("3773.14" if key == "regular_excluded" else "0.00", Unit(unit), f"what_if.{column}@1",
+                    f"ev_wi_{i:08d}", f"n{i + 1}", language)
+           for i, (key, column, unit) in enumerate(config.WHAT_IF_NUMBERS)},
+        assumptions=["a"], caveats=[])
+    observed = what_if._card(result, 20, language).estimate.observed
+    assert [n.method for n in observed] == ["what_if.regular_excluded_eur@1"] and all(n.value for n in observed)
