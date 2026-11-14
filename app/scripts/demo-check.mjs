@@ -26,7 +26,8 @@ const TEXT = {
     undo: /^(Peru|Kumoa)$/,
     firstQuestion: 'Mihin rahani menivät?',
     saveQuestion: 'Miten voisin säästää enemmän?',
-    saveAction: /kuukausisäästö|monthly saving/i,
+    // The core's label is "Katso kuukausisäästäminen S-mobiilissa"; the stem also covers "kuukausisäästö".
+    saveAction: /kuukausisääst|monthly saving/i,
     hostScreen: /Kuukausisäästö/,
     startOver: 'Aloita alusta',
     mockBadge: 'Testidata',
@@ -38,6 +39,8 @@ const GREETING = /^(Hi|Hei)\b/
 const amount = (text) => parseAmount(text, lang) ?? parseAmount(text, lang === 'fi' ? 'en' : 'fi')
 const ANSWER_MS = 60_000 // a live answer from the model can take a while
 const MODULE_MS = 30_000
+const NEEDED_MS = 8_000 // the label answer, then the count, on a slow host
+const STEPS = 6
 
 const args = parseArgs(process.argv.slice(2))
 if (args.error) {
@@ -65,11 +68,18 @@ const short = (text, max = 60) => {
 }
 
 console.log(`Sentti demo check · ${base} · ${lang} · ${persona}`)
-const browser = await chromium.launch({ headless: true, executablePath })
-const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: lang === 'fi' ? 'fi-FI' : 'en-GB' })
-const page = await context.newPage()
+let browser
+try {
+  browser = await chromium.launch({ headless: true, executablePath })
+} catch (error) {
+  console.error(
+    `demo:check: could not start the browser at ${executablePath}: ${short(error.message.split('\n')[0], 160)}. DEMO_CHECK_BROWSER must point at Chrome, Chromium or chrome-headless-shell.`,
+  )
+  process.exit(2)
+}
+let context
+let page
 const pageErrors = []
-page.on('pageerror', (error) => pageErrors.push(short(error.message, 120)))
 
 /** The module's frame after the demo frame opened it (Start over), or the page itself without a frame. */
 async function openModule(hasFrame) {
@@ -121,6 +131,9 @@ let hasFrame = false
 let mod = null
 let mock = false
 try {
+  context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: lang === 'fi' ? 'fi-FI' : 'en-GB' })
+  page = await context.newPage()
+  page.on('pageerror', (error) => pageErrors.push(short(error.message, 120)))
   // 1. The demo frame.
   const response = await page.goto(`${base}/demo.html?lang=${lang}&persona=${persona}`)
   await page.waitForSelector('.start-over, #root', { timeout: MODULE_MS }).catch(() => null)
@@ -182,27 +195,51 @@ try {
   } else if (!(await review.count()) || !(await needed.count())) {
     report(3, 'FAIL', `no "${T.asks}" question with an answer button to tap`)
   } else {
-    const heroText = () => mod.evaluate(() => [document.querySelector('[data-opening-part="hero"] button span')?.textContent ?? '', Math.round(window.scrollY)])
+    // [hero text, scrollY, Undo shown]
+    const heroText = () =>
+      mod.evaluate((undoSource) => {
+        const undo = new RegExp(undoSource)
+        return [
+          document.querySelector('[data-opening-part="hero"] button span')?.textContent ?? '',
+          Math.round(window.scrollY),
+          [...document.querySelectorAll('button')].some((b) => undo.test((b.textContent ?? '').trim())),
+        ]
+      }, T.undo.source)
+    // The count starts only after POST /api/baskets/label answers (a live host may be slow); a mock
+    // build answers in the page, so Undo or the first changed amount also mean the answer is in.
+    let answered = false
+    let labelStatus = null
+    page
+      .waitForResponse((r) => r.url().includes('/api/baskets/label') && r.request().method() === 'POST', { timeout: NEEDED_MS })
+      .then((r) => {
+        answered = true
+        labelStatus = r.status()
+      }, () => {})
     const samples = [await heroText()]
     await needed.first().click()
     let still = 0
     const started = Date.now()
-    while (Date.now() - started < 4000 && still < 12) {
+    while (Date.now() - started < NEEDED_MS) {
       await mod.waitForTimeout(50)
       const sample = await heroText()
-      still = sample[0] === samples[samples.length - 1][0] && samples.length > 3 ? still + 1 : 0
+      if (sample[2] || sample[0] !== samples[0][0]) answered = true
+      still = answered && sample[0] === samples[samples.length - 1][0] ? still + 1 : 0
       samples.push(sample)
+      if (still >= 12) break
     }
     const values = samples.map(([text]) => amount(text)).filter((v) => v !== null)
     const count = downOnly(values)
     const maxScroll = Math.max(...samples.map(([, y]) => y))
-    const undo = await mod.getByRole('button', { name: T.undo }).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const undo = samples.some(([, , shown]) => shown)
     const shown = (v) => samples.find(([text]) => amount(text) === v)?.[0] ?? String(v)
     const problems = []
     if (!count.ok) problems.push(count.upAt > 0 ? 'the hero went up during the count' : 'the hero did not go down')
     if (maxScroll !== 0) problems.push(`scrollY reached ${maxScroll}`)
     if (!undo) problems.push('no Undo')
-    const measured = `${shown(count.from)} → ${shown(count.to)} in ${count.steps} steps${count.upAt === -1 ? ', never up' : ''}; scrollY max ${maxScroll}; Undo ${undo ? 'shown' : 'missing'}`
+    if (!answered) problems.push(`no answer to "${T.needed.source}" within ${NEEDED_MS / 1000} s`)
+    if (labelStatus !== null && labelStatus >= 400) problems.push(`POST /api/baskets/label answered ${labelStatus}`)
+    const waited = ((Date.now() - started) / 1000).toFixed(1)
+    const measured = `${shown(count.from)} → ${shown(count.to)} in ${count.steps} steps${count.upAt === -1 ? ', never up' : ''}; scrollY max ${maxScroll}; Undo ${undo ? 'shown' : 'missing'}; ${waited} s`
     report(3, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : `Needed: ${measured}`)
   }
 
@@ -236,15 +273,22 @@ try {
     const action = answer.article.getByRole('button', { name: T.saveAction })
     if (!(await action.count())) {
       if (mock) report(5, 'SKIP', `"${T.saveQuestion}" (${answer.how}): the mock build answers without the safe-to-save card, so there is no "See monthly saving" (#495)`)
-      else report(5, 'FAIL', `"${T.saveQuestion}" (${answer.how}): the answer has no "See monthly saving" action`)
+      else {
+        const buttons = (await answer.article.getByRole('button').allInnerTexts()).map((b) => short(b, 40)).filter((b) => !/\d/.test(b))
+        report(5, 'FAIL', `"${T.saveQuestion}" (${answer.how}): the answer has no "See monthly saving" action (its buttons: ${buttons.join(' | ') || 'none'})`)
+      }
     } else {
       const label = short(await action.first().innerText(), 50)
       await action.first().click()
       const sheet = await page.locator('.sheet-title').first().waitFor({ timeout: 3000 }).then(() => page.locator('.sheet-title').first().innerText(), () => '')
       const names = await page.locator('.log-item .log-name').allInnerTexts()
+      const bodies = await page.locator('.log-item').evaluateAll((items) =>
+        items.filter((i) => i.querySelector('.log-name')?.textContent === 'sentti.openHostScreen').map((i) => i.querySelector('.log-body')?.textContent ?? ''),
+      )
       const problems = []
       if (!T.hostScreen.test(sheet)) problems.push(sheet ? `host sheet "${short(sheet)}"` : 'no host sheet')
       if (!names.includes('sentti.openHostScreen')) problems.push('the log has no sentti.openHostScreen')
+      else if (!bodies.some((b) => b.includes('"monthly_saving"'))) problems.push(`sentti.openHostScreen without the target monthly_saving (${short(bodies[0], 60)})`)
       const measured = `"${label}" → host sheet "${short(sheet)}"; log: ${names.slice(0, 3).join(', ') || 'empty'}`
       report(5, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : measured)
       await page.keyboard.press('Escape')
@@ -265,6 +309,7 @@ try {
     const step = results.length + 1
     report(step, 'FAIL', `stopped: ${short(error.message.split('\n')[0], 140)}`)
   }
+  for (let step = results.length + 1; step <= STEPS; step++) report(step, 'SKIP', 'not reached')
 } finally {
   await browser.close()
 }
