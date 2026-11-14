@@ -9,6 +9,7 @@ import { useSettings } from '../lib/settings.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
 import { TokenText } from './cards.tsx'
+import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
 
 type Strings = ReturnType<typeof chatStrings>
@@ -212,7 +213,12 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
         {turn.question}
       </p>
 
-      {(hasContent || streaming || done) && <SenttiLabel s={s} />}
+      {(hasContent || streaming || done) && (
+        <div className="flex min-h-11 items-center justify-between gap-2">
+          <SenttiLabel s={s} />
+          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} latest={latest} />}
+        </div>
+      )}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
 
