@@ -20,7 +20,8 @@ Settings, from the environment (and the repository's .env, like the Gemini setti
 - NEMOTRON_VL_MODEL: the model id (default PROVIDER.default_model, the provider's own).
 - BILL_READER: auto (default: Nemotron when the key is set, else Gemini), gemini, or nemotron (the same as auto,
   said explicitly).
-- NEMOTRON_TIMEOUT_S: seconds per reading (default 12, at most 30), so a slow provider falls back in time.
+- NEMOTRON_TIMEOUT_S: seconds for the whole reading, from the request to the last byte of the answer (default 30,
+  at most 30), so a slow provider falls back in time. The real check on #616 read warm in 6.5 to 24.5 s (#637).
 - NEMOTRON_DAILY_BUDGET: Nemotron requests in any rolling 24 hours (default 30; 0 turns the reader off),
   counted in var/nemotron-requests.jsonl.
 A bad value is the default, with one log line; nothing fails at start-up.
@@ -32,6 +33,8 @@ import base64
 import json
 import logging
 import re
+import string
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,10 +51,14 @@ log = logging.getLogger("core.bills.nemotron")
 ops_log = logging.getLogger("uvicorn.error")   # the service log: what the operator sees (a fallback, a bad setting)
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LEDGER = ROOT / "var" / "nemotron-requests.jsonl"
-DEFAULT_TIMEOUT_S = 12.0
+# The real check on #616 read the samples warm in 6.5 to 24.5 s; 12 s sent the slowest to Gemini every time (#637).
+MAX_TIMEOUT_S = 30.0
+DEFAULT_TIMEOUT_S = MAX_TIMEOUT_S
 DEFAULT_DAILY_BUDGET = 30
 # The answer is six short strings (max_tokens 4096): a larger body is no reading, and is never read further (#594).
 MAX_RESPONSE_BYTES = 32 * 1024
+CHUNK_BYTES = 4096
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 @dataclass(frozen=True)
@@ -137,8 +144,9 @@ def request_body(model: str, contents: list[dict[str, Any]], config: dict[str, A
 
 def without_think(text: str) -> str:
     """The text without <think>…</think> blocks, in one linear pass (a lazy regex is quadratic on unclosed tags,
-    #594). An unclosed block drops the rest: it is reasoning, not the reading."""
-    lower, out, i = text.lower(), [], 0
+    #594). An unclosed block drops the rest: it is reasoning, not the reading. The case fold is ASCII only, so an
+    index in the folded text is the same index in the text ("İ".lower() is two characters, #637)."""
+    lower, out, i = text.translate(_ASCII_LOWER), [], 0
     while True:
         start = lower.find("<think>", i)
         if start < 0:
@@ -196,9 +204,29 @@ def valid_url(url: str | None) -> bool:
         return False
     try:
         parts = urllib.parse.urlsplit(url)
+        parts.port              # a port that is not a number from 0 to 65535 raises ValueError (#637)
     except ValueError:
         return False
     return parts.scheme == "https" and bool(parts.hostname) and parts.username is None and parts.password is None
+
+
+def _read_body(response: Any, deadline: float) -> bytes:
+    """The answer's body, at most MAX_RESPONSE_BYTES + 1 bytes, read by the deadline of the whole reading (#637).
+    The socket's timeout holds for each wait alone, so an answer that trickles in a few bytes at a time would run
+    on far past it: each read takes what one network read gives (read1), and no read starts after the deadline.
+    A wait that started before the deadline still ends by the socket's timeout."""
+    read = getattr(response, "read1", None) or response.read
+    chunks: list[bytes] = []
+    size = 0
+    while size <= MAX_RESPONSE_BYTES:
+        if time.monotonic() > deadline:
+            raise ProviderTimeout()
+        chunk = read(min(CHUNK_BYTES, MAX_RESPONSE_BYTES + 1 - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b"".join(chunks)
 
 
 class NemotronTransport:
@@ -223,9 +251,10 @@ class NemotronTransport:
             self.url, data=json.dumps(body).encode("utf-8"), method="POST",
             headers={"Authorization": "Bearer " + self._key, "Content-Type": "application/json",
                      "Accept": "application/json"})
+        deadline = time.monotonic() + timeout_s     # the whole reading, not each wait (#637)
         try:
             with self._open(request, timeout=timeout_s) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = _read_body(response, deadline)
             if len(raw) > MAX_RESPONSE_BYTES:
                 raise ProviderBadResponse()
             data = json.loads(raw.decode("utf-8"))
@@ -283,8 +312,8 @@ class NemotronSettings(BaseSettings):
             seconds = float(str(value).strip())
         except (TypeError, ValueError):
             seconds = -1.0
-        return seconds if 0 < seconds <= 30 else _bad("NEMOTRON_TIMEOUT_S", DEFAULT_TIMEOUT_S,
-                                                      "seconds, more than 0, at most 30")
+        return seconds if 0 < seconds <= MAX_TIMEOUT_S else _bad("NEMOTRON_TIMEOUT_S", DEFAULT_TIMEOUT_S,
+                                                                 "seconds, more than 0, at most 30")
 
     @field_validator("nemotron_daily_budget", mode="before")
     @classmethod
