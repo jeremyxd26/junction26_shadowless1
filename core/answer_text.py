@@ -283,7 +283,9 @@ def display_matches(display: str, value: float, unit: str, language: str, method
 BANK_PRODUCT = re.compile(
     r"\bS-?mobiili\w*"                                       # the bank's app: S-mobiili, S-mobiilissa, S-mobiiliin
     r"|\bmonthly\s+saving\b(?!s|\s+of\b)"                    # the product; "monthly savings", "a monthly saving of" pass
+    r"|\binto\s+(?:your\s+)?monthly\s+savings?\b"            # "put it into monthly savings": a destination
     r"|\bkuukausisäästämi\w*"                                # kuukausisäästäminen in every case; "kuukausisäästö" passes
+    r"|\bkuukausisäästö(?:ön|ihin)\b"                        # "laita se kuukausisäästöön": a destination
     r"|\b(?:investment|index|equity|stock|bond|mutual|money[- ]market)\s+funds?\b"
     r"|\b(?:into|in)\s+(?:a\s+|the\s+|your\s+)?funds?\b"     # "into a fund"; "an emergency fund" and "refund" pass
     r"|\bfund\s+(?:units?|shares?|savings?)\b|\bBonus\s+to\s+fund\b"

@@ -23,6 +23,7 @@ from test_tools_safe_to_save_pure import run as save_run
 
 from core.agent import template
 from core.agent.validator import allowed_from, amount_with_bank_product
+from core.answer_text import amount_beside_bank_product
 from core.tools import config
 from core.tools.models import HOST_SCREEN_TARGETS
 
@@ -133,3 +134,24 @@ def test_the_bonus_template_keeps_the_amount_apart_from_the_bank(language, quest
         numbers[n.id] = n
     text = template_text(result, numbers, language, question)
     assert amount_with_bank_product(text, numbers) is None, text
+
+
+def strings_of(obj):
+    """Every string of a card (titles, subtitles, labels, estimate texts, displays, action labels)."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from strings_of(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from strings_of(v)
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_no_card_string_names_an_amount_and_the_bank(language):
+    """Decisions 2 and 4: nothing next to the button joins an amount and the bank's screen or product."""
+    results = [save_run(r, language)[0] for r in SAVE_ROWS.values()] + [bonus_run(language=language)[0]]
+    for result in results:
+        for text in strings_of(result.card.model_dump(mode="json")):
+            assert amount_beside_bank_product(text) is None, (result.tool, text)
