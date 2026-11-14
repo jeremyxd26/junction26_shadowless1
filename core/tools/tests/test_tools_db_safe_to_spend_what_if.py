@@ -265,8 +265,9 @@ def test_what_if_rejects_a_health_merchant(conn):
 def test_what_if_without_spending_is_an_invalid_scenario(conn):
     # CUST00002 has no Travel in the window (metrics.md section 6 worked numbers: 0.00 a month)
     assert sql_row(conn, "04_what_if.sql", "CUST00002", {"whatif": "category:Travel", "whatif_pct": "20"}) == []
-    with pytest.raises(ValueError, match="invalid_scenario"):
-        run_what_if(ctx_for(conn, "CUST00002"), {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
+    with pytest.raises(ValueError, match="invalid_scenario"):   # the endpoint's mode: 422 (contracts section 8.1)
+        run_what_if(ctx_for(conn, "CUST00002"), {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20},
+                    too_few="not_offered")
 
 
 @pytest.mark.parametrize("customer_id", SAMPLE + ["CUST00860"])
@@ -386,3 +387,15 @@ def test_the_endpoint_mode_answers_too_few_purchases_as_not_offered_with_the_rea
     assert_reconciles(conn, customer_id, refs)
     # the card opens the purchases themselves
     assert evidence.resolve(conn, result.card.evidence_ref, customer_id).row_count == row["n_tx"]
+
+
+def test_a_what_if_on_a_selection_never_bought_in_the_window_says_there_is_nothing_to_cut(conn):
+    # #498: CUST00493 has no public transport (MCC 4111) in the window; the chat's tool says so, with no number
+    assert sql_row(conn, "04_what_if.sql", "CUST00493", {"whatif": "mcc:4111", "whatif_pct": "20"}) == []
+    ctx = ctx_for(conn, "CUST00493")
+    with pytest.raises(MissingData) as raised:
+        run_what_if(ctx, {"selection": {"kind": "mcc", "value": "4111"}, "cut_pct": 20})
+    d = raised.value.details
+    assert raised.value.reason == "too_few_transactions" and d["n"] == 0 and raised.value.numbers == {}
+    assert d["span"] == "Between 1 Apr and 30 Sep 2026" and ctx.numbers.all() == {}
+    assert "purchases" not in d["what"]   # "public transport" (with #488's names) or "MCC 4111", never doubled
