@@ -48,7 +48,7 @@
   "tool_calls": [
    "ask_clarifying_question"
   ],
-  "text": "By how much would you like to cut it, and in which category?",
-  "text_rendered": "By how much would you like to cut it, and in which category?"
+  "text": "Which spending would you like to cut, and by how much?",
+  "text_rendered": "Which spending would you like to cut, and by how much?"
  }
 }

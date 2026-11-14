@@ -109,7 +109,10 @@ def test_clarifying_question_ends_the_turn(make_pipeline):
     events = run(make_pipeline(ScriptedModel(plans=[[ask]])), "How much did I spend?")
     done = dict(events)["done"]
     assert done["outcome"] == "clarify"
-    assert done["clarify"] == {"question": "Which period do you mean?", "options": ["This month", "Last month"]}
+    # This registry has no spending tool, so the rules cannot take "This month" as a next message, and
+    # their own clarifying question replaces the model's (#304). With the service's tools it is kept.
+    assert done["clarify"] == {"question": "Which period do you mean?",
+                               "options": ["This month", "Last month", "The last three months"]}
 
 
 def test_clarifying_question_with_a_number_is_replaced(make_pipeline):
