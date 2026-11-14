@@ -55,6 +55,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "bill.request_fields": schemas.BillExplainRequest,
     "bill.response": schemas.BillExplainResponse,
     "bill.response_unknown": schemas.BillExplainResponse,
+    "bill.response_not_covered": schemas.BillExplainResponse,
     "bill.error": schemas.BillErrorResponse,                # #242: invalid_bill with its `reason`
     # bill.read_response joins with #250 (section 11.4, not implemented yet)
     "action.open_host_screen": schemas.OpenHostScreenAction,   # contract 0.3.1 (#267)
