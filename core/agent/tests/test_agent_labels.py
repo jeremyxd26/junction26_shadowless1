@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+from types import SimpleNamespace
 
 import pytest
 from agent_fakes import AUG, FakeArgs, audit_records, fake_spending, registry, run
@@ -23,7 +24,7 @@ REVIEW_CARD = {"card_id": "card_review", "type": "review", "category": "Home & T
 class Steps:
     """A fake of the overview's label functions that records what happened, in order."""
 
-    def __init__(self, log: list[str], labels_=None, pending="review", card=REVIEW_CARD):
+    def __init__(self, log: list[str], labels_=None, pending=SimpleNamespace(tx_id=606016), card=REVIEW_CARD):
         self.log = log
         self.labels = {606016: "unclassified", 1: "everyday_spending"} if labels_ is None else labels_
         self.pending = pending
@@ -94,8 +95,17 @@ def test_every_tool_call_shares_the_answers_labels_and_reads_none(make_pipeline,
     assert len(seen) == 2 and all(s is steps.labels for s in seen)
 
 
-def _tool(name):
-    return ToolSpec(name, name, FakeArgs, fake_spending, ("x", "x"))
+SPIKE_TX = SimpleNamespace(id=606016, category="Home & Tech")
+
+
+def _tool(name, fails=False):
+    """A data tool that loads a history holding the spike's purchase (the card checks its category)."""
+    def fn(ctx, args):
+        if fails:
+            raise RuntimeError("the tool failed")
+        ctx._history = [SPIKE_TX]
+        return fake_spending(ctx, args)
+    return ToolSpec(name, name, FakeArgs, fn, ("x", "x"))
 
 
 def test_the_pending_review_card_joins_a_safe_to_spend_or_basket_answer(make_pipeline):
@@ -116,10 +126,20 @@ def test_the_pending_review_card_joins_a_safe_to_spend_or_basket_answer(make_pip
 
 @pytest.mark.parametrize("args,attached", [({"category": "Restaurants"}, False), ({"category": "Home & Tech"}, True)])
 def test_a_category_answer_gets_the_card_only_for_the_spikes_category(make_pipeline, args, attached):
+    log: list[str] = []
     reg = registry(_tool("get_spending"))
     model = ScriptedModel(plans=[[FunctionCall("get_spending", args), FunctionCall("finish")]], drafts=[GOOD])
-    events = run(pipeline(make_pipeline, model, Steps([]), reg=reg))
+    events = run(pipeline(make_pipeline, model, Steps(log), reg=reg))
     assert ("card_review" in [p["card"]["card_id"] for e, p in events if e == "card"]) is attached
+    assert ("card" in log) is attached   # review of #231: no card is built (no connection) when not sent
+
+
+def test_no_card_when_the_triggering_call_failed(make_pipeline):
+    log: list[str] = []
+    reg = registry(_tool("get_safe_to_spend", fails=True))
+    model = ScriptedModel(plans=[[FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")]], drafts=[GOOD])
+    events = run(pipeline(make_pipeline, model, Steps(log), reg=reg))
+    assert "card" not in log and "card_review" not in [p["card"]["card_id"] for e, p in events if e == "card"]
 
 
 def test_no_card_without_a_pending_review_or_without_room(make_pipeline):

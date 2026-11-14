@@ -173,6 +173,7 @@ class _Answer:
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
+    ok_calls: list[dict[str, Any]] = field(default_factory=list)  # the data calls that returned a result
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -310,6 +311,7 @@ class Pipeline:
             for (call, args), record in zip(pending, records):
                 a.calls.append({"name": call.name, "args": call.args})
                 if "view" in record:
+                    a.ok_calls.append({"name": call.name, "args": call.args})
                     views.append(record.pop("view"))
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
@@ -373,10 +375,17 @@ class Pipeline:
     def _attach_review(self, ctx: ToolContext, pending: Any, emit: Emit, a: _Answer) -> None:
         """Add the pending review's card when the answer's tools touched the spike's basket or category
         (contract section 7.2). It counts towards the three cards; it is the server's, never the model's."""
-        names = {c["name"] for c in a.calls}
-        filtered = [c for c in a.calls if c["name"] in CATEGORY_TOOLS]
+        # Only calls that returned a result count (review of #231): a failed call touched nothing.
+        names = {c["name"] for c in a.ok_calls}
+        filtered = [c for c in a.ok_calls if c["name"] in CATEGORY_TOOLS]
         if len(a.cards) >= MAX_CARDS or not (names & SPIKE_TOOLS or filtered):
             return
+        if not names & SPIKE_TOOLS:
+            # The spike's category from the history the tools already loaded, before any connection is
+            # taken or evidence written for a card that would not be sent.
+            category = next((t.category for t in ctx._history or [] if t.id == getattr(pending, "tx_id", None)), None)
+            if category is None or not any(json.dumps(category) in json.dumps(c["args"]) for c in filtered):
+                return
         try:
             with self.data.connection() as conn:
                 ctx.conn = conn
@@ -388,9 +397,6 @@ class Pipeline:
             log.warning("review card not added (data unavailable)")  # the answer itself stands
             return
         if card is None:
-            return
-        if not names & SPIKE_TOOLS and not any(json.dumps(card.get("category")) in json.dumps(c["args"])
-                                               for c in filtered):
             return
         a.cards.append(card["card_id"])
         emit("card", {"card": card})
