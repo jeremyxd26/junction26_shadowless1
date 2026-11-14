@@ -82,16 +82,54 @@ cases:
   question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
   intent: save_more
   expect: answered
-  expected_tools: [get_basket_breakdown, get_recurring_bills]
+  expected_tools: [get_safe_to_save, get_basket_breakdown]
   tags: [brief, q4_save_more, lead]
   numbers:
+  - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
   - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
-  - {name: bills_due_before_payday, value: 928.5, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
-  - {name: total_spending_month, value: 3010.59, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
   forbid:
   - {name: invented_dining_cut_saving, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+
+- id: sanna-bonus
+  persona: CUST00860
+  question: {en: 'How much S-Bonus could I get?', fi: 'Paljonko S-Bonusta voisin saada?'}
+  intent: bonus
+  expect: answered
+  expected_tools: [get_bonus_estimate]
+  tags: [bonus, lead]
+  numbers:
+  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: bonus_total_month, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
+  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
+  forbid:
+  - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
+
+- id: sanna-bonus-half
+  persona: CUST00860
+  question: {en: 'What would my Bonus be if half my groceries were S-Group?', fi: 'Mikä olisi Bonukseni, jos puolet ruokaostoksista olisi S-ryhmästä?'}
+  intent: bonus
+  expect: answered
+  expected_tools: [get_bonus_estimate]
+  tags: [bonus, lead]
+  numbers:
+  - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
+  - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
+  forbid:
+  - {name: bonus_total_month_default, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
+
+- id: sanna-peer-comparison
+  persona: CUST00860
+  question: {en: 'How do I compare with people like me?', fi: 'Miten kulutukseni vertautuu kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, lead]
+  numbers:
+  - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
+  - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
+  - {name: peer_group_size, value: 118, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
 
 - id: marja-q1-where-money-went
   persona: CUST00493

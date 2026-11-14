@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from core import answer_text
+from core.tools import config as tools_config
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -60,11 +61,19 @@ MONTHLY_AVERAGE = ("monthly average", "kuukausikeskiarvo")
 # "How could I save more?" without a category or a cut: the answer shows the basket shares and the bills
 # due, and ends by offering a what-if on the largest everyday category. The offer names no amount: the
 # coach never suggests a cut (issue #142, R1); the user says by how much.
-SAVE_MORE = r"save more|saving more|säästää enemmän|säästäisin enemmän|säästämään enemmän|säästöä enemmän"
+SAVE_MORE = (r"save more(?! time)|saving more(?! time)|help me save|help me to save|säästää enemmän|"
+             r"säästäisin enemmän|säästämään enemmän|säästöä enemmän|säästän enemmän")
 WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how much.",
                  "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
 WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
                      "Haluatko nähdä, mitä vähentäminen tekisi? Kerro luokka ja kuinka paljon.")
+# The peer benchmark's reasons for showing nothing (#216): the reason only, never a number.
+PEER_REASON = {
+    "group_too_small": ("There are too few people like you in the data to compare with.",
+                        "Aineistossa on liian vähän kaltaisiasi vertailuun."),
+    "not_comparable": ("Your spending cannot be compared with people like you for this period.",
+                       "Kulutustasi ei voi verrata kaltaisiisi tällä jaksolla."),
+}
 NO_DATA = ("There are no transactions for that period in your data.",
            "Tältä jaksolta ei ole tapahtumia aineistossasi.")
 TOOL_FAILED = ("Some of the data could not be computed right now.",
@@ -185,10 +194,19 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
 BILL_WORDS = r"\bbills?\b|\blasku\w*"
-BILL_PAYDAY = r"\b(payday|pay day|salary|income|palkka\w*|palkkapäiv\w*|tulo|tulot|tuloni|tuloja)\b"
+# Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
+# takeaway below read them from here, so a question routed for its income gets the income (#216).
+INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
+                r"tuloja|tienaa?\w*|ansaitse\w*)\b")
 
 # Matched against the folded question (no diacritics), so folded here too.
-SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, BILL_PAYDAY))
+SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS))
+
+
+def asks_income(q: str) -> bool:
+    """A folded question about income or payday and not about the bills ("Which bills are due before
+    payday?" is a bills question)."""
+    return bool(re.search(INCOME_WORDS, q)) and not re.search(BILL_WORDS, q)
 
 
 def _num(node: Any, label: str | None = None) -> tuple[str, str] | None:
@@ -217,6 +235,37 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         if not re.search(SAVE_MORE, q):  # "save more": the three shares, the rest stays in the card
             picks.append(_num(view.get("total")))
         picks += [_num(b.get("share"), b.get("label")) for b in view.get("baskets") or []]
+    elif tool == "get_safe_to_save":
+        # The monthly figure is the main number (#216); "save more" cites it alone next to the basket
+        # shares. When it is 0, the tool's reason says why (a text without digits), never a negative.
+        picks.append(_num(view.get("monthly")))
+        if not re.search(SAVE_MORE, q):
+            picks.append(_num(view.get("stock")))
+        reason = view.get("reason") or {}
+        if (view.get("monthly") or {}).get("value") == 0 and isinstance(reason.get("text"), str):
+            extra.append(reason["text"])
+    elif tool == "get_bonus_estimate":
+        # The estimate and its assumptions sentence; the user's share stays out of the text (#216).
+        if view.get("status") == "not_offered":
+            if isinstance(view.get("reason"), str):
+                extra.append(view["reason"])
+        else:
+            # The share is cited too: the user's own number when they gave one ("Share at S-Group
+            # stores"), else the assumed default ("Assumed share ..."), so a "half" answer never reads
+            # like one for all groceries (review of #246).
+            picks += [_num(view.get(k)) for k in ("total_month", "share", "total_year", "grocery_month")]
+            assumptions = [a for a in view.get("assumptions") or [] if isinstance(a, str)]
+            if assumptions:
+                extra.append(assumptions[-1])  # "...a what-if, not a fact about where you shop."
+    elif tool == "get_peer_benchmark":
+        # The position, the difference from the median with the tool's own display (it carries its
+        # direction word), the median and the group size; nothing but the reason when not shown (#216).
+        if view.get("shown") is False:
+            if view.get("reason") in PEER_REASON:
+                extra.append(pick(PEER_REASON[view["reason"]], language))
+        else:
+            picks += [_num(view.get("percentile")), _num(view.get("vs_median")), _num(view.get("peer_median")),
+                      _num((view.get("peer_group") or {}).get("size"))]
     elif tool == "get_safe_to_spend":
         picks += [_num(view.get(k)) for k in ("safe_to_spend", "balance_limit", "budget_limit")]
     elif tool == "run_what_if":
@@ -225,7 +274,7 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
     elif tool == "get_recurring_bills":
         if re.search(SAVE_MORE, q):  # "save more": the bills due before payday, one number
             picks.append(_num(view.get("upcoming_total")))
-        elif re.search(BILL_PAYDAY, q) and not re.search(BILL_WORDS, q):
+        elif asks_income(q):
             picks += [_num(i.get("typical_month"), i.get("label")) for i in view.get("income") or []]
             if isinstance(view.get("next_payday"), str):
                 extra.append(f"{pick(NEXT_PAYDAY, language)}: {_date(view['next_payday'], language)}.")
@@ -238,6 +287,53 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         picks = list(_numbers_in(view))
     out = [p for p in picks if p is not None][:TAKEAWAY_SIZE]
     return out, extra
+
+
+# Safe to spend as one takeaway sentence with its reason (coordinator, after #246): the amount, and which
+# limit binds. The three numbers are the ones the takeaway always cited.
+SAFE_SENTENCE = {
+    "budget": ("Safe to spend in the coming week: {safe}, because your monthly budget is the limit ({budget}); "
+               "your balance would allow more ({balance}).",
+               "Turvallisesti käytettävissä tulevalla viikolla: {safe}, koska kuukausibudjettisi on raja ({budget}); "
+               "saldosi sallisi enemmän ({balance})."),
+    "balance": ("Safe to spend in the coming week: {safe}, because your balance is the limit ({balance}); "
+                "your monthly budget would allow more ({budget}).",
+                "Turvallisesti käytettävissä tulevalla viikolla: {safe}, koska saldosi on raja ({balance}); "
+                "kuukausibudjettisi sallisi enemmän ({budget})."),
+    "equal": ("Safe to spend in the coming week: {safe}; your balance and your monthly budget set the same limit "
+              "({balance}).",
+              "Turvallisesti käytettävissä tulevalla viikolla: {safe}; saldosi ja kuukausibudjettisi asettavat saman "
+              "rajan ({balance})."),
+}
+
+
+def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The safe-to-spend takeaway as one sentence, and the ids it cites; None when a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    nums = {k: view.get(k) for k in ("safe_to_spend", "balance_limit", "budget_limit")}
+    if not all(isinstance(n, dict) and isinstance(n.get("id"), str) for n in nums.values()):
+        return None
+    if nums["balance_limit"].get("value") == nums["budget_limit"].get("value"):
+        kind, ids = "equal", [nums["safe_to_spend"]["id"], nums["balance_limit"]["id"]]
+    else:
+        kind = "balance" if view.get("binding_limit") == "balance" else "budget"
+        ids = [nums[k]["id"] for k in ("safe_to_spend", "balance_limit", "budget_limit")]
+    tokens = {k.split("_")[0] if k != "safe_to_spend" else "safe": f"{{{{{n['id']}}}}}" for k, n in nums.items()}
+    return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
+
+
+PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")
+
+
+def lead_sentences(view: dict[str, Any], language: str) -> list[str]:
+    """Text that comes before a tool's numbers: the spender profile's own label and description, so
+    the answer to "What kind of spender am I?" names the type (review of #246). Text, never a number."""
+    profile = view.get("profile") if view.get("tool") == "get_spender_profile" else None
+    if isinstance(profile, dict) and isinstance(profile.get("label"), str):
+        description = profile.get("description") if isinstance(profile.get("description"), str) else ""
+        return [pick(PROFILE_LEAD, language).format(label=profile["label"], description=description).strip()]
+    return []
 
 
 def save_more_plan(views: list[dict[str, Any]], question: str) -> bool:
@@ -254,6 +350,8 @@ def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
             if basket.get("key") != "everyday_spending":
                 continue
             for c in basket.get("categories") or []:
+                if c.get("key") not in tools_config.WHAT_IF_CATEGORIES:  # only a cut the rules can plan
+                    continue
                 amount = (c.get("amount") or {}).get("value")
                 if isinstance(amount, (int, float)) and c.get("label") and (largest is None or amount > largest[0]):
                     largest = (amount, c["label"])
@@ -296,6 +394,12 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         period = view.get("period")
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
+        sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
+        custom = safe_to_spend_sentence(view, language)
+        if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
+            sentences.append(custom[0])
+            cited += custom[1]
+            chosen = []  # the sentence above cites them
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue

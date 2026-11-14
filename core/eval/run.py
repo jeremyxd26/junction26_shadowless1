@@ -132,6 +132,11 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
         # - any other number passes only if a tool call of this same answer returned it (the audit's
         #   model views), and its value is checked against SQL wherever the case can derive it.
         typed = answer_text.scan_numbers(question, lang)
+        # A share the user gave as a word counts as typed (#216): "half" is 50 %, "all" 100 %.
+        if re.search(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b", question, re.I):
+            typed.append((50.0, "pct"))
+        if re.search(r"\ball\b|\bkaikki\w*", question, re.I):
+            typed.append((100.0, "pct"))
         for x in declared:
             if any(x["unit"] == n["unit"] and answer_text.same_value(x["value"], n["value"], n["unit"], x.get("method"))
                    for n in wanted):
