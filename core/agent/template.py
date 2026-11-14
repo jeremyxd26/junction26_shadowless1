@@ -491,9 +491,10 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return f"{{{{{node['id']}}}}}"
     if tool == "get_safe_to_spend":
         safe, usual = view.get("safe_to_spend"), view.get("usual_week")
-        if view.get("binding_limit") != "budget" or not (_id(safe) and _id(usual)):
+        if view.get("binding_limit") != "budget" or not _id(safe):
             return None
-        if _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
+        # without the usual pace the goal is still said (#552): the plain goal sentence
+        if _id(usual) and _value(safe) < _value(usual) - float(tools_config.USUAL_PACE_MARGIN_EUR):
             text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["below_usual_with_goal"], language)
             return text.format(goal=tok(goal), safe=tok(safe), usual=tok(usual)), [goal["id"], safe["id"], usual["id"]]
         text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT["with_goal"], language)
@@ -506,6 +507,40 @@ def goal_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] 
         return text.format(goal=tok(goal), weekly=tok(weekly)), [goal["id"], weekly["id"]]
     text = tools_config.label(tools_config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language)
     return text.format(goal=tok(goal), monthly=tok(monthly)), [goal["id"], monthly["id"]]
+
+
+# "Why is my safe to spend lower / so low / so little", "miksi vähemmän / niin vähän" (#552): a rule answer from the
+# safe-to-spend view (why_lower_sentence), never a model guess. Matched on the folded question; the rule planner
+# also wants the safe-to-spend words, or a short bare question, and no category.
+WHY_LOWER = (r"\b(why|how come)\b.*\b(lower|low|so little|less|smaller|so small|only)\b"
+             r"|\bmiksi\b.*\b(vahemman|vahan|pieni\w*|pienempi|pienemp\w*|alhai\w*|matala\w*)\b")
+
+
+def why_lower(q: str) -> bool:
+    return bool(re.search(WHY_LOWER, q))
+
+
+def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The answer to "why is my safe to spend lower?" (#552): the limit that binds by name (the view's
+    binding_limit), with the budget side the savings goal set aside first, and the other side's figure. None when
+    a number is missing."""
+    if view.get("tool") != "get_safe_to_spend":
+        return None
+    safe, goal, balance, budget = (view.get(k) for k in ("safe_to_spend", "savings_goal", "balance_limit",
+                                                         "budget_limit"))
+    if not (_id(safe) and _id(balance) and _id(budget)):
+        return None
+    if _value(balance) == _value(budget):
+        key, cited = "why_equal", [safe]
+    elif view.get("binding_limit") == "budget":
+        key, cited = ("why_budget_goal", [safe, goal, balance]) if _value(goal) > 0 and _id(goal) else \
+            ("why_budget", [safe, balance])
+    else:
+        key, cited = "why_balance", [safe, budget]
+    tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
+              (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
+    text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
+    return text.format(**{**{"goal": ""}, **tokens}), [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
@@ -769,7 +804,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         has_head = isinstance(period, str) and ok(period)
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
-        custom = (safe_to_spend_sentence(view, language)
+        custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
+                  or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:

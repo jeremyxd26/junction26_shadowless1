@@ -410,6 +410,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         planner_fallback = False
+        template_answer = False   # the rule planner asked for its own template answer (#552)
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
         a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
@@ -433,6 +434,8 @@ class Pipeline:
             calls = self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
+            # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
+            template_answer = template_answer or getattr(plan, "template_answer", False)
             model_failed = model_failed or source == "fallback"
             if source == "fallback":
                 a.model_unavailable = a.model_unavailable or "error"
@@ -536,7 +539,8 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
+                                             skip_model=planner_fallback or template_answer
+                                             or a.composer_unavailable is not None, a=a)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).

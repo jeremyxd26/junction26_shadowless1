@@ -1307,6 +1307,11 @@ def claim(request: PlanInput) -> Claim:
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
+    if "get_safe_to_spend" in tools and template.why_lower(q) and not _filter_of(q) and \
+            (re.search(SAFE, q) or len(bare.split()) <= 4):
+        # "Why is my safe to spend lower?", "why so little?", "miksi niin vähän?" (#552): the template answers it
+        # from the safe-to-spend view, naming the limit that binds; never the composer model's guess
+        return Claim("safe_to_spend_why", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")))
     if "get_spending" in tools and any(re.fullmatch(rx, bare) for rx, _ in PRESETS):
         args = plan_spending(question, as_of)
         if args:
@@ -1342,7 +1347,10 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact))
+        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
+        template_answer = claim(request).rule == "safe_to_spend_why"
+        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
+                          template_answer=template_answer)
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:

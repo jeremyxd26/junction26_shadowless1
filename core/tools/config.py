@@ -722,6 +722,24 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
                               "usual {usual}.",
                               "Jotta voit laittaa sivuun {goal}, turvallisesti käytettävissä on noin {safe} "
                               "viikossa, alle tavallisen {usual}."),
+    # "Why is my safe to spend lower?" (#552): the rule answer names the limit that binds, and with the budget side
+    # the goal set aside first; the other side's figure says what would not limit it. At most three numbers.
+    "why_budget_goal": ("This week {safe} is safe to spend because your monthly budget sets the limit, after setting "
+                        "aside {goal} first. Your balance alone would allow {balance}.",
+                        "Tällä viikolla turvallisesti käytettävissä on {safe}, koska kuukausibudjettisi asettaa "
+                        "rajan, kun ensin laitat sivuun {goal}. Saldosi yksin sallisi {balance}."),
+    "why_budget": ("This week {safe} is safe to spend because your monthly budget sets the limit. Your balance alone "
+                   "would allow {balance}.",
+                   "Tällä viikolla turvallisesti käytettävissä on {safe}, koska kuukausibudjettisi asettaa rajan. "
+                   "Saldosi yksin sallisi {balance}."),
+    "why_balance": ("This week {safe} is safe to spend because your balance sets the limit, after the bills and "
+                    "reserves before payday. Your monthly budget would allow {budget}.",
+                    "Tällä viikolla turvallisesti käytettävissä on {safe}, koska saldosi asettaa rajan, kun ennen "
+                    "palkkapäivää erääntyvät laskut ja varaukset on otettu huomioon. Kuukausibudjettisi sallisi "
+                    "{budget}."),
+    "why_equal": ("This week {safe} is safe to spend: your balance and your monthly budget set the same limit.",
+                  "Tällä viikolla turvallisesti käytettävissä on {safe}: saldosi ja kuukausibudjettisi asettavat "
+                  "saman rajan."),
     "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
