@@ -86,6 +86,37 @@ describe('speakAnswer in a live build', () => {
     expect(speech.speakingNow()).toBeNull()
   })
 
+  it('shows "preparing" at once on the tap and clears it when the audio plays', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) }))
+    speech.speakAnswer('7', 'Text.', voice, remote)
+    expect(speech.usePreparingId).toBeTypeOf('function')
+    await flush()
+    expect(sources).toHaveLength(1)
+  })
+
+  it('plays a voice fetched ahead without a second request', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, headers: { get: () => 'ok' }, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })
+    vi.stubGlobal('fetch', fetchSpy)
+    speech.prefetchVoice(remote)
+    speech.prefetchVoice(remote)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    await flush()
+    speech.speakAnswer('7', 'Text.', voice, remote)
+    await flush()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(sources).toHaveLength(1)
+    expect(sources[0].started).toBe(1)
+  })
+
+  it('stops fetching ahead once the core says the budget is low', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, headers: { get: () => 'low' }, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })
+    vi.stubGlobal('fetch', fetchSpy)
+    speech.prefetchVoice(remote)
+    await flush()
+    speech.prefetchVoice({ ...remote, answerId: 'ans_bbbb2222' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('falls back to the device voice on an error answer', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
     speech.speakAnswer('7', 'Groceries were 412.30 EUR.', voice, remote)
