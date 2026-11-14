@@ -3,6 +3,7 @@ import { api } from './api/client.ts'
 import type { Language } from './api/types.ts'
 import { EvidenceSheet } from './components/EvidenceSheet.tsx'
 import { OpeningProvider, OpeningTurn } from './components/OpeningTurn.tsx'
+import { OverviewSheet } from './components/OverviewSheet.tsx'
 import { WhatIfSheet } from './components/WhatIfSheet.tsx'
 import { Header } from './components/Header.tsx'
 import { HostNotice } from './components/HostNotice.tsx'
@@ -13,7 +14,7 @@ import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
 import { useChat } from './lib/useChat.ts'
 import { useLoad } from './lib/useLoad.ts'
-import { redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
+import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
@@ -25,6 +26,7 @@ export default function App() {
   const personaParam = params.get('persona')
   const evidenceRef = params.get('evidence')
   const whatIf = whatIfFromParams(params)
+  const overviewOpen = overviewFromParams(params)
   const [personaSheet, setPersonaSheet] = useState(false)
 
   const loadPersonas = useCallback(() => api.personas(lang), [lang])
@@ -55,7 +57,7 @@ export default function App() {
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
-        <Header onLongPress={() => setPersonaSheet(true)} disclosure={ready?.ai_disclosure || t.disclosure} />
+        <Header onLongPress={() => setPersonaSheet(true)} disclosure={ready?.ai_disclosure || t.disclosure} overviewReady={ready !== null} />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
         <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
           {path === '/cards' && CardGallery ? (
@@ -89,6 +91,8 @@ export default function App() {
         </main>
       </div>
 
+      {/* The overview sheet first, then what-if, then evidence: each one stacks above the one before. */}
+      {overviewOpen && ready && <OverviewSheet overview={ready} />}
       {/* Before the evidence sheet, so evidence opened from a what-if number stacks on top. */}
       {whatIf && customerId && (
         <WhatIfSheet key={`${whatIf.selection.kind}:${whatIf.selection.value}`} scenario={whatIf} />
