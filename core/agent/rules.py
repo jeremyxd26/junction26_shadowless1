@@ -130,7 +130,8 @@ WEATHER_FI = r"\bsää(?:n|tä|ssä|llä|ennuste\w*|tiedot\w*)?\b"
 
 CATEGORY_WORDS = [
     # "food" is food shopping, as Finnish "ruoka" is; eating out is "restaurants" (#527)
-    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks", "Groceries"),
+    (r"groceries|grocery|food shopping|(?<!fast )(?<!fast-)\bfood\b|ruoka(an|ostok\w*)?\b|ruokaostoks|"
+     r"\bruokakulu\w*", "Groceries"),   # "ruokakuluni" (#664)
     (r"restaurants?|dining out|eating out|eat out|fast[- ]food|ravintol\w*|ulkona syö\w*", "Restaurants"),
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
@@ -139,7 +140,11 @@ CATEGORY_WORDS = [
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan|vapaa-aja\w*", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
-    (r"\btransportation\b|liikkumi\w*", "Transportation"),   # the peer card's label (#403)
+    # the peer card's label (#403); "transport" and "liikenne", the app's own label for it (#664). The group phrases
+    # ("public transport", "joukkoliikenne") are removed before this list is read; "liikennevakuutus" and
+    # "liikennesakko" are other things
+    (r"\btransportation\b|liikkumi\w*|\btransport\b|\bliikenne(kulu\w*|meno\w*)?\b|"
+     r"\bliikentee(n|seen|ssä|stä|lle)\b", "Transportation"),
 ]
 # A word inside a compound that names something else is no group (#497): "parking fines", "pysäköintisakko",
 # "the cinema club", "elokuvakerho"; and "Cinemax" is no cinema (whole words only).
