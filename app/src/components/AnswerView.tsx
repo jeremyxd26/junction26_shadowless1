@@ -4,7 +4,7 @@
 import type { Action } from '../api/types.ts'
 import { STAGES, actionsOf, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
-import { openEvidence } from '../lib/url.ts'
+import { openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
@@ -104,9 +104,9 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
     )
   }
   if (action.type === 'open_whatif') {
-    // Until the what-if sheet exists (POST /api/whatif), the coach answers it as a question.
+    // The what-if sheet (#154) takes the action's scenario unchanged.
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => onAsk(action.label)}>
+      <button type="button" className={ACTION_CHIP} onClick={() => openWhatIf(action.scenario)}>
         {action.label}
       </button>
     )
