@@ -30,6 +30,7 @@ def answer_events(events):
 
 
 def test_a_repeated_question_is_served_from_the_cache(make_pipeline, tool_cache_off, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")      # no database here: no labels
     monkeypatch.setattr(tool_cache_off, "mode", "memory")
     calls: list[str] = []
     data = FakeData()
@@ -41,6 +42,7 @@ def test_a_repeated_question_is_served_from_the_cache(make_pipeline, tool_cache_
 
 
 def test_another_customer_never_gets_the_cached_result(make_pipeline, tool_cache_off, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
     monkeypatch.setattr(tool_cache_off, "mode", "memory")
     calls: list[str] = []
     data = FakeData()
