@@ -14,6 +14,11 @@ and prints the time and the source (computed or already cached) of every call. A
 evidence rows are gone from coach_evidence (a reset database) is treated as a miss and computed again:
 one query per persona checks the refs.
 
+Viewers (#144): the warm-up runs without a viewer, so it warms the shared label state. That is the
+state every new viewer starts with (a viewer without answers sees the shared state), so a new viewer's
+first overview is a hit once the pending spike review exists (the warm-up creating it first is #240);
+a viewer who answered gets entries of their own label set.
+
 Limits: only the customers of core/config/personas.yaml, never more; one database connection with the
 tools' 60 s statement timeout; the tools write their evidence specs, as on any request.
 
