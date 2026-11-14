@@ -18,6 +18,9 @@ from core.tools.spending import get_spending
 
 AS_OF = date(2026, 9, 30)
 NON_SPEND = ("Salary", "Other Income", "Invest Withdraw", "Invest Deposit", "Salary Sweep")
+# Two personas: the reference sums are plain SQL, so any customer with taxi and restaurant rows in the
+# period and more than three spending categories proves them; the shared database is for the personas (#508).
+CUSTOMERS = ["CUST00860", "CUST00493"]
 
 
 def ctx_for(conn, customer_id, language="en"):
@@ -37,7 +40,7 @@ def as_dec(number):
     return Decimal(str(number.value))
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
 def test_taxi_last_month_matches_sql(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["taxi"]}})
@@ -49,17 +52,18 @@ def test_taxi_last_month_matches_sql(conn, customer_id):
     assert res.data.total.method == "spending.total@1" and res.data.tx_count.method == "spending.n_tx@1"
 
 
-def test_taxi_last_month_empty(conn):
-    res = get_spending(ctx_for(conn, "CUST00001"),
-                       {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["taxi"]}})
-    assert sql_sum(conn, "CUST00001", date(2026, 8, 1), date(2026, 8, 31), "mcc = '4121'") == (0, 0)
+def test_parking_last_month_empty(conn):
+    # CUST00493 parked nowhere in August (every persona took a taxi then)
+    res = get_spending(ctx_for(conn, "CUST00493"),
+                       {"period": {"preset": "last_month"}, "filter": {"mcc_groups": ["parking"]}})
+    assert sql_sum(conn, "CUST00493", date(2026, 8, 1), date(2026, 8, 31), "mcc = '7523'") == (0, 0)
     assert (res.data.total.value, res.data.tx_count.value) == (0, 0)
     assert res.notes == ["No transactions in this period."]
-    r = evidence.resolve(conn, res.data.total.evidence_ref, "CUST00001")
+    r = evidence.resolve(conn, res.data.total.evidence_ref, "CUST00493")
     assert (r.row_count, r.reconciles, r.rows) == (0, True, [])
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
 def test_restaurants_last_3_months_matches_sql(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_3_months"}, "filter": {"categories": ["Restaurants"]}})
@@ -69,7 +73,7 @@ def test_restaurants_last_3_months_matches_sql(conn, customer_id):
     assert (as_dec(res.data.total), res.data.tx_count.value) == (expected, n)
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
 def test_total_by_category_last_month_matches_sql(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_month"}, "group_by": "category", "top_n": 10})
@@ -86,7 +90,7 @@ def test_total_by_category_last_month_matches_sql(conn, customer_id):
     assert [g.key for g in res.data.groups] == sorted(expected, key=lambda c: (-expected[c], c))
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
 def test_every_evidence_ref_reconciles(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_month"}, "group_by": "category", "top_n": 3,
@@ -102,7 +106,7 @@ def test_every_evidence_ref_reconciles(conn, customer_id):
     assert kinds == {"transactions", "composite"}
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00007", "CUST00008"])
+@pytest.mark.parametrize("customer_id", CUSTOMERS)
 def test_comparison_and_other_group_match_sql(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_month"}, "group_by": "category", "top_n": 3,
@@ -130,19 +134,20 @@ def test_comparison_and_other_group_match_sql(conn, customer_id):
 
 def test_time_groupings_have_no_per_group_change(conn):
     for group_by in ("month", "week"):
-        res = get_spending(ctx_for(conn, "CUST00007"),
+        res = get_spending(ctx_for(conn, "CUST00860"),
                            {"period": {"preset": "last_3_months"}, "group_by": group_by,
                             "compare_to": "previous_period"})
         assert res.data.comparison is not None
         assert res.data.groups and all(g.change is None for g in res.data.groups), group_by
         assert sum(as_dec(g.amount) for g in res.data.groups) == as_dec(res.data.total)
-    months = [g.key for g in get_spending(ctx_for(conn, "CUST00007"),
+    months = [g.key for g in get_spending(ctx_for(conn, "CUST00860"),
                                           {"period": {"preset": "last_3_months"}, "group_by": "month"}).data.groups]
     assert months == ["2026-07", "2026-08", "2026-09"]
 
 
 def test_tone_is_neutral_for_saving_and_counts_are_integers(conn):
-    res = get_spending(ctx_for(conn, "CUST00001"),
+    # CUST00349 invests every month: an August deposit in both years
+    res = get_spending(ctx_for(conn, "CUST00349"),
                        {"period": {"preset": "last_month"}, "filter": {"categories": ["Invest Deposit"]},
                         "compare_to": "same_period_last_year"})
     assert res.data.comparison.tone.value == "neutral"
@@ -152,13 +157,13 @@ def test_tone_is_neutral_for_saving_and_counts_are_integers(conn):
 
 
 def test_evidence_pagination_and_rows(conn):
-    res = get_spending(ctx_for(conn, "CUST00008"),
+    res = get_spending(ctx_for(conn, "CUST00860"),
                        {"period": {"preset": "last_3_months"}, "filter": {"categories": ["Restaurants"]}})
     ref = res.data.total.evidence_ref
-    first = evidence.resolve(conn, ref, "CUST00008", limit=5)
+    first = evidence.resolve(conn, ref, "CUST00860", limit=5)
     seen, cursor = list(first.rows), first.next_cursor
     while cursor:
-        page = evidence.resolve(conn, ref, "CUST00008", limit=5, cursor=cursor)
+        page = evidence.resolve(conn, ref, "CUST00860", limit=5, cursor=cursor)
         seen += page.rows
         cursor = page.next_cursor
     assert len(seen) == first.row_count == res.data.tx_count.value
@@ -168,51 +173,51 @@ def test_evidence_pagination_and_rows(conn):
 
 
 def test_evidence_collision_is_detected_in_the_store(conn):
-    res = get_spending(ctx_for(conn, "CUST00008"), {"period": {"preset": "last_month"}})
+    res = get_spending(ctx_for(conn, "CUST00860"), {"period": {"preset": "last_month"}})
     ref = res.data.total.evidence_ref
     _, stored = evidence.load(conn, ref)
     forged = dict(stored, value="0.01")                       # a different spec under an existing ref
     with pytest.raises(evidence.EvidenceCollision):
         evidence.write(conn, {ref: forged})
     assert evidence.load(conn, ref)[1] == stored              # unchanged
-    assert evidence.resolve(conn, ref, "CUST00008").reconciles is True
+    assert evidence.resolve(conn, ref, "CUST00860").reconciles is True
 
 
 def test_evidence_of_another_customer_is_refused(conn):
-    res = get_spending(ctx_for(conn, "CUST00008"), {"period": {"preset": "last_month"}})
+    res = get_spending(ctx_for(conn, "CUST00860"), {"period": {"preset": "last_month"}})
     with pytest.raises(evidence.EvidenceForbidden):
-        evidence.resolve(conn, res.data.total.evidence_ref, "CUST00007")
+        evidence.resolve(conn, res.data.total.evidence_ref, "CUST00493")
 
 
 def test_refs_stable_across_calls_and_languages(conn):
     args = {"period": {"preset": "last_month"}, "group_by": "category", "compare_to": "previous_period"}
-    a = get_spending(ctx_for(conn, "CUST00007"), args)
-    b = get_spending(ctx_for(conn, "CUST00007", language="fi"), args)
+    a = get_spending(ctx_for(conn, "CUST00860"), args)
+    b = get_spending(ctx_for(conn, "CUST00860", language="fi"), args)
     assert a.evidence == b.evidence
     assert a.data.total.label != b.data.total.label  # labels differ, refs do not
 
 
 def test_model_view_has_no_rows_ids_or_refs(conn):
     for group_by in ("merchant", "category", "week"):
-        res = get_spending(ctx_for(conn, "CUST00008"),
+        res = get_spending(ctx_for(conn, "CUST00860"),
                            {"period": {"preset": "last_3_months"}, "group_by": group_by, "compare_to": "previous_period"})
         text = json.dumps(res.model_view)
         for forbidden in (r"CUST\d", r"MRC-", r"ev_[0-9a-f]", r"\btx_\d", r"customer", r"balance", r'"rows"'):
             assert not re.search(forbidden, text), (group_by, forbidden)
-    merchant_view = get_spending(ctx_for(conn, "CUST00008"),
+    merchant_view = get_spending(ctx_for(conn, "CUST00860"),
                                  {"period": {"preset": "last_3_months"}, "group_by": "merchant"}).model_view
     assert all(g["key"].startswith("store_") or g["key"] in ("other", "no_merchant") for g in merchant_view["groups"])
 
 
 def test_merchant_alias_filter_round_trip(conn):
-    view = get_spending(ctx_for(conn, "CUST00008"),
+    view = get_spending(ctx_for(conn, "CUST00860"),
                         {"period": {"preset": "last_3_months"}, "group_by": "merchant", "top_n": 5}).data
     top = next(g for g in view.groups if g.key.startswith("store_"))  # bills have no merchant
-    res = get_spending(ctx_for(conn, "CUST00008"),
+    res = get_spending(ctx_for(conn, "CUST00860"),
                        {"period": {"preset": "last_3_months"}, "filter": {"merchant": top.key}})
     assert res.data.total.value == top.amount.value
     with pytest.raises(ValueError):
-        get_spending(ctx_for(conn, "CUST00008"),
+        get_spending(ctx_for(conn, "CUST00860"),
                      {"period": {"preset": "last_3_months"}, "filter": {"merchant": "store_zzz"}})
 
 
@@ -224,7 +229,9 @@ BASKET_MONTH_AVG = {
 }
 
 
-@pytest.mark.parametrize("customer_id", sorted(BASKET_MONTH_AVG))
+# the worked numbers of metrics.md: sample customers, on a private database only (#502, #508)
+@pytest.mark.parametrize("customer_id", [pytest.param(c, marks=pytest.mark.sample_customer)
+                                         for c in sorted(BASKET_MONTH_AVG)])
 def test_basket_classification_matches_metrics_worked_numbers(conn, customer_id):
     res = get_spending(ctx_for(conn, customer_id),
                        {"period": {"preset": "last_6_months"}, "group_by": "basket", "top_n": 10})

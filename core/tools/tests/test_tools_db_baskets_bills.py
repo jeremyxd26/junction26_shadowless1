@@ -21,7 +21,12 @@ from core.tools.formatting import money
 
 AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
-CUSTOMERS = ["CUST00001", "CUST00002", "CUST00006"]
+SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+# The sample customers' cases check the worked numbers of metrics.md: on a private database only (#502, #508).
+# The SQL and evidence checks also run for the personas, on the shared database.
+SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]
+CUSTOMERS = SAMPLE_CASES + PERSONAS
 
 
 def ctx_for(conn, customer_id, language="en", as_of=AS_OF):
@@ -86,8 +91,9 @@ def test_baskets_match_02_baskets_sql_and_worked_numbers(conn, customer_id):
             rows += page.rows
             cursor = page.next_cursor
         assert sum(-Decimal(x["amount"]) for x in rows) == row["total_eur"]
-    worked = {k: (str(dec(b.amount)), str(dec(b.share))) for k, b in got.items()}
-    assert worked == BASKETS_WORKED[customer_id]
+    if customer_id in BASKETS_WORKED:   # the worked numbers of metrics.md (sample customers)
+        worked = {k: (str(dec(b.amount)), str(dec(b.share))) for k, b in got.items()}
+        assert worked == BASKETS_WORKED[customer_id]
 
 
 @pytest.mark.parametrize("customer_id", CUSTOMERS)
@@ -103,7 +109,7 @@ def test_basket_total_matches_spender_profile_and_shares_add_up(conn, customer_i
 
 
 def test_part_month_period_uses_period_totals(conn):
-    res = get_basket_breakdown(ctx_for(conn, "CUST00001"),
+    res = get_basket_breakdown(ctx_for(conn, "CUST00860"),
                                {"period": {"preset": "custom", "start": "2026-09-01", "end": "2026-09-14"}})
     assert not res.data.monthly_average and res.data.n_months is None
     assert res.data.total.method == "spending.total@1"
@@ -111,11 +117,12 @@ def test_part_month_period_uses_period_totals(conn):
     expected = Decimal(conn.execute(
         """SELECT COALESCE(sum(-amount_eur), 0) FROM transactions
            WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s AND category <> ALL(%s)""",
-        ("CUST00001", AS_OF, date(2026, 9, 1), date(2026, 9, 14),
+        ("CUST00860", AS_OF, date(2026, 9, 1), date(2026, 9, 14),
          ["Salary", "Other Income", "Invest Withdraw", "Invest Deposit", "Salary Sweep"])).fetchone()[0])
     assert dec(res.data.total) == expected == sum(dec(b.amount) for b in res.data.baskets)
 
 
+@pytest.mark.sample_customer   # CUST00001's Health line inside unexpected necessities
 def test_health_is_only_a_line_inside_a_full_breakdown(conn):
     res = get_basket_breakdown(ctx_for(conn, "CUST00001"), {"period": {"preset": "last_6_months"}})
     unexpected = next(b for b in res.data.baskets if b.key == "unexpected_necessities")
@@ -158,7 +165,7 @@ def test_series_match_01_recurring_sql_and_worked_numbers(conn, customer_id):
             row["direction"], row["months_present"], row["tx_per_month"], row["typical_day"], row["status"],
             row["next_expected_date"], row["last_date"], row["last_tx_id"], row["n_tx_this_month"]), key
         assert money(s.typical_month) == row["typical_month_eur"], key
-    for key, (typical, day, status, nxt) in BILLS_WORKED[customer_id]["series"].items():
+    for key, (typical, day, status, nxt) in BILLS_WORKED.get(customer_id, {"series": {}})["series"].items():
         s = series[key]
         assert (str(money(s.typical_month)), s.status, s.next_expected) == (typical, status, nxt)
         if day is not None:
@@ -169,7 +176,9 @@ def test_series_match_01_recurring_sql_and_worked_numbers(conn, customer_id):
 def test_bills_due_match_03_safe_to_spend_sql_and_worked_numbers(conn, customer_id):
     res = get_recurring_bills(ctx_for(conn, customer_id))
     sql = run_metric(conn, "03_safe_to_spend.sql", customer_id)[0]
-    assert dec(res.data.upcoming_total) == sql["bills_due_eur"] == Decimal(BILLS_WORKED[customer_id]["due"])
+    assert dec(res.data.upcoming_total) == sql["bills_due_eur"]
+    if customer_id in BILLS_WORKED:
+        assert dec(res.data.upcoming_total) == Decimal(BILLS_WORKED[customer_id]["due"])
     assert (res.data.next_payday, res.data.salary_status) == (sql["next_payday"], sql["salary_status"])
     # metrics wins: the total is 03's rounded sum; each item is rounded on its own (0.01 each at most)
     items = sum(dec(b.due_until_payday) for b in res.data.bills)
@@ -191,6 +200,7 @@ def test_bills_due_match_03_safe_to_spend_sql_and_worked_numbers(conn, customer_
     (date(2026, 5, 15), "upcoming", date(2026, 5, 16)),
     (date(2026, 5, 20), "late", date(2026, 5, 31)),
 ])
+@pytest.mark.sample_customer   # CUST00001's own dates of metrics.md sections 2 and 3
 def test_dates_with_salary_not_yet_paid_match_the_sql(conn, as_of, salary_status, payday):
     ctx = ctx_for(conn, "CUST00001", as_of=as_of)
     series = {s.key: s for s in recurring.detect(ctx.history(), as_of)}
@@ -220,14 +230,14 @@ def test_dates_with_salary_not_yet_paid_match_the_sql(conn, as_of, salary_status
 
 
 def test_the_bills_due_total_has_one_ref_and_resolves_to_all_bill_transactions(conn):
-    res = get_recurring_bills(ctx_for(conn, "CUST00001"))
+    res = get_recurring_bills(ctx_for(conn, "CUST00860"))
     total = res.data.upcoming_total
     assert sum(1 for ref in res.evidence if ref == total.evidence_ref) == 1
-    r = evidence.resolve(conn, total.evidence_ref, "CUST00001", limit=200)
+    r = evidence.resolve(conn, total.evidence_ref, "CUST00860", limit=200)
     n = conn.execute("""SELECT count(*) FROM transactions WHERE customer_id = %s AND tx_date <= %s
                         AND tx_type IN ('housing_payment', 'utilities_payment', 'investment_deposit')
                         AND tx_date BETWEEN %s AND %s""",
-                     ("CUST00001", AS_OF, date(2026, 4, 1), date(2026, 9, 30))).fetchone()[0]
+                     ("CUST00860", AS_OF, date(2026, 4, 1), date(2026, 9, 30))).fetchone()[0]
     assert r.kind == "transactions" and r.reconciles is True and r.row_count == n
 
 
@@ -253,18 +263,22 @@ def test_baskets_for_one_month(conn, customer_id):
          ["Salary", "Other Income", "Invest Withdraw", "Invest Deposit", "Salary Sweep"])).fetchall()
     by_category = {c: Decimal(s) for c, s in rows}
     assert dec(res.data.total) == sum(by_category.values())                  # one month: average = total
-    listed = {c.key: dec(c.amount) for b in res.data.baskets for c in b.categories}
+    # a category can sit in two baskets: taxi rides are everyday spending, other transport is regular (rule 4)
+    listed = {}
+    for b in res.data.baskets:
+        for c in b.categories:
+            listed[c.key] = listed.get(c.key, Decimal(0)) + dec(c.amount)
     assert sum(listed.values()) == sum(by_category.values())
     assert set(listed) == set(by_category) or all(by_category[c] == 0 for c in set(by_category) - set(listed))
 
 
 def test_series_evidence_is_the_series_transactions(conn):
-    res = get_recurring_bills(ctx_for(conn, "CUST00001"))
+    res = get_recurring_bills(ctx_for(conn, "CUST00860"))
     housing = next(b for b in res.data.bills if b.bill_id == "bill_housing_payment")
-    r = evidence.resolve(conn, housing.typical_month.evidence_ref, "CUST00001", limit=200)
+    r = evidence.resolve(conn, housing.typical_month.evidence_ref, "CUST00860", limit=200)
     n = conn.execute("""SELECT count(*) FROM transactions WHERE customer_id = %s AND tx_date <= %s
                         AND tx_type = 'housing_payment' AND tx_date BETWEEN %s AND %s""",
-                     ("CUST00001", AS_OF, date(2026, 4, 1), date(2026, 9, 30))).fetchone()[0]
+                     ("CUST00860", AS_OF, date(2026, 4, 1), date(2026, 9, 30))).fetchone()[0]
     assert r.reconciles and r.row_count == n == len(r.rows)
     assert {x["category"] for x in r.rows} == {"Housing"} and all(x["merchant"] is None for x in r.rows)
 
@@ -280,7 +294,7 @@ def test_every_evidence_ref_reconciles(conn, customer_id):
 
 
 def test_model_views_have_no_rows_ids_or_refs(conn):
-    for customer_id in CUSTOMERS:
+    for customer_id in PERSONAS:   # the same check for the personas (#508)
         for language in ("en", "fi"):
             ctx = ctx_for(conn, customer_id, language)
             for res in (get_basket_breakdown(ctx, {"period": {"preset": "last_6_months"}}),
@@ -292,6 +306,6 @@ def test_model_views_have_no_rows_ids_or_refs(conn):
 
 
 def test_refs_are_the_same_in_both_languages(conn):
-    a = get_recurring_bills(ctx_for(conn, "CUST00002"))
-    b = get_recurring_bills(ctx_for(conn, "CUST00002", "fi"))
+    a = get_recurring_bills(ctx_for(conn, "CUST00860"))
+    b = get_recurring_bills(ctx_for(conn, "CUST00860", "fi"))
     assert a.evidence == b.evidence and a.data.bills[0].label != b.data.bills[0].label

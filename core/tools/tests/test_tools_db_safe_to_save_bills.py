@@ -15,6 +15,8 @@ from core.tools.context import ToolContext
 
 AS_OF = date(2026, 9, 30)
 D = Decimal
+PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
 
 # metrics.md 3.1 and the contract examples card.safe_to_save* (as_of 2026-09-30, no labels):
 # free until payday, everyday until payday, safe to save, free month, everyday month, safe to save monthly,
@@ -41,17 +43,24 @@ BILLS_WORKED = {
 }
 
 
+def cases(customer_ids):
+    """The persona cases run on the shared database; any other customer is a sample customer, read only on a
+    private database (the sample_customer marker, #502, #508)."""
+    return [c if c in PERSONAS else pytest.param(c, marks=pytest.mark.sample_customer) for c in customer_ids]
+
+
 def as_text(value):
     return None if value is None else str(value)
 
 
-@pytest.mark.parametrize("customer_id", sorted(SAVE_WORKED))
+@pytest.mark.parametrize("customer_id", cases(sorted(SAVE_WORKED)))
 def test_safe_to_save_columns_equal_the_worked_numbers(conn, customer_id):
     row = metric_sql.run_one(conn, "03_safe_to_spend.sql", customer_id, AS_OF, {"cushion_eur": "100"})
     assert tuple(as_text(row[c]) for c in SAVE_COLUMNS) == SAVE_WORKED[customer_id]
 
 
-@pytest.mark.parametrize("customer_id", sorted(SAVE_WORKED))
+# the two reason branches are CUST00019 and CUST00002 (sample); every persona can save something
+@pytest.mark.parametrize("customer_id", cases(sorted(SAVE_WORKED) + ["CUST00349", "CUST00493"]))
 def test_safe_to_save_rules(conn, customer_id):
     r = metric_sql.run_one(conn, "03_safe_to_spend.sql", customer_id, AS_OF, {"cushion_eur": "100"})
     # computed from unrounded terms, rounded once: within a cent of the displayed parts, never below 0
@@ -69,7 +78,7 @@ def test_safe_to_save_rules(conn, customer_id):
         assert r["save_reason_category"] not in (None, "Health")  # R9
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00002", "CUST00006", "CUST00860", "CUST00849"])
+@pytest.mark.parametrize("customer_id", cases(SAMPLE + PERSONAS))
 def test_per_bill_rows_add_up_to_bills_due(conn, customer_id):
     total = metric_sql.run_one(conn, "03_safe_to_spend.sql", customer_id, AS_OF, {"cushion_eur": "100"})
     rows = metric_sql.run(conn, "03_safe_to_spend_bills.sql", customer_id, AS_OF)
@@ -86,14 +95,14 @@ def test_per_bill_rows_add_up_to_bills_due(conn, customer_id):
             assert r["occurrences"] >= 1 and r["pro_rata_days"] == 0 and r["first_due_date"] <= r["next_payday"]
 
 
-@pytest.mark.parametrize("customer_id", sorted(BILLS_WORKED))
+@pytest.mark.parametrize("customer_id", cases(sorted(BILLS_WORKED)))
 def test_per_bill_rows_equal_the_worked_numbers(conn, customer_id):
     rows = metric_sql.run(conn, "03_safe_to_spend_bills.sql", customer_id, AS_OF)
     got = [(r["series_key"], r["status"], str(r["bill_due_eur"])) for r in rows]
     assert got == BILLS_WORKED[customer_id]
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00002", "CUST00006", "CUST00860", "CUST00849"])
+@pytest.mark.parametrize("customer_id", cases(SAMPLE + PERSONAS))
 def test_per_bill_rows_equal_the_bills_tool(conn, customer_id):
     """safe_to_spend.bill_due_eur@1: the SQL rows and get_recurring_bills' due amounts are the same numbers."""
     rows = metric_sql.run(conn, "03_safe_to_spend_bills.sql", customer_id, AS_OF)
