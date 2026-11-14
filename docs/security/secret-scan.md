@@ -9,6 +9,27 @@ Two checks prove that no secret is in the repository, its history or its GitHub 
 
 `.gitleaks.toml` and the CI job come from #83 (PR #94). They are in `dev`, and the gitleaks parts of this page apply once they reach `main`.
 
+## A branch before a merge, without CI
+
+`scripts/scan_diff_secrets.py` (#472) reads only the lines a branch adds. It is the check to run when the CI secret scan cannot run, and a quick one before any merge:
+
+```
+git fetch origin "+refs/heads/*:refs/remotes/origin/*" "+refs/pull/*/head:refs/pull/*/head"
+python scripts/scan_diff_secrets.py --pr 443                  # a pull request head against origin/dev
+python scripts/scan_diff_secrets.py --base origin/dev         # the current branch against origin/dev
+python scripts/scan_diff_secrets.py --range A..B              # what a range of commits added
+```
+
+It reports:
+- common key shapes;
+- database URLs with a password that the allowlist in `.gitleaks.toml` does not cover (path and value together);
+- literal values of the local `.env`;
+- added `.env` files.
+
+It prints the kind and the file, never a value. It exits 1 on a finding, 0 when clean and 2 when it cannot run.
+
+It does not replace gitleaks, which has many more rules and reads the whole history in CI. The history, pull request heads and GitHub texts are covered by `scan_env_values.py` below.
+
 ## Before the repository goes public
 
 Run both checks right before the switch, from the main checkout with an up-to-date `.env`:
