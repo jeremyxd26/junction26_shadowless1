@@ -352,6 +352,21 @@ def safe_to_save(view: dict[str, Any], language: str, save_more: bool) -> Senten
     monthly, stock = _tok(view.get("monthly")), _tok(view.get("stock"))
     if not monthly:
         return None
+    goal, weekly = _tok(view.get("savings_goal")), _tok(view.get("safe_to_spend_week"))
+    if goal and weekly and (_value(view.get("savings_goal")) or 0) > 0:
+        # Pay yourself first (#391): the goal is quoted next to safe to spend, so the two add up; when safe to
+        # save by its own formula is below the goal, the goal against it. The stock may follow (three numbers).
+        if (_value(view.get("monthly")) or 0) >= (_value(view.get("savings_goal")) or 0):
+            first = pick(config.SAFE_TO_SAVE_TEXT["subtitle_with_goal"], language).format(goal=goal, weekly=weekly)
+            cited = [goal, weekly]
+        else:
+            first = pick(config.SAFE_TO_SAVE_TEXT["subtitle_below_goal"], language).format(goal=goal, monthly=monthly)
+            cited = [goal, monthly]
+        sentences = [first]
+        if stock and not save_more:
+            sentences.append(pick(STOCK, language).format(stock=stock))
+            cited.append(stock)
+        return sentences, _ids(*cited)
     reason = (view.get("reason") or {}).get("text")
     if _value(view.get("monthly")) == 0 and isinstance(reason, str) and not re.search(r"\d", reason):
         if save_more:                      # the reason, then the what-if offer: two sentences

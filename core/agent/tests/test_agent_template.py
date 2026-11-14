@@ -256,4 +256,5 @@ def test_without_a_goal_or_on_the_balance_side_the_sentence_is_as_before():
 def test_safe_to_save_quotes_the_goal_next_to_safe_to_spend(monthly, text):
     view = {"tool": "get_safe_to_save", "monthly": n(2, monthly, "eur_per_month"),
             "stock": n(3, 12272.28), "savings_goal": n(4, 360.0, "eur_per_month"), "safe_to_spend_week": n(6, 138.79)}
-    assert template_draft([view], [], "en", None)["text"] == text
+    # the goal sentence leads; the stock may follow as the second sentence (answer_sentences, #342)
+    assert template_draft([view], [], "en", None)["text"].startswith(text)
