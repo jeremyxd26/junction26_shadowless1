@@ -224,7 +224,7 @@ def test_persona_label_description_and_traits(conn, customer_id, language):
     assert [t["key"] for t in card.traits] == traits
     shown = {f["key"]: f for f in card.features}
     assert D(str(shown["one_off_share"]["value"]["value"])) == D(one_off)
-    assert shown["one_off_share"]["decides_label"] == (key == "big_ticket")
+    assert shown["one_off_share"]["decides_label"] == ("one_off_share" in DECIDING[key])
     if key == "big_ticket":   # the text claims no size of share at 6.0 % (#687)
         assert "notable" not in card.profile["description"] and "merkittävä" not in card.profile["description"]
 
