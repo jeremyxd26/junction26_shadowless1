@@ -280,6 +280,20 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   - `core/config/*.yaml` (personas and benefit rules).
 
   Every `tests` directory and cache is excluded again after that, because later lines win. `deploy/Dockerfile` copies `core` as a whole, so the allowlist alone decides what goes in. A path in the list that does not exist yet (`core/agent`) is simply absent. A new file of a kind the completeness check already lists (`*.py` under `core/app`, `core/tools` or `core/agent`, `core/metrics/*.sql`, `core/config/*.yaml`) only needs its path in `.dockerignore`, and the check catches a forgotten one before the switch. A new **kind** of run-time file (for example `core/data/*.csv`) must be added to `.dockerignore` **and** to the `git ls-files` patterns of the completeness check in `deploy/remote-deploy.sh`; otherwise the check cannot see it.
+- **Response headers** (`deploy/Caddyfile`, #102):
+
+  | Applies to | Header |
+  |---|---|
+  | every response | `Strict-Transport-Security: max-age=31536000` (no `preload`: the parent domain is shared), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; the `Server` header is removed, also the core's `server: uvicorn` |
+  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` |
+  | the app (`index.html` and the other non-asset paths) | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'` |
+
+  The app's policy follows the app owner's needs on #102: the Vite build emits external script and style files, no inline script, and the font is bundled. The app calls `/api` on its own origin. Images come from the app or `data:` URIs, so rendered markdown cannot load an outside image. Only the app's own origin may frame it; the S-mobiili WebView loads the module top-level and is not affected. A demo page on another origin that frames the app needs that origin added to `frame-ancestors`.
+
+  After every deploy `dev.sh` checks the public URL and fails if HSTS or `nosniff` is missing. A deploy of a commit older than #102 therefore ends with that error, although the commit is running. To check by hand:
+  ```
+  curl -sS -D - -o /dev/null https://sentti.jeremyxd.dev/api/personas
+  ```
 
 ## Setting up a new instance from scratch
 
