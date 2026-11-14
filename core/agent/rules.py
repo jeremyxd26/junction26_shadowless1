@@ -189,8 +189,19 @@ WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent
 # A what-if is a scenario. A question about what one did ("did I spend 10% less on taxis last month?", PAST)
 # is not one unless it is said as a scenario: "what if", "if I", "would", "could", "jos", a Finnish
 # conditional verb ("vähentäisin") (review of PR #376).
-HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we)\b|\bwould\b|\bcould\b|\bshould\b|\bsuppose\b|\bimagine\b|"
-                r"\bcan (i|we)\b|\bhow (can|could|do|should) (i|we)\b|\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
+HYPOTHETICAL = (r"\bwhat if\b|\bif (i|we|it|there|my|the|this|that|they|you)\b|\bwould\b|\bcould\b|\bshould\b|"
+                r"\bmight\b|\bsuppose\b|\bimagine\b|\b(can|may) (i|we)\b|\bhow (can|could|do|should) (i|we)\b|"
+                r"\bjos\b|\w+isi(?:n|mme|t|tte|vat)?\b|\bvoisin\b")
+# A plan for the future beats every past signal (second review of #488): "I will cut taxis by 10% in May",
+# "from August I will ...", "next month I cut ...", "tomorrow ...", "Aion vähentää ... toukokuusta alkaen".
+FUTURE = (r"\bwill\b|\bgoing to\b|\bnext (week|month|year)\b|\btomorrow\b|\bfrom (now|today|next)\b|\bstarting\b|"
+          r"\bfrom (january|february|march|april|may|june|july|august|september|october|november|december)\b|"
+          r"\baion\b|\baiomme\b|\balkaen\b|\bensi (viikolla|kuussa|vuonna)\b|\bhuomenna\b")
+# A verb of the scenario itself, in the present or the imperative ("Cut restaurants by 20% in May", "spend 20%
+# less on restaurants in May"). A named month counts as the past only without one: "restaurants 20% less in
+# August?" is about August, "Cut restaurants by 20% in May" is a scenario (second review of #488).
+ACTION = (r"\b(cut|reduce|lower|spend|save|take|use|go|eat|halve)\b|vähentä\w*|\bvähenn(?:ä|et)\w*|säästä\w*|"
+          r"\bkäytä\w*|\bkuluta\w*|puolitta\w*")
 # Past verbs beyond PAST (review of #488, R1/R2): "I used / took / went / ate / cut / reduced", "have I cut",
 # "I have taken", "was", "were"; Finnish "kävin", "söin", "vähensin", "olen vähentänyt". A bare "cut" is the
 # imperative of a scenario ("Cut restaurants by 20%"): only "I cut" / "we cut" is past.
@@ -520,7 +531,7 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
-PAST_VERB, PAST_PERIOD = (fold_pattern(rx) for rx in (PAST_VERB, PAST_PERIOD))
+PAST_VERB, PAST_PERIOD, FUTURE, ACTION = (fold_pattern(rx) for rx in (PAST_VERB, PAST_PERIOD, FUTURE, ACTION))
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_CONTENTS_BASKETS]
 
@@ -767,13 +778,16 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
 
 
 def said_in_the_past(question: str, q: str, as_of: date) -> bool:
-    """A message about what one did, not a scenario (review of #488, R1/R2): a past verb (PAST, PAST_VERB) or a
-    past period (PAST_PERIOD, a named month), and no scenario marker (HYPOTHETICAL). "If I had taken 20% fewer
-    taxis last month, how much would I have saved?" is a scenario; "I took 10% fewer taxis in August" is not."""
-    if re.search(HYPOTHETICAL, q):
+    """A message about what one did, not a scenario (reviews of #488). With no scenario marker (HYPOTHETICAL) and no
+    plan for the future (FUTURE): a past verb (PAST, PAST_VERB) or a past period word (PAST_PERIOD) is the past; a
+    named month is the past only without a verb of the scenario (ACTION). "I took 10% fewer taxis in August" and
+    "restaurants 20% less in August?" are about August; "Cut restaurants by 20% in May", "May I cut taxis by 10%?",
+    "I will cut taxis by 10% in May" and "if I had taken 20% fewer taxis last month ..." are scenarios."""
+    if re.search(HYPOTHETICAL, q) or re.search(FUTURE, q):
         return False
-    return bool(re.search(PAST, q) or re.search(PAST_VERB, q) or re.search(PAST_PERIOD, q)
-                or _months_mentioned(question, as_of))
+    if re.search(PAST, q) or re.search(PAST_VERB, q) or re.search(PAST_PERIOD, q):
+        return True
+    return bool(_months_mentioned(question, as_of)) and not re.search(ACTION, q)
 
 
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool) -> Claim:

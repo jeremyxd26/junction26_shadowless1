@@ -162,6 +162,32 @@ def test_a_scenario_keeps_working(question, lang, selection, cut):
     assert found.rule == "what_if" and first(found).args == {"selection": selection, "cut_pct": cut}, (question, found)
 
 
+@pytest.mark.parametrize("question,lang,selection,cut", [   # second review of #488: dev's what-if again, or better
+    ("May we cut restaurants by 20%?", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("may i cut restaurants by 20 percent", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("if it were 10% less on restaurants", "en", {"kind": "category", "value": "Restaurants"}, 10),
+    ("Cut restaurants by 20% in May", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("reduce restaurants by 20% from May", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("spend 20% less on restaurants in May", "en", {"kind": "category", "value": "Restaurants"}, 20),
+    ("May I cut taxis by 10%?", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("from August I will cut taxis by 20%", "en", {"kind": "mcc", "value": "4121"}, 20),
+    ("I will cut taxis by 10% in May", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("I will cut taxis by 10% from September", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("from May I will spend 10% less on taxis", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("Aion vähentää taksia 10 % toukokuusta alkaen", "fi", {"kind": "mcc", "value": "4121"}, 10),
+    ("next month I cut taxis by 10%", "en", {"kind": "mcc", "value": "4121"}, 10),
+    ("tomorrow I cut taxis by 10%", "en", {"kind": "mcc", "value": "4121"}, 10),
+])
+def test_a_modal_a_plan_or_an_action_with_a_month_is_still_a_scenario(question, lang, selection, cut):
+    found = ask(question, lang)
+    assert found.rule == "what_if" and first(found).args == {"selection": selection, "cut_pct": cut}, (question, found)
+
+
+def test_a_card_prompt_with_a_month_and_no_cut_stays_the_spending_question():
+    found = ask("What if I cut restaurants in August?")
+    assert found.rule == "spending" and first(found).args["filter"] == {"categories": ["Restaurants"]}
+
+
 # ---- review of #488, R6: the noun "vähennys" is no what-if -----------------------------------------------------
 
 @pytest.mark.parametrize("question", ["onko vähennys oikein", "vähennys palkasta"])
