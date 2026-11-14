@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
-from core.agent import people, template
+from core.agent import people, savings_transfer, template
 from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
 from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
@@ -108,7 +108,10 @@ DECLINE_RULES = [
 OWN_TRANSFERS = (r"\b(did|have|had)\s+(i|we)\s+(ever\s+)?transfer(red)?\b|"
                  r"\b(do|does)\s+(i|we)\s+(usually|normally|often|typically)\s+transfer\b|"
                  r"\bhow much (do|does) (i|we) transfer\b|\btransfer\s+(fees?|charges?|history)\b|"
-                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b")
+                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b|"
+                 # "Do I have a regular transfer to savings?" (#658)
+                 r"\b(do|does|did)\s+(i|we)\s+have\s+(a|any)\s+(regular\s+|monthly\s+|recurring\s+|standing\s+)?"
+                 r"transfers?\b")
 # What the entries above (and "transfer") refused before #539, word parts included. A question they refused that the
 # rules would now answer with the unfiltered total ("how much did the weather stripping cost me?", "paljonko kulutin
 # Vaalimaalla?") is left to the next planner: when unclear, unclaimed rather than a number the user did not ask.
@@ -1895,6 +1898,10 @@ def _claim(request: PlanInput) -> Claim:
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    if "get_savings_plan" in tools and savings_transfer.asks(q):
+        # "How much did I transfer to savings last month?" (#658): what already goes to savings (#560), the template's
+        # answer in any model state; never a spending category or the unfiltered total
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
     cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
     if cost is not None:
         category, per = cost
@@ -2006,8 +2013,9 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
-        template_answer = claim(request).rule == "safe_to_spend_why"
+        # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
+        # the template's answer in both rounds: no composer model
+        template_answer = claim(request).rule in ("safe_to_spend_why", "savings_transfer")
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
                           template_answer=template_answer)
 
