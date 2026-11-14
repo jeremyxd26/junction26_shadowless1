@@ -37,6 +37,11 @@ USER_INPUT_METHOD = "user_input@1"
 WHOLE_PERCENT_METHODS = frozenset({USER_INPUT_METHOD, "bonus_estimate.share_pct@1"})
 
 
+# The space between the day, the month and the year of a date in a text the app shows (a question, a subtitle): a
+# no-break space, so "28 September 2026" never breaks across lines (#662). Written as an escape, never raw.
+DATE_SPACE = "\u00a0"
+
+
 def money(value: Decimal) -> Decimal:
     """Round to cents, half away from zero (like PostgreSQL round on numeric)."""
     return value.quantize(CENT, rounding=ROUND_HALF_UP)

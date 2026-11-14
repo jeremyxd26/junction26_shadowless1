@@ -71,7 +71,7 @@ export default function App() {
               <BillScreen />
             </Suspense>
           ) : (
-            <OpeningProvider overview={overview}>
+            <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
               <Chat
                 chat={chat}
                 question={params.get('q')}

@@ -2131,10 +2131,10 @@
         }
       ],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "overview.response_no_hero": {
@@ -2465,10 +2465,10 @@
       "reviews": [],
       "insights": [],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "overview.response_pending": {
@@ -3199,10 +3199,10 @@
       ],
       "insights": [],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "ask.sse.meta": {

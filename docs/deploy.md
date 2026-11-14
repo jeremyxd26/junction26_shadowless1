@@ -164,7 +164,11 @@ At the venue, every visitor on the shared Wi-Fi arrives from one client address.
 
 - `git archive <sha> app` gives the commit's tracked files only. A local `app/.env` never reaches the build.
 - They are built in a throwaway `node:22.21.1-slim` container: `npm ci && npm run build`, as uid 1000, with `--memory 2g`, `--cap-drop ALL` and `--security-opt no-new-privileges`. The container has network, because npm downloads the packages. npm's cache is kept in `/var/cache/shadowless1/npm`.
-- The container gets no service setting. Its only build setting is the public `VITE_API_MODE=live`, so the app calls `/api` on the same origin. Vite puts only `VITE_*` variables into the bundle.
+- The container gets no service setting. It gets two public build settings:
+  - `VITE_API_MODE=live`: the app calls `/api` on the same origin.
+  - `VITE_BILL_LIVE=true`: the bill screen (`/bill`) calls the core's bill endpoints (`/api/bill/samples`, `/api/bill/read`, `/api/bill/explain`) instead of the mock. It has an effect only together with `VITE_API_MODE=live` (`app/src/api/bill.ts`).
+
+  Vite puts only `VITE_*` variables into the bundle, and neither of these is a secret.
 - Measured on this instance (4 vCPU) with the app of PR #75: 7 s with an empty npm cache, 6 s with a warm one. The build is about 0.3 MB in 3 files.
 - **Only plain files.** The build must hold nothing but regular files and directories; a symbolic link or anything else refuses the deploy. Caddy follows links, so a link left in the build by a package could otherwise publish any file Caddy can read, its TLS keys included.
 - **Secret check.** The secret-like settings of `/etc/shadowless1/core.env` (names ending in `KEY`, `TOKEN`, `SECRET` or `PASSWORD`, and `DATABASE_URL`) are searched for in all built files: the full value when it has at least 6 characters, and a URL's password and host. Any match refuses the deploy and prints the setting's name, never its value. Public settings such as a model name, CORS origins or a plain URL are not searched.

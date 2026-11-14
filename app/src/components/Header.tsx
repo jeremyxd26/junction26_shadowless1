@@ -18,8 +18,8 @@ function longPressMs(): number {
 }
 
 /**
- * Minimal header inside the host app: back and "Sentti" with a small AI tag; tapping the title
- * opens the AI disclosure (`ai_disclosure`) in a small sheet. No logo and no own navigation.
+ * Minimal header inside the host app: back and "Sentti" with a small AI tag and an ⓘ; tapping the
+ * title opens the AI disclosure (`ai_disclosure`) in a small sheet. No logo and no own navigation.
  * A long press on the header (not on a button) opens the demo persona switch. In a plain browser,
  * where nobody would guess the long press, a visible button in the left cell opens it too, unless
  * the back chevron takes that cell.
@@ -107,19 +107,11 @@ export function Header({
           // Inside a host with nowhere to go back to (not reached today); the cell keeps the title centred.
           <span aria-hidden="true" />
         )}
-        {/* The title with its AI tag opens the AI disclosure; the right cell is kept for the overview
-            button (#322). The accessible name is `titleLabel`: "Sentti, AI" / "Sentti, tekoäly". */}
+        {/* The title with its AI tag and an ⓘ opens the AI disclosure, the only place it is shown
+            (answers carry no AI line, #685); the right cell is kept for the overview button (#322).
+            The ⓘ sits inside the one button, so the grid keeps its three cells at 200 % text (#590). */}
         <h1 className="flex justify-center @max-[13rem]:col-span-3 @max-[13rem]:row-start-2">
-          <button
-            type="button"
-            onClick={() => setAbout(true)}
-            aria-haspopup="dialog"
-            aria-label={t.titleLabel}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
-          >
-            Sentti
-            <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
-          </button>
+          <AboutButton onOpen={() => setAbout(true)} />
         </h1>
         {/* The overview sheet from anywhere in the thread (#322), the same sheet as the overview row. */}
         <button
@@ -138,13 +130,41 @@ export function Header({
         </button>
       </div>
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
-      {about &&
-        createPortal(
-          <BottomSheet title={t.aboutSentti} onClose={() => setAbout(false)}>
-            <p className="text-base text-ink-2">{disclosure}</p>
-          </BottomSheet>,
-          document.body,
-        )}
+      {about && createPortal(<AboutSheet disclosure={disclosure} onClose={() => setAbout(false)} />, document.body)}
     </header>
+  )
+}
+
+/**
+ * "Sentti", the visible AI tag and an ⓘ, as one 44 px button. Its accessible name says what it
+ * opens: "Sentti, AI. About Sentti" / "Sentti, tekoäly. Tietoa Senttistä".
+ */
+export function AboutButton({ onOpen }: { onOpen: () => void }) {
+  const { t } = useSettings()
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-label={`${t.titleLabel}. ${t.aboutSentti}`}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
+    >
+      Sentti
+      <span className="rounded-sm border border-brand px-1 text-xs font-bold leading-4 text-brand">AI</span>
+      <svg data-icon="info" aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
+      </svg>
+    </button>
+  )
+}
+
+/** The AI disclosure as received (`ai_disclosure` of the ready overview, or the app's fallback), in a small sheet. */
+export function AboutSheet({ disclosure, onClose }: { disclosure: string; onClose: () => void }) {
+  const { t } = useSettings()
+  return (
+    <BottomSheet title={t.aboutSentti} onClose={onClose}>
+      <p className="text-base text-ink-2">{disclosure}</p>
+    </BottomSheet>
   )
 }

@@ -11,6 +11,9 @@ No tool returns the amount of one past month or of one transfer, so a question a
 saying so, then what is known: the regular transfer (its typical month, never presented as one month's amount) or
 the zero state. A request to move money is no question about transfers: the decline rules refuse it before this.
 Matched on the folded question (guard.fold: lower case, no diacritics).
+
+Only a message that is one question with nothing after it is claimed (`ONE_QUESTION`, Renat's decision on the review
+of #670); any other message is left to the rules as they were before #658, so a request in it keeps their refusal.
 """
 
 from __future__ import annotations
@@ -47,19 +50,34 @@ ASKS = fold_pattern(
 MOVE_WITH_AMOUNT = fold_pattern(
     r"\b(transfer|move|send|put|deposit|add|pay|increase|raise|lower|reduce|change|set|siirrä|siirtää|laita|laittaa|"
     r"pistä|pane|talleta|nosta|nostaa|muuta|maksa)\b[^.?!]{0,30}?"
-    # "€200", "200 €", "200€", "200 euros", "fifty euros" (a "€" is no word character, so no \b after it)
-    r"(€\s?\d|\b\d[\d\s.,]*\s?(?:€|\b(?:euros?|eur|euroa?|e)\b)|\b(ten|twenty|fifty|hundred|thousand|kymmenen|"
+    # "€200", "200 €", "200€", "200e", "200eur", "200 euros", "fifty euros" (a "€" is no word character, so no \b
+    # after it, and none between the digit and the unit)
+    r"(€\s?\d|\b\d[\d\s.,]*\s?(?:€|(?:euros?|eur|euroa?|e)\b)|\b(ten|twenty|fifty|hundred|thousand|kymmenen|"
     r"viisikymmentä|sata|tuhat)\s+(euros?|euroa?)\b)")
-# A move or change request in a later sentence or clause, with no amount ("… Also move some money to savings now",
-# "… Increase it.", "…, and can you increase it?"): a request too, which keeps the decline rules' refusal (review of
-# #670)
-LATER_REQUEST = fold_pattern(
-    r"(?:[.!?;]|,\s*(?:and|then|ja|sitten))\s*(?:(?:also|and|then|please|pls|now|so|myös|ja|sitten|nyt)\s+)*"
-    r"(?:(?:can|could|would|will)\s+you\s+(?:also\s+)?|voi(?:tko|sitko|tteko)\s+(?:myös\s+)?)?"
-    r"(move|transfer|send|put|pay|increase|raise|lower|reduce|change|stop|cancel|set|start|deposit|add|make|double|"
-    r"siirrä|siirtää|siirtäkää|laita|laittaa|pistä|pane|nosta|nostaa|muuta|muuttaa|lopeta|lopettaa|aloita|lisää|"
-    r"pienennä|tee|tehdä|talleta)\b")
-REQUEST_ELSEWHERE = MOVE_WITH_AMOUNT + "|" + LATER_REQUEST
+# One question with nothing after it, the whole message (Renat's decision on the review of #670): no second sentence
+# (after ".", "?", "!", ";", ":" or a line break) and no further clause (after ",", a dash, "&", "+", "and", "then",
+# "also", "plus", "ja", "sitten", "myös" or "sekä"); only a closing "please" or "thanks" may follow. "… and increase
+# it", "…, increase it", "… - increase it", "…? Bump it up" and "…? And the month before?" are left to the rules as
+# before #658.
+_BREAK = r"[.?!;:,\n&+–—]|\s-|-\s|\b(and|then|also|plus|ja|sitten|myös|sekä)\b"
+ONE_QUESTION = fold_pattern(r"\s*(?:(?!" + _BREAK + r").)+?(?:,?\s+(?:please|pls|thanks|thank you|kiitos))?\s*[.?!]*\s*")
+# "Do I have a regular transfer to savings?" (#658) as the whole message, nothing before or after it but the bank the
+# savings account is at or a closing "please". Only this message has its "transfer" exempted from the move-money
+# refusal (rules._declines), and only when it is claimed: "… please increase it", "… increase it to 200" and
+# "Increase it. Do I have …?" keep the refusal, as do a transfer to a person and a scheduled or future transfer.
+HAVE_TRANSFER = fold_pattern(
+    r"\s*(do|does|did)\s+(i|we)\s+have\s+(a|any)\s+(regular\s+|monthly\s+|recurring\s+|standing\s+)?transfers?\s+"
+    r"(to|into)\s+(my\s+|the\s+|our\s+)?savings?(\s+accounts?)?"
+    r"(\s+(at|in|with)\s+(another|a\s+different|an\s+other|my\s+other|other)\s+banks?)?"
+    r"(\s*,?\s*(please|pls))?\s*[.?!]*\s*")
+# "How much should I transfer to savings (each month)?" (#668) as the whole message, nothing before or after it but a
+# month or a closing "please": how much to set aside, the savings plan's question. As with HAVE_TRANSFER, only this
+# message has its "transfer" exempted from the move-money refusal (rules._declines), and only when it is claimed
+# (`set_aside`); "… or invest in stocks?", "… at another bank?", "… next month?" and any later clause keep the refusal.
+SET_ASIDE_TRANSFER = fold_pattern(
+    r"\s*how\s+much\s+(should|can|could|shall)\s+(i|we)\s+transfer\s+(to|into)\s+(my\s+|the\s+|our\s+)?savings?"
+    r"(\s+accounts?)?(\s+(each|every|per|a)\s+month|\s+monthly)?(\s*,?\s*(please|pls))?\s*[.?!]*\s*")
+# A request to move money as the message's first word or after "can you", "voitko" (#668: never how much to set aside)
 REQUEST = fold_pattern(
     r"^\W*(please\s+|pls\s+)?(transfer|put|move|send|set|pay|make|start|stop|cancel|siirrä|siirtäkää|laita|pistä|"
     r"pane|tee|aloita|lopeta)\b|\b(can|could|would|will)\s+you\b|\bvoi(tko|sitko|tteko)\b")
@@ -70,13 +88,15 @@ NOT_OWN = REQUEST + "|" + fold_pattern(
     r"tarvitsee|täytyy|jos)\b|"
     r"\bensi (kuussa|vuonna|viikolla)\b|"
     # fees, costs, interest or tax on savings are another question (review of #670)
-    r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b|"
-    # a discount, a deadline ahead, a why or a comparison is another question too (#668): "I used a promo code, how
-    # much did I save?", "paljonko olen säästänyt jouluun mennessä?", "why did I save less last month?"
+    r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b") + "|" + MOVE_WITH_AMOUNT
+# "How much did I save?" is what went to savings only without a discount, a deadline ahead, a why or a comparison
+# (#668): "I used a promo code, how much did I save?", "paljonko olen säästänyt jouluun mennessä?", "why did I save
+# less last month?" are other questions. Read only when SAVED, not MOVED, makes the question one about savings.
+SAVED_OTHER = fold_pattern(
     r"\b(promo(tion)?s?|discounts?|coupons?|vouchers?|offers?|deals?|cashback|rebates?|alennu\w*|tarjou\w*|"
     r"kuponki\w*|kupongi\w*)\b|"
     r"\bby\s+(christmas|the end|end of|new year|easter|summer|midsummer|then)\b|\bmennessä\b|\bjouluun\b|"
-    r"\b(why|how come|miksi)\b|\b(less|more|fewer|vähemmän|enemmän)\b") + "|" + REQUEST_ELSEWHERE
+    r"\b(why|how come|miksi)\b|\b(less|more|fewer|vähemmän|enemmän)\b")
 # The past: a month, the last transfer, a past verb. Otherwise the question is about the usual transfer.
 PAST = fold_pattern(
     r"\b(did|was|were|went|last|latest|previous|recent|ago|transferred|moved|sent|paid|this year|so far)\b|"
@@ -129,17 +149,33 @@ HYPOTHESIS = fold_pattern(r"\bwhat if\b|\bif (i|we)\b|\bjos\b|\bentä jos\b")
 
 
 def asks(q: str) -> str | None:
-    """"past" or "usual" when the folded question asks about the user's own transfers to savings (or how much they
-    saved), else None."""
-    if not ((re.search(MOVED, q) or re.search(SAVED, q)) and re.search(ASKS, q)) or re.search(NOT_OWN, q):
+    """"past" or "usual" when the folded message is one question about the user's own transfers to savings (or how
+    much they saved, #668), else None."""
+    saved = re.search(SAVED, q) and not re.search(SAVED_OTHER, q)
+    if not re.fullmatch(ONE_QUESTION, q) or not ((re.search(MOVED, q) or saved) and re.search(ASKS, q)) \
+            or re.search(NOT_OWN, q):
         return None
     return "past" if re.search(PAST, q) else "usual"
 
 
+def have_transfer(q: str) -> bool:
+    """The whole folded message asks whether the user has a regular transfer to savings, and the rules claim it: its
+    "transfer" is no request to move money (rules._declines)."""
+    return bool(re.fullmatch(HAVE_TRANSFER, q)) and asks(q) is not None
+
+
 def set_aside(q: str) -> bool:
-    """The folded question asks how much the user should or can move to savings (#668)."""
-    return bool(re.search(MOVED, q) and re.search(HOW_MUCH, q) and re.search(SET_ASIDE_MODAL, q)
-                and not re.search(HYPOTHESIS, q) and not re.search(REQUEST, q) and not re.search(REQUEST_ELSEWHERE, q))
+    """The folded message is one question how much the user should or can move to savings (#668), with no amount and
+    no request."""
+    return bool(re.fullmatch(ONE_QUESTION, q) and re.search(MOVED, q) and re.search(HOW_MUCH, q)
+                and re.search(SET_ASIDE_MODAL, q) and not re.search(HYPOTHESIS, q) and not re.search(REQUEST, q)
+                and not re.search(MOVE_WITH_AMOUNT, q))
+
+
+def set_aside_transfer(q: str) -> bool:
+    """The whole folded message asks how much the user should transfer to savings, and the rules claim it: its
+    "transfer" is no request to move money (rules._declines)."""
+    return bool(re.fullmatch(SET_ASIDE_TRANSFER, q)) and set_aside(q)
 
 
 def sentence(view: dict[str, Any], language: str, q: str, already: dict[str, tuple[str, str]]) -> \

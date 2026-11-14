@@ -25,6 +25,7 @@ const ASKING_OPENING: Opening = {
   releaseThreadReview: () => {},
   refresh: () => {},
   scrollToReview: () => {},
+  pushClientTurn: () => {},
 }
 
 /** The contract has no standalone `bills` example; it is a card of `overview.response`. */

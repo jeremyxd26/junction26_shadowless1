@@ -50,6 +50,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "card.safe_to_save_everyday": schemas.SafeToSaveCard,
     "evidence.response_metric": schemas.EvidenceResponse,   # contract 0.2.2
     "evidence.response_peer": schemas.EvidenceResponse,     # contract 0.2.2
+    "evidence.response_national": schemas.EvidenceResponse,  # contract 0.3.10 (#569, #524)
     "whatif.error": schemas.ErrorResponse,                  # contract 0.2.2
     "bill.request": schemas.BillExplainRequest,             # contract 0.3.0 (#243); endpoint with #242
     "bill.request_fields": schemas.BillExplainRequest,
