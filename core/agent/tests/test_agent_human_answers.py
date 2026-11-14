@@ -15,12 +15,15 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from agent_fakes import FakeArgs, registry, run
 
 from core.agent import template
+from core.agent.model import FunctionCall, ScriptedModel
+from core.agent.registry import ToolSpec
 from core.agent.validator import allowed_from, render, validate
 from core.tools import config
 from core.tools.formatting import display
-from core.tools.models import Number, Period, Unit
+from core.tools.models import Card, Number, Period, ToolResult, Unit
 from core.tools.periods import period_label
 
 AS_OF = date(2026, 9, 30)
@@ -329,3 +332,113 @@ def test_lead_persona_texts():
     for (key, lang), text in expected.items():
         draft, v, _, _ = answer(key, lang)
         assert render(draft["text"], v.numbers) == text
+
+
+# ---- two views in one answer (review of #365) ------------------------------------------------------------
+# When answer_sentences writes every view, the first view is the takeaway and is said whole; a later view is
+# said only if the answer stays within two sentences and three numbers, otherwise it is left out whole and
+# only its card shows it. The draft cites exactly the tokens of its text.
+
+RESTAURANTS = ("Restaurants", "Ravintolat")
+TWO_VIEWS = {
+    "baskets_bills": (("Where did my money go, and which bills are due before payday?",
+                       "Mihin rahani menivät, ja mitä laskuja on tulossa ennen palkkapäivää?"),
+                      lambda v, lang: baskets(v, lang), bills),
+    "spending_what_if": (("How much did I spend on restaurants last month, and what if I cut them by 20%?",
+                          "Paljonko käytin ravintoloihin viime kuussa, ja entä jos vähentäisin niitä 20 %?"),
+                         lambda v, lang: spending(v, lang, label=fi(lang, *RESTAURANTS), count=10, total=138.94),
+                         what_if),
+    "bills_what_if": (("Which bills are due before payday, and what if I cut restaurants by 20%?",
+                       "Mitä laskuja on tulossa ennen palkkapäivää, ja entä jos vähentäisin ravintoloita 20 %?"),
+                      bills, what_if),
+    "by_category_bills": (("How much did I spend by category last month, and which bills are due before payday?",
+                           "Paljonko käytin luokittain viime kuussa, ja mitä laskuja on tulossa ennen "
+                           "palkkapäivää?"),
+                          lambda v, lang: spending(v, lang, groups=[
+                              ("Housing", fi(lang, "Housing", "Asuminen"), 836.65, AUG),
+                              ("Groceries", fi(lang, "Groceries", "Ruokaostokset"), 612.3, AUG),
+                              ("other", fi(lang, "Everything else", "Kaikki muu"), 2726.22, AUG)]),
+                          bills),
+    "spending_payday": (("How much did I spend last month, and when is my next payday?",
+                         "Paljonko käytin viime kuussa, ja milloin on seuraava palkkapäiväni?"),
+                        lambda v, lang: spending(v, lang), bills),
+}
+SECOND_FITS = {"spending_payday"}
+
+
+def two_views(key: str, lang: str, errors: list[dict] | None = None):
+    questions, first, second = TWO_VIEWS[key]
+    v = Views(lang)
+    views = first(v, lang)
+    first_ids = set(v.numbers)
+    views += second(v, lang)
+    draft = template.template_draft(views, errors or [], lang, None, questions[lang == "fi"])
+    return draft, v, views, first_ids, set(v.numbers) - first_ids
+
+
+def assert_short_and_valid(draft, v, views, lang) -> set[str]:
+    text = draft["text"]
+    _, errors = validate(draft, language=lang, numbers=v.numbers,
+                         allowed=allowed_from(v.numbers.values(), views, AS_OF))
+    assert errors == [], (text, errors)
+    tokens = re.findall(r"\{\{(n\d+)\}\}", text)
+    assert draft["cited"] == list(dict.fromkeys(tokens)), text           # cited is rebuilt from the text
+    assert 1 <= len([s for s in SENTENCE_END.split(text) if s.strip()]) <= 2, text
+    assert len(set(tokens)) <= 3, text
+    return set(tokens)
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+@pytest.mark.parametrize("key", sorted(TWO_VIEWS))
+def test_a_second_view_is_said_whole_or_left_out_whole(key, lang):
+    draft, v, views, first_ids, second_ids = two_views(key, lang)
+    said = assert_short_and_valid(draft, v, views, lang)
+    alone = template.template_draft(views[:1], [], lang, None, TWO_VIEWS[key][0][lang == "fi"])
+    assert draft["text"].startswith(alone["text"]), draft["text"]       # the takeaway first, never cut
+    assert said & first_ids == set(re.findall(r"\{\{(n\d+)\}\}", alone["text"]))
+    if key in SECOND_FITS:
+        assert said & second_ids, draft["text"]                          # it fits: both are said
+    else:
+        assert not said & second_ids and draft["text"] == alone["text"], draft["text"]   # left out whole
+
+
+def test_an_error_sentence_counts_toward_the_two():
+    error = [{"tool": "get_safe_to_save", "error": "tool_failed"}]
+    draft, v, views, first_ids, _ = two_views("spending_payday", "en", error)
+    said = assert_short_and_valid(draft, v, views, "en")
+    assert said <= first_ids and draft["text"].endswith(template.pick(template.TOOL_FAILED, "en"))
+
+
+def tool_from(tag: str, build) -> ToolSpec:
+    """A data tool that returns the first view `build` makes, its numbers registered in the answer, and a card."""
+    def fn(ctx, args):
+        v = Views(ctx.language)
+        view = build(v, ctx.language)[0]
+        ids = {local: ctx.numbers.register(n.model_copy(update={"evidence_ref": f"ev_{tag}{local:0>11}"})).id
+               for local, n in v.numbers.items()}
+
+        def remap(x):
+            if isinstance(x, dict):
+                return {k: ids[x[k]] if k == "id" and x[k] in ids else remap(x[k]) for k in x}
+            return [remap(i) for i in x] if isinstance(x, list) else x
+        primary = ctx.numbers.get(ids["n1"])
+        card = Card(card_id=f"card_{tag}", type="metric", title=tag, evidence_ref=primary.evidence_ref,
+                    primary=primary)
+        return ToolResult(tool=tag, data={}, card=card, evidence=[primary.evidence_ref], model_view=remap(view))
+    return ToolSpec(tag, tag, FakeArgs, fn, ("x", "x"))
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_the_left_out_view_keeps_its_card(make_pipeline, lang):
+    """Through the pipeline with the model unavailable for the answer: baskets then bills. The template says
+    the baskets only, the draft passes the orchestrator's validator and both cards are sent."""
+    questions, first, second = TWO_VIEWS["baskets_bills"]
+    reg = registry(tool_from("a", first), tool_from("b", second))
+    plan = [FunctionCall("a", {}), FunctionCall("b", {}), FunctionCall("finish")]
+    events = run(make_pipeline(ScriptedModel(plans=[plan]), reg=reg), questions[lang == "fi"], language=lang)
+    done = dict(events)["done"]
+    assert [p["card"]["card_id"] for e, p in events if e == "card"] == ["card_a", "card_b"]
+    tokens = re.findall(r"\{\{(n\d+)\}\}", done["text"])
+    assert done["cited"] == list(dict.fromkeys(tokens))   # the outcome name differs on dev: not checked here
+    assert set(tokens) == {"n2", "n3", "n4"}              # the three basket shares; the bills start at n6
+    assert len([s for s in SENTENCE_END.split(done["text"]) if s.strip()]) == 2, done["text"]

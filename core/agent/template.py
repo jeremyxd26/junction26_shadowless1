@@ -388,8 +388,16 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     sentences: list[str] = []
     cited: list[str] = []
     q = fold(question)
-    all_own = bool(views)    # every view written by answer_sentences: the answer is capped at two sentences
-    for view in views:
+    # #342: human sentences for the tools answer_sentences writes; the others (profile, peer, S-Bonus,
+    # safe to spend, an unknown tool) keep their own form below.
+    owns = [answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
+                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
+            for view in views]
+    generic = views   # the views that get the sentence-per-tool form below
+    if views and all(own is not None for own in owns):
+        offer = what_if_offer(views, language) if save_more_plan(views, question) else None
+        sentences, generic = own_answer([own[0] for own in owns], bool(errors), offer), []
+    for view, own in zip(generic, owns):
         # One sentence per tool: "<period>: <label>: {{n1}}; <label>: {{n2}}." Items are joined with
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
         # would read as a date). Signed values keep their sign in the token's display.
@@ -403,15 +411,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             sentences.append(custom[0])
             cited += custom[1]
             chosen = []  # the sentence above cites them
-        # #342: one to three human sentences for the tools answer_sentences writes; the others (profile,
-        # peer, S-Bonus, an unknown tool) keep their own form below.
-        own = answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
-                                        asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
         if own and not set(own[1]) & set(cited) and len(cited) + len(own[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences += own[0]   # the tool's notes stay on its card (Renat's length rule)
             cited += own[1]
             continue
-        all_own = False
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
@@ -432,10 +435,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         for note in view.get("notes") or []:
             if isinstance(note, str) and ok(note, is_note=True):
                 sentences.append(note)
-    if sentences and save_more_plan(views, question):
+    if generic and sentences and save_more_plan(views, question):
         sentences.append(what_if_offer(views, language))
-    if all_own:
-        sentences = sentences[:2]   # #342: two sentences for the whole answer, the rest on the cards
     if errors:
         if not views and all(e.get("error") == "period_out_of_range" for e in errors):
             sentences.append(pick(NO_DATA, language))
@@ -443,4 +444,30 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             sentences.append(pick(TOOL_FAILED, language))
     if not sentences:
         sentences.append(pick(NOTHING, language))
-    return {"language": language, "text": " ".join(sentences), "cited": cited, "lesson_key": None}
+    text = " ".join(sentences)
+    if not generic:   # own_answer may leave a view out: cite exactly the tokens the text says, in order
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+    return {"language": language, "text": text, "cited": cited, "lesson_key": None}
+
+
+TOKEN = re.compile(r"\{\{(n\d+)\}\}")
+ANSWER_SENTENCES = 2   # Renat's length rule on #342: the whole answer
+ANSWER_NUMBERS = 3
+
+
+def own_answer(views: list[list[str]], errors: bool, offer: str | None) -> list[str]:
+    """The answer when answer_sentences writes every view (#342, review of #365): the first view that says
+    something is the takeaway and is always said whole; a later view is said only while the answer stays
+    within two sentences and three numbers, otherwise it is left out whole and its card shows it. The
+    save-more offer and the error sentence count as sentences."""
+    room = ANSWER_SENTENCES - (1 if errors else 0)
+    sentences: list[str] = []
+    tokens: set[str] = set()
+    for texts in views:
+        more = tokens | set(TOKEN.findall(" ".join(texts)))
+        if not sentences or (len(sentences) + len(texts) <= room and len(more) <= ANSWER_NUMBERS):
+            sentences += texts
+            tokens = more
+    if offer and sentences and len(sentences) < room:
+        sentences.append(offer)
+    return sentences
