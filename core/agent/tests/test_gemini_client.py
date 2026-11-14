@@ -135,21 +135,41 @@ def test_replay_mode_never_reaches_the_network(tmp_path):
 
 # ---- errors, retries and the fallback model ----------------------------------------------------
 
-def test_503_is_retried_twice_with_a_pause_then_succeeds():
-    pauses: list[float] = []
-    transport = FakeTransport(api_error(503), api_error(503), call_response())
-    c = GeminiClient(FLASH, transport, cache="off", sleep=pauses.append)
-    assert c.plan(*PLAN_ARGS).calls
-    assert len(transport.requests) == 3 and pauses == list(gc.SERVER_RETRY_BACKOFF_S)
+class Clock:
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
 
 
-def test_an_overwhelmed_model_falls_back_to_the_other_model_once():
-    transport = FakeTransport(api_error(503), api_error(503), api_error(503), call_response())
-    c = client(transport, fallback_model=PRO)
+def test_503_without_a_fallback_is_not_retried_here_and_pauses_briefly():
+    clock = Clock()
+    transport = FakeTransport(api_error(503), call_response())
+    c = GeminiClient(FLASH, transport, cache="off", sleep=lambda s: None, clock=clock)
+    with pytest.raises(GeminiError) as exc:
+        c.plan(*PLAN_ARGS)
+    assert exc.value.code == "server" and len(transport.requests) == 1
+    with pytest.raises(GeminiError):
+        c.plan(*PLAN_ARGS)                              # the pipeline's retry inside the pause: no request
+    assert len(transport.requests) == 1
+    clock.now += gc.OVERLOAD_COOLDOWN_S + 1
+    assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 2
+
+
+def test_an_overwhelmed_model_falls_back_once_and_then_skips_the_primary_for_a_while():
+    clock = Clock()
+    transport = FakeTransport(api_error(503), call_response())
+    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None, clock=clock)
     reply = c.plan(*PLAN_ARGS)
-    assert [m for m, _ in transport.requests] == [FLASH, FLASH, FLASH, PRO]
+    assert [m for m, _ in transport.requests] == [FLASH, PRO]
     assert reply.model == PRO
     assert reply.usage.cost_usd == pytest.approx((1000 * 2.00 + 50 * 12.00) / 1e6)  # priced as pro
+    c.plan(*PLAN_ARGS)
+    assert [m for m, _ in transport.requests][-1] == PRO   # one request per call while flash is skipped
+    clock.now += gc.PRIMARY_SKIP_S + 1
+    c.plan(*PLAN_ARGS)
+    assert [m for m, _ in transport.requests][-1] == FLASH
 
 
 def test_an_outage_everywhere_raises_and_pauses_further_requests():
@@ -157,23 +177,189 @@ def test_an_outage_everywhere_raises_and_pauses_further_requests():
     c = client(transport, fallback_model=PRO)
     with pytest.raises(GeminiError) as exc:
         c.plan(*PLAN_ARGS)
-    assert exc.value.code == "server" and len(transport.requests) == 4
+    assert exc.value.code == "server" and len(transport.requests) == 2
     with pytest.raises(GeminiError):
         c.compose("s", "u", {"type": "object"})  # paused: the pipeline's retry adds no request
-    assert len(transport.requests) == 4
+    assert len(transport.requests) == 2
 
 
 def test_a_refused_fallback_model_is_turned_off_and_the_primary_pauses_only_briefly():
-    now = [1000.0]
-    transport = FakeTransport(api_error(503), api_error(503), api_error(503), api_error(404), call_response())
-    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None, clock=lambda: now[0])
+    clock = Clock()
+    transport = FakeTransport(api_error(503), api_error(404), call_response())
+    c = GeminiClient(FLASH, transport, cache="off", fallback_model=PRO, sleep=lambda s: None, clock=clock)
     with pytest.raises(GeminiError) as exc:
         c.plan(*PLAN_ARGS)
     assert exc.value.code == "server" and c.fallback_model is None
-    assert [m for m, _ in transport.requests] == [FLASH, FLASH, FLASH, PRO]
-    now[0] += gc.OVERLOAD_COOLDOWN_S + 1               # the short overload pause, not the 5 minutes of a 404
+    assert [m for m, _ in transport.requests] == [FLASH, PRO]
+    clock.now += gc.OVERLOAD_COOLDOWN_S + 1               # the short overload pause, not the 5 minutes of a 404
     assert c.plan(*PLAN_ARGS).calls
     assert [m for m, _ in transport.requests][-1] == FLASH
+
+
+@pytest.mark.parametrize("failure", [api_error(400), TimeoutError(), {"candidates": []},
+                                     {"candidates": [{"finish_reason": "MAX_TOKENS", "content": {"parts": []}}]}],
+                         ids=["400", "timeout", "empty", "cut"])
+def test_three_failures_in_a_row_pause_further_requests(failure):
+    clock = Clock()
+    transport = FakeTransport(failure, failure, failure, call_response())
+    c = GeminiClient(FLASH, transport, cache="off", sleep=lambda s: None, clock=clock)
+    for _ in range(3):
+        with pytest.raises(GeminiError):
+            c.plan(*PLAN_ARGS)
+    with pytest.raises(GeminiError):
+        c.plan(*PLAN_ARGS)
+    assert len(transport.requests) == 3                 # the fourth call sent nothing
+    clock.now += gc.FAILURE_STREAK_COOLDOWN_S + 1
+    assert c.plan(*PLAN_ARGS).calls and len(transport.requests) == 4
+
+
+def test_a_success_resets_the_failure_streak():
+    transport = FakeTransport(api_error(400), api_error(400), call_response(), api_error(400), api_error(400),
+                              call_response())
+    c = client(transport)
+    for step in range(6):
+        if step in (2, 5):
+            assert c.plan(*PLAN_ARGS).calls
+        else:
+            with pytest.raises(GeminiError):
+                c.plan(*PLAN_ARGS)
+    assert len(transport.requests) == 6                 # never paused
+
+
+def test_composer_safety_blocks_count_as_failures():
+    blocked = {"candidates": [{"finish_reason": "SAFETY", "content": {"parts": []}}]}
+    transport = FakeTransport(blocked, blocked, blocked, text_response("{}"))
+    c = client(transport)
+    for _ in range(3):
+        assert c.compose("s", "u", {"type": "object"}).blocked
+    with pytest.raises(GeminiError):
+        c.compose("s", "u", {"type": "object"})
+    assert len(transport.requests) == 3
+
+
+# ---- one answer: request cap and deadline -----------------------------------------------------------
+
+def test_one_answer_sends_at_most_eight_requests():
+    transport = FakeTransport(call_response())
+    c = client(transport)
+    answer = object()
+    c.start_answer(answer)
+    for _ in range(gc.MAX_REQUESTS_PER_ANSWER):
+        c.plan(*PLAN_ARGS)
+    c.start_answer(answer)                              # the pipeline's retry: the same answer goes on
+    with pytest.raises(GeminiError) as exc:
+        c.plan(*PLAN_ARGS)
+    assert exc.value.code == "answer_budget" and len(transport.requests) == gc.MAX_REQUESTS_PER_ANSWER
+    c.start_answer(object())                            # the next answer starts a new count
+    assert c.plan(*PLAN_ARGS).calls
+
+
+def test_every_call_of_an_answer_ends_within_its_deadline():
+    clock = Clock()
+    timeouts: list[float] = []
+
+    def hang(model, contents, config, timeout_s):       # a provider that never answers
+        timeouts.append(timeout_s)
+        clock.now += timeout_s
+        raise TimeoutError()
+
+    c = GeminiClient(FLASH, hang, cache="off", sleep=lambda s: None, clock=clock)
+    started = clock.now
+    c.start_answer(object())
+    for _ in range(4):
+        with pytest.raises(GeminiError):
+            c.compose("s", "u", {"type": "object"})
+    assert sum(timeouts) <= gc.ANSWER_DEADLINE_S and clock.now - started <= gc.ANSWER_DEADLINE_S
+    assert timeouts[0] == c.compose_timeout_s and timeouts[1] == gc.ANSWER_DEADLINE_S - c.compose_timeout_s
+
+
+# ---- the ledger: reservation, concurrency, rolling window, live log ------------------------------
+
+def test_simultaneous_calls_cannot_overshoot_the_cap(tmp_path):
+    import threading
+    import time as _time
+
+    ledger = Ledger(tmp_path / "requests.jsonl", daily_cap=3, max_in_flight=100)
+    sent = []
+
+    def slow(model, contents, config, timeout_s):
+        sent.append(model)
+        _time.sleep(0.05)
+        return call_response()
+
+    c = GeminiClient(FLASH, slow, cache="off", ledger=ledger, sleep=lambda s: None)
+    barrier = threading.Barrier(10)
+    errors = []
+
+    def worker():
+        barrier.wait()
+        try:
+            c.plan(*PLAN_ARGS)
+        except GeminiError as exc:
+            errors.append(exc.code)
+
+    threads = [threading.Thread(target=worker) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(sent) == 3 and errors.count("budget") == 7 and ledger.count() == 3
+
+
+def test_requests_in_flight_are_bounded(tmp_path):
+    import threading
+
+    ledger = Ledger(tmp_path / "requests.jsonl", daily_cap=None, max_in_flight=2)
+    release = threading.Event()
+    sent = []
+
+    def blocking(model, contents, config, timeout_s):
+        sent.append(model)
+        release.wait(5)
+        return call_response()
+
+    c = GeminiClient(FLASH, blocking, cache="off", ledger=ledger, sleep=lambda s: None)
+    errors = []
+
+    def worker():
+        try:
+            c.plan(*PLAN_ARGS)
+        except GeminiError as exc:
+            errors.append(exc.code)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    while len(sent) < 2:
+        pass
+    worker()                                            # a third call while two are in flight
+    release.set()
+    for t in threads:
+        t.join()
+    assert errors == ["busy"] and len(sent) == 2
+
+
+def test_the_budget_is_a_rolling_24_hours(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    path = tmp_path / "requests.jsonl"
+    now = datetime.now(timezone.utc)
+    lines = [{"ts": (now - timedelta(hours=25)).isoformat(timespec="seconds"), "kind": "plan"},
+             {"ts": (now - timedelta(hours=23)).isoformat(timespec="seconds"), "kind": "plan"},
+             {"ts": (now - timedelta(minutes=5)).isoformat(timespec="seconds"), "kind": "compose"}]
+    path.write_text("".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8")
+    assert Ledger(path, daily_cap=10).count() == 2
+
+
+def test_each_request_is_logged_with_the_running_total_on_the_service_log(tmp_path, caplog):
+    import logging
+
+    c = client(FakeTransport(call_response()), ledger=Ledger(tmp_path / "requests.jsonl", daily_cap=200))
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        c.plan(*PLAN_ARGS)
+    lines = [r.getMessage() for r in caplog.records if r.name == "uvicorn.error"]
+    assert any(line.startswith("gemini request 1 of 200 in 24 h") for line in lines)
+    assert all("planner prompt" not in line for line in lines)
 
 
 def test_an_unwritable_ledger_still_enforces_the_budget(tmp_path):

@@ -10,26 +10,31 @@ against max_output_tokens and are billed as output). The SDK is `google-genai`; 
 come from its documentation (Context7 /googleapis/python-genai) and the Gemini API docs, checked
 on 2026-11-14.
 
-Around each call, within one deadline per call:
-- 503 and other 5xx ("model overwhelmed"): up to two retries with a pause, then one attempt on the
-  fallback model if one is set (flash <-> pro), then GeminiError and a pause of OVERLOAD_COOLDOWN_S
-  (so the pipeline's retry and the next questions do not add requests during an outage);
-- 429 (a spending or rate limit): no retry. The client stops calling for RATE_LIMIT_COOLDOWN_S, so
-  the pipeline's own retry cannot send a second request; the pipeline falls back to the rule
-  planner and the template answer. 401, 403 and 404 (a key or model id the API refuses) pause the
-  same way;
-- a timeout is not retried here (the pipeline retries a failed call once, then falls back);
-- a response that cannot be used (empty, cut at max_output_tokens, malformed function call)
-  raises GeminiError with a short code; no request or response text is ever put in an error.
-Request budget (the dev service is public): every request that goes to the network is appended to a
-ledger (JSON lines under var/, no prompt or response text) and logged with the day's running total. A
-request that would pass the daily budget is not sent, and none is sent while the switch file exists
-(var/model-off): the call raises GeminiError("budget") or GeminiError("disabled"), and the pipeline
-answers from the rule planner and the template. Both are read on every call, so neither needs a
-restart; the ledger is a file, so a restart does not reset the count.
-Cache: on disk, keyed by a hash of the whole request (model, call kind, contents, config). Only
-usable responses are stored, and only their candidates, prompt feedback, usage and model version
-(no HTTP headers). Mode "replay" never reaches the network: a miss raises.
+Request policy. The model account is shared and policed, and the dev service is public, so every
+request is reserved, bounded and counted:
+- One attempt per call on the active model. The pipeline already retries a failed call once, so
+  this layer does not retry the same model again: retries are never multiplied at two levels.
+- 5xx ("model overwhelmed"): one attempt on the fallback model (flash <-> pro), if one is set. When
+  the fallback answers, the primary model is skipped for PRIMARY_SKIP_S, so an outage of the
+  primary costs one request per call, not two. When both fail: a pause of OVERLOAD_COOLDOWN_S.
+- 429 (a spending or rate limit): no further request for RATE_LIMIT_COOLDOWN_S. 401, 403 and 404
+  (a key or model id the API refuses): the same pause; a refused fallback model only turns itself off.
+- Any other failure (400, a timeout, an empty or cut response, a malformed call, a composer safety
+  block): after FAILURE_STREAK_LIMIT failures in a row, the same pause as for 401/403/404.
+- Per answer: at most MAX_REQUESTS_PER_ANSWER requests and one deadline of ANSWER_DEADLINE_S for
+  every model call of the answer (the model starts an answer with start_answer). Past either, the
+  call raises at once and the pipeline answers from the rule planner and the template.
+- The ledger (JSON lines under var/, no prompt or response text) reserves a slot before a request is
+  sent and records it after: at most `daily_cap` requests in any rolling 24 hours and at most
+  MAX_IN_FLIGHT at the same time. While the switch file exists (var/model-off), nothing is sent.
+  Each request is logged with the running total on the service's log ("uvicorn.error").
+Every refusal raises GeminiError with a short code; no request or response text is ever put in an
+error, and the pipeline then answers from the rule planner and the template.
+
+Cache: on disk, keyed by a hash of the whole request (model, call kind, contents, config). It keeps
+usable responses and safety blocks (so a repeated blocked request costs nothing), and only their
+candidates, prompt feedback, usage and model version (no HTTP headers). Mode "replay" never reaches
+the network: a miss raises.
 Each call reports its tokens (prompt, thoughts, output), its cost in USD and its live latency (a cache
 hit reports the latency of the call that filled it). The API key is passed to the SDK client only;
 it is never logged, cached, written to the ledger or part of a cache key.
@@ -44,13 +49,17 @@ import math
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("core.agent.gemini")
+# The service's own log: uvicorn configures this logger with a handler at INFO, so the running
+# total of requests and every pause are visible in the service log (our live view of the budget).
+ops_log = logging.getLogger("uvicorn.error")
 
 # USD per 1M tokens on the paid Standard tier: (input, output). Thinking tokens are billed at the
 # output rate. Source: the Gemini API pricing page, checked 2026-11-14. Flash: price through
@@ -59,15 +68,19 @@ PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.8-flash": (0.75, 3.75),
     "gemini-3.1-pro-preview": (2.00, 12.00),
 }
-SERVER_RETRY_CODES = {500, 502, 503, 504}
-SERVER_RETRY_BACKOFF_S = (0.5, 1.5)     # pauses before the first and the second retry
+SERVER_ERROR_CODES = {500, 502, 503, 504}
 RATE_LIMIT_COOLDOWN_S = 300.0           # after a 429, no request for this long
-OVERLOAD_COOLDOWN_S = 30.0              # after 5xx on every attempt and on the fallback, no request for this long
-# A key or model the API refuses (401, 403, 404) will not work on a retry or on the next question:
-# no request for this long, so a wrong setting cannot burn the request budget.
-CONFIG_ERROR_CODES = {401, 403, 404}
+OVERLOAD_COOLDOWN_S = 30.0              # after 5xx on the primary and on the fallback model
+PRIMARY_SKIP_S = 180.0                  # after the fallback answered, call it directly for this long
+CONFIG_ERROR_CODES = {401, 403, 404}    # a key or model the API refuses: no retry will help
 CONFIG_ERROR_COOLDOWN_S = 300.0
-MIN_ATTEMPT_S = 1.0                     # an attempt needs at least this much of the deadline left
+FAILURE_STREAK_LIMIT = 3                # other failures in a row before a pause
+FAILURE_STREAK_COOLDOWN_S = 300.0
+MAX_REQUESTS_PER_ANSWER = 8             # every request of one answer, planner and composer together
+ANSWER_DEADLINE_S = 15.0                # every model call of one answer must end within this (design: 15 s)
+MAX_IN_FLIGHT = 4                       # requests in flight at the same time, per process
+LEDGER_WINDOW = timedelta(hours=24)     # the daily budget is a rolling 24 hours
+MIN_ATTEMPT_S = 1.0                     # an attempt needs at least this much of a deadline left
 # The Gemini API rejects a request whose server deadline (the X-Server-Timeout header, which the SDK
 # fills from the client timeout) is under 10 s with HTTP 400. The client-side timeout stays ours.
 MIN_SERVER_DEADLINE_S = 10
@@ -84,7 +97,7 @@ CACHE_FORMAT = 1
 class GeminiError(RuntimeError):
     """A call that produced nothing usable. `code` is short and never holds request or response text:
     timeout, rate_limited, server, network, http_<status>, empty, truncated, malformed_function_call,
-    budget, disabled, cache_miss, error."""
+    blocked, budget, busy, disabled, answer_budget, deadline, cache_miss, error."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -165,52 +178,80 @@ class SdkTransport:
 
 
 class Ledger:
-    """Counts the requests sent to the Gemini API per UTC day, in a JSON-lines file shared by every
-    process that uses the same path. Each line: time, call kind, model, result, latency, tokens.
-    `off_switch`: while this file exists, no request is sent."""
+    """Counts the requests sent to the Gemini API in a rolling 24 hours, in a JSON-lines file shared by
+    every process that uses the same path. Each line: time, call kind, model, result, latency, tokens.
 
-    def __init__(self, path: Path, daily_cap: int | None, off_switch: Path | None = None) -> None:
+    reserve() takes a slot before a request is sent and add() records it after, so simultaneous calls
+    cannot overshoot the cap. The count is never below what this process sent itself, so an unwritable
+    or deleted ledger cannot reopen the budget. `off_switch`: while this file exists, nothing is sent."""
+
+    def __init__(self, path: Path, daily_cap: int | None, off_switch: Path | None = None,
+                 max_in_flight: int = MAX_IN_FLIGHT) -> None:
         self.path = Path(path)
         self.daily_cap = daily_cap
         self.off_switch = Path(off_switch) if off_switch is not None else None
+        self.max_in_flight = max_in_flight
         self._lock = threading.Lock()
-        self._sent: tuple[str, int] = ("", 0)   # (UTC day, requests this process sent): the floor of the count
+        self._sent: deque[datetime] = deque()   # requests this process sent: the floor of the count
+        self._in_flight = 0
 
     def disabled(self) -> bool:
         return self.off_switch is not None and self.off_switch.exists()
 
-    def today(self) -> int:
-        """Requests today: the ledger file's count, and never less than this process sent, so an
-        unwritable or deleted ledger cannot reopen the budget."""
-        day = f"{datetime.now(timezone.utc):%Y-%m-%d}"
-        prefix = f'{{"ts": "{day}'
+    def _counted(self, since: datetime) -> int:
+        n = 0
         try:
             with self.path.open(encoding="utf-8") as f:
-                counted = sum(1 for line in f if line.startswith(prefix))
+                for line in f:
+                    try:
+                        if datetime.fromisoformat(json.loads(line)["ts"]) >= since:
+                            n += 1
+                    except (ValueError, KeyError, TypeError):
+                        continue
         except OSError:
-            counted = 0
-        sent_day, sent = self._sent
-        return max(counted, sent if sent_day == day else 0)
+            pass
+        return n
+
+    def count(self) -> int:
+        """Requests sent in the last 24 hours, plus the ones in flight."""
+        since = datetime.now(timezone.utc) - LEDGER_WINDOW
+        while self._sent and self._sent[0] < since:
+            self._sent.popleft()
+        return max(self._counted(since), len(self._sent)) + self._in_flight
+
+    today = count                         # the name the budget had when it was a calendar day
+
+    def reserve(self) -> str | None:
+        """Take a slot for one request. None when granted, else the refusal: disabled, busy or budget."""
+        with self._lock:
+            if self.disabled():
+                return "disabled"
+            if self._in_flight >= self.max_in_flight:
+                return "busy"
+            if self.daily_cap is not None and self.count() >= self.daily_cap:
+                return "budget"
+            self._in_flight += 1
+            return None
 
     def allow(self) -> bool:
-        return self.daily_cap is None or self.today() < self.daily_cap
+        return self.daily_cap is None or self.count() < self.daily_cap
 
     def add(self, kind: str, model: str, result: str, latency_ms: int, usage: CallUsage) -> int:
-        """Append one request; returns the day's count after it."""
-        line = json.dumps({"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind,
-                           "model": model, "result": result, "latency_ms": latency_ms,
+        """Record one sent request (and free its slot); returns the count after it."""
+        now = datetime.now(timezone.utc)
+        line = json.dumps({"ts": now.isoformat(timespec="seconds"), "kind": kind, "model": model,
+                           "result": result, "latency_ms": latency_ms,
                            "tokens": [usage.prompt_tokens, usage.thought_tokens, usage.output_tokens]})
         with self._lock:
-            day = f"{datetime.now(timezone.utc):%Y-%m-%d}"
-            self._sent = (day, (self._sent[1] if self._sent[0] == day else 0) + 1)
-        try:
-            with self._lock:
+            self._in_flight = max(0, self._in_flight - 1)
+            self._sent.append(now)
+            try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8") as f:
                     f.write(line + "\n")
-        except OSError:
-            log.warning("gemini request ledger not written")
-        return self.today()
+            except OSError:
+                ops_log.warning("gemini request ledger not written")
+            return self.count()
 
 
 def cost_usd(model: str, prompt: int, thoughts: int, output: int) -> float:
@@ -285,7 +326,7 @@ class GeminiClient:
 
     def __init__(self, model: str, transport: Transport | None, *, fallback_model: str | None = None,
                  cache: str = "on", cache_dir: Path | None = None, ledger: Ledger | None = None,
-                 plan_timeout_s: float = 8.0, compose_timeout_s: float = 10.0,
+                 plan_timeout_s: float = 6.0, compose_timeout_s: float = 8.0,
                  plan_thinking: str = "low", compose_thinking: str = "low",
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
@@ -310,9 +351,29 @@ class GeminiClient:
         self.sleep = sleep
         self.clock = clock
         self.calls: list[CallRecord] = []
-        self._paused_until = 0.0         # set by a 429 or by an outage (5xx everywhere)
-        self._pause_code = "rate_limited"
         self._lock = threading.Lock()
+        self._paused_until = 0.0         # set by a 429, a refused key or model, an outage or a failure streak
+        self._pause_code = "rate_limited"
+        self._skip_primary_until = 0.0   # set when the fallback model answered during an outage
+        self._failures = 0               # failures in a row
+        self._answer = threading.local() # per answer (one answer runs in one thread): requests, deadline
+
+    # ---- answers ---------------------------------------------------------------------------------
+
+    def start_answer(self, key: Any) -> None:
+        """Start the request count and the deadline of one answer. `key` identifies the answer's first
+        planner request; the pipeline's retry passes the same object, which does not restart the count."""
+        if getattr(self._answer, "key", None) is key:
+            return
+        self._answer.key = key
+        self._answer.requests = 0
+        self._answer.deadline = self.clock() + ANSWER_DEADLINE_S
+
+    def _answer_left(self) -> tuple[int | None, float | None]:
+        """Requests and seconds left for the current answer, or (None, None) outside an answer."""
+        if getattr(self._answer, "key", None) is None:
+            return None, None
+        return MAX_REQUESTS_PER_ANSWER - self._answer.requests, self._answer.deadline - self.clock()
 
     # ---- the two calls ---------------------------------------------------------------------------
 
@@ -336,7 +397,10 @@ class GeminiClient:
             "thinking_config": {"thinking_level": self.compose_thinking},
             "max_output_tokens": self.compose_max_tokens,
         }
-        return self._call("compose", contents, config, self.compose_timeout_s)
+        reply = self._call("compose", contents, config, self.compose_timeout_s)
+        if reply.blocked and not reply.cached:
+            self._failed("blocked")      # a blocked composer leads to a retry: it counts as a failure
+        return reply
 
     # ---- cache -----------------------------------------------------------------------------------
 
@@ -374,108 +438,134 @@ class GeminiClient:
         except OSError:
             log.warning("gemini cache entry not written")
 
-    # ---- one call --------------------------------------------------------------------------------
+    # ---- state -----------------------------------------------------------------------------------
 
     def _record(self, kind: str, model: str, latency_ms: int, usage: CallUsage, *, cached: bool = False,
                 finish: str | None = None, error: str | None = None, network: bool = False) -> None:
         self.calls.append(CallRecord(kind, model, latency_ms, cached, usage, finish, error, network))
         if network and self.ledger is not None:
             total = self.ledger.add(kind, model, error or "ok", latency_ms, usage)
-            log.info("gemini request %d of %s today (%s %s, %s)", total, self.ledger.daily_cap, kind, model, error or "ok")
+            ops_log.info("gemini request %d of %s in 24 h (%s %s %s, %d ms)", total, self.ledger.daily_cap,
+                         kind, model, error or "ok", latency_ms)
         log.info("gemini %s model=%s cached=%s latency_ms=%d tokens prompt=%d thoughts=%d output=%d "
                  "cost_usd=%.6f%s", kind, model, cached, latency_ms, usage.prompt_tokens,
                  usage.thought_tokens, usage.output_tokens, usage.cost_usd, f" error={error}" if error else "")
-
-    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float) -> Reply:
-        key = self.cache_key(self.model, kind, contents, config)
-        entry = self._read_cache(key)
-        if entry is not None:
-            reply = parse(self.model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
-            self._record(kind, self.model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
-            return reply
-        if self.cache == "replay":
-            self._record(kind, self.model, 0, CallUsage(), error="cache_miss")
-            raise GeminiError("cache_miss")
-
-        deadline = self.clock() + timeout_s
-        try:
-            return self._attempts(self.model, key, kind, contents, config, deadline,
-                                  retries=len(SERVER_RETRY_BACKOFF_S))
-        except GeminiError as exc:
-            if exc.code != "server":
-                raise
-            if self.fallback_model is None:
-                self._pause(OVERLOAD_COOLDOWN_S, "server")
-                raise
-        # The primary model stayed overwhelmed: one attempt on the fallback model, same deadline.
-        key = self.cache_key(self.fallback_model, kind, contents, config)
-        try:
-            return self._attempts(self.fallback_model, key, kind, contents, config, deadline, retries=0,
-                                  fallback=True)
-        except GeminiError as exc:
-            if exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
-                # The fallback model is refused (for example an id this key cannot use): stop using it,
-                # but do not pause the primary model for longer than an overload.
-                log.error("gemini fallback model refused (%s); fallback turned off", exc.code)
-                self.fallback_model = None
-            self._pause(OVERLOAD_COOLDOWN_S, "server")
-            raise GeminiError("server") from None
 
     def _pause(self, seconds: float, code: str) -> None:
         with self._lock:
             self._paused_until = max(self._paused_until, self.clock() + seconds)
             self._pause_code = code
-        log.error("gemini %s: model calls paused for %d s; answers use the rule planner and the template",
-                  code, seconds)
+        ops_log.error("gemini %s: model calls paused for %d s; answers use the rule planner and the template",
+                      code, seconds)
 
-    def _attempts(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
-                  deadline: float, retries: int, fallback: bool = False) -> Reply:
-        assert self.transport is not None
-        attempt = 0
-        while True:
+    def _failed(self, code: str) -> None:
+        with self._lock:
+            self._failures += 1
+            streak = self._failures
+        if streak >= FAILURE_STREAK_LIMIT:
+            self._pause(FAILURE_STREAK_COOLDOWN_S, f"{code} ({streak} failures in a row)")
             with self._lock:
-                paused, code = self.clock() < self._paused_until, self._pause_code
-            if paused:
-                self._record(kind, model, 0, CallUsage(), error=f"{code} (paused)")
-                raise GeminiError(code)
-            if self.ledger is not None and self.ledger.disabled():
-                self._record(kind, model, 0, CallUsage(), error="disabled")
-                raise GeminiError("disabled")
-            if self.ledger is not None and not self.ledger.allow():
-                self._record(kind, model, 0, CallUsage(), error="budget")
-                log.warning("gemini daily budget of %s requests reached; answers use the template", self.ledger.daily_cap)
-                raise GeminiError("budget")
-            remaining = deadline - self.clock()
-            if remaining < MIN_ATTEMPT_S:
-                self._record(kind, model, 0, CallUsage(), error="timeout (no time left)")
-                raise GeminiError("timeout")
-            t = self.clock()
-            try:
-                raw = self.transport(model, contents, config, remaining)
-            except Exception as exc:  # noqa: BLE001 - only a short code leaves this function
-                code, status = _error_code(exc)
-                ms = int((self.clock() - t) * 1000)
-                if status == 429:
-                    self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
-                elif status in CONFIG_ERROR_CODES and not fallback:
-                    self._pause(CONFIG_ERROR_COOLDOWN_S, code)
-                if status in SERVER_RETRY_CODES and attempt < retries:
-                    pause = SERVER_RETRY_BACKOFF_S[attempt]
-                    if deadline - self.clock() - pause >= MIN_ATTEMPT_S:
-                        self._record(kind, model, ms, CallUsage(), error=f"{code} (retrying)", network=True)
-                        attempt += 1
-                        self.sleep(pause)
-                        continue
-                self._record(kind, model, ms, CallUsage(), error=code, network=True)
-                raise GeminiError(code) from None
-            latency_ms = int((self.clock() - t) * 1000)
-            try:
-                reply = parse(model, raw, latency_ms)
-            except GeminiError as exc:
-                finish = str((raw.get("candidates") or [{}])[0].get("finish_reason") or "")
-                self._record(kind, model, latency_ms, _usage(model, raw.get("usage_metadata")), finish=finish,
-                             error=exc.code, network=True)
-                raise
-            self._write_cache(key, model, kind, raw, latency_ms)
-            self._record(kind, model, latency_ms, reply.usage, finish=reply.finish_reason, network=True)
+                self._failures = 0
+
+    def _succeeded(self) -> None:
+        with self._lock:
+            self._failures = 0
+
+    # ---- one call --------------------------------------------------------------------------------
+
+    def _call(self, kind: str, contents: list[dict[str, Any]], config: dict[str, Any], timeout_s: float) -> Reply:
+        skip_primary = self.fallback_model is not None and self.clock() < self._skip_primary_until
+        model = self.fallback_model if skip_primary else self.model
+        key = self.cache_key(model, kind, contents, config)
+        entry = self._read_cache(key)
+        if entry is not None:
+            reply = parse(model, entry["response"], int(entry.get("latency_ms") or 0), cached=True)
+            self._record(kind, model, reply.latency_ms, reply.usage, cached=True, finish=reply.finish_reason)
             return reply
+        if self.cache == "replay":
+            self._record(kind, model, 0, CallUsage(), error="cache_miss")
+            raise GeminiError("cache_miss")
+
+        deadline = self.clock() + timeout_s
+        try:
+            return self._attempt(model, key, kind, contents, config, deadline, fallback=skip_primary)
+        except GeminiError as exc:
+            if exc.code != "server" or skip_primary or self.fallback_model is None:
+                if exc.code == "server":
+                    self._pause(OVERLOAD_COOLDOWN_S, "server")
+                raise
+        # The primary model is overwhelmed: one attempt on the fallback model, within the same deadline.
+        fallback = self.fallback_model
+        try:
+            reply = self._attempt(fallback, self.cache_key(fallback, kind, contents, config), kind, contents,
+                                  config, deadline, fallback=True)
+        except GeminiError as exc:
+            if exc.code in {f"http_{c}" for c in CONFIG_ERROR_CODES}:
+                # The fallback model is refused (for example an id this key cannot use): stop using it,
+                # but do not pause the primary model for longer than an overload.
+                ops_log.error("gemini fallback model refused (%s); fallback turned off", exc.code)
+                self.fallback_model = None
+            self._pause(OVERLOAD_COOLDOWN_S, "server")
+            raise GeminiError("server") from None
+        with self._lock:
+            self._skip_primary_until = self.clock() + PRIMARY_SKIP_S
+        ops_log.warning("gemini %s overloaded; calling %s directly for %d s", self.model, fallback, PRIMARY_SKIP_S)
+        return reply
+
+    def _attempt(self, model: str, key: str, kind: str, contents: list[dict[str, Any]], config: dict[str, Any],
+                 deadline: float, fallback: bool = False) -> Reply:
+        """One request, after every check: pause, per-answer requests and deadline, ledger slot."""
+        assert self.transport is not None
+        with self._lock:
+            paused, pause_code = self.clock() < self._paused_until, self._pause_code
+        if paused:
+            self._record(kind, model, 0, CallUsage(), error=f"{pause_code} (paused)")
+            raise GeminiError(pause_code.split(" ")[0])
+        requests_left, answer_left = self._answer_left()
+        if requests_left is not None and requests_left <= 0:
+            self._record(kind, model, 0, CallUsage(), error="answer_budget")
+            raise GeminiError("answer_budget")
+        timeout = deadline - self.clock()
+        if answer_left is not None:
+            timeout = min(timeout, answer_left)
+        if timeout < MIN_ATTEMPT_S:
+            self._record(kind, model, 0, CallUsage(), error="deadline")
+            raise GeminiError("deadline")
+        if self.ledger is not None:
+            refused = self.ledger.reserve()
+            if refused is not None:
+                self._record(kind, model, 0, CallUsage(), error=refused)
+                if refused == "budget":
+                    ops_log.warning("gemini budget of %s requests in 24 h reached; answers use the template",
+                                    self.ledger.daily_cap)
+                raise GeminiError(refused)
+        if requests_left is not None:
+            self._answer.requests += 1
+
+        t = self.clock()
+        try:
+            raw = self.transport(model, contents, config, timeout)
+        except Exception as exc:  # noqa: BLE001 - only a short code leaves this function
+            code, status = _error_code(exc)
+            self._record(kind, model, int((self.clock() - t) * 1000), CallUsage(), error=code, network=True)
+            if status == 429:
+                self._pause(RATE_LIMIT_COOLDOWN_S, "rate_limited")
+            elif status in CONFIG_ERROR_CODES and not fallback:
+                self._pause(CONFIG_ERROR_COOLDOWN_S, code)
+            elif status not in SERVER_ERROR_CODES:
+                self._failed(code)
+            raise GeminiError(code) from None
+        latency_ms = int((self.clock() - t) * 1000)
+        try:
+            reply = parse(model, raw, latency_ms)
+        except GeminiError as exc:
+            finish = str((raw.get("candidates") or [{}])[0].get("finish_reason") or "")
+            self._record(kind, model, latency_ms, _usage(model, raw.get("usage_metadata")), finish=finish,
+                         error=exc.code, network=True)
+            self._failed(exc.code)
+            raise
+        self._write_cache(key, model, kind, raw, latency_ms)
+        self._record(kind, model, latency_ms, reply.usage, finish=reply.finish_reason, network=True)
+        if not reply.blocked:
+            self._succeeded()
+        return reply

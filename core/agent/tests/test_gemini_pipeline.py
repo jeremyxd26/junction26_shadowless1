@@ -15,6 +15,7 @@ import pytest
 
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import GeminiModel, RulesFirstModel, not_recognised
+from core.agent import gemini_client as gc
 from core.agent.gemini_client import GeminiClient, Ledger
 from core.agent.model import PlanInput
 from core.agent.orchestrator import AskRequest, Pipeline
@@ -225,3 +226,29 @@ def test_only_an_unmatched_question_is_not_recognised():
     refusal = RuleModel().plan(PlanInput(question="Will the bank approve my mortgage?", language="en",
                                          as_of="2026-09-30", tools=[{"name": "get_spending"}]))
     assert not not_recognised(refusal)
+
+
+# ---- review fixes: requests per answer ---------------------------------------------------------------
+
+def test_a_hanging_provider_costs_at_most_three_requests_then_pauses():
+    transport = FakeTransport(TimeoutError())
+    p, _ = pipeline(transport)
+    p.model.client.fallback_model = None
+    for _ in range(3):
+        assert ask(p)["outcome"] == "fallback"
+    assert len(transport.requests) == 3                   # the failure streak pause stopped the rest
+
+
+def test_a_503_storm_with_a_fallback_costs_two_requests_then_pauses():
+    transport = FakeTransport(api_error(503))
+    p, _ = pipeline(transport)
+    assert ask(p)["outcome"] == "fallback" and ask(p)["outcome"] == "fallback"
+    assert len(transport.requests) == 2                   # flash, then pro once; then the overload pause
+
+
+def test_the_rules_first_model_starts_the_answer_for_the_composer_too():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, _ = rules_first(transport)
+    for _ in range(gc.MAX_REQUESTS_PER_ANSWER + 2):       # many answers, one composer request each
+        assert ask(p)["outcome"] == "answered"
+    assert len(transport.compose.requests) == gc.MAX_REQUESTS_PER_ANSWER + 2
