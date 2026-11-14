@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -48,3 +48,6 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str | None = None
     cors_origins: CommaSeparated = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
+    # Which customers the API serves (#101): `personas`, only the ids of core/config/personas.yaml (the
+    # demo and the dev service), or `all`, every customer of the data (local eval runs only).
+    demo_customers: Literal["personas", "all"] = "personas"

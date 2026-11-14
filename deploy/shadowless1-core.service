@@ -2,6 +2,10 @@
 # The container reads its settings from /etc/shadowless1/core.env (root only, outside git) every time it
 # starts, so changing a setting needs only `systemctl restart shadowless1-core`, not a redeploy.
 # Logs go to the journal only (journalctl -u shadowless1-core), which is not world-readable.
+# The service's own data (var/ at the repository root, /srv/var in the container: audit log, daily
+# model-call counter, response and tool caches) lives on the host in /var/lib/shadowless1/var, owned by
+# the container user (uid 10001, mode 700), so a deploy or a restart keeps it. The rest of the
+# container's file system is read-only.
 [Unit]
 Description=shadowless1 core service (container)
 After=docker.service network-online.target
@@ -16,6 +20,7 @@ ExecStart=/usr/bin/docker run --rm --name shadowless1-core \
     --env-file /etc/shadowless1/core.env \
     --publish 127.0.0.1:8000:8000 \
     --memory 1g --pids-limit 256 --read-only --tmpfs /tmp \
+    --volume /var/lib/shadowless1/var:/srv/var \
     --log-driver none \
     shadowless1-core:current
 ExecStop=/usr/bin/docker stop --timeout 10 shadowless1-core

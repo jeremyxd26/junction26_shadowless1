@@ -29,7 +29,20 @@ RESERVED_SETTINGS = frozenset({"demo_today", "customer_from", "customer_to"})
 
 
 def is_reserved_setting(name: str) -> bool:
-    return name in RESERVED_SETTINGS or name.startswith("customer_")
+    """A name that would set the customer range or as_of. PostgreSQL setting names are not case
+    sensitive (`app.Customer_from` is `app.customer_from`), so the check ignores case and surrounding
+    whitespace (#122); evidence.resolve uses it for stored specs as well."""
+    key = str(name).strip().lower()
+    return key in RESERVED_SETTINGS or key.startswith("customer_")
+
+
+def check_settings(settings: dict[str, str] | None) -> None:
+    """Refuse a reserved or malformed setting name before anything touches the database."""
+    for name in settings or {}:
+        if is_reserved_setting(name):
+            raise ValueError(f"setting {name!r} is reserved: run() sets it from its arguments")
+        if not isinstance(name, str) or not SETTING_NAME.fullmatch(name):
+            raise ValueError(f"bad setting name {name!r}")
 
 
 def customer_range(customer_id: str) -> tuple[str, str]:
@@ -51,17 +64,19 @@ def run(conn: psycopg.Connection, file: str, customer_id: str, as_of: date,
     """
     if "/" in file or "\\" in file or not file.endswith(".sql"):
         raise ValueError(f"not a metric file name: {file!r}")
-    for name in settings or {}:
-        if is_reserved_setting(name):
-            raise ValueError(f"setting {name!r} is reserved: run() sets it from its arguments")
+    check_settings(settings)
     sql = (METRICS_DIR / file).read_text(encoding="utf-8")
     lo, hi = customer_range(customer_id)
-    values = {"demo_today": as_of.isoformat(), "customer_from": lo, "customer_to": hi, **(settings or {})}
+    # The caller's settings first and the customer range and as_of last, in the sequence of set_config
+    # calls as well as in value: a later set_config of the same name wins in PostgreSQL, so the
+    # server's values win even if a name ever slipped past check_settings (defence in depth, #122).
+    server = [("demo_today", as_of.isoformat()), ("customer_from", lo), ("customer_to", hi)]
+    values = list((settings or {}).items()) + server
     own_transaction = conn.info.transaction_status == pq.TransactionStatus.IDLE
     with conn.transaction():
         if own_transaction:
             conn.execute("SET TRANSACTION READ ONLY")
-        for name, value in values.items():
+        for name, value in values:
             if not SETTING_NAME.fullmatch(name):
                 raise ValueError(f"bad setting name {name!r}")
             conn.execute("SELECT set_config(%s, %s, true)", (f"app.{name}", str(value)))

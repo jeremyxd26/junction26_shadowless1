@@ -76,9 +76,6 @@ def test_api_docs_are_not_served_by_the_app(client, path):
     assert client.get(path).status_code == 404
 
 
-@pytest.mark.xfail(strict=True, reason="demo mode serves every customer in the data, not only the personas; issue #101. "
-                                       "Assumes the persona check runs before any database read (as in PR #125); "
-                                       "without a database a persona gets 503 and a non-persona must get 404")
 @pytest.mark.parametrize("path", ["/api/overview/CUST00001", "/api/evidence/ev_000000000000?customer_id=CUST00001"])
 def test_demo_mode_serves_only_the_personas(client, path):
     r = client.get(path)

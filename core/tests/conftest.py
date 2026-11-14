@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SETTINGS_ENV = ("DATABASE_URL", "DEMO_TODAY", "GEMINI_API_KEY", "GEMINI_MODEL", "CORS_ORIGINS")
+SETTINGS_ENV = ("DATABASE_URL", "DEMO_TODAY", "GEMINI_API_KEY", "GEMINI_MODEL", "CORS_ORIGINS",
+                "DEMO_CUSTOMERS")
 
 @pytest.fixture
 def unreachable_db() -> str:
