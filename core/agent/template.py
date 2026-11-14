@@ -609,7 +609,21 @@ def why_lower_sentence(view: dict[str, Any], language: str) -> tuple[str, list[s
     tokens = {name: f"{{{{{node['id']}}}}}" for name, node in
               (("safe", safe), ("goal", goal), ("balance", balance), ("budget", budget)) if _id(node)}
     text = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[key], language)
-    return text.format(**{**{"goal": ""}, **tokens}), [node["id"] for node in cited]
+    text = text.format(**{**{"goal": ""}, **tokens})
+    # #575: a pending or "Needed" review's purchase (core.agent.why_review) takes the place of the other side's
+    # figure: the first sentence stays, the review sentence follows, still at most three numbers.
+    review = view.get("review_effect") or {}
+    amount_id = (review.get("amount") or {}).get("id")
+    review_key = {("pending", True): "why_review_pending_lowers", ("pending", False): "why_review_pending_same",
+                  ("needed", True): "why_review_needed_moved", ("needed", False): "why_review_needed_same"}.get(
+        (review.get("state"), bool(review.get("moved"))))
+    if amount_id and review_key:
+        first = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+        kept = cited[:2] if key == "why_budget_goal" else cited[:1]
+        sentence = tools_config.label(tools_config.SAFE_TO_SPEND_TEXT[review_key], language).format(
+            amount="{{" + amount_id + "}}")
+        return first + " " + sentence, [node["id"] for node in kept] + [amount_id]
+    return text, [node["id"] for node in cited]
 
 
 def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
