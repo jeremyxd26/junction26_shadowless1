@@ -803,10 +803,12 @@ WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer ta
 # budget allows" is a figure Sentti derives). Matched on the folded question.
 BUDGET_WORDS = r"\bbudget\w*|\bspending (limit|cap)s?\b|budjet\w*|\bkulutusraj\w*"   # "kuukausibudjetti" too
 BUDGET_PAST_FI = r"\bylitin\w*|\bpysyin\w*"   # "Ylitinkö budjettini?", "Pysyinkö budjetissa?": as "Did I go over …?"
+# At most 140 characters each: a longer question is rejected by the clarify function's schema (registry.ClarifyArgs),
+# and the answer then falls through to "I could not find data" (review of #579). The options name the two offers.
 BUDGET_BACK = ("Sentti sees your transactions, not a budget plan, so I can't say how you did against one. I can show "
-               "what you spent, or what you can safely spend this week.",
-               "Sentti näkee tapahtumasi mutta ei budjettisuunnitelmaa, joten en voi verrata kulutustasi siihen. Voin "
-               "näyttää, paljonko käytit, tai paljonko voit turvallisesti käyttää tällä viikolla.")
+               "your spending or safe to spend.",
+               "Sentti näkee tapahtumasi, ei budjettisuunnitelmaa, joten en voi verrata kulutustasi siihen. Voin "
+               "näyttää kulutuksesi tai turvallisen summan.")
 BUDGET_OPTIONS = (("How much did I spend last month?", "What can I safely spend this week?"),
                   ("Paljonko käytin viime kuussa?", "Paljonko voin turvallisesti käyttää tällä viikolla?"))
 BUDGET_OPTIONS_THIS_MONTH = (("How much did I spend this month?", "What can I safely spend this week?"),
@@ -1423,9 +1425,11 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
             return Claim(None, reason=why)   # the model, or the general question back (not the period)
     preset = ((spending or {}).get("period") or {}).get("preset")
     if re.search(BUDGET_WORDS, q) and set(found) <= {"safe_to_spend", "spending"} and preset != "this_week" and \
+            not (spending or {}).get("compare_to") and \
             (re.search(PAST, q) or re.search(BUDGET_PAST_FI, q) or _other_period(spending)):
         # "what was my budget last month", "did I stay within budget in August" (#547): the question back; this
-        # week's budget questions keep theirs (safe to spend, or the two rules' question back)
+        # week's budget questions keep theirs (safe to spend, or the two rules' question back), and so does a
+        # comparison ("Why is my monthly budget lower than last month?": the spending comparison, as on dev)
         options = BUDGET_OPTIONS_THIS_MONTH if preset == "this_month" else BUDGET_OPTIONS
         return Claim("budget", tuple(RuleModel._clarify(BUDGET_BACK, options, lang)))
     if "small_purchases" in found and not small_purchases_whole(q):

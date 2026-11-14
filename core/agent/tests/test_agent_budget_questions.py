@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from core.agent.model import PlanInput
+from core.agent.registry import ClarifyArgs
 from core.agent.rules import BUDGET_BACK, BUDGET_OPTIONS, BUDGET_OPTIONS_THIS_MONTH, RuleModel, claim
 from core.agent.toolset import KNOWN_TOOLS
 from core.agent.validator import draft_problems, setting_claim
@@ -60,6 +61,32 @@ def test_the_question_back_is_a_recognised_answer_so_the_model_never_plans_it(qu
 @pytest.mark.parametrize("text", BUDGET_BACK)
 def test_the_question_back_makes_no_claim_about_a_budget(text):
     assert setting_claim(text) is None
+
+
+@pytest.mark.parametrize("text", BUDGET_BACK)
+def test_the_question_back_fits_the_clarify_schema(text):
+    # a longer question is rejected by ClarifyArgs and the answer falls through to "I could not find data" (review
+    # of #579)
+    assert ClarifyArgs.model_validate({"question": text, "options": list(BUDGET_OPTIONS[0])})
+
+
+@pytest.mark.parametrize("question,lang", [("What was my budget last month?", "en"), ("Did I go over my budget?", "en"),
+                                           ("Mikä oli budjettini viime kuussa?", "fi")])
+def test_the_question_back_reaches_the_user_through_the_pipeline(make_pipeline, question, lang):
+    from agent_fakes import run
+
+    from core.agent.toolset import default_registry
+    pipe = make_pipeline(RuleModel(), reg=default_registry())
+    done = dict(run(pipe, question, language=lang))["done"]
+    i = 0 if lang == "en" else 1
+    assert done["outcome"] == "clarify" and done["text"] == BUDGET_BACK[i], done["text"]
+    assert done["clarify"]["options"] == list(BUDGET_OPTIONS[i])
+
+
+def test_a_budget_compared_with_last_month_keeps_the_spending_comparison():
+    # as on dev: the rules plan the spending comparison, never the question back (review of #579)
+    found = ask("Why is my monthly budget lower than last month?")
+    assert found.rule == "spending" and found.calls[0].args.get("compare_to") == "previous_period", found
 
 
 @pytest.mark.parametrize("question,lang", [   # a budget for this week: the safe-to-spend question, as on dev
