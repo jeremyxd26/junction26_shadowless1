@@ -39,6 +39,7 @@ interface ToastState {
   numbers: Record<string, Num>
   undo: boolean
   retry: boolean
+  retryUntil: number | null
 }
 
 type Motion = NumberMotion & { seq: number }
@@ -191,6 +192,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       numbers: response.message.numbers,
       undo: answered,
       retry: false,
+      retryUntil: null,
     })
     focusCard.current = true
     if (answered) {
@@ -234,12 +236,15 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       // Nothing moved: the card (or the toast, for an undo) says so and offers a retry when it may help.
       const message = caught instanceof ApiError ? caught.message : t.reviewSaveFailed
       const retryable = caught instanceof ApiError ? caught.retryable : true
+      // A 429 (or 503) may say how long to wait: Retry stays off until then.
+      const wait = caught instanceof ApiError ? caught.retryAfter : null
+      const until = wait ? Date.now() + wait * 1000 : null
       if (basket === null) {
         const run = ++seq.current
-        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable })
+        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable, retryUntil: until })
         setShowToast(run)
       } else {
-        setError({ message, retryable })
+        setError({ message, retryable, until })
       }
     } finally {
       setBusy(null)
@@ -325,6 +330,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           numbers={visibleToast.numbers}
           onUndo={visibleToast.undo && busy === null ? () => void send(null) : undefined}
           onRetry={visibleToast.retry ? () => void send(null) : undefined}
+          retryUntil={visibleToast.retryUntil}
           onClose={() => setToast(null)}
         />
       )}

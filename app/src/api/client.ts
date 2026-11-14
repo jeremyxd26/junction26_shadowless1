@@ -6,7 +6,7 @@ import type {
   OverviewResponse,
   PersonasResponse,
 } from './types.ts'
-import { ApiError, isErrorEnvelope } from './errors.ts'
+import { ApiError, isErrorEnvelope, parseRetryAfter } from './errors.ts'
 import { strings } from '../lib/i18n.ts'
 
 export type ApiMode = 'mock' | 'live'
@@ -58,12 +58,13 @@ function createLiveClient(base: string): ApiClient {
     }
     const body: unknown = await response.json().catch(() => null)
     if (!response.ok) {
-      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
-      throw new ApiError(response.status, {
-        code: 'internal',
-        message: t.errorRetry,
-        retryable: response.status >= 500,
-      })
+      const retryAfter = parseRetryAfter(response.headers.get('Retry-After'))
+      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error, retryAfter)
+      throw new ApiError(
+        response.status,
+        { code: 'internal', message: t.errorRetry, retryable: response.status >= 500 },
+        retryAfter,
+      )
     }
     // A 200 that is not the expected JSON object (for example a static host answering /api with
     // index.html, an array, or an object without the fields the screen reads) must not reach the
