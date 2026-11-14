@@ -43,3 +43,31 @@ def test_the_review_why_says_that_the_answer_can_change_safe_to_spend():
         assert "which basket it goes into, which can change your safe to spend" in en
         assert "mihin koriin se kuuluu" in fi and "turvallisesti käytettävissä" in fi
         assert "only how your own spending is grouped" not in en and "vain sitä" not in fi
+
+
+SAFE_TO_SAVE = {   # each number of metrics.md section 3.1 gets its own sentence (review of #612)
+    "safe_to_save_monthly_eur": "after bills, essentials, the reserve and your usual everyday spending",
+    "free_month_eur": "before everyday spending",
+    "everyday_month_eur": "everyday spending in a typical month",
+    "essentials_shortfall_month_eur": "exceed your income in a typical month",
+    "safe_to_save_eur": "never below zero",
+    "everyday_until_payday_eur": "for the days until payday",
+    "save_reason_month_eur": "why a typical month leaves nothing",
+}
+
+
+@pytest.mark.parametrize("column, phrase", sorted(SAFE_TO_SAVE.items()))
+def test_each_safe_to_save_number_has_its_own_true_sentence(column, phrase):
+    en, fi = texts.METHODS[f"safe_to_spend.{column}@1"].summary
+    assert phrase in en and fi.strip()
+
+
+def test_the_safe_to_save_sentences_are_all_different():
+    summaries = [texts.METHODS[f"safe_to_spend.{c}@1"].summary for c in SAFE_TO_SAVE]
+    assert len(set(summaries)) == len(summaries)
+
+
+def test_the_savings_goal_is_not_called_the_customers_own_choice():
+    en, fi = texts.METHODS["safe_to_spend.savings_goal_eur@1"].summary
+    assert en.startswith("A monthly savings goal, set aside first") and "you set aside" not in en
+    assert "jonka laitat" not in fi

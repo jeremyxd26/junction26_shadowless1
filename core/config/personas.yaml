@@ -74,7 +74,7 @@ personas:
       key: everyday_heavy
       label: Everyday spender
     tagline: Almost a third of spending is everyday purchases, with restaurants the largest part.
-    tagline_fi: Lähes kolmannes kulutuksesta on arjen ostoksia, ja niistä suurin osa menee ravintoloihin.
+    tagline_fi: Lähes kolmannes kulutuksesta on arjen ostoksia, ja niistä suurin osuus menee ravintoloihin.
     default_language: en
     demo_role: young_everyday
     why: >-

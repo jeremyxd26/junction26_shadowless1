@@ -3794,7 +3794,7 @@ A `metric` number (Sanna's budget limit for the next 7 days, from `core/metrics/
   "method": {
     "id": "safe_to_spend.budget_limit_7d_eur@1",
     "name": "Your monthly budget allows",
-    "summary": "What a typical month leaves free, minus your savings goal, for 7 days.",
+    "summary": "What a typical month leaves free, minus your savings goal, scaled to 7 days.",
     "doc": "docs/design/metrics.md#3-safe-to-spend"
   },
   "query": null,
