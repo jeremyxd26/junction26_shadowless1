@@ -22,7 +22,9 @@ interface Props {
  * safe area in its padding) and followed as it changes, for example with 200 % text. The answer's
  * toast closes by itself after 6 s (Undo stays on the answered card), and when the customer closes
  * it or asks the next question; a toast with Retry stays until it is closed. Screen readers hear
- * `text_rendered` through the overview's live region, not this copy.
+ * `text_rendered` through the overview's live region, not this copy. A long message (200 % text,
+ * an answer without `effect`) scrolls inside at most half the screen, while Close and Undo stay in
+ * view beside it (#521).
  */
 export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClose }: Props) {
   const { t } = useSettings()
@@ -46,7 +48,7 @@ export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClo
       className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] z-40 flex justify-center px-4"
     >
       <div className="toast-in pointer-events-auto flex w-full max-w-[448px] items-start gap-1 rounded-lg bg-ink py-2 pl-4 pr-1 text-surface shadow-float [&_:focus-visible]:outline-mint">
-        <p className="flex-1 py-2 text-sm leading-6">
+        <p tabIndex={0} className="max-h-[50dvh] min-w-0 flex-1 overflow-y-auto overscroll-contain py-2 text-sm leading-6">
           <TokenText text={text} numbers={numbers} />
         </p>
         {/* Actions in one narrow column, so the message keeps most of the width. */}
