@@ -150,6 +150,13 @@ The only writes are the label answer and its undo. The undo always runs and is a
 
 Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
 
+### Limits of `/api/ask` at the venue
+
+At the venue, every visitor on the shared Wi-Fi arrives from one client address.
+- **Model windows:** 10 a minute per address, 60 globally, 10 per address and persona. They protect the language-model budget. When one is used up, questions are still answered, by the rules and the template, with the "model unavailable" warning.
+- **Hard ceiling:** 120 a minute per address, 600 globally. It protects the service. Only it answers 429.
+- **Presenter:** use a network of your own (a phone hotspot), so the room's questions never share your address or your model window.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:

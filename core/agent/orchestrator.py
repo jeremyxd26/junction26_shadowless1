@@ -120,6 +120,9 @@ class AskRequest:
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
+    # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
+    # with the `llm_unavailable` warning, and no model request is made.
+    model_allowed: bool = True
 
 
 @dataclass
@@ -231,7 +234,7 @@ class Pipeline:
             plan, source = self._plan(PlanInput(
                 question=message, language=lang, as_of=self.as_of.isoformat(), tools=self.registry.schemas(),
                 history=history, responses=list(responses), model_turns=list(model_turns), guard_flags=a.flags,
-                round=rnd), a)
+                round=rnd), a, req.model_allowed)
             calls = plan.calls
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
@@ -253,6 +256,8 @@ class Pipeline:
                 for call, kind, _ in parsed:
                     turn["calls"].append({"name": call.name, "args": call.args,
                                           "status": "ok" if kind == "control" else "not_run"})
+                if planner_fallback and "llm_unavailable" not in a.warnings:
+                    a.warnings.append("llm_unavailable")  # the rules answered in the model's place
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
                 return self._clarify(controls["ask_clarifying_question"], lang, emit, a)
@@ -310,7 +315,10 @@ class Pipeline:
                                    "answer": TOKEN.sub("[number]", text)})
         return lang
 
-    def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
+    def _plan(self, request: PlanInput, a: _Answer, model_allowed: bool = True) -> tuple[PlanResult, str]:
+        if not model_allowed:  # a used-up model window (#232): the rules plan, the template writes
+            a.planner_turns.append({"round": request.round, "source": "model", "error": "model window used up"})
+            return self.fallback.plan(request), "fallback"
         for _ in range(2):  # the call and one retry
             t = self.clock()
             try:

@@ -91,49 +91,69 @@ def _env_int(name: str, default: int) -> int:
 
 
 class AskLimits:
-    """Per-process limits on POST /api/ask, checked before the stream opens (security issue #85).
+    """Per-process limits on POST /api/ask, checked before the stream opens (security issues #85, #232).
+    Sliding one-minute windows; 0 turns a window off.
 
-    Three sliding one-minute windows; 0 turns a limit off:
+    Model windows protect the language-model budget. When one is used up the question is still
+    answered, by the rule planner and the template, with the `llm_unavailable` warning and no model
+    request, so a room on one Wi-Fi address can never switch the chat off for everyone:
     - per client address (ASK_RATE_LIMIT_PER_MIN, default 10): the address uvicorn reports. In the
       image uvicorn runs with --proxy-headers behind Caddy, which replaces X-Forwarded-For, so this is
       the address Caddy saw; changing the customer_id in the body never resets it;
-    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together, which
-      also caps how often one customer can be asked about from many addresses;
-    - per address and customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10): keyed by both, so one
-      address that uses up its window for a persona never blocks that persona for anyone else (on
-      the public demo, every visitor asks about the same four personas).
-    A request counts only if every limit allows it.
+    - global (ASK_RATE_LIMIT_GLOBAL_PER_MIN, default 60): all asks of this process together;
+    - per address and customer (ASK_RATE_LIMIT_CUSTOMER_PER_MIN, default 10).
+    The hard ceiling protects the service itself; only it answers 429 with Retry-After:
+    - per client address (ASK_HARD_LIMIT_PER_MIN, default 120);
+    - global (ASK_HARD_LIMIT_GLOBAL_PER_MIN, default 600).
+    A request counts towards the model windows only when it may use the model.
     """
 
-    def __init__(self, per_address: int, global_: int, per_customer: int) -> None:
-        self.limits = {"address": per_address, "global": global_, "customer": per_customer}
+    def __init__(self, per_address: int, global_: int, per_customer: int, hard_address: int = 0,
+                 hard_global: int = 0) -> None:
+        self.model = {"address": per_address, "global": global_, "customer": per_customer}
+        self.hard = {"hard_address": hard_address, "hard_global": hard_global}
         self._hits: dict[tuple[str, str], deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
     @classmethod
     def from_env(cls) -> AskLimits:
         return cls(_env_int("ASK_RATE_LIMIT_PER_MIN", 10), _env_int("ASK_RATE_LIMIT_GLOBAL_PER_MIN", 60),
-                   _env_int("ASK_RATE_LIMIT_CUSTOMER_PER_MIN", 10))
+                   _env_int("ASK_RATE_LIMIT_CUSTOMER_PER_MIN", 10), _env_int("ASK_HARD_LIMIT_PER_MIN", 120),
+                   _env_int("ASK_HARD_LIMIT_GLOBAL_PER_MIN", 600))
 
-    def allow(self, address: str, customer_id: str) -> tuple[bool, int]:
+    def _retry(self, limits: dict[str, int], keys: dict[str, str], now: float) -> int:
+        """Seconds until every window of `limits` has room again; 0 when all have room now."""
+        retry = 0
+        for kind, limit in limits.items():
+            if limit <= 0:
+                continue
+            hits = self._hits[(kind, keys[kind])]
+            while hits and now - hits[0] > 60:
+                hits.popleft()
+            if len(hits) >= limit:
+                retry = max(retry, int(60 - (now - hits[0])) + 1)
+        return retry
+
+    def _record(self, limits: dict[str, int], keys: dict[str, str], now: float) -> None:
+        for kind, limit in limits.items():
+            if limit > 0:
+                self._hits[(kind, keys[kind])].append(now)
+
+    def check(self, address: str, customer_id: str) -> tuple[str, int]:
+        """("model", 0): answer as usual; ("rules", 0): answer without the model; ("refuse", seconds):
+        the hard ceiling, 429 with Retry-After."""
         now = time.monotonic()
-        keys = {"address": address, "global": "*", "customer": f"{address} {customer_id}"}
+        keys = {"address": address, "global": "*", "customer": f"{address} {customer_id}",
+                "hard_address": address, "hard_global": "*"}
         with self._lock:
-            retry = 0
-            for kind, limit in self.limits.items():
-                if limit <= 0:
-                    continue
-                hits = self._hits[(kind, keys[kind])]
-                while hits and now - hits[0] > 60:
-                    hits.popleft()
-                if len(hits) >= limit:
-                    retry = max(retry, int(60 - (now - hits[0])) + 1)
+            retry = self._retry(self.hard, keys, now)
             if retry:
-                return False, retry
-            for kind, limit in self.limits.items():
-                if limit > 0:
-                    self._hits[(kind, keys[kind])].append(now)
-            return True, 0
+                return "refuse", retry
+            self._record(self.hard, keys, now)
+            if self._retry(self.model, keys, now):
+                return "rules", 0
+            self._record(self.model, keys, now)
+            return "model", 0
 
 
 def trusted_proxies() -> set[str]:
@@ -259,8 +279,8 @@ async def ask(request: Request):
     if not message:
         return envelope("invalid_request", lang)
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
-    allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
-    if not allowed:
+    decision, retry_after = agent.limits.check(client_address(request), body.customer_id)
+    if decision == "refuse":  # the hard ceiling (#232); a used-up model window answers without the model
         return envelope("rate_limited", lang, headers={"Retry-After": str(retry_after)})
     try:
         exists = await run_in_threadpool(agent.data.customer_exists, body.customer_id)
@@ -270,7 +290,7 @@ async def ask(request: Request):
         return envelope("customer_not_found", lang)
 
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
-                     conversation_id=body.conversation_id)
+                     conversation_id=body.conversation_id, model_allowed=decision == "model")
     if "text/event-stream" in request.headers.get("accept", ""):
         return StreamingResponse(_stream(agent.pipeline, req), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
