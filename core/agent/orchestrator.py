@@ -397,8 +397,9 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback
-                                             or a.model_unavailable not in (None, "no_model"), a=a)
+                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
+        # With no key ("no_model") the template writes directly: running the rule model's own template
+        # through the model-draft checks would only fill composer_attempts (review of #401).
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
         # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote

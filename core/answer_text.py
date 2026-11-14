@@ -221,23 +221,27 @@ MAX_SENTENCES = 2
 MAX_SHORT_WORDS = 35
 MAX_NUMBERS = 3
 _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# Abbreviations whose dot ends no sentence ("approx. {{n1}}", "esim. ruoka").
+_ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
 
 
 def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
     2026" names one thing, so it is one word, and its dots end no sentence)."""
-    plain = re.sub(r"\{\{n\d+\}\}", "N", text)
+    plain = re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
     for d in sorted((d for d in displays if d), key=len, reverse=True):
-        plain = plain.replace(d, "N")
+        plain = plain.replace(d, "NUM")
     spans, blanked = find_dates(plain, blank_all=True)
     if spans:
         chars = list(blanked)
         for span in spans:   # one word in the place of each blanked expression
             at = normalise(plain).find(span.text)
             if at >= 0:
-                chars[at] = "D"
+                n = min(4, len(span.text))
+                chars[at:at + n] = list("DATE"[:n])
         plain = "".join(chars)
+    plain = _ABBREVIATION.sub(lambda m: m.group(1).replace(".", ""), plain)
     problems = []
     sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
     if sentences > MAX_SENTENCES:

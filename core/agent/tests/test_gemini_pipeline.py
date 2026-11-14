@@ -440,3 +440,17 @@ def test_clarify_options_the_rules_recognise_are_kept_and_markdown_is_dropped():
     p, _ = pipeline(transport)
     done = ask(p, "money?")
     assert done["clarify"] == {"question": "Which of these do you mean?", "options": options}
+
+
+
+def test_without_a_key_the_template_writes_with_no_model_draft_attempt():
+    """Review of #401: with no key the rule model's own template is not run through the model-draft checks;
+    composer_attempts holds only the template, and the text is the same."""
+    from core.agent.rules import RuleModel
+
+    p, audit = pipeline(FakeTransport(call_response()))
+    p.model = RuleModel()
+    done = ask(p)
+    attempts = audit.records[-1]["composer_attempts"]
+    assert [a["raw"] for a in attempts] == ["template"] and "llm_unavailable" in done["warnings"]
+    assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
