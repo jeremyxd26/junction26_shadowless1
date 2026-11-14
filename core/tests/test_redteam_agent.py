@@ -326,7 +326,6 @@ def test_an_invisible_message_is_rejected_before_the_model(client, message):
     assert client.model.plan_inputs == []
 
 
-@pytest.mark.xfail(strict=True, reason="demo mode serves every customer in the data, not only the personas; issue #101")
 def test_ask_serves_only_the_demo_personas(client):
     """CUST00002 exists in the (fake) data but is not a persona of core/config/personas.yaml: it gets
     the same 404 as an unknown customer, and the model is never called."""

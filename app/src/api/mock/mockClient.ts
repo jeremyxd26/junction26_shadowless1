@@ -14,6 +14,7 @@ import type { ApiClient } from '../client.ts'
 import { ApiError } from '../errors.ts'
 import type {
   ErrorEnvelope,
+  Language,
   EvidenceResponse,
   MetricCard,
   Num,
@@ -22,6 +23,8 @@ import type {
   PersonasResponse,
   ReviewCard,
   SafeToSaveCard,
+  WhatIfResponse,
+  WhatIfScenarioRequest,
 } from '../types.ts'
 import contract from './contract-examples.json'
 
@@ -36,6 +39,7 @@ const examples = contract.examples as unknown as {
   'card.safe_to_save_aleksi': SafeToSaveCard
   'card.safe_to_save_zero': SafeToSaveCard
   'card.safe_to_save_everyday': SafeToSaveCard
+  'whatif.response': WhatIfResponse
 }
 
 /** Card examples shown on the mock-only `/cards` page; their chips open placeholder evidence. */
@@ -199,6 +203,69 @@ function buildEvidence(ref: string, customerId: string): EvidenceResponse {
   })
 }
 
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+const RATE_SUFFIX: Partial<Record<Num['unit'], { en: string; fi: string }>> = {
+  eur: { en: '', fi: '' },
+  eur_per_week: { en: ' a week', fi: ' / vk' },
+  eur_per_month: { en: ' a month', fi: ' / kk' },
+  eur_per_year: { en: ' a year', fi: ' / v' },
+}
+
+/** Money the way the core's formatter writes it (contract 0.2.2, section 2.1): €1,234.56 a month / 1 234,56 € / kk. */
+function money(value: number, unit: Num['unit'], lang: Language): string {
+  const [whole, frac] = Math.abs(value).toFixed(2).split('.')
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, lang === 'fi' ? ' ' : ',')
+  const sign = value < 0 && round2(value) !== 0 ? '-' : ''
+  const suffix = RATE_SUFFIX[unit]?.[lang] ?? ''
+  return lang === 'fi' ? `${sign}${grouped},${frac} €${suffix}` : `${sign}€${grouped}.${frac}${suffix}`
+}
+
+function withDisplay(number: Num, value: number, lang: Language): Num {
+  return { ...number, value, display: money(value, number.unit, lang) }
+}
+
+/** The contract's `whatif.error` (0.2.2), in the request's language like the core. */
+const WHATIF_ERROR = {
+  en: 'This scenario cannot be calculated.',
+  fi: 'Tätä tilannetta ei voi laskea.',
+}
+
+/**
+ * What-if in mock mode: the contract has one response example (Restaurants, 20%). The mock scales
+ * it for other cuts of the same selection by the contract's own rule (section 8, metrics.md
+ * section 4): the saving is `cut_pct` of the example's baseline, per week × 7 / 30.4375 days, per
+ * year × 12. At 20% this gives the example's numbers exactly. Amounts are written in the request
+ * language like the core does; the example's texts stay English. Any other selection gets 422.
+ */
+function mockWhatIf(scenario: WhatIfScenarioRequest, lang: Language): WhatIfResponse {
+  const example = examples['whatif.response']
+  const { selection, cut_pct: cut } = scenario
+  const same =
+    selection.kind === example.scenario.selection.kind &&
+    selection.value.toLowerCase() === example.scenario.selection.value.toLowerCase()
+  if (!same || !Number.isInteger(cut) || cut < 1 || cut > 100) {
+    throw new ApiError(422, { code: 'invalid_scenario', message: WHATIF_ERROR[lang], retryable: false })
+  }
+  const month = round2((example.baseline_per_month.value * cut) / 100)
+  const week = round2((month * 7) / 30.4375)
+  const year = round2(month * 12)
+  const response = clone(example)
+  const assumption = `Average of your last 6 full months (one-off purchases left out), cut by ${cut}%.`
+  response.language = lang
+  response.scenario.cut_pct = { ...response.scenario.cut_pct, value: cut, display: lang === 'fi' ? `${cut} %` : `${cut}%` }
+  response.scenario.label = `Spend ${cut}% less on restaurants`
+  response.saving_per_month = withDisplay(response.saving_per_month, month, lang)
+  response.saving_per_week = withDisplay(response.saving_per_week, week, lang)
+  response.saving_per_year = withDisplay(response.saving_per_year, year, lang)
+  response.baseline_per_month = withDisplay(response.baseline_per_month, response.baseline_per_month.value, lang)
+  response.one_off_excluded = withDisplay(response.one_off_excluded, response.one_off_excluded.value, lang)
+  response.regular_excluded = withDisplay(response.regular_excluded, response.regular_excluded.value, lang)
+  response.assumptions = [assumption, ...response.assumptions.slice(1)]
+  response.estimate = response.estimate && { ...response.estimate, text: assumption }
+  return response
+}
+
 export function createMockClient(): ApiClient {
   return {
     mode: 'mock',
@@ -220,5 +287,8 @@ export function createMockClient(): ApiClient {
         // The contract shows only the first page of rows; any next page is empty and the last.
         return cursor ? { ...evidence, rows: [], next_cursor: null } : evidence
       }),
+    // About the dev host's speed (0.5 s), so the sheet's loading state shows in mock mode too.
+    whatIf: (_customerId: string, scenario: WhatIfScenarioRequest, lang: Language) =>
+      later(() => mockWhatIf(scenario, lang), 500),
   }
 }

@@ -1,4 +1,11 @@
-import type { EvidenceResponse, Language, OverviewResponse, PersonasResponse } from './types.ts'
+import type {
+  EvidenceResponse,
+  Language,
+  OverviewResponse,
+  PersonasResponse,
+  WhatIfResponse,
+  WhatIfScenarioRequest,
+} from './types.ts'
 import { ApiError, isErrorEnvelope } from './errors.ts'
 import { strings } from '../lib/i18n.ts'
 
@@ -11,6 +18,8 @@ export interface ApiClient {
   overview(customerId: string, lang: Language): Promise<OverviewResponse>
   /** `cursor` is the previous page's `next_cursor` (contract section 9). */
   evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
+  /** Contract section 8: the deterministic what-if calculator. Errors come in `lang`. */
+  whatIf(customerId: string, scenario: WhatIfScenarioRequest, lang: Language): Promise<WhatIfResponse>
 }
 
 type Body = Record<string, unknown>
@@ -32,6 +41,15 @@ const isOverview = (body: Body) =>
   (body.safe_to_save == null || isRecord(body.safe_to_save)) &&
   hasArrays(body, 'cards', 'reviews', 'insights', 'suggested_questions')
 const isEvidence = (body: Body) => isRecord(body.number) && isRecord(body.method) && hasArrays(body, 'rows', 'parts')
+const isWhatIf = (body: Body) =>
+  isRecord(body.scenario) &&
+  isRecord(body.saving_per_month) &&
+  isRecord(body.saving_per_week) &&
+  isRecord(body.saving_per_year) &&
+  isRecord(body.baseline_per_month) &&
+  isRecord(body.one_off_excluded) &&
+  isRecord(body.regular_excluded) &&
+  hasArrays(body, 'assumptions', 'caveats')
 
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
@@ -63,6 +81,34 @@ function createLiveClient(base: string): ApiClient {
     return body as T
   }
 
+  /** POST with a JSON body; the core answers errors in the body's `language`. */
+  async function post<T>(path: string, payload: unknown, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    const t = strings(lang)
+    let response: Response
+    try {
+      response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    } catch {
+      throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
+    }
+    const body: unknown = await response.json().catch(() => null)
+    if (!response.ok) {
+      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
+      throw new ApiError(response.status, {
+        code: 'internal',
+        message: t.errorRetry,
+        retryable: response.status >= 500,
+      })
+    }
+    if (!isRecord(body) || !isShape(body)) {
+      throw new ApiError(response.status, { code: 'bad_response', message: t.errorRetry, retryable: true })
+    }
+    return body as T
+  }
+
   return {
     mode: 'live',
     personas: (lang) => get<PersonasResponse>('/api/personas', {}, lang, isPersonas),
@@ -75,6 +121,8 @@ function createLiveClient(base: string): ApiClient {
         lang,
         isEvidence,
       ),
+    whatIf: (customerId, scenario, lang) =>
+      post<WhatIfResponse>('/api/whatif', { customer_id: customerId, scenario, language: lang }, lang, isWhatIf),
   }
 }
 
@@ -86,6 +134,7 @@ function createLazyMockClient(): ApiClient {
     personas: (lang) => client.then((mock) => mock.personas(lang)),
     overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
     evidence: (ref, customerId, lang, cursor) => client.then((mock) => mock.evidence(ref, customerId, lang, cursor)),
+    whatIf: (customerId, scenario, lang) => client.then((mock) => mock.whatIf(customerId, scenario, lang)),
   }
 }
 
