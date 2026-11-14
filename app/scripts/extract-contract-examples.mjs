@@ -64,6 +64,7 @@ const NEEDED = [
   'bill.error',
   'bill.response',
   'bill.response_unknown',
+  'bill.response_not_covered',
   'bill.read_response',
   'host.payment_draft',
   // The action open_host_screen and the host message it sends (contract 0.3.1, #268)

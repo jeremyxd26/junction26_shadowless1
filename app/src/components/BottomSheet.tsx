@@ -13,6 +13,8 @@ interface Props {
   title: string
   onClose: () => void
   children: ReactNode
+  /** A short sheet that explains one thing (a bill term): at most about 46 % of the screen. */
+  short?: boolean
 }
 
 /**
@@ -21,7 +23,7 @@ interface Props {
  * cycle through the sheet, Escape closes it, and the focus returns to the element that opened it.
  * Which sheet is on top is decided by `lib/sheetStack.ts` for all open sheets together (#516).
  */
-export function BottomSheet({ title, onClose, children }: Props) {
+export function BottomSheet({ title, onClose, children, short = false }: Props) {
   const { t } = useSettings()
   const titleId = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -75,7 +77,7 @@ export function BottomSheet({ title, onClose, children }: Props) {
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className="sheet-panel relative flex max-h-[88dvh] w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none"
+        className={`sheet-panel relative flex ${short ? 'max-h-[46dvh]' : 'max-h-[88dvh]'} w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none`}
       >
         <div className="flex items-start gap-2 px-4 pt-2">
           <div className="flex-1 pt-3">
