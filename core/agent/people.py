@@ -366,7 +366,23 @@ def _head(np: str) -> str | None:
     return " ".join(tokens)
 
 
+# The coach's own terms (#601): "safe to spend" and "safe to save" are money, like "budget", whoever owns them ("my
+# wife's safe to spend" is her money), and never a name, however they are capitalised ("What Is Safe To Spend?").
+PRODUCT_TERM = re.compile(r"\bsafe[ -]to[ -](?:spend|save)\b", re.I)
+
+
+def _normalised(question: str) -> str:
+    """The question as the people rules read it (#601): the coach's own terms read as the money word "budget", in any
+    case ("What Is Safe To Spend?": its capitals mark no name; a real name keeps its capital and its reading)."""
+    # "my wife safe to spend" is "my wife's budget": a person word right before the term owns it
+    question = re.sub(r"\b(my|our|his|her|their)\s+([^\W\d_]+)\s+(?=safe[ -]to[ -](?:spend|save)\b)",
+                      lambda m: f"{m.group(1)} {m.group(2)}'s " if fold(m.group(2)) in PERSON_EN else m.group(0),
+                      question, flags=re.I)
+    return PRODUCT_TERM.sub("budget", question)
+
+
 def classify(question: str, peer_question: bool = False) -> str | None:
+    question = _normalised(question)
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
     plain = " ".join(plain.split())
     if JOINT_LIST.search(_plain(question)):

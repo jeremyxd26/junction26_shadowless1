@@ -43,7 +43,8 @@ DECLINE_RULES = [
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
-                          r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
+                          r"kannattaako.*(sijoit|osak|rahasto|bitcoin|krypto)|mihin (minun )?(pitäisi|kannattaa) "
+                          r"sijoittaa|pitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*(osak|rahasto|bitcoin|krypto|etf)"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
     ("out_of_scope", r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
                      r"guess (a |an |some )?(number|amount|figure)|"
