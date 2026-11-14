@@ -561,7 +561,7 @@ class Pipeline:
         # template (the same way as the peer answer with the national line, #569)
         designed = template_answer and not a.template_failed
         if designed:
-            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "template_answer": True})
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": "rule_template"})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)

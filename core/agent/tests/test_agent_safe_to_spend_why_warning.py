@@ -78,7 +78,7 @@ def test_the_why_answer_carries_no_warning_with_the_model_on_off_over_budget_or_
     assert done["outcome"] == "answered" and "llm_unavailable" not in done["warnings"], done["warnings"]
     assert "because your monthly budget sets the limit" in done["text"] and model.composed == []
     turns = audit_records(pipe)[-1]["planner_turns"]
-    assert turns[-1] == {"round": len(turns), "source": "template", "template_answer": True}
+    assert turns[-1] == {"round": len(turns), "source": "template", "designed": "rule_template"}
 
 
 def test_the_why_answer_carries_no_warning_with_no_key_either(make_pipeline):
