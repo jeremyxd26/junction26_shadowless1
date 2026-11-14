@@ -380,11 +380,17 @@ class Pipeline:
         filtered = [c for c in a.ok_calls if c["name"] in CATEGORY_TOOLS]
         if len(a.cards) >= MAX_CARDS or not (names & SPIKE_TOOLS or filtered):
             return
+        def names_category(category: Any) -> bool:
+            return any(json.dumps(category) in json.dumps(c["args"]) for c in filtered)
+
+        category = None
         if not names & SPIKE_TOOLS:
-            # The spike's category from the history the tools already loaded, before any connection is
-            # taken or evidence written for a card that would not be sent.
+            # The spike's category from the history the tools already loaded, so a card that would not be
+            # sent takes no connection and writes no evidence. The history is often not loaded (a what-if
+            # by category runs metric SQL only; the label step reads it only when it creates a review):
+            # then the card is built and its own category decides, below.
             category = next((t.category for t in ctx._history or [] if t.id == getattr(pending, "tx_id", None)), None)
-            if category is None or not any(json.dumps(category) in json.dumps(c["args"]) for c in filtered):
+            if category is not None and not names_category(category):
                 return
         try:
             with self.data.connection() as conn:
@@ -397,6 +403,8 @@ class Pipeline:
             log.warning("review card not added (data unavailable)")  # the answer itself stands
             return
         if card is None:
+            return
+        if not names & SPIKE_TOOLS and category is None and not names_category(card.get("category")):
             return
         a.cards.append(card["card_id"])
         emit("card", {"card": card})
