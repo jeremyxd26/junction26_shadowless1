@@ -51,12 +51,15 @@ def set_cookie(response: Response, value: str, secure: bool) -> None:
     response.set_cookie(COOKIE, value, max_age=MAX_AGE_S, path="/", secure=secure, httponly=True, samesite="lax")
 
 
-def viewer_of(request: Request, response: Response) -> str:
+def viewer_of(request: Request, response: Response, *, refresh: bool = False) -> str:
     """The viewer's session key. A request without a valid cookie gets a new one on `response`; its
-    key has no answers yet, so it sees the shared state."""
+    key has no answers yet, so it sees the shared state. With `refresh` (every label write) an existing
+    cookie is set again with a new Max-Age, so an answer never outlives the cookie that owns it."""
     value = cookie_value(request)
     if value is None:
         value = new_value()
+        set_cookie(response, value, request.app.state.settings.viewer_cookie_secure)
+    elif refresh:
         set_cookie(response, value, request.app.state.settings.viewer_cookie_secure)
     return session_key(value)
 

@@ -1,13 +1,17 @@
 """Per-process sliding-window rate limits for write and model endpoints (#144).
 
-One limiter holds several named limits, each counted per key over the same window, for example
-{"address": 10, "customer": 30} per minute. A request is admitted only if every limit allows it, and
-only an admitted request counts. When a limit is full, `allow` says how many seconds until the
+One limiter holds several named limits over the same window, each counted per key, for example
+{"address": 10, "viewer": 10} per minute. A call names the keys of the limits that apply to it; a limit
+whose name it does not give is not checked. A request is admitted only if every named limit allows it,
+and only an admitted request counts. When a limit is full, the result says how many seconds until the
 oldest counted request leaves the window: that is the `Retry-After` of the 429.
+
+`check` and `record` split `allow` in two, for a limit that should count only an event that happened
+(a new viewer session is counted once its first answer is stored, not for every refused attempt).
 
 It lives under core/app so every endpoint can use it: POST /api/baskets/label now, and POST /api/ask
 (#59, whose limiter has the same shape) can move to it later. Memory stays bounded: empty keys are
-dropped, and a key never holds more entries than its limit.
+dropped, and a key never holds more entries than its limit. No key is ever stored beyond the window.
 """
 
 from __future__ import annotations
@@ -17,8 +21,6 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-
-from fastapi import Request
 
 
 class SlidingWindowLimiter:
@@ -32,22 +34,42 @@ class SlidingWindowLimiter:
         self._calls = 0
 
     def allow(self, keys: dict[str, str]) -> tuple[bool, int]:
-        """(admitted, retry_after_seconds). `keys` names the key of each limit, e.g. the address."""
-        now = self._clock()
+        """(admitted, retry_after_seconds); an admitted request is counted for every named limit."""
         with self._lock:
-            self._calls += 1
-            if self._calls % 1000 == 0:
-                self._prune(now)
-            retry = 0.0
-            for name, limit in self.limits.items():
-                hits = self._window(name, keys[name], now)
-                if len(hits) >= limit:
-                    retry = max(retry, self.window_s - (now - hits[0]))
-            if retry > 0:
-                return False, max(1, math.ceil(retry))
-            for name in self.limits:
+            ok, retry = self._check(keys, self._clock())
+            if ok:
+                self._record(keys, self._clock())
+            return ok, retry
+
+    def check(self, keys: dict[str, str]) -> tuple[bool, int]:
+        """Like allow, but counts nothing."""
+        with self._lock:
+            return self._check(keys, self._clock())
+
+    def record(self, keys: dict[str, str]) -> None:
+        """Count one event for every named limit (after a check that allowed it)."""
+        with self._lock:
+            self._record(keys, self._clock())
+
+    def _check(self, keys: dict[str, str], now: float) -> tuple[bool, int]:
+        self._calls += 1
+        if self._calls % 1000 == 0:
+            self._prune(now)
+        retry = 0.0
+        for name, limit in self.limits.items():
+            if name not in keys:
+                continue
+            hits = self._window(name, keys[name], now)
+            if len(hits) >= limit:
+                retry = max(retry, self.window_s - (now - hits[0]))
+        if retry > 0:
+            return False, max(1, math.ceil(retry))
+        return True, 0
+
+    def _record(self, keys: dict[str, str], now: float) -> None:
+        for name in self.limits:
+            if name in keys:
                 self._hits.setdefault((name, keys[name]), deque()).append(now)
-            return True, 0
 
     def _window(self, name: str, key: str, now: float) -> deque[float]:
         hits = self._hits.get((name, key), deque())
@@ -63,9 +85,3 @@ class SlidingWindowLimiter:
     def size(self) -> int:
         """Keys currently held (for tests)."""
         return len(self._hits)
-
-
-def client_address(request: Request) -> str:
-    """The client's address. Behind Caddy the service runs uvicorn with --proxy-headers, so this is the
-    address the proxy saw, not the proxy's own."""
-    return request.client.host if request.client else "unknown"

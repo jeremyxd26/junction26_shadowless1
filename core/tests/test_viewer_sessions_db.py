@@ -41,8 +41,7 @@ def db_conn():
 def client(db_conn, monkeypatch):
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     with db_conn.transaction(force_rollback=True):
-        reviews.ensure_table(db_conn)
-        reviews.reset(db_conn, [LEAD])
+        reviews.private_tables(db_conn)  # no lock on the shared tables
         app = create_app(Settings(_env_file=None, database_url=None))
         with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
             app.state.pool = StubPool(db_conn)
@@ -134,11 +133,60 @@ def test_cap_drops_the_oldest_viewer_who_sees_the_pending_card_again(client, db_
     assert answer_rows(db_conn) == 2
 
 
+def test_eviction_takes_the_least_recently_active_not_the_first_to_answer(client, db_conn, monkeypatch):
+    """A answered first but taps again later (last_active refreshed), so the new viewer C drops B."""
+    monkeypatch.setattr(reviews, "MAX_SESSIONS", 2)
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    answer(client, A, tx_ref, "unexpected_necessities")
+    answer(client, B, tx_ref, "unexpected_necessities")
+    answer(client, A, tx_ref, None)                                   # A is active again (undo)
+    answer(client, C, tx_ref, "everyday_spending")
+    assert overview(client, B).json()["reviews"][0]["tx_ref"] == tx_ref    # B dropped: pending card again
+    a = overview(client, A).json()
+    assert a["reviews"][0]["tx_ref"] == tx_ref and viewer.session_key(A) in {
+        r[0] for r in db_conn.execute("SELECT session_key FROM spike_review_answers").fetchall()}  # A kept
+
+
+def test_every_label_write_refreshes_the_cookie(client):
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    as_viewer(client, A)
+    r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": tx_ref,
+                                                "basket": "unexpected_necessities", "language": "en"})
+    assert r.status_code == 200
+    cookie = r.headers["set-cookie"]
+    assert cookie.startswith(f"{viewer.COOKIE}={A};") and "Max-Age=7200" in cookie    # same value, new age
+
+
+@pytest.fixture
+def one_new_session_an_hour(db_conn, monkeypatch):
+    monkeypatch.setenv("SPIKE_REVIEWS", "on")
+    with db_conn.transaction(force_rollback=True):
+        reviews.private_tables(db_conn)  # no lock on the shared tables
+        app = create_app(Settings(_env_file=None, database_url=None, label_new_sessions_per_hour=1))
+        with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
+            app.state.pool = StubPool(db_conn)
+            yield c
+
+
+def test_new_sessions_per_address_count_only_admitted_ones(one_new_session_an_hour):
+    client = one_new_session_an_hour
+    tx_ref = overview(client, A).json()["reviews"][0]["tx_ref"]
+    as_viewer(client, C)                                              # a refused attempt does not count
+    junk = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": "txr_0000000000000000",
+                                                   "basket": "unexpected_necessities"})
+    assert junk.status_code == 404
+    answer(client, A, tx_ref, "unexpected_necessities")               # admitted: the hour's one session
+    as_viewer(client, B)
+    second = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": tx_ref,
+                                                     "basket": "unexpected_necessities"})
+    assert second.status_code == 429 and second.json()["error"]["code"] == "rate_limited"
+    assert answer(client, A, tx_ref, None)["review_state"] == "pending"   # an established viewer goes on
+
+
 def test_answers_expire_after_the_session_ttl(db_conn, monkeypatch):
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     with db_conn.transaction(force_rollback=True):
-        reviews.ensure_table(db_conn)
-        reviews.reset(db_conn, [LEAD])
+        reviews.private_tables(db_conn)  # no lock on the shared tables
         now = reviews.utcnow()
         pending = reviews.ensure_pending(db_conn, LEAD, AS_OF, load_transactions(db_conn, LEAD, AS_OF), now)
         key = viewer.session_key(A)
@@ -157,8 +205,7 @@ def test_a_full_session_cannot_answer_another_review(db_conn, monkeypatch):
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     monkeypatch.setattr(reviews, "MAX_ANSWERS_PER_SESSION", 1)
     with db_conn.transaction(force_rollback=True):
-        reviews.ensure_table(db_conn)
-        reviews.reset(db_conn, [LEAD])
+        reviews.private_tables(db_conn)  # no lock on the shared tables
         now = reviews.utcnow()
         first = reviews.ensure_pending(db_conn, LEAD, AS_OF, load_transactions(db_conn, LEAD, AS_OF), now)
         other_tx = db_conn.execute("SELECT id FROM transactions WHERE customer_id = %s AND id <> %s "
