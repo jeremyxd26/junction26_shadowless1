@@ -60,3 +60,14 @@ def test_the_what_if_sql_default_for_too_few_purchases_is_the_setting():
     sql = (Path(__file__).resolve().parents[2] / "metrics" / "04_what_if.sql").read_text(encoding="utf-8")
     m = re.search(r"app\.whatif_min_tx', true\), ''\), '(\d+)'\)", sql)
     assert m and int(m.group(1)) == config.TOO_FEW_TRANSACTIONS
+
+
+@pytest.mark.parametrize("kind,value,lang,expected", [
+    ("mcc", "1234", "en", "MCC 1234"),               # a code list without a name: never "purchases with MCC ..."
+    ("mcc", "1234,5678", "fi", "MCC 1234, 5678"),
+    ("category", "Travel", "en", "travel"),
+])
+def test_a_too_few_sentence_names_a_code_list_once(kind, value, lang, expected):
+    from core.tools.what_if import WhatIfSelection, _purchases_of, _what
+    sel = WhatIfSelection(kind=kind, value=value)
+    assert _purchases_of(sel, _what(sel, None, lang), lang) == expected

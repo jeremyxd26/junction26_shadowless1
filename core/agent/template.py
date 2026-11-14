@@ -118,7 +118,8 @@ UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they
            "largest are {categories}.",
            "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat ovat "
            "{categories}.")
-TOO_FEW = {"one": tools_config.WHAT_IF_TEXT["too_few_one"], "few": tools_config.WHAT_IF_TEXT["too_few_few"]}
+TOO_FEW = {"none": tools_config.WHAT_IF_TEXT["too_few_none"], "one": tools_config.WHAT_IF_TEXT["too_few_one"],
+           "few": tools_config.WHAT_IF_TEXT["too_few_few"]}
 CATEGORY_CHIP = ("How much did I spend on {category} last month?", "Paljonko käytin luokkaan {category} viime kuussa?")
 # The categories the rules map from words (rules.CATEGORY_WORDS): a chip must be a question they answer.
 CHIP_CATEGORIES = ("Groceries", "Restaurants", "Entertainment", "Housing", "Utilities", "Travel", "Lifestyle",
@@ -287,7 +288,7 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
     by_reason = {e["reason"]: e.get("details") or {} for e in errors}
     if "too_few_transactions" in by_reason:
         d = by_reason["too_few_transactions"]
-        kind = "one" if d.get("n") == 1 else "few"
+        kind = {0: "none", 1: "one"}.get(d.get("n"), "few")   # none: nothing in the window to cut (#498)
         what = str(d.get("what") or "")
         if re.search(r"\d", what + str(d.get("period") or "x")) and not d.get("period"):
             return None

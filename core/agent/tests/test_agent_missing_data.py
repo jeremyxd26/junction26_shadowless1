@@ -328,3 +328,32 @@ def test_a_name_in_the_users_spelling_is_quoted_whole():
     assert text.startswith("I can't see \u201cCaf\u00e9 M\u00fcller\u201d on its own") and len(chips) == 3
     # never more than a short name of letters
     assert template.missing_data_answer([basket_view()], [], "en", AS_OF, unknown="a" * 41) is None
+
+
+
+# ---- #498: a what-if on a selection with no purchases in the window --------------------------------------
+
+@pytest.mark.parametrize("lang,what,span,text", [
+    ("en", "public transport", "Between 1 Apr and 30 Sep 2026",
+     "Between 1 Apr and 30 Sep 2026 you made no public transport purchases, so there is nothing to cut."),
+    ("fi", "joukkoliikenne", "Jaksolla 1.4.\u201330.9.2026",
+     "Jaksolla 1.4.\u201330.9.2026 luokassa joukkoliikenne ei ollut yht\u00e4\u00e4n ostosta, joten leikattavaa ei ole."),
+])
+def test_no_purchases_to_cut_is_said_in_plain_words(lang, what, span, text):
+    errors = [{"reason": "too_few_transactions", "details": {"what": what, "period": "1 Apr \u2013 30 Sep 2026",
+                                                             "span": span, "n": 0}}]
+    got, chips = template.missing_data_answer([], errors, lang, AS_OF)
+    assert got == text and not re.search(r"\{\{", got) and len(chips) == 2
+
+
+def test_the_pipeline_answers_a_what_if_with_nothing_to_cut_and_no_compose_request(make_pipeline):
+    def tool(ctx, args: FakeArgs):
+        raise MissingData("too_few_transactions", what="public transport", period="1 Apr \u2013 30 Sep 2026",
+                          span="Between 1 Apr and 30 Sep 2026", n=0)
+    spec = ToolSpec("fake_what_if", "A what-if on nothing bought.", FakeArgs, tool, ("Looking", "Katson"))
+    model = ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(spec)), "what if I cut public transport by 20%", language="en")
+    done = dict(events)["done"]
+    assert done["outcome"] == "answered" and model.compose_inputs == [] and done["cited"] == []
+    assert done["text"] == "Between 1 Apr and 30 Sep 2026 you made no public transport purchases, so there is nothing to cut."
+    assert "could not be computed" not in done["text"]

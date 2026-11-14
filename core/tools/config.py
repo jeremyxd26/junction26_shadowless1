@@ -869,6 +869,8 @@ WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     # Too few purchases for a monthly habit (#379): the chat's answer and the what-if screen's caveat.
     "too_few_one": ("{span} you made a single {what} purchase of {total}, so there is no monthly habit to cut.",
                     "{span} luokassa {what} oli vain yksittäinen ostos, {total}, joten kuukausittaista tapaa ei ole."),
+    "too_few_none": ("{span} you made no {what} purchases, so there is nothing to cut.",
+                     "{span} luokassa {what} ei ollut yhtään ostosta, joten leikattavaa ei ole."),
     "too_few_few": ("{span} you made {count} {what} purchases, {total} in all: too few to show a monthly habit to "
                     "cut.",
                     "{span} luokassa {what} oli vain {count} ostosta, yhteensä {total}, joten kuukausittaista tapaa "

@@ -26,7 +26,8 @@ from core.tools.context import ToolContext
 from core.tools.missing import MissingData
 from core.tools.selection import Selection
 from core.tools.formatting import display
-from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
+from core.tools.models import (MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, PeriodArg, ToolResult,
+                               Unit)
 from core.tools.numbers import NumberBuilder, model_number
 
 TOOL = "run_what_if"
@@ -126,6 +127,14 @@ def _what(sel: WhatIfSelection, alias_label: str | None, language: str) -> str:
     return text[:1].lower() + text[1:] if language != "fi" else text.lower()
 
 
+def _purchases_of(sel: WhatIfSelection, what: str, language: str) -> str:
+    """What goes before "purchases" in a too-few sentence: the selection's words, or for a code list without a
+    name "MCC 4111", never "purchases with MCC 4111 purchases" (#379, #498)."""
+    if sel.kind == "mcc" and what == _t("mcc", language, codes=sel.value.replace(",", ", ")):
+        return "MCC " + sel.value.replace(",", ", ")
+    return what
+
+
 def caveats_for(status: str, language: str) -> list[str]:
     """The caveats a what-if result carries for its status (contracts/api.md section 8.1)."""
     out = [_t("caveat_estimate", language)]
@@ -171,6 +180,13 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "ra
                 **labels.metric_settings_for(ctx)}  # #68
     row = metric_sql.run_one(ctx.conn, config.WHAT_IF_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
+        if too_few != "not_offered":
+            # The chat says there is nothing to cut, never "could not be computed" (#498): #379's reason with no
+            # purchases in the window (the metric's window, the last 6 complete months), and no number.
+            window = periods.resolve(PeriodArg(preset="last_6_months"), ctx.as_of, lang).period
+            raise MissingData("too_few_transactions", what=_purchases_of(sel, _what(sel, alias_label, lang), lang),
+                              period=window.label,
+                              span=periods.span_phrase(window.start, window.end, lang), n=0)
         # contracts/api.md section 8.1: no spending in the window at all -> 422 invalid_scenario
         raise WhatIfRefused("invalid_scenario: the selection has no spending in the last 6 full months")
 
@@ -197,9 +213,11 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict, too_few: str = "ra
         if too_few != "not_offered":
             evidence.write(ctx.conn, txb.specs)
             # the pipeline registers the two Numbers (the tool cache keeps no numbers of a call that raises)
-            raise MissingData("too_few_transactions", numbers={"total": total, "count": count}, what=what,
+            raise MissingData("too_few_transactions", numbers={"total": total, "count": count},
+                              what=_purchases_of(sel, what, lang),
                               period=window.label, span=span, n=len(bought))
-        sentence = _t("too_few_one" if len(bought) == 1 else "too_few_few", lang, span=span, what=what,
+        sentence = _t("too_few_one" if len(bought) == 1 else "too_few_few", lang, span=span,
+                      what=_purchases_of(sel, what, lang),
                       total=total.display, count=count.display)
         few = (txb, total, sentence)
     nb = NumberBuilder(ctx, [])
