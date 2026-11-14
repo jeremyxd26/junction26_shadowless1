@@ -76,7 +76,7 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      {error && <ErrorBlock message={error.message} onRetry={error.retryable ? confirm : undefined} />}
+      {error && <ErrorBlock message={error.message} onRetry={error.retryable ? confirm : undefined} until={error.until ?? null} />}
       <CardShell>
         <h3 className={CARD_TITLE}>{s.cardTitle}</h3>
         {reading && <p className="text-sm text-muted">{s.cardSubtitle}</p>}

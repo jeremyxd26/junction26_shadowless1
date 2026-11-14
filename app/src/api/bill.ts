@@ -11,7 +11,7 @@ import type {
   BillReadResponse,
   BillSamplesResponse,
 } from './billTypes.ts'
-import { ApiError, isErrorEnvelope } from './errors.ts'
+import { ApiError, isErrorEnvelope, parseRetryAfter } from './errors.ts'
 import type { Language } from './types.ts'
 import { strings } from '../lib/i18n.ts'
 
@@ -21,8 +21,8 @@ export const BILL_LIVE = import.meta.env.VITE_API_MODE === 'live' && import.meta
 export class BillApiError extends ApiError {
   readonly reason: string | null
 
-  constructor(status: number, envelope: BillErrorEnvelope['error']) {
-    super(status, envelope)
+  constructor(status: number, envelope: BillErrorEnvelope['error'], retryAfter: number | null = null) {
+    super(status, envelope, retryAfter)
     this.name = 'BillApiError'
     this.reason = typeof envelope.reason === 'string' ? envelope.reason : null
   }
@@ -73,8 +73,14 @@ function createLiveBillApi(base: string): BillApi {
     }
     const body: unknown = await response.json().catch(() => null)
     if (!response.ok) {
-      if (isErrorEnvelope(body)) throw new BillApiError(response.status, (body as BillErrorEnvelope).error)
-      throw new BillApiError(response.status, { code: 'internal', message: t.errorRetry, retryable: response.status >= 500 })
+      // A 429 (readings have their own window, section 11.4) says how long to wait.
+      const retryAfter = parseRetryAfter(response.headers.get('Retry-After'))
+      if (isErrorEnvelope(body)) throw new BillApiError(response.status, (body as BillErrorEnvelope).error, retryAfter)
+      throw new BillApiError(
+        response.status,
+        { code: 'internal', message: t.errorRetry, retryable: response.status >= 500 },
+        retryAfter,
+      )
     }
     if (!isRecord(body) || !isShape(body)) {
       throw new BillApiError(response.status, { code: 'bad_response', message: t.errorRetry, retryable: true })
