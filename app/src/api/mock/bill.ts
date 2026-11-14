@@ -5,8 +5,9 @@
 // Hand-written and PROVISIONAL, because the contract has no example for them yet (#249, #250):
 // - the samples list and its tile images (inline SVG data URIs; the CSP allows `img-src data:`);
 // - the readings of the other samples (sample_4 has a misread amount over the explain limit).
-// The housing sample returns the contract's `bill.read_response` unchanged, in both languages (its
-// displays are Finnish, as in the contract).
+// The housing sample returns the contract's `bill.read_response` in the request's language: for
+// Finnish exactly the example; for English the same values with English displays of the amount and
+// the due date (provisional, like sample_1's).
 // Every company is fictional (the contract's own "Esimerkki" names); the IBANs are test numbers.
 //
 // Explain rules of the mock:
@@ -153,8 +154,15 @@ const REFERENCE_NOTE: Record<Language, string> = {
 }
 
 function readSample(sampleId: string, lang: Language): BillReadResponse {
-  // The contract example, answered in the request's language (contract 11.4); its displays stay.
-  if (sampleId === 'sample_2') return { ...clone(examples['bill.read_response']), language: lang }
+  // The contract example, answered in the request's language (contract 11.4).
+  if (sampleId === 'sample_2') {
+    const reading = { ...clone(examples['bill.read_response']), language: lang }
+    if (lang === 'en') {
+      if (reading.fields.amount) reading.fields.amount.display = '€812.40'
+      if (reading.fields.due_date) reading.fields.due_date.display = '1 Oct 2026'
+    }
+    return reading
+  }
   if (sampleId === 'sample_1') {
     // The typed bill of the contract (bill.request_fields), as a reader would see it on paper.
     return {
