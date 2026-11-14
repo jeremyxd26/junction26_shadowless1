@@ -81,7 +81,7 @@ PRESETS = [
     (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
      "last_3_months"),
     (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
-    (r"last (12|twelve) months|past year|viimeisen (12|vuoden)", "last_12_months"),
+    (r"last (12|twelve) months|past year|(in|over|during) the last year|viimeisen (12|vuoden)", "last_12_months"),
     (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
@@ -427,7 +427,12 @@ FUTURE_MONEY = r"\bspen[dt]\w*|\bsav(e|ed|ing)\b|\bafford\b|\bbudget\w*|\bkulut\
 # A future period next to another period ("next month compared to last month", "in August and next month",
 # "by Christmas last year"): no rule claims it; the model plans both calls (#443 review, 3).
 PAST_PERIOD = (r"\blast (week|month|year|summer|winter|spring|autumn|christmas)\b|\bprevious\b|\bago\b|\bviime\b|"
-               r"\bedelli\w*|\bthis (month|year)\b")
+               r"\bedelli\w*")
+# A future cue that is itself a period: with it, a named month is another period ("in August and next month");
+# a verb ("will I spend") or "afford" carries its own month ("will I spend in March?", review of #443 D1).
+FUTURE_PERIOD = (r"\bnext (month|year|week)\b|\bby (christmas|new year|the end of the year)\b|"
+                 r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bjouluun\b")
+THIS_PERIOD = r"\bthis (month|year|week)\b|\btässä kuussa\b|\btämän kuun\b|\btänä vuonna\b"
 # A thing the user names that no category or merchant group maps ("the gym", "Netflix", "flurbles",
 # "kuntosaliin"): the rules never answer it with the unfiltered total (#395). Health keeps its spending plan.
 OBJECT_EN = (r"\b(?:spen[dt]\w*|paid|pay|bought|buy|cost\w*)\b(?:\s+\S+){0,3}?\s+(?:on|at|for)\s+"
@@ -504,8 +509,8 @@ COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY))
 RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE_BETWEEN, RANGE_FI))
 _M = fold_pattern(_M)
-FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD = (
-    fold_pattern(rx) for rx in (FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD))
+FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD, FUTURE_PERIOD, THIS_PERIOD = (
+    fold_pattern(rx) for rx in (FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD, FUTURE_PERIOD, THIS_PERIOD))
 OBJECT_STOP = frozenset(fold(w) for w in OBJECT_STOP)
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 
@@ -625,18 +630,33 @@ def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
         return False
     if re.search(PAST_PERIOD, q):
         return True
-    plain = [m for m in re.finditer(_M, q) if not re.search(r"\b(next|ensi)\s+$", q[:m.start()])]
-    return len(plain) > (1 if afford_month and not re.search(FUTURE, q) else 0)
+    period_cue = bool(re.search(FUTURE_PERIOD, q))
+    if period_cue and re.search(THIS_PERIOD, q):
+        return True                        # "next month compared to this month"
+    # a month that is part of the future cue ("next March", "March next year") is no other period
+    plain = [m for m in re.finditer(_M, q) if not re.search(r"\b(next|ensi)\s+$", q[:m.start()])
+             and not re.match(r"\s+(next year|ensi vuonna)\b", q[m.end():])]
+    return len(plain) > (0 if period_cue and not re.search(r"\bnext year\b|\bensi vuonna\b", q) else 1)
 
 
 def _future_period(question: str, q: str, as_of: date) -> dict:
     """The future period a question names: a month's next occurrence, next year, until Christmas, or next month."""
+    named = [m for _, m in _months_mentioned(question, as_of)]
+    tomorrow = date.fromordinal(as_of.toordinal() + 1)
     if re.search(r"\bnext year\b|\bensi (vuonna|vuoden)\b", q):
+        if named:   # "in March next year"
+            start, end = _month_range(as_of.year + 1, named[0])
+            return {"preset": "custom", "start": start.isoformat(), "end": end.isoformat()}
         return {"preset": "custom", "start": f"{as_of.year + 1}-01-01", "end": f"{as_of.year + 1}-12-31"}
+    if re.search(r"\bend of the year\b|\bthis year\b|\btänä vuonna\b", q) and not named:
+        return {"preset": "custom", "start": tomorrow.isoformat(), "end": f"{tomorrow.year}-12-31"}
+    if re.search(r"\bthis month\b|\btässä kuussa\b|\btämän kuun\b", q) and not named:
+        # the rest of this month: the data ends today, so it is the future (at least tomorrow)
+        end = max(tomorrow, _month_range(as_of.year, as_of.month)[1])
+        return {"preset": "custom", "start": tomorrow.isoformat(), "end": end.isoformat()}
     if re.search(r"\bchristmas\b|\bjouluun\b", q):
         year = as_of.year if (as_of.month, as_of.day) < (12, 25) else as_of.year + 1
         return {"preset": "custom", "start": date.fromordinal(as_of.toordinal() + 1).isoformat(), "end": f"{year}-12-25"}
-    named = [m for _, m in _months_mentioned(question, as_of)]
     if named and not re.search(r"\bnext month\b|\bensi (kuussa|kuun)\b", q):
         month = named[0]
         year = as_of.year if month > as_of.month else as_of.year + 1
@@ -730,6 +750,10 @@ def _beats(a: str, b: str, q: str, spending: dict | None) -> bool:
         return not category and not re.search(COMPARE, q)   # the breakdown compares nothing
     if (a, b) == ("spending", "where_money_went"):
         return category and spending is not None and not re.search(COMPARE, q)   # "break down my restaurant spending"
+    if (a, b) == ("what_if", "future"):
+        return plan_what_if(q)[0] != "unmapped"
+    if (a, b) == ("future", "what_if"):
+        return plan_what_if(q)[0] == "unmapped"   # "paljonko olen säästänyt jouluun mennessä?"
     if (a, b) == ("what_if", "safe_to_spend"):
         return bool(re.search(PERCENT + "|" + HALF, q))   # "cut my restaurant budget by 20%"
     if (a, b) == ("what_if", "recurring_bills"):
