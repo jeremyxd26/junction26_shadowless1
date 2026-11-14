@@ -81,10 +81,10 @@ def make(tmp_path, seen):
         return ToolResult(tool="spend", data={"merchant_id": CANARY, "rows": [{"merchant": CANARY}]},
                           evidence=[total.evidence_ref], model_view=view)
 
-    def build(model, data=None):
+    def build(model, data=None, store=None):
         reg = Registry()
         reg.register(ToolSpec("spend", "Restaurants spending.", SpendArgs, spend, ("Looking", "Katson")))
-        return Pipeline(reg, model, data or FakeData(), as_of=AS_OF, audit=AuditLog(tmp_path / "audit"))
+        return Pipeline(reg, model, data or FakeData(), as_of=AS_OF, audit=AuditLog(tmp_path / "audit"), store=store)
     return build
 
 
@@ -265,6 +265,24 @@ def test_another_customers_conversation_shows_nothing_of_it(make):
     run(pipe, customer_id=ME, conversation_id=theirs)
     later = json.dumps([model.plan_inputs[1].__dict__, model.compose_inputs[1].__dict__], default=str)
     assert "bluebird" not in later
+
+
+@pytest.mark.parametrize("idle_s, continues", [(30 * 60 - 1, True), (30 * 60 + 1, False)])
+def test_a_conversation_expires_after_thirty_minutes(make, idle_s, continues):
+    """The same customer, the same conversation id: kept within the 30 minutes, gone after them (R4)."""
+    from core.agent.conversation import ConversationStore
+
+    now = [1000.0]
+    store = ConversationStore(clock=lambda: now[0])
+    model = ScriptedModel(plans=[[FunctionCall("spend", {}), FunctionCall("finish")]] * 2, drafts=[GOOD, GOOD])
+    pipe = make(model, store=store)
+    first = dict(run(pipe, message="Restaurants in August 2026? Remember the word bluebird."))["meta"]["conversation_id"]
+    now[0] += idle_s
+    events = run(pipe, conversation_id=first)
+    later = json.dumps([model.plan_inputs[1].__dict__, model.compose_inputs[1].__dict__], default=str)
+    assert (dict(events)["meta"]["conversation_id"] == first) is continues
+    assert ("conversation_reset" in done(events)["warnings"]) is not continues
+    assert ("bluebird" in later) is continues
 
 
 # ---- A8: input bounds (LLM10) -------------------------------------------------------------------

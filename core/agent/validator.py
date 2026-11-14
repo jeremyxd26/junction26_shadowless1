@@ -619,6 +619,24 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
+# payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
+_META_TEXT = re.compile(
+    r"\b(is|are|gets?) declined\b|\bdeclined before\b|\bdeclined by my\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) (instructed|programmed)\b|"
+    r"\bi was (told|instructed|programmed|set up)\b|\bhow i(?: was|['’]ve been| have been| am|['’]m) set up\b|"
+    r"\bmy (instructions|rules|guidelines|prompt|system prompt|programming)\b|\bper my\b|"
+    r"\bhylätään\b|\bennen kuin (kirjoitan|vastaan)\b|\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|"
+    r"\bminulla ei ole lupaa\b|\bminulla on ohjeet\b|\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+
+
+def meta_text(text: str) -> str | None:
+    """The first words in a draft about the model's own rules, instructions or process, or None."""
+    m = _META_TEXT.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
                    labels: Iterable[str] = (), views: Iterable[Any] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
@@ -649,6 +667,9 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
+    meta = meta_text(text)
+    if meta:
+        problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
     used = TOKEN.findall(text)
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")

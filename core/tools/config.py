@@ -876,6 +876,22 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "why_equal": ("This week {safe} is safe to spend: your balance and your monthly budget set the same limit.",
                   "Tällä viikolla turvallisesti käytettävissä on {safe}: saldosi ja kuukausibudjettisi asettavat "
                   "saman rajan."),
+    # #575: the purchase of a pending or "Needed" review, in place of the other side's figure (approved texts). "This"
+    # is safe to spend, which the first sentence names; {amount} is the review card's own Number.
+    "why_review_pending_lowers": ("Your {amount} purchase still waits for your answer: marking it needed would lower "
+                                  "this.",
+                                  "Ostoksesi {amount} odottaa vielä vastaustasi: jos merkitset sen välttämättömäksi, "
+                                  "summa pienenee."),
+    "why_review_pending_same": ("Your {amount} purchase still waits for your answer: marking it needed would not "
+                                "change this.",
+                                "Ostoksesi {amount} odottaa vielä vastaustasi: sen merkitseminen välttämättömäksi ei "
+                                "muuttaisi summaa."),
+    "why_review_needed_moved": ("Marking your {amount} purchase as needed lowered this: it now counts as an unexpected "
+                                "necessity.",
+                                "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa pieneni: se lasketaan nyt "
+                                "odottamattomaksi välttämättömäksi menoksi."),
+    "why_review_needed_same": ("Marking your {amount} purchase as needed did not change this.",
+                               "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa ei muuttunut."),
     "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
