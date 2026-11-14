@@ -226,6 +226,10 @@ MAX_SHORT_WORDS = 55
 MAX_LONG_WORDS = 75
 MAX_NUMBERS = 3
 LONG_KINDS = ("why", "general")
+# The templates keep their own budget (#288): two short sentences and about 35 words, so no template answer changes
+# with this rule (#572); a template that fits a line only when it stays within it asks with kind "template".
+MAX_TEMPLATE_SENTENCES = 2
+MAX_TEMPLATE_WORDS = 35
 # A why or how question ("why is it lower?", "how does an e-invoice work?", "miksi…", "miten…"); "how much" and
 # "how many" ask an amount, so they stay ordinary.
 WHY_HOW = re.compile(r"\bwhy\b|\bhow come\b|\bhow (?!much\b|many\b|long\b)\w+|\bmiksi\b|\bmiten\b|\bminkä takia\b",
@@ -479,8 +483,9 @@ def length_problems(text: str, numbers: int, displays: Iterable[str] = (), kind:
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
     2026" names one thing, so it is one word, and its dots end no sentence). `kind` (answer_kind): "why" and
     "general" allow four sentences."""
-    max_sentences = MAX_SENTENCES_LONG if kind in LONG_KINDS else MAX_SENTENCES
-    max_words = MAX_LONG_WORDS if kind in LONG_KINDS else MAX_SHORT_WORDS
+    max_sentences = (MAX_SENTENCES_LONG if kind in LONG_KINDS else MAX_TEMPLATE_SENTENCES if kind == "template"
+                     else MAX_SENTENCES)
+    max_words = MAX_LONG_WORDS if kind in LONG_KINDS else MAX_TEMPLATE_WORDS if kind == "template" else MAX_SHORT_WORDS
     plain = re.sub(r"\{\{n\d+\}\}", "NUM", text)   # one word; "N." would read as an abbreviation
     for d in sorted((d for d in displays if d), key=len, reverse=True):
         plain = plain.replace(d, "NUM")

@@ -510,7 +510,7 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if found is None:
         return None
     for extra, ids in _national(view, language, ok):
-        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
+        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids), kind="template"):
             return found[0] + extra, found[1] + ids
     return found              # the comparison and its offer come first; the context line only when it fits
 

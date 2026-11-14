@@ -380,3 +380,9 @@ def test_the_length_rule_by_kind():
     words = " ".join(["word"] * 60) + "."
     assert answer_text.length_problems(words, 0) == ["too long: 60 words, at most 55"]
     assert answer_text.length_problems(words, 0, kind="why") == []
+    # the templates keep their own budget, so no template answer changes (the peer answer's national line, #569)
+    three = "One. Two words here. Three words here."
+    assert answer_text.length_problems(three, 0) == []
+    assert answer_text.length_problems(three, 0, kind="template") == ["too long: 3 sentences, at most 2"]
+    assert answer_text.length_problems(" ".join(["word"] * 36) + ".", 0, kind="template") == [
+        "too long: 36 words, at most 35"]
