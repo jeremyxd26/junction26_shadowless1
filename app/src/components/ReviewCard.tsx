@@ -161,7 +161,10 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
               <span aria-hidden="true" className={`inline-flex size-9 items-center justify-center rounded-md text-lg ${look.tint}`}>
                 {look.icon}
               </span>
-              {option.label[lang]}
+              {/* Its own flex item, so with large text it wraps inside the button, hyphenated (#541). */}
+              <span lang={lang} className="max-w-full min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
             </button>
           )
         })}
