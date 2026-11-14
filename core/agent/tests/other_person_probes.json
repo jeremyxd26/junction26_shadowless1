@@ -1,5 +1,5 @@
 {
- "about": "Review of #458: other people's money in the rules. not_declined: never declined as another person's data; declined: declined as other_person_data; not_user_data: declined or unclaimed, never a data tool with the user's numbers. claimed: own questions main and dev answer with a data tool; they must still be answered by one. unclaimed: money paid to the user by a person (not get_spending).",
+ "about": "Review of #458: other people's money in the rules. not_declined: never declined as another person's data; declined: declined as other_person_data; not_user_data: declined or unclaimed, never a data tool with the user's numbers. claimed: own questions main and dev answer with a data tool; they must still be answered by one. A named thing no filter maps (a merchant, a gift, school fees, food) is not in claimed: the rules may leave it unclaimed rather than give the unfiltered total (#379); it is in not_declined. unclaimed: money paid to the user by a person (not get_spending).",
  "not_declined": [
   [
    "Does Prisma pay S-Bonus on groceries?",
@@ -2816,30 +2816,6 @@
    "en"
   ],
   [
-   "how much did I spend on my wife's birthday gift in September",
-   "en"
-  ],
-  [
-   "how much did I pay for my son's school fees last month",
-   "en"
-  ],
-  [
-   "how much did I spend on my daughter's hobbies in August",
-   "en"
-  ],
-  [
-   "how much did I spend on my kids' clothes last month",
-   "en"
-  ],
-  [
-   "what did I spend on my dad's gift in September",
-   "en"
-  ],
-  [
-   "did I spend more on my brother's gifts than on my sister's gifts last month",
-   "en"
-  ],
-  [
    "paljonko käytin lapsilleni syyskuussa",
    "fi"
   ],
@@ -2849,10 +2825,6 @@
   ],
   [
    "how much did our household spend last month",
-   "en"
-  ],
-  [
-   "How much did we spend on food last month?",
    "en"
   ],
   [
@@ -2916,10 +2888,6 @@
    "fi"
   ],
   [
-   "Joulukuussa, paljonko käytin lahjoihin?",
-   "fi"
-  ],
-  [
    "Show me my Restaurants spending in August",
    "en"
   ],
@@ -2933,10 +2901,6 @@
   ],
   [
    "Groceries cost me how much last month?",
-   "en"
-  ],
-  [
-   "How much did I spend at S-Market in August?",
    "en"
   ],
   [
@@ -3144,10 +3108,6 @@
    "en"
   ],
   [
-   "How much did I spend on a gift for my wife in September?",
-   "en"
-  ],
-  [
    "I bought my brother a gift, how much did I spend in August?",
    "en"
   ],
@@ -3156,35 +3116,7 @@
    "en"
   ],
   [
-   "How much did I spend at Jane's Cafe last month?",
-   "en"
-  ],
-  [
-   "How much did I spend at Harry's Bar in August?",
-   "en"
-  ],
-  [
-   "How much did I spend at McDonald's in August?",
-   "en"
-  ],
-  [
-   "How much did I spend at Tom's Diner in July?",
-   "en"
-  ],
-  [
    "Paljonko käytin Marjan kahvilassa elokuussa?",
-   "fi"
-  ],
-  [
-   "Show me spending at Anna's Bakery in August",
-   "en"
-  ],
-  [
-   "How much did I spend on a gift for Marja in June?",
-   "en"
-  ],
-  [
-   "Paljonko käytin lahjaan Marjalle kesäkuussa?",
    "fi"
   ],
   [
@@ -3209,10 +3141,6 @@
   ],
   [
    "What did I buy from Jane in June?",
-   "en"
-  ],
-  [
-   "Spending on Jane in June",
    "en"
   ],
   [
