@@ -7,8 +7,9 @@
   viewer cookie as /api/ask reads it (`known_viewer`, never set here) keys a per-viewer window, next to a
   per-address window, so one visitor cannot spend the budget. A request without a cookie shares one key.
 - Limits before the body is read: a known audio type, and a declared Content-Length of at most MAX_BYTES;
-  the body is then read with a running cap, so a chunked body cannot go over either. Too large: 413
-  `invalid_request`; an unknown type, an empty or unreadable clip, or a WAV clip over 15 s: 400.
+  the body is then read with a running cap, so a chunked body cannot go over either. Too large, or too
+  long (a WAV header over 15 s, or more audio than about 17 s by the model's token count): 413
+  `invalid_request`; an unknown type or an empty or unreadable clip: 400.
 - The text goes back as JSON and nowhere else: no audit record, no file, no log line with audio or text.
 - Errors as /api/tts: 429 `rate_limited` with Retry-After (the windows, the budget or too many at once), 503
   `model_unavailable` (no key, switched off, an API error, a timeout, or no speech heard).
@@ -99,9 +100,9 @@ async def post_stt(request: Request, customer_id: str = "", language: str = "en"
         text = await run_in_threadpool(stt_service(request.app).transcribe, audio, content_type, lang)
     except SttError as exc:
         log.info("stt: %s, %d bytes", exc.code, len(audio))   # the code and the size only
-        if exc.code == "too_large":
+        if exc.code in ("too_large", "too_long"):
             return too_large(lang)
-        if exc.code in ("empty", "unsupported", "too_long"):
+        if exc.code in ("empty", "unsupported"):
             return envelope("invalid_request", lang)
         if exc.code in ("budget", "busy"):
             return envelope("rate_limited", lang, headers={"Retry-After": str(exc.retry_after or 60)})

@@ -41,8 +41,9 @@ def no_real_transport(monkeypatch):
 
 
 class FakeTransport:
-    def __init__(self, *steps):
+    def __init__(self, *steps, prompt_tokens=120):
         self.steps = list(steps) or [SPOKEN]
+        self.prompt_tokens = prompt_tokens
         self.calls: list[tuple[str, int, str, str]] = []
 
     def __call__(self, model, audio, mime_type, prompt, timeout_s):
@@ -50,7 +51,7 @@ class FakeTransport:
         step = self.steps.pop(0) if len(self.steps) > 1 else self.steps[0]
         if isinstance(step, Exception):
             raise step
-        return step, CallUsage(prompt_tokens=120, output_tokens=12)
+        return step, CallUsage(prompt_tokens=self.prompt_tokens, output_tokens=12)
 
 
 def service(tmp_path, transport, budget=100, off=None):
@@ -89,6 +90,20 @@ def test_browser_types_map_to_the_documented_ones(app, tmp_path, content_type, s
     assert transport.calls[0][2] == sent
 
 
+def test_compressed_clip_over_about_17_seconds_by_its_tokens_is_413_and_counted(app, tmp_path):
+    # 20 s of audio at the documented 32 tokens a second, plus the prompt: refused, its text never returned
+    transport = FakeTransport(prompt_tokens=32 * 20 + 35)
+    app.state.stt_service = service(tmp_path, transport)
+    r = post(app)
+    assert r.status_code == 413 and r.json()["error"]["code"] == "invalid_request"
+    assert SPOKEN not in r.text
+    entry = json.loads((tmp_path / "stt-requests.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert entry["result"] == "too_long"
+    # a real 15 s clip (about 515 tokens in all) passes
+    app.state.stt_service = service(tmp_path, FakeTransport(prompt_tokens=32 * 15 + 35))
+    assert post(app).status_code == 200
+
+
 def test_finnish_prompt_names_finnish(app, tmp_path):
     transport = FakeTransport("Paljonko käytin ruokaan syyskuussa?")
     app.state.stt_service = service(tmp_path, transport)
@@ -118,13 +133,13 @@ def test_service_refuses_too_large_also_without_the_route(tmp_path):
     assert err.value.code == "too_large"
 
 
-def test_wav_over_15_seconds_is_400_and_a_short_one_passes(app, tmp_path):
+def test_wav_over_15_seconds_is_413_and_a_short_one_passes(app, tmp_path):
     transport = FakeTransport()
     app.state.stt_service = service(tmp_path, transport)
     long_clip = wav(20, rate=8000)
     assert len(long_clip) < stt.MAX_BYTES            # small enough: refused for its length
     r = post(app, body=long_clip, content_type="audio/wav")
-    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_request"
+    assert r.status_code == 413 and r.json()["error"]["code"] == "invalid_request"
     assert transport.calls == []
     assert post(app, body=wav(3), content_type="audio/wav").status_code == 200
     assert stt.wav_seconds(wav(3)) == pytest.approx(3.0)

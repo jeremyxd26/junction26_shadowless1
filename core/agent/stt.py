@@ -13,7 +13,9 @@
   stops these requests too, and so does a missing key.
 - Limits before any request: at most MAX_BYTES of audio, a known audio type, and for WAV (whose header
   names its length) at most MAX_SECONDS. A compressed clip (WebM, MP4, OGG) carries no reliable length
-  while it is recorded, so the byte cap bounds it and the app stops recording at 15 s.
+  while it is recorded (the app stops recording at 15 s), so its length is checked from the answer: the API
+  counts audio at a fixed 32 tokens a second (audio docs, checked 2026-11-14), and a request whose prompt
+  took more than MAX_PROMPT_TOKENS is refused as too long, its text dropped. It is counted in the ledger.
 Every refusal raises SttError with a short code; no audio, text or key is ever in an error or a log line.
 """
 
@@ -44,6 +46,9 @@ DEFAULT_LEDGER = ROOT / "var" / "stt-requests.jsonl"
 MAX_IN_FLIGHT = 2
 MAX_BYTES = 1_000_000      # about 1 MB: 15 s of browser audio is far smaller
 MAX_SECONDS = 15.5         # the app stops at 15 s; a little room for the recorder's last chunk
+AUDIO_TOKENS_PER_SECOND = 32
+# 17 s of audio plus the prompt (about 35 tokens measured): a 15 s clip is about 515 tokens in all
+MAX_PROMPT_TOKENS = AUDIO_TOKENS_PER_SECOND * 17 + 100
 MAX_TEXT = 500             # the composer's limit (MAX_QUESTION in the app)
 API_VERSION = "v1beta"
 
@@ -226,6 +231,8 @@ class SttService:
         usage = CallUsage()
         try:
             raw, usage = self.transport(self.model, audio, mime, prompt, self.timeout_s)
+            if usage.prompt_tokens > MAX_PROMPT_TOKENS:
+                raise SttError("too_long")
         except Exception as exc:  # noqa: BLE001 - only a short code leaves this method
             result = exc.code if isinstance(exc, SttError) else _error_code(exc)[0]
             raise SttError(result) from None
