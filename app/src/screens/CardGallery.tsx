@@ -14,8 +14,14 @@ import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 const examples = contract.examples as unknown as Record<string, unknown>
 
 /** An opening that asks about the `card.review` purchase, for the pointer's "Show" state. */
+const REVIEW_TX = (examples['card.review'] as ReviewCard).tx_ref
 const ASKING_OPENING: Opening = {
-  reviewTxRef: (examples['card.review'] as ReviewCard).tx_ref,
+  reviewTxRef: REVIEW_TX,
+  shownReview: { txRef: REVIEW_TX, phase: 'asking' },
+  reportReview: () => {},
+  threadReviews: {},
+  claimThreadReview: () => {},
+  releaseThreadReview: () => {},
   refresh: () => {},
   scrollToReview: () => {},
 }
@@ -106,15 +112,15 @@ export default function CardGallery() {
           <AnswerCard key={card.card_id} card={card} />
         ))}
       </section>
-      {/* A review card inside a chat answer (#318): no second question, a pointer to the opening's.
-          Outside the thread there is no opening, so only the line; with an opening that asks about
-          the same purchase, also the "Show" button. */}
+      {/* A review card inside a chat answer (#318, #450): when nobody shows the question (here: no
+          opening), the answer shows the card with its answer buttons; when the opening shows it,
+          only a line and "Show". */}
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">card.review → in an answer (no opening)</p>
+        <p className="font-mono text-xs text-muted">card.review → in an answer (nobody shows it: the card itself)</p>
         <AnswerCard card={examples['card.review'] as Card} />
       </section>
       <section id="card.review-in-answer-asking" aria-label="card.review in an answer, opening asks" className="flex flex-col gap-2">
-        <p className="font-mono text-xs text-muted">card.review → in an answer (the opening asks about it)</p>
+        <p className="font-mono text-xs text-muted">card.review → in an answer (the opening shows it: a pointer)</p>
         <OpeningContext.Provider value={ASKING_OPENING}>
           <AnswerCard card={examples['card.review'] as Card} />
         </OpeningContext.Provider>
