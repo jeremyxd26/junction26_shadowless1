@@ -19,7 +19,10 @@ export function BottomSheet({ title, onClose, children }: Props) {
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      // With two sheets open (evidence over what-if), Escape closes only the top one.
+      const dialogs = document.querySelectorAll('[role="dialog"]')
+      if (dialogs[dialogs.length - 1] === panel.current) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => {
