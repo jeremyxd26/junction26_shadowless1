@@ -333,6 +333,17 @@ def _quotable(word: str) -> bool:
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
 
 
+UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
+                   "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
+
+
+def unknown_lead(word: str, language: str) -> str:
+    """#598: the sentence for a thing no category maps, before the answer to the other question; the user's word is
+    quoted when it is safe to quote, and never with a digit (the answer's text has no digits of its own)."""
+    quote = bool(word) and _quotable(word) and not re.search(r"\d", word)
+    return pick(UNKNOWN_PLAIN, language).format(word=word) if quote else pick(UNKNOWN_NO_WORD, language)
+
+
 def _first_month(details: dict[str, Any]) -> date:
     """The customer's own first day of data from the tool's error (#379), else the dataset's first day."""
     first = _iso_day(details.get("first"))

@@ -611,6 +611,23 @@ def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
     return m.group(0) if m else None
 
 
+# #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check.
+_META_TEXT = re.compile(
+    r"\b(is|are|was|were|been|gets?|got) declined\b|\bdeclined before\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) instructed\b|"
+    r"\bi was (told|instructed)\b|\bmy (instructions|rules|guidelines|prompt|system prompt)\b|"
+    r"\bhylätään\b|\bhylättiin\b|\bennen kuin (kirjoitan|vastaan)\b|"
+    r"\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|\bminulla ei ole lupaa\b|"
+    r"\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+
+
+def meta_text(text: str) -> str | None:
+    """The first words in a draft about the model's own rules, instructions or process, or None."""
+    m = _META_TEXT.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
                    labels: Iterable[str] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
@@ -641,6 +658,9 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     extra = health_extra(text, numbers)
     if extra:
         problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
+    meta = meta_text(text)
+    if meta:
+        problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")

@@ -47,7 +47,8 @@ from core.agent import guard, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CallRejected, Registry
+from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -197,6 +198,14 @@ class _InCallOrder(NumberRegistry):
         return self._shared.all()
 
 
+def _health_spending(call: dict[str, Any] | FunctionCall) -> bool:
+    """A get_spending call filtered on Health or on the health MCC group (#571, #598)."""
+    name, args = (call.name, call.args) if isinstance(call, FunctionCall) else (call["name"], call.get("args"))
+    flt = (args or {}).get("filter") or {}
+    return name == "get_spending" and ("Health" in (flt.get("categories") or [])
+                                       or "health" in (flt.get("mcc_groups") or []))
+
+
 def _health_what_if(call: FunctionCall) -> bool:
     """A planned what-if on Health or on a code of the health MCC group, alone or in a list (R9, #510)."""
     if call.name != "run_what_if":
@@ -315,6 +324,9 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    # #598: the model planned the Health filter for a question that names no health word ("the gym"); the call was
+    # dropped and the thing is answered as an unknown one. The user's word, "" when there is none to quote.
+    health_dropped: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -436,7 +448,8 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            calls = self._unknown_object_guard(message, plan.calls)
+            guarded = self._health_filter_guard(message, plan.calls, source, a)
+            calls = guarded if guarded is not plan.calls else self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
             model_failed = model_failed or source == "fallback"
@@ -445,7 +458,8 @@ class Pipeline:
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
             if calls is not plan.calls:
-                turn["guard"] = "unknown_object"   # the planned unfiltered total became the breakdown (B3)
+                # the planned unfiltered total became the breakdown (B3), or a Health filter was dropped (#598)
+                turn["guard"] = "health_filter" if guarded is not plan.calls else "unknown_object"
             a.planner_turns.append(turn)
 
             parsed, rejected = [], []
@@ -542,12 +556,16 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         # A Health total is the per-tool template, never a model draft (#571, R9): no tip, offer, comparison or
-        # judgement can be added to it, whatever planned the call.
-        health_total = any(c["name"] == "get_spending" and "Health" in (((c.get("args") or {}).get("filter") or {})
-                                                                       .get("categories") or []) for c in a.calls)
+        # judgement can be added to it, whatever planned the call, and the other tool's sentence beside it is its
+        # template too (#598). So is an answer whose Health filter was dropped: the template says the thing can't
+        # be seen on its own, then answers the other question.
+        deliberate = any(_health_spending(c) for c in a.calls) or a.health_dropped is not None
+        lead = template.unknown_lead(a.health_dropped, lang) if a.health_dropped is not None else None
         draft, used_template = self._compose(compose_in, numbers, allowed,
                                              skip_model=planner_fallback or a.composer_unavailable is not None
-                                             or health_total, a=a)
+                                             or deliberate, a=a, lead=lead)
+        # the template written by choice, with the model working, carries no "model unavailable" warning
+        chosen = deliberate and not planner_fallback and a.composer_unavailable is None
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -557,7 +575,7 @@ class Pipeline:
         # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
-        if used_template:
+        if used_template and not chosen:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
@@ -825,7 +843,7 @@ class Pipeline:
         return record
 
     def _compose(self, request: ComposeInput, numbers, allowed: Allowed, *, skip_model: bool,
-                 a: _Answer) -> tuple[AnswerDraft, bool]:
+                 a: _Answer, lead: str | None = None) -> tuple[AnswerDraft, bool]:
         lang = request.language
         if not skip_model:
             errors: list[str] = []
@@ -871,6 +889,8 @@ class Pipeline:
                 if not errors:
                     return draft, False
         fallback = template.template_draft(request.data, request.errors, lang, allowed, request.question)
+        if lead:   # #598: the sentence on the thing that can't be seen on its own, before the other answer
+            fallback = {**fallback, "text": f"{lead} {fallback['text']}".strip()}
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
@@ -936,6 +956,24 @@ class Pipeline:
                   and not (c.name == "get_basket_breakdown" and (c.args or {}).get("period") == period)]
         return [FunctionCall("get_basket_breakdown", {"period": period}, unfiltered[0].id), *others,
                 FunctionCall("finish")]
+
+    def _health_filter_guard(self, message: str, calls: list[FunctionCall], source: str,
+                             a: _Answer) -> list[FunctionCall]:
+        """#598: a Health filter the model planned stands only when the question names health itself (the rules'
+        health words, English and Finnish). Otherwise ("the gym", "yoga", "a massage") the call is dropped before
+        anything runs and the thing is answered as the rules answer an unknown thing: beside another question, the
+        other calls still run and the template says Sentti can't see the thing on its own; alone, the call becomes
+        the category breakdown of the same period, the rule path's answer. Never a Health card for such a word."""
+        health = [c for c in calls if _health_spending(c)]
+        if source != "model" or not health or re.search(RULE_HEALTH, guard.fold(message)):
+            return calls
+        a.health_dropped = unknown_object(message) or ""
+        others = [c for c in calls if c not in health]
+        if any(c.name not in CONTROL for c in others) or "get_basket_breakdown" not in self.registry.tools:
+            return others or [FunctionCall("finish")]
+        period = (health[0].args or {}).get("period") or {"preset": "last_6_months"}
+        return [FunctionCall("get_basket_breakdown", {"period": period}, health[0].id),
+                *[c for c in others if c.name != "finish"], FunctionCall("finish")]
 
     def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
                  a: _Answer) -> str:
