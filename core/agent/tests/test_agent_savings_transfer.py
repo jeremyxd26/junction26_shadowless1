@@ -191,6 +191,23 @@ def test_only_the_whole_message_asking_for_a_transfer_to_savings_is_exempted(que
     assert not exempt or savings_transfer.asks(q) == "usual"
 
 
+@pytest.mark.parametrize("question, rule, calls", [
+    ("Do I have a regular transfer to savings?", "savings_transfer", ["get_savings_plan", "finish"]),
+    ("Do I have a regular transfer to savings, please?", "savings_transfer", ["get_savings_plan", "finish"]),
+    ("Do I have a regular transfer to savings? Bump it up", "decline", ["decline"]),
+    ("Do I have a regular transfer to savings and increase it", "decline", ["decline"]),
+])
+def test_after_an_incomplete_earlier_turn_the_exempted_question_is_still_claimed(question, rule, calls):
+    # review of #670: an earlier turn the follow-up rule would read never leaves the exempted question unclaimed; it is
+    # the template's answer, and any other message keeps the refusal, never a question back
+    request = PlanInput(question=question, language="en", as_of="2026-09-30", tools=default_registry().schemas(),
+                        history=[{"question": "How much did I spend on groceries last month?", "calls": [],
+                                  "results": []}], guard_flags=[])
+    result = RuleModel().plan(request)
+    assert claim(request).rule == rule and [c.name for c in result.calls] == calls
+    assert result.template_answer is (rule == "savings_transfer")
+
+
 def test_how_much_the_user_can_move_keeps_devs_savings_plan():
     # review of #670: "Paljonko voin siirtää säästöön kuukaudessa?" is not the user's own transfer; it keeps dev's
     # outcome, the savings plan as "How could I save more?", the composer's answer

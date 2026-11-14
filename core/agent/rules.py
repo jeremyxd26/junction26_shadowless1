@@ -2010,6 +2010,10 @@ def _claim(request: PlanInput) -> Claim:
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
+    if "get_savings_plan" in tools and savings_transfer.have_transfer(q):
+        # "Do I have a regular transfer to savings?" (#658) is exempted from the move-money refusal only to be claimed,
+        # so it is claimed before the follow-up rule too, never a question back (review of #670)
+        return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     if "get_savings_plan" in tools and savings_transfer.asks(q):
