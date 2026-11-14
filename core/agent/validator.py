@@ -271,6 +271,8 @@ def plain_text(text: str) -> str:
     text = _MD_BULLET.sub("", text)
     if len(_MD_NUMBERED.findall(text)) >= 2:
         text = _MD_NUMBERED.sub("", text)
+    else:
+        text = re.sub(r"(?m)^[ \t]*\d{1,2}[.)][ \t]+(?=\{\{n\d+\}\})", "", text)   # "1. {{n7}} is safe to spend." 
     return _MD_EMPHASIS.sub("", text).strip()
 
 
@@ -280,7 +282,10 @@ def plain_text(text: str) -> str:
 UNAVAILABLE_CLAIM = re.compile(
     r"\b(?:not|n't)\b[^.!?,;]{0,50}\bavailable\b|\bno\s+(?:data|figure|number|calculation)s?\s+(?:is\s+|are\s+)?available\b"
     r"|\bunavailable\b|\b(?:could\s*not|couldn't|cannot|can't|can\s+not)\s+(?:be\s+)?(?:calculat|comput|work)\w*"
-    r"|\bcannot\s+be\s+shown\b|\bei\s+ole\s+(?:saatavilla|saatavissa|laskettu\w*)\b|\bei\s+(?:voitu|voida)\s+laskea\b",
+    r"|\bcannot\s+be\s+shown\b|\bei\s+ole\s+(?:saatavilla|saatavissa|laskettu\w*)\b|\bei\s+(?:voitu|voida)\s+laskea\b"
+    r"|\bunable\s+to\s+(?:calculat|comput|work\s+out|show)\w*|\b(?:calculation|it)\s+is\s+not\s+possible\b"
+    r"|\bnot\s+possible\s+to\s+(?:calculat|comput)\w*"
+    r"|\b(?:don't|do\s+not|doesn't|does\s+not)\s+have\s+(?:that|this|the|a|any)\s+(?:\w+\s+)?(?:figure|number|data|amount|limit)\b",
     re.I)
 
 
@@ -309,12 +314,19 @@ def contents_claim(text: str) -> str | None:
     week" are fine; "on health, which includes your gym visits" is not)."""
     labels = _category_labels()
     for m in CONTENTS_CLAIM.finditer(text):
-        before = text[max(0, m.start() - 40):m.start()].lower()
-        if not any(re.search(r"\b" + re.escape(label) + r"\b", before) for label in labels):
-            continue
-        after = re.sub(r"^\s*(?:your|the|all|kaikki|sinun)?\s*", "", text[m.end():m.end() + 60]).lower()
+        verb = m.group(0).lower()
+        raw_after = text[m.end():m.end() + 60].lower().lstrip()
+        if raw_after.startswith(("all ", "kaikki ")):
+            continue                 # "the total contains all your purchases" is the total's definition
+        after = re.sub(r"^\s*(?:your|the|sinun)?\s*", "", raw_after)
         if after.startswith("{{") or any(after.startswith(label) for label in labels):
             continue
+        if "cover" in verb:
+            # "covers" is about coverage ("still covers your bills until payday") unless a category label
+            # stands right before it ("Restaurants, which covers your lunches").
+            before = text[max(0, m.start() - 40):m.start()].lower()
+            if not any(re.search(r"\b" + re.escape(label), before) for label in labels):
+                continue
         return m.group(0)
     return None
 
