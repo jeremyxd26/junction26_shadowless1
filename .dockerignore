@@ -8,12 +8,11 @@
 !core/app/
 !core/tools/
 !core/agent/
+!core/bills/
 !core/answer_text.py
 !core/metrics/*.sql
 !core/config/*.yaml
-# the bill parser and the sample bills of the gallery (#241, #249): the images and samples.json are
-# served; the PDFs, the README and the generator stay out
-!core/bills/
+# of the sample bills (#249) only the images and samples.json are served: no PDFs, no README
 core/bills/samples/*.pdf
 core/bills/samples/README.md
 

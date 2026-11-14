@@ -121,8 +121,8 @@ fi
 # the packages that they import (core.agent, shared with the eval). The model prompts are read at run
 # time: a missing one would otherwise deploy green and leave the service on the rule model only.
 if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/agent/prompts/*.md' \
-                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml' \
-                  'core/bills/*.py' 'core/bills/samples/*.png' 'core/bills/samples/samples.json'); then
+                  'core/bills/*.py' 'core/bills/samples/*.png' 'core/bills/samples/samples.json' \
+                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml'); then
   echo "refusing to deploy: cannot list the run-time files of the checkout" >&2
   drop_image
   exit 1
