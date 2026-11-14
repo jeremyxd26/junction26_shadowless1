@@ -204,3 +204,26 @@ def test_the_savings_goal_is_an_optional_argument_and_a_setting_only_when_given(
 def test_the_hero_card_lists_the_goal_with_its_limits():
     card = _hero_card(date(2026, 10, 1), date(2026, 10, 7), "en")
     assert [n.value for n in card.secondary][-1] == 360.0
+
+
+# ---- #346: a merchant-category group by its name, on the model's path only ---------------------------
+
+@pytest.mark.parametrize("name, codes", [("taxi", "4121"), ("public transport", "4111"), ("Fuel", "5541,5542"),
+                                         ("parking", "7523")])
+def test_an_mcc_group_name_stands_for_its_codes_in_the_models_arguments(name, codes):
+    from core.tools.what_if import ModelWhatIfArgs
+
+    args = ModelWhatIfArgs.model_validate({"selection": {"kind": "mcc", "value": name}, "cut_pct": 10})
+    assert args.selection.value == codes
+
+
+def test_the_health_group_by_name_is_still_refused_and_the_api_keeps_the_codes():
+    from pydantic import ValidationError
+
+    from core.tools.what_if import ModelWhatIfArgs, RunWhatIfArgs
+
+    for model in (ModelWhatIfArgs, RunWhatIfArgs):
+        with pytest.raises(ValidationError):
+            model.model_validate({"selection": {"kind": "mcc", "value": "health"}, "cut_pct": 10})
+    with pytest.raises(ValidationError):      # /api/whatif: the contract's codes only
+        RunWhatIfArgs.model_validate({"selection": {"kind": "mcc", "value": "taxi"}, "cut_pct": 10})

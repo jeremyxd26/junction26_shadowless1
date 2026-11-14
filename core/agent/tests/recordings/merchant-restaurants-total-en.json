@@ -1,0 +1,497 @@
+{
+ "question": "Which restaurants did I spend the most at in August?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "model",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [
+  {
+   "name": "get_spending",
+   "args": {
+    "period": {
+     "preset": "custom",
+     "start": "2026-08-01",
+     "end": "2026-08-31"
+    },
+    "filter": {
+     "categories": [
+      "Restaurants"
+     ]
+    },
+    "direction": "out",
+    "group_by": "merchant",
+    "compare_to": "none",
+    "top_n": 5
+   },
+   "numbers": [
+    {
+     "value": 138.94,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_09aee32cd934",
+     "label": "Restaurants",
+     "display": "€138.94",
+     "id": "n1"
+    },
+    {
+     "value": 10,
+     "unit": "count",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.n_tx@1",
+     "evidence_ref": "ev_daa7be635e8e",
+     "label": "Transactions",
+     "display": "10",
+     "id": "n2"
+    },
+    {
+     "value": 17.9,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_0374ad2586c5",
+     "label": "Share of total",
+     "display": "17.9%",
+     "id": "n3"
+    },
+    {
+     "value": 24.88,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_6eb8b709fe1c",
+     "label": "Restaurant A",
+     "display": "€24.88",
+     "id": "n4"
+    },
+    {
+     "value": 12.8,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_63bb6fe7e4c7",
+     "label": "Share of total",
+     "display": "12.8%",
+     "id": "n5"
+    },
+    {
+     "value": 17.81,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_187064c9490e",
+     "label": "Restaurant W",
+     "display": "€17.81",
+     "id": "n6"
+    },
+    {
+     "value": 12.7,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_cec0ac6d2402",
+     "label": "Share of total",
+     "display": "12.7%",
+     "id": "n7"
+    },
+    {
+     "value": 17.58,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_501e642c3d84",
+     "label": "Restaurant K",
+     "display": "€17.58",
+     "id": "n8"
+    },
+    {
+     "value": 12.4,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_de26946f817f",
+     "label": "Share of total",
+     "display": "12.4%",
+     "id": "n9"
+    },
+    {
+     "value": 17.21,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_9b9fea60cc95",
+     "label": "Restaurant U",
+     "display": "€17.21",
+     "id": "n10"
+    },
+    {
+     "value": 11.3,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_0baf69d37347",
+     "label": "Share of total",
+     "display": "11.3%",
+     "id": "n11"
+    },
+    {
+     "value": 15.67,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_1edbd802e033",
+     "label": "Restaurant V",
+     "display": "€15.67",
+     "id": "n12"
+    },
+    {
+     "value": 33.0,
+     "unit": "percent",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.share_pct@1",
+     "evidence_ref": "ev_4ed2b9211c27",
+     "label": "Share of total",
+     "display": "33.0%",
+     "id": "n13"
+    },
+    {
+     "value": 45.79,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_2c914ebfeaba",
+     "label": "Everything else",
+     "display": "€45.79",
+     "id": "n14"
+    }
+   ],
+   "model_view": {
+    "tool": "get_spending",
+    "period": "August 2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 138.94,
+     "unit": "eur",
+     "label": "Restaurants"
+    },
+    "tx_count": {
+     "id": "n2",
+     "value": 10,
+     "unit": "count",
+     "label": "Transactions"
+    },
+    "comparison": null,
+    "groups": [
+     {
+      "key": "store_ae",
+      "label": "Restaurant A",
+      "amount": {
+       "id": "n4",
+       "value": 24.88,
+       "unit": "eur",
+       "label": "Restaurant A"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 2,
+      "share": {
+       "id": "n3",
+       "value": 17.9,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "store_ev",
+      "label": "Restaurant W",
+      "amount": {
+       "id": "n6",
+       "value": 17.81,
+       "unit": "eur",
+       "label": "Restaurant W"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 1,
+      "share": {
+       "id": "n5",
+       "value": 12.8,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "store_cn",
+      "label": "Restaurant K",
+      "amount": {
+       "id": "n8",
+       "value": 17.58,
+       "unit": "eur",
+       "label": "Restaurant K"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 1,
+      "share": {
+       "id": "n7",
+       "value": 12.7,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "store_ei",
+      "label": "Restaurant U",
+      "amount": {
+       "id": "n10",
+       "value": 17.21,
+       "unit": "eur",
+       "label": "Restaurant U"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 1,
+      "share": {
+       "id": "n9",
+       "value": 12.4,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "store_eo",
+      "label": "Restaurant V",
+      "amount": {
+       "id": "n12",
+       "value": 15.67,
+       "unit": "eur",
+       "label": "Restaurant V"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 1,
+      "share": {
+       "id": "n11",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "other",
+      "label": "Everything else",
+      "amount": {
+       "id": "n14",
+       "value": 45.79,
+       "unit": "eur",
+       "label": "Everything else"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 4,
+      "share": {
+       "id": "n13",
+       "value": 33.0,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     }
+    ],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_8762719144569121652",
+          "args": {
+           "period": {
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "preset": "custom"
+           },
+           "filter": {
+            "categories": [
+             "Restaurants"
+            ]
+           },
+           "group_by": "merchant",
+           "top_n": 5
+          },
+          "name": "get_spending"
+         },
+         "thought_signature": "EmAKXgFpFH0T2ivqHrt2WRG4maz0SF2T47V8UMHN0i5hQuGZOKPCUtq8v0F6rQ7ObOd_JSUD__LpXdXRj3fJy8ZS412AvZyQL8FaKSq4wSFraFBP8Dsb2quzk79MeX9h50Y="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3802,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 70
+    }
+   }
+  },
+  {
+   "kind": "plan",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "function_call": {
+          "id": "call_11008329176031689280",
+          "args": {},
+          "name": "finish"
+         },
+         "thought_signature": "EmAKXgFpFH0TOhNcmDF65pAU2rnFRIT8L1hPMvZR4mhx00OX4G3TKuX4alL-7m20Xu_HCbj5Ey-YSEXnywmEfhpVjxBihMlt6GHPRbZmrdCMVTXVK5Ksf01cM4mUY2NoKvo="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 4536,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 8
+    }
+   }
+  },
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026 you spent {{n1}} across {{n2}}. The top restaurant was Restaurant A at {{n4}}, which is {{n3}} of it.\",\n  \"cited\": [\"n1\", \"n2\", \"n4\", \"n3\"],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0Tr_ucpHGRPzzAeWffGG7diTIbFVsDRKqfZxoGFdtA81_DS5cBaEv3OdqNNsU6EkllD4WitUSyulGoOpAJcgYFaSMWAeVMUDZRs3AL51ZEgHCt3_bKJ-4QAq8="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3328,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 84
+    }
+   }
+  },
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"In August 2026, you spent the most at Restaurant A, totaling {{n4}}, which is {{n3}} of your total restaurant spending.\",\n  \"cited\": [\n    \"n4\",\n    \"n3\"\n  ],\n  \"lesson_key\": null\n}",
+         "thought_signature": "EmAKXgFpFH0TsL02qkrsVwuF5KLPembZDmFrYNMRNLN4jyjXKKQi6l8oBiG7vd9Y50GZgvnMoWD9sBxlSznS4wpOJPY1aJxNfc5NY0ZYoslTCD09Pzm8wKTy1KEVZhytTV0="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3373,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 79
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_spending",
+   "finish"
+  ],
+  "text": "In August 2026, you spent the most at Restaurant A, totaling {{n4}}, which is {{n3}} of your total restaurant spending.",
+  "text_rendered": "In August 2026, you spent the most at Restaurant A, totaling €24.88, which is 17.9% of your total restaurant spending."
+ }
+}

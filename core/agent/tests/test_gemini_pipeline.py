@@ -408,3 +408,49 @@ def test_after_a_planner_failure_the_clarifying_question_says_it_was_not_worked_
     assert done["clarify"]["question"].startswith("I could not work that out right now. ")
     done = ask(p, "Kerro jotain hyödyllistä ruokaostoksistani", language="fi")
     assert done["clarify"]["question"].startswith("En pystynyt selvittämään tätä juuri nyt. ")
+
+
+# ---- #304, #302: a model-written clarifying question ------------------------------------------------------
+
+def clarify_response(question, options):
+    return call_response("ask_clarifying_question", {"question": question, "options": options})
+
+
+def test_clarify_options_the_rules_do_not_recognise_are_replaced_by_the_rules_question():
+    """On dev the model asked back with fragments ("Where did money go"): tapped, they are not recognised,
+    so with the model off the user got a second clarifying question (#304)."""
+    transport = ByKind(clarify_response("What do you want to know?",
+                                        ["Where did money go", "Safe to spend", "Recurring bills"]), text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    done = ask(p, "money?")
+    assert done["outcome"] == "clarify" and done["clarify"]["options"] != ["Where did money go", "Safe to spend",
+                                                                           "Recurring bills"]
+    rules = RuleModel()
+    for option in done["clarify"]["options"]:
+        plan = rules.plan(PlanInput(question=option, language="en", as_of="2026-09-30",
+                                    tools=p.registry.schemas()))
+        assert plan.recognised, option
+    assert audit.records[-1]["planner_turns"][-1]["error"] == "clarify options not recognised"
+
+
+def test_clarify_options_the_rules_recognise_are_kept_and_markdown_is_dropped():
+    # Full questions: a bare "Last month" counts only after a spending question (#384), and "money?" is not one.
+    options = ["How much did I spend last month?", "How much did I spend this month?"]
+    transport = ByKind(clarify_response("**Which** of these do you mean?", options), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "money?")
+    assert done["clarify"] == {"question": "Which of these do you mean?", "options": options}
+
+
+
+def test_without_a_key_the_template_writes_with_no_model_draft_attempt():
+    """Review of #401: with no key the rule model's own template is not run through the model-draft checks;
+    composer_attempts holds only the template, and the text is the same."""
+    from core.agent.rules import RuleModel
+
+    p, audit = pipeline(FakeTransport(call_response()))
+    p.model = RuleModel()
+    done = ask(p)
+    attempts = audit.records[-1]["composer_attempts"]
+    assert [a["raw"] for a in attempts] == ["template"] and "llm_unavailable" in done["warnings"]
+    assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]

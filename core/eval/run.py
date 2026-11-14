@@ -23,6 +23,8 @@ is checked for (rules of docs/design/research-bank-assistants.md):
   dates/labels the expected dates and keys (profile, what-if status) are in the answer
   forbid       a value a confused coach would give does not appear
   deny lists   no sensitive inference (R9), no buy/sell instruction (R7), no promise (R13)
+  length       an answered outcome is at most two sentences, about 35 words and three numbers (the
+               answer-length rule, #288; core/answer_text.py length_problems, shared with the pipeline)
 It prints one line per question, a summary per tag, and exits 1 on any failure. A source that does
 not report its tool calls or keys fails those checks as "unverified"; it never passes them.
 """
@@ -174,6 +176,10 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
     for f in case.get("forbid") or []:
         if any(abs(abs(float(x["value"])) - abs(f["value"])) <= f["tolerance"] + 1e-9 for x in declared):
             fails.append(f"forbidden value {f['name']} = {f['value']} appears")
+    if case["expect"] == "answered" and ans.outcome == "answered" and not getattr(ans, "length_exempt", False):
+        displays = [str(x.get("display") or "") for x in declared]
+        for problem in answer_text.length_problems(ans.text, len(declared), displays=displays):
+            fails.append(f"length: {problem}")
     for rule, rx in DENY.items():
         m = re.search(rx, ans.text, re.I)
         if m:
