@@ -1,0 +1,112 @@
+{
+ "question": "How much did I spend on taxis last month?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.8-flash",
+ "tools": [
+  {
+   "name": "get_spending",
+   "args": {
+    "period": {
+     "preset": "last_month"
+    },
+    "filter": {
+     "mcc_groups": [
+      "taxi"
+     ]
+    },
+    "direction": "out",
+    "group_by": "none",
+    "compare_to": "none",
+    "top_n": 5
+   },
+   "numbers": [
+    {
+     "value": 52.84,
+     "unit": "eur",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.total@1",
+     "evidence_ref": "ev_84bc51fddedb",
+     "label": "Taxi",
+     "display": "€52.84",
+     "id": "n1"
+    },
+    {
+     "value": 1,
+     "unit": "count",
+     "period": {
+      "start": "2026-08-01",
+      "end": "2026-08-31",
+      "label": "August 2026"
+     },
+     "method": "spending.n_tx@1",
+     "evidence_ref": "ev_552e8ff2be4a",
+     "label": "Transactions",
+     "display": "1",
+     "id": "n2"
+    }
+   ],
+   "model_view": {
+    "tool": "get_spending",
+    "period": "August 2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 52.84,
+     "unit": "eur",
+     "label": "Taxi"
+    },
+    "tx_count": {
+     "id": "n2",
+     "value": 1,
+     "unit": "count",
+     "label": "Transactions"
+    },
+    "comparison": null,
+    "groups": [],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\"language\":\"en\",\"text\":\"In August 2026, you spent **{{n1}}** on taxis across {{n2}} purchase.\",\"cited\":[\"n1\",\"n2\"],\"lesson_key\":null}",
+         "thought_signature": "EmkKZwFpFH0TJKWtZf0b_gZoAT8lXLnpG9YBR3acNFM8p75DZuMM2V_otStyM6ukj-TukRtXA5Rn1T4LOkQNJt3cWc8ZyzXKt3RcQCEgD4HPBB3pvYTD17doxo3JWKxnx6tYSmhvP4IZSmQ="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 1989,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 48
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_spending",
+   "finish"
+  ],
+  "text": "In August 2026, you spent **{{n1}}** on taxis across {{n2}} purchase.",
+  "text_rendered": "In August 2026, you spent **€52.84** on taxis across 1 purchase."
+ }
+}
