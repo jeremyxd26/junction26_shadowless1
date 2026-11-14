@@ -164,6 +164,16 @@ DECLINE_RULES = [
                r"[^.?!]{0,40}?\b(to|for)\b)|"
                r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(lähetä|siirrä|maksa|lähettää|siirtää|maksaa)\b"
                r"[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\w+(lle|lleni|llesi|llemme|lleen)\b"),
+    # The same request with "put" or "deposit" into savings or an account (#668): "Put 100 euros into savings",
+    # "Laita 100 euroa säästöön", "Pistä 50 euroa säästötilille". Only as a request, so "what if I put 100 euros into
+    # savings", "how much did I put into savings" and a budget or goal setting stay what they were.
+    ("unsafe", r"(^|[.!?;,]\s*|\b(please|pls|kindly|can you|could you|would you|will you|i want you to|"
+               r"i need you to|go ahead and)\s+)(put|deposit|add|stash|place)\s+" + AMOUNT_EN +
+               r"[^.?!]{0,30}?\b(in|into|to|on)\s+(my\s+|the\s+|our\s+)?(savings?|savings account|account)\b"
+               r"(?!\s+(goal|target|budget|plan)s?\b)|"
+               r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(laita|laittaa|pistä|pistää|pane|panna|talleta|"
+               r"tallettaa)\b[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\b(säästöön|säästöihin|säästötili\w*|tilille\w*|"
+               r"tilillesi|tililleni)\b"),
     ("out_of_scope", r"\bjust (estimate|guess)\b|\bany number\b(?!\s+of\b)|"
                      r"\bmake up (a |an |some )?(number|amount|figure)s?\b|\bguess (a |an |some )?(number|amount|figure)s?\b|"
                      r"\binvent (a |an )?(number|amount)s?\b|\bkeksi (jokin |joku )?(luku|summa)\b|"
@@ -1065,8 +1075,9 @@ DECLINED_BEFORE_539 = fold_pattern(DECLINED_BEFORE_539)
 def _declines(rx: str, q: str) -> bool:
     """A decline rule matches the folded question; the user's own past or usual transfers never do (#539), nor a
     message that is only the question whether the user has a regular transfer to savings, which the rules claim (#658;
-    any other message keeps the refusal, review of #670)."""
-    if savings_transfer.have_transfer(q):
+    any other message keeps the refusal, review of #670), nor one that is only the question how much to transfer to
+    savings, which the rules claim as the savings plan (#668, the same single-question rule)."""
+    if savings_transfer.have_transfer(q) or savings_transfer.set_aside_transfer(q):
         return False
     return bool(re.search(rx, re.sub(OWN_TRANSFERS, " ", q, flags=re.I), re.I))
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
@@ -2052,12 +2063,19 @@ def _claim(request: PlanInput) -> Claim:
         # "Do I have a regular transfer to savings?" (#658) is exempted from the move-money refusal only to be claimed,
         # so it is claimed before the follow-up rule too, never a question back (review of #670)
         return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
+    if savings_transfer.set_aside_transfer(q):
+        # "How much should I transfer to savings?" (#668) is exempted from the move-money refusal only to be claimed, so
+        # it is claimed before the follow-up rule too: the savings plan, as "How could I save more?"
+        return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     if "get_savings_plan" in tools and savings_transfer.asks(q):
         # "How much did I transfer to savings last month?" (#658): what already goes to savings (#560), the template's
         # answer in any model state; never a spending category or the unfiltered total
         return Claim("savings_transfer", (FunctionCall("get_savings_plan", {}), FunctionCall("finish")))
+    if savings_transfer.set_aside(q):
+        # "How much should I put into savings each month?" (#668): how much to set aside, as "How could I save more?"
+        return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
     if cost is not None:
         category, per = cost
