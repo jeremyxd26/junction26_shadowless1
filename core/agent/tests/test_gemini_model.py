@@ -262,3 +262,11 @@ def test_the_service_logs_the_model_state_at_start(caplog):
         with TestClient(create_app(Settings(_env_file=None))):
             pass
     assert any(r.getMessage().startswith("language model: off (no GEMINI_API_KEY)") for r in caplog.records)
+
+
+def test_bill_readings_get_their_share_from_the_setting(monkeypatch, tmp_path):
+    monkeypatch.setenv("BILL_READ_DAILY_BUDGET", "7")
+    assert gemini.GeminiSettings(_env_file=None).bill_read_budget == 7
+    m = make_model(settings(gemini_api_key="test-key-not-real", gemini_cache="off", bill_read_budget=3),
+                   ledger_path=tmp_path / "requests.jsonl", off_switch=tmp_path / "off")
+    assert m.client.ledger.kind_caps == {"extract": 3}

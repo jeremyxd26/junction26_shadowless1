@@ -56,6 +56,7 @@ FALLBACK_MODELS = {"gemini-3.8-flash": "gemini-3.1-pro-preview", "gemini-3.1-pro
 # requests today in the ledger, answers use the template.
 DEFAULT_DAILY_BUDGET = 300
 OFF_SWITCH = ROOT / "var" / "model-off"   # while this file exists, no request is sent
+DEFAULT_BILL_READ_BUDGET = 50              # bill readings' share of the daily budget (#250)
 
 
 @dataclass(frozen=True)
@@ -243,7 +244,8 @@ class GeminiSettings(BaseSettings):
     - GEMINI_PLANNER: rules_first (default: the rule planner, Gemini only for questions it does not
       recognise) or model (Gemini plans every question; used by the eval of the planner);
     - GEMINI_CACHE: on (default), off, or replay; GEMINI_CACHE_DIR: default var/gemini-cache;
-    - MODEL_DAILY_BUDGET: requests to the Gemini API a UTC day, counted in var/gemini-requests.jsonl
+    - BILL_READ_DAILY_BUDGET: the bill readings' share of that budget (default 50, #250);
+    - MODEL_DAILY_BUDGET: requests to the Gemini API in any rolling 24 hours, counted in var/gemini-requests.jsonl
       (cache hits do not count); 0 turns the model off. While the file var/model-off exists, no request
       is sent either: create it to stop the model at once, without a restart or a redeploy."""
 
@@ -257,6 +259,7 @@ class GeminiSettings(BaseSettings):
     gemini_cache: str = "on"
     gemini_cache_dir: Path = DEFAULT_CACHE_DIR
     daily_budget: int = Field(default=DEFAULT_DAILY_BUDGET, ge=0, validation_alias="MODEL_DAILY_BUDGET")
+    bill_read_budget: int = Field(default=DEFAULT_BILL_READ_BUDGET, ge=0, validation_alias="BILL_READ_DAILY_BUDGET")
 
 
 def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGER, off_switch: Path = OFF_SWITCH,
@@ -282,7 +285,9 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     transport = None if cache == "replay" else SdkTransport(secret)
     client = GeminiClient(model, transport, fallback_model=None if fallback == "none" else fallback, cache=cache,
                           cache_dir=None if cache == "off" else Path(cache_dir),
-                          ledger=Ledger(ledger_path, budget, off_switch), **client_options)
+                          ledger=Ledger(ledger_path, budget, off_switch,
+                                        kind_caps={"extract": getattr(s, "bill_read_budget", env.bill_read_budget)}),
+                          **client_options)
     return GeminiModel(client)
 
 
