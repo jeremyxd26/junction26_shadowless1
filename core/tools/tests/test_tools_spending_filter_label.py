@@ -25,13 +25,19 @@ AS_OF = date(2026, 9, 30)
 SEPTEMBER = {"preset": "custom", "start": "2026-09-01", "end": "2026-09-30"}
 
 
-def tx(i, d, category, amount):
-    return Tx(i, d, datetime.combine(d, datetime.min.time()), category, "purchase", None, None, Decimal(amount))
+def tx(i, d, category, amount, mcc=None):
+    return Tx(i, d, datetime.combine(d, datetime.min.time()), category, "purchase", None, mcc, Decimal(amount))
 
 
-HISTORY = [tx(1, date(2026, 9, 1), "Housing", "-800.00"), tx(2, date(2026, 9, 5), "Restaurants", "-24.40"),
-           tx(3, date(2026, 9, 9), "Restaurants", "-31.10"), tx(4, date(2026, 9, 12), "Travel", "-120.00"),
-           tx(5, date(2026, 9, 14), "Groceries", "-60.00")]
+# Every group and sub-group a test filters on has a row, with the category its rows carry in the data, so a label
+# is asserted on a real number: a filter with nothing in the data gets the missing-data answer instead (#379).
+HISTORY = [tx(1, date(2026, 9, 1), "Housing", "-800.00"),
+           tx(2, date(2026, 9, 5), "Restaurants", "-24.40", "5813"),      # bars
+           tx(3, date(2026, 9, 9), "Restaurants", "-31.10", "5814"),      # takeaway
+           tx(4, date(2026, 9, 12), "Travel", "-120.00"), tx(5, date(2026, 9, 14), "Groceries", "-60.00"),
+           tx(6, date(2026, 9, 16), "Entertainment", "-12.00", "7832"),   # cinemas
+           tx(7, date(2026, 9, 18), "Home & Tech", "-45.00", "5732"),     # electronics_home
+           tx(8, date(2026, 9, 20), "Transportation", "-18.50", "4121")]  # taxi
 
 
 def run(args, language="en"):
@@ -103,7 +109,7 @@ def test_a_duplicate_part_is_counted_once():
 @pytest.mark.parametrize("language,label", [("en", "Spending"), ("fi", "Kulutus")])
 def test_without_a_filter_the_total_is_spending(language, label):
     result, store = run({}, language)
-    assert result.data.total.label == label and result.data.total.value == 1035.5
+    assert result.data.total.label == label and result.data.total.value == 1111.0
     spec = store.rows[result.data.total.evidence_ref]
     from core.app.api import texts
     assert evidence_api._label_of(spec, language) == texts.pick(texts.METHODS["spending.total@1"].name, language)
