@@ -25,6 +25,7 @@ import re
 from datetime import date
 from typing import Any, Callable
 
+from core import answer_text
 from core.tools import config
 
 Sentences = tuple[list[str], list[str]]
@@ -281,6 +282,8 @@ BILLS_DUE = {
 BILL_ITEM = ("{amount} for {bill}", "{bill} {amount}")
 BILLS_TYPICAL = ("Your regular bills are {items}.", "Säännölliset laskusi ovat {items}.")
 BILL_TYPICAL_ITEM = ("{bill} at {amount}", "{bill}, tavallisesti {amount}")
+# #540: "what does electricity cost a month?": that one bill's typical month
+BILL_ONE_TYPICAL = ("Your {bill} bills usually come to {amount}.", "{bill}: tavallisesti {amount}.")
 # One sentence: the first income row and, when known, the next payday (review of #365).
 SALARY = ("Your salary is usually {amount}", "Palkkasi on tavallisesti {amount}")
 OTHER_INCOME = ("Your usual {income} is {amount}", "Tavallinen tulosi ({income}) on {amount}")
@@ -300,9 +303,10 @@ def _bill_name(label: str, language: str) -> str:
     return label[:1].lower() + label[1:]
 
 
-def bills(view: dict[str, Any], language: str, ok: Ok, mode: str) -> Sentences | None:
+def bills(view: dict[str, Any], language: str, ok: Ok, mode: str, only: str | None = None) -> Sentences | None:
     """mode: "due" (bills before payday), "typical" (the regular bills), "income" (salary and payday),
-    "save_more" (only the bills due before payday)."""
+    "save_more" (only the bills due before payday). `only` (#540): the category whose typical month the question
+    asks; that bill alone when the customer has it, else the regular bills as for "typical"."""
     if mode == "income":
         when = _date(view.get("next_payday"), language) if isinstance(view.get("next_payday"), str) else None
         first = None
@@ -322,6 +326,15 @@ def bills(view: dict[str, Any], language: str, ok: Ok, mode: str) -> Sentences |
             return [first[0] + end], _ids(first[1])
         return ([pick(NEXT_PAYDAY, language).format(date=when)], []) if when else None
 
+    if mode == "typical" and only:
+        # the model view has no bill id (#487): the category's bill is the one with its series label
+        pair = config.SERIES_LABELS.get(f"{only.lower()}_payment")
+        want = config.label(pair, language) if pair else None
+        mine = next((b for b in view.get("bills") or [] if want and b.get("label") == want), None)
+        amount = _tok(mine.get("typical_month")) if mine else None
+        if amount and isinstance(mine.get("label"), str) and ok(mine["label"]):
+            name = mine["label"] if language == "fi" else _bill_name(mine["label"], language)
+            return [pick(BILL_ONE_TYPICAL, language).format(bill=name, amount=amount)], _ids(amount)
     if mode == "typical":
         items, cited = [], []
         for b in (view.get("bills") or [])[:3]:
@@ -485,7 +498,36 @@ PEER_SAME = {"total": ("You spend about the same as the median of people like yo
                         "Luokassa {metric} kulutat suunnilleen saman verran kuin kaltaistesi mediaani.")}
 
 
+# #569: one line of national context after the comparison: two facts side by side, no comparison word between the
+# customer's amount and the survey's; the survey's period (its year, as the Number's returned period) and the source.
+# No age digits (the digit rule): "your age group". Short, so the comparison and the line fit the length rule.
+# The display carries "a month"; the survey's category comes from the tool, long or short (the length rule).
+NATIONAL = ("Households your age spent {amount} per adult-equivalent on {what} ({source}, {period}).",
+            "Ikäryhmäsi kotitaloudet käyttivät {what} {amount} aikuista vastaavaa henkilöä kohti ({source}, {period}).")
+
+
+def _national(view: dict[str, Any], language: str, ok: Ok) -> list[tuple[list[str], list[str]]]:
+    """The line with the survey's category in its long and its short words, in that order; [] without a line."""
+    n = view.get("national") if isinstance(view.get("national"), dict) else None
+    amount = _tok(n.get("amount")) if n else None
+    if not n or not amount or not all(isinstance(n.get(k), str) and ok(n[k]) for k in ("survey", "source", "what")):
+        return []
+    whats = [n["what"]] + ([n["what_short"]] if isinstance(n.get("what_short"), str) and ok(n["what_short"]) else [])
+    return [([pick(NATIONAL, language).format(amount=amount, what=what, source=n["source"], period=n["survey"])],
+             _ids(amount)) for what in whats]
+
+
 def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    found = _peer(view, language, ok)
+    if found is None:
+        return None
+    for extra, ids in _national(view, language, ok):
+        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
+            return found[0] + extra, found[1] + ids
+    return found              # the comparison and its offer come first; the context line only when it fits
+
+
+def _peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     vs = _tok(view.get("vs_median"))
     if view.get("shown") is False or not vs:
         return None                      # the reason alone, in template.py (PEER_REASON)
@@ -554,7 +596,7 @@ def bonus(view: dict[str, Any], language: str) -> Sentences | None:
 # ---- dispatch ---------------------------------------------------------------------------------------------
 
 def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, asks_income: bool,
-             bill_typical: bool) -> Sentences | None:
+             bill_typical: bool, bill_only: str | None = None) -> Sentences | None:
     """The sentences for one tool's view, or None when this module does not write that tool's answer."""
     tool = view.get("tool")
     if tool == "get_spending":
@@ -562,8 +604,9 @@ def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, as
     if tool == "get_basket_breakdown":
         return baskets(view, language, ok, save_more)
     if tool == "get_recurring_bills":
-        mode = "save_more" if save_more else "income" if asks_income else "typical" if bill_typical else "due"
-        return bills(view, language, ok, mode)
+        mode = "save_more" if save_more else "income" if asks_income else "typical" if bill_typical or bill_only \
+            else "due"
+        return bills(view, language, ok, mode, only=bill_only)
     if tool == "run_what_if":
         return what_if(view, language, ok)
     if tool == "get_safe_to_save":
