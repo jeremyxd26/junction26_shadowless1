@@ -1,8 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
+import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import type { ClientTurn } from '../lib/thread.ts'
 import { TurnView } from './AnswerView.tsx'
-import { clientTurns, type ClientTurnProps } from './clientTurns.tsx'
+import { clientTurns, openingChips, type ClientTurnProps } from './clientTurns.tsx'
+import { OpeningChips } from './OpeningChips.tsx'
 
 function Probe({ turnId }: ClientTurnProps) {
   return (
@@ -50,5 +52,35 @@ describe('a client turn in the thread (#319)', () => {
     expect(html).toContain('Show Sentti a probe')
     expect(html).toContain('>Sentti<')
     expect(html).not.toContain('Probe step')
+  })
+})
+
+describe('the opening\'s client-turn chips (#319)', () => {
+  const opening = { pushClientTurn: () => {} } as unknown as Opening
+  const chips = () =>
+    renderToStaticMarkup(
+      <OpeningContext.Provider value={opening}>
+        <OpeningChips />
+      </OpeningContext.Provider>,
+    )
+
+  afterEach(() => {
+    delete clientTurns.probe
+    openingChips.length = 0
+  })
+
+  it('renders nothing while openingChips is empty', () => {
+    expect(openingChips).toEqual([])
+    expect(chips()).toBe('')
+  })
+
+  it('shows a visible chip, apart from the question chips, and hides one that is not visible', () => {
+    openingChips.push('probe')
+    clientTurns.probe = { chip: (lang) => (lang === 'fi' ? 'Näytä koe' : 'Show a probe'), visible: () => true, Component: Probe }
+    const html = chips()
+    expect(html).toContain('data-opening-part="client-chips"')
+    expect(html).toContain('>Show a probe</button>')
+    clientTurns.probe = { ...clientTurns.probe, visible: () => false }
+    expect(chips()).toBe('')
   })
 })

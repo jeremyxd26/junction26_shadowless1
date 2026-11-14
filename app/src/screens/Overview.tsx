@@ -19,6 +19,7 @@ import { askInThread } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { OverviewRow } from '../components/OverviewRow.tsx'
 import { BillLink } from '../components/BillLink.tsx'
+import { OpeningChips } from '../components/OpeningChips.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
 type Phase =
@@ -395,6 +396,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
 
       <OverviewRow disabled={busy !== null} />
       <BillLink />
+      <OpeningChips />
 
       {/* Screen readers hear the label response's message with its numbers written out. */}
       <p role="status" className="sr-only">
