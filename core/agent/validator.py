@@ -394,6 +394,31 @@ def check_text(text: str, allowed: Allowed) -> list[str]:
     return errors
 
 
+# #569: the national context figure (Statistics Finland's survey) is context, never a verdict: the sentence that
+# cites it cites no other number and has no comparison or judgement word, so a draft never reads "you spend more
+# than households your age". A rejected draft is retried and then answered by the template's own line.
+NATIONAL_METHOD = "national_context.monthly_eur@1"
+NATIONAL_COMPARISON = re.compile(
+    r"\b(more|less|than|above|below|higher|lower|average|exceed\w*|compared?|comparison|whereas|while|twice|double"
+    r"|half|too|should|only|enemmän|vähemmän|kuin|yli|alle|keskiarvo\w*|verrat\w*|vertailu\w*|kun taas"
+    r"|kaksinkertai\w*|puolet|liikaa|pitäisi|vain)\b", re.I)
+
+
+def national_problems(text: str, numbers: dict[str, Number]) -> list[str]:
+    """Why a text turns the national context figure into a comparison, or []."""
+    problems = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        ids = TOKEN.findall(sentence)
+        if not any(numbers.get(i) is not None and numbers[i].method == NATIONAL_METHOD for i in ids):
+            continue
+        if len(set(ids)) > 1:
+            problems.append("the national context figure stands in its own sentence, with no other number")
+        word = NATIONAL_COMPARISON.search(TOKEN.sub(" ", sentence))
+        if word:
+            problems.append(f"the national context figure is context, never a comparison: '{word.group(0)}'")
+    return problems
+
+
 def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
              allowed: Allowed) -> tuple[AnswerDraft | None, list[str]]:
     """(draft, []) when the composer output passes every rule, else (None or draft, errors)."""
@@ -436,6 +461,8 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
         if language == "fi" and not re.search(r"[äöå]", stripped, re.I) and len(english_words) >= 3:
             errors.append("the text must be in Finnish")
     errors += check_text(draft.text, allowed)
+    if not unknown:
+        errors += national_problems(draft.text, numbers)
     if not unknown:
         # Rule 3 again on the text the user reads: each token replaced by its display. A token glued to
         # another token, a digit, a unit word or a month ("{{n2}}{{n2}}", "{{n2}}.{{n2}}", "{{n2}} euros",
