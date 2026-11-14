@@ -1,12 +1,13 @@
 // Mock mode only (`/cards`): every card example of the contract on one page, so each card
 // renderer can be checked at 375 px without a persona that happens to have that card.
 // A live build does not include this page (see App.tsx).
-import type { BreakdownCard, Card, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, OverviewResponse, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
 import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BasketStrip } from '../components/BasketStrip.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
 import { BillFlow } from '../components/bill/BillFlow.tsx'
+import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
@@ -51,6 +52,14 @@ export default function CardGallery() {
       <p className="text-sm text-muted">
         Contract {contract.contract_version} card examples (mock mode only).
       </p>
+      {/* The overview sheet's content (#320): Sanna (the lead persona, the demo start), Aino (with
+          insights) and the no-hero example. */}
+      {(['overview.response_pending', 'overview.response', 'overview.response_no_hero'] as const).map((name) => (
+        <section key={name} id={`${name}-sheet`} aria-label={`${name} overview sheet content`} className="flex flex-col gap-2">
+          <p className="font-mono text-xs text-muted">{name} → OverviewSheetContent</p>
+          <OverviewSheetContent overview={examples[name] as OverviewResponse} />
+        </section>
+      ))}
       {/* The basket strip (#312) in its three places: a full strip (the answer to "Where did my
           money go?" and the overview sheet), the same in Finnish, and the mini row of Sentti's
           answer after "Needed" / "My choice", which carries the flight targets. */}
