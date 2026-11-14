@@ -25,12 +25,13 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
 from core.agent.gemini import Prompt, load_prompt
 from core.agent.gemini_client import GeminiError
+from core.tools import config as tool_config
 from core.tools.formatting import display
 from core.tools.models import Unit
 
@@ -49,11 +50,12 @@ READ_SCHEMA = {
     "additionalProperties": False,
 }
 READ_REQUEST = "Read the bill in the image and fill the fields you can read."
-_SPACES = re.compile(r"[  \t\r\n]")
+DUE_DATE_WINDOW = timedelta(days=2 * 366)     # a due date within about two years of today (review of #250)
+_SPACES = re.compile(r"[ \u00a0\t\r\n]")
 _IBAN_SHAPE = re.compile(r"[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}")
 _REFERENCE_SHAPE = re.compile(r"RF[0-9]{2}[A-Z0-9]{1,21}|[0-9]{2,20}")
 _BARCODE_SHAPE = re.compile(r"[0-9]{54}")
-_AMOUNT = re.compile(r"(?:€|EUR)?\s*([0-9][0-9  .,]*?)\s*(?:€|EUR|eur|e)?")
+_AMOUNT = re.compile(r"(?:€|EUR)?\s*([0-9][0-9 \u00a0.,]*?)\s*(?:€|EUR|eur|e)?")
 _DATE_FI = re.compile(r"([0-9]{1,2})\.([0-9]{1,2})\.([0-9]{4})")
 _DATE_ISO = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 # An English bill prints its dates with the month's name ("20 October 2026", "20 Oct 2026"): found by the
@@ -132,7 +134,9 @@ def model_fields(text: str) -> dict[str, str]:
 
 def parse_amount(text: str) -> Decimal | None:
     """A printed amount ("812,40", "€812.40", "1 234,56 €") as a Decimal, or None. ASCII digits only;
-    exactly two decimals when there are decimals; never negative."""
+    exactly two decimals when there are decimals; more than 0 and at most the explain endpoint's cap
+    (BILL_AMOUNT_MAX). A single dot or comma before three digits ("12.345", "1,234") is a thousands
+    separator in one locale and decimals in another: such an amount is dropped, not guessed (review of #250)."""
     m = _AMOUNT.fullmatch(text.strip())
     if not m:
         return None
@@ -140,12 +144,24 @@ def parse_amount(text: str) -> Decimal | None:
     decimals = "00"
     if len(number) >= 3 and number[-3] in ".," and number[-2:].isdigit():
         number, decimals = number[:-3], number[-2:]
-    whole = re.sub(r"[  .,]", "", number)
-    groups = re.split(r"[  .,]", number)
+    elif re.fullmatch(r"[0-9]{1,3}[.,][0-9]{3}", number):
+        return None
+    whole = re.sub(r"[ \u00a0.,]", "", number)
+    groups = re.split(r"[ \u00a0.,]", number)
     if not whole.isascii() or not whole.isdigit() or (len(groups) > 1 and any(len(g) != 3 for g in groups[1:])):
         return None
     value = Decimal(f"{int(whole)}.{decimals}")
-    return value if value < Decimal("10000000") else None
+    return value if plausible_amount(value) else None
+
+
+def plausible_amount(value: Decimal | None) -> bool:
+    """More than 0 and at most the explain endpoint's cap (review of #250)."""
+    return value is not None and Decimal(0) < value <= tool_config.BILL_AMOUNT_MAX
+
+
+def plausible_date(value: date | None, today: date) -> bool:
+    """Within two years of today, either way: "1.1.1900" or "2999-01-01" is no due date (review of #250)."""
+    return value is not None and abs((value - today).days) <= DUE_DATE_WINDOW.days
 
 
 def parse_due_date(text: str) -> date | None:
@@ -206,8 +222,16 @@ def _reference(text: str, parser: Any) -> str | None:
 
 # ---- step 3: code decides --------------------------------------------------------------------------------
 
-def check_fields(fields: dict[str, str], parser: Any, language: str) -> dict[str, Field | None]:
-    """The checked reading: every field of READ_FIELDS as a Field or None (not read, or failed its format)."""
+def check_fields(fields: dict[str, str], parser: Any, language: str,
+                 today: date | None = None) -> dict[str, Field | None]:
+    """The checked reading: every field of READ_FIELDS as a Field or None (not read, or failed its format or
+    its plausibility).
+
+    Decision A of the review of #250: on this path the barcode is TRANSCRIBED BY THE MODEL, and the Finnish
+    virtual barcode has no check digit over the amount and the due date. So only the IBAN and the reference
+    can be `checked`, each by its own check digits; the amount, the due date and the barcode itself are
+    always `unchecked`, whatever their source, also when the barcode and the printed value agree."""
+    today = today or date.today()
     out: dict[str, Field | None] = {name: None for name in READ_FIELDS}
 
     payee = fields.get("payee")
@@ -218,6 +242,8 @@ def check_fields(fields: dict[str, str], parser: Any, language: str) -> dict[str
     printed_reference = _reference(fields["reference"], parser) if "reference" in fields else None
     printed_amount = parse_amount(fields["amount"]) if "amount" in fields else None
     printed_due = parse_due_date(fields["due_date"]) if "due_date" in fields else None
+    if not plausible_date(printed_due, today):
+        printed_due = None
 
     barcode = None
     raw_barcode = _compact(fields.get("barcode", ""))
@@ -239,19 +265,21 @@ def check_fields(fields: dict[str, str], parser: Any, language: str) -> dict[str
         return "checked", None
 
     if barcode is not None:
-        out["barcode"] = Field(raw_barcode, raw_barcode, "checked", "barcode")
+        out["barcode"] = Field(raw_barcode, raw_barcode, "unchecked", "barcode")   # decision A
         status, note = differs("iban", printed_iban, barcode.iban)
         out["iban"] = Field(barcode.iban, parser.format_iban(barcode.iban), status, "barcode", note)
         status, note = differs("reference", printed_reference, barcode.reference)
         out["reference"] = Field(barcode.reference, parser.format_reference(barcode.reference), status, "barcode", note)
-        if barcode.amount is not None:
-            status, note = differs("amount", printed_amount, barcode.amount)
-            out["amount"] = amount_field(barcode.amount, status, "barcode", note)
+        # The amount and the due date: always unchecked (decision A); a disagreement keeps its note, and
+        # a value outside the plausible range is dropped as a printed one would be.
+        if plausible_amount(barcode.amount):
+            _, note = differs("amount", printed_amount, barcode.amount)
+            out["amount"] = amount_field(barcode.amount, "unchecked", "barcode", note)
         elif printed_amount is not None:
             out["amount"] = amount_field(printed_amount, "unchecked", "printed")
-        if barcode.due_date is not None:
-            status, note = differs("due_date", printed_due, barcode.due_date)
-            out["due_date"] = date_field(barcode.due_date, status, "barcode", note)
+        if plausible_date(barcode.due_date, today):
+            _, note = differs("due_date", printed_due, barcode.due_date)
+            out["due_date"] = date_field(barcode.due_date, "unchecked", "barcode", note)
         elif printed_due is not None:
             out["due_date"] = date_field(printed_due, "unchecked", "printed")
         return out
@@ -275,17 +303,34 @@ def check_fields(fields: dict[str, str], parser: Any, language: str) -> dict[str
 # ---- step 1 and the whole reading ----------------------------------------------------------------------
 
 def read_bill(client: Any, image: bytes, mime_type: str, language: str, *, parser: Any | None = None,
-              prompt: Prompt | None = None) -> dict[str, Any]:
+              prompt: Prompt | None = None, today: date | None = None) -> dict[str, Any]:
     """Read one bill image: {fields, needs_confirmation, prompt, model}. Raises BillReadUnavailable when
-    the model may not be used, fails, is blocked, or answers outside the schema (503 model_unavailable)."""
+    the model may not be used, fails, is blocked, answers outside the schema, or gives no usable field at all
+    (503 model_unavailable). Only a usable answer is cached; a cached one this reading rejects is a miss, so
+    a bad first answer never makes a sample fail for ever (review of #250)."""
     parser = parser or importlib.import_module("core.bills.parse")
     prompt = prompt or load_prompt("bill_read")
+    today = today or date.today()
+
+    def checked(text: str) -> dict[str, Field | None]:
+        return check_fields(model_fields(text), parser, language, today)
+
+    def usable(reply: Any) -> bool:
+        if reply.blocked:
+            return False
+        try:
+            return any(checked(reply.text).values())
+        except BillReadUnavailable:
+            return False
+
     try:
-        reply = client.extract(prompt.text, READ_REQUEST, image, mime_type, READ_SCHEMA)
+        reply = client.extract(prompt.text, READ_REQUEST, image, mime_type, READ_SCHEMA, accept=usable)
     except GeminiError as exc:
         raise BillReadUnavailable(exc.code) from None
     if reply.blocked:
         raise BillReadUnavailable("blocked")
-    fields = check_fields(model_fields(reply.text), parser, language)
+    fields = checked(reply.text)
+    if not any(fields.values()):
+        raise BillReadUnavailable("empty")      # "{}" or nothing that passed: not a reading (review of #250)
     return {"fields": {name: (f.as_dict() if f else None) for name, f in fields.items()},
             "needs_confirmation": True, "prompt": prompt.version, "model": reply.model}

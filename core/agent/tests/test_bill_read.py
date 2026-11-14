@@ -132,16 +132,19 @@ PRINTED = dict(payee="Esimerkki Asunnot Oy", iban="FI21 1234 5600 0007 85", refe
 
 # ---- the four cases of the issue ---------------------------------------------------------------------
 
-def test_a_barcode_bill_read_correctly_is_checked_by_code():
+def test_a_barcode_bill_read_correctly_checks_only_the_iban_and_the_reference():
+    """Decision A of the review of #250: the model transcribed the barcode, and the barcode has no check digit
+    over the amount and the due date, so they stay unchecked even when barcode and print agree."""
     result, transport = read(model_answer(**PRINTED, barcode=BARCODE))
     f = result["fields"]
     assert len(transport.requests) == 1 and result["needs_confirmation"] is True
-    assert f["barcode"]["status"] == "checked" and f["barcode"]["source"] == "barcode"
+    assert f["barcode"]["status"] == "unchecked" and f["barcode"]["source"] == "barcode"
     assert f["iban"] == {"value": IBAN, "display": "FI21 1234 5600 0007 85", "status": "checked", "source": "barcode",
                          "note": None}
     assert f["reference"]["value"] == "1232" and f["reference"]["status"] == "checked"
-    assert f["amount"] == {"value": "812.40", "display": "812,40 €", "status": "checked", "source": "barcode", "note": None}
-    assert f["due_date"] == {"value": "2026-10-01", "display": "1.10.2026", "status": "checked", "source": "barcode",
+    assert f["amount"] == {"value": "812.40", "display": "812,40 €", "status": "unchecked", "source": "barcode",
+                           "note": None}
+    assert f["due_date"] == {"value": "2026-10-01", "display": "1.10.2026", "status": "unchecked", "source": "barcode",
                              "note": None}
     assert f["payee"]["status"] == "unchecked" and f["payee"]["source"] == "printed"
     assert "Number" not in json.dumps(result) and "evidence_ref" not in json.dumps(result)
@@ -222,6 +225,36 @@ def test_a_field_that_fails_its_format_is_dropped(field, value):
     assert checked[field] is None
 
 
+@pytest.mark.parametrize("text", ["0,00", "0.00", "12.345", "1.234", "12,345", "100000,01", "250 000,00"])
+def test_an_amount_that_is_zero_ambiguous_or_over_the_cap_is_dropped(text):
+    """Review of #250: never 0, at most the explain endpoint's cap (BILL_AMOUNT_MAX), and a single separator
+    before three digits is a thousand in one locale and decimals in another: dropped, not guessed."""
+    assert parse_amount(text) is None
+
+
+@pytest.mark.parametrize("text", ["1.1.1900", "2999-01-01", "1 January 2030"])
+def test_a_due_date_far_from_today_is_dropped(text):
+    checked = check_fields(model_fields(json.dumps({"due_date": text})), FakeParser(), "en", date(2026, 9, 30))
+    assert checked["due_date"] is None
+
+
+def test_a_due_date_within_two_years_stays():
+    checked = check_fields(model_fields(json.dumps({"due_date": "1.10.2026"})), FakeParser(), "en", date(2026, 9, 30))
+    assert checked["due_date"].value == "2026-10-01" and checked["due_date"].status == "unchecked"
+
+
+@pytest.mark.parametrize("answer", ["{}", json.dumps({"amount": "0,00", "due_date": "1.1.1900"})])
+def test_a_reading_with_no_usable_field_is_unavailable_and_not_cached(tmp_path, answer):
+    """Review of #250: "{}" or nothing that passed is no reading: 503, and a later read asks the model again."""
+    transport = FakeTransport(text_response(answer), text_response(json.dumps(PRINTED)))
+    client = GeminiClient("gemini-3.8-flash", transport, cache="on", cache_dir=tmp_path, sleep=lambda s: None)
+    with pytest.raises(BillReadUnavailable) as exc:
+        read_bill(client, PNG, "image/png", "en", parser=FakeParser(), today=date(2026, 9, 30))
+    assert exc.value.reason == "empty"
+    again = read_bill(client, PNG, "image/png", "en", parser=FakeParser(), today=date(2026, 9, 30))
+    assert again["fields"]["iban"]["value"] == IBAN and len(transport.requests) == 2
+
+
 @pytest.mark.parametrize("text, value", [("812,40", "812.40"), ("€812.40", "812.40"), ("1 234,56 €", "1234.56"),
                                          ("1,234.56", "1234.56"), ("812", "812.00"), ("EUR 60,00", "60.00")])
 def test_printed_amounts_in_both_locales(text, value):
@@ -236,15 +269,16 @@ def test_printed_due_dates_in_both_locales(text):
 
 # ---- injection: text in the image tells the model to report another account -------------------------
 
-def fake_explain(confirmed: dict) -> dict:
-    """A stand-in for POST /api/bill/explain (#242) until it is merged: the warning signs it raises for
-    confirmed fields, and whether it offers the add_to_payments action."""
-    signals = []
-    if not FakeParser.valid_iban(confirmed["iban"]):
-        signals.append("iban_check_failed")
-    if not FakeParser.valid_reference(confirmed["reference"]):
-        signals.append("reference_check_failed")
-    return {"signals": signals, "actions": [] if signals else ["add_to_payments"]}
+def explain(confirmed: dict) -> dict:
+    """What POST /api/bill/explain (#242) does with confirmed fields, by its own rules (core.tools.bill_explain):
+    the warning signs and whether it offers the add_to_payments action (review of #250: the real code, no
+    stand-in)."""
+    from core.tools.bill_explain import draft_allowed, read_fields, signal_codes
+
+    bill = read_fields(confirmed.get("payee"), confirmed["iban"], confirmed["reference"], confirmed["amount"],
+                       date.fromisoformat(confirmed["due_date"]))
+    return {"signals": signal_codes(bill, "new_payee", None, None, date(2026, 9, 30)),
+            "actions": ["add_to_payments"] if draft_allowed(bill) else []}
 
 
 def test_an_obeyed_injection_with_a_bad_check_digit_shows_unchecked_and_never_reaches_a_payment():
@@ -253,8 +287,10 @@ def test_an_obeyed_injection_with_a_bad_check_digit_shows_unchecked_and_never_re
     iban = result["fields"]["iban"]
     assert iban["status"] == "unchecked" and iban["note"] and result["needs_confirmation"] is True
     confirmed = {name: f["value"] for name, f in result["fields"].items() if f}      # the user confirms as shown
-    explained = fake_explain(confirmed)
+    explained = explain(confirmed)
     assert "iban_check_failed" in explained["signals"] and "add_to_payments" not in explained["actions"]
+    clean = explain({name: f["value"] for name, f in read(model_answer(**PRINTED))[0]["fields"].items() if f})
+    assert "iban_check_failed" not in clean["signals"] and clean["actions"] == ["add_to_payments"]
 
 
 def test_an_obeyed_injection_on_a_barcode_bill_loses_to_the_barcode_and_is_flagged():
