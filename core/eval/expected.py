@@ -155,6 +155,9 @@ def connect(as_of: str) -> Db:
 
 def evaluate(db: Db, cid: str, src: dict):
     """The value a source spec produces for one customer (Decimal, int, str or date)."""
+    if "literal" in src:
+        # a number the question itself states ("my friend spends 500 euros"): for `forbid`, never from the data
+        return Decimal(str(src["literal"]))
     if "metric" in src:
         rows = db.metric(src["metric"], cid, src.get("settings"))
         where = src.get("where", {})
@@ -174,6 +177,13 @@ def evaluate(db: Db, cid: str, src: dict):
             value = 100 * (cur - prev) / prev if prev else None
         else:
             raise ValueError(f"unknown column {src['column']}")
+    elif src.get("query") == "national":
+        # #569: Statistics Finland's table value for an age group, from the committed file; no database, no network
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from core.tools.national import figure
+
+        value = figure(src["category"], src["age_band"]).monthly
     elif src.get("query") == "bonus":
         # The S-Bonus estimate (#216): the grocery base from SQL (the 6-month window's Groceries average,
         # cents), then the rules file's formula (core/config/s_group_benefits.yaml) the tool applies.

@@ -1,8 +1,9 @@
 // Mock mode only (`/cards`): every card example of the contract on one page, so each card
 // renderer can be checked at 375 px without a persona that happens to have that card.
 // A live build does not include this page (see App.tsx).
-import type { BreakdownCard, Card, OverviewResponse, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, OverviewResponse, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
+import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BasketStrip } from '../components/BasketStrip.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
@@ -11,6 +12,20 @@ import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
+
+/** An opening that asks about the `card.review` purchase, for the pointer's "Show" state. */
+const REVIEW_TX = (examples['card.review'] as ReviewCard).tx_ref
+const ASKING_OPENING: Opening = {
+  reviewTxRef: REVIEW_TX,
+  shownReview: { txRef: REVIEW_TX, phase: 'asking' },
+  reportReview: () => {},
+  answered: null,
+  threadReviews: {},
+  claimThreadReview: () => {},
+  releaseThreadReview: () => {},
+  refresh: () => {},
+  scrollToReview: () => {},
+}
 
 /** The contract has no standalone `bills` example; it is a card of `overview.response`. */
 const OVERVIEW_CARDS = (examples['overview.response'] as { cards: Card[] }).cards
@@ -81,6 +96,11 @@ export default function CardGallery() {
           <SafeToSaveCard card={examples[name] as SafeToSaveData} />
         </section>
       ))}
+      {/* Safe to save inside a chat answer (#477): the card draws no actions there (AnswerView does). */}
+      <section id="card.safe_to_save-answer" aria-label="card.safe_to_save in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.safe_to_save → in an answer</p>
+        <AnswerCard card={examples['card.safe_to_save'] as Card} />
+      </section>
       <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
         <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
@@ -98,10 +118,18 @@ export default function CardGallery() {
           <AnswerCard key={card.card_id} card={card} />
         ))}
       </section>
-      {/* A review card inside a chat answer: the generic card, no answer buttons (answered in "Sentti asks"). */}
+      {/* A review card inside a chat answer (#318, #450): when nobody shows the question (here: no
+          opening), the answer shows the card with its answer buttons; when the opening shows it,
+          only a line and "Show". */}
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
-        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.review → in an answer</p>
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.review → in an answer (nobody shows it: the card itself)</p>
         <AnswerCard card={examples['card.review'] as Card} />
+      </section>
+      <section id="card.review-in-answer-asking" aria-label="card.review in an answer, opening asks" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.review → in an answer (the opening shows it: a pointer)</p>
+        <OpeningContext.Provider value={ASKING_OPENING}>
+          <AnswerCard card={examples['card.review'] as Card} />
+        </OpeningContext.Provider>
       </section>
       <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
         <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">bill flow (section 11, mock)</p>
