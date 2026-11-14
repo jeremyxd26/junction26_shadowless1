@@ -20,7 +20,7 @@ from core.tools import config, evidence, periods, spending
 from core.tools.formatting import display
 from core.tools.models import Unit
 from core.tools.numbers import json_value
-from core.tools.selection import Selection
+from core.tools.selection import NONE_KEY, Selection
 
 from . import texts
 from .deps import CUSTOMER_ID_PATTERN, EVIDENCE_REF_PATTERN, customer_connection
@@ -63,6 +63,13 @@ def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = 
         return config.label(config.TEXT["income"], language)   # an unfiltered income total is income (#501)
     if sel.get("series_key") in config.SERIES_LABELS:
         return config.label(config.SERIES_LABELS[sel["series_key"]], language)
+    # A breakdown's own items, named as the tool names them (Number label = card title = evidence title, #567):
+    # "Other" is the purchases with no merchant group, "Everything else" the rest after the top items; neither is
+    # the customer's total spending.
+    if group.get("by") == "mcc_group" and group.get("key") == NONE_KEY:
+        return config.label(config.TEXT["no_mcc_group"], language)
+    if group.get("not_in") and not group.get("key"):
+        return config.label(config.TEXT["everything_else"], language)
     if group.get("by") == "category" and group.get("key") in config.CATEGORY_LABELS:
         return config.label(config.CATEGORY_LABELS[group["key"]], language)
     if group.get("by") == "basket" and group.get("key") in config.BASKET_LABELS:
