@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { goBack } from '../lib/url.ts'
+import { canGoBack, goBack, useUrl } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 
 const FALLBACK_LONG_PRESS_MS = 600
@@ -19,6 +19,9 @@ function longPressMs(): number {
  */
 export function Header({ onLongPress }: { onLongPress: () => void }) {
   const { t } = useSettings()
+  // Re-render on every navigation, so the back button follows the current screen.
+  useUrl()
+  const showBack = canGoBack()
   const timer = useRef<number | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
 
@@ -53,16 +56,21 @@ export function Header({ onLongPress }: { onLongPress: () => void }) {
       onContextMenu={(event) => event.preventDefault()}
     >
       <div className="grid min-h-13 grid-cols-[44px_1fr_44px] items-center px-2">
-        <button
-          type="button"
-          onClick={goBack}
-          aria-label={t.back}
-          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.25">
-            <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        {showBack ? (
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={t.back}
+            className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.25">
+              <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : (
+          // First screen in a plain browser: nowhere to go back to. The cell keeps the title centred.
+          <span aria-hidden="true" />
+        )}
         <h1 className="text-center text-lg font-semibold text-ink">Sentti</h1>
         <span aria-hidden="true" />
       </div>
