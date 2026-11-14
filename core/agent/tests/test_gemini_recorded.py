@@ -192,12 +192,12 @@ def test_a_merchant_total_of_several_purchases_is_not_called_one_visit():
 
 
 def test_the_spender_type_answer_cites_the_comparison_with_similar_people():
-    """r-w6's comparison: both models left the peer numbers out of every spender-type answer."""
+    """The model comparison: both models left the peer numbers out of every spender-type answer."""
     assert any(m.startswith("peer_benchmark.") for m in cited_methods(load("spender-type-peers-en")))
 
 
 def test_the_what_if_answer_states_its_baseline():
-    """r-w6's comparison: flash-lite left the dining baseline out three times in eight."""
+    """The model comparison: flash-lite left the dining baseline out three times in eight."""
     methods = cited_methods(load("what-if-restaurants-baseline-en"))
     assert "what_if.baseline_month_eur@1" in methods and "what_if.saving_month_eur@1" in methods
 
@@ -206,7 +206,7 @@ def test_the_what_if_answer_states_its_baseline():
 def test_the_template_for_each_recorded_tool_result_repeats_no_period(path):
     """The repeated-period check runs on model drafts only at runtime (a template is never replaced for
     it), so the templates are checked here: the template text for every recorded tool result, in the
-    recording's language, never says "a month a month" (#288, r-w3's #390)."""
+    recording's language, never says "a month a month" (#288, #390)."""
     from core.agent import template
     from core.agent.validator import allowed_from, repeated_period
 

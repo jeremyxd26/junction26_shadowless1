@@ -15,7 +15,7 @@ total a month and a year computed here; no model adds numbers (rules in docs/des
   total a year twelve times that (composite `scale`). Both are estimates. Each cut share is a rule value
   (`savings_plan.cut_pct@1`), so an answer can cite it as a number instead of bare digits.
 - These are savings from cutting below the usual pace: they add to safe to save, never to safe to spend
-  (r-w6's invariant, #381). Safe to save a month is shown next to the plan as it is today, never added in.
+  (the invariant of #381). Safe to save a month is shown next to the plan as it is today, never added in.
 - The S-Bonus is never shown with the plan, never part of the total (product owner, #369): no amount on the
   card or in the model view. When its estimate is offered, its own question ("How much S-Bonus could I
   get?") is the answer's first follow-up, answered with its own Number and evidence (coordinator, #411).
