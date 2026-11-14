@@ -143,3 +143,56 @@ def test_an_invisible_message_is_rejected_before_the_model(client, message):
 def test_a_real_message_with_invisible_marks_still_runs(client):
     assert ask(client, "​Restaurants in August 2026?​").status_code != 400
     assert len(client.model.plan_inputs) == 1
+
+
+# ---- review of #129: obfuscation, Finnish word forms, slang -----------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "Your balance is three hun\u200bdred euros.",              # zero-width space inside a word
+    "Säästit tu\u00adhat euroa.",                               # soft hyphen
+    "That is a thou\u2060sand more.",                           # word joiner
+    "That is a thou\ufeffsand more.",                           # BOM
+    "Your balance is three hun\u0301dred euros.",              # combining mark
+    "Your balance is three hun-dred euros.",                    # visible hyphen inside the word
+    "Your balance is one \uff54\uff48\uff4f\uff55\uff53\uff41\uff4e\uff44 euros.",   # fullwidth letters
+    "Your balance is one th\u043eusand euros.",                # Cyrillic o in "thousand"
+    "Open \uff4a\uff41\uff56\uff41\uff53\uff43\uff52\uff49\uff50\uff54:alert(x) now.",  # fullwidth scheme
+    "Maksoit sadalla eurolla.",                                 # inflected magnitudes, whole words
+    "Nousi sataan euroon.",
+    "Sadat eurot menivät ruokaan.",
+    "Tuhannet eurot menivät asumiseen.",
+    "Se maksoi kahdensadan euron verran.",
+    "Säästö oli kolmetuhatta euroa.",
+    "That costs a grand.",                                      # slang and unit forms
+    "That is five k a year.",
+    "You spent fifty bucks on taxis.",
+    "That is ten pct more.",
+    "You spent \u20actwenty on parking.",
+    "You spent EUR twenty on parking.",
+    "Se maksoi tonnin.",
+    "Annoit satasen.",
+    "Annoit kympin.",
+    "Ostit sen kympillä.",
+])
+def test_obfuscated_and_slang_numbers_are_rejected(text):
+    assert rejected(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Voit osata säästää, jos tasata laskut kumppanin kanssa.",   # osata, tasata: ordinary verbs
+    "Älä kasata kuluja kuun loppuun.",                           # kasata
+    "Jos huomenna sataa, käytät ehkä taksia.",                   # sataa: it rains
+    "Sataman pysäköinti näkyy liikenteessä.",
+    "Your **regular** and **flexible** costs: [regular] [flexible].",
+    "In August 2026 you spent a grand total of {{n1}}.",
+    "Käytit elokuussa 2026 ruokaan {{n1}}.",                     # precomposed Finnish letters
+    "This is a one-off, not a habit.",
+])
+def test_ordinary_finnish_verbs_and_brackets_still_pass(text):
+    assert check_text(text, ALLOWED) == []
+
+
+@pytest.mark.parametrize("message", ["\u2800\u2800", "\u3164", "\u0301\u0301", " \u2800 \u0308 "])
+def test_blank_look_alikes_and_mark_only_messages_are_empty(client, message):
+    response = ask(client, message)
+    assert response.status_code == 400 and client.model.plan_inputs == []

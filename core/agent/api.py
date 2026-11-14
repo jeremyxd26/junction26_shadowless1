@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import unicodedata
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -251,6 +252,16 @@ def _collect(pipeline: Pipeline, req: AskRequest) -> tuple[int, dict[str, Any]]:
     return 200, body
 
 
+# Characters that render as nothing although they are letters or symbols (braille blank, Hangul fillers).
+BLANK_LOOKALIKES = {"\u2800", "\u3164", "\u115f", "\u1160", "\uffa0"}
+
+
+def _visible(message: str) -> str:
+    """The message without blank look-alikes and combining marks: empty means nothing to answer (#105)."""
+    return "".join(ch for ch in message
+                   if ch not in BLANK_LOOKALIKES and not unicodedata.category(ch).startswith("M")).strip()
+
+
 @router.post("/api/ask")
 async def ask(request: Request):
     agent = get_agent(request.app)
@@ -261,7 +272,7 @@ async def ask(request: Request):
     # Empty after the input guard (only spaces, zero-width or bidi marks): 400 before any model call
     # (issue #105). The length limit applies to the raw message.
     message = guard.clean(body.message)
-    if not message or len(body.message) > MAX_MESSAGE:
+    if not _visible(message) or len(body.message) > MAX_MESSAGE:
         return _error(400, "invalid_request", ERROR_TEXT["invalid_request"])
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
     allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)
