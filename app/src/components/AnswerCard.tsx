@@ -131,8 +131,12 @@ interface Place {
 }
 
 function CardBody({ card, later = false, previousCaption = null }: { card: Card } & Place) {
+  const { t } = useSettings()
   const own = answerFigures(card)
-  const figures = own && later ? asLaterCard(own, previousCaption) : own
+  const placed = own && later ? asLaterCard(own, previousCaption) : own
+  // The bills' amounts are rounded one by one, so they can miss the total by a cent each (contract
+  // 0.2.1); the answer card says so, like the bills card (#696).
+  const figures = placed && card.type === 'bills' ? { ...placed, note: t.billsRounding } : placed
   if (figures) return <AnswerFrame card={card} figures={figures} />
   switch (card.type) {
     // A review is asked once, in the opening; the answer points there (#318).

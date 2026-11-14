@@ -180,6 +180,15 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(plain).not.toContain('data-answer-caveats')
   })
 
+  it('review in an answer (#696): the white frame of the answer card, the amount as the one main number, answer buttons kept', () => {
+    const review = examples['card.review'] as Card & { amount: { display: string }; options: { label: { en: string } }[] }
+    const html = render(review)
+    expect(html).toContain('data-answer-main')
+    expect(html).not.toContain('bg-deep')
+    expect(html).toContain(review.amount.display)
+    for (const option of review.options) expect(html).toContain(escape(option.label.en))
+  })
+
   it('bills and safe to save in an answer draw no action of their own (the chat shows them as chips)', () => {
     const billsAction = (bills.actions[0] as { label: string }).label
     expect(render(bills)).not.toContain(billsAction)
