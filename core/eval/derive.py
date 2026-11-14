@@ -86,7 +86,8 @@ class Deriver:
         values = self.candidates(case, number)
         if values is None:
             return None
-        if any(answer_text.same_value(number["value"], v, number["unit"]) for v in values if v is not None):
+        if any(answer_text.same_value(number["value"], v, number["unit"], number.get("method"))
+               for v in values if v is not None):
             return None
         return (f"Number object {number.get('value')} {number.get('unit')} ({number.get('method')}) "
                 f"does not match the SQL value")

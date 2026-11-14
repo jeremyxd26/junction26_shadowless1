@@ -141,7 +141,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
                 fails.append(f"unverified: {what}: the source did not report what its tools returned")
                 continue
             if not any(t.get("id") == x.get("id") and t.get("unit") == x["unit"]
-                       and answer_text.same_value(t["value"], x["value"], x["unit"]) for t in ans.tool_numbers):
+                       and answer_text.same_value(t["value"], x["value"], x["unit"], x.get("method"))
+                       for t in ans.tool_numbers):
                 fails.append(f"R1: {what} was not returned by a tool of this answer")
                 continue
             problem = deriver.problem(case, x) if deriver is not None else None
