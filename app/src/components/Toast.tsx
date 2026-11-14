@@ -16,16 +16,17 @@ interface Props {
 }
 
 /**
- * The confirmation after a review answer, pinned above the bottom edge. It stays until the
- * customer closes it or undoes, so Undo never disappears on a timer. Screen readers hear
- * `text_rendered` through the overview's live region, not this visual copy.
+ * The confirmation after a review answer, pinned just above the composer (bar height 73 px,
+ * DESIGN.md "Shell", plus the safe area and an 8 px gap), so the input is never covered. It stays
+ * until the customer closes it, undoes or asks the next question, so Undo never disappears on a
+ * timer. Screen readers hear `text_rendered` through the overview's live region, not this copy.
  */
 export function Toast({ text, numbers, onUndo, onRetry, retryUntil = null, onClose }: Props) {
   const { t } = useSettings()
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+81px)] z-40 flex justify-center px-4">
       <div className="toast-in pointer-events-auto flex w-full max-w-[448px] items-start gap-1 rounded-lg bg-ink py-2 pl-4 pr-1 text-surface shadow-float [&_:focus-visible]:outline-mint">
-        <p className="flex-1 py-1.5 text-base leading-8">
+        <p className="flex-1 py-2 text-sm leading-6">
           <TokenText text={text} numbers={numbers} />
         </p>
         {/* Actions in one narrow column, so the message keeps most of the width. */}
