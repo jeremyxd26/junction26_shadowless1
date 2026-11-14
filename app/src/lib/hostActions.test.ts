@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HANDOVER_EVENT, handOver, type HandOverDetail, type PaymentDraft } from './hostActions.ts'
+import contract from '../api/mock/contract-examples.json'
+import {
+  HANDOVER_EVENT,
+  handOver,
+  hostScreenTarget,
+  openHostScreen,
+  type HandOverDetail,
+  type PaymentDraft,
+} from './hostActions.ts'
 import type { HostScope } from './hostBridge.ts'
 
 // The payload of the contract's example `host.payment_draft` (contracts/api.md section 11.3).
@@ -99,5 +107,26 @@ describe('handOver', () => {
     // @ts-expect-error a message name the module does not hand over
     handOver('handoff', {}, { scope, silent: true })
     expect(names).toEqual([])
+  })
+})
+
+describe('open_host_screen (#268)', () => {
+  const examples = contract.examples as unknown as Record<string, { target?: string } & Record<string, unknown>>
+
+  it('knows the two targets of contract 0.3.1 and nothing else', () => {
+    expect(hostScreenTarget('monthly_saving')).toBe('monthly_saving')
+    expect(hostScreenTarget('bonus_to_fund')).toBe('bonus_to_fund')
+    for (const unknown of ['savings', '', null, undefined, 42, { target: 'monthly_saving' }]) {
+      expect(hostScreenTarget(unknown)).toBeNull()
+    }
+  })
+
+  it("sends the contract's host.open_host_screen message for the action.open_host_screen example, and nothing else", () => {
+    const postMessage = vi.fn()
+    const scope = { webkit: { messageHandlers: { sentti: { postMessage } } } } as HostScope
+    const target = hostScreenTarget(examples['action.open_host_screen'].target)!
+    expect(openHostScreen(target, { scope })).toBe(true)
+    expect(postMessage).toHaveBeenCalledTimes(1)
+    expect(postMessage).toHaveBeenCalledWith(examples['host.open_host_screen'])
   })
 })

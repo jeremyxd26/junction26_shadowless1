@@ -52,6 +52,8 @@ export type Action =
   | { type: 'open_evidence'; label: string; evidence_ref: string }
   | { type: 'ask'; label: string; prompt: string }
   | { type: 'open_whatif'; label: string; scenario: unknown }
+  /** Contract 0.3.1: one step into the host app's own screen; `target` from a closed list the app checks. */
+  | { type: 'open_host_screen'; label: string; target: string }
 
 export interface CardBase {
   card_id: string
