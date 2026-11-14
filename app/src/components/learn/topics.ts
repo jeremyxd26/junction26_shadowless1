@@ -1,30 +1,23 @@
 import type { Language, OverviewResponse } from '../../api/types.ts'
-import { lessonKey, lessonsFor, type Lesson } from '../lesson/lessons.ts'
-import { billLessons } from './billLessons.ts'
-import { savingLessons } from './savingLessons.ts'
+import { teachLessons, type TeachLesson } from './teachLessons.ts'
 
-// The Learn tab's topics, each a few lessons in the lesson turn's format. Only lessons the persona's
-// overview can fill are listed, so a topic never offers an empty lesson.
+// The Learn tab's topics, each a few lessons taught in four steps (teachLessons.ts). Every topic always
+// has its lessons; a lesson whose figure the overview lacks just leaves out its numbers card.
 
 export interface Topic {
   id: string
   lessons: string[]
 }
 
-/** A topic's lessons, as the lesson turn takes them. */
-export function lessonsOf(topic: string, overview: OverviewResponse | null, lang: Language): Lesson[] {
-  if (topic === 'bills') return billLessons(lang)
-  if (topic === 'saving') return savingLessons(overview, lang)
-  return lessonsFor(overview)
+const TOPICS = ['money', 'bills', 'saving']
+
+/** A topic's lessons. */
+export function lessonsOf(topic: string, overview: OverviewResponse | null, lang: Language): TeachLesson[] {
+  return teachLessons(topic, overview, lang)
 }
 
 export function topicsFor(overview: OverviewResponse | null, lang: Language = 'en'): Topic[] {
-  const topics: Topic[] = []
-  const money = lessonsOf('money', overview, lang).map(lessonKey)
-  if (money.length > 0) topics.push({ id: 'money', lessons: money })
-  topics.push({ id: 'bills', lessons: lessonsOf('bills', overview, lang).map(lessonKey) })
-  topics.push({ id: 'saving', lessons: lessonsOf('saving', overview, lang).map(lessonKey) })
-  return topics
+  return TOPICS.map((id) => ({ id, lessons: lessonsOf(id, overview, lang).map((lesson) => lesson.key) }))
 }
 
 /** The first lesson not done yet, in topic order, or null when every lesson is done. */
