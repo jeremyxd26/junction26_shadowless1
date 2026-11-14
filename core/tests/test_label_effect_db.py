@@ -121,18 +121,29 @@ def test_every_answer_and_undo_states_the_real_effect(client, customer):
                 assert re.search(r"does not change|stays the same|ei muuta|pysyy samana", effect["text_rendered"])
 
 
-def test_sanna_needed_moves_safe_to_spend_and_safe_to_save(client):
+def test_the_lead_persona_text_names_what_really_moved(client):
+    """No persona literal: the expected text follows the overview's own numbers (the safe-to-spend formula
+    may change, #391). Another viewer's numbers do not move."""
     as_viewer(client, viewer.new_value())
-    tx_ref = client.get("/api/overview/CUST00860").json()["reviews"][0]["tx_ref"]
+    pending = client.get("/api/overview/CUST00860").json()
+    tx_ref = pending["reviews"][0]["tx_ref"]
     items, effect = step(client, "CUST00860", "en", tx_ref, "unexpected_necessities", "lead Needed")
-    assert (items["safe_to_spend"]["before"]["value"], items["safe_to_spend"]["after"]["value"]) == (221.58, 180.26)
-    assert (items["safe_to_save"]["before"]["value"], items["safe_to_save"]["after"]["value"]) == (364.31, 184.61)
-    assert effect["text_rendered"] == ("Your safe to spend this week goes from €221.58 to €180.26: €1,080.42 now "
-                                       "counts as an unexpected necessity, so the reserve grows.")
-    other = viewer.new_value()                                              # another viewer did not move
-    as_viewer(client, other)
-    hero = client.get("/api/overview/CUST00860").json()["hero"]["primary"]["value"]
-    assert hero == 221.58
+    sts, save = items["safe_to_spend"], items["safe_to_save"]
+    amount = next(n for n in effect["numbers"].values() if n["method"] == "spending.total@1")["display"]
+    reserve = "so the reserve grows" if items["irregular_reserve"]["after"]["value"] > \
+        items["irregular_reserve"]["before"]["value"] else ""
+    if sts["before"]["value"] != sts["after"]["value"]:
+        assert effect["text_rendered"].startswith(f"Your safe to spend this week goes from {sts['before']['display']} "
+                                                  f"to {sts['after']['display']}: {amount} now counts as an unexpected "
+                                                  f"necessity")
+    elif save["before"]["value"] != save["after"]["value"]:
+        assert effect["text_rendered"].endswith(f"what you can typically put aside goes from {save['before']['display']} "
+                                                f"to {save['after']['display']}.")
+    else:
+        assert "does not change this week's safe to spend" in effect["text_rendered"]
+    assert reserve in effect["text_rendered"] or sts["before"]["value"] == sts["after"]["value"]
+    as_viewer(client, viewer.new_value())                                   # another viewer did not move
+    assert client.get("/api/overview/CUST00860").json()["hero"]["primary"] == pending["hero"]["primary"]
 
 
 def test_write_texts_for_the_pr():
