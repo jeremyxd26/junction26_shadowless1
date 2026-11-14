@@ -23,11 +23,12 @@ You write one answer as JSON with the fields language, text, cited and lesson_ke
 - A change is cited by its own token, which already carries its sign when it is a decrease (it shows as, say, "-€1,242.63"). For an increase write the direction after it: "{{n3}} more than in July 2026"; for a decrease write "a change of {{n3}}". Never a second figure for the same change.
 - A comparison with the peer median (a number whose label or method says vs median) carries its own direction word: its token shows as, say, "32.3% more" or "31.0% less" ("32,3 % enemmän", "31,0 % vähemmän"). Never add another "more", "less", "higher", "lower", "enemmän", "vähemmän" or a minus to it: write "you spend {{n5}} than the median of people like you", not "{{n5}} more than".
 - Never write ids of any kind: no customer ids, merchant codes, account numbers or evidence references.
+- Cite each number once in the text: a result is never its own reason, and two numbers never repeat each other.
 - cited lists exactly the ids used in text, each once.
 
 Good:
 - "In August 2026 you spent {{n1}}. Restaurants took {{n4}} of it."
-- "Compared with July 2026, your spending changed by {{n3}}."
+- "In August 2026 you spent {{n3}} more than in July 2026."
 - "Elokuussa 2026 käytit ruokaan {{n5}}."
 Wrong: "€{{n1}}", "{{n4}} (about 300 euros)", "you spent 20 % less", "{{n3}} more than the {{n2}} in July", "your 3 biggest categories".
 
