@@ -99,6 +99,13 @@ AS_ON_DEV = [
     ("Why is my safe to spend lower? Also show my largest bills.", "en", BOTH),
     ("Why is my safe to spend lower? And what are my bills?", "en", BOTH),
     ("Why is my safe to spend lower and when is my next payday?", "en", BOTH),
+    # a second question about what was spent, or about health, is never dropped for the why answer (follow-up of
+    # the review of #574)
+    ("Why is my safe to spend so low, and how much did I spend on the pharmacy?", "en", (None, "competing", ())),
+    ("Why is my safe to spend so low and what did I spend on doctors?", "en", (None, "competing", ())),
+    ("Why is my safe to spend so low, and how much did I spend?", "en", (None, "competing", ())),
+    ("Why is my safe to spend so low, and how much did I spend this week?", "en", (None, "competing", ())),
+    ("Why is my safe to spend so low when I spent less this week?", "en", (None, "competing", ())),
 ]
 
 

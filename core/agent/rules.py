@@ -803,6 +803,8 @@ BARE_WHY_LOW = (r"(why|how come)( is)?( it| that| this)?( so| that)? (low|lower|
 # the question's own verb in the past ("why was it lower in August?", "miksi se oli pienempi?"), never the past of a
 # comparison ("why is it lower than it was?")
 WHY_PAST = r"\b(why|how come) (was|were|did|had)\b|\bmiksi( se| tama| tuo| minulla)? (oli|olivat|olin)\b"
+# what the user spent, beside the why question ("…, and how much did I spend?", "…, paljonko käytin?")
+WHY_SPENT = r"\bspent\b|\b(did|do) (i|we) spend\b|\bkaytin\b|\bkaytimme\b|\bkulutin\b|\bmaksoin\b|\bolen kayttanyt\b"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
@@ -1344,9 +1346,15 @@ def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
     decided in _claim_clause after every decline and guard, as the safe-to-spend rule is; also when only the
     spending rule competes with it (a comparison with last week). Never a past horizon ("why was it lower in
     August?"), another period ("my monthly budget lower than last month") or a category."""
-    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q):
-        return False
+    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q) or \
+            re.search(HEALTH, q):
+        return False   # "…, and how much did I spend on the pharmacy?": never the why answer alone (follow-up of #574)
     if ((spending or {}).get("period") or {}).get("preset") not in (None, "this_week", "last_week"):
+        return False
+    if "spending" in found and (not spending or (not spending.get("compare_to") and re.search(WHY_SPENT, q))):
+        # the spending rule competes only as the comparison ("lower than last week") or this week's amount one
+        # can spend ("why can I only spend so little this week?"); a question about what was spent ("…, and how
+        # much did I spend?", "…, what did I spend this week?") is a second question, decided as on dev
         return False
     rest = set(found) - {"safe_to_spend", "spending"}
     # "vähemmän" (less) compares there, it is no cut: the what-if rule only when nothing else in it is a scenario
