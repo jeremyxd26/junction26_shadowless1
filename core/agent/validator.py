@@ -500,8 +500,11 @@ _FIXED_EN = r"(?:housing|rent|utilities|utility\s+bills?|insurance|loans?|mortga
 _FIXED_FI = r"(?:asumi\w*|vuokra\w*|vakuutu\w*|laina\w*|asunto\w*|sähkö\w*)"
 _CUT_EN = r"(?:cut|cuts|cutting|reduce|reducing|trim|trimming)"
 _CUT_FI = r"(?:vähen\w*|leikka\w*|leikat\w*|karsi\w*|pienen\w*|tinki\w*)"
-_OBJECT_EN = rf"(?:\s+(?:back|down))?(?:\s+on)?(?:\s+(?:your|the|some|of|a))*(?:\s+\w+){{0,2}}?\s+{_FIXED_EN}\b"
-_SUGGEST_EN = (r"\b(?:could|can|try|trying|consider|considering|want\s+to\s+see|would\s+you\s+like\s+to|how\s+about"
+# Up to two words may stand between the cut and the essential ("cut your monthly rent"), never a conjunction:
+# "cut restaurants and rent stays" cuts restaurants (review of #437).
+_FREE = r"(?:\s+(?!(?:and|or|but|while|so|ja|tai|mutta|kun|joten)\b)\w+)"
+_OBJECT_EN = rf"(?:\s+(?:back|down))?(?:\s+on)?(?:\s+(?:your|the|some|of|a))*{_FREE}{{0,2}}?\s+{_FIXED_EN}\b"
+_SUGGEST_EN = (r"\b(?:why\s+not|could|can|try|trying|consider|considering|want\s+to\s+see|would\s+you\s+like\s+to|how\s+about"
                r"|what\s+if\s+you|should|might|may\s+want\s+to|recommend|suggest)\b")
 _SUGGEST_FI = (r"\b(?:voisit|voit|voisitte|kokeile|kokeilla|kokeilisit|harkitse|harkita|harkitsisit|kannattaa"
                r"|kannattaisi|haluatko\s+nähdä|mitä\s+jos|entä\s+jos|suosittelen|ehdotan)\b")
@@ -509,9 +512,9 @@ FIXED_CUT = re.compile(
     rf"{_SUGGEST_EN}[^.!?;:,]{{0,30}}?\b{_CUT_EN}{_OBJECT_EN}"
     rf"|{_SUGGEST_EN}[^.!?;:,]{{0,30}}?\b{_FIXED_EN}\s+cuts?\b"
     rf"|(?:^|[.!?]\s+)(?:cut|reduce|trim){_OBJECT_EN}"
-    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_CUT_FI}(?:\s+\w+){{0,2}}?\s+{_FIXED_FI}"
-    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_FIXED_FI}(?:\s+\w+){{0,2}}?\s+{_CUT_FI}"
-    rf"|(?:^|[.!?]\s+)(?:vähennä|leikkaa|karsi|pienennä)(?:\s+\w+){{0,2}}?\s+{_FIXED_FI}", re.I)
+    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_CUT_FI}{_FREE}{{0,2}}?\s+{_FIXED_FI}"
+    rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_FIXED_FI}{_FREE}{{0,2}}?\s+{_CUT_FI}"
+    rf"|(?:^|[.!?]\s+)(?:vähennä|leikkaa|karsi|pienennä){_FREE}{{0,2}}?\s+{_FIXED_FI}", re.I)
 # Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
 # "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
 KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
@@ -527,11 +530,12 @@ _COUNT_NOUN_BEFORE = re.compile(
 # people", "you beat most people", "parempi kuin useimmat", "olet kärjessä". "The top category is restaurants"
 # names a category, not a rank.
 RANKING = re.compile(
-    r"\b(?:near|at|in|among|to)\s+the\s+(?:very\s+)?(?:top|bottom)\b"
+    r"\b(?:near|at|in|among|to)\s+the\s+(?:very\s+)?(?:top|bottom)\b(?!\s+(?:categor\w*|rows?|lines?|items?))"
     r"|\b(?:top|bottom)\s+(?:\{\{n\d+\}\}|\d|percent|tier|spenders?|savers?|half|third|quarter|group|of\s+the)\b"
     r"|\b(?:best|worst|better\s+than|worse\s+than|beat|beats|beating|outperform\w*|outrank\w*|outspend\w*|outsave\w*"
     r"|ahead\s+of|rank\w*)\b"
-    r"|\b(?:paras|parhai\w*|parhaim\w*|huonoin\w*|huonoim\w*|paremp\w*|huonomp\w*|kärj\w*|kärki\w*|häntäpää\w*"
+    r"|\b(?:paras|parhai(?!llaan|mmillaan)\w*|huonoin\w*|huonoim(?!millaan)\w*|paremp\w*|huonomp\w*|kärj\w*|kärki\w*"
+    r"|häntäpää\w*"
     r"|sijoitu\w*|sijalla|voitat|peittoat)\b", re.I)
 
 
@@ -539,7 +543,7 @@ def fixed_cut(text: str) -> str | None:
     """The words in which a draft suggests cutting a regular essential, or None (review of #437)."""
     for m in FIXED_CUT.finditer(text):
         start = max((text.rfind(c, 0, m.start() + 1) for c in ".!?;:,"), default=-1) + 1
-        if not answer_text.NEGATION.search(text[start:m.end()]):
+        if not answer_text.negated(text[start:m.end()]):
             return m.group(0).strip(" .!?")
     return None
 

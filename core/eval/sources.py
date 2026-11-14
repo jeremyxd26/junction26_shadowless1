@@ -120,10 +120,11 @@ class ReferenceSource:
             from core.agent import template
             lang = language if language in ("en", "fi") else "en"
             if case.get("intent") == "borrowing":
-                # The credit decision decline names a loan, so a borrowing rule that rejects naming fails here
+                # The app's own credit decision decline ("whether a loan or mortgage would be approved") names
+                # a loan, so a borrowing rule that rejects naming fails here
                 # (review of #437); `--source liars:borrowing` shows that a suggestion fails too.
-                return Answer(text=REFUSAL["credit_decision"][language], outcome="refused",
-                              refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
+                return Answer(text=template.pick(template.REFUSAL["credit_decision"]["text"], lang),
+                              outcome="refused", refusal_kind="credit_decision", labels=[], tool_calls=["decline"])
             return Answer(text=template.pick(template.CLARIFY_GENERAL["question"], lang), outcome="clarify",
                           labels=[], tool_calls=[])
         if case["expect"] == "meta":  # Sentti introduces itself (#287): the template text and the four chips
