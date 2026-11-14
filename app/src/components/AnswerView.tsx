@@ -14,7 +14,7 @@ import { ErrorBlock } from './States.tsx'
 
 type Strings = ReturnType<typeof chatStrings>
 
-const ACTION_CHIP =
+export const ACTION_CHIP =
   'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-left text-base font-semibold text-brand hover:bg-mint-tint'
 export const QUESTION_CHIP =
   'inline-flex min-h-11 items-center rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-semibold text-ink hover:bg-mint'

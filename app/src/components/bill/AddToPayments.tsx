@@ -10,10 +10,7 @@ import { addToPayments, hostScreenActions, paymentAction } from '../../lib/addTo
 import { billStrings } from '../../lib/billStrings.ts'
 import { openHostScreen } from '../../lib/hostActions.ts'
 import { useSettings } from '../../lib/settings.ts'
-
-/** The look of an action chip in an answer (AnswerView's ACTION_CHIP). */
-const ACTION_CHIP =
-  'inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-brand bg-surface px-4 text-left text-base font-semibold text-brand hover:bg-mint-tint'
+import { ACTION_CHIP } from '../AnswerView.tsx'
 
 export function AddToPayments({ response }: { response: Pick<BillExplainResponse, 'actions' | 'warnings'> }) {
   const { lang } = useSettings()
