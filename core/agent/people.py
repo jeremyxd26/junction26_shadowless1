@@ -233,6 +233,11 @@ PATTERNS = {
     # #647); the user's own spending on it keeps its outcome ("How much did I spend on my husband's birthday?")
     "owner_cost": re.compile(rf"\b(?:did|does|do|is|was|has|will|would) (?:my|our) (?P<np>{_TOKEN})['’]s? "
                              rf"(?:{_TOKEN} ){{0,3}}(?:cost|costs|come to|run)\b(?!\s+(?:me|us)\b)", re.I),
+    # the Finnish twin: "Paljonko mieheni liittymä maksoi?", "Mitä vaimoni vakuutus maksaa?" (review of #679); the
+    # user's own cost of it ("… maksoi minulle") keeps its outcome
+    "fi_owner_cost": re.compile(rf"\b(?:paljonko|mita|kuinka paljon) (?P<np>{_TOKEN}) (?:{_TOKEN} ){{1,2}}?"
+                                rf"(?:maksoi|maksaa|maksoivat|maksavat|kustansi|kustantaa)\b(?! (?:minulle|meille)\b)",
+                                re.I),
     "fi_cost_to": re.compile(rf"\b(?:maksoi|maksoivat|maksavat|kustansi)(?: {_TOKEN}){{0,2}}? "
                              rf"(?P<np>{_TOKEN}(?:lle|lleni|llemme))\b", re.I),
     # a lone name at the start with a time: "Jane in June, how much?"
@@ -484,6 +489,9 @@ def _other_spender(clause: str, first: bool) -> list[str]:
     for m in PATTERNS["owner_cost"].finditer(clause):
         if kind_of(m.group("np")) == "person":
             out.append(DECLINE)                       # "did my husband's phone plan cost?"
+    for m in PATTERNS["fi_owner_cost"].finditer(clause):
+        if kind_of(m.group("np")) == "person" and re.search(r"(?:ni|n)$", fold(m.group("np"))):
+            out.append(DECLINE)                       # "Paljonko mieheni liittymä maksoi?" (a genitive owner)
     for m in PATTERNS["fi_cost_to"].finditer(clause):
         if kind_of(m.group("np")) in ("person", "name"):
             out.append(UNCLAIMED)

@@ -1197,8 +1197,10 @@ PRONOUN_THING = r"\b(on|for|at) (it|that|this|them|those)\b|\bsiihen\b|\bniihin\
 OBLIGATION_TO_PAY = (r"\b(pitää|pitäisi|täytyy|joudun|joudumme|on) maksaa\b|\bmaksettava\w*|"
                      r"\b(have|has|need|needs) to pay\b|\bmust pay\b")
 RENT_WORDS = r"\bvuokra\w*|\brent\b"
-WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS = (
-    fold_pattern(rx) for rx in (WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS))
+# a question about the Bonus already received, not an estimate asked for ("Paljonko Bonusta olen saanut?") (#639)
+BONUS_RECEIVED = r"\b(saanut|saaneet|kertynyt|kerännyt|received|earned|got|collected)\b"
+WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS, BONUS_RECEIVED = (
+    fold_pattern(rx) for rx in (WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS, BONUS_RECEIVED))
 # no thing: the whole of the spending, or a period ("What did everything cost me?", "How much did last month cost?")
 COST_NO_THING = {"it", "everything", "all", "that", "this", "these", "those", "i", "we", "you", "kaikki", "se", "ne",
                  "tama", "tuo", "kulutus", "kulutukseni", "spending", "shopping", "life"}
@@ -2093,9 +2095,12 @@ class RuleModel:
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
         # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
-        template_answer = claim(request).rule == "safe_to_spend_why"
+        found = claim(request)
+        template_answer = found.rule == "safe_to_spend_why"
+        # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
+        bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
-                          template_answer=template_answer)
+                          template_answer=template_answer, bonus_received=bonus_received)
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
