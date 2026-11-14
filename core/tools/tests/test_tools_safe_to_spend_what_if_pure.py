@@ -161,7 +161,8 @@ def _hero_card(start: date, end: date, language: str):
         return Number(value=float(value), unit=Unit.EUR, period=week, method="safe_to_spend.safe_to_spend_7d_eur@1",
                       evidence_ref="ev_0123456789ab", label="Safe to spend", display=f"€{value}")
 
-    data = SafeToSpendData(period=week, safe_to_spend=n("180.26"), free_until_payday=n("900.00"),
+    data = SafeToSpendData(period=week, safe_to_spend=n("180.26"), savings_goal=n("360.00"), usual_week=n("137.80"),
+                           free_until_payday=n("900.00"),
                            balance_limit=n("400.00"), budget_limit=n("180.26"), binding_limit="budget",
                            components=[], status="ok", next_payday=date(2026, 10, 15), salary_status="upcoming")
     return _card(data, language)
@@ -179,6 +180,36 @@ def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
     assert card.subtitle == subtitle
     assert card.primary.period.label == ("Seuraavat 7 päivää" if language == "fi" else "Next 7 days")
     assert card.primary.method == "safe_to_spend.safe_to_spend_7d_eur@1" and card.primary.value == 180.26
+
+
+# ---- #391: the savings goal ------------------------------------------------------------------------------
+
+def test_the_savings_goal_is_a_python_parameter_and_a_setting_only_when_given():
+    from core.tools import evidence, metric_sql
+    from core.tools.context import ToolContext
+    from core.tools.safe_to_spend import GetSafeToSpendArgs, settings_for
+
+    ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=None)
+    ctx._labels = {}
+    assert "savings_goal_eur" not in settings_for(ctx)                 # the default goal: 03's own
+    assert settings_for(ctx, Decimal("250"))["savings_goal_eur"] == "250.00"
+    # #447: not a tool argument, so no plan (model or rules) can pass it
+    for value in (250, -1, "500"):
+        with pytest.raises(ValidationError):
+            GetSafeToSpendArgs.model_validate({"savings_goal": value})
+    assert GetSafeToSpendArgs.model_json_schema().get("properties", {}) == {}
+    # the typed setting's bounds, the check a later API field goes through
+    goal_ok = metric_sql.TYPED_SETTINGS["savings_goal_eur"]
+    assert [goal_ok(v) for v in ("0.00", "250.00", "100000.00")] == [True, True, True]
+    assert [goal_ok(v) for v in ("-1.00", "100000.01", "250", "1.234", "1e3", "250.00; drop")] == [False] * 6
+    assert evidence.FORMULAS["minimum_after_goal"] == ("a", "b", "goal")
+    values = {"a": Decimal("5864.86"), "b": Decimal("97.46"), "goal": Decimal("360")}
+    assert evidence.compute_formula("minimum_after_goal", values) == Decimal("97.46")
+
+
+def test_the_hero_card_lists_the_goal_with_its_limits():
+    card = _hero_card(date(2026, 10, 1), date(2026, 10, 7), "en")
+    assert [n.value for n in card.secondary][-1] == 360.0
 
 
 # ---- #346: a merchant-category group by its name, on the model's path only ---------------------------

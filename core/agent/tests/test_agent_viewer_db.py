@@ -76,5 +76,5 @@ def test_two_viewers_get_their_own_safe_to_spend_in_the_chat(client):
     r = client.post("/api/baskets/label", json={"customer_id": LEAD, "tx_ref": card["tx_ref"],
                                                 "basket": "unexpected_necessities", "language": "en"})
     assert r.status_code == 200, r.text
-    assert safe_to_spend(client, A) == 180.26     # A answered "Needed": the hero and the chat agree
-    assert safe_to_spend(client, B) == 221.58     # B has not answered: still pending
+    assert safe_to_spend(client, A) == 97.46     # A answered "Needed": the hero and the chat agree
+    assert safe_to_spend(client, B) == 138.79     # B has not answered: still pending

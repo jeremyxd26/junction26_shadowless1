@@ -236,6 +236,10 @@ SANNA_03_ROW = {
     "free_until_payday_eur": Decimal("12567.56"), "everyday_until_payday_eur": Decimal("295.28"),
     "safe_to_save_eur": Decimal("12272.28"), "save_reason": None, "save_reason_category": None,
     "save_reason_month_eur": None, "next_payday": date(2026, 10, 15), "salary_status": "received_this_month",
+    # the weekly figure after the savings goal (#391): "Needed" keeps the goal at 360
+    "week_start": date(2026, 10, 1), "week_end": date(2026, 10, 7), "balance_limit_7d_eur": Decimal("5864.86"),
+    "budget_limit_7d_eur": Decimal("97.46"), "safe_to_spend_7d_eur": Decimal("97.46"),
+    "savings_goal_eur": Decimal("360.00"),
 }
 
 

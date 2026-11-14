@@ -93,9 +93,11 @@ The owner changed the set after the scan (comments on #22 and #40):
 
 | Slot | Candidates (age, profile, score, safe to spend 7d, status) |
 |---|---|
-| lead tier (every check) | CUST00493 (52, steady, essentials 77.4%, 175.46 ok); CUST00848 (52, saver, 63.0%, 423.94 ok); CUST00151 (42, stretched, 61.0%, 91.83 below_usual) |
-| young_everyday | **CUST00349** (32, everyday_heavy, 30.1%, 285.21 ok); **CUST00849** (25, steady, 28.0%, 166.84 ok); CUST00305 (31, steady, 26.2%, 92.03 ok) |
-| recent_unexpected | **CUST00860** (35, big_ticket, 1,080.42, 180.26 ok); CUST00183 (40, everyday_heavy, 785.80, 281.65 ok); CUST00857 (37, steady, 655.93, 335.46 ok) |
+| lead tier (every check) | CUST00493 (52, steady, essentials 77.4%, 78.86 ok); CUST00848 (52, saver, 63.0%, 233.06 ok); CUST00151 (42, stretched, 61.0%, 91.83 below_usual) |
+| young_everyday | **CUST00349** (32, everyday_heavy, 30.1%, 147.23 below_usual); **CUST00849** (25, steady, 28.0%, 123.15 ok); CUST00305 (31, steady, 26.2%, 92.03 ok) |
+| recent_unexpected | **CUST00860** (35, big_ticket, 1,080.42, 97.46 below_usual); CUST00183 (40, everyday_heavy, 785.80, 240.25 ok); CUST00857 (37, steady, 655.93, 153.77 below_usual) |
+
+Safe to spend 7d and its status are after the savings goal of #391 (as_of 2026-09-30, rule state, no review answered), recomputed per customer with `get_safe_to_spend`. The scan itself ran before #391 and chose on its earlier figures, when all four personas were `ok`; the goal moved several of them to `below_usual`, which the persona choice does not depend on.
 
 Only one of the 78 passing candidates is 18–24 (CUST00164, age 23), and its safe-to-spend status is `below_usual`. Among the passing candidates with status `ok`, Aleksi (25) is the youngest.
 
@@ -106,7 +108,7 @@ Only one of the 78 passing candidates is 18–24 (CUST00164, age 23), and its sa
 | Salary series (01) | in, 6 of 6 months, 3,187.25 / month, day 15, done this month | in, 6 of 6, 2,571.73, day 15, done this month (arrived 2026-09-28) | in, 6 of 6, 3,171.65, day 15, done this month | in, 6 of 6, 2,088.35, day 15, done this month |
 | Housing series (01) | 6 of 6, 836.65 / month, day 3, done this month | 6 of 6, 1,209.05, day 3, done this month (2026-09-08) | 6 of 6, 683.77, day 3, done this month | 6 of 6, 613.93, day 6, done this month |
 | Salary Sweep months | 0 | 0 | 0 | 0 |
-| Safe to spend 7d (03) | **180.26**, ok | **175.46**, ok | **285.21**, ok | **166.84**, ok |
+| Safe to spend 7d (03), after the savings goal (#391) | **97.46**, below usual (goal 360) | **78.86**, ok (goal 420) | **147.23**, below usual (goal 600) | **123.15**, ok (goal 190) |
 | Unexpected necessity Jul–Sep, largest (Health excluded) | **Home & Tech 1,080.42 on 2026-09-28, 9.0× median, one-off** (tx 606016) | Home & Tech 104.41 (2.5× median) | Home & Tech 98.98 (1.6×) | none |
 | Months with restaurant spending (category), Mar–Sep | 7 of 7 | 7 of 7 | 7 of 7 | 6 of 7 (none in March) |
 | Peer cell (age band + area3) | 35-44 / 005 | 45-54 / 001 | 25-34 / 021 | 25-34 / 022 |
@@ -180,13 +182,14 @@ Sanna's spike review (#68) changes the shares, not the profile. Each share is of
 
 | | CUST00860 | CUST00493 | CUST00349 | CUST00849 |
 |---|---|---|---|---|
-| **Safe to spend 7d** | **180.26** (budget limit), ok | **175.46** (budget limit), ok | **285.21** (budget limit), ok | **166.84** (budget limit), ok |
+| **Safe to spend 7d** (after the savings goal, #391) | **97.46** (budget limit), below usual | **78.86** (budget limit), ok | **147.23** (budget limit), below usual | **123.15** (budget limit), ok |
+| Savings goal (#391): safe to save before the review's answer, rounded down to 10 € | 360 | 420 | 600 | 190 |
 | Budget: income − committed − essentials − irregular per month | 3,187.25 − 1,023.04 − 860.34 − 520.08 = 783.79 | 2,571.73 − 1,374.89 − 289.62 − 144.30 = 762.92 | 3,171.65 − 1,069.73 − 584.87 − 276.88 = 1,240.17 | 2,088.35 − 712.67 − 525.97 − 124.23 = 725.47 |
 | Committed (recurring out) | housing 836.65 + utilities 186.40 | housing 1,209.05 + utilities 165.85 | housing 683.77 + investment 242.95 + utilities 143.01 | housing 613.93 + utilities 98.74 |
 | Balance limit 7d | 5,864.86 (balance 14,276.35, bills due 928.50) | 4,265.71 (balance 10,745.42, bills due 1,290.78) | 10,747.98 (balance 24,310.32, bills due 754.25) | 382.49 (balance 1,902.64, bills due 662.59) |
 | Usual everyday spending / 7 days | 137.80 | 76.76 | 159.45 | 120.86 |
 
-The budget limit binds for all four: the estimate is driven by the typical month (`free_month × 7 / 30.4375`). Aleksi's balance limit (382.49) is the closest to binding. Each column of the SQL is rounded on its own, so a sum written out here can differ from the result by 0.01 (Aleksi: 725.48 against 725.47).
+The budget limit binds for all four: the estimate is driven by the typical month after the savings goal (`(free_month − goal) × 7 / 30.4375`, #391). Aleksi's balance limit (382.49) is the closest to binding. Each column of the SQL is rounded on its own, so a sum written out here can differ from the result by 0.01 (Aleksi: 725.48 against 725.47).
 
 ### Q4. "How much could I save if I reduced dining out by 20%?" — `04_what_if.sql`, `app.whatif = category:Restaurants`, `app.whatif_pct = 20`
 

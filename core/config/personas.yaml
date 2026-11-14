@@ -96,5 +96,5 @@ personas:
     why: >-
       Young adult (25), the bank's focus group (product decision): a monthly salary of 2,088.35,
       a keep rate of 9.4% and 20 transactions that left the balance below zero in the last 6 months,
-      yet a positive safe to spend of 166.84 this week.
+      yet a positive safe to spend of 123.15 this week.
     peer_group: {level: age_band+area3, age_band: "25-34", area3: "022", comparable_others: 39}

@@ -5,6 +5,7 @@ import { EvidenceSheet } from './components/EvidenceSheet.tsx'
 import { OpeningProvider, OpeningTurn } from './components/OpeningTurn.tsx'
 import { WhatIfSheet } from './components/WhatIfSheet.tsx'
 import { Header } from './components/Header.tsx'
+import { HostNotice } from './components/HostNotice.tsx'
 import { PersonaSheet } from './components/PersonaSheet.tsx'
 import { LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
@@ -54,7 +55,7 @@ export default function App() {
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
-        <Header onLongPress={() => setPersonaSheet(true)} />
+        <Header onLongPress={() => setPersonaSheet(true)} disclosure={ready?.ai_disclosure || t.disclosure} />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
         <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
           {path === '/cards' && CardGallery ? (
@@ -81,7 +82,7 @@ export default function App() {
             </OpeningProvider>
           )}
           {api.mode === 'mock' && (
-            <p className="mt-6 text-center text-xs text-muted">
+            <p className="mt-2 text-center text-xs text-muted">
               {t.mockBadge} · {customerId ?? '…'}
             </p>
           )}
@@ -104,6 +105,9 @@ export default function App() {
           onClose={closePersonas}
         />
       )}
+      {/* Once for every screen and sheet: "This continues in the bank app." when no host takes a
+          hand-over (#431). Last, so it sits above an open sheet. */}
+      <HostNotice />
     </SettingsContext.Provider>
   )
 }

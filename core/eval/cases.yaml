@@ -10,7 +10,8 @@
 # expect: answered | no_data (answered, but no number: the period has no data) | refused (a refusal
 # template of one of refusal_kinds, and no data tool call).
 # Each item's `source` is the metric file and output column, or the plain spending query, that
-# produced `value` (core/eval/expected.py). Values are for as_of. Do not edit values by hand:
+# produced `value` (core/eval/expected.py); `multiply` scales it and `plus` adds other sources to it (a sum
+# a confused coach would give, for `forbid`). Values are for as_of. Do not edit values by hand:
 # python core/eval/expected.py --write regenerates them, and --check proves they are current.
 # Period presets, resolved for as_of 2026-09-30: last month = 2026-08; this month = 2026-09-01 to
 # today; last 3 months = the last 3 complete calendar months, 2026-07 to 2026-09 (as last_6_months in
@@ -61,7 +62,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, lead]
   numbers:
-  - {name: safe_to_spend_week, value: 180.26, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 97.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -83,15 +84,17 @@ cases:
   question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
   intent: save_more
   expect: answered
-  expected_tools: [get_safe_to_save, get_basket_breakdown]
-  tags: [brief, q4_save_more, lead]
+  expected_tools: [get_savings_plan]
+  tags: [brief, q4_save_more, lead, savings_plan]
   numbers:
+  - {name: plan_total_month, value: 63.17, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 758.04, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
   - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
-  - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: plan_eating_out_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
+  - {name: plan_other_month, value: 17.26, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
   forbid:
-  - {name: invented_dining_cut_saving, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  - {name: plan_plus_safe_to_save, value: 247.78, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: safe_to_save_monthly_eur}]}}
+  - {name: plan_plus_s_bonus, value: 88.32, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}]}}
 
 - id: sanna-bonus
   persona: CUST00860
@@ -184,7 +187,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 175.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 78.86, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: marja-q4-dining-what-if
   persona: CUST00493
@@ -238,7 +241,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend]
   numbers:
-  - {name: safe_to_spend_week, value: 285.21, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 147.23, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
 
 - id: eetu-q4-dining-what-if
   persona: CUST00349
@@ -292,7 +295,7 @@ cases:
   expected_tools: [get_safe_to_spend]
   tags: [brief, q3_safe_to_spend, young_adult]
   numbers:
-  - {name: safe_to_spend_week, value: 166.84, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+  - {name: safe_to_spend_week, value: 123.15, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
   dates:
   - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
 
@@ -834,3 +837,45 @@ cases:
   numbers:
   - {name: small_count, value: 1, unit: count, tolerance: 0, source: {metric: small_purchases, column: count, where: {category: all}}}
   - {name: small_total, value: 8.64, unit: eur, tolerance: 0.005, source: {metric: small_purchases, column: total_eur, where: {category: all}}}
+
+- id: marja-save-more-plan
+  persona: CUST00493
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [savings_plan]
+  numbers:
+  - {name: plan_total_month, value: 30.38, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 364.56, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
+  - {name: safe_to_save_month, value: 429.16, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: plan_eating_out_month, value: 20.53, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
+  - {name: plan_other_month, value: 9.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+
+- id: eetu-save-more-plan
+  persona: CUST00349
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [savings_plan]
+  numbers:
+  - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 923.88, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
+  - {name: safe_to_save_month, value: 546.87, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: plan_eating_out_month, value: 58.95, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
+  - {name: plan_other_month, value: 18.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+
+- id: aleksi-save-more-plan
+  persona: CUST00849
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [savings_plan]
+  numbers:
+  - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, source: {query: savings_plan, column: total_year_eur}}
+  - {name: safe_to_save_month, value: 199.95, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+  - {name: plan_eating_out_month, value: 55.5, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
+  - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
