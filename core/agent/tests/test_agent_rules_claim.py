@@ -345,8 +345,10 @@ def test_a_plain_health_total_is_the_health_filter(question, lang):
     assert result.calls[0].args["filter"] == {"categories": ["Health"]}
 
 
-def test_what_was_saved_at_the_pharmacy_is_left_to_the_planner():
-    assert claimed_rule("How much did I save on pharmacy last month?") == NOT_CLAIMED   # #571: no total, no refusal
+def test_what_was_saved_at_the_pharmacy_stays_declined():
+    # no plain total (review of #607): the review of #443's decline, as before #571
+    result = plan("How much did I save on pharmacy last month?", "en")
+    assert [c.name for c in result.calls] == ["decline"] and result.calls[0].args == {"kind": "out_of_scope"}
 
 
 @pytest.mark.parametrize("question,lang,args", [

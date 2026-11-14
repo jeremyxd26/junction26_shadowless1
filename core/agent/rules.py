@@ -432,8 +432,6 @@ HEALTH_NOT_TOTAL = (r"\bsay about me\b|\bsuggests?\b|\bmean for me\b|\bam i (get
                     r"\bwhy\b|\bmiksi\b|\bso (low|high|little|much)\b|\bwhat if\b|\bmitä jos\b|\bentä jos\b|"
                     r"\bhalv(e|ed|ing)\b|\bpuolit(a|t)\w*|\bleikkaa\w*|\bleikkaisi\w*|\bleikata\b|\bkarsi\w*|"
                     r"\bjättäisi\w*|\blopettaisi\w*|\bvähentäisi\w*")
-# A question about what was saved at the pharmacy is no spending total: the next planner reads it (#571).
-HEALTH_SAVED = r"\bsav(e|ed|ing)\b|\bsäästi\w*|\bsäästin\b"
 # The decline rule's medicine words, which a plain health total may hold ("how much did I spend on medicines?").
 HEALTH_TOTAL_WORDS = r"medicines?|lääke(?!r)\w*|lääkk\w*"
 # A visit or bill at the doctor's is the user's own spending, not the doctor's money (#571).
@@ -863,8 +861,7 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
-HEALTH_NOT_TOTAL, HEALTH_SAVED, HEALTH_TOTAL_WORDS = (
-    fold_pattern(rx) for rx in (HEALTH_NOT_TOTAL, HEALTH_SAVED, HEALTH_TOTAL_WORDS))
+HEALTH_NOT_TOTAL, HEALTH_TOTAL_WORDS = (fold_pattern(rx) for rx in (HEALTH_NOT_TOTAL, HEALTH_TOTAL_WORDS))
 PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE = (
     fold_pattern(rx) for rx in (PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE))
 RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE_BETWEEN, RANGE_FI))
@@ -1368,11 +1365,37 @@ def said_in_the_past(question: str, q: str, as_of: date) -> bool:
     return bool(_months_mentioned(question, as_of)) and not re.search(ACTION, q)
 
 
+# The shapes of a plain health total (#571, review of #607): one question, a spending verb, the health thing (H) and
+# an optional period, nothing else. "How much did I spend at the pharmacy last month?", "What did my doctor visits
+# cost this year?", "Paljonko käytin lääkkeisiin viime kuussa?", "Paljonko lääkekulut olivat?". Another person, a
+# judgement, a comparison, a why, a split or a second sentence is no such shape: the message keeps dev's outcome.
+_HEALTH_THING = (r"(?:(?:the|my|a|an) )?(?:H )*H(?: (?:visits?|appointments?|bills?|costs?|fees?|check-?ups?|"
+                 r"purchases?|spending|expenses))?")
+PLAIN_HEALTH_SHAPES = [fold_pattern(rx.replace("T", _HEALTH_THING)) for rx in (
+    r"(?:how much|what) (?:did|have|do) i (?:spend|spent|pay|paid)(?: in total| altogether)? (?:on|at|for|in) T",
+    r"(?:how much|what) (?:did|do) T cost(?: me)?",
+    r"(?:how much|what) (?:was|were) T",
+    r"paljonko (?:käytin|kulutin|maksoin)(?: yhteensä)? T",
+    r"paljonko T (?:maksoi|maksoivat|olivat|oli)(?: minulle)?",
+)]
+_PLAIN_PERIODS = [RANGE_EN, RANGE_BETWEEN, RANGE_FI, YEAR_BEFORE_LAST, YEARS_AGO, *(rx for rx, _ in PRESETS), MONTH_RX,
+                  r"\b(?:last|previous) year\b|\bviime vuonna\b|\bedellisenä vuonna\b", r"\b(?:19|20)\d{2}\b"]
+
+
 def _plain_health_total(q: str) -> bool:
-    """A question about the user's own health spending and nothing beyond its total (#571): a health word, a money
-    or spending word, and no what-if, comparison with people, inference, advice, judgement or tip."""
-    return bool(re.search(HEALTH, q) and (re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q))
-                and not re.search(HEALTH_NOT_TOTAL, q) and not re.search(WHAT_IF, q) and not re.search(PEERS, q))
+    """A plain total of the user's own health spending (#571), and nothing beyond it: the whole message has one of
+    PLAIN_HEALTH_SHAPES once its period is taken out."""
+    if not re.search(HEALTH, q):
+        return False
+    s = re.sub(r"[?.!]+\s*$", "", q.strip())
+    if re.search(r"[?.!;:,]", s):
+        return False          # a second sentence or clause ("…? Do I have an illness?", "…, split by merchant")
+    for rx in _PLAIN_PERIODS:
+        s = re.sub(rx, " P ", s)
+    s = re.sub(r"\S*(?:" + HEALTH + r")\S*", " H ", s)
+    s = re.sub(r"(?:\b(?:in|during|over|for|of|from|since|until|the)\s+)*\bP\b", " ", s)
+    s = " ".join(s.split())
+    return any(re.fullmatch(rx, s) for rx in PLAIN_HEALTH_SHAPES)
 
 
 def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
@@ -1391,7 +1414,7 @@ def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
 
 
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
-                  drop_spending: bool = False, asked: str | None = None) -> Claim:
+                  drop_spending: bool = False, asked: str | None = None, health_total: bool = False) -> Claim:
     q = fold(question)
     # A long message whose clauses ask no spending question never gets the spending rule (#399): a sum of the
     # categories its statements mention is not its answer; the other rules, or the model, take it. When a clause
@@ -1425,10 +1448,9 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
             not {"safe_to_spend", "balance_forecast", "small_purchases"} & set(found):
         # "How much did I spend on the pharmacy?" is never answered with the unfiltered total (#443). A plain health
         # total is the Health category's total for the period asked, labelled Health, never the thing the user named
-        # (Renat, 14 Nov, #571). A what-if, a comparison with people, or anything beyond the total stays declined (R9).
-        if re.search(HEALTH_SAVED, q):
-            return Claim(None, reason="health_saved")   # what was saved at the pharmacy: the next planner reads it
-        if not set(found) - {"spending", "where_money_went"}:
+        # (Renat, 14 Nov, #571), only when the whole message is one of PLAIN_HEALTH_SHAPES (`health_total`, decided in
+        # claim()). Anything else that names health stays declined as before #571 (R9, review of #607).
+        if health_total and not set(found) - {"spending", "where_money_went"}:
             if spending is None or "spending" not in found:
                 return Claim(None, reason="period")      # as any category's total without a period
             spending = {**spending, "filter": {"categories": ["Health"]}}
@@ -1624,8 +1646,10 @@ def claim(request: PlanInput) -> Claim:
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
     if re.search(WEATHER_FI, question, re.I):   # the weather, read unfolded (#370)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
-    # "my doctor visits", "dentist bills": a thing the user paid for, not the doctor's own money (#571)
-    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I), peer_question)   # #350, #405
+    # "my doctor visits", "dentist bills" in a plain health total: a thing the user paid for, not the doctor's own money
+    # (#571); in any other message the people rules read it as before ("my son's dentist", review of #607)
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else question,
+                              peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
     if verdict == people.UNCLAIMED:   # cannot tell whose money: never the user's own numbers
@@ -1664,7 +1688,7 @@ def claim(request: PlanInput) -> Claim:
             return " ".join(c for c in asked if c.rstrip("?").strip() in part) or None
 
         if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-            parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part))
+            parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part), health_total)
                      for part, _ in clauses]
             declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
             if declined is not None:
@@ -1688,7 +1712,7 @@ def claim(request: PlanInput) -> Claim:
                              tuple(calls) + (FunctionCall("finish"),))
             competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
             return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-        return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None)
+        return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None, health_total)
 
     # A long message is decided as a short one (#399, review of #496), with two exceptions, by construction:
     # - a clause asks about spending: the spending filter is the asking clauses' own;

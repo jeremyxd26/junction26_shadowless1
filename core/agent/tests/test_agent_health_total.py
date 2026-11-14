@@ -62,9 +62,38 @@ def test_without_a_period_it_is_the_period_question_as_for_any_category(question
     assert found.rule is None and found.reason == "period", (question, found)
 
 
-def test_what_was_saved_at_the_pharmacy_is_left_to_the_planner():
-    found = decided("How much did I save on pharmacy last month?")
-    assert found.rule is None and found.reason == "health_saved"
+def test_what_was_saved_at_the_pharmacy_stays_declined():
+    assert declined(decided("How much did I save on pharmacy last month?")) == "out_of_scope"   # as on dev
+
+
+# Review of #607: only one of PLAIN_HEALTH_SHAPES opens the total. Another person in the health phrase (B2) or a
+# second ask the shape does not hold (B3) keeps dev's decline, never the user's own Health total.
+AS_ON_DEV = [
+    ("How much did I pay for my mom's medicine last month?", "en"),
+    ("Paljonko maksoin äitini lääkkeistä viime kuussa?", "fi"),
+    ("How much did I spend on my kid's medicine last month?", "en"),
+    ("Paljonko maksoin lapseni lääkkeistä viime kuussa?", "fi"),
+    ("How much did I spend on my son's dentist last month?", "en"),
+    ("What did my mom's pharmacy visits cost me last month?", "en"),
+    ("How much did I pay for a doctor's appointment for my girlfriend last month?", "en"),
+    ("Is my pharmacy spending normal? How much was it last month?", "en"),
+    ("Is my health spending typical last month?", "en"),
+    ("Is my medicine spending too high last month?", "en"),
+    ("How much did I spend at the pharmacy last month? Do I have an illness?", "en"),
+    ("How much did I spend at the pharmacy last month. what does it mean", "en"),
+    ("How much did I spend at the pharmacy last month. Do I need to worry?", "en"),
+    ("Did I spend more on pharmacy than last month?", "en"),
+    ("How much did I spend at the pharmacy last month compared to the month before?", "en"),
+    ("Why did my pharmacy spending go up last month?", "en"),
+    ("How much did I spend at the pharmacy last month, split by merchant", "en"),
+]
+
+
+@pytest.mark.parametrize("question, language", AS_ON_DEV)
+def test_more_than_a_plain_total_keeps_devs_decline(question, language):
+    found = decided(question, language)
+    assert found.calls and found.calls[0].name == "decline", (question, found)
+    assert not any((c.args.get("filter") or {}).get("categories") == ["Health"] for c in found.calls)
 
 
 # List B: still declined, the whole message (the security session's rows, the stored sets, r-w4's Finnish row).
