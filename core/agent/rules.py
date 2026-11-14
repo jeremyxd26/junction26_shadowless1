@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from core.agent import people, template
-from core.agent.guard import flags, fold, fold_pattern
+from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
+from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -34,7 +35,8 @@ RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
                           r"someone else|other (people|customers)|muiden|toisen"),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
@@ -628,7 +630,8 @@ NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borro
 COMPLETE_WORDS = (r"\btotal\b|\boverall\b|\bspending\b|\b(was|were|been) spent\b|\byhteensä\b|\bkaikkiaan\b|\bkokonais\w*|"
                   r"\bmeni\b|\bmenivät\b|\bkului\w*")
 # An attempt to set the rules aside ("ignore your rules, what's my budget?") is never claimed by a data
-# rule; the input guard does not flag these forms yet (#205).
+# rule. Since #526 the input guard flags these forms and DECLINE_RULES refuses them (core/agent/guard.py SET_ASIDE);
+# this list stays as the claim rules' own guard.
 SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these|those|previous|prior) "
              r"(rules|instructions|guidelines|limits)\b|"
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
@@ -809,6 +812,14 @@ WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer ta
                           "Entä jos vähentäisin noutoruokaa?"))
 # A money question the rules cannot map: it asks about the period only when it is about spending.
 MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
+# "Why is my safe to spend lower?" (#552, review of #574), on the folded question: the bare whole message ("why so
+# little?", "why is it lower?", "miksi niin vähän?", "miksi se on pieni?"), with no subject noun; and the past tense
+# that makes it another horizon ("why was it lower in August?"), never the why answer.
+BARE_WHY_LOW = (r"(why|how come)( is)?( it| that| this)?( so| that)? (low|lower|little|small|smaller|less)"
+                r"|miksi( se| tama| tuo)?( on)?( nyt)?( niin)? (vahan|vahemman|pieni|pienempi|alhainen|matala)")
+# the question's own verb in the past ("why was it lower in August?", "miksi se oli pienempi?"), never the past of a
+# comparison ("why is it lower than it was?")
+WHY_PAST = r"\b(why|how come) (was|were|did|had)\b|\bmiksi( se| tama| tuo| minulla)? (oli|olivat|olin)\b"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
@@ -1354,6 +1365,21 @@ def _plain_health_total(q: str) -> bool:
                 and not re.search(HEALTH_NOT_TOTAL, q) and not re.search(WHAT_IF, q) and not re.search(PEERS, q))
 
 
+def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
+    """"Why is my safe to spend lower (than last week)?", "Miksi minulla on nyt vähemmän käytettävissä?" (#552):
+    decided in _claim_clause after every decline and guard, as the safe-to-spend rule is; also when only the
+    spending rule competes with it (a comparison with last week). Never a past horizon ("why was it lower in
+    August?"), another period ("my monthly budget lower than last month") or a category."""
+    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q):
+        return False
+    if ((spending or {}).get("period") or {}).get("preset") not in (None, "this_week", "last_week"):
+        return False
+    rest = set(found) - {"safe_to_spend", "spending"}
+    # "vähemmän" (less) compares there, it is no cut: the what-if rule only when nothing else in it is a scenario
+    return not rest or (rest == {"what_if"} and not re.search(dict(INTENTS)["what_if"], re.sub(r"\bvahemman\b", " ", q))
+                        and not re.search(HYPOTHETICAL, q))
+
+
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
                   drop_spending: bool = False, asked: str | None = None) -> Claim:
     q = fold(question)
@@ -1434,6 +1460,8 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
                                                 FunctionCall("finish")))
             return Claim(None, reason="unknown_object")
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
+    if "get_safe_to_spend" in tools and _why_safe_lower(q, found, spending):
+        return Claim("safe_to_spend_why", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")))
     winner, competing = _resolve(found, q, spending)
     if winner is None:
         return Claim(None, candidates=competing, reason="competing")
@@ -1605,6 +1633,10 @@ def claim(request: PlanInput) -> Claim:
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
+    if "get_safe_to_spend" in tools and re.fullmatch(BARE_WHY_LOW, bare):
+        # "why so little?", "why is it lower?", "miksi niin vähän?" (#552, review of #574): only the whole message,
+        # with no subject noun; a question with one is decided where the safe-to-spend rule is (_claim_clause)
+        return Claim("safe_to_spend_why", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")))
     if "get_spending" in tools and any(re.fullmatch(rx, bare) for rx, _ in PRESETS):
         args = plan_spending(question, as_of)
         if args:
@@ -1638,7 +1670,10 @@ def claim(request: PlanInput) -> Claim:
             calls = list(unique.values())
             if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1
                    for part in parts) and len(calls) <= MAX_DATA_CALLS:
-                rules = list(dict.fromkeys(part.rule for part in parts))
+                # the why answer is a template for one question; with another question the composer writes
+                # both, as for the plain safe-to-spend question (#552, review of #574)
+                rules = list(dict.fromkeys("safe_to_spend" if part.rule == "safe_to_spend_why" else part.rule
+                                           for part in parts))
                 return Claim(rules[0] if len(rules) == 1 else "+".join(rules),
                              tuple(calls) + (FunctionCall("finish"),))
             competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
@@ -1699,7 +1734,10 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact))
+        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
+        template_answer = claim(request).rule == "safe_to_spend_why"
+        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
+                          template_answer=template_answer)
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
