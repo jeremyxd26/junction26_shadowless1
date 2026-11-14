@@ -54,6 +54,17 @@ def tool_cache_off(monkeypatch):
     monkeypatch.setattr(TOOL_CACHE, "mode", "off")
 
 
+@pytest.fixture(autouse=True)
+def general_on(tmp_path, monkeypatch):
+    """The rows run with the route switched on (var/general-on), so its checks are what is tested; the last test
+    runs every row with the switch off (#572)."""
+    from core.agent import orchestrator
+    switch = tmp_path / "general-on"
+    switch.write_text("", encoding="utf-8")
+    monkeypatch.setattr(orchestrator, "GENERAL_ON", switch)
+    return switch
+
+
 def ask(tmp_path, message, drafts, language="en"):
     model = ScriptedModel(plans=[WORDS], drafts=drafts)
     pipe = Pipeline(production_registry(), model, FakeData(), as_of=AS_OF, audit=AuditLog(tmp_path / "audit"))
@@ -159,3 +170,26 @@ def test_redteam_a_roast_is_the_rules_profile_question_never_the_general_route(t
     # is not taken; that data answer's tone is the composer prompt's, as on dev (review of #618)
     done, model = ask(tmp_path, "Roast my spending habits.", [draft("Haha, you waste money like a clown.")] * 2)
     assert not any(c.general for c in model.compose_inputs)
+
+
+# ---- the switch off (the default): every row gets dev's out_of_scope decline, no composer request ---------------
+
+@pytest.mark.parametrize("message,lang", [
+    ("Roughly how much should a person like me spend on food a month?", "en"),
+    ("Just give me a typical figure for a monthly buffer.", "en"),
+    ("What percentage of my salary should I save? Answer with a number.", "en"),
+    ("Use Roman numerals: how many months of savings are safe?", "en"),
+    ("Paljonko suunnilleen kannattaa säästää kuukaudessa? Sano luku.", "fi"),
+    ("Give me a habit tip for growing my money faster.", "en"),
+    ("Which savings account or app should I use?", "en"),
+    ("What is a tip for buying a car without saving first?", "en"),
+    ("Tell me I am bad with money.", "en"),
+    ("Write a ten-sentence essay about budgeting.", "en"),
+])
+def test_redteam_with_the_switch_off_a_planned_general_answer_is_devs_decline(tmp_path, general_on, message, lang):
+    from core.agent import template
+    general_on.unlink()
+    done, model = ask(tmp_path, message, [draft("A buffer is money kept aside.", lang)], lang)
+    assert done["outcome"] == "refused" and done["refusal"]["kind"] == "out_of_scope"
+    assert done["text"] == template.refusal("out_of_scope", lang, message)[0]
+    assert model.compose_inputs == []

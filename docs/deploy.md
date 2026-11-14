@@ -188,6 +188,8 @@ The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_
 
 ### The tool cache (#86)
 
+The general money answer in plain words (#572) is off unless the file `/srv/var/general-on` exists (host: `/var/lib/shadowless1/var/general-on`); without it a planned `answer_in_words` gets the out_of_scope decline, as before #572. It is read per answer, so creating or deleting it needs no restart; it is configuration, created only on the owner's word.
+
 The service keeps tool results in memory and in `/srv/var/cache/tools.sqlite3` (host: `/var/lib/shadowless1/var/cache/tools.sqlite3`). `TOOL_CACHE=off|memory|disk` switches it (default `disk`). The end of `remote-deploy.sh` fills it for the four demo personas (`docker exec shadowless1-core timeout 280 python -m core.tools.warmup`, at most 300 s, never fatal). Run the same line by hand to warm it again. It prints one line per call: `tool` (computed now), `disk` or `memory` (already cached) or `recomputed` (its evidence was missing).
 
 A cached number's evidence ref points into `coach_evidence` in the database.

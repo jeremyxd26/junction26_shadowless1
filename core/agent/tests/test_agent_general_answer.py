@@ -30,6 +30,16 @@ GOOD = {"language": "en", "text": "A buffer is money you keep aside for surprise
 TOOLS = [{"name": t.function, "description": "", "parameters_json_schema": {}} for t in KNOWN_TOOLS]
 
 
+@pytest.fixture(autouse=True)
+def general_on(tmp_path, monkeypatch):
+    """The route's switch file exists in these tests; the switch-off tests remove it (#572)."""
+    from core.agent import orchestrator
+    switch = tmp_path / "general-on"
+    switch.write_text("", encoding="utf-8")
+    monkeypatch.setattr(orchestrator, "GENERAL_ON", switch)
+    return switch
+
+
 def done(events):
     return dict(events)["done"]
 
@@ -251,6 +261,49 @@ def test_the_nearest_tool_of_a_general_question(question, topic):
 def test_the_answer_kind_of_a_question(question, kind):
     assert answer_text.answer_kind(question) == kind
     assert answer_text.answer_kind(question, general=True) == "general"
+
+
+# ---- the switch (#572, review of #618): off unless var/general-on exists ----------------------------------
+
+SWITCH_OFF_QUESTIONS = [(BUFFER, "en"), ("How can I build a saving habit?", "en"), ("How do I avoid impulse buying?", "en"),
+                        ("How does a reference number work?", "en"),
+                        ("What should I think about before a big purchase?", "en"),
+                        ("How do people usually plan a monthly budget?", "en"),
+                        ("Kuinka suuri hätävaran pitäisi olla?", "fi"), ("Miten vältän heräteostoksia?", "fi"),
+                        ("Miten viitenumero toimii?", "fi"), ("How do I start saving?", "en"),
+                        ("How do I stop impulse buying?", "en")]
+
+
+@pytest.mark.parametrize("message,lang", SWITCH_OFF_QUESTIONS)
+def test_with_the_switch_off_a_general_question_gets_devs_decline(make_pipeline, general_on, message, lang):
+    general_on.unlink()
+    model = ScriptedModel(plans=[WORDS], drafts=[GOOD])
+    pipe = make_pipeline(model)
+    d = done(run(pipe, message, language=lang))
+    expected, refusal = template.refusal("out_of_scope", lang, message)
+    assert d["outcome"] == "refused" and d["refusal"] == refusal and d["text"] == expected
+    assert model.compose_inputs == []   # no composer request with the route off
+    turns = audit_records(pipe)[-1]["planner_turns"]
+    assert any(t.get("error") == "answer_in_words: switched off" for t in turns), turns
+
+
+def test_the_switch_is_read_per_answer_with_no_restart(make_pipeline, general_on):
+    model = ScriptedModel(plans=[WORDS, WORDS], drafts=[GOOD])
+    pipe = make_pipeline(model)
+    assert done(run(pipe, BUFFER))["text"] == GOOD["text"]
+    general_on.unlink()
+    assert done(run(pipe, BUFFER))["outcome"] == "refused"
+
+
+def test_the_switch_changes_neither_the_declarations_nor_the_compose_request():
+    # off or on, the planner sees the same tool list and a non-general compose request is byte for byte the same,
+    # so no model cache empties when the switch file is created or removed
+    from core.agent import orchestrator
+    names = [s["name"] for s in Registry().schemas()]
+    assert "answer_in_words" in names
+    from pathlib import Path
+    source = Path(orchestrator.__file__).read_text(encoding="utf-8")
+    assert 'GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"' in source
 
 
 # ---- the review of #618: each class closed ----------------------------------------------------------------

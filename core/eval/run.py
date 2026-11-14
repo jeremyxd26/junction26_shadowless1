@@ -86,10 +86,13 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
     # `any`: the outcome may differ by source (the rules ask back, a model may answer), so any of the three
     # real outcomes passes; every other check still applies, the "returned by a tool" check among them (#419,
     # review of #437). Only the expected numbers are skipped: such a case has none.
+    # `words` with the general route switched off (var/general-on absent, the default): dev's out_of_scope decline is
+    # the expected answer, as before #572; the plain-words checks then have nothing to check
+    switched_off = case["expect"] == "words" and ans.outcome == "refused" and ans.refusal_kind == "out_of_scope"
     if case["expect"] == "any":
         if ans.outcome not in ANY_OUTCOMES:
             fails.append(f"outcome {ans.outcome}, expected one of {', '.join(ANY_OUTCOMES)}")
-    elif ans.outcome != want:
+    elif ans.outcome != want and not switched_off:
         fails.append(f"outcome {ans.outcome}, expected {want}")
     if case["expect"] == "refused" and ans.refusal_kind not in case.get("refusal_kinds", []):
         fails.append(f"refusal kind {ans.refusal_kind}, expected one of {case.get('refusal_kinds')}")
@@ -128,7 +131,7 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
     if case["expect"] == "no_data" and ans.follow_ups is not None and not ans.follow_ups:
         fails.append("chips: a period without data offers what Sentti can answer instead (#379)")
-    if case["expect"] == "words":   # a general money answer in plain words (#572); no tool: no_data_tool_call
+    if case["expect"] == "words" and not switched_off:   # plain words (#572); no tool: no_data_tool_call
         for problem in answer_text.general_problems(ans.text or "") + \
                 answer_text.general_language_problems(ans.text or "", lang):
             fails.append(f"plain words: {problem}")

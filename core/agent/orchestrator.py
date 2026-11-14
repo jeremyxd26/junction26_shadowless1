@@ -38,6 +38,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, NamedTuple, Protocol
 
 import psycopg
@@ -65,6 +66,10 @@ from core.tools.periods import MONTHS_EN, PeriodOutOfRange
 log = logging.getLogger("uvicorn.error")
 
 MAX_ROUNDS = 2
+# The general route's switch (#572): only while this file exists does a planned answer_in_words get a plain-words
+# answer; without it (the default, in code and on the stand) the answer is dev's out_of_scope decline, so the route is
+# off with no change to the tool declarations or the prompts (their model caches stay). Checked per answer, no restart.
+GENERAL_ON = Path(__file__).resolve().parents[2] / "var" / "general-on"
 # The rules' verdict that leaves a message to a plain-words answer (#572): not claimed with no reason (their general
 # question back). Their period question ("How much do I spend on takeaway?") is an own-figures question, and a flagged,
 # other-person, competing, follow-up or unknown-thing message never goes there either (review of #618).
@@ -496,6 +501,11 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
+            if any(c.name == "answer_in_words" for c in plan.calls) and not GENERAL_ON.exists():
+                # the general route is switched off: dev's answer to a general question, the out_of_scope decline
+                a.planner_turns.append({"round": rnd, "source": source, "error": "answer_in_words: switched off",
+                                        "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
+                return self._refuse("out_of_scope", lang, emit, a)
             if any(c.name == "answer_in_words" for c in plan.calls):
                 refused = self._general_refused(plan_in, plan.calls, a)
                 if refused is None:

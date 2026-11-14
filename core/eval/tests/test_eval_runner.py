@@ -664,6 +664,16 @@ def test_a_plain_words_case_needs_the_answer_and_no_tool():
     assert run.check(_words_case(), with_data, "en", question) == ["data tools called: ['get_safe_to_spend']"]
 
 
+def test_with_the_general_route_switched_off_devs_decline_passes_a_plain_words_case():
+    # var/general-on absent (the default): the answer is dev's out_of_scope decline, which the case accepts (#572)
+    question = _words_case()["question"]["en"]
+    off = Answer(text="That's outside my lane.", outcome="refused", refusal_kind="out_of_scope", labels=[], tool_calls=[])
+    assert run.check(_words_case(), off, "en", question) == []
+    other = Answer(text="I can't give investment advice.", outcome="refused", refusal_kind="investment_advice",
+                   labels=[], tool_calls=[])
+    assert "outcome refused, expected answered" in run.check(_words_case(), other, "en", question)
+
+
 def test_a_plain_words_case_must_say_no_data_tool_call():
     import expected
     case = _words_case()

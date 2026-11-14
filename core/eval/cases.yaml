@@ -883,8 +883,9 @@ cases:
 
 # General money questions in plain words (#572): no tool, no number of any kind (no digit, no number word), at most
 # four sentences, no product, borrowing, health or judging. Only the model writes them (answer_in_words); with the rule
-# model alone the rules ask their general question back, so these fail there. The reference source shows the fixed
-# text and its offer. Questions the rules already answer with data stay out of this set (PR of #572).
+# model alone the rules ask their general question back, so these fail there. With the route switched off (no
+# var/general-on, the default) dev's out_of_scope decline passes. The reference source shows the fixed text and its
+# offer. Questions the rules already answer with data stay out of this set (PR of #572).
 - id: general-buffer-size
   persona: CUST00860
   question: {en: 'How big should my emergency buffer be?', fi: 'Kuinka suuri hätävaran pitäisi olla?'}
