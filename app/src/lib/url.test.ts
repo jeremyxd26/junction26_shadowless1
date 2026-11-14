@@ -83,6 +83,15 @@ describe('overview sheet (#321)', () => {
     expect(target.searchParams.get('persona')).toBe('CUST00860')
   })
 
+  it('does nothing when the overview is open already: no second history entry (#513)', () => {
+    const { pushState, replaceState, dispatchEvent } = page('/', '?persona=CUST00860&overview=1', { sheet: true })
+    openOverview()
+    openOverview()
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(dispatchEvent).not.toHaveBeenCalled()
+  })
+
   it('reads ?overview=1 and nothing else as open', () => {
     expect(overviewFromParams(new URLSearchParams('overview=1'))).toBe(true)
     expect(overviewFromParams(new URLSearchParams('overview=0'))).toBe(false)

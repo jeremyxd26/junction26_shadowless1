@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { FOCUSABLE, trapTarget } from '../lib/focusTrap.ts'
+import { FOCUSABLE, escapeCloses, trapTarget } from '../lib/focusTrap.ts'
 import { useSettings } from '../lib/settings.ts'
 
 const SUPPORTS_INERT = typeof HTMLElement !== 'undefined' && 'inert' in HTMLElement.prototype
@@ -68,10 +68,11 @@ export function BottomSheet({ title, onClose, children }: Props) {
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // With two sheets open (evidence over what-if), Escape closes only the top one.
-      const dialogs = document.querySelectorAll('[role="dialog"]')
-      if (dialogs[dialogs.length - 1] === panel.current) close.current()
+      // With sheets stacked (evidence over what-if over overview), one Escape closes only the top
+      // one: the sheet that closes marks the event handled, and the others then ignore it.
+      if (!escapeCloses(event, document.querySelectorAll('[role="dialog"]'), panel.current)) return
+      event.preventDefault()
+      close.current()
     }
     window.addEventListener('keydown', onKey)
     return () => {
