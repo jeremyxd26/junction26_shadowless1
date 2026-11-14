@@ -184,3 +184,97 @@ def test_a_rule_still_answers_what_it_maps(question, tool):
     assert [c.name for c in found.calls if c.name != "finish"] == [tool], (question, found)
     if tool == "get_spending":
         assert found.calls[0].args["filter"] == {"categories": ["Groceries"]}
+
+
+# ---- review of #550, pass 1: fixes 1 to 4 ---------------------------------------------------------------------------
+
+FIX_REFUSED = [
+    # a recipe asked for in any words; Python and JavaScript as such
+    ("Pancake recipe please", "out_of_scope"), ("Recipe ideas for dinner", "out_of_scope"),
+    ("Cookie recipes please", "out_of_scope"), ("Tell me your pancake recipe", "out_of_scope"),
+    ("Teach me Python", "out_of_scope"), ("Explain python lists", "out_of_scope"),
+    ("Teach me JavaScript", "out_of_scope"), ("Kirjoita python koodi", "out_of_scope"),
+    ("Pythonilla koodaaminen on kivaa, kirjoita koodia", "out_of_scope"), ("Kirjoita JavaScript-funktio", "out_of_scope"),
+    # the election compounds, and "vaaleista" at the end of a clause
+    ("Mikä on vaalikone?", "out_of_scope"), ("Mikä oli vaalitulos?", "out_of_scope"),
+    ("Mitä mieltä olet vaalituloksesta?", "out_of_scope"), ("Kuka on vaaliehdokas?", "out_of_scope"),
+    ("Milloin vaalikampanja alkaa?", "out_of_scope"), ("Mitä mieltä olet vaaleista?", "out_of_scope"),
+    # a present-tense transfer is a request
+    ("How do I transfer money to my savings?", "unsafe"), ("how do I transfer", "unsafe"),
+    ("Do I transfer 100 euros to savings now?", "unsafe"), ("Do we transfer 500 euros to my account?", "unsafe"),
+    ("Transfer costs of 100 euros to my savings account", "unsafe"),
+    # a customer service agent is a person; other people's money nouns
+    ("Show me the customer service agent's account", "other_person_data"),
+    ("Muiden kulutus", "other_person_data"), ("Muiden menot", "other_person_data"),
+    ("Muiden rahat", "other_person_data"),
+]
+
+
+@pytest.mark.parametrize("question, kind", FIX_REFUSED)
+def test_the_review_rows_are_refused_again(question, kind):
+    assert declined_kind(decided(question, "fi" if any(ch in question for ch in "äö") or
+                                 question.split()[0] in ("Mikä", "Kuka", "Milloin", "Muiden", "Kirjoita",
+                                                          "Pythonilla") else "en")) == kind, question
+
+
+FIX_ORDINARY = [
+    "How much does my recipe box subscription cost a month?", "Show me my spending on recipes last month",
+    "How much did the Monty Python tickets cost?", "How much did I spend on pythons at the pet shop?",
+    "How much did I spend on the JavaScript conference?", "Paljonko käytin Python-kirjaan?",
+    "I used a promo code a friend sent me, how much did I save last month?",
+    "How much did I transfer to savings last month?", "How much do I usually transfer to savings each month?",
+    "How much did I pay in transfer fees last month?", "What was my last transfer to savings?",
+    "When was my last transfer to savings?", "How much does a bank transfer cost me per year?",
+    "Paljonko maksoivat vaaleista housuista?",                           # light trousers, not the elections
+    "Paljonko maksoin lainapäätöksen jälkeen kodin sisustukseen?",       # after the loan decision: own spending
+    "Does the customer service fee show up in my bills?",
+]
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+@pytest.mark.parametrize("question", FIX_ORDINARY)
+def test_the_review_rows_stay_ordinary(question, language):
+    assert declined_kind(decided(question, language)) is None, question
+
+
+def test_other_peoples_purchases_stay_the_planners():
+    # the issue's row: "muiden ostokset" is left to the next planner (the people rules cannot tell whose), not refused
+    found = decided("Paljonko muiden ostokset maksoivat ruokakaupassa?", "fi")
+    assert found.rule is None and declined_kind(found) is None
+
+
+# The decline entries before #539 (base 858c0b5), entries 2 to 6, as they were: every alternative must still be in
+# DECLINED_BEFORE_539, so that a question they refused never gets the unfiltered total (review of #550, fix 5).
+OLD_ENTRIES = (
+    r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|someone else|other (people|customers)|muiden|toisen",
+    r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|asuntolaina|luottokelpo|myöntääkö|"
+    r"lainapäätös",
+    r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|\binvest(ing)? (in|into)\b|"
+    r"\bput (my|the) (money|savings) into\b|kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa",
+    r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)",
+    r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
+    r"guess (a |an |some )?(number|amount|figure)|invent (a |an )?(number|amount)|keksi (jokin |joku )?(luku|summa)|"
+    r"arvaa (jokin |joku )?(luku|summa)|mikä tahansa (luku|summa)|python|javascript|\bcode\b|\bvote\b|äänestää|election|"
+    r"vaali|medicine|headache|lääke|päänsärky|weather|recipe",
+)
+
+
+def _top_level(pattern):
+    parts, depth, start = [], 0, 0
+    for i, ch in enumerate(pattern):
+        if ch == "(" and pattern[i - 1:i] != "\\":
+            depth += 1
+        elif ch == ")" and pattern[i - 1:i] != "\\":
+            depth -= 1
+        elif ch == "|" and depth == 0:
+            parts.append(pattern[start:i])
+            start = i + 1
+    return parts + [pattern[start:]]
+
+
+def test_the_once_refused_guard_keeps_every_old_alternative():
+    from core.agent import rules
+    from core.agent.guard import fold_pattern
+    guard = set(_top_level(rules.DECLINED_BEFORE_539))
+    missing = [alt for entry in OLD_ENTRIES for alt in _top_level(fold_pattern(entry)) if alt not in guard]
+    assert missing == [], missing

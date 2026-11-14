@@ -48,14 +48,16 @@ DECLINE_RULES = [
     # The entries below are whole words or listed word forms (#539): "selection", "promo code", "vaalia" (to cherish),
     # "laakeri" (a bearing), "weatherproof" or "toisen kuukauden" (the second month) are ordinary words.
     ("other_person_data", r"\bCUST\d+|\bcustomer\b(?!\s+(service|support|care|portal|experience|satisfaction|loyalty|"
-                          r"club|desk|hotline|feedback|centre|center)\b)|\bneighbou?r(s|'s|s')?\b|"
+                          r"club|desk|hotline|feedback|centre|center)\b(?!\s+(agent|representative|rep|worker|"
+                          r"employee|person)))|\bneighbou?r(s|'s|s')?\b|"
                           r"\bnaapur(i|in|ia|ille|illa|ilta|ista|issa|iin|it|eiden|eitten|eita|eille|eilla|eilta|eista|"
                           r"eissa|eihin)(ni|si|mme|nne|nsa)?\b|\bsomeone else\b|\bother (people|customers)\b|"
                           r"\bmuiden (ihmisten|asiakkaiden|käyttäjien|henkilöiden|tapahtum\w*|tilit\w*|tiedot|tietoja|"
-                          r"saldo\w*)\b|\bjonkun toisen\b|\btoisen (ihmisen|henkilön|asiakkaan|käyttäjän|tili\w*|"
+                          r"saldo\w*|kulutus|kulutusta|kulut|kuluja|menot|menoja|rahat|rahoja|tulot|tuloja|palkat|palkkoja)\b|"
+                          r"\bjonkun toisen\b|\btoisen (ihmisen|henkilön|asiakkaan|käyttäjän|tili\w*|"
                           r"tapahtum\w*)\b"),
     ("credit_decision", r"\bmortgag(e|es|ed)\b|\bcredit ?scores?\b|\bcreditworth(y|iness)\b|\bapprove (my |a )?loan\b|"
-                        r"\bloan (be )?approved\b|\basuntolain\w*|\bluottokelpo\w*|\bmyöntääkö\b|\blainapäätö\w*"),
+                        r"\bloan (be )?approved\b|\basuntolain\w*|\bluottokelpo\w*|\bmyöntääkö\b|\blainapäätös\w*"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto)\w*|\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b"),
@@ -75,30 +77,35 @@ DECLINE_RULES = [
                      r"\bmake up (a |an |some )?(number|amount|figure)s?\b|\bguess (a |an |some )?(number|amount|figure)s?\b|"
                      r"\binvent (a |an )?(number|amount)s?\b|\bkeksi (jokin |joku )?(luku|summa)\b|"
                      r"\barvaa (jokin |joku )?(luku|summa)\b|\bmikä tahansa (luku|summa)\b|"
-                     # Python and JavaScript as programming ("write it in python"), never "Monty Python tickets"
-                     r"\b(write|writing|code|coding|program|programming|script|scripts|function|snippet)\b[^.?!]{0,30}"
-                     r"\b(python|javascript)\b|\b(python|javascript)\b[^.?!]{0,30}\b(code|coding|program|programming|"
-                     r"script|scripts|function|snippet)\b|\bin (python|javascript)\b|"
+                     # Python and JavaScript ("Teach me Python", "Kirjoita JavaScript-funktio", "pythonilla"), never
+                     # "Monty Python", the snakes ("pythons"), or a ticket, show, conference, course or book
+                     r"(?<!monty )\b(python|javascript)(?!s\b)\w*\b(?![\s-]+(tickets?|shows?|conferences?|"
+                     r"workshops?|courses?|books?|snakes?|kurssi\w*|kirja\w*|konferenssi\w*|lipu\w*|liput)\b)|"
                      # "code" only as program code ("write code", "python code"), never a promo, QR, zip or area code
                      r"\b(write|writing|wrote|written|generate|generating)\s+(me\s+|us\s+)?(some\s+|the\s+)?code\b|"
                      r"\b(example|sample|source|computer|programming|python|javascript|java|sql|html|css)\s+code\b|"
+                     r"(?<!promo )(?<!discount )(?<!voucher )(?<!coupon )(?<!gift )(?<!qr )(?<!zip )(?<!post )(?<!area )"
                      r"\bcode\s+(a|an|me|snippets?)\b|\bcode\s+(in|for)\s+(python|javascript|java|sql|html|css)\b|"
                      r"\bvote\b|\bäänestää\b|\belections?\b|"
                      # the elections in Finnish, also as a compound ("eduskuntavaalit"); never "vaalia" (to cherish)
-                     r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)?vaal(i|it|in|ien|eissa|eista|"
+                     r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)?vaal(i|it|in|ien|eissa|"
                      r"eihin|eja|eilla|eille)\b|"
+                     r"\b(eduskunta|kunta|presidentin|europarlamentti|alue|esi|seurakunta)vaaleista\b|"
+                     r"\bvaaleista\b(?=\s*([?.!,;]|$))|\bvaali(kone|tulo|ehdokas|kampanja|lupaus)\w*|"
                      r"\bmedicines?\b|\bheadaches?\b|\blääke(?!r)\w*|\bpäänsärky\w*|"
                      r"\bweather\b(?![-\s]?(proof|strip|resist|seal))|"
-                     # a recipe asked for ("a recipe for pancakes"), never the spending on recipes or a recipe box
-                     r"\brecipes?\s+(for|to)\b|\b(a|any|some|good|easy|quick|simple|healthy|new)\s+recipes?\b(?!\s+box)|"
-                     r"\b(give|send|find|suggest|recommend)\s+(me\s+|us\s+)?(a\s+|an\s+|some\s+|the\s+)?(\w+\s+){0,2}"
-                     r"recipes?\b(?!\s+box)"),
+                     # a recipe asked for in any words ("Pancake recipe please"), never the spending on recipes or a
+                     # recipe box, kit, app, subscription, book, magazine, delivery or service
+                     r"(?<!\bon )(?<!\bfor )\brecipes?\b(?![\s-]+(box|boxes|kits?|apps?|subscriptions?|books?|"
+                     r"magazines?|deliver(y|ies)|services?|charges?|cards?)\b)"),
 ]
 # A question about the user's own past or usual transfers, or about transfer fees, is not a request to move money
 # (#539): "How much did I transfer to savings last month?", "How much did I pay in transfer fees?". The "transfer" of
 # the first entry still refuses "transfer 100 euros to …".
-OWN_TRANSFERS = (r"\b(did|do|does|have|had)\s+(i|we)\s+(ever\s+|usually\s+|normally\s+)?transfer\b|"
-                 r"\btransfer\s+(fees?|charges?|costs?|history)\b")
+OWN_TRANSFERS = (r"\b(did|have|had)\s+(i|we)\s+(ever\s+)?transfer(red)?\b|"
+                 r"\b(do|does)\s+(i|we)\s+(usually|normally|often|typically)\s+transfer\b|"
+                 r"\bhow much (do|does) (i|we) transfer\b|\btransfer\s+(fees?|charges?|history)\b|"
+                 r"\btransfer\s+costs?\b(?!\s+(of|to)\b)|\b(my|the|our) (last|latest|previous|recent) transfers?\b")
 # What the entries above (and "transfer") refused before #539, word parts included. A question they refused that the
 # rules would now answer with the unfiltered total ("how much did the weather stripping cost me?", "paljonko kulutin
 # Vaalimaalla?") is left to the next planner: when unclear, unclaimed rather than a number the user did not ask.
