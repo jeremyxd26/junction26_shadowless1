@@ -47,7 +47,9 @@ NUMBERS = {"n1": num("n1", "360.00", Unit.EUR_PER_MONTH), "n2": num("n2", "184.6
     "{{n1}} could go into an index fund.",
     "Bonus to fund turns {{n2}} into fund units.",
     "Save {{n1}}; open monthly saving.",                              # a semicolon does not end the sentence
+    "Put {{n1}} into monthly savings.",                               # a destination, even in the plural
     "Laita {{n1}} kuukausisäästämiseen.",
+    "Laita {{n1}} kuukausisäästöön.",                                 # the illative of kuukausisäästö: a destination
     "Voisit siirtää {{n2}} S-mobiilissa kuukausisäästämiseen.",
     "Sijoita {{n1}} osakerahastoon.",
     "Bonus rahastoon kerryttää {{n2}}.",
