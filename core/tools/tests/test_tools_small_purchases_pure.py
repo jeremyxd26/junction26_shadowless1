@@ -164,7 +164,7 @@ def test_the_model_view_has_numbers_and_labels_only():
     view = result.model_view
     text = repr(view)
     assert "m_secret" not in text and "ev_" not in text and "CUST" not in text
-    assert set(view) == {"tool", "period", "max_amount", "count", "total", "average", "per_month",
+    assert set(view) == {"tool", "period", "period_preset", "max_amount", "count", "total", "average", "per_month",
                          "share_of_everyday", "everyday_total", "categories", "takeaway", "notes"}
     assert view["count"]["value"] == 6 and view["categories"][0]["label"] == "Restaurants"
 
