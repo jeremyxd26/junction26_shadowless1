@@ -88,9 +88,10 @@ def db_conn():
 def client(db_conn, monkeypatch):
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     with db_conn.transaction(force_rollback=True):
-        reviews.reset(db_conn, [LEAD])
+        reviews.private_tables(db_conn)  # no lock on the shared tables
         app = create_app(Settings(_env_file=None, database_url=None))
-        with TestClient(app, raise_server_exceptions=False) as c:
+        # https, so the client sends the Secure viewer cookie back (#144)
+        with TestClient(app, base_url="https://testserver", raise_server_exceptions=False) as c:
             app.state.pool = StubPool(db_conn)
             yield c
 

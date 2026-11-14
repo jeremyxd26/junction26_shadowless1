@@ -20,7 +20,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Path, Query, Request, Response
 
 from core.tools import review_card
 from core.tools import reviews as spike_reviews
@@ -35,6 +35,7 @@ from . import texts
 from .deps import CUSTOMER_ID_PATTERN, customer_connection
 from .personas import persona_by_id
 from .schemas import Language, MetricCard, OverviewResponse, SafeToSaveCard
+from .viewer import viewer_of
 
 router = APIRouter()
 
@@ -106,10 +107,11 @@ def build(ctx: ToolContext, hero_tool: Callable | None = None, save_tool: Callab
 @router.get("/api/overview/{customer_id}", response_model=OverviewResponse)
 def get_overview(
     request: Request,
+    response: Response,
     customer_id: str = Path(pattern=CUSTOMER_ID_PATTERN),
     lang: Language = Query("en"),
 ) -> OverviewResponse:
     with customer_connection(request, customer_id) as conn:   # allowlist first, no database (#101)
         ctx = ToolContext(customer_id=customer_id, as_of=request.app.state.settings.demo_today, conn=conn,
-                          language=lang)
+                          language=lang, viewer=viewer_of(request, response))  # #144: this viewer's answers
         return build(ctx, HERO_TOOL, SAVE_TOOL)
