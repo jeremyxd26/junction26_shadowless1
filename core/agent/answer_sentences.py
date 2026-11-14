@@ -76,13 +76,17 @@ _KNOWN_LABELS = {lab for table in (config.CATEGORY_LABELS, config.BASKET_LABELS,
                  for pair in table.values() for lab in pair}
 
 
-def _subject(label: str, language: str) -> str | None:
-    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat")."""
+def _subject(label: str, language: str, parts: int = 1) -> str | None:
+    """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat",
+    and for a filter of two or more parts "housing and restaurants", "luokissa Asuminen ja ravintolat", #399)."""
     if label in (pick(config.TEXT["spending"], language), pick(config.TEXT["income"], language)):
         return None
     if language == "fi":
-        return f"luokassa {label}"
-    return label.lower() if label in _KNOWN_LABELS else label
+        return f"luokissa {label}" if parts > 1 else f"luokassa {label}"
+    if label in _KNOWN_LABELS:
+        return label.lower()
+    first = re.split(r", | and ", label, maxsplit=1)[0]
+    return label[:1].lower() + label[1:] if parts > 1 and first in _KNOWN_LABELS else label
 
 
 SPENT = {
@@ -136,7 +140,8 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if not total or not isinstance(period, str) or not ok(period):
         return None
     label = (view.get("total") or {}).get("label") or ""
-    what = _subject(label, language)
+    parts = view.get("filter_parts")
+    what = _subject(label, language, parts if isinstance(parts, int) else 1)
     lang = 1 if language == "fi" else 0
     phrase = in_period(period, language)
     fmt = {"total": total, "count": count, "what": what or "", "period": phrase, "Period": _cap(phrase)}

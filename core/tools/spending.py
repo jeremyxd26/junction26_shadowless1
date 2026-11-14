@@ -83,19 +83,36 @@ def _base_selection(args: GetSpendingArgs, period: Period, alias_map: aliases.Al
                      merchant_id=merchant_id)
 
 
+def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
+    """A filter in words, every part named: "Restaurants", "Housing and restaurants", "Asuminen ja ravintolat"
+    (#399); None without a filter. A filtered sum is never labelled as all spending. The parts after the first
+    are lower-cased (a merchant's alias keeps its case); categories, groups and baskets come in that order, each
+    sorted as the selection sorts them, so the tool and the evidence view name one filter the same way."""
+    known = ([config.label(config.CATEGORY_LABELS[c], language) for c in categories if c in config.CATEGORY_LABELS]
+             + [config.label(config.MCC_GROUP_LABELS[g], language) for g in mcc_groups if g in config.MCC_GROUP_LABELS]
+             + [config.label(config.BASKET_LABELS[b], language) for b in baskets if b in config.BASKET_LABELS])
+    names = known + ([merchant] if merchant else [])
+    if not names:
+        return None
+    words = [n if i == 0 or i >= len(known) else n[:1].lower() + n[1:] for i, n in enumerate(names)]
+    if len(words) == 1:
+        return words[0]
+    return ", ".join(words[:-1]) + (" ja " if language == "fi" else " and ") + words[-1]
+
+
+def filter_parts(args: GetSpendingArgs) -> int:
+    """How many things the filter names (categories, groups, baskets and a merchant)."""
+    f = args.filter or Filter()
+    return len(f.categories or []) + len(f.mcc_groups or []) + len(f.baskets or []) + (f.merchant is not None)
+
+
 def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
     f = args.filter or Filter()
-    parts = [bool(f.categories), bool(f.baskets), bool(f.mcc_groups), f.merchant is not None]
-    if sum(parts) == 1:
-        if f.categories and len(f.categories) == 1:
-            return config.label(config.CATEGORY_LABELS[f.categories[0].value], language)
-        if f.mcc_groups and len(f.mcc_groups) == 1:
-            return config.label(config.MCC_GROUP_LABELS[f.mcc_groups[0].value], language)
-        if f.baskets and len(f.baskets) == 1:
-            return config.label(config.BASKET_LABELS[f.baskets[0].value], language)
-        if f.merchant is not None:
-            return alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
-    return _text("spending" if args.direction is Direction.OUT else "income", language)
+    merchant = (alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
+                if f.merchant is not None else None)
+    named = filter_label(sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
+                         sorted({b.value for b in f.baskets or []}), merchant, language)
+    return named or _text("spending" if args.direction is Direction.OUT else "income", language)
 
 
 def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap, language: str) -> tuple[str, str]:
@@ -244,7 +261,7 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         card=_card(args, data, lang),
         notes=notes,
         evidence=list(nb.specs),
-        model_view=_model_view(data, base.direction, notes, group_counts),
+        model_view=_model_view(data, base.direction, notes, group_counts, filter_parts(args)),
     )
 
 
@@ -265,7 +282,8 @@ def _card(args: GetSpendingArgs, data: SpendingData, language: str) -> Card:
                 items=[g.model_dump() for g in data.groups], **common)
 
 
-def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None) -> dict[str, Any]:
+def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None,
+                parts: int = 0) -> dict[str, Any]:
     """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3).
 
     A group's amount is the total of all its transactions in the period. The view says so, and gives
@@ -287,6 +305,7 @@ def _model_view(data: SpendingData, direction: str, notes: list[str], counts: li
         "period": data.period.label,
         "direction": direction,
         "total": _model_number(data.total),
+        "filter_parts": parts,   # how many things the total's label names (#399): "luokissa" for two or more
         "tx_count": _model_number(data.tx_count),
         "comparison": comparison,
         "groups": [

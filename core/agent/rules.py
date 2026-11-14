@@ -675,10 +675,21 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
 
 
-def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool) -> Claim:
+LONG_MESSAGE_CHARS = 200   # a message longer than this is never claimed by the spending rule (#399)
+
+
+def long_message(question: str) -> bool:
+    """A message longer than LONG_MESSAGE_CHARS, or with several question marks (#399)."""
+    return len(question) > LONG_MESSAGE_CHARS or question.count("?") > 1
+
+
+def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
+                  long: bool = False) -> Claim:
     q = fold(question)
-    spending = plan_spending(question, as_of) if "get_spending" in tools else None
-    found = _matched(q, peer_question, spending)
+    # The spending rule never claims a long message or one with several questions (#399): a sum of the
+    # categories it happens to mention is not its answer. The other rules, or the model, take it.
+    spending = plan_spending(question, as_of) if "get_spending" in tools and not long else None
+    found = [f for f in _matched(q, peer_question, spending) if not (long and f == "spending")]
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)
@@ -835,10 +846,11 @@ def claim(request: PlanInput) -> Claim:
         args = plan_spending(question, as_of)
         if args:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
+    long = long_message(question)
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-        parts = [_claim_clause(part, as_of, tools, lang, peer_question) for part, _ in clauses]
+        parts = [_claim_clause(part, as_of, tools, lang, peer_question, long) for part, _ in clauses]
         declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
         if declined is not None:
             return declined          # a refusal of one part is the answer to the whole message
@@ -850,7 +862,7 @@ def claim(request: PlanInput) -> Claim:
             return Claim(rules[0] if len(rules) == 1 else "+".join(rules), tuple(calls) + (FunctionCall("finish"),))
         competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
         return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-    return _claim_clause(question, as_of, tools, lang, peer_question)
+    return _claim_clause(question, as_of, tools, lang, peer_question, long)
 
 
 class RuleModel:

@@ -160,6 +160,8 @@ MERCHANT_KIND_DEFAULT = ("Merchant", "Kauppias")
 TEXT: dict[str, tuple[str, str]] = {
     "spending": ("Spending", "Kulutus"),
     "income": ("Income", "Tulot"),
+    # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
+    "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),
