@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
+import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
@@ -29,7 +30,16 @@ interface Props {
 export function Chat({ chat, question, disclosure, suggestions, opening, starters: openingStarters }: Props) {
   const { lang, customerId } = useSettings()
   const s = chatStrings(lang)
-  const { turns, busy, send, retry, stop } = chat
+  const { turns, busy, retry, stop } = chat
+  // Every question goes through here, so the opening can close its Undo toast (#315).
+  const chatSend = chat.send
+  const send = useCallback(
+    (question: string) => {
+      notifyAsked()
+      chatSend(question)
+    },
+    [chatSend],
+  )
   const [draft, setDraft] = useState('')
   const input = useRef<HTMLInputElement>(null)
 

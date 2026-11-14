@@ -254,6 +254,17 @@ export interface LabelChange {
 
 export type ReviewState = 'answered' | 'pending' | 'closed'
 
+/**
+ * What the answer did (contract 0.3.2, added): the numbers that moved, with a confirmation text
+ * whose numbers are tokens. On an undo, before and after swap. Null or missing on older cores.
+ */
+export interface LabelEffect {
+  items: LabelChange[]
+  text: string
+  text_rendered: string
+  numbers: Record<string, Num>
+}
+
 export interface LabelResponse {
   customer_id: string
   as_of: string
@@ -265,6 +276,7 @@ export interface LabelResponse {
   message: { text: string; text_rendered: string; numbers: Record<string, Num> }
   changes: LabelChange[]
   refetch: string[]
+  effect?: LabelEffect | null
 }
 
 // POST /api/ask (contract section 7).

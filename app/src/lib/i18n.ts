@@ -39,6 +39,7 @@ const en = {
   staysSame: 'stays the same',
   // The opening turn (#310 decision: one thought per screen). Captions stay under 8 words.
   heroCaption: 'safe to spend this week',
+  movedTo: 'Moved to',
   heroHowMade: 'Show how it is made',
   aboutSentti: 'About Sentti',
   reviewWhy: 'Why Sentti asks',
@@ -99,6 +100,7 @@ const fi: Strings = {
   was: (display: string) => `aiemmin ${display}`,
   staysSame: 'pysyy ennallaan',
   heroCaption: 'turvallisesti käytettävissä tällä viikolla',
+  movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Tietoa Senttistä',
   reviewWhy: 'Miksi Sentti kysyy',

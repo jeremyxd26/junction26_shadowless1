@@ -50,7 +50,7 @@ function factsOf(card: ReviewCardData, date: string): string {
  * tokens, if a question carries them, become chips too. A question without the amount gets the
  * amount and the purchase's facts above it.
  */
-function QuestionText({ card }: { card: ReviewCardData }) {
+function QuestionText({ card, compact = false }: { card: ReviewCardData; compact?: boolean }) {
   const { lang, t } = useSettings()
   const date = formatDate(card.date, lang)
   const purchase = purchaseOf(card, t.reviewSeePurchase)
@@ -68,7 +68,7 @@ function QuestionText({ card }: { card: ReviewCardData }) {
   ) : (
     date
   )
-  const amountChip = <NumberChip number={card.amount} size="lead" />
+  const amountChip = <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
   const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
 
   if (tokens.has('n1') || amountAt >= 0) {
@@ -80,7 +80,12 @@ function QuestionText({ card }: { card: ReviewCardData }) {
           ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
         ]
     // On the 48px line each 40px chip keeps a touch area of about 46px (measured), with no overlap.
-    return <p className="mt-2 text-xl font-bold leading-12 text-on-deep">{sentence}</p>
+    // Compact (after the answer, as context): 16px text and the inline chip, whose hit area is 44px.
+    return compact ? (
+      <p className="mt-2 text-base font-semibold leading-10 text-on-deep-muted">{sentence}</p>
+    ) : (
+      <p className="mt-2 text-xl font-bold leading-12 text-on-deep">{sentence}</p>
+    )
   }
   return (
     <>
@@ -256,14 +261,21 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
 interface AnsweredProps {
   card: ReviewCardData
   basket: BasketKey
+  /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
+  onUndo?: () => void
+  /** Show what the answer does (`options[].effect`); off when Sentti's reply under the card says it. */
+  explain?: boolean
 }
 
 /**
- * After the tap: the question stays, with a check and the chosen answer under it, and what the
- * answer does (`options[].effect`) until Sentti's reply in the thread explains it (#317).
+ * After the tap: the question stays, with a check and the chosen answer under it. Sentti's reply
+ * under the card says where the purchase went (#317); without one, the card shows the effect.
  */
-export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered({ card, basket }, ref) {
-  const { lang } = useSettings()
+export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
+  { card, basket, onUndo, explain = true },
+  ref,
+) {
+  const { lang, t } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
@@ -276,16 +288,26 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       data-opening-part="review"
       className={`${SURFACE} card-enter`}
     >
-      <AsksHeader titleId={titleId} />
-      <QuestionText card={card} />
-      <p className="mt-3 flex items-center gap-2 text-base font-bold text-on-deep">
+      <AsksHeader titleId={titleId}>
+        {onUndo && (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="min-h-11 px-1 text-sm font-semibold text-mint underline underline-offset-4 hover:text-on-deep"
+          >
+            {t.undo}
+          </button>
+        )}
+      </AsksHeader>
+      <QuestionText card={card} compact />
+      <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
         <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
           <Check className="size-4" />
         </span>
         <span aria-hidden="true">{look?.icon}</span>
         {option?.label[lang]}
       </p>
-      {option && <p className="mt-1 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
+      {explain && option && <p className="mt-1 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
     </section>
   )
 })
