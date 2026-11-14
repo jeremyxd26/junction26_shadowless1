@@ -10,7 +10,7 @@ import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { captionOf } from '../lib/answerFigures.ts'
 import { nextStep } from '../lib/nextStep.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
-import { firstWords, remainingMs, useWordReveal, wordEnds } from '../lib/reveal.ts'
+import { firstWords, holdsCards, remainingMs, useWordReveal, wordEnds } from '../lib/reveal.ts'
 import { useSettings } from '../lib/settings.ts'
 import { isClientTurn } from '../lib/thread.ts'
 import type { Turn } from '../lib/useChat.ts'
@@ -229,6 +229,8 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       ? { takeaway: '', rest: '' }
       : splitTakeaway(firstWords(answer.text, reveal.words))
     const total = wordEnds(answer.text).length
+    // A live answer keeps its cards behind the skeleton until the text has typed in; then they fade in.
+    const holdCards = live && holdsCards(reveal.words, { streaming, revealing: reveal.revealing })
     body = (
       <>
         {takeaway && (
@@ -237,7 +239,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           </p>
         )}
         {/* One main number per answer: only the first card draws one large (#684). */}
-        {answer.cards.map((card, index) => {
+        {!holdCards && answer.cards.map((card, index) => {
           const view = (
             <AnswerCard
               key={card.card_id}
@@ -254,7 +256,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
             view
           )
         })}
-        {holdText && <CardSkeleton />}
+        {(holdText || holdCards) && <CardSkeleton />}
         {rest && (
           <p className={ANSWER_TEXT}>
             <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} plain />
