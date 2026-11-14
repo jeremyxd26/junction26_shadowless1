@@ -47,7 +47,15 @@ export function BillsCard({ card }: { card: BillsData }) {
         ))}
       </ul>
 
-      {card.items.length > 1 && <p className="mt-2 text-xs text-muted">{t.billsRounding}</p>}
+      {/* The rounding note sits under "How it was calculated", not in the way of the bills. */}
+      {card.items.length > 1 && (
+        <details className="group mt-2">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 text-sm font-semibold text-brand [&::-webkit-details-marker]:hidden">
+            {t.howCalculated}
+          </summary>
+          <p className="text-xs text-muted">{t.billsRounding}</p>
+        </details>
+      )}
 
       {card.actions.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">

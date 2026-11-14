@@ -5,6 +5,7 @@ import type { ClientTurn } from '../lib/thread.ts'
 import { TurnView } from './AnswerView.tsx'
 import { clientTurns, openingChips, type ClientTurnProps } from './clientTurns.tsx'
 import { OpeningChips } from './OpeningChips.tsx'
+import { chipTexts } from './openingQuestions.ts'
 import { ClientTurnBoundary } from './ClientTurnBoundary.tsx'
 import { SettingsContext } from '../lib/settings.ts'
 import { strings } from '../lib/i18n.ts'
@@ -73,12 +74,15 @@ describe('the opening\'s client-turn chips (#319)', () => {
     openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('shows "Show Sentti a bill" (#332) in the one chip row, after the first two questions; the Learn tab replaced "Lesson of the day"', () => {
+  it('shows three entry cards and "More questions"; the sheet lists "Show Sentti a bill" (#332) after the first two questions', () => {
     expect(openingChips).toEqual(['bill'])
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')
-    expect(html).toContain('>Show Sentti a bill</button>')
-    expect(html).not.toContain('>Lesson of the day</button>')
+    for (const title of ['Where my money goes', 'Bills until payday', 'Try a what-if', 'More questions']) expect(html).toContain(title)
+    const texts = chipTexts('en')
+    expect(texts).toHaveLength(9)
+    expect(texts.indexOf('Show Sentti a bill')).toBe(2)
+    expect(texts).not.toContain('Lesson of the day')
   })
 
   it('says "Näytä Sentille lasku" in Finnish, the wording of the issue', () => {
@@ -89,18 +93,18 @@ describe('the opening\'s client-turn chips (#319)', () => {
         </OpeningContext.Provider>
       </SettingsContext.Provider>,
     )
-    expect(html).toContain('>Näytä Sentille lasku</button>')
+    expect(html).toContain('Lisää kysymyksiä')
+    expect(chipTexts('fi')).toContain('Näytä Sentille lasku')
   })
 
   it('shows a visible chip and hides one that is not visible', () => {
     openingChips.splice(0, openingChips.length, 'probe')
     clientTurns.probe = { chip: (lang) => (lang === 'fi' ? 'Näytä koe' : 'Show a probe'), visible: () => true, Component: Probe }
-    const html = chips()
-    expect(html).toContain('data-opening-part="client-chips"')
-    expect(html).toContain('>Show a probe</button>')
+    expect(chipTexts('en')).toContain('Show a probe')
     clientTurns.probe = { ...clientTurns.probe, visible: () => false }
-    // The question chips stay; only the hidden client chip is gone.
-    expect(chips()).not.toContain('>Show a probe</button>')
+    // The questions stay; only the hidden client chip is gone.
+    expect(chipTexts('en')).not.toContain('Show a probe')
+    expect(chipTexts('en')).toHaveLength(8)
   })
 })
 

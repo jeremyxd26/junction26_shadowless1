@@ -54,6 +54,8 @@ const en = {
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
+  /** The overview sheet's collapsible sections under the main answer (Renat's review). */
+  overviewSections: { money: 'Where the money goes', bills: 'Bills until payday', save: 'What you can set aside' } as Record<string, string>,
   /** The header's pencil button: empties the thread (asks first when there is something in it). */
   newChat: 'New chat',
   /** The folded opening's line after the first message: the amount is the API's `display`. */
@@ -128,6 +130,7 @@ const fi: Strings = {
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
+  overviewSections: { money: 'Mihin raha menee', bills: 'Laskut palkkapäivään', save: 'Mitä voit säästää' },
   newChat: 'Uusi keskustelu',
   foldLeft: (display: string) => `Käyttövara ${display}`,
   foldQuestions: (n: number) => (n === 1 ? '1 kysymys Senttiltä' : `${n} kysymystä Senttiltä`),
