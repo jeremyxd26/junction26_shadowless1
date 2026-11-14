@@ -153,7 +153,8 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
   - There is no EN/FI switch in the header: the language comes from the host (`?lang=` now, `host.context` later) and, in the demo, from the persona sheet.
 - **Host messages:** every message to the host is `{type: 'sentti.<name>', v: 1, payload}` with a camelCase name: `close` (back on the first screen), `paymentDraft` and `openHostScreen`. iOS gets the object through `webkit.messageHandlers.sentti`, Android a JSON string through `window.sentti` (#175, `src/lib/hostBridge.ts`). Without a host nothing is sent and the module uses its own navigation.
 - **Composer:** pinned to the bottom ("Ask anything…"). The input is 48 px high with 16 px text; the send button is a 48 px circle in `--color-deep`. Bottom padding adds `env(safe-area-inset-bottom)`. The whole bar is 73 px high at 375 px with no inset (12 + 48 + 12 + border). A microphone appears only behind the voice flag (later).
-- **Toast:** sits above the composer, never over it: its bottom is 8 px above the composer's top, so the input and the send button stay reachable while Undo is shown.
+- **Toast:** sits above the composer, never over it: its bottom is 8 px above the composer's top, so the input and the send button stay reachable while Undo is shown. It closes when a question is sent, and the toast of a review answer also goes by itself after 6 s; a toast with an error and Retry stays until it is closed.
+- **No toast when the reply says it:** when Sentti's reply under the question already shows the answer's confirmation (the label response's `effect`, contract 0.3.2), no toast is shown, so nothing covers the reply. Undo is then the 44 px Undo on the answered card, and the live region reads `message.text_rendered` once. Without `effect`, the toast shows as above.
 
 ### Thread
 - The first screen is **one thread on `/`** that Sentti opens. `/chat` redirects to `/` with `replace`, so Back never returns to it.
@@ -217,10 +218,10 @@ Sum: 28 + 12 + 100 + 12 + 204 + 12 + 148 = 516, so the last chip ends at 576: 16
 **The #35 moment in this layout:** after "It was needed":
 1. The question card collapses to one line (a check, the chosen label).
 2. The big card counts from `changes[].before` to `after` (for example €221.58 → €180.26).
-3. Sentti answers right under the question with a short turn: one sentence without a number (for example "Moved to 🔧 Unexpected necessities", with the basket label from the API) and a **mini basket row** where the amount (€1,080.42) flies from "Waiting for your answer" into the chosen basket.
-4. The toast with Undo appears above the composer.
+3. Sentti answers right under the question with a short turn: a **mini basket row** where the amount (€1,080.42) flies from "Waiting for your answer" into the chosen basket, and under it `effect.text` with its tokens as chips. On a core without `effect`, a client sentence without a number comes first instead ("Moved to 🔧 Unexpected necessities", the basket label from the API).
+4. With `effect` there is no toast: Undo is on the answered card (see "Toast" in "Shell"). Without `effect`, the toast with Undo appears above the composer.
 
-The big card, the mini basket row and the toast are on screen together at both sizes, so the flight and the count can be seen without scrolling. If a size or setting breaks this (320 px wide, 200 % zoom, large text, a long Finnish question), the glide sequence built in #157 is the specified behaviour: the big card counts first, the page glides to the mini basket row, then the amount flies.
+The big card, the mini basket row and the reply's text are on screen together at both sizes, so the flight and the count can be seen without scrolling. If a size or setting breaks this (320 px wide, 200 % zoom, large text, a long Finnish question), the glide sequence built in #157 is the specified behaviour: the big card counts first, the page glides to the mini basket row, then the amount flies.
 
 ### Overview sheet
 - Opens from the header's overview button (#322), as a bottom sheet and a history entry, so Back closes it.
@@ -299,10 +300,10 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - **Contents:** the question text only: `question` is `{en, fi}`, shown as `question[language]`, the language of the request. Its `{{n1}}` (the amount) and `{{date}}` tokens become chips, so there is no separate amount line.
 - **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels are `options[].label[language]`.
 - **After a tap** (the thread layout, see "Fit budget"):
-  1. The card collapses to one line: a check and the chosen label.
+  1. The card keeps its header (with a 44 px Undo while the answer can be undone), the question in a compact size, and a check with the chosen label. It shows no effect line: what the answer did is Sentti's reply.
   2. The big card's number counts from `changes[].before` to `after` (900 ms, tabular figures; see section 4).
-  3. Sentti answers right under the question with a short turn: one sentence without a number (for example "Moved to 🔧 Unexpected necessities", the basket label from the API) and a **mini basket row**. In it the amount, as a pill, flies from "Waiting for your answer" to the chosen basket: `--duration-flight` (600 ms) with `--ease-expressive`; its border colour turns to the target basket's, and the waiting cell fades out.
-  4. A toast above the composer shows `message.text` with each `{{nN}}` token rendered as a number chip from `message.numbers`, and an Undo button. `message.text_rendered` (tokens already replaced) is only for screen readers (the toast's live region) and copying.
+  3. Sentti answers right under the question with a short turn, mounted at the tap so it is on screen when the answer arrives: a **mini basket row**, and under it `effect.text` with its tokens as chips (on a core without `effect`, a client sentence without a number comes first instead, for example "Moved to 🔧 Unexpected necessities" with the basket label from the API). In the row the amount, as a pill, flies from "Waiting for your answer" to the chosen basket: `--duration-flight` (600 ms) with `--ease-expressive`; its border colour turns to the target basket's, and the waiting cell fades out. The flight looks for its cells only inside this reply and never scrolls the page.
+  4. With `effect`, no toast is shown; the live region reads `message.text_rendered` once, and Undo is on the card. Without `effect`, a toast above the composer shows `message.text` with each `{{nN}}` token rendered as a number chip from `message.numbers`, and an Undo button; `message.text_rendered` (tokens already replaced) is only for screen readers (the live region) and copying.
   5. **Undo** sends `basket: null` and counts the changed numbers back. If the review is less than 7 days old, the purchase returns to "Waiting for your answer" and the question comes back. If it is older, the review closes and the purchase returns to the basket its rules give it; the card does not come back.
 - **No reload:** the overview is refetched in the background after the animation.
 - **Expiry:** a pending review expires 7 days after creation; after that its `tx_ref` returns 404 `tx_ref_not_found`. The app then removes the card quietly and shows no error.
