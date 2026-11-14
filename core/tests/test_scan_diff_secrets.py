@@ -204,6 +204,15 @@ def test_a_line_written_while_resolving_a_merge_is_found(repo):
     assert scanner.Finding("postgres_url_with_password", "c.py", merge[:10]) in found
 
 
+def test_merging_the_base_into_a_branch_adds_nothing_of_the_base(repo):
+    commit(repo, {"a.txt": "feature\n"})
+    run_git(repo, "checkout", "-q", "main")
+    commit(repo, {"base.py": f"URL = '{FAKE_URL}'\n"}, "already on the base")
+    run_git(repo, "checkout", "-q", "feature")
+    run_git(repo, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+    assert scan_head(repo) == []                                   # the base's line is not the branch's
+
+
 def test_content_lines_that_look_like_headers_stay_content(repo):
     notes = "++ b/evil.env\n+++ x\n--- a/y\n" + f"URL = '{FAKE_URL}'\n"
     commit(repo, {"notes.md": notes})

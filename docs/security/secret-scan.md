@@ -22,7 +22,7 @@ python scripts/scan_diff_secrets.py --range A..B              # what a range of 
 
 What it reads:
 - by default, every commit from the merge base to the head, and the final diff. A secret that one commit adds and a later one removes is still found: a merge commit brings that history into `dev` and `main`;
-- a merge commit as its diff against its first parent, which also shows lines written while resolving it;
+- a merge commit as its remerge diff (git 2.36 or newer): only the lines written while resolving it. What a merge brings from its parents is read in their own commits, or is already in the base;
 - `--net-only`: the final diff alone;
 - added lines only, binary files read as text.
 

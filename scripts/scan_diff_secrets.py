@@ -11,9 +11,10 @@ command that fetches it.
 
 What is read. By default every commit between the merge base and the head, and the final diff as well:
 a secret added in one commit and removed in a later one stays in the history that a merge commit brings
-into dev and main. A merge commit is read as its diff against its first parent, which also shows lines
-written while resolving it. `--net-only` reads the final diff alone. Only added lines count. Files are
-read as text, binary ones included; a file git still reports as binary is listed (path only) as skipped.
+into dev and main. A merge commit is read as its remerge diff (git 2.36 or newer): the lines written
+while resolving it. What a merge brings from its parents is read in their own commits, or is already in
+the base. `--net-only` reads the final diff alone. Only added lines count. Files are read as text, binary
+ones included; a file git still reports as binary is listed (path only) as skipped.
 
 What it reports:
 - common key shapes (Google, GitHub, OpenAI or Anthropic, AWS, private key blocks, Slack, JWT), and
@@ -273,9 +274,11 @@ def read_patch(repo: Path, since: str, head: str, net_only: bool) -> Patch:
     """The final diff since..head and, unless net_only, every commit in since..head as well."""
     patch = parse_patch(git(repo, "diff", *DIFF_OPTIONS, "--end-of-options", since, head).stdout)
     if not net_only:
-        log = git(repo, "log", "-p", *DIFF_OPTIONS, "--diff-merges=first-parent", "--format=%x00commit %H",
-                  "--end-of-options", f"{since}..{head}").stdout
-        parse_patch(log, patch=patch)
+        done = git(repo, "log", "-p", *DIFF_OPTIONS, "--diff-merges=remerge", "--format=%x00commit %H",
+                   "--end-of-options", f"{since}..{head}", check=False)
+        if done.returncode != 0:
+            raise NotRun("git log --diff-merges=remerge failed; it needs git 2.36 or newer (or use --net-only)")
+        parse_patch(done.stdout, patch=patch)
     return patch
 
 
