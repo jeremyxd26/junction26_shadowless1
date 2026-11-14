@@ -263,15 +263,16 @@ A card inside a chat answer is part of one answer that is read once (#684, #696)
 - **Caption:** the period, once (`period.label` of the main number, xs, muted). A later card of the same answer drops it when it is the same period.
 - **Estimate marker:** top right, on the caption's line. A fact has no marker.
 - **One main number** per answer: the first card's main number, large, as plain text, never a green pill (`size lg`, `tone plain`). A later card turns its main number into its first row.
-- **At most 3 "label — value" rows** under it: the label in small muted text on the left, the value in normal ink on the right. With large text the value moves under its label. Changes read "▲ €91.70 more", with an arrow and a word, never colour alone.
+- **"Label — value" rows** under it: the label in small muted text on the left, the value in normal ink on the right. With large text the value moves under its label. Changes read "▲ €91.70 more", with an arrow and a word, never colour alone.
+- **The parts that make up the main number are never cut** (every basket, "Waiting for your answer" included, and every bill): a hidden part would make the rows not add up to the total. **Other figures are capped at 3 rows.**
 - **What each type shows** (`lib/answerFigures.ts`, chosen by card type, never by matching texts):
 
   | Card type | Main number | Rows |
   |---|---|---|
   | `metric` | `primary` | comparison, then `secondary` |
   | `breakdown` | `total` | comparison, then the items |
-  | baskets breakdown | `total` | the baskets, then the comparison |
-  | `bills` | `total` | the bills' amounts due before payday |
+  | baskets breakdown | `total` | every basket (all parts), then the comparison |
+  | `bills` | `total` | every bill's amount due before payday (all parts) |
   | `safe_to_save` | `monthly` | the reason, weekly, daily, stock |
   | `whatif` | saving a month | a week, a year, the baseline |
   | `profile` | the deciding feature | the other features |
@@ -280,7 +281,7 @@ A card inside a chat answer is part of one answer that is read once (#684, #696)
 - **What-if caveats:** shown as sent, in a `--color-warning-tint` box, when the status is not a plain `estimate` (`estimate_with_caveat`, `not_offered`), as in the what-if sheet.
 - Numbers are tappable text when they have an evidence ref, and plain text without one.
 - Card `actions` are not drawn on the card: the answer offers at most one next step (below).
-- **The review card** is the exception. Inside an answer it points to the "Sentti asks" card in the opening, or, when nothing shows that question, it is that card with its answer buttons (#318, #450).
+- **The review card** is the exception. Inside an answer it points to the "Sentti asks" card in the opening, or, when nothing shows that question, it is that card with its answer buttons (#318, #450), in the answer card's white frame. It has no large main number: the question text from the API already carries the amount, shown once as a number in the text, so nothing is repeated.
 
 ### Answer order
 1. Takeaway: the first sentence, `--text-lg`, normal weight.

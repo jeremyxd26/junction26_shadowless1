@@ -28,6 +28,12 @@ export interface AnswerFigures {
   note: string | null
   /** A what-if's caveats, shown as sent when its status is not a plain `estimate` (#696). */
   caveats: string[]
+  /**
+   * How many of the first rows are the parts that make up the main number (every basket, every
+   * bill). They are never cut: a hidden part would make the rows not add up to the total, which
+   * reads as a calculation error (#696 ruling). The cap of three applies to the rows after them.
+   */
+  parts: number
 }
 
 type ProfileCard = Card & {
@@ -55,16 +61,18 @@ const row = (number: Num | null | undefined, key: string): FigureRow[] =>
 const comparisonRow = (comparison: Comparison | null | undefined): FigureRow[] =>
   comparison ? [{ key: 'comparison', label: comparison.label, number: comparison.change, tone: comparison.tone }] : []
 
-function figures(main: Num | null, rows: FigureRow[], extra: Partial<AnswerFigures> = {}): AnswerFigures {
+/** `parts`: the rows that make up the main number, all of them; then `rows`, at most three. */
+function figures(main: Num | null, rows: FigureRow[], extra: Partial<AnswerFigures> = {}, parts: FigureRow[] = []): AnswerFigures {
   return {
     caption: main?.period.label ?? null,
     title: null,
     tags: [],
     main,
-    rows: rows.slice(0, MAX_ROWS),
+    rows: [...parts, ...rows.slice(0, MAX_ROWS)],
     note: null,
     caveats: [],
     ...extra,
+    parts: parts.length,
   }
 }
 
@@ -75,11 +83,13 @@ function figures(main: Num | null, rows: FigureRow[], extra: Partial<AnswerFigur
  */
 export function asLaterCard(figures: AnswerFigures, previousCaption: string | null): AnswerFigures {
   const rows = figures.main ? [{ key: 'main', label: figures.main.label, number: figures.main }, ...figures.rows] : figures.rows
+  // The parts of the total are never cut; with the main number as a row, they stay below it.
+  const kept = figures.parts + (figures.main ? 1 : 0)
   return {
     ...figures,
     caption: figures.caption === previousCaption ? null : figures.caption,
     main: null,
-    rows: rows.slice(0, MAX_ROWS),
+    rows: rows.slice(0, Math.max(MAX_ROWS, kept)),
   }
 }
 
@@ -113,19 +123,21 @@ export function answerFigures(card: Card): AnswerFigures | null {
     case 'breakdown': {
       const breakdown = card as BreakdownCard
       const items = breakdown.items.map((item) => ({ key: item.key, label: item.label, number: item.amount }))
-      // The baskets answer the question themselves, so they come before the comparison (#696):
-      // with three baskets and a comparison, the cap of three rows keeps the baskets.
-      if (isBasketsBreakdown(breakdown)) return figures(breakdown.total, [...items, ...comparisonRow(breakdown.comparison)])
+      // Every basket is a part of the total, "Waiting for your answer" too while a review is
+      // pending: none is cut. The comparison follows them.
+      if (isBasketsBreakdown(breakdown)) return figures(breakdown.total, comparisonRow(breakdown.comparison), {}, items)
       return figures(breakdown.total, [
         ...comparisonRow(breakdown.comparison),
         ...breakdown.items.map((item) => ({ key: item.key, label: item.label, number: item.amount })),
       ])
     }
     case 'bills': {
-      // The total due before payday, then the bills (#696).
+      // The total due before payday, then every bill: each is a part of the total (#696).
       const bills = card as BillsCard
       return figures(
         bills.total,
+        [],
+        {},
         bills.items.map((item) => ({ key: item.bill_id, label: item.label, number: item.due_until_payday })),
       )
     }

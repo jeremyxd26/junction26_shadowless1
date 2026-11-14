@@ -142,27 +142,39 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(render({ ...profile, type: 'stores', estimate: null } as unknown as Card)).not.toContain('From your transactions')
   })
 
-  it('baskets breakdown (#696): the total large, the baskets as rows, no green pills', () => {
-    const baskets = (examples['overview.response'] as { cards: Card[] }).cards.find(
+  const basketsOf = (name: string) =>
+    (examples[name] as { cards: Card[] }).cards.find(
       (card) => card.type === 'breakdown' && (card as unknown as { items: { key: string }[] }).items.some((item) => item.key === 'regular_essentials'),
-    ) as Card & { total: { display: string }; items: { label: string }[] }
+    ) as Card & { total: { display: string }; items: { label: string }[]; comparison: unknown }
+
+  it('baskets breakdown (#696): the total large, every basket as a row, no green pills', () => {
+    const baskets = basketsOf('overview.response')
     const html = render(baskets)
     expect(html).toContain('data-answer-main')
     expect(html).toContain(baskets.total.display)
     const rows = html.split('data-figure-row').slice(1)
-    expect(rows.length).toBe(Math.min(3, baskets.items.length))
-    // The baskets come first, so the cap keeps them rather than a comparison row.
-    baskets.items.slice(0, rows.length).forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+    expect(rows.length).toBe(baskets.items.length + (baskets.comparison ? 1 : 0))
+    baskets.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
     expect(html).not.toContain('bg-mint')
     expect(html).not.toContain(`<h3`)
   })
 
-  it('bills (#696): the total due before payday large, at most three bills as rows', () => {
+  it('baskets with a review pending (#696 ruling): all four parts of the total, "Waiting for your answer" included', () => {
+    const pending = basketsOf('overview.response_pending')
+    expect(pending.items.length).toBe(4)
+    const rows = render(pending).split('data-figure-row').slice(1)
+    expect(rows.length).toBeGreaterThanOrEqual(4)
+    pending.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+  })
+
+  it('bills (#696): the total due before payday large, every bill as a row (no part of the total is cut)', () => {
     const html = render(bills)
     expect(html).toContain('data-answer-main')
     const rows = html.split('data-figure-row').slice(1)
-    const items = (bills as unknown as { items: unknown[] }).items
-    expect(rows.length).toBe(Math.min(3, items.length))
+    const items = (bills as unknown as { items: { label: string }[] }).items
+    expect(rows.length).toBe(items.length)
+    const four = { ...bills, items: [...items, ...items].slice(0, 4).map((item, index) => ({ ...item, bill_id: `b${index}` })) } as unknown as Card
+    expect(render(four).split('data-figure-row').length - 1).toBe(4)
     expect(html).not.toContain('bg-mint')
   })
 
@@ -180,10 +192,12 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(plain).not.toContain('data-answer-caveats')
   })
 
-  it('review in an answer (#696): the white frame of the answer card, the amount as the one main number, answer buttons kept', () => {
+  it('review in an answer (#696): the white frame of the answer card, the amount once in the question (no large repeat), answer buttons kept', () => {
     const review = examples['card.review'] as Card & { amount: { display: string }; options: { label: { en: string } }[] }
     const html = render(review)
-    expect(html).toContain('data-answer-main')
+    expect(html).not.toContain('data-answer-main')
+    // Visible text only: the number's button also names the amount in its accessible label.
+    expect(html.replace(/<[^>]*>/g, '').split(review.amount.display).length - 1).toBe(1)
     expect(html).not.toContain('bg-deep')
     expect(html).toContain(review.amount.display)
     for (const option of review.options) expect(html).toContain(escape(option.label.en))

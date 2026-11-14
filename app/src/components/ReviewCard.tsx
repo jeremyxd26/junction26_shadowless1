@@ -73,9 +73,13 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
   ) : (
     date
   )
-  // In an answer the amount is the card's one main number, above the question; in the question it
-  // is plain text, so it is not a second tappable copy (#696).
-  const amountChip = inAnswer ? card.amount.display : <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  // In an answer the question carries the amount once, as a number in the text (tappable when it
+  // has an evidence ref), not a pill and not repeated as a large number (#696 ruling).
+  const amountChip = inAnswer ? (
+    <NumberChip number={card.amount} size="inline" tone="plain" />
+  ) : (
+    <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  )
   const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
   const sentence = tokens.has('n1')
     ? fill(question, { n1: amountChip, date: dateChip })
@@ -85,22 +89,14 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
           <span key="amount">{amountChip}</span>,
           ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
         ]
-      : inAnswer
-        ? // The main number above already shows the amount the question does not carry.
-          fill(question, { date: dateChip })
-        : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
+      : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
   // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
   // touch area at 44px.
   if (inAnswer) {
     return compact ? (
       <p className="mt-2 text-base leading-6 text-ink-2">{sentence}</p>
     ) : (
-      <>
-        <div data-answer-main="" className="mt-2 max-w-full text-ink">
-          <NumberChip number={card.amount} size="lg" tone="plain" />
-        </div>
-        <p className="mt-1 text-lg leading-7 text-ink">{sentence}</p>
-      </>
+      <p className="mt-2 text-lg leading-8 text-ink">{sentence}</p>
     )
   }
   return compact ? (
