@@ -1169,6 +1169,11 @@ def claim(request: PlanInput) -> Claim:
         args = plan_spending(question, as_of)
         if args:
             return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
+    if re.search(SMALL_PURCHASES, q) and not re.search(WHAT_IF, q) and not peer_question and \
+            not small_purchases_whole(q):
+        # The whitelist rule's leftover is read on the WHOLE message, before any split: more than the plain
+        # small-purchases question goes to the next planner (the coordinator, #379 part B; review of #465)
+        return Claim(None, reason="period")
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
     clauses = [(part, topics) for part, topics in clauses if topics]
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
