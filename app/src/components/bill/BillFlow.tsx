@@ -1,16 +1,16 @@
 // The bill flow (Lasku): one container that runs the steps and makes the calls.
 // gallery → reading (POST /api/bill/read) → fields → explaining (POST /api/bill/explain) → explanation.
-// The fields card (#329) and the explanation card (#330) plug into the `fields` and `explanation`
-// steps; until then those steps show a plain read-only preview.
+// The `fields` step is the fields card (#329); the explanation card (#330) plugs into the
+// `explanation` step, which until then shows only the match sentence.
 import { useEffect, useReducer } from 'react'
 import { billApi } from '../../api/bill.ts'
-import type { BillReadFieldKey, BillReadResponse } from '../../api/billTypes.ts'
 import { ApiError } from '../../api/errors.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { strings } from '../../lib/i18n.ts'
 import { useSettings } from '../../lib/settings.ts'
-import { CARD_TITLE, CardShell } from '../cards.tsx'
+import { CardShell } from '../cards.tsx'
 import { ErrorBlock, LoadingBlock } from '../States.tsx'
+import { BillFieldsCard } from './BillFieldsCard.tsx'
 import { BillGallery } from './BillGallery.tsx'
 import { flowReducer, initialFlow, type FlowError } from './billFlowState.ts'
 
@@ -38,7 +38,7 @@ export function BillFlow({ onDone }: Props) {
       (reading) => dispatch({ type: 'read_ok', sampleId: readingId, reading }),
       (error: unknown) => {
         if (error instanceof ApiError && error.code === 'model_unavailable') {
-          dispatch({ type: 'read_unavailable', sampleId: readingId })
+          dispatch({ type: 'read_unavailable', sampleId: readingId, message: error.message })
         } else {
           dispatch({ type: 'read_failed', sampleId: readingId, error: toFlowError(error, t.errorRetry) })
         }
@@ -86,11 +86,18 @@ export function BillFlow({ onDone }: Props) {
       )
     case 'fields':
     case 'explaining':
+      // One element for both steps, so the user's edits survive a failed explanation.
       return (
         <div className="flex flex-col gap-3">
+          <h2 className="text-card-title font-bold text-brand">{state.reading ? s.confirmTitle : s.typeTitle}</h2>
+          {state.notice && <p className="rounded-lg bg-sunken p-3 text-base text-ink-2">{state.notice}</p>}
           {state.step === 'fields' && state.error && <ErrorBlock message={state.error.message} />}
-          <ReadingPreview reading={state.reading} />
-          {state.step === 'explaining' && <p className="text-sm text-muted">{s.explaining}</p>}
+          <BillFieldsCard
+            key={state.sampleId ?? 'typed'}
+            reading={state.reading}
+            busy={state.step === 'explaining'}
+            onConfirm={(request) => dispatch({ type: 'confirm', request })}
+          />
           <BackButton label={s.backToSamples} onClick={back} />
         </div>
       )
@@ -110,57 +117,6 @@ export function BillFlow({ onDone }: Props) {
         </div>
       )
   }
-}
-
-const FIELD_ORDER: BillReadFieldKey[] = ['payee', 'iban', 'reference', 'amount', 'due_date', 'barcode']
-
-/**
- * What Sentti read, field by field, each marked checked or "Is this right?". Read-only: the
- * editable fields card with Confirm replaces it (#329). `reading: null` is the typed fallback.
- */
-function ReadingPreview({ reading }: { reading: BillReadResponse | null }) {
-  const { lang } = useSettings()
-  const s = billStrings(lang)
-  return (
-    <CardShell>
-      <h2 className={CARD_TITLE}>{reading ? s.confirmTitle : s.typeTitle}</h2>
-      <dl className="mt-2 flex flex-col divide-y divide-line">
-        {FIELD_ORDER.map((key) => {
-          const read = reading?.fields[key] ?? null
-          if (key === 'barcode' && !read) return null
-          return (
-            <div key={key} className="flex min-h-14 flex-col justify-center gap-0.5 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <dt className="text-sm text-muted">{s.fieldLabels[key]}</dt>
-                <StatusMark checked={read?.status === 'checked'} />
-              </div>
-              <dd className={`text-base text-ink ${key === 'barcode' ? 'font-mono text-sm break-all' : ''}`}>
-                {read ? read.display : reading ? <span className="text-muted">{s.notFound}</span> : null}
-              </dd>
-              {read?.note && <dd className="text-sm text-ink-2">{read.note}</dd>}
-            </div>
-          )
-        })}
-      </dl>
-    </CardShell>
-  )
-}
-
-/** Checked (a mark and a word) or "Is this right?"; never colour alone. */
-function StatusMark({ checked }: { checked: boolean }) {
-  const { lang } = useSettings()
-  const s = billStrings(lang)
-  return checked ? (
-    <span className="inline-flex items-center gap-1 rounded-pill bg-mint-tint px-2.5 py-0.5 text-xs font-semibold text-brand">
-      <span aria-hidden="true">✓</span>
-      {s.checked}
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-pill bg-waiting-tint px-2.5 py-0.5 text-xs font-semibold text-waiting">
-      <span aria-hidden="true">?</span>
-      {s.isThisRight}
-    </span>
-  )
 }
 
 function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
