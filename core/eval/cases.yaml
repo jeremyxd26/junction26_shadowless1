@@ -131,7 +131,7 @@ cases:
   - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
 
 - id: marja-q1-where-money-went
   persona: CUST00493
