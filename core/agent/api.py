@@ -276,6 +276,7 @@ async def ask(request: Request):
     if not exists:
         return envelope("customer_not_found", lang)
 
+    # SEAM (#144, PR #199): viewer=viewer_of(request, response), with the cookie set on the response.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
                      conversation_id=body.conversation_id)
     if "text/event-stream" in request.headers.get("accept", ""):
