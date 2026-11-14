@@ -22,7 +22,7 @@ python scripts/scan_env_values.py
 - The first line also fetches the head of every pull request, closed ones included. Those refs become public with the repository, even when their branch was deleted. The script runs the same fetch itself unless it gets `--no-fetch`.
 - Both checks must end clean: `no leaks found`, and `RESULT: clean` with `0 / 0 / 0` for every variable.
 - The script exits 2 and prints `NOT RUN` when it loads no value, for example from an empty or missing `.env`.
-- The data the dev service keeps (audit files, model response cache, journal) is one more step of this list: it is deleted by hand after the event, with the checklist in `docs/security/server-data.md`.
+- One more step of this list comes later, after the event rather than before the switch: delete by hand the data the dev service keeps (audit files, model response cache, journal), with the checklist in `docs/security/server-data.md`.
 
 **If anything is found**:
 - the key counts as leaked, even if the repository is still private;
