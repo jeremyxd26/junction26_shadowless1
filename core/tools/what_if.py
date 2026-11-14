@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from core.tools import aliases, config, evidence, metric_sql, periods
 from core.tools.context import ToolContext
+from core.tools.formatting import display
 from core.tools.models import MERCHANT_ALIAS_PATTERN, Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
 
@@ -163,7 +165,7 @@ def run_what_if(ctx: ToolContext, args: RunWhatIfArgs | dict) -> ToolResult:
 
     cut = reg(Number(value=args.cut_pct, unit=Unit.PERCENT, period=window, method=config.USER_INPUT_METHOD,
                      evidence_ref=None, label=_t("cut", lang),
-                     display=f"{args.cut_pct} %" if lang == "fi" else f"{args.cut_pct}%"))
+                     display=display(Decimal(args.cut_pct), Unit.PERCENT, lang, config.USER_INPUT_METHOD)))
     scenario_label = _t("scenario", lang, pct=args.cut_pct, what=what)
     result = WhatIfResult(
         scenario=Scenario(selection={"kind": sel.kind, "value": sql_value}, cut_pct=cut, label=scenario_label),
