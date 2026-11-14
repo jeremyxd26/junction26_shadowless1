@@ -222,7 +222,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       {(hasContent || streaming || done) && (
         <div className="flex min-h-11 items-center justify-between gap-2">
           <SenttiLabel s={s} />
-          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
+          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} answerId={done.answer_id} />}
         </div>
       )}
       {/* The first answer of a conversation says once, in the API's words, that Sentti is an AI. */}

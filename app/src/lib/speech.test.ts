@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { speak, speakingNow, stopSpeaking, voiceFor } from './speech.ts'
+import { TTS_LIVE, speak, speakAnswer, speakingNow, stopSpeaking, voiceFor } from './speech.ts'
 
 const voice = (lang: string, name = lang, localService = true) => ({ lang, name, localService }) as unknown as SpeechSynthesisVoice
 
@@ -80,5 +80,15 @@ describe('speak and stopSpeaking', () => {
     expect(speakingNow()).toBeNull()
     spoken[0].onend?.()
     expect(speakingNow()).toBeNull()
+  })
+
+  it('keeps the device voice in a mock build, also with an answer id (#730)', () => {
+    expect(TTS_LIVE).toBe(false)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    speakAnswer('5', 'Groceries were €412.30.', en, { customerId: 'CUST00860', answerId: 'ans_aaaa1111', language: 'en' })
+    expect(spoken.map((u) => u.text)).toEqual(['Groceries were €412.30.'])
+    expect(speakingNow()).toBe('5')
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
