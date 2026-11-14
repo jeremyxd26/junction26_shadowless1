@@ -333,6 +333,7 @@ def test_an_unrecognised_question_with_the_model_off_gets_the_general_clarifying
     done = ask(p, "Tell me something useful about my groceries")
     assert done["outcome"] == "clarify" and done["clarify"] is not None
     assert "llm_unavailable" in done["warnings"] and transport.requests == []
+    assert not done["clarify"]["question"].startswith("I could not")   # the model is off, not failed (#341)
 
 
 def test_a_rules_refusal_needs_no_warning_when_the_model_is_off(tmp_path):
@@ -370,3 +371,40 @@ def test_without_a_key_the_rule_models_answer_carries_the_warning():
     assert "€1,146.05" in done["text_rendered"] and audit.records[-1]["model_unavailable"] == "no_model"
     refusal = ask(p, "Should I put my savings into tech stocks?")
     assert refusal["outcome"] == "refused" and "llm_unavailable" not in refusal["warnings"]
+
+
+# ---- #341: no answer without data to a data question; a plain note when the planner fails ------------------
+
+FINISH_ONLY = call_response("finish", {})
+
+
+def test_a_model_plan_with_no_data_call_is_planned_by_the_rules_instead():
+    """The model's planner chose no data function: the composer could only introduce Sentti. The rules
+    plan the question, so it is answered with its number."""
+    transport = ByKind(FINISH_ONLY, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
+    turns = audit.records[-1]["planner_turns"]
+    assert turns[0]["error"] == "no data call" and turns[1]["source"] == "rules"
+    assert turns[0]["tokens"]["prompt_tokens"] > 0       # the replaced plan's usage stays in the audit
+    assert "llm_unavailable" not in done["warnings"]
+
+
+def test_a_question_the_rules_do_not_recognise_then_gets_their_general_clarifying_question():
+    transport = ByKind(FINISH_ONLY, text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and transport.compose.requests == []
+    assert done["clarify"]["question"].startswith("I could not work that out right now.")   # an empty plan
+
+
+def test_after_a_planner_failure_the_clarifying_question_says_it_was_not_worked_out():
+    transport = FakeTransport(TimeoutError())
+    p, _ = pipeline(transport)
+    p.model.client.fallback_model = None
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and "llm_unavailable" in done["warnings"]
+    assert done["clarify"]["question"].startswith("I could not work that out right now. ")
+    done = ask(p, "Kerro jotain hyödyllistä ruokaostoksistani", language="fi")
+    assert done["clarify"]["question"].startswith("En pystynyt selvittämään tätä juuri nyt. ")

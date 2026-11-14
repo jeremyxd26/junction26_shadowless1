@@ -85,6 +85,16 @@ CLARIFY_GENERAL = {
                 ("Mihin rahani menivät?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?",
                  "Miten voisin säästää enemmän?")),
 }
+# "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
+# the card's own "why" text; {amount} is the card amount's token.
+REVIEW_PURCHASE = (
+    "That was your {category} purchase on {date}: {amount}. It is the large purchase I asked you about: "
+    "was it needed, or your choice? {why}",
+    "Se oli ostoksesi {date} luokassa {category}: {amount}. Tästä isosta ostoksesta kysyin sinulta: oliko se "
+    "välttämätön hankinta vai oma valinta? {why}",
+)
+# Before the rules' clarifying question when the model could not plan the question (#341).
+NOT_WORKED_OUT = ("I could not work that out right now.", "En pystynyt selvittämään tätä juuri nyt.")
 CLARIFY = {
     "question": ("Which period do you mean?", "Mitä ajanjaksoa tarkoitat?"),
     "options": (("This month", "Last month", "The last three months"),
