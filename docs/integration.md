@@ -23,8 +23,9 @@ The host loads the module **top-level** in its WebView, never inside an iframe o
 
 **In the demo (main):** the customer is a demo persona chosen in the app.
 - The app sends the persona's `customer_id` in the path of `GET /api/overview/{customer_id}` and as `?customer_id=` for evidence (`app/src/api/client.ts`). The API also takes it in the body of `POST /api/whatif`, which the app does not call yet.
-- The service checks that the customer exists (`core/app/api/deps.py`, `require_customer`).
-- Only the four personas are served; any other id answers 404 `customer_not_found` (issue #101, PR #125): **dev**.
+- Every handler that takes a customer enters through `customer_connection` (`core/app/api/deps.py`):
+  - **Personas only:** only the four personas are served (setting `DEMO_CUSTOMERS`, default `personas`, `core/app/settings.py`). Any other id answers 404 `customer_not_found` before the database is touched (issue #101): **main**.
+  - **Existence check:** the service then checks that the customer exists (`require_customer`): **main**.
 
 **In S-mobiili (planned):** the customer comes from the bank session, never from a client-supplied id (rule R4).
 1. The host asks the bank's backend for a short-lived token for the signed-in customer (minutes, audience "sentti").
@@ -46,7 +47,7 @@ The host loads the module **top-level** in its WebView, never inside an iframe o
 ## 3. The bridge between the module and the host
 
 **Built today (main), iOS only:**
-- The back button on the module's first screen posts `{ type: 'close' }` through `window.webkit.messageHandlers.sentti.postMessage(...)`, if that handler exists (`app/src/lib/url.ts`, `goBack`). Without the handler it steps back in the module's own history.
+- The back button on the module's first screen posts `{ type: 'close' }` through `window.webkit.messageHandlers.sentti.postMessage(...)`, if that handler exists (`app/src/lib/url.ts`, `goBack`). Without the handler, back on a screen other than `/` goes to `/`, and on `/` it steps back in the module's own history.
 - Nothing is posted on Android, and the module handles no message from the host.
 
 **The target (planned):** the versioned envelope below; the app aligns with it in issue #170.
@@ -90,7 +91,7 @@ The amount in a handoff is a Number object of the API contract (`contracts/api.m
 - **Cookies** (**planned**, issue #144): the module will use one first-party, functional cookie. It is on neither `main` nor `dev` yet, only on the branch `r/144-viewer-sessions` (`core/app/api/viewer.py`).
   - **Name and value:** `sentti_viewer`, 32 random characters (192 bits) with no personal data. The server keeps only a hash and never logs the value.
   - **Attributes:** `HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=7200`.
-  - **Where it is set,** when the request has none: by the overview, by the review answer, and by `GET /api/viewer/reset`, which gives a presenter a fresh state.
+  - **Where it is set:** by the overview and by the review answer when the request has none, and by `GET /api/viewer/reset` always (a new cookie, so a presenter gets a fresh state).
   - **Without it:** a client sees the shared pending state.
   - **In the bank:** the session of section 2 would ride on the same mechanism.
 - **In the WebViews:** the cookie is first-party on the page's own origin.
@@ -197,7 +198,6 @@ class SenttiActivity : AppCompatActivity() {
 - **The bridge:** only today's iOS `{ type: 'close' }` is built. The versioned messages of section 3, Android, and handling messages from the host are planned; the app aligns in issue #170.
 - **Swedish:** `sv` in the API, the texts and the app.
 - **Theme tokens from the host:** the module uses its own S-mobiili-style tokens.
-- **On `dev`, not yet on `main`:** only the persona customers served (issue #101, PR #125).
 - **Planned:**
   - the viewer-session cookie and the rate limit on the review answer (issue #144, on a branch only);
   - the review-card answer, the module's one write (#68, PR #141).
