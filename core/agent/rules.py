@@ -30,6 +30,14 @@ from core.tools import config
 RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.PERSON_FI), key=len, reverse=True))
             + r")\b")
 
+# An amount in a request to move money: digits, with or without the euro, or the number in words.
+_NUMBER_EN = (r"(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|"
+              r"sixty|seventy|eighty|ninety|a hundred|hundred|a thousand|thousand)([- ](one|two|three|four|five|six|"
+              r"seven|eight|nine|hundred|thousand))*")
+AMOUNT_EN = r"(€\s?)?(\d[\d\s.,]*|" + _NUMBER_EN + r")\s?(€|euros?|eur|bucks)?\b"
+AMOUNT_FI = (r"(€\s?)?(\d[\d\s.,]*|yksi|kaksi|kolme|neljä|viisi|kuusi|seitsemän|kahdeksan|yhdeksän|kymmenen|"
+             r"\w+kymmentä|sata|satanen|satasen|tuhat|tonni|tonnin)\s?(€|euroa?|e)?\b")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
@@ -50,6 +58,16 @@ DECLINE_RULES = [
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto)\w*|\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
+    # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my
+    # savings account now.", "Make a payment of 30 euros to my landlord.", "Lähetä 20 euroa ystävälleni". Only as a
+    # request (a sentence's first word, or after "please", "can you", "voitko"), so "how much did I send to my
+    # landlord", "did I pay 30 euros to Elisa" or "what if I pay 50 euros to savings" stay questions.
+    ("unsafe", r"(^|[.!?;,]\s*|\b(please|pls|kindly|can you|could you|would you|will you|i want you to|"
+               r"i need you to|go ahead and)\s+)((send|move|wire|pay)\s+(me\s+)?" + AMOUNT_EN + r"[^.?!]{0,40}?\bto\b|"
+               r"send\s+me\s+" + AMOUNT_EN + r"|make\s+(a\s+)?payments?\s+(of\s+)?" + AMOUNT_EN +
+               r"[^.?!]{0,40}?\b(to|for)\b)|"
+               r"(^|[.!?;,]\s*|\b(voitko|voisitko|voitteko|ole hyvä ja)\s+)(lähetä|siirrä|maksa|lähettää|siirtää|maksaa)\b"
+               r"[^.?!]{0,30}?" + AMOUNT_FI + r"[^.?!]{0,40}?\w+(lle|lleni|llesi|llemme|lleen)\b"),
     ("out_of_scope", r"\bjust (estimate|guess)\b|\bany number\b(?!\s+of\b)|"
                      r"\bmake up (a |an |some )?(number|amount|figure)s?\b|\bguess (a |an |some )?(number|amount|figure)s?\b|"
                      r"\binvent (a |an )?(number|amount)s?\b|\bkeksi (jokin |joku )?(luku|summa)\b|"
