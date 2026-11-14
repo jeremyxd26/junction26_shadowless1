@@ -222,7 +222,8 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 highlighted ? look.tint.split(' ')[0] : ''
               } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
             >
-              <div className="flex items-center gap-3">
+              {/* With large text the amount moves under the label instead of running past the card (#493). */}
+              <div className="flex flex-wrap items-center gap-3">
                 <span
                   aria-hidden="true"
                   className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
@@ -233,8 +234,8 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                   <p className={`font-semibold leading-5 ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
-                <span data-amount-key={item.key} className="shrink-0">
-                  <NumberChip number={item.amount} size="inline" count={motion?.counts[item.key]} />
+                <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">
+                  <NumberChip number={item.amount} size="inline" wrap count={motion?.counts[item.key]} />
                 </span>
               </div>
               {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
