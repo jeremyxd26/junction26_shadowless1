@@ -547,7 +547,7 @@ FORECAST_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Balance until payday", "Saldo palkkapäivään asti"),
     "balance_now": ("Balance today", "Saldo tänään"),
     "bills_until_payday": ("Bills before payday", "Laskut ennen palkkapäivää"),
-    "daily_pace": ("Usual spending a day", "Tavallinen kulutus päivässä"),
+    "daily_pace": ("Usual spending", "Tavallinen kulutus"),   # the display says "a day" / "/ pv"
     "bills_to_date": ("Bills due by then", "Siihen mennessä erääntyvät laskut"),
     "lowest": ("Lowest point, {date}", "Alin kohta, {date}"),
     "lowest_day_before_payday": ("Lowest point, the day before payday, {date}",
@@ -562,10 +562,10 @@ FORECAST_TEXT: dict[str, tuple[str, str]] = {
     "row_day_before_payday": ("day before payday", "palkkapäivää edeltävä päivä"),
     "estimate_label": ("Estimate", "Arvio"),
     "estimate_text": (
-        "If you spend as usual: about {pace} a day, the middle one of your last three full months' daily "
+        "If you spend as usual: about {pace}, the middle one of your last three full months' daily "
         "averages of everyday spending and essentials, bills left out. Bills come on their usual days. "
         "Salary and other money coming in before payday are not counted.",
-        "Jos kulutat tavalliseen tapaan: noin {pace} päivässä, kolmen viimeisen täyden kuukauden "
+        "Jos kulutat tavalliseen tapaan: noin {pace}, kolmen viimeisen täyden kuukauden "
         "päiväkeskiarvoista keskimmäinen, arkikulutus ja välttämättömät menot ilman laskuja. Laskut tulevat "
         "tavallisina päivinään. Palkkaa tai muita ennen palkkapäivää tulevia rahoja ei lasketa mukaan.",
     ),
