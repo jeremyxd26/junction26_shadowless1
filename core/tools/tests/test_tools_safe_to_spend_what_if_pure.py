@@ -184,18 +184,24 @@ def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
 
 # ---- #391: the savings goal ------------------------------------------------------------------------------
 
-def test_the_savings_goal_is_an_optional_argument_and_a_setting_only_when_given():
-    from core.tools import evidence
+def test_the_savings_goal_is_a_python_parameter_and_a_setting_only_when_given():
+    from core.tools import evidence, metric_sql
     from core.tools.context import ToolContext
     from core.tools.safe_to_spend import GetSafeToSpendArgs, settings_for
 
     ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=None)
     ctx._labels = {}
     assert "savings_goal_eur" not in settings_for(ctx)                 # the default goal: 03's own
-    assert settings_for(ctx, GetSafeToSpendArgs.model_validate({"savings_goal": 250}).savings_goal)[
-        "savings_goal_eur"] == "250.00"
-    with pytest.raises(ValidationError):
-        GetSafeToSpendArgs.model_validate({"savings_goal": -1})
+    assert settings_for(ctx, Decimal("250"))["savings_goal_eur"] == "250.00"
+    # #447: not a tool argument, so no plan (model or rules) can pass it
+    for value in (250, -1, "500"):
+        with pytest.raises(ValidationError):
+            GetSafeToSpendArgs.model_validate({"savings_goal": value})
+    assert GetSafeToSpendArgs.model_json_schema().get("properties", {}) == {}
+    # the typed setting's bounds, the check a later API field goes through
+    goal_ok = metric_sql.TYPED_SETTINGS["savings_goal_eur"]
+    assert [goal_ok(v) for v in ("0.00", "250.00", "100000.00")] == [True, True, True]
+    assert [goal_ok(v) for v in ("-1.00", "100000.01", "250", "1.234", "1e3", "250.00; drop")] == [False] * 6
     assert evidence.FORMULAS["minimum_after_goal"] == ("a", "b", "goal")
     values = {"a": Decimal("5864.86"), "b": Decimal("97.46"), "goal": Decimal("360")}
     assert evidence.compute_formula("minimum_after_goal", values) == Decimal("97.46")
