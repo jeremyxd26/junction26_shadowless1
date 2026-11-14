@@ -78,6 +78,9 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # get_balance_forecast (#257, metrics.md section 3.3)
+    "daily_pace": "balance_forecast.daily_pace_eur@1",
+    "bills_to_date": "balance_forecast.bills_to_date_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -533,6 +536,70 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
         "This month's salary has not arrived yet, so payday is taken as the end of the month.",
         "Tämän kuun palkka ei ole vielä tullut, joten palkkapäiväksi oletetaan kuun loppu.",
     ),
+}
+
+# ---- get_balance_forecast (#257, metrics.md section 3.3) ------------------------------------------
+# Number labels have no digits except a date written exactly as the number's own period label (the
+# validator accepts it); the card's row labels are card text only and may carry dates.
+FORECAST_BALANCE_METHOD = "balance_forecast.balance_eur@1"   # composite, formula `balance_forecast`
+FORECAST_BASKETS = ("everyday_spending", "regular_essentials")   # the usual spending of the daily pace
+FORECAST_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Balance until payday", "Saldo palkkapäivään asti"),
+    "balance_now": ("Balance today", "Saldo tänään"),
+    "bills_until_payday": ("Bills before payday", "Laskut ennen palkkapäivää"),
+    "daily_pace": ("Usual spending", "Tavallinen kulutus"),   # the display says "a day" / "/ pv"
+    "bills_to_date": ("Bills due by then", "Siihen mennessä erääntyvät laskut"),
+    "lowest": ("Lowest point, {date}", "Alin kohta, {date}"),
+    "lowest_day_before_payday": ("Lowest point, the day before payday, {date}",
+                                 "Alin kohta, palkkapäivää edeltävä päivä, {date}"),
+    "day_before_payday": ("Day before payday, {date}", "Palkkapäivää edeltävä päivä, {date}"),
+    "below_zero": ("First day below zero, {date}", "Ensimmäinen päivä miinuksella, {date}"),
+    "after_bills": ("After bills, {date}", "Laskujen jälkeen, {date}"),
+    "row_today": ("Today", "Tänään"),
+    "row_bills": ("{bills} paid", "{bills} maksettu"),
+    "row_below_zero": ("below zero", "miinuksella"),
+    "row_lowest": ("lowest point", "alin kohta"),
+    "row_day_before_payday": ("day before payday", "palkkapäivää edeltävä päivä"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "If you spend as usual: about {pace}, the middle one of your last three full months' daily "
+        "averages of everyday spending and essentials, bills left out. Bills come on their usual days. "
+        "Salary and other money coming in before payday are not counted.",
+        "Jos kulutat tavalliseen tapaan: noin {pace}, kolmen viimeisen täyden kuukauden "
+        "päiväkeskiarvoista keskimmäinen, arkikulutus ja välttämättömät menot ilman laskuja. Laskut tulevat "
+        "tavallisina päivinään. Palkkaa tai muita ennen palkkapäivää tulevia rahoja ei lasketa mukaan.",
+    ),
+    "note_comfortable": ("Your balance stays comfortably above the bills due before payday.",
+                         "Saldosi pysyy selvästi suurempana kuin ennen palkkapäivää erääntyvät laskut."),
+    "note_above_zero": ("Your balance stays above zero until payday if you spend as usual, but with little to spare.",
+                        "Saldosi pysyy plussalla palkkapäivään asti, jos kulutat tavalliseen tapaan, mutta "
+                        "liikkumavaraa on vähän."),
+    "note_below_zero": ("If you spend as usual, your balance goes below zero on {date}.",
+                        "Jos kulutat tavalliseen tapaan, saldosi menee miinukselle {date}."),
+    "note_estimate": (
+        "This is an estimate: it assumes you spend as usual and your bills come on their usual days, and "
+        "it leaves out money coming in before payday.",
+        "Tämä on arvio: se olettaa, että kulutat tavalliseen tapaan ja laskut tulevat tavallisina päivinään, "
+        "eikä siinä ole mukana ennen palkkapäivää tulevia rahoja.",
+    ),
+    "note_payday_bills": (
+        "Bills due on payday itself are in the bills before payday, but not in the balance the day before.",
+        "Palkkapäivänä erääntyvät laskut ovat mukana ennen palkkapäivää erääntyvissä laskuissa, mutta eivät "
+        "edellisen päivän saldossa.",
+    ),
+    "note_no_salary": (
+        "No regular salary shows on this account, so payday is assumed to be a month away.",
+        "Tilillä ei näy säännöllistä palkkaa, joten palkkapäivän oletetaan olevan kuukauden päästä.",
+    ),
+    "note_late_salary": (
+        "This month's salary has not arrived yet, so payday is taken as the end of the month.",
+        "Tämän kuun palkka ei ole vielä tullut, joten palkkapäiväksi oletetaan kuun loppu.",
+    ),
+    "note_no_data": ("Your balance until payday cannot be estimated: there are no transactions to start from.",
+                     "Saldoa palkkapäivään asti ei voi arvioida: aloitukseen ei ole tapahtumia."),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    "whatif_label": ("What could I cut?", "Mistä voisin vähentää?"),
+    "whatif_prompt": ("What if I cut my spending?", "Entä jos vähentäisin kulutustani?"),
 }
 
 # ---- get_safe_to_save (#165, metrics.md section 3.1) ----------------------------------------------

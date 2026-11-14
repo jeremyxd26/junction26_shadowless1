@@ -25,7 +25,8 @@ from core import answer_text
 
 # Data tools of agent-core.md section 6.2. decline, ask_clarifying_question and finish read no data.
 DATA_TOOLS = {"get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if",
-              "get_spender_profile", "get_peer_benchmark", "compare_store_prices", "down_payment_plan"}
+              "get_spender_profile", "get_peer_benchmark", "compare_store_prices", "down_payment_plan",
+              "get_balance_forecast"}
 
 
 @dataclass
