@@ -856,6 +856,28 @@ def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, ex
         assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == expected
 
 
+@pytest.mark.parametrize("question,lang,expected", [
+    # #534 with #488: an everyday word is its own selection in a what-if, never also the category found inside it
+    ("What if I spent 20% less on fast food?", "en", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän pikaruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("Mitä jos käyttäisin 20 % vähemmän noutoruokaan?", "fi", {"kind": "mcc", "value": "5814"}),
+    ("What if I spent 20% less on food?", "en", {"kind": "category", "value": "Groceries"}),
+    ("What if I spent 20% less on eating out?", "en", {"kind": "category", "value": "Restaurants"}),
+])
+def test_a_what_if_on_an_everyday_word_cuts_its_codes_and_bare_food_cuts_groceries(question, lang, expected):
+    calls = data_calls(plan(question, lang))
+    assert [name for name, _ in calls] == ["run_what_if"] and calls[0][1]["selection"] == expected
+
+
+def test_a_what_if_on_a_food_compound_asks_which_spending_and_saving_on_it_is_the_save_more_question():
+    from core.agent.rules import WHAT_IF_WHICH
+    for question in ("What if I spent 20% less on food delivery?", "What if I cut pet food by 20%?"):
+        result = plan(question)
+        assert data_calls(result) == [] and result.calls[0].args["question"] == WHAT_IF_WHICH[0], question
+    assert [name for name, _ in data_calls(plan("How could I save on food delivery?"))] == \
+        ["get_safe_to_save", "get_basket_breakdown"]
+
+
 @pytest.mark.parametrize("question,lang", [
     # #510: a frequency, a determiner, a holiday's eve, a first week, a shop in general: no thing
     ("how much did I spend on twice a month?", "en"),

@@ -359,8 +359,14 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
-    categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, q)} & config.WHAT_IF_CATEGORIES
     codes = {c for rx, c in WHAT_IF_MCC_WORDS if re.search(rx, q)}
+    # An everyday word is its own selection: "fast food" and "pikaruoka" are MCC 5814 in a what-if, never also the
+    # Restaurants or Groceries category the category words find inside them (#534 with #488). A food compound
+    # ("food delivery", "pet food") is no selection the rules know, never Groceries: a cut of it asks which spending.
+    rest = q
+    for rx in [rx for rx, _ in WHAT_IF_MCC_WORDS] + [FOOD_COMPOUND]:
+        rest = re.sub(rx, " ", rest)
+    categories = {c for rx, c in CATEGORY_WORDS if re.search(rx, rest)} & config.WHAT_IF_CATEGORIES
     baskets = {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, q)}
     selections = len(categories) + len(codes) + len(baskets)
     pct = re.search(PERCENT, q)
@@ -1153,8 +1159,9 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # "How much did I spend on the pharmacy?" is never answered with the unfiltered total: the same
         # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
-    if re.search(FOOD_COMPOUND, q):
-        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534)
+    if re.search(FOOD_COMPOUND, q) and "what_if" not in found:
+        # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534);
+        # a what-if on one keeps the what-if rule, which asks which spending, as on dev
         return Claim(None, reason="food_compound")
     if not found:
         if _unknown_object(q):
