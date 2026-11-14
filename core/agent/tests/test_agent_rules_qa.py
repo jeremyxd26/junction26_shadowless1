@@ -29,15 +29,12 @@ def spending_periods(result):
 
 # --- #298: a month name or abbreviation inside another word is not a month ---------------------
 
-GAP_298 = "a month abbreviation matches inside another word (Marja -> March, maybe -> May); issue #298"
-
-
+# Fixed by #298 (in PR #384): a month is a whole word, or a Finnish month stem with "kuu".
 @pytest.mark.parametrize("question", [
-    pytest.param("can you summarize my spending?", marks=pytest.mark.xfail(strict=True, reason=GAP_298)),  # sum-MAR-ize
-    pytest.param("maybe I spend too much on groceries?", marks=pytest.mark.xfail(strict=True, reason=GAP_298)),  # MAY-be
-    pytest.param("help me decide how much to spend on food", marks=pytest.mark.xfail(strict=True, reason=GAP_298)),
-    pytest.param("how much did I spend at the doctor?", marks=pytest.mark.xfail(strict=True, reason=GAP_298)),
-    # "afford" is the safe-to-spend question (#316): no spending period at all, so this one holds already.
+    "can you summarize my spending?",          # sum-MAR-ize
+    "maybe I spend too much on groceries?",    # MAY-be
+    "help me decide how much to spend on food",  # DEC-ide
+    "how much did I spend at the doctor?",     # d-OCT-or
     "can I afford a new sofa, maybe next month?",
 ])
 def test_no_month_is_read_from_inside_a_word(question):
@@ -45,7 +42,7 @@ def test_no_month_is_read_from_inside_a_word(question):
         assert period.get("preset") != "custom", f"{question!r} planned the custom period {period}"
 
 
-@pytest.mark.xfail(strict=True, reason="another person's name is answered with the user's own data; issue #298")
+# Fixed by #298 (in PR #384): no month from a name, and another person's profile is not claimed.
 @pytest.mark.parametrize("question,lang", [
     ("show me Marja's spending", "en"),
     ("show me Jani's groceries", "en"),
