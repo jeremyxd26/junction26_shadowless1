@@ -477,7 +477,7 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 - the warning sign `amount_above_usual` still applies against the category's typical month, and then names that basis ("much more than all your Utilities payments in a usual month");
 - the basket (regular essentials) and the effect on safe to spend are as for a match.
 
-**Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
+**Comparison and warning signs.** For your regular bill (a matched bill that fits it, #400), `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
 
 | Code | Rule |
 |---|---|
@@ -487,6 +487,17 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 | `short_term` | `0 ≤ D - as_of < 7` days (`config.BILL_SHORT_TERM_DAYS`); a past due date is a warning instead. |
 
 **Evidence.** The bill's amount (`bill_barcode@1` or `user_input@1`) is not the customer's data and has no ref. In the composites that use it (the comparison, the counted amount), it is a part stored inline with only its method, value and date, never the payee, IBAN or reference. The balance limit with the bill is a `metric` spec whose settings hold the counted amount, so its evidence re-runs 03 with it and reconciles.
+
+**The forecast on the due date (#421).** The balance forecast of section 3.3, on the bill's due date `D`, before and after the bill (`bill_explain._forecast`):
+- **The window.** The forecast covers today up to the day before payday. A due date before `as_of`, or on or after payday, is `outside_forecast`, with no numbers. The due date is taken as printed, with no shift to a banking day, as the forecast's days, the bills due and the effect on safe to spend use calendar dates.
+- **Before.** The forecast's own Number for `D` (`balance_forecast.balance_eur@1`, built by `forecast.Projection.balance_on`, the same code as the forecast card, so the same ref). For `D` = today it is the balance now.
+- **How the forecast and the bill overlap.** The forecast already subtracts the hero's bills on their expected days. When the bill belongs to one of those series (any match), the balance before already holds what the forecast has subtracted for that series by `D`: `already_counted`, the series' part of `balance_forecast.bills_to_date_eur@1` up to `D`. So the bill takes only `counted = max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`), and nothing is subtracted twice. This is not safe to spend's `reserved`, which runs up to payday: a monthly bill expected after `D` is not in the balance on `D` yet, so a bill due before its usual day takes its whole amount. Unmatched: `counted = A`.
+- **After:** `before - counted` (`bill.forecast_after_eur@1`).
+- **The status:** `not_covered` below 0; `tight` below `config.BILL_FORECAST_MARGIN_EUR` (€100); else `covered`. For `not_covered`, `shortfall = counted - before` (`bill.forecast_shortfall_eur@1`), the sentence names it and the date, and a chip asks the forecast question. No sentence suggests borrowing (#419).
+- **The draft.** The status never removes the payment draft.
+- **A known failure** (no transactions, no balance, the bills due of the two paths differ): the block is `null`, as `safe_to_spend`.
+- **Example (CUST00860, sample 2, €312.70 to a utilities payee, due 13 Oct):** the forecast for 13 Oct is €12,491.82. Utilities is spread over the month, so €79.61 of it (186.40 × 13 / 30.4375) is already in it. The bill takes €233.09, and €12,258.73 is left: `covered`.
+- **Example (CUST00849, lowest €641.43 on 14 Oct):** a bill of €600 due then leaves €41.43 (`tight`). One of €700 is €58.57 short (`not_covered`).
 
 ## 4. What-if savings — "How could I save more?"
 
