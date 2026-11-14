@@ -372,8 +372,12 @@ def test_a_redirect_is_never_followed_by_the_real_opener():
     class Redirect(http.server.BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802 - http.server's name
             seen.append(self.path)
+            # read the body and say the answer has none: a socket closed with unread data sends a reset on Windows,
+            # which can reach the client before the 302 (ConnectionAbortedError 10053, a flake in full runs, #645)
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
             self.send_response(302)
             self.send_header("Location", "http://other.example/x")
+            self.send_header("Content-Length", "0")
             self.end_headers()
 
         def log_message(self, *args):  # quiet
