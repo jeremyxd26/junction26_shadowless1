@@ -587,12 +587,18 @@ S_GROUP_CHAINS = r"s-?market\w*|prisma\w*|alepa\w*|\bsale\b|\babc\b|sokos\w*|her
 BONUS = (r"(?<!['’])\bs[- ]?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
          r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*|"
          rf"\bbonu\w*\b.*\b({S_GROUP_CHAINS})|\b({S_GROUP_CHAINS}).*\bbonu\w*|"
-         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi|tienaisin|ansaitsisin)\b")
+         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi|tienaisin|ansaitsisin)\b|"
+         # the Bonus received ("Paljonko Bonusta olen saanut kaikkiaan?"): the S-Bonus estimate, never the spending
+         # total (#639); a bonus from work is no S-Bonus
+         r"\bbonu\w*\b(?!.*\b(työ\w*|palk\w*|esimie\w*|work|salary|employer|job|boss)\b).*"
+         r"\b(saanut|saaneet|kertynyt|kerännyt|received|earned|got|collected)\b|"
+         r"\b(saanut|saaneet|received|earned|got|collected)\b.*\bbonu\w*\b"
+         r"(?!.*\b(työ\w*|palk\w*|work|salary|employer|job|boss)\b)")
 # A bonus word the S-Bonus rule does not claim ("How much could I earn in bonus?") competes with the
 # income rule: an employer's bonus or the S-Bonus, the planner or a question back decides.
 BONUS_WORD = r"\bbonu\w*"
 SHARE_WORDS = [(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b|puoleen", 50),
-               (r"\ball\b|\bkaikki\w*", 100)]
+               (r"\ball\b|\bkaikki(?!aan\b)\w*", 100)]   # "kaikkiaan" is "in total", no share (#639)
 # A share stated in a form the rules cannot read: a fraction or a number written as a word.
 SHARE_UNREADABLE = (r"\b(a |one )?(third|quarter|fifth|tenth)s?\b|\b\w+sosa\w*|\b\d+\s?/\s?\d+\b|"
                     r"\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b|"
@@ -1139,6 +1145,17 @@ COST_SUBJECT_FI = (r"\b(?:paljonko|mita|kuinka paljon)\s+(?:minun\s+|meidan\s+)?
                    r"|\b(?:paljonko|mita|kuinka paljon)\s+maksoin\s+([^\W\d_]+n)\b")
 # a subject that is a bill, not a purchase: what "how much is my insurance bill" gives (the bills tool)
 COST_BILL_THINGS = r"\binsurance\b|\b(?:phone|mobile)\s+plan\b|\bsubscriptions?\b|vakuutu\w*|vakuutus\w*|liittym\w*"
+# Narrower than any filter of the spending tool (#639): a part of the week, and a pronoun that names nothing without a
+# previous turn; the rent as an obligation ("Paljonko minun pitää maksaa vuokraa?"). Folded below.
+WEEK_PART = (r"\bweekends?\b|\bweekdays?\b|\bweeknights?\b|\bon (mondays|tuesdays|wednesdays|thursdays|fridays|"
+             r"saturdays|sundays)\b|\bviikonlop\w*|\barkipäiv\w*|\barkisin\b|\barki-?iltaisin\b|"
+             r"\b(maanantai|tiistai|keskiviikko|torstai|perjantai|lauantai|sunnuntai)sin\b")
+PRONOUN_THING = r"\b(on|for|at) (it|that|this|them|those)\b|\bsiihen\b|\bniihin\b|\btuohon\b|\bnoihin\b"
+OBLIGATION_TO_PAY = (r"\b(pitää|pitäisi|täytyy|joudun|joudumme|on) maksaa\b|\bmaksettava\w*|"
+                     r"\b(have|has|need|needs) to pay\b|\bmust pay\b")
+RENT_WORDS = r"\bvuokra\w*|\brent\b"
+WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS = (
+    fold_pattern(rx) for rx in (WEEK_PART, PRONOUN_THING, OBLIGATION_TO_PAY, RENT_WORDS))
 # no thing: the whole of the spending, or a period ("What did everything cost me?", "How much did last month cost?")
 COST_NO_THING = {"it", "everything", "all", "that", "this", "these", "those", "i", "we", "you", "kaikki", "se", "ne",
                  "tama", "tuo", "kulutus", "kulutukseni", "spending", "shopping", "life"}
@@ -1633,6 +1650,18 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f != "spending"]
         if not found:
             return Claim(None, reason="to_person")
+    if "spending" in found and re.search(WEEK_PART, q):
+        # "at the weekend", "on weekdays", "viikonloppuisin": no filter of the spending tool, so never the whole period
+        # as the answer; the planner reads it (#639)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="week_part")
+    if "spending" in found and not (spending or {}).get("filter") and re.search(PRONOUN_THING, q):
+        # "how much did I spend on it last month?" with no turn before it ("it" names nothing; a follow-up is decided
+        # in claim() before this): never the whole period (#639)
+        found = [f for f in found if f != "spending"]
+        if not found:
+            return Claim(None, reason="pronoun")
     dropped, why = [], "named_object"
     if "spending" in found and named_object(question):
         dropped.append("spending")   # a named place is never answered with a group's or the whole total (#497)
@@ -1703,9 +1732,18 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         # thing keeps its own rule, and so does a question whose thing is the other rule's own ("Is it ok to
         # spend money on therapy?" is the safe-to-spend question).
         return Claim(None, candidates=tuple(dict.fromkeys(found + ["spending"])), reason="competing")
+    if not found and re.search(OBLIGATION_TO_PAY, q) and re.search(RENT_WORDS, q) and "get_recurring_bills" in tools:
+        # "Paljonko minun pitää maksaa vuokraa?": the rent as a bill, what the bills tool shows (#639)
+        return _plan_intent("recurring_bills", question, q, as_of, tools, lang, spending)
     if not found and (subject := _cost_subject(q)) and re.search(COST_BILL_THINGS, subject) and \
             "get_recurring_bills" in tools:
-        # "What did my insurance cost me last month?": a bill, what "how much is my insurance bill" gives (#623)
+        if (re.search(PAST_PERIOD, q) or _months_mentioned(question, as_of)) and "get_basket_breakdown" in tools:
+            # a past period ("What did my insurance cost me last month?"): the bills tool shows what is due now, never
+            # what one bill cost then; the unknown-thing breakdown says the payment is not visible on its own (#639)
+            period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+            return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
+                                            FunctionCall("finish")))
+        # "How much is my insurance?", "What does my phone plan cost me?": a bill, what the bills tool gives (#623)
         return _plan_intent("recurring_bills", question, q, as_of, tools, lang, spending)
     if not found:
         if _unknown_object(q):
