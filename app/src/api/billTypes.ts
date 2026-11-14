@@ -118,6 +118,16 @@ export interface AddToPaymentsAction {
   draft: PaymentDraft
 }
 
+/** `open_host_screen` (since 0.3.3: target `contact_bank` after a failed check or a new payee with another sign). */
+export interface BillHostScreenAction {
+  type: 'open_host_screen'
+  label: string
+  target: string
+}
+
+/** Pick an action by its `type`, never by its index; an unknown type is ignored. */
+export type BillAction = AddToPaymentsAction | BillHostScreenAction | { type: string; label?: string }
+
 export interface BillSignal {
   code: 'iban_check_failed' | 'reference_check_failed' | 'new_payee' | 'amount_above_usual' | 'short_term' | string
   /** One plain sentence (two for a failed check); never a verdict. */
@@ -137,8 +147,11 @@ export interface BillExplainResponse {
   basket: BillBasket
   safe_to_spend: BillSafeToSpend | null
   glossary: BillGlossaryEntry[]
-  /** At most one; empty when a check failed. The app shows the button only when it is here. */
-  actions: AddToPaymentsAction[]
+  /**
+   * At most two: `add_to_payments` (absent when a check failed) and, since 0.3.3, `open_host_screen`
+   * `contact_bank`. The app shows each only when it is here.
+   */
+  actions: BillAction[]
   warnings: string[]
   signals: BillSignal[]
 }
