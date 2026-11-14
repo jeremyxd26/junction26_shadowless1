@@ -15,6 +15,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
 
 from core.agent import template
@@ -71,9 +72,11 @@ MONTH_RX = (r"(january|february|march|april|may|june|july|august|september|octob
 
 PRESETS = [
     (r"last (3|three) months|past (3|three) months|viimeisen (3|kolmen) kuukauden|viimeiset (3|kolme) kuukautta", "last_3_months"),
+    (RECENTLY := r"\blately\b|\brecently\b|\bthese days\b|\bof late\b|viime aikoina|viime kuukausina|viime aikoj\w*",
+     "last_3_months"),
     (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
     (r"last (12|twelve) months|past year|viimeisen (12|vuoden)", "last_12_months"),
-    (r"last month|previous month|viime kuussa|viime kuun|edellisen kuun", "last_month"),
+    (r"last month|previous month|viime kuussa|viime kuun\b|viime kuukausi\b|edellisen kuun|edellinen kuukausi", "last_month"),
     (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
     (r"last week|viime viikolla", "last_week"),
@@ -115,7 +118,10 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     months = _months_mentioned(q, as_of)
     between = re.search(r"between (\d{1,2}) and (\d{1,2}) " + MONTH_RX + r"\w*\s+(\d{4})", q)
     year_only = re.search(r"\b(?:in|vuonna|vuoden)\s+(\d{4})\b", q)
-    preset = next((p for rx, p in PRESETS if re.search(rx, q)), None)
+    presets = [p for rx, p in PRESETS if re.search(rx, q)]
+    preset = presets[0] if presets else None
+    if compare and {"this_month", "last_month"} <= set(presets):
+        preset = "this_month"   # "compare this month with last month": this month, against the one before
 
     if between:
         month = MONTHS[between.group(3)]
@@ -143,15 +149,15 @@ def plan_spending(question: str, as_of: date) -> dict | None:
         args["period"] = {"preset": "custom", "start": f"{year}-01-01", "end": f"{year}-12-31"}
     else:
         return None
-    if compare:
-        args["compare_to"] = "previous_period"
+    if compare or (preset == "last_3_months" and re.search(RECENTLY, q)):
+        args["compare_to"] = "previous_period"   # "lately": against the three months before
     if "categories" in flt and set(flt["categories"]) == {"Invest Deposit"}:
         args["direction"] = "out"
     return args
 
 
 WHAT_IF = (r"\bsave\b|\bcut\b|\breduce|spen[dt]\w*\s+(?:\S+\s+){0,2}less\b|spent half|half as much|less on|"
-           r"säästä\w*|vähentä\w*|vähemmän|puolet")
+           r"säästä\w*|säästöön|vähentä\w*|vähemmän|puolet")
 PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
 # A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
@@ -198,9 +204,14 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
 # employer's bonus is not it. The share of groceries comes only from the user: "half" and "all" as words
 # they typed, a whole percentage from 1 to 100 as typed. A share they stated that cannot be read or is
 # outside that range is asked back, as the what-if does; no stated share means the tool's default (R1).
+S_GROUP_CHAINS = r"s-?market\w*|prisma\w*|alepa\w*|\bsale\b|\babc\b|sokos\w*|herkku\w*"
 BONUS = (r"(?<!['’])\bs[- ]?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
          r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*|"
-         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi)\b")
+         rf"\bbonu\w*\b.*\b({S_GROUP_CHAINS})|\b({S_GROUP_CHAINS}).*\bbonu\w*|"
+         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi|tienaisin|ansaitsisin)\b")
+# A bonus word the S-Bonus rule does not claim ("How much could I earn in bonus?") competes with the
+# income rule: an employer's bonus or the S-Bonus, the planner or a question back decides.
+BONUS_WORD = r"\bbonu\w*"
 SHARE_WORDS = [(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b|puoleen", 50),
                (r"\ball\b|\bkaikki\w*", 100)]
 # A share stated in a form the rules cannot read: a fraction or a number written as a word.
@@ -243,23 +254,50 @@ SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|
                    + RELATION)
 
 
-# The partner's questions and their tools (team-lead mapping). The first match wins; a question about
-# a specific period or category falls through to get_spending.
-BRIEF = [
-    ("where_money_went", r"where did (all )?my money go|where does my money go|mihin rahani (meni|menivät|menee)",
-     # The metric's window (metrics.md section 1): month averages of the last 6 complete months.
-     lambda q, as_of: [("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]),
-    ("safe_to_spend", r"safe(ly)? to spend|safely spend|spend safely|can i (safely )?spend this week|turvallisesti|"
-                      r"voin käyttää tällä viikolla",
-     lambda q, as_of: [("get_safe_to_spend", {})]),
-    ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
-     lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
+# The intents the rules know, each with its own full pattern (#316, #340). Which one claims a message is
+# decided in claim() below.
+# 1. "Where did my money go?": where the money goes, what it goes to most, a breakdown.
+WHERE = (r"\bwhere\b.*\bmoney\b.*\b(go|goes|went|gone|going|disappear\w*|vanish\w*)\b|"
+         r"\b(spend|spending|spent) (the )?most\b|\bmost of my money\b|\bbiggest (expenses?|spending|costs?)\b|"
+         r"\b(spending )?break ?down\b|\bwhat do i spend (my )?money on\b|"
+         r"\bmihin\b.*\braha\w*|\bmihin\b.*\beniten\b|\beniten rahaa\b")
+# 2. "What kind of spender am I?": the user's type, style or habits.
+SPENDER = (r"\bwhat (kind|type|sort) of (spender|saver|consumer)\b|\b\w+ of (spender|saver) am i\b|"
+           r"\bspending (style|habits?|personality|profile|type|pattern)s?\b|\bdescribe (my )?spending\b|"
+           r"\bam i an? (\w+ ){0,3}(spender|saver)\b|"
+           r"\bmill?ai?nen (kuluttaja|rahankäyttäjä|säästäjä|tuhlaaja)\b|\bolenko (tuhlari|tuhlaaja|säästäjä|pihi|nuuka)\b|"
+           r"\bkulutustottumu\w*|\brahankäyttäjä\w*")
+# 3. "What can I safely spend this week?": what the user MAY spend: a limit, a budget, what is left, what
+#    they can afford (#316). A question about what they DID spend (PAST) is the spending rule's.
+SAFE = (r"safe(ly)? to spend|safely spend|spend safely|\bturvallisesti\b|"
+        r"(?<!credit )\b(spending )?limit\b|\bbudget\w*|\bbudjet\w*|"
+        r"\bleft to spend\b|\b(have|got) (left )?to spend\b|\bmoney left\b|\b(have|got) left\b|"
+        r"\b(can|could|may) i (\w+ly )?(spend|afford)\b|\bafford\b|"
+        r"\bok(ay)? (if|to) (i )?spend\b|\ball right (if|to) (i )?spend\b|"
+        r"\b(voin|voinko|saanko|uskallanko) (turvallisesti )?(käyttää|kuluttaa|tuhlata)\b|"
+        r"\bpaljon(ko)? (mä |minä )?voin\b(?!.*säästä)|"
+        r"\bkäytettävissä\b|\bjäljellä\b|\b(on|onko) (minulla |mulla )?varaa\b")
+PAST = (r"\bdid (i|we)\b|\b(have|has) (i|we) (spent|paid|bought|used)\b|\bi('ve| have)? (spent|paid|bought)\b|"
+        r"\bspent\b|\bwas i\b|\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
+        r"\bmaksoin\b|\bostin\b")
+# The spending rule needs a period (plan_spending) and a word about spending: a money word, a category or
+# group, "how much", a comparison of named months, or a total.
+SPEND_SIGNAL = r"\bhow much\b|\bpaljonko\b|\bkuinka paljon\b|\bexpens\w*|\bmenot\b|\bmenoni\b|\bbuy\b|\bostanut\b"
+# A message with its own subject and verb about the user's money is complete; anything else in a running
+# conversation ("compared to August?", "and restaurants?") is a follow-up of the previous turn (#300).
+SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|afford|cost\w*|get)\b|"
+              r"\bmy (spending|money|expenses|budget|income|salary|bills)\b|"
+              r"\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bkulutukse\w*|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
+              r"\bmaksoin\b|\bostin\b|\bvoinko\b|\btienaan\b|\bmenoni\b|\brahani\b")
+INTENTS = [
+    ("where_money_went", WHERE),
+    ("safe_to_spend", SAFE),
+    ("spender_type", SPENDER),
     # Bills, payday and income: the template's own matchers, so the answer cites what was asked.
-    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS,
-     lambda q, as_of: [("get_recurring_bills", {})]),
-    ("bonus", BONUS, lambda q, as_of: [("get_bonus_estimate", plan_bonus(q))]),
-    ("peers", PEERS, lambda q, as_of: [("get_peer_benchmark", {"metric": "spend_total"})]),
-    ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
+    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS),
+    ("bonus", BONUS),
+    ("peers", PEERS),
+    ("what_if", WHAT_IF),  # plan_what_if: a cut, or "how could I save more?"
 ]
 # "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
 # section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
@@ -280,17 +318,19 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 
 
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
-BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON = (
-    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON))
+BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD = (
+    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD))
+WHERE, SPENDER, SAFE, PAST, SPEND_SIGNAL, SELF_SPEND = (
+    fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, PAST, SPEND_SIGNAL, SELF_SPEND))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
 MONTHS = {fold(k): v for k, v in MONTHS.items()}
 MONTH_RX = fold_pattern(MONTH_RX)
 PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
-COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE = (
-    fold_pattern(rx) for rx in (COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE))
-BRIEF = [(intent, fold_pattern(rx), build) for intent, rx, build in BRIEF]
+COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY = (
+    fold_pattern(rx) for rx in (COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY))
+INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 
 
 # Questions about Sentti itself (#287). They match only when the whole message is the greeting or the
@@ -323,6 +363,324 @@ def meta_intent(question: str) -> str | None:
     return None
 
 
+# ---- which rule claims a message (#281, #300, #316, #340, #357) ----------------------------------------
+# A rule claims a message only when it is confident: its own pattern matches and no other rule's does,
+# except for the priorities below. Two rules that compete, or a word another rule owns ("bonus" next to
+# "earn"), are not claimed: the model's planner decides, and without the model the rules ask back with
+# the candidates' own questions as options. A question in several clauses ("Where did my money go and
+# what can I spend?") is claimed only when every clause is, and then every part is planned. In a running
+# conversation a message that is not complete on its own is a follow-up of the previous turn (#300).
+
+# (winner, loser): when both match one clause, the winner claims it; every other pair competes. Some
+# priorities hold only on a condition, in _beats: safe to spend over spending only without a word about
+# the past (PAST), over the bills rule only without a bills word; the breakdown over spending only
+# without a category; save more over income only with the save-more words; a what-if over spending only
+# with a cut the user stated.
+PRECEDENCE = {
+    ("bonus", "recurring_bills"), ("bonus", "what_if"), ("bonus", "spending"), ("bonus", "peers"),
+    ("safe_to_spend", "spending"), ("safe_to_spend", "recurring_bills"),
+    ("where_money_went", "spending"),
+    ("spender_type", "peers"), ("spender_type", "spending"),
+    ("recurring_bills", "spending"),
+    ("peers", "spending"), ("peers", "what_if"),
+}
+MAX_DATA_CALLS = 6  # the pipeline's limit for one answer (orchestrator.MAX_DATA_CALLS)
+# The questions offered when rules compete: each is claimed by its own rule.
+CANDIDATE_QUESTIONS = {
+    "where_money_went": template.BRIEF_QUESTIONS[0],
+    "spender_type": template.BRIEF_QUESTIONS[1],
+    "safe_to_spend": template.BRIEF_QUESTIONS[2],
+    "what_if": template.BRIEF_QUESTIONS[3],
+    "spending": ("How much did I spend this month?", "Paljonko käytin tässä kuussa?"),
+    "recurring_bills": ("Which bills are coming up next?", "Mitkä laskut ovat tulossa seuraavaksi?"),
+    "bonus": ("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"),
+    "peers": ("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
+}
+CLARIFY_WHICH = ("Which of these do you mean?", "Mitä näistä tarkoitat?")
+# Where one question ends and the next starts: a question mark with more text after it, or "and", a comma
+# or a semicolon before a question word.
+_QUESTION_WORD = (r"(?:what|where|how|when|which|why|can|could|should|is|are|am|do|does|did|will|would|tell|show|"
+                  r"mita|mihin|paljonko|kuinka|voinko|onko|miten|missa|mista|millainen|milloin|mika)\b")
+CLAUSE_BREAK = rf"\?\s+(?=\S)|[,;]\s*(?={_QUESTION_WORD})|\s+(?:and|also|plus|ja|seka)\s+(?={_QUESTION_WORD})"
+# A follow-up compared with a baseline the get_spending tool knows (CompareTo).
+BASELINE_LAST_YEAR = (r"\blast year\b|\ba year (ago|before|earlier)\b|\bsame (month|period|time) last year\b|"
+                      r"\bviime vuo\w*|\bvuotta (aiemmin|sitten)\b|\bedellisvuo\w*")
+BASELINE_TYPICAL = r"\b(typical|usual|normal|average)\w*|\btavallis\w*|\bkeskimäär\w*|\bnormaali\w*"
+LAST_MONTH_WORDS = r"\blast month\b|\bprevious month\b|\bviime kuu\w*|\bedelli\w* kuu\w*"
+FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
+BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS = (
+    fold_pattern(rx) for rx in (BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS))
+
+
+@dataclass(frozen=True)
+class Claim:
+    """What the rules do with a message: rule is the rule that claims it, None when none does."""
+
+    rule: str | None
+    calls: tuple[FunctionCall, ...] = ()
+    candidates: tuple[str, ...] = ()   # not claimed: the rules that competed for it
+    reason: str = ""                   # not claimed: "competing", "period", "what_if_which", "follow_up", ""
+
+
+def _filter_of(q: str) -> dict:
+    groups = [g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)]
+    categories = [c for rx, c in CATEGORY_WORDS if re.search(rx, q)]
+    return {"mcc_groups": groups} if groups else {"categories": categories} if categories else {}
+
+
+def _spending_words(q: str) -> bool:
+    return bool(re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q) or _filter_of(q))
+
+
+def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
+    """Every rule whose own pattern matches the clause."""
+    found = []
+    for intent, rx in INTENTS:
+        if not re.search(rx, q):
+            continue
+        if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
+            continue  # saving time is no money question
+        if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
+            continue  # "save more of my income" is the save-more question, not the income (#296)
+        if intent == "peers" and not peer_question:
+            continue  # what others spend, a named person, or no "I": not the peer benchmark
+        found.append(intent)
+    if "recurring_bills" in found and "bonus" not in found and re.search(BONUS_WORD, q):
+        found.append("bonus")  # "earn in bonus": an employer's bonus or the S-Bonus (#357)
+    if spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
+        found.append("spending")
+    elif "safe_to_spend" in found and re.search(PAST, q):
+        found.append("spending")  # "Did I go over my budget?": what one did or what one may spend
+    return found
+
+
+def _beats(a: str, b: str, q: str, spending: dict | None) -> bool:
+    if (a, b) == ("safe_to_spend", "spending"):
+        return not re.search(PAST, q)
+    if (a, b) == ("safe_to_spend", "recurring_bills"):
+        return not re.search(template.BILL_WORDS, q)
+    if (a, b) == ("where_money_went", "spending"):
+        return not (spending or {}).get("filter")
+    if (a, b) == ("what_if", "recurring_bills"):
+        return bool(re.search(template.SAVE_MORE, q))
+    if {a, b} == {"what_if", "spending"}:
+        return (a == "what_if") == bool(re.search(PERCENT + "|" + HALF, q))
+    if (a, b) == ("bonus", "recurring_bills"):
+        return bool(re.search(BONUS, q))  # a bare "bonus" next to "earn" competes
+    return (a, b) in PRECEDENCE
+
+
+def _resolve(found: list[str], q: str, spending: dict | None) -> tuple[str | None, tuple[str, ...]]:
+    """The rule that claims a clause, or None and the rules that compete for it."""
+    winners = [a for a in found if all(a == b or _beats(a, b, q, spending) for b in found)]
+    if len(winners) == 1:
+        return winners[0], ()
+    return None, tuple(a for a in found if not any(b != a and _beats(b, a, q, spending) for b in found))
+
+
+def _claimed(rule: str, planned: list[tuple[str, dict]], tools: set[str], lang: str) -> Claim:
+    calls = tuple(FunctionCall(name, args) for name, args in planned if name in tools)
+    if not calls:  # the rule's tool is not registered
+        return Claim(rule, tuple(RuleModel._clarify(NOT_YET, NOT_YET_OPTIONS, lang)))
+    return Claim(rule, calls + (FunctionCall("finish"),))
+
+
+def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str], lang: str,
+                 spending: dict | None) -> Claim:
+    if intent == "spending":
+        return _claimed(intent, [("get_spending", spending)], tools, lang)
+    if intent == "where_money_went":
+        # A period the user named ("this month", "last month") is the breakdown's period (#281); else the
+        # metric's window (metrics.md section 1): month averages of the last 6 complete months.
+        period = (plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+        return _claimed(intent, [("get_basket_breakdown", {"period": period})], tools, lang)
+    if intent == "safe_to_spend":
+        return _claimed(intent, [("get_safe_to_spend", {})], tools, lang)
+    if intent == "spender_type":
+        return _claimed(intent, [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})],
+                        tools, lang)
+    if intent == "recurring_bills":
+        return _claimed(intent, [("get_recurring_bills", {})], tools, lang)
+    if intent == "bonus":
+        share = plan_bonus(q)
+        if share is None:
+            return Claim(intent, tuple(RuleModel._clarify(BONUS_SHARE_ASK, ((), ()), lang)))
+        return _claimed(intent, [("get_bonus_estimate", share)], tools, lang)
+    if intent == "peers":
+        return _claimed(intent, [("get_peer_benchmark", {"metric": "spend_total"})], tools, lang)
+    kind, what_if = plan_what_if(q)
+    if kind == "health":
+        return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if kind == "unmapped":
+        return Claim(None, reason="what_if_which")
+    if kind == "amount":
+        return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
+    if kind == "save_more":
+        return _claimed("save_more", SAVE_MORE_CALLS, tools, lang)
+    return _claimed(intent, [("run_what_if", what_if)], tools, lang)
+
+
+def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool) -> Claim:
+    q = fold(question)
+    spending = plan_spending(question, as_of) if "get_spending" in tools else None
+    found = _matched(q, peer_question, spending)
+    if not found:
+        return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
+    winner, competing = _resolve(found, q, spending)
+    if winner is None:
+        return Claim(None, candidates=competing, reason="competing")
+    return _plan_intent(winner, question, q, as_of, tools, lang, spending)
+
+
+def _topics(part: str, peer_question: bool) -> frozenset[str]:
+    """The rules a clause is about, to tell two questions from one question in two clauses."""
+    q = fold(part)
+    found = {intent for intent, rx in INTENTS if re.search(rx, q) and (intent != "peers" or peer_question)}
+    if re.search(MONEY_WORDS, q) or _filter_of(q):
+        found.add("spending")
+    return frozenset(found)
+
+
+def _complete(question: str, q: str, as_of: date) -> bool:
+    """A message that stands on its own: the user's own subject and verb, another rule's question, or a
+    category with a period ("Restaurants in August")."""
+    if re.search(SELF_SPEND, q) or any(re.search(rx, q) for _, rx in INTENTS):
+        return True
+    args = plan_spending(question, as_of)
+    return bool(args and args.get("filter"))
+
+
+def _prev_month(ym: tuple[int, int]) -> tuple[int, int]:
+    return (ym[0], ym[1] - 1) if ym[1] > 1 else (ym[0] - 1, 12)
+
+
+def _single_month(period, as_of: date) -> tuple[int, int] | None:
+    """The calendar month a period is, or None (several months, a week, a malformed period)."""
+    if not isinstance(period, dict):
+        return None
+    if period.get("preset") == "this_month":
+        return as_of.year, as_of.month
+    if period.get("preset") == "last_month":
+        return _prev_month((as_of.year, as_of.month))
+    if period.get("preset") == "custom":
+        try:
+            start, end = date.fromisoformat(str(period["start"])), date.fromisoformat(str(period["end"]))
+        except (KeyError, ValueError):
+            return None
+        if start.day == 1 and (start.year, start.month) == (end.year, end.month) \
+                and end.day == calendar.monthrange(end.year, end.month)[1]:
+            return start.year, start.month
+    return None
+
+
+def _baseline(question: str, q: str, period, as_of: date) -> str | None:
+    """The compare_to of "compared to August?" for the previous turn's period, or None when the tool cannot
+    compare with that baseline (it knows the previous period, the same period last year and the typical)."""
+    if re.search(BASELINE_TYPICAL, q):
+        return "typical"
+    if re.search(BASELINE_LAST_YEAR, q):
+        return "same_period_last_year"
+    target = _single_month(period, as_of)
+    named = [m for m in _months_mentioned(question, as_of) if m != target]
+    if not named and re.search(LAST_MONTH_WORDS, q):
+        named = [_prev_month((as_of.year, as_of.month))]
+    if not named:
+        return "previous_period"   # "compared with before?", "vs the previous month?"
+    if target is None:
+        return None
+    if named[-1] == _prev_month(target):
+        return "previous_period"
+    if named[-1] == (target[0] - 1, target[1]):
+        return "same_period_last_year"
+    return None
+
+
+def _follow_up(request: PlanInput, q: str, as_of: date, tools: set[str]) -> Claim:
+    """A message that is not complete on its own, in a running conversation (#300). It keeps the previous
+    turn's tool, period and filter and changes what it names: a baseline ("compared to August?"), a period
+    ("and last month?") or a category ("what about groceries?"). It answers the rules' period question
+    ("Last month" after "How much did I spend on groceries?"). Anything else is not claimed."""
+    question = request.question
+    not_claimed = Claim(None, reason="follow_up")
+    prev = request.history[-1] if isinstance(request.history[-1], dict) else {}
+    calls = [c for c in prev.get("calls") or [] if isinstance(c, dict)]
+    stated = plan_spending(question, as_of)
+    flt = _filter_of(q)
+    compare = bool(re.search(COMPARE, q))
+    if not calls:
+        before = prev.get("question")
+        if compare or stated is None or not isinstance(before, str) or "get_spending" not in tools:
+            return not_claimed
+        asked = claim(PlanInput(question=before, language=request.language, as_of=request.as_of, tools=request.tools))
+        args = plan_spending(before + ". " + question, as_of) if asked.reason == "period" else None
+        if not args:
+            return not_claimed
+        return Claim("follow_up", (FunctionCall("get_spending", args), FunctionCall("finish")))
+    if len(calls) != 1 or calls[0].get("name") not in FOLLOW_TOOLS or "get_spending" not in tools:
+        return not_claimed
+    tool, args = calls[0]["name"], dict(calls[0].get("args") or {}) if isinstance(calls[0].get("args"), dict) else {}
+    new = dict(args) if tool == "get_spending" else {"period": args.get("period")}
+    if flt:
+        new["filter"] = flt
+        new.pop("direction", None)
+        if flt.get("categories") == ["Invest Deposit"]:
+            new["direction"] = "out"
+    if compare:
+        compare_to = _baseline(question, q, args.get("period"), as_of)
+        if compare_to is None or new.get("period") is None:
+            return not_claimed
+        new["compare_to"] = compare_to
+        return Claim("follow_up", (FunctionCall("get_spending", new), FunctionCall("finish")))
+    period = (stated or {}).get("period")
+    if not flt and period is None:
+        return not_claimed           # "why?", "tell me more": the planner, or the general question back
+    if tool == "get_basket_breakdown" and not flt:
+        return Claim("follow_up", (FunctionCall("get_basket_breakdown", {**args, "period": period}),
+                                   FunctionCall("finish")))
+    if period is not None:
+        new["period"] = period
+    if new.get("period") is None:
+        return not_claimed
+    return Claim("follow_up", (FunctionCall("get_spending", new), FunctionCall("finish")))
+
+
+def _data_calls(found: Claim) -> list[FunctionCall]:
+    return [c for c in found.calls if c.name not in ("finish", "decline", "ask_clarifying_question")]
+
+
+def claim(request: PlanInput) -> Claim:
+    """The one place that decides which rule claims a message, or that none does (see above)."""
+    question = request.question
+    q = fold(question)  # "kayttaa" and "käyttää" match the same rules
+    tools = {t["name"] for t in request.tools}
+    lang = request.language
+    as_of = date.fromisoformat(request.as_of)
+    # A comparison with people like me is the peer benchmark (aggregates), not another person's data;
+    # a named or specific person still is (#216).
+    peer_question = (bool(re.search(PEERS, q)) and bool(re.search(SELF, q))
+                     and not re.search(SPECIFIC_PERSON, q, re.I) and not re.search(OTHERS_DATA, q))
+    for kind, rx in DECLINE_RULES:
+        if kind == "other_person_data" and peer_question:
+            continue
+        if re.search(rx, q, re.I):
+            return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
+    if request.history and not _complete(question, q, as_of):
+        return _follow_up(request, q, as_of, tools)
+    clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
+    clauses = [(part, topics) for part, topics in clauses if topics]
+    if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
+        parts = [_claim_clause(part, as_of, tools, lang, peer_question) for part, _ in clauses]
+        unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
+        calls = list(unique.values())
+        if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1 for part in parts) \
+                and len(calls) <= MAX_DATA_CALLS:
+            rules = list(dict.fromkeys(part.rule for part in parts))
+            return Claim(rules[0] if len(rules) == 1 else "+".join(rules), tuple(calls) + (FunctionCall("finish"),))
+        competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
+        return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
+    return _claim_clause(question, as_of, tools, lang, peer_question)
+
+
 class RuleModel:
     model_id = "rules@1"
 
@@ -347,56 +705,17 @@ class RuleModel:
     def _calls(self, request: PlanInput) -> tuple[list[FunctionCall], bool]:
         if request.responses:  # round 2: the data is in; write the answer
             return [FunctionCall("finish")], True
-        q = fold(request.question)  # "kayttaa" and "käyttää" match the same rules
-        # A comparison with people like me is the peer benchmark (aggregates), not another person's data;
-        # a named or specific person still is (#216).
-        peer_question = (bool(re.search(PEERS, q)) and bool(re.search(SELF, q))
-                         and not re.search(SPECIFIC_PERSON, q, re.I) and not re.search(OTHERS_DATA, q))
-        for kind, rx in DECLINE_RULES:
-            if kind == "other_person_data" and peer_question:
-                continue
-            if re.search(rx, q, re.I):
-                return [FunctionCall("decline", {"kind": kind})], True
-        tools = {t["name"] for t in request.tools}
+        found = claim(request)
+        if found.rule is not None:
+            return list(found.calls), True
         lang = request.language
-        as_of = date.fromisoformat(request.as_of)
-        spending = plan_spending(request.question, as_of) if "get_spending" in tools else None
-        for intent, rx, build in BRIEF:
-            if not re.search(rx, q, re.I):
-                continue
-            # A what-if or bills question that names a period is still a what-if or bills question;
-            # a plain spending question with a period goes to get_spending below.
-            if intent == "what_if" and spending is not None and not re.search(PERCENT + "|" + HALF, q):
-                break
-            if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
-                continue  # saving time is no money question
-            if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
-                continue  # "save more of my income" is the save-more question, not the income
-            if intent == "peers" and not peer_question:
-                continue  # what others spend, a named person, or no "I": not the peer benchmark
-            if intent == "bonus" and plan_bonus(q) is None:
-                return self._clarify(BONUS_SHARE_ASK, ((), ()), lang), True
-            if intent == "what_if":
-                kind, what_if = plan_what_if(q)
-                if kind == "health":
-                    return [FunctionCall("decline", {"kind": "out_of_scope"})], True
-                if kind == "unmapped":
-                    return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
-                if kind == "amount":
-                    return self._clarify(WHAT_IF_AMOUNT, ((), ()), lang), True
-                planned = SAVE_MORE_CALLS if kind == "save_more" else [("run_what_if", what_if)]
-            else:
-                planned = build(q, as_of)
-            calls = [FunctionCall(name, args) for name, args in planned if name in tools]
-            if calls:
-                return calls + [FunctionCall("finish")], True
-            return self._clarify(NOT_YET, NOT_YET_OPTIONS, lang), True
-        if "get_spending" in tools:
-            args = plan_spending(request.question, date.fromisoformat(request.as_of))
-            if args is not None:
-                return [FunctionCall("get_spending", args), FunctionCall("finish")], True
-        if re.search(MONEY_WORDS, q) or any(re.search(rx, q) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
-            return self._default_clarify(request.language), False      # a spending question without a period
+        if found.reason == "what_if_which":
+            return self._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang), False
+        options = [template.pick(CANDIDATE_QUESTIONS[c], lang) for c in found.candidates if c in CANDIDATE_QUESTIONS]
+        if len(options) > 1:   # rules compete: their own questions as the options
+            return self._clarify((CLARIFY_WHICH[0], CLARIFY_WHICH[1]), (tuple(options[:3]), tuple(options[:3])), lang), False
+        if found.reason == "period":
+            return self._default_clarify(lang), False      # a spending question without a period
         return self._clarify(template.CLARIFY_GENERAL["question"], template.CLARIFY_GENERAL["options"], lang), False
 
     def compose(self, request: ComposeInput) -> ComposeResult:
