@@ -143,10 +143,12 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         body["rows"] = _rows(res.rows, language)
         body["reconciles"] = res.reconciles
         body["next_cursor"] = res.next_cursor
-        # row_count is a Number with its own ref (contract section 9): a count over the same selection.
+        # row_count is a Number with its own ref (contract section 9): a count over the same selection,
+        # under the same label set as the number it counts (#68, R2), so it reconciles too.
         rc_value = Decimal(res.row_count or 0)
         rc_spec = evidence.transactions_spec(customer_id, date.fromisoformat(spec["as_of"]),
-                                             config.METHODS["row_count"], Selection.from_spec(sel), rc_value)
+                                             config.METHODS["row_count"], Selection.from_spec(sel), rc_value,
+                                             label_set=spec.get("labels"))
         rc_ref = evidence.make_ref(rc_spec)
         evidence.write(conn, {rc_ref: rc_spec})
         body["row_count"] = {

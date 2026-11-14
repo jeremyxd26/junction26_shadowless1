@@ -36,6 +36,7 @@ class Selection:
     series_key: str | None = None       # a recurring series: a tx_type, or a merchant id for card
                                         # purchases (metrics.md section 2); replaces the flow filter
     series_keys: tuple[str, ...] | None = None  # several series (the bills due total); () = none
+    tx_ids: tuple[int, ...] | None = None       # exactly these transactions (a reviewed purchase, #68)
 
     def to_spec(self) -> dict[str, Any]:
         spec: dict[str, Any] = {
@@ -53,6 +54,8 @@ class Selection:
             spec["series_key"] = self.series_key
         if self.series_keys is not None:
             spec["series_keys"] = list(self.series_keys)
+        if self.tx_ids is not None:
+            spec["tx_ids"] = list(self.tx_ids)
         return spec
 
     @classmethod
@@ -71,6 +74,7 @@ class Selection:
             group_not_in=tuple(group.get("not_in") or ()),
             series_key=spec.get("series_key"),
             series_keys=tuple(spec["series_keys"]) if "series_keys" in spec else None,
+            tx_ids=tuple(int(i) for i in spec["tx_ids"]) if "tx_ids" in spec else None,
         )
 
     def with_group(self, by: str, key: str | None = None, not_in: tuple[str, ...] = ()) -> Selection:
@@ -120,6 +124,8 @@ def select(rows: list[CTx], sel: Selection) -> list[CTx]:
     out = []
     for c in rows:
         if not (sel.start <= c.tx.tx_date <= sel.end) or not _in_direction(c, sel):
+            continue
+        if sel.tx_ids is not None and c.tx.id not in sel.tx_ids:
             continue
         if sel.baskets and c.basket not in sel.baskets:
             continue

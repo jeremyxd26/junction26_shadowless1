@@ -18,7 +18,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from core.tools import aliases, labels
+from core.tools import aliases
 from core.tools.classify import classify
 from core.tools.db import load_transactions
 from core.tools.selection import Selection, select, value_of
@@ -49,7 +49,8 @@ def make_ref(spec: dict[str, Any]) -> str:
 
 
 def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection, value: Decimal,
-                      params: dict[str, Any] | None = None) -> dict[str, Any]:
+                      params: dict[str, Any] | None = None,
+                      label_set: list[list[Any]] | None = None) -> dict[str, Any]:
     spec = {
         "v": SPEC_VERSION,
         "kind": "transactions",
@@ -61,6 +62,8 @@ def transactions_spec(customer_id: str, as_of: date, method: str, sel: Selection
     }
     if params:  # only when set (for example n_months), so refs of other numbers do not change
         spec["params"] = params
+    if label_set:  # the customer's labels in effect (#68); only when there are any, as for params
+        spec["labels"] = label_set
     return spec
 
 
@@ -270,7 +273,9 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
 
     sel = Selection.from_spec(spec["selection"])
     history = load_transactions(conn, customer_id, as_of)
-    overrides = labels.basket_labels(conn, customer_id, as_of)  # the same labels the tools used
+    # The labels the number was computed with (#68), not today's: a ref issued before a label keeps
+    # resolving to the number as it was. A spec without labels was computed without any.
+    overrides = {int(tx_id): basket for tx_id, basket in spec.get("labels", [])}
     rows = select(classify(history, as_of, overrides), sel)
     try:
         reconciles = value_of(rows, sel, spec["method"], spec.get("params")) == value

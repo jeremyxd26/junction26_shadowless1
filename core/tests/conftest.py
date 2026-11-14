@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,20 @@ if str(ROOT) not in sys.path:
 
 SETTINGS_ENV = ("DATABASE_URL", "DEMO_TODAY", "GEMINI_API_KEY", "GEMINI_MODEL", "CORS_ORIGINS",
                 "DEMO_CUSTOMERS")
+
+@pytest.fixture(scope="session", autouse=True)
+def spike_reviews_off():
+    """Tests see the published numbers whatever the demo answered on the shared database: no label is
+    read and no review is created. Session-scoped, so it is set before any module or session fixture
+    calls the API. Spike-review tests switch it on inside a rolled-back transaction (#68)."""
+    previous = os.environ.get("SPIKE_REVIEWS")
+    os.environ["SPIKE_REVIEWS"] = "off"
+    yield
+    if previous is None:
+        os.environ.pop("SPIKE_REVIEWS", None)
+    else:
+        os.environ["SPIKE_REVIEWS"] = previous
+
 
 @pytest.fixture
 def unreachable_db() -> str:
