@@ -68,6 +68,7 @@ Model settings:
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.
 - Per role (#341): `GEMINI_PLANNER_MODEL` and `GEMINI_COMPOSER_MODEL` choose a model for the planner or the composer, for example the faster `gemini-3.5-flash-lite` for the composer. Both default to `GEMINI_MODEL`. Each role's fallback is `GEMINI_FALLBACK_MODEL`, or else the model's usual partner (flash-lite falls back to flash). `GEMINI_PLANNER_THINKING` and `GEMINI_COMPOSER_THINKING` take `default`, `minimal`, `low` (the default), `medium` or `high`. A level the model rejects is sent as `low`: `gemini-3.8-flash` has no `minimal`. `GEMINI_PLANNER_TIMEOUT_S` (default 9) and `GEMINI_COMPOSER_TIMEOUT_S` (default 5) are seconds per call, at most 15. The start-up line shows every role's model, thinking level, timeout and fallback. The cache key holds the model and the thinking level, so a switch never serves another model's saved text. Like `GEMINI_MODEL`, set the model ids as process variables, not in `.env`.
+- Bill readings (#250) have their own role: `GEMINI_EXTRACT_MODEL` (default the pinned default model, never the planner's setting), `GEMINI_EXTRACT_THINKING` (default `low`) and `GEMINI_EXTRACT_TIMEOUT_S` (default 15, at most 30), so changing the planner or composer never changes a reading's cache key. `BILL_READ_DAILY_BUDGET` (default 50) is the readings' share of the daily budget. A bad value of these is the default, with one log line; it never turns the model off. A reading in the cache is served even while the model may not be used (budget, pause, switch file); only a reading not in the cache needs the model and answers 503 `model_unavailable` without it.
 
 ```
 curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "Accept: text/event-stream" \
@@ -182,6 +183,12 @@ To load it into an empty database:
    python core/ingest/load.py data/s-pankki
    ```
    This creates the tables `transactions`, `customers`, `mortgage_applications` and `mortgage_events`, and prints the number of rows inserted into each.
+
+### National context
+
+Beside the peer comparison the coach can show one line of national context: what households of the customer's age group spent a month per consumption unit on the same category (groceries, transport without buying a vehicle). The figures come from Statistics Finland's household budget survey and are committed in `core/config/national_context.yaml`, with the table, the survey year, the query and the date they were retrieved. Nothing fetches them at run time.
+
+Source: Statistics Finland, households' consumption, table 14q4 (2022), CC BY 4.0.
 
 ### Metric marts
 

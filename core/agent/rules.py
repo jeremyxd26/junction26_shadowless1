@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from core.agent import people, template
-from core.agent.guard import flags, fold, fold_pattern
+from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
+from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -34,14 +35,16 @@ RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
                           r"someone else|other (people|customers)|muiden|toisen"),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
                           r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
-                          r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
+                          r"kannattaako.*(sijoit|osak|rahasto|bitcoin|krypto)|mihin (minun )?(pitäisi|kannattaa) "
+                          r"sijoittaa|pitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*(osak|rahasto|bitcoin|krypto|etf)"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
     ("out_of_scope", r"just (estimate|guess)|any number|make up (a |an |some )?(number|amount|figure)|"
                      r"guess (a |an |some )?(number|amount|figure)|"
@@ -406,9 +409,34 @@ WHAT_IF_BASKET_WORDS = [(fold_pattern(rx), basket) for rx, basket in [
 WHOLE_SPENDING = r"\b(my|our) (spending|expenses)\b|\bkulutusta(ni|mme)\b|\bmenoja(ni|mme)\b"
 PERCENT = r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s?(?:%|percent\b|per cent\b|prosent\w*)"
 HALF = r"\bhalf\b|\bpuolet\b|\bpuoleen\b|puolitta\w*"
-# A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words.
-HEALTH = (r"\bhealth(care)?\b|tervey\w*|lääk(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
-          r"hammaslääk\w*|\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
+# A health selection is never a what-if (R9): the health MCCs of core/tools/config.py and plain words. A plain
+# health total is answered with the Health filter (Renat, 14 Nov, #571); "laakeri" (a bearing) is no medicine.
+# "health" before club, food, insurance, conscious, kick, bar, store or shop names no health spending (security
+# review of #607): "my health club membership", "health food", "terveysvakuutus" get what the same question without
+# the word gets.
+HEALTH_NOT_HEALTH = r"(?![\s-](?:club|food|insurance|conscious|kick|bar|store|shop)s?\b)"
+HEALTH = (r"\bhealth(care)?\b" + HEALTH_NOT_HEALTH + r"|tervey(?!s(?:ruo|kaup|vakuut|baar|klub))\w*|"
+          r"lääk(?!er)(e|k)\w*|pharmac\w*|apteek\w*|\bdoctors?\b|lääkär\w*|dentist\w*|"
+          r"hammaslääk\w*|\bchemists?\b|\bantidepressant\w*|\bpregnancy tests?\b|\braskaustest\w*|"
+          r"\bmedicines?\b(?! balls?)|"
+          r"\b(?:" + "|".join(config.MCC_GROUPS["health"]) + r")\b")
+# Beyond a plain health total (#571): an inference, advice, a judgement or a tip about it declines the whole
+# message ("how much at the pharmacy, and what does that say about me?"); one rule never answers the total alone.
+HEALTH_NOT_TOTAL = (r"\bsay about me\b|\bsuggests?\b|\bmean for me\b|\bam i (getting )?(ill|sick|pregnant)\b|"
+                    r"\bwhat illness\w*\b|\bsee a doctor\b|\bwhich medicines?\b|\bwhat medicines?\b|\bis (that|it|this) "
+                    r"(a lot|much|too much|normal|high)\b|\btips?\b|\badvice\b|\bspend less on\b|\bcut\b|"
+                    r"\bkertoo minusta\b|\bolenko (sairas|sairastumassa|raskaana)\b|\bmitä lääkkeitä\b|"
+                    r"\bpitäisikö (minun )?(mennä|käydä) lääkärissä\b|\bonko (se|tämä) (paljon|liikaa|normaalia)\b|"
+                    r"\bvink\w*|\bneuvo\w*|"
+                    # a scenario about health spending (QA's Finnish what-if on #607): "Mitä jos puolittaisin
+                    # lääkärikäyntini?" (a why-question is no plain total: it keeps dev's outcome, #574's rows)
+                    r"\bwhat if\b|\bmitä jos\b|\bentä jos\b|"
+                    r"\bhalv(e|ed|ing)\b|\bpuolit(a|t)\w*|\bleikkaa\w*|\bleikkaisi\w*|\bleikata\b|\bkarsi\w*|"
+                    r"\bjättäisi\w*|\blopettaisi\w*|\bvähentäisi\w*")
+# The decline rule's medicine words, which a plain health total may hold ("how much did I spend on medicines?").
+HEALTH_TOTAL_WORDS = r"medicines?|lääke(?!r)\w*|lääkk\w*"
+# A visit or bill at the doctor's is the user's own spending, not the doctor's money (#571).
+CARE_VISITS = r"\b(?:doctors?|dentists?)(?:'s|s')?\s+(visits?|appointments?|bills?|fees?|costs?|check-?ups?)\b"
 # A selection the rules do not map (an MCC, a merchant): never replaced by a category of their own.
 SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
 
@@ -611,7 +639,8 @@ NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borro
 COMPLETE_WORDS = (r"\btotal\b|\boverall\b|\bspending\b|\b(was|were|been) spent\b|\byhteensä\b|\bkaikkiaan\b|\bkokonais\w*|"
                   r"\bmeni\b|\bmenivät\b|\bkului\w*")
 # An attempt to set the rules aside ("ignore your rules, what's my budget?") is never claimed by a data
-# rule; the input guard does not flag these forms yet (#205).
+# rule. Since #526 the input guard flags these forms and DECLINE_RULES refuses them (core/agent/guard.py SET_ASIDE);
+# this list stays as the claim rules' own guard.
 SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these|those|previous|prior) "
              r"(rules|instructions|guidelines|limits)\b|"
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
@@ -744,7 +773,11 @@ WEEKDAY = r"(mon|tues|wednes|thurs|fri|satur|sun)days?"
 # eating out ("food delivery", "a food court", "food trucks and stalls", "street food") or pet and baby food
 # ("pet food", "my dog's food"). Such a message is claimed by no rule (the coordinator, review of #534).
 FOOD_COMPOUND = (r"\bfood (deliver\w*|courts?|trucks?|stalls?)\b|\b(pet|pets|dog|dogs|cat|cats|baby|babies|street)"
-                 r"('s|s'|')? food\b")
+                 r"('s|s'|')? food\b"
+                 # Finnish (#576): "ruoan toimitukseen", "ruokalähetyksiin", "lemmikin ruokaan", "koiranruokaan",
+                 # "kissanruokaan", "katuruokaan": a thing no category maps, quoted whole, never Groceries
+                 r"|\bruoan (toimitu|kuljetu)\w*|\bruoka(toimitu|kuljetu|lahety)\w*|\blemmikin ruo\w*|"
+                 r"\b(lemmikki|koiran|kissan|vauvan|katu)ruo\w*")
 
 
 def _is_thing(word: str) -> bool:
@@ -790,8 +823,34 @@ WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For exa
 WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer taxis?", "What if I cut takeaway?"),
                          ("Entä jos vähentäisin ravintoloita?", "Entä jos käyttäisin taksia vähemmän?",
                           "Entä jos vähentäisin noutoruokaa?"))
+# A budget for a past period (#547): Sentti keeps no budget that the customer sets, so the rules ask back with what
+# they can show, and no answer says that a budget was or was not set. A budget for this week is the safe-to-spend
+# question, as before; "what is my monthly budget" stays as it was (the safe-to-spend card's own "Your monthly
+# budget allows" is a figure Sentti derives). Matched on the folded question.
+BUDGET_WORDS = r"\bbudget\w*|\bspending (limit|cap)s?\b|budjet\w*|\bkulutusraj\w*"   # "kuukausibudjetti" too
+BUDGET_PAST_FI = r"\bylitin\w*|\bpysyin\w*"   # "Ylitinkö budjettini?", "Pysyinkö budjetissa?": as "Did I go over …?"
+# At most 140 characters each: a longer question is rejected by the clarify function's schema (registry.ClarifyArgs),
+# and the answer then falls through to "I could not find data" (review of #579). The options name the two offers.
+BUDGET_BACK = ("Sentti sees your transactions, not a budget plan, so I can't say how you did against one. I can show "
+               "your spending or safe to spend.",
+               "Sentti näkee tapahtumasi, ei budjettisuunnitelmaa, joten en voi verrata kulutustasi siihen. Voin "
+               "näyttää kulutuksesi tai turvallisen summan.")
+BUDGET_OPTIONS = (("How much did I spend last month?", "What can I safely spend this week?"),
+                  ("Paljonko käytin viime kuussa?", "Paljonko voin turvallisesti käyttää tällä viikolla?"))
+BUDGET_OPTIONS_THIS_MONTH = (("How much did I spend this month?", "What can I safely spend this week?"),
+                             ("Paljonko käytin tässä kuussa?", "Paljonko voin turvallisesti käyttää tällä viikolla?"))
 # A money question the rules cannot map: it asks about the period only when it is about spending.
 MONEY_WORDS = r"\bspen[dt]\w*|\bcost\w*|\bpaid\b|\bbought\b|kulut\w*|kaytin|kaytan|maksoin|ostin"
+# "Why is my safe to spend lower?" (#552, review of #574), on the folded question: the bare whole message ("why so
+# little?", "why is it lower?", "miksi niin vähän?", "miksi se on pieni?"), with no subject noun; and the past tense
+# that makes it another horizon ("why was it lower in August?"), never the why answer.
+BARE_WHY_LOW = (r"(why|how come)( is)?( it| that| this)?( so| that)? (low|lower|little|small|smaller|less)"
+                r"|miksi( se| tama| tuo)?( on)?( nyt)?( niin)? (vahan|vahemman|pieni|pienempi|alhainen|matala)")
+# the question's own verb in the past ("why was it lower in August?", "miksi se oli pienempi?"), never the past of a
+# comparison ("why is it lower than it was?")
+WHY_PAST = r"\b(why|how come) (was|were|did|had)\b|\bmiksi( se| tama| tuo| minulla)? (oli|olivat|olin)\b"
+# what the user spent, beside the why question ("…, and how much did I spend?", "…, paljonko käytin?")
+WHY_SPENT = r"\bspent\b|\b(did|do) (i|we) spend\b|\bkaytin\b|\bkaytimme\b|\bkulutin\b|\bmaksoin\b|\bolen kayttanyt\b"
 NOT_YET = ("I can't answer that one yet. I can tell you about your spending by category or period.",
            "En osaa vielä vastata tähän. Voin kertoa kulutuksestasi luokittain tai jaksoittain.")
 NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on restaurants last month?"),
@@ -825,6 +884,7 @@ PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY, HYPOTHETICAL, WHOLE_SPENDING = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY,
                                 HYPOTHETICAL, WHOLE_SPENDING))
+HEALTH_NOT_TOTAL, HEALTH_TOTAL_WORDS = (fold_pattern(rx) for rx in (HEALTH_NOT_TOTAL, HEALTH_TOTAL_WORDS))
 PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE = (
     fold_pattern(rx) for rx in (PAST_VERB, WHATIF_PAST_PERIOD, WHATIF_FUTURE, ACTION, WHATIF_FUTURE_WEAK, PAST_VERB_SURE))
 RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE_BETWEEN, RANGE_FI))
@@ -847,6 +907,10 @@ BASKET_CONTENTS_BASKETS = [(fold_pattern(rx), basket) for rx, basket in BASKET_C
 # is the baskets question. Russian forms are answered in English.
 _GREET = (r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|"
           r"huomenta|hyvaa (huomenta|paivaa|iltaa)|hyva huomenta|привет|здравствуй(те)?)")
+# "How are you" in English and Finnish (folded, #630): "miten sä voit", "kuinka sinä voit", "mitä sulle kuuluu",
+# "miten menee"; the whole message, alone or after a greeting.
+_HOW_ARE_YOU = (r"how are you( doing)?|(miten|kuinka) ((sa|sina) )?voit|(miten|kuinka) voit (sa|sina)|"
+                r"mita ((sulle|sinulle) )?kuuluu|(miten|kuinka) (sulla |sinulla )?menee")
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -865,7 +929,7 @@ META = [
                 r"ovatko tietoni turvassa|jaatko tietojani)"),
     ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
                r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
-    ("greeting", rf"{_GREET}( (are you there|how are you( doing)?))?|are you there|how are you( doing)?|mita kuuluu"),
+    ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
 META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
@@ -952,6 +1016,21 @@ LAST_MONTH_WORDS = r"\blast month\b|\bprevious month\b|\bviime kuu\w*|\bedelli\w
 FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
 
 
+def _same_question(q: str, first_end: int, start: int) -> bool:
+    """An object listed after the first one belongs to the question: in the same sentence ("on restaurants and the
+    gym"), or in a later sentence that asks it itself, a question ("…? And on the gym?") or an elliptical follow-up
+    ("And the gym."). An object in a later statement ("My family … the long drive north and the old cabin by the
+    lake …") is no object of the question (#576)."""
+    between = q[first_end:start]
+    breaks = list(re.finditer(r"[.!?]+(?:\s+|$)", between))
+    if not breaks:
+        return True
+    sentence_start = first_end + breaks[-1].end()
+    end = re.search(r"[.!?]", q[start:])
+    sentence = q[sentence_start:start + (end.end() if end else len(q) - start)].strip()
+    return sentence.endswith("?") or bool(re.match(r"(?:and|or|plus|also|ja|tai|seka|enta)\b", sentence))
+
+
 def _unknown_object(q: str) -> str | None:
     """The thing a spending question names when no category, merchant group or health word maps it: the
     first object, or one listed after it ("on restaurants and at the gym")."""
@@ -963,6 +1042,8 @@ def _unknown_object(q: str) -> str | None:
     starts = [m.start(1)] + sorted({rest + n.start(1) for rx in (OBJECT_MORE_EN, OBJECT_MORE_BARE, OBJECT_MORE_FI)
                                     for n in re.finditer(rx, q[rest:])})
     for i, start in enumerate(starts):
+        if i and not _same_question(q, rest, start):
+            continue   # "… the long drive north and the old cabin …" in a later statement: no object asked (#576)
         word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
         after = q[start + len(word):].lstrip()
         if re.fullmatch(r"[a-z]+(?:'s|s'|')", word) and (re.match(HEALTH, after) or any(
@@ -1218,7 +1299,15 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
             return Claim(intent, tuple(RuleModel._clarify(BONUS_SHARE_ASK, ((), ()), lang)))
         return _claimed(intent, [("get_bonus_estimate", share)], tools, lang)
     if intent == "peers":
-        return _claimed(intent, [("get_peer_benchmark", {"metric": "spend_total"})], tools, lang)
+        # a comparison of one named category is that category's ("How does my grocery spending compare with people
+        # like me?") only when it is the message's single subject: no second category or subject ("groceries and
+        # transport", "ruoka- ja terveysmenoni", "…? And how do I compare overall?", a spending question after a
+        # comma) and no health word; otherwise the total, as before (#569, the review of #585)
+        named = _filter_of(q).get("categories") or []
+        single = len(named) == 1 and named[0] in config.PEER_METRICS and not re.search(HEALTH, q) and \
+            not re.search(r"\b(and|or|plus|ja|tai|seka|overall|altogether|kokonai\w*|yhteensa)\b|,", q) and \
+            q.count("?") <= 1
+        return _claimed(intent, [("get_peer_benchmark", {"metric": named[0] if single else "spend_total"})], tools, lang)
     kind, what_if = plan_what_if(question)
     if kind == "health":
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
@@ -1328,8 +1417,62 @@ def said_in_the_past(question: str, q: str, as_of: date) -> bool:
     return bool(_months_mentioned(question, as_of)) and not re.search(ACTION, q)
 
 
+# The shapes of a plain health total (#571, review of #607): one question, a spending verb, the health thing (H) and
+# an optional period, nothing else. "How much did I spend at the pharmacy last month?", "What did my doctor visits
+# cost this year?", "Paljonko käytin lääkkeisiin viime kuussa?", "Paljonko lääkekulut olivat?". Another person, a
+# judgement, a comparison, a why, a split or a second sentence is no such shape: the message keeps dev's outcome.
+_HEALTH_THING = (r"(?:(?:the|my|a|an) )?(?:H )*H(?: (?:visits?|appointments?|bills?|costs?|fees?|check-?ups?|"
+                 r"purchases?|spending|expenses))?")
+PLAIN_HEALTH_SHAPES = [fold_pattern(rx.replace("T", _HEALTH_THING)) for rx in (
+    r"(?:how much|what) (?:did|have|do) i (?:spend|spent|pay|paid)(?: in total| altogether)? (?:on|at|for|in) T",
+    r"(?:how much|what) (?:did|do) T cost(?: me)?",
+    r"(?:how much|what) (?:was|were) T",
+    r"paljonko (?:käytin|kulutin|maksoin)(?: yhteensä)? T",
+    r"paljonko T (?:maksoi|maksoivat|olivat|oli)(?: minulle)?",
+)]
+_PLAIN_PERIODS = [RANGE_EN, RANGE_BETWEEN, RANGE_FI, YEAR_BEFORE_LAST, YEARS_AGO, *(rx for rx, _ in PRESETS), MONTH_RX,
+                  r"\b(?:last|previous) year\b|\bviime vuonna\b|\bedellisenä vuonna\b", r"\b(?:19|20)\d{2}\b"]
+
+
+def _plain_health_total(q: str) -> bool:
+    """A plain total of the user's own health spending (#571), and nothing beyond it: the whole message has one of
+    PLAIN_HEALTH_SHAPES once its period is taken out."""
+    if not re.search(HEALTH, q):
+        return False
+    s = re.sub(r"[?.!]+\s*$", "", q.strip())
+    if re.search(r"[?.!;:,]", s):
+        return False          # a second sentence or clause ("…? Do I have an illness?", "…, split by merchant")
+    for rx in _PLAIN_PERIODS:
+        s = re.sub(rx, " P ", s)
+    s = re.sub(r"\S*(?:" + HEALTH + r")\S*", " H ", s)
+    s = re.sub(r"(?:\b(?:in|during|over|for|of|from|since|until|the)\s+)*\bP\b", " ", s)
+    s = " ".join(s.split())
+    return any(re.fullmatch(rx, s) for rx in PLAIN_HEALTH_SHAPES)
+
+
+def _why_safe_lower(q: str, found: list[str], spending: dict | None) -> bool:
+    """"Why is my safe to spend lower (than last week)?", "Miksi minulla on nyt vähemmän käytettävissä?" (#552):
+    decided in _claim_clause after every decline and guard, as the safe-to-spend rule is; also when only the
+    spending rule competes with it (a comparison with last week). Never a past horizon ("why was it lower in
+    August?"), another period ("my monthly budget lower than last month") or a category."""
+    if not (template.why_lower(q) and "safe_to_spend" in found) or _filter_of(q) or re.search(WHY_PAST, q) or \
+            re.search(HEALTH, q):
+        return False   # "…, and how much did I spend on the pharmacy?": never the why answer alone (follow-up of #574)
+    if ((spending or {}).get("period") or {}).get("preset") not in (None, "this_week", "last_week"):
+        return False
+    if "spending" in found and (not spending or (not spending.get("compare_to") and re.search(WHY_SPENT, q))):
+        # the spending rule competes only as the comparison ("lower than last week") or this week's amount one
+        # can spend ("why can I only spend so little this week?"); a question about what was spent ("…, and how
+        # much did I spend?", "…, what did I spend this week?") is a second question, decided as on dev
+        return False
+    rest = set(found) - {"safe_to_spend", "spending"}
+    # "vähemmän" (less) compares there, it is no cut: the what-if rule only when nothing else in it is a scenario
+    return not rest or (rest == {"what_if"} and not re.search(dict(INTENTS)["what_if"], re.sub(r"\bvahemman\b", " ", q))
+                        and not re.search(HYPOTHETICAL, q))
+
+
 def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_question: bool,
-                  drop_spending: bool = False, asked: str | None = None) -> Claim:
+                  drop_spending: bool = False, asked: str | None = None, health_total: bool = False) -> Claim:
     q = fold(question)
     # A long message whose clauses ask no spending question never gets the spending rule (#399): a sum of the
     # categories its statements mention is not its answer; the other rules, or the model, take it. When a clause
@@ -1352,6 +1495,15 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         found = [f for f in found if f not in dropped]
         if not found:
             return Claim(None, reason=why)   # the model, or the general question back (not the period)
+    preset = ((spending or {}).get("period") or {}).get("preset")
+    if re.search(BUDGET_WORDS, q) and set(found) <= {"safe_to_spend", "spending"} and preset != "this_week" and \
+            not (spending or {}).get("compare_to") and \
+            (re.search(PAST, q) or re.search(BUDGET_PAST_FI, q) or _other_period(spending)):
+        # "what was my budget last month", "did I stay within budget in August" (#547): the question back; this
+        # week's budget questions keep theirs (safe to spend, or the two rules' question back), and so does a
+        # comparison ("Why is my monthly budget lower than last month?": the spending comparison, as on dev)
+        options = BUDGET_OPTIONS_THIS_MONTH if preset == "this_month" else BUDGET_OPTIONS
+        return Claim("budget", tuple(RuleModel._clarify(BUDGET_BACK, options, lang)))
     if "small_purchases" in found and not small_purchases_whole(q):
         # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
         # it, never answered for the defaults (#142, #390)
@@ -1361,9 +1513,17 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if re.search(HEALTH, q) and (re.search(MONEY_WORDS, q) or re.search(SPEND_SIGNAL, q)) and \
             not {"safe_to_spend", "balance_forecast", "small_purchases"} & set(found):
-        # "How much did I spend on the pharmacy?" is never answered with the unfiltered total: the same
-        # out-of-scope decline as the health what-if (R9; the coordinator, review of #443)
-        return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+        # "How much did I spend on the pharmacy?" is never answered with the unfiltered total (#443). A plain health
+        # total is the Health category's total for the period asked, labelled Health, never the thing the user named
+        # (Renat, 14 Nov, #571), only when the whole message is one of PLAIN_HEALTH_SHAPES (`health_total`, decided in
+        # claim()). Anything else that names health stays declined as before #571 (R9, review of #607).
+        if health_total and not set(found) - {"spending", "where_money_went"}:
+            if spending is None or "spending" not in found:
+                return Claim(None, reason="period")      # as any category's total without a period
+            spending = {**spending, "filter": {"categories": ["Health"]}}
+            found = ["spending"]
+        else:
+            return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if re.search(FOOD_COMPOUND, q) and "what_if" not in found:
         # "food delivery", "a food court", "my dog's food": not the food shopping bare "food" is (review of #534), but
         # a thing no category maps, as any unknown thing (#551): a spending question on it alone is answered with
@@ -1372,6 +1532,11 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
         others = [f for f in found if f != "spending"]
         if others:
             return Claim(None, candidates=tuple(dict.fromkeys(others + ["spending"])), reason="competing")
+        asking = [p for p in re.split(CLAUSE_BREAK, q) if p.strip() and _spending_words(p)]
+        if _filter_of(re.sub(FOOD_COMPOUND, " ", q)) or len(asking) > 1:
+            # "dog food and groceries", "…food delivery last month? …groceries last month?": the breakdown would
+            # answer the compound only; the message asks two things, so no rule claims it (#576)
+            return Claim(None, reason="food_compound")
         if "get_basket_breakdown" in tools and _spending_words(q):
             period = (spending or plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
             return Claim("unknown_object", (FunctionCall("get_basket_breakdown", {"period": period}),
@@ -1399,6 +1564,8 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
                                                 FunctionCall("finish")))
             return Claim(None, reason="unknown_object")
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
+    if "get_safe_to_spend" in tools and _why_safe_lower(q, found, spending):
+        return Claim("safe_to_spend_why", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")))
     winner, competing = _resolve(found, q, spending)
     if winner is None:
         return Claim(None, candidates=competing, reason="competing")
@@ -1541,20 +1708,30 @@ def claim(request: PlanInput) -> Claim:
     # a named or specific person still is (#216).
     peer_question = (bool(re.search(PEERS, q)) and bool(re.search(SELF, q))
                      and not re.search(SPECIFIC_PERSON, q, re.I) and not re.search(OTHERS_DATA, q))
+    health_total = _plain_health_total(q)
     for kind, rx in DECLINE_RULES:
         if kind == "other_person_data" and peer_question:
             continue
+        if kind == "out_of_scope" and health_total and not re.search(rx, re.sub(HEALTH_TOTAL_WORDS, " ", q), re.I):
+            continue   # "how much did I spend on medicines?": a plain health total, not medicine advice (#571)
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
     if re.search(WEATHER_FI, question, re.I):   # the weather, read unfolded (#370)
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
-    verdict = people.classify(question, peer_question)   # #350, #405: someone else's money
+    # "my doctor visits", "dentist bills" in a plain health total: a thing the user paid for, not the doctor's own money
+    # (#571); in any other message the people rules read it as before ("my son's dentist", review of #607)
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else question,
+                              peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
     if verdict == people.UNCLAIMED:   # cannot tell whose money: never the user's own numbers
         return Claim(None, reason="other_person")
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
+    if re.search(HEALTH, q) and (re.search(HEALTH_NOT_TOTAL, q) or peer_question or re.search(PEERS, q)):
+        # an inference, advice, a judgement, a tip or a comparison with people about health spending declines the
+        # whole message (#571, R9): "Miten terveyskuluni vertautuvat kaltaisiini?" as "… compared with people like me"
+        return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if _other_script(question):
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):
@@ -1562,6 +1739,10 @@ def claim(request: PlanInput) -> Claim:
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
+    if "get_safe_to_spend" in tools and re.fullmatch(BARE_WHY_LOW, bare):
+        # "why so little?", "why is it lower?", "miksi niin vähän?" (#552, review of #574): only the whole message,
+        # with no subject noun; a question with one is decided where the safe-to-spend rule is (_claim_clause)
+        return Claim("safe_to_spend_why", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")))
     if "get_spending" in tools and any(re.fullmatch(rx, bare) for rx, _ in PRESETS):
         args = plan_spending(question, as_of)
         if args:
@@ -1579,7 +1760,7 @@ def claim(request: PlanInput) -> Claim:
             return " ".join(c for c in asked if c.rstrip("?").strip() in part) or None
 
         if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
-            parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part))
+            parts = [_claim_clause(part, as_of, tools, lang, peer_question, drop, asked_in(part), health_total)
                      for part, _ in clauses]
             declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
             if declined is not None:
@@ -1595,12 +1776,15 @@ def claim(request: PlanInput) -> Claim:
             calls = list(unique.values())
             if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1
                    for part in parts) and len(calls) <= MAX_DATA_CALLS:
-                rules = list(dict.fromkeys(part.rule for part in parts))
+                # the why answer is a template for one question; with another question the composer writes
+                # both, as for the plain safe-to-spend question (#552, review of #574)
+                rules = list(dict.fromkeys("safe_to_spend" if part.rule == "safe_to_spend_why" else part.rule
+                                           for part in parts))
                 return Claim(rules[0] if len(rules) == 1 else "+".join(rules),
                              tuple(calls) + (FunctionCall("finish"),))
             competing = [r for part in parts for r in (part.candidates or ((part.rule,) if part.rule else ()))]
             return Claim(None, candidates=tuple(dict.fromkeys(competing)), reason="competing")
-        return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None)
+        return _claim_clause(question, as_of, tools, lang, peer_question, drop, " ".join(asked) or None, health_total)
 
     # A long message is decided as a short one (#399, review of #496), with two exceptions, by construction:
     # - a clause asks about spending: the spending filter is the asking clauses' own;
@@ -1656,7 +1840,10 @@ class RuleModel:
         (the default one, or the what-if one for a selection the rules do not map). A decline, a
         NOT_YET answer, a what-if amount question and every data call are recognised answers."""
         calls, recognised = self._calls(request)
-        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact))
+        # "why is my safe to spend lower?" (#552) is the template's answer in both rounds: no composer model
+        template_answer = claim(request).rule == "safe_to_spend_why"
+        return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),
+                          template_answer=template_answer)
 
     @staticmethod
     def _clarify(texts: tuple[str, str], options: tuple[tuple[str, ...], tuple[str, ...]], lang: str) -> list[FunctionCall]:
