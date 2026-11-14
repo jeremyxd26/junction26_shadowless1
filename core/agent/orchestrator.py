@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import guard, template, validator
+from core.agent import guard, offers, template, validator
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -537,7 +537,7 @@ class Pipeline:
         missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message),
                                                unfiltered_spending=unfiltered)
         if missing is not None:
-            return self._missing(missing, numbers, lang, emit, a)
+            return self._missing(missing, numbers, lang, emit, a, views=views)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
@@ -562,8 +562,11 @@ class Pipeline:
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        # #572: the answer's next step, the listed offer's question, comes first among the chips
+        follow_ups = offers.next_step(template.follow_ups(message, lang, views=views), views=views, language=lang,
+                                      question=message, outcome=a.outcome, review_pending=review is not None)
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.follow_ups(message, lang, views=views),
+                      "cited": cited, "follow_ups": follow_ups,
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
@@ -933,7 +936,7 @@ class Pipeline:
                 FunctionCall("finish")]
 
     def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
-                 a: _Answer) -> str:
+                 a: _Answer, views: list[dict[str, Any]] = ()) -> str:
         """An answer that is only a missing-data reason (#379, the coordinator's decision A): the template
         writes it, whoever planned the tool, with the model on or off; no compose request. Outcome
         "answered"; it cites only numbers the tool registered (too few purchases: the purchases themselves);
@@ -945,8 +948,11 @@ class Pipeline:
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "missing_data": True})
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
-                      "warnings": a.warnings})
+                      "cited": cited, "follow_ups": offers.missing_step(   # #572: the breakdown is the next step
+                          missing[1], lang, breakdown_answered=any(isinstance(v, dict) and
+                                                                   v.get("tool") == "get_basket_breakdown"
+                                                                   for v in views)),
+                      "lesson": None, "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": a.calls, "views": [], "answer": text})
         return lang
 
