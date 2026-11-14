@@ -72,7 +72,8 @@ const NEEDED = [
   'host.open_host_screen',
 ]
 
-const text = readFileSync(contractPath, 'utf8')
+// A Windows checkout with core.autocrlf=true has CRLF line endings; the pattern below expects LF (#643).
+const text = readFileSync(contractPath, 'utf8').replace(/\r\n?/g, '\n')
 const version = /\*\*Version:\*\*\s*([0-9.]+)/.exec(text)?.[1] ?? 'unknown'
 const pattern = /<!-- example: ([\w.]+) -->\s*```(json|text)\n([\s\S]*?)\n```/g
 
