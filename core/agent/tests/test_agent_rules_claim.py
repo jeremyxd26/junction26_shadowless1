@@ -810,16 +810,26 @@ def test_rent_or_bills_next_month_is_the_bills_rule(question, lang):
     assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
 
 
+# "fast food": the Restaurants category on this chain alone (#534); the takeaway sub-group (MCC 5814, "Takeaway and
+# fast food") once #514's sub-groups are in the tree, which strip group words before the categories. The sub-group
+# wins where it exists: narrower and true (the coordinator, #551). Bare "food" stays Groceries either way.
+FAST_FOOD = ({"categories": ["Restaurants"]}, {"mcc_groups": ["takeaway"]})
+
+
+def accepted(flt) -> tuple:
+    return flt if isinstance(flt, tuple) else (flt,)
+
+
 @pytest.mark.parametrize("question,lang,flt", [
     # #527: a known category word behind a possessive keeps its filter; "food" is food shopping as "ruoka" is
     ("how much did I spend on my kids' clothes last month", "en", {"categories": ["Lifestyle"]}),
     ("How much did we spend on food last month?", "en", {"categories": ["Groceries"]}),
     ("paljonko käytimme ruokaan viime kuussa?", "fi", {"categories": ["Groceries"]}),
-    ("how much did I spend on fast food last month?", "en", {"categories": ["Restaurants"]}),
+    ("how much did I spend on fast food last month?", "en", FAST_FOOD),
 ])
 def test_a_possessive_keeps_the_category_and_food_is_groceries(question, lang, flt):
     calls = data_calls(plan(question, lang))
-    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == flt
+    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(flt)
 
 
 def test_a_possessive_before_no_category_is_still_an_unknown_thing():
@@ -831,7 +841,7 @@ def test_a_possessive_before_no_category_is_still_an_unknown_thing():
     # review of #534: bare "food" stays food shopping; a noun that changes its meaning leaves it to the model
     ("how much did I spend on food last month?", {"categories": ["Groceries"]}),
     ("how much did I spend on food shopping last month?", {"categories": ["Groceries"]}),
-    ("how much did I spend on fast food last month?", {"categories": ["Restaurants"]}),
+    ("how much did I spend on fast food last month?", FAST_FOOD),
     ("how much did I spend on food delivery last month?", None),
     ("how much did I spend at a food court last month?", None),
     ("how much did I spend at the food truck last month?", None),
@@ -847,7 +857,7 @@ def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, ex
     if expected is None:
         assert claimed_rule(question) == NOT_CLAIMED and calls == []
     else:
-        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == expected
+        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(expected)
 
 
 # ---- #545: a spending question about an unknown thing beside another rule's question asks back ------------------
