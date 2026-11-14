@@ -279,6 +279,15 @@ BILL_TYPICAL = r"regular|monthly|usual|every month|säännölli|kuukausi|tavalli
 # A bills question is a bills question even when it names payday ("Which bills are due before payday?",
 # "Mitä laskuja on tulossa ennen palkkapäivää?"); only a question without bills is about income.
 BILL_WORDS = r"\bbills?\b|lasku\w*"   # also inside a compound: "kuukausilaskuni"
+# #540: "what does <bill> cost a month / a year?" for a regular bill's category: the bills tool's typical month, or
+# the last 12 months of that category from the spending tool (never a month multiplied by twelve). Word boundaries
+# throughout; a named month ("tässä kuussa", "this month") is no "per month".
+BILL_COST = (r"\b(cost|costs|maksaa|maksavat)\b|"
+             r"\bhow much (is|are) (my |the )?(rent|electricity|utilities|housing|water bills?)\b")
+BILL_COST_MONTH = (r"\b(a|per|each|every) month\b|\bmonthly\b|\bkuukaudessa\b|\bkuukausittain\b|"
+                   r"(?<!tassa )(?<!ensi )(?<!viime )\bkuussa\b")
+BILL_COST_YEAR = r"\b(a|per|each|every) year\b|\byearly\b|\bannually\b|\bvuodessa\b|\bvuosittain\b"
+BILL_COST_CATEGORIES = ("Housing", "Utilities")
 # Income and payday words: the rule that sends the question to the bills tool (rules.py) and the
 # takeaway below read them from here, so a question routed for its income gets the income (#216).
 INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|ings)?|palkka\w*|tulo|tulot|tuloni|"
@@ -286,6 +295,19 @@ INCOME_WORDS = (r"\b(pay ?day|salary|income|take-? ?home pay|net pay|earn(s|ed|i
 
 # Matched against the folded question (no diacritics), so folded here too.
 SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS = (fold_pattern(rx) for rx in (SAVE_MORE, BILL_TYPICAL, BILL_WORDS, INCOME_WORDS))
+
+
+def bill_cost(q: str) -> tuple[str, str] | None:
+    """(category, "month" or "year") for a folded question that asks what a regular bill costs a month or a year,
+    else None: a cost word, exactly one category named, a bill category, and one of the two periods (#540)."""
+    from core.agent.rules import CATEGORY_WORDS   # the category words in one place (rules imports this module)
+    if not re.search(BILL_COST, q):
+        return None
+    categories = {category for rx, category in CATEGORY_WORDS if re.search(rx, q)}
+    month, year = bool(re.search(BILL_COST_MONTH, q)), bool(re.search(BILL_COST_YEAR, q))
+    if len(categories) != 1 or not categories <= set(BILL_COST_CATEGORIES) or month == year:
+        return None
+    return categories.pop(), "month" if month else "year"
 
 
 def asks_income(q: str) -> bool:
@@ -676,8 +698,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     q = fold(question)
     # #342: human sentences for the tools answer_sentences writes; the others (profile, peer, S-Bonus,
     # safe to spend, an unknown tool) keep their own form below.
+    cost = bill_cost(q)
     owns = [answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
-                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
+                                      asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)),
+                                      bill_only=cost[0] if cost and cost[1] == "month" else None)   # #540
             for view in views]
     generic = views   # the views that get the sentence-per-tool form below
     if views and all(own is not None for own in owns):

@@ -58,7 +58,7 @@ CATEGORY_WORDS = [
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
-    (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
+    (r"utilit\w*|electricity|sähkö\w*|\bvesi\b|\bvesilasku\w*|\bwater bills?\b", "Utilities"),   # #540: vesi
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
@@ -576,7 +576,9 @@ META = [
     ("greeting", rf"{_GREET}( (are you there|how are you( doing)?))?|are you there|how are you( doing)?|mita kuuluu"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
-META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
+META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti"),
+              # #540: "What can Sentti do?", "Mitä Sentti osaa (tehdä)?": the introduction
+              ("capabilities", r"(what can|what does) sentti (do|help( me)? with)|mita (kaikkea )?sentti osaa( tehda)?")]
 
 
 def small_purchases_whole(q: str) -> bool:
@@ -978,6 +980,15 @@ def claim(request: PlanInput) -> Claim:
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
+    if cost is not None:
+        category, per = cost
+        if per == "month" and "get_recurring_bills" in tools:
+            return Claim("bills", (FunctionCall("get_recurring_bills", {}), FunctionCall("finish")))
+        if per == "year" and "get_spending" in tools:
+            return Claim("spending", (FunctionCall("get_spending", {"filter": {"categories": [category]},
+                                                                    "period": {"preset": "last_12_months"}}),
+                                      FunctionCall("finish")))
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
     if "get_spending" in tools and any(re.fullmatch(rx, bare) for rx, _ in PRESETS):
         args = plan_spending(question, as_of)
