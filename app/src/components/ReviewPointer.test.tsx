@@ -53,6 +53,19 @@ describe('reviewPlacement (#450)', () => {
     expect(reviewPlacement(TX, 'me', opening(null, { [TX]: 'me' }))).toBe('card') // this turn holds it
     expect(reviewPlacement(TX, 'me', null)).toBe('card')
   })
+
+  it('an answer that closed its own card (Not sure or gone) shows nothing, never a pointer to a later card', () => {
+    const closed = threadReview(THREAD_REVIEW_START, { type: 'not_sure' }).kind === 'not_sure'
+    const gone = threadReview(THREAD_REVIEW_START, { type: 'gone' }).kind === 'not_sure'
+    expect(closed && gone).toBe(true)
+    // Its card released the purchase, so a later answer shows the card and holds it.
+    expect(reviewPlacement(TX, 'me', opening(null, { [TX]: 'later-turn' }), closed)).toBe('none')
+    expect(reviewPlacement(TX, 'me', opening({ txRef: TX, phase: 'asking' }), closed)).toBe('none')
+    expect(reviewPlacement(TX, 'me', opening(null), closed)).toBe('none')
+    expect(reviewPlacement(TX, 'me', null, closed)).toBe('none')
+    // The later answer itself is not closed: it shows the card.
+    expect(reviewPlacement(TX, 'later-turn', opening(null, { [TX]: 'later-turn' }))).toBe('card')
+  })
 })
 
 describe('threadReview: the review card answered in the thread', () => {

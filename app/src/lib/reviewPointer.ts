@@ -4,14 +4,23 @@ import type { ReviewError } from '../components/ReviewCard.tsx'
 import type { Opening } from './openingContext.ts'
 
 /**
+ * - `none`: this answer showed the review card itself and the person closed it (Not sure, or the
+ *   review is gone): the answer shows nothing more, and never turns into a pointer to a later card.
  * - `pointer`: the opening shows the question about this purchase (asking or answered), or an
  *   earlier turn in the thread shows it: one line and a "Show" button that scrolls to that card.
  * - `card`: nobody shows it (Not sure, another purchase, no question in the opening, or outside
  *   the thread): this answer shows the review card itself, with its answer buttons.
  */
-export type ReviewPlacement = 'pointer' | 'card'
+export type ReviewPlacement = 'none' | 'pointer' | 'card'
 
-export function reviewPlacement(txRef: string, owner: string, opening: Opening | null): ReviewPlacement {
+/** `closed`: this answer showed the review card and it was closed (`ThreadReview` kind `not_sure`). */
+export function reviewPlacement(
+  txRef: string,
+  owner: string,
+  opening: Opening | null,
+  closed = false,
+): ReviewPlacement {
+  if (closed) return 'none'
   if (!opening) return 'card'
   if (opening.shownReview?.txRef === txRef) return 'pointer'
   const holder = opening.threadReviews[txRef]
