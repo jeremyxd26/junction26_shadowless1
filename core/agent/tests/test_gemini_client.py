@@ -484,3 +484,27 @@ def test_sdk_transport_calls_the_preview_model_on_v1beta(monkeypatch):
     pro_client = transport._client_for(PRO)
     assert pro_client is not transport._client and transport._client_for(PRO) is pro_client
     assert opened == [None, "v1beta"]
+
+
+def test_the_planner_gets_nine_seconds_and_no_second_request_after_a_timeout():
+    clock = Clock()
+    timeouts: list[float] = []
+
+    def slow(model, contents, config, timeout_s):
+        timeouts.append(timeout_s)
+        clock.now += timeout_s
+        raise TimeoutError()
+
+    c = GeminiClient(FLASH, slow, cache="off", sleep=lambda s: None, clock=clock)
+    assert c.plan_timeout_s == 9.0
+    answer = object()
+    c.start_answer(answer)
+    for _ in range(2):                                    # the call and the pipeline's retry
+        with pytest.raises(GeminiError) as exc:
+            c.plan(*PLAN_ARGS)
+        assert exc.value.code == "timeout"
+    assert timeouts == [9.0]                              # the retry sent nothing
+    c.start_answer(object())                              # the next answer may ask the planner again
+    with pytest.raises(GeminiError):
+        c.plan(*PLAN_ARGS)
+    assert len(timeouts) == 2
