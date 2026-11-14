@@ -77,7 +77,9 @@ export function BottomSheet({ title, onClose, children, short = false }: Props) 
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className={`sheet-panel relative flex ${short ? 'max-h-[46dvh]' : 'max-h-[88dvh]'} w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none`}
+        // A short sheet scrolls as a whole, title row included: with large text that row alone can take
+        // most of 46dvh, and the text below needs the room (#680). A tall sheet keeps its title in place.
+        className={`sheet-panel relative flex ${short ? 'max-h-[46dvh] overflow-y-auto overscroll-contain' : 'max-h-[88dvh]'} w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none`}
       >
         <div className="flex items-start gap-2 px-4 pt-2">
           <div className="flex-1 pt-3">
@@ -97,7 +99,7 @@ export function BottomSheet({ title, onClose, children, short = false }: Props) 
             </svg>
           </button>
         </div>
-        <div className="overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-2">
+        <div className={`${short ? '' : 'overflow-y-auto overscroll-contain '}px-4 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-2`}>
           {children}
         </div>
       </div>
