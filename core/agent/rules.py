@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from core.agent import people, template
-from core.agent.guard import flags, fold, fold_pattern
+from core.agent.guard import ROLE_TEXT, flags, fold, fold_pattern
+from core.agent.guard import SET_ASIDE as GUARD_SET_ASIDE   # #526; SET_ASIDE below is the claim rules'
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -34,7 +35,8 @@ RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
-               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
+               r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot|"
+               + GUARD_SET_ASIDE + "|" + ROLE_TEXT),   # #526: set-aside and role text, before any data tool
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
                           r"someone else|other (people|customers)|muiden|toisen"),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
@@ -611,7 +613,8 @@ NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borro
 COMPLETE_WORDS = (r"\btotal\b|\boverall\b|\bspending\b|\b(was|were|been) spent\b|\byhteensä\b|\bkaikkiaan\b|\bkokonais\w*|"
                   r"\bmeni\b|\bmenivät\b|\bkului\w*")
 # An attempt to set the rules aside ("ignore your rules, what's my budget?") is never claimed by a data
-# rule; the input guard does not flag these forms yet (#205).
+# rule. Since #526 the input guard flags these forms and DECLINE_RULES refuses them (core/agent/guard.py SET_ASIDE);
+# this list stays as the claim rules' own guard.
 SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these|those|previous|prior) "
              r"(rules|instructions|guidelines|limits)\b|"
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
