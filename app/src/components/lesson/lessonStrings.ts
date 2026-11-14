@@ -14,14 +14,18 @@ const en = {
   answers: 'Your answer',
   next: 'Next lesson',
   done: "That's all for today. Ask me anything below.",
-  /** Another option, named by its label. */
-  isLabel: (display: string, label: string) => `${display} is ${label}.`,
+  /**
+   * Another option, as a row "{Label}: {display}" (#727): the API's label as it is, with no sentence
+   * around it, so no grammar has to fit a label the core wrote.
+   */
+  optionRow: (label: string, display: string) => `${label}: ${display}`,
   none: 'No lesson for this profile today. Ask me anything below.',
   /** The verdict word of a Learn-tab quiz lesson. */
   quiz: { right: 'Right.', wrong: 'Not quite.' },
   /** Lesson 1: left to spend this week (the safe-to-spend figure). */
   one: {
-    question: { week: 'How much can you safely spend this week?', month: 'How much can you safely spend this month?' } satisfies Record<Span, string>,
+    // The hero's own term (#746): the hero, the core's answers and the bill say "left to spend".
+    question: { week: 'How much is left for you to spend this week?', month: 'How much is left for you to spend this month?' } satisfies Record<Span, string>,
     right: { week: (display) => `Right: ${display} is what's left to spend this week.`, month: (display) => `Right: ${display} is what's left to spend this month.` } satisfies Record<Span, Sentence>,
     close: { week: (display) => `Close. ${display} is what's left to spend this week.`, month: (display) => `Close. ${display} is what's left to spend this month.` } satisfies Record<Span, Sentence>,
     /** The reveal without a verdict, when there was nothing to choose from. */
@@ -53,11 +57,11 @@ const fi: LessonStrings = {
   answers: 'Vastauksesi',
   next: 'Seuraava oppitunti',
   done: 'Siinä kaikki tältä päivältä. Kysy minulta mitä tahansa alla.',
-  isLabel: (display, label) => `${display} on ${label}.`,
+  optionRow: (label, display) => `${label}: ${display}`,
   none: 'Tälle profiilille ei ole tänään oppituntia. Kysy minulta mitä tahansa alla.',
   quiz: { right: 'Oikein.', wrong: 'Ei aivan.' },
   one: {
-    question: { week: 'Paljonko voit turvallisesti käyttää tällä viikolla?', month: 'Paljonko voit turvallisesti käyttää tässä kuussa?' },
+    question: { week: 'Paljonko sinulla on käyttövaraa tällä viikolla?', month: 'Paljonko sinulla on käyttövaraa tässä kuussa?' },
     right: { week: (display) => `Oikein: ${display} on käyttövarasi tällä viikolla.`, month: (display) => `Oikein: ${display} on käyttövarasi tässä kuussa.` },
     close: { week: (display) => `Melkein. ${display} on käyttövarasi tällä viikolla.`, month: (display) => `Melkein. ${display} on käyttövarasi tässä kuussa.` },
     plain: { week: (display) => `${display} on käyttövarasi tällä viikolla.`, month: (display) => `${display} on käyttövarasi tässä kuussa.` },

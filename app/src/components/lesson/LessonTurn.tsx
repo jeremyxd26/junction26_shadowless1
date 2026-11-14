@@ -7,7 +7,7 @@ import { firstWords, useWordReveal } from '../../lib/reveal.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { openEvidence } from '../../lib/url.ts'
 import type { ClientTurnProps } from '../clientTurns.tsx'
-import { inSentence, lessonKey, lessonsFor, opensOnReveal, revealOf, startIndex, type Lesson, type PickLesson } from './lessons.ts'
+import { lessonKey, lessonsFor, opensOnReveal, revealOf, startIndex, type Lesson, type PickLesson } from './lessons.ts'
 import { lessonStrings } from './lessonStrings.ts'
 
 const HEADING = 'text-lg font-semibold leading-7 text-ink outline-none'
@@ -295,7 +295,7 @@ function PickReveal({ lesson, picked, s, hint }: { lesson: PickLesson; picked: s
       {reveal.others.length > 0 && (
         <ul className="flex flex-col gap-1 text-base text-ink-2">
           {reveal.others.map((option) => (
-            <li key={option.source}>{s.isLabel(option.number.display, inSentence(option.number.label))}</li>
+            <li key={option.source}>{s.optionRow(option.number.label, option.number.display)}</li>
           ))}
         </ul>
       )}
