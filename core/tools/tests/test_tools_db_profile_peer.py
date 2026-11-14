@@ -412,3 +412,36 @@ def test_a_label_never_moves_the_peer_group_statistics(conn):
     group = lambda d: (d.peer_median.value, d.peer_p25.value, d.peer_p75.value, d.peer_group.size.value)  # noqa: E731
     assert group(labelled) == group(plain)                   # the labels are this customer's only
     assert labelled.you.value > plain.you.value              # only the customer's own value moves
+
+
+# ---- #527: the peer offer from the peer tool's own rows, tied to the what-if metric ---------------------------
+
+OFFER_METRICS = ["Restaurants", "Lifestyle", "Travel", "Entertainment", "everyday_spending", "unexpected_necessities"]
+
+
+@pytest.mark.parametrize("customer_id", ["CUST00860", "CUST00493", "CUST00349", "CUST00849"])
+def test_the_offer_decision_equals_the_what_if_metrics_own(conn, customer_id):
+    from core.tools import peer
+    from core.tools.what_if import WhatIfRefused, run_what_if
+    for metric in OFFER_METRICS:
+        ctx = ToolContext(customer_id=customer_id, as_of=date(2026, 9, 30), conn=conn, language="en")
+        kind = "basket" if metric in config.BASKET_LABELS else "category"
+        try:
+            status = run_what_if(ctx, {"selection": {"kind": kind, "value": metric}, "cut_pct": 20},
+                                 too_few="not_offered").data.status
+        except WhatIfRefused:
+            status = "not_offered"
+        fresh = ToolContext(customer_id=customer_id, as_of=date(2026, 9, 30), conn=conn, language="en")
+        assert peer.what_if_offered(fresh, metric) is (status != "not_offered"), (customer_id, metric, status)
+
+
+def test_a_failing_offer_check_leaves_the_card_without_the_offer(conn, monkeypatch):
+    from core.tools import peer
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(peer, "cuttable_purchases", boom)
+    result = get_peer_benchmark(ToolContext(customer_id="CUST00849", as_of=date(2026, 9, 30), conn=conn,
+                                            language="en"), {"metric": "Restaurants"})
+    assert result.card is not None and result.card.actions == [] and result.model_view["offers_cut"] is False

@@ -448,7 +448,7 @@ def validate(raw: str | dict, *, language: str, numbers: dict[str, Number],
 
 
 # A token whose display carries its period ("€229.56 a month", "229,56 € / kk") followed by a period word
-# again renders as "€3,010.59 a month a month" (live, #288; r-w3 met it in a template, #390).
+# again renders as "€3,010.59 a month a month" (live, #288; also seen in a template, #390).
 _PERIOD_UNITS = {"eur_per_day", "eur_per_week", "eur_per_month", "eur_per_year"}
 _PERIOD_WORDS = re.compile(
     r"[ \t]*(?:(?:a|per|each|every)\s+(?:day|week|month|year)\b|daily\b|weekly\b|monthly\b|yearly\b|annually\b"

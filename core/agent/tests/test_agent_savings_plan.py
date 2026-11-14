@@ -55,7 +55,7 @@ def test_the_plan_in_english(fake):  # noqa: F811
     """The plan's total a month first (#411), then what can already be set aside."""
     text, cited = rendered()
     assert text == ("These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and "
-                    "spending a tenth less on lifestyle. You could already set aside about €184.61 a month.")
+                    "spending a tenth less on lifestyle. That is on top of the about €360.00 a month you set aside first.")
     assert len(cited) == 3
 
 
@@ -63,13 +63,13 @@ def test_the_plan_in_finnish(fake, monkeypatch):  # noqa: F811
     from core.tools.tests.test_tools_savings_plan_pure import num
     from types import SimpleNamespace
 
-    fi_save = num("184.61", "ev_save", "safe_to_spend.safe_to_save_monthly_eur@1")
-    fi_save = fi_save.model_copy(update={"display": "184,61 € / kk"})   # the fixture's numbers are English
-    monkeypatch.setattr(sp, "get_safe_to_save", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(monthly=fi_save)))
+    fi_save = num("360.00", "ev_goal", "safe_to_spend.savings_goal_eur@1")
+    fi_save = fi_save.model_copy(update={"display": "360,00 € / kk"})   # the fixture's numbers are English
+    monkeypatch.setattr(sp, "get_safe_to_spend", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(savings_goal=fi_save)))
     text, cited = rendered("fi")
     assert text == ("Nämä muutokset voisivat lisätä noin 63,17 € / kk, noin 758,04 € / v: ulkona syöminen viidenneksen "
-                    "vähemmän ja luokassa Ostokset ja vapaa-aika kymmenyksen vähemmän. Voisit jo nyt säästää noin "
-                    "184,61 € / kk.")
+                    "vähemmän ja luokassa Ostokset ja vapaa-aika kymmenyksen vähemmän. Tämä on sen lisäksi, että "
+                    "laitat ensin sivuun noin 360,00 € / kk.")
     assert len(cited) == 3
 
 
@@ -78,14 +78,14 @@ def test_one_lever_only(fake):  # noqa: F811
         fake.what_ifs[c] = what_if("20.00", "2.00", ref=f"ev_{c[:3]}")
     text, _ = rendered()
     assert text == ("These changes could add about €45.91 a month, about €550.92 a year: eating out a fifth less. "
-                    "You could already set aside about €184.61 a month.")
+                    "That is on top of the about €360.00 a month you set aside first.")
 
 
 @pytest.mark.parametrize("language,expected", [
     ("en", "These changes could add about €63.17 a month: eating out a fifth less and spending 15.0% less on "
-           "lifestyle. You could already set aside about €184.61 a month."),
+           "lifestyle. That is on top of the about €360.00 a month you set aside first."),
     ("fi", "Nämä muutokset voisivat lisätä noin 63,17 € / kk: ulkona syöminen viidenneksen vähemmän ja luokassa "
-           "Ostokset ja vapaa-aika 15,0 % vähemmän. Voisit jo nyt säästää noin 184,61 € / kk."),
+           "Ostokset ja vapaa-aika 15,0 % vähemmän. Tämä on sen lisäksi, että laitat ensin sivuun noin 360,00 € / kk."),
 ])
 def test_a_cut_share_without_words_is_cited_as_a_number(fake, monkeypatch, language, expected):  # noqa: F811
     """Review of #411: another cut share (15 %) is cited as its Number; the answer is still two sentences and
@@ -96,9 +96,9 @@ def test_a_cut_share_without_words_is_cited_as_a_number(fake, monkeypatch, langu
 
     monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
     if language == "fi":
-        fi_save = num("184.61", "ev_save", "safe_to_spend.safe_to_save_monthly_eur@1")
-        fi_save = fi_save.model_copy(update={"display": "184,61 € / kk"})
-        monkeypatch.setattr(sp, "get_safe_to_save", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(monthly=fi_save)))
+        fi_save = num("360.00", "ev_goal", "safe_to_spend.savings_goal_eur@1")
+        fi_save = fi_save.model_copy(update={"display": "360,00 € / kk"})
+        monkeypatch.setattr(sp, "get_safe_to_spend", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(savings_goal=fi_save)))
     text, cited = rendered(language)
     assert text == expected and len(cited) == 3
     assert "25.15" not in text and "25,15" not in text and "S-Bonus" not in text
@@ -112,7 +112,7 @@ def test_two_equal_shares_without_words_are_one_number_said_once(fake, monkeypat
     monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
     text, cited = rendered()
     assert text == ("These changes could add about €63.17 a month: eating out and spending on lifestyle, each 15.0% "
-                    "less. You could already set aside about €184.61 a month.")
+                    "less. That is on top of the about €360.00 a month you set aside first.")
     assert len(cited) == len(set(cited)) == 3
 
 
@@ -178,10 +178,23 @@ def test_without_a_tool_question_the_follow_ups_are_the_brief_questions():
         template.follow_ups("How could I save more?", "en")
 
 
-def test_no_lever_says_so_plainly_and_keeps_safe_to_save(fake):  # noqa: F811
+def test_a_goal_of_zero_leaves_the_second_sentence_out(fake, monkeypatch):  # noqa: F811
+    from types import SimpleNamespace
+
+    from core.tools.tests.test_tools_savings_plan_pure import num
+
+    monkeypatch.setattr(sp, "get_safe_to_spend", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
+        savings_goal=num("0.00", "ev_goal0", "safe_to_spend.savings_goal_eur@1"))))
+    text, cited = rendered()
+    assert text == ("These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and "
+                    "spending a tenth less on lifestyle.")
+    assert len(cited) == 2
+
+
+def test_no_lever_says_so_plainly_and_keeps_the_goal(fake):  # noqa: F811
     fake.what_ifs = {c: what_if("20.00", "2.00", ref=f"ev_{c[:3]}") for c in SANNA}
     text, cited = rendered()
-    assert text == "None of the usual cuts would add much here; you could already set aside about €184.61 a month."
+    assert text == "None of the usual cuts would add much here; you already set aside about €360.00 a month first."
     assert len(cited) == 1
 
 
