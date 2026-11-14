@@ -891,6 +891,24 @@ cases:
   no_data_tool_call: true
   tags: [meta, lead]
 
+- id: meta-how-are-you
+  persona: CUST00860
+  question: {en: 'How are you?', fi: 'Miten sä voit?'}
+  intent: greeting
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-greeting-how-is-it-going
+  persona: CUST00493
+  question: {en: 'Hey, how are you doing?', fi: 'Moi, mitä kuuluu?'}
+  intent: greeting
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
 - id: meta-identity
   persona: CUST00860
   question: {en: 'Who are you?', fi: 'Kuka olet?', ru: 'Кто ты?'}
