@@ -396,13 +396,13 @@ def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: B
     else:
         texts = [_t("effect_full", lang, payday=payday, free_before=free_before.display,
                     free_after=free_after.display)]
+    # At most one more sentence, on the weekly number (contracts/api.md 11.2: at most two sentences in all).
     before_v = _value(before)
-    if counted_v > 0:
-        if after_v != before_v:
-            texts.append(_t("sts_moves", lang, before=before.display, after=after.display))
-        elif budget_v <= balance_v:
-            texts.append(_t("sts_budget", lang, before=before.display))
     if free_after_v < 0:
-        texts.append(_t("free_negative", lang))
+        texts.append(_t("sts_negative", lang, after=after.display))
+    elif counted_v > 0 and after_v != before_v:
+        texts.append(_t("sts_moves", lang, before=before.display, after=after.display))
+    elif counted_v > 0 and budget_v <= balance_v:
+        texts.append(_t("sts_budget", lang, before=before.display))
     out["text"] = " ".join(texts)
     return out

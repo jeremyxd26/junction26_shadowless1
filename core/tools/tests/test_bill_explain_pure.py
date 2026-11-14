@@ -280,7 +280,38 @@ def test_a_bill_larger_than_what_is_free(fake):
     sts = explain(fields_bill(amount="400.00", due=date(2026, 10, 10)))["safe_to_spend"]
     assert sts["free_until_payday_after"]["value"] == -100.0 and sts["after"]["value"] == 0.0
     assert sts["after"]["display"] == "€0.00"
-    assert sts["text"].endswith("This bill takes more than is free until payday.")
+    assert sts["text"].endswith("This bill takes more than is free until payday, so your weekly safe to spend is "
+                                "€0.00.")
+
+
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")   # a decimal point or a Finnish date's dot is followed by a digit
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+@pytest.mark.parametrize("case", ["budget", "moves", "negative", "covered", "after_payday", "full_unmatched"])
+def test_the_safe_to_spend_text_is_at_most_two_sentences(fake, lang, case):
+    """contracts/api.md 11.2 (r-coord: no more than two sentences, shorter on a phone)."""
+    housing = be.read_barcode(barcode(euros="000886", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy")
+    bills = {
+        "budget": (housing, None, {"free_until_payday_eur": Decimal("12517.56"), "balance_limit_7d_eur": Decimal("5841.53")}),
+        "moves": (fields_bill(amount="100.00", due=date(2026, 10, 10)),
+                  hero(before="140.00", free="300.00", balance="140.00", budget="166.84"),
+                  {"free_until_payday_eur": Decimal("200.00"), "balance_limit_7d_eur": Decimal("93.33")}),
+        "negative": (fields_bill(amount="400.00", due=date(2026, 10, 10)),
+                     hero(before="140.00", free="300.00", balance="140.00", budget="166.84"),
+                     {"free_until_payday_eur": Decimal("-100.00"), "balance_limit_7d_eur": Decimal("0.00")}),
+        "covered": (be.read_barcode(barcode(euros="000836", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy"),
+                    None, None),
+        "after_payday": (fields_bill(), None, None),
+        "full_unmatched": (fields_bill(amount="486.00", due=date(2026, 10, 2)), None,
+                           {"free_until_payday_eur": Decimal("12081.56"), "balance_limit_7d_eur": Decimal("5638.06")}),
+    }
+    bill, fake_hero, row = bills[case]
+    if fake_hero is not None:
+        fake.hero = fake_hero
+    fake.row = row
+    text = explain(bill, lang)["safe_to_spend"]["text"]
+    assert 1 <= len(SENTENCE_END.findall(text)) <= 2, text
 
 
 def test_a_bill_due_after_payday_changes_nothing_and_runs_nothing(fake):

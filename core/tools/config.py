@@ -226,27 +226,29 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     "effect_after_payday": ("Due on {due}, after your payday on {payday}, so it changes nothing before then.",
                             "Eräpäivä on {due}, palkkapäiväsi {payday} jälkeen, joten se ei muuta mitään "
                             "ennen sitä."),
-    "effect_excess": ("Due before your payday on {payday}. {reserved} is already counted for your {label} bill, "
-                      "so only the extra {counted} is added: free until payday goes from {free_before} to "
-                      "{free_after}.",
-                      "Eräpäivä on ennen palkkapäivääsi {payday}. Laskullesi {label} on jo varattu {reserved}, "
-                      "joten vain ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+    # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
+    # free until payday, then at most one sts_* sentence on the weekly number.
+    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
+                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+                      "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("Due before your payday on {payday}. {reserved} is already counted for your {label} bill, "
-                       "which covers this one, so nothing changes.",
-                       "Eräpäivä on ennen palkkapäivääsi {payday}. Laskullesi {label} on jo varattu {reserved}, "
-                       "mikä kattaa tämän laskun, joten mikään ei muutu."),
-    "effect_full": ("Due before your payday on {payday}. It is added to the bills before payday: free until "
+    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
+                       "covers this one, so nothing changes.",
+                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+                       "tämän laskun, joten mikään ei muutu."),
+    "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
-                    "Eräpäivä on ennen palkkapäivääsi {payday}. Lasku lisätään laskuihin ennen palkkapäivää: "
-                    "palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
+                    "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
+                    "palkkapäivää: palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
     "sts_moves": ("Your weekly safe to spend goes from {before} to {after}.",
                   "Viikon turvallisesti käytettävissä oleva summasi on {after} (ennen laskua {before})."),
     "sts_budget": ("Your weekly safe to spend stays {before}: your monthly budget limits it, not your balance.",
                    "Viikon turvallisesti käytettävissä oleva summasi pysyy ennallaan, {before}: sitä rajaa "
                    "kuukausibudjettisi, ei saldosi."),
-    "free_negative": ("This bill takes more than is free until payday.",
-                      "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana."),
+    "sts_negative": ("This bill takes more than is free until payday, so your weekly safe to spend is {after}.",
+                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten viikon turvallisesti "
+                     "käytettävissä oleva summasi on {after}."),
     # warnings: a small note that never repeats a signal (contracts/api.md 11.2); today only a past due date
     "warn_past": ("The due date has passed. The payee may charge late-payment interest, so pay it soon.",
                   "Eräpäivä on mennyt. Maksunsaaja voi periä viivästyskorkoa, joten maksa lasku pian."),
