@@ -173,6 +173,9 @@ TEXT: dict[str, tuple[str, str]] = {
     "filter_within": (" within ", ""),
     "filter_at": (" at ", " kauppiaalla "),
     "filter_at_unnamed": (" at the chosen merchant", " valitulla kauppiaalla"),   # the evidence view, no alias
+    # a category with the MCC group of the same name: only its purchases with a merchant code, i.e. card purchases
+    # (a purchase without a card has no merchant and no MCC; docs/design/metrics.md section 0; review of #528)
+    "filter_card_purchases": ("card purchases", "korttiostot"),
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),

@@ -128,7 +128,8 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
     Within one dimension the parts are a union ("Housing and restaurants"). Across dimensions the selection is an
     intersection (#501, review of #528):
     - an MCC group with categories is a part of them: the group first, the categories in brackets, "Taxi
-      (Transportation)", "Taksi (Liikenne)"; a group named like its category is said once ("Groceries");
+      (Transportation)", "Taksi (Liikenne)"; a group named like its category is the category's card purchases,
+      "Restaurants (card purchases)", "Ravintolat (korttiostot)", never the category's own label;
     - a basket: "Housing within everyday spending"; in Finnish in the brackets too, "Asuminen (arjen kulutus)";
     - a merchant: "Restaurants at Grocery store A", "Ravintolat kauppiaalla Ruokakauppa A".
     FILTER_LABEL_CAP parts or more of one dimension are counted, with no digit: "Spending in several categories",
@@ -149,10 +150,14 @@ def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bo
 
     cats, groups, bsk, merchant = (named.get(k) for k in ("categories", "mcc_groups", "baskets", "merchant"))
     brackets: list[str] = []
-    if cats and groups:
+    if cats and groups and {n.lower() for n in groups} == {n.lower() for n in cats}:
+        # a group named like its category holds only the category's card purchases (an MCC is set only on a card
+        # purchase): a smaller sum than the category's, so never the category's own label (review of #528, R1)
+        lead_kind, lead = "categories", cats
+        brackets.append(text_of("filter_card_purchases"))
+    elif cats and groups:
         lead_kind, lead = "mcc_groups", groups
-        if {n.lower() for n in groups} != {n.lower() for n in cats}:
-            brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
+        brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
     else:
         lead_kind = next(k for k in ("categories", "mcc_groups", "baskets", "merchant") if k in named)
         lead = named[lead_kind]

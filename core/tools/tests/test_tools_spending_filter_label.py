@@ -225,7 +225,7 @@ def test_four_parts_are_listed_and_five_are_counted():
 
 @pytest.mark.parametrize("keys,en,fi", [
     ((["Transportation"], ["taxi"], [], None), "Taxi (Transportation)", "Taksi (Liikkuminen)"),
-    ((["Groceries"], ["groceries"], [], None), "Groceries", "Ruokaostokset"),          # the same name once
+    ((["Groceries"], ["groceries"], [], None), "Groceries (card purchases)", "Ruokaostokset (korttiostot)"),   # R1
     (([], ["taxi"], ["everyday_spending"], None), "Taxi within everyday spending", "Taksi (arjen kulutus)"),
     ((["Restaurants"], ["taxi"], ["everyday_spending"], "Grocery store A"),
      "Taxi (Restaurants) within everyday spending at Grocery store A",
@@ -250,3 +250,46 @@ def test_a_finnish_sentence_across_dimensions_has_no_capital_after_the_first_par
     rest = subject.split(" ", 2)[2].replace(MERCHANT, "")
     assert rest == rest.lower(), subject
 
+
+
+# ---- review of #528, R1: a group named like its category is that category's card purchases --------------------
+# The group holds the category's purchases with one of its merchant codes; a purchase without a card has no merchant
+# and no MCC (docs/design/metrics.md section 0). On the personas the group is the smaller sum (CUST00493 Restaurants
+# 615.95 against 603.14), so the two never share a label.
+
+@pytest.mark.parametrize("category,group,en,fi", [
+    ("Restaurants", "restaurants", "Restaurants (card purchases)", "Ravintolat (korttiostot)"),
+    ("Groceries", "groceries", "Groceries (card purchases)", "Ruokaostokset (korttiostot)"),
+])
+def test_a_group_named_like_its_category_is_never_labelled_as_the_category(category, group, en, fi):
+    for language, expected in (("en", en), ("fi", fi)):
+        assert filter_label([category], [group], [], None, language) == expected
+        assert filter_label([category], [group], [], None, language) != filter_label([category], [], [], None, language)
+    assert filter_label([category], [group], ["everyday_spending"], None, "en") == en + " within everyday spending"
+    assert filter_label([category], [group], ["everyday_spending"], None, "fi") == fi[:-1] + ", arjen kulutus)"
+
+
+CARD_HISTORY = [Tx(11, date(2026, 9, 5), datetime(2026, 9, 5), "Restaurants", "purchase", "M0101", "5812",
+                   Decimal("-24.40")),
+                Tx(12, date(2026, 9, 9), datetime(2026, 9, 9), "Restaurants", "purchase", None, None, Decimal("-31.10"))]
+
+
+@pytest.mark.parametrize("language,label,sentence", [
+    ("en", "Restaurants (card purchases)", " on restaurants (card purchases) "),
+    ("fi", "Ravintolat (korttiostot)", "luokassa Ravintolat (korttiostot)"),
+])
+def test_the_card_purchases_label_is_the_same_on_the_number_the_card_the_evidence_and_the_sentence(
+        language, label, sentence):
+    def spend(filter_):
+        store = FakeStore()
+        ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=store, language=language, _history=CARD_HISTORY)
+        return get_spending(ctx, {"period": SEPTEMBER, "filter": filter_}), store
+
+    result, store = spend({"categories": ["Restaurants"], "mcc_groups": ["restaurants"]})
+    total = result.data.total
+    assert total.label == label and result.card.title == label and total.value == 24.4
+    assert evidence_api._label_of(store.rows[total.evidence_ref], language) == label
+    sentences, _ = answer_sentences.spending(result.model_view, language, lambda s, **kw: True)
+    assert sentence in " ".join(sentences), sentences
+    alone, _ = spend({"categories": ["Restaurants"]})
+    assert alone.data.total.value == 55.5 and alone.data.total.label != label
