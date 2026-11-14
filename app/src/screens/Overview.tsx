@@ -82,7 +82,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   // The answer's own confirmation (`effect`, contract 0.3.2), shown in the reply when the core sends it.
   const [replyNote, setReplyNote] = useState<{ text: string; numbers: Record<string, Num> } | null>(null)
   const replyRef = useRef<HTMLDivElement>(null)
-  const openingRef = useRef<HTMLDivElement>(null)
 
   const seq = useRef(0)
   const timers = useRef<number[]>([])
@@ -309,7 +308,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const replyLabel = reply ? baskets?.items.find((item) => item.key === reply)?.label : undefined
 
   return (
-    <div ref={openingRef} className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
@@ -334,7 +333,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           card={card}
           basket={phase.basket}
           onUndo={busy === null ? () => void send(null) : undefined}
-          explain={!(reply && baskets)}
         />
       )}
 

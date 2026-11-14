@@ -258,16 +258,14 @@ interface AnsweredProps {
   basket: BasketKey
   /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
   onUndo?: () => void
-  /** Show what the answer does (`options[].effect`); off when Sentti's reply under the card says it. */
-  explain?: boolean
 }
 
 /**
- * After the tap: the question stays, with a check and the chosen answer under it. Sentti's reply
- * under the card says where the purchase went (#317); without one, the card shows the effect.
+ * After the tap: the header, the question and the chosen answer (reference 2-after-needed). What
+ * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
-  { card, basket, onUndo, explain = true },
+  { card, basket, onUndo },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -302,7 +300,6 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
         <span aria-hidden="true">{look?.icon}</span>
         {option?.label[lang]}
       </p>
-      {explain && option && <p className="mt-1 line-clamp-2 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
     </section>
   )
 })
