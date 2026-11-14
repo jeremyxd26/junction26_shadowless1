@@ -10,7 +10,6 @@ import { USAGE, downOnly, findBrowser, line, parseAmount, parseArgs } from './de
 
 const TEXT = {
   en: {
-    greeting: /^Hi\b/,
     asks: 'Sentti asks',
     needed: /Needed/,
     undo: /^(Undo)$/,
@@ -22,7 +21,6 @@ const TEXT = {
     mockBadge: 'Mock data',
   },
   fi: {
-    greeting: /^Hei\b/,
     asks: 'Sentti kysyy',
     needed: /Välttämätön|Needed/,
     undo: /^(Peru|Kumoa)$/,
@@ -34,6 +32,10 @@ const TEXT = {
     mockBadge: 'Testidata',
   },
 }
+// The greeting and the amounts are API texts: Finnish from a live core with lang=fi, English in a
+// mock build (its examples are English only), so either form is accepted.
+const GREETING = /^(Hi|Hei)\b/
+const amount = (text) => parseAmount(text, lang) ?? parseAmount(text, lang === 'fi' ? 'en' : 'fi')
 const ANSWER_MS = 60_000 // a live answer from the model can take a while
 const MODULE_MS = 30_000
 
@@ -162,8 +164,8 @@ try {
     })
     await fitPage.close()
     const problems = []
-    if (!T.greeting.test(greeting)) problems.push(`greeting "${short(greeting, 30)}"`)
-    if (parseAmount(hero, lang) === null) problems.push(`hero "${short(hero, 20)}" is not an amount`)
+    if (!GREETING.test(greeting)) problems.push(`greeting "${short(greeting, 30)}"`)
+    if (amount(hero) === null) problems.push(`hero "${short(hero, 20)}" is not an amount`)
     if (!asks) problems.push(`no "${T.asks}" (answered already? Start over resets the viewer)`)
     if (chips.length !== 3) problems.push(`${chips.length} chips, not 3`)
     if (!fit) problems.push('no chips or no composer at 375×768')
@@ -191,11 +193,11 @@ try {
       still = sample[0] === samples[samples.length - 1][0] && samples.length > 3 ? still + 1 : 0
       samples.push(sample)
     }
-    const values = samples.map(([text]) => parseAmount(text, lang)).filter((v) => v !== null)
+    const values = samples.map(([text]) => amount(text)).filter((v) => v !== null)
     const count = downOnly(values)
     const maxScroll = Math.max(...samples.map(([, y]) => y))
     const undo = await mod.getByRole('button', { name: T.undo }).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
-    const shown = (v) => samples.find(([text]) => parseAmount(text, lang) === v)?.[0] ?? String(v)
+    const shown = (v) => samples.find(([text]) => amount(text) === v)?.[0] ?? String(v)
     const problems = []
     if (!count.ok) problems.push(count.upAt > 0 ? 'the hero went up during the count' : 'the hero did not go down')
     if (maxScroll !== 0) problems.push(`scrollY reached ${maxScroll}`)
@@ -226,14 +228,15 @@ try {
   }
 
   // 5. "How could I save more?", then "See monthly saving": the frame's host sheet and its log.
-  {
+  if (!hasFrame) {
+    // Without the frame there is no host sheet to check, so no question is spent on it.
+    report(5, 'SKIP', 'the host sheet and the message log are part of the demo frame (#442)')
+  } else {
     const answer = await ask(mod, T.saveQuestion)
     const action = answer.article.getByRole('button', { name: T.saveAction })
     if (!(await action.count())) {
       if (mock) report(5, 'SKIP', `"${T.saveQuestion}" (${answer.how}): the mock build answers without the safe-to-save card, so there is no "See monthly saving" (#495)`)
       else report(5, 'FAIL', `"${T.saveQuestion}" (${answer.how}): the answer has no "See monthly saving" action`)
-    } else if (!hasFrame) {
-      report(5, 'SKIP', 'the "See monthly saving" action is there, but the host sheet needs the demo frame (#442)')
     } else {
       const label = short(await action.first().innerText(), 50)
       await action.first().click()
