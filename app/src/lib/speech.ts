@@ -1,8 +1,14 @@
-// Reading an answer aloud (#252) with the browser's own speechSynthesis: on the device only,
-// nothing is sent anywhere and nothing is stored. Only voices that run on the device are used:
-// a voice with `localService: false` (Chrome's "Google …" voices, Edge's "… Online (Natural)")
-// sends the text to a cloud service, so it is never picked. One answer speaks at a time; starting
-// another stops the first. The text is the answer's `text_rendered` exactly as the API sent it.
+// Reading an answer aloud (#252, #730). What is sent, and when:
+// - A live build, on a tap: the app sends the answer's id, never its text, to the core
+//   (POST /api/tts). The core has the model provider (Gemini) synthesize the answer's
+//   `text_rendered`, unless that audio is already in the core's cache, which keeps it. The app
+//   stores nothing.
+// - The fallback, and the only voice of a mock build: the browser's speechSynthesis, with voices
+//   that run on the device only, so the text is not sent anywhere. A voice with
+//   `localService: false` (Chrome's "Google …" voices, Edge's "… Online (Natural)") sends the text
+//   to a cloud service, so it is never picked.
+// One answer speaks at a time; starting another stops the first. The text is the answer's
+// `text_rendered` exactly as the API sent it.
 //
 // Gemini voice (#730): in a live build the core reads the answer aloud (POST /api/tts names our own
 // answer by its id, never a text) and the WAV plays through the Web Audio API, because the page's CSP

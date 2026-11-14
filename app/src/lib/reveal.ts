@@ -44,6 +44,15 @@ export function remainingMs(words: number, total: number): number {
   return Math.ceil((total - words) / revealStep(total)) * REVEAL_TICK_MS
 }
 
+/**
+ * Whether a live answer's cards wait behind the skeleton: while the answer streams and while its text types
+ * in, so the numbers never show before the words. A reveal that is off (history, reduced motion, a tap)
+ * shows every word (`words` is Infinity) and never holds the cards.
+ */
+export function holdsCards(words: number, { streaming, revealing }: { streaming: boolean; revealing: boolean }): boolean {
+  return Number.isFinite(words) && (streaming || revealing)
+}
+
 export interface Reveal {
   /** How many words of the text to show (Infinity: all). */
   words: number
