@@ -252,3 +252,22 @@ def test_upcoming_bills_take_no_past_window():
     text = load("regular-bills-upcoming-en")["expect"]["text"]
     assert not re.search(r"\b\d{1,2} [A-Z][a-z]{2} – \d{1,2} [A-Z][a-z]{2} \d{4}\b", text)   # e.g. "1 Apr – 30 Sep 2026"
     assert "before payday" in text or "15 October 2026" in text
+
+
+@pytest.mark.parametrize("path", RECORDINGS, ids=[p.stem for p in RECORDINGS])
+def test_no_recorded_answer_and_no_template_for_a_recorded_result_suggests_borrowing(path):
+    """#419: the recorded answers, and the template text for every recorded tool result."""
+    from core.agent import template
+    from core.agent.validator import allowed_from
+    from core.answer_text import borrowing_suggestion
+
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    assert borrowing_suggestion(fixture["expect"]["text"] or "") is None
+    if not fixture["tools"]:
+        return
+    numbers = {n["id"]: Number.model_validate(n) for t in fixture["tools"] for n in t["numbers"]}
+    views = [t["model_view"] for t in fixture["tools"]]
+    allowed = allowed_from(numbers.values(), views, date.fromisoformat(fixture["as_of"]))
+    draft = template.template_draft(views, [], fixture["language"], allowed, fixture["question"])
+    text = draft["text"] if isinstance(draft, dict) else json.loads(draft)["text"]
+    assert borrowing_suggestion(text) is None, text

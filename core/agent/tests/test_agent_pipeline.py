@@ -444,3 +444,44 @@ def test_a_count_with_its_noun_and_a_comparison_with_its_direction_pass(make_pip
     pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[good]))
     done = dict(run(pipe))["done"]
     assert done["text"] == good["text"] and audit_records(pipe)[-1]["composer_attempts"][0]["validation"] == "ok"
+
+
+# ---- #419: Sentti never suggests borrowing ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "August 2026 cost {{n1}}. You could take out a small loan to cover the repair.",
+    "August 2026 cost {{n1}}. Consider using your credit card and pay it later.",
+    "August 2026 cost {{n1}}. You could pay in instalments.",
+    "Elokuussa 2026 käytit {{n1}}. Voit ottaa lainaa korjaukseen.",
+    "Elokuussa 2026 käytit {{n1}}. Maksa se osamaksulla.",
+])
+def test_a_draft_suggesting_borrowing_is_retried(make_pipeline, text):
+    lang = "fi" if text.startswith("Elokuussa") else "en"
+    bad = {"language": lang, "text": text, "cited": ["n1"], "lesson_key": None}
+    good_text = "Elokuussa 2026 käytit {{n1}}." if lang == "fi" else "August 2026 cost {{n1}}."
+    good = {"language": lang, "text": good_text, "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe, language=lang))["done"]
+    assert done["text"] == good_text
+    assert any("never suggest borrowing" in e for e in audit_records(pipe)[-1]["composer_attempts"][0]["validation"])
+
+
+@pytest.mark.parametrize("text, labels", [
+    ("Your Loan repayment bill is {{n1}} this month.", ["Loan repayment"]),     # the user's own bill keeps its label
+    ("Luottamus on tärkeää.", []),                                              # trust, not credit
+    ("I can't predict whether a loan or mortgage would be approved, and I don't rate creditworthiness.", []),
+])
+def test_naming_a_loan_or_credit_is_not_suggesting_it(text, labels):
+    from core.answer_text import borrowing_suggestion
+
+    assert borrowing_suggestion(text, labels) is None
+
+
+def test_no_refusal_or_clarify_template_suggests_borrowing():
+    from core.agent import template
+    from core.answer_text import borrowing_suggestion
+
+    texts = [t for kind in template.REFUSAL.values() for t in kind["text"]]
+    texts += list(template.CLARIFY_GENERAL["question"]) + list(template.CLARIFY["question"])
+    texts += list(template.REVIEW_PURCHASE) + list(getattr(template, "REVIEW_WHY", ()))
+    assert texts and all(borrowing_suggestion(t) is None for t in texts)

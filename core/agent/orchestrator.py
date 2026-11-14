@@ -135,6 +135,24 @@ class DataAccess(Protocol):
     # seconds and raises DataUnavailable otherwise. Without it, a turn's calls run one by one.
 
 
+def _labels_in(views: Any) -> list[str]:
+    """Every label in the tools' model views: the user's own words for their data (#419)."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("label"), str):
+                found.append(node["label"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(views)
+    return found
+
+
 def error_envelope(code: str, language: str) -> dict[str, Any]:
     texts, retryable = ERRORS[code]
     return {"code": code, "message": template.pick(texts, language), "retryable": retryable}
@@ -689,7 +707,8 @@ class Pipeline:
                         errors.append(f"'{repeated}': the number's display already says how often; write it once")
                     # The stand's other composer defects (#398): self-introduction, sums no tool computed, a
                     # count without its noun, a comparison without direction, a fixed bill to cut, wrong words.
-                    errors += draft_problems(draft.text, numbers, has_data=bool(request.data))
+                    errors += draft_problems(draft.text, numbers, has_data=bool(request.data),
+                                             labels=_labels_in(request.data))
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

@@ -116,6 +116,11 @@ class ReferenceSource:
         if case is None:  # the reference only knows the eval questions
             return Answer(text=REFUSAL["other"][language], outcome="refused", refusal_kind="out_of_scope",
                           labels=[], tool_calls=[])
+        if case["expect"] == "any":  # the outcome may vary (#419): the rules' general clarifying question
+            from core.agent import template
+            lang = language if language in ("en", "fi") else "en"
+            return Answer(text=template.pick(template.CLARIFY_GENERAL["question"], lang), outcome="clarify",
+                          labels=[], tool_calls=[])
         if case["expect"] == "meta":  # Sentti introduces itself (#287): the template text and the four chips
             from core.agent import template
             lang = language if language in ("en", "fi") else "en"

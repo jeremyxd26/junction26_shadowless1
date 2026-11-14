@@ -225,6 +225,30 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|etc)\.", re.I)
 
 
+# Sentti never suggests borrowing (#419): a loan, credit, a credit card as a way to pay, instalments,
+# financing, "buy now, pay later" or an overdraft, in a suggesting sense. Naming them is fine (the credit
+# decision decline says "loan"; a repayment bill keeps its label); proposing them is not.
+BORROWING_SUGGESTION = re.compile(
+    r"\b(?:take|taking|get|getting|use|using|apply\s+for|consider|try|open)\s+(?:out\s+)?(?:a\s+|an\s+|your\s+|some\s+)?"
+    r"(?:small\s+|personal\s+|short-term\s+|quick\s+)?(?:loans?|credit(?:\s+cards?|\s+line)?|overdraft\w*|instal{1,2}ment\s+plans?"
+    r"|payday\s+loans?|financing)\b"
+    r"|\bborrow(?:ing)?\b(?!\s+(?:decisions?|costs?))|\bpay\s+(?:for\s+it\s+|it\s+)?(?:later|in\s+instal{1,2}ments)\b"
+    r"|\bbuy\s+now,?\s+pay\s+later\b|\bbnpl\b|\bput\s+it\s+on\s+(?:a|your)\s+credit\s+card\b"
+    r"|\bfinance\s+(?:it|the\s+\w+)\b"
+    r"|\b(?:ota|ottaa|otat|ottamalla|hae|hakea|haet|käytä|käyttää|käytät|harkitse|harkita)\s+(?:\w+\s+)?"
+    r"(?:lainaa|lainan|luottoa|luoton|luottokorttia|tililuottoa|osamaksu\w*|pikavippi\w*|rahoitusta|kulutusluottoa)\b"
+    r"|\bosamaksulla\b|\bluottokortilla\b|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
+
+
+def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
+    """The words in which a text suggests borrowing, or None. Labels from the user's own data (a
+    category or bill such as "Loan repayment") are taken out first."""
+    for label in sorted((x for x in labels if x), key=len, reverse=True):
+        text = re.sub(re.escape(label), " ", text, flags=re.I)
+    m = BORROWING_SUGGESTION.search(text)
+    return m.group(0) if m else None
+
+
 def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
     display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep

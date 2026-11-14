@@ -458,9 +458,15 @@ KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemat\w*", re.I)
 _COUNT_END = re.compile(r"\s*(?:[.,;:!?)]|$|(?:and|but|ja|mutta)\b)", re.I)
 
 
-def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool) -> list[str]:
-    """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing."""
+def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
+                   labels: Iterable[str] = ()) -> list[str]:
+    """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
+    `labels` are the labels in the answer's data, which a draft may always name (#419)."""
     problems = []
+    borrowing = answer_text.borrowing_suggestion(text, labels)
+    if borrowing:
+        problems.append(f"'{borrowing}': never suggest borrowing (a loan, credit, a credit card, instalments, an "
+                        "overdraft); say what is safe to spend, or offer saving towards a date from <data>")
     if has_data and SELF_INTRO.search(text):
         problems.append("do not introduce yourself in an answer about the user's money; start with the answer")
     m = COMPOSITE_CLAIM.search(text)
