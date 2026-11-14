@@ -2187,6 +2187,12 @@ def _claim(request: PlanInput) -> Claim:
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if _other_script(question):
         return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
+    if "get_safe_to_spend" in tools and not re.search(HEALTH, q) and template.borrow_budget_amount(question) is not None:
+        # "Should I borrow €500 for a holiday?" (#806): after every refusal above, the budget side only (the template
+        # says it can't advise on borrowing), with the way to the bank for the credit side; a health purpose (R9) keeps
+        # today's path
+        return Claim("borrow_budget", (FunctionCall("get_safe_to_spend", {}), FunctionCall("finish")),
+                     offer_contact=True)
     if _future_and_another_period(question, q, as_of):
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
     if "get_savings_plan" in tools and savings_transfer.have_transfer(q):
@@ -2320,7 +2326,7 @@ class RuleModel:
         # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
         # the template's answer in both rounds: no composer model
         found = claim(request)
-        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer")
+        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer", "borrow_budget")   # #806 too
         # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
         bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),

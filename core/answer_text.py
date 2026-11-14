@@ -315,7 +315,8 @@ BORROWING_SUGGESTION = re.compile(
     r"|kulutusluottoa)\b"
     r"|\blainaa\s+(?:rahaa|\w+(?:lta|ltä))\b"
     r"|\bosamaksulla\b|\bluottokortilla\b|\b(?:tili)?luotolla\b|\blainalla\b|\blainarahalla\b"
-    r"|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
+    r"|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b"
+    r"|\blainaa?\s+(?:\w+\s+)?kannatta(?:a|isi)\b", re.I)   # "lainaa kannattaa ottaa", "laina kannattaisi" (#806)
 
 
 def _a_statement(text: str, m: re.Match) -> bool:
