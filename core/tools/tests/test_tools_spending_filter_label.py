@@ -55,8 +55,8 @@ def test_a_two_category_total_names_both_in_its_label_card_and_evidence(language
 def test_three_parts_and_mixed_filters():
     assert filter_label(["Housing", "Restaurants", "Travel"], [], [], None, "en") == "Housing, restaurants and travel"
     # across dimensions the selection is an intersection, so the label is one too (#501)
-    assert filter_label(["Restaurants"], ["taxi"], [], None, "en") == "Restaurants within taxi"
-    assert filter_label(["Restaurants"], [], ["everyday_spending"], None, "fi") == "Ravintolat, joista arjen kulutus"
+    assert filter_label(["Restaurants"], ["taxi"], [], None, "en") == "Taxi (Restaurants)"   # review of #528
+    assert filter_label(["Restaurants"], [], ["everyday_spending"], None, "fi") == "Ravintolat (arjen kulutus)"
     assert filter_label([], [], [], "Grocery store A", "en") == "Grocery store A"          # an alias keeps its case
     assert filter_label(["Restaurants"], [], [], "Grocery store A", "en") == "Restaurants at Grocery store A"
     assert filter_label([], [], [], None, "en") is None
@@ -133,9 +133,9 @@ MERCHANT = "Home and tech store A"
     ((["Restaurants"], [], [], MERCHANT), "en", "Restaurants at Home and tech store A"),
     ((["Restaurants"], [], [], MERCHANT), "fi", "Ravintolat kauppiaalla Home and tech store A"),
     ((["Housing"], [], ["everyday_spending"], None), "en", "Housing within everyday spending"),
-    ((["Housing"], [], ["everyday_spending"], None), "fi", "Asuminen, joista arjen kulutus"),
-    ((["Restaurants"], ["taxi"], [], None), "en", "Restaurants within taxi"),
-    ((["Restaurants"], ["taxi"], [], None), "fi", "Ravintolat, joista taksi"),
+    ((["Housing"], [], ["everyday_spending"], None), "fi", "Asuminen (arjen kulutus)"),
+    ((["Restaurants"], ["taxi"], [], None), "en", "Taxi (Restaurants)"),
+    ((["Restaurants"], ["taxi"], [], None), "fi", "Taksi (Ravintolat)"),
 ])
 def test_a_filter_across_dimensions_is_worded_as_an_intersection(keys, language, expected):
     assert filter_label(*keys, language) == expected
@@ -148,7 +148,7 @@ def test_a_filter_across_dimensions_is_worded_as_an_intersection(keys, language,
     ({"categories": ["Housing"], "mcc_groups": [], "baskets": ["everyday_spending"], "merchant_id": None}, None,
      "Housing within everyday spending"),
     ({"categories": ["Restaurants"], "mcc_groups": ["taxi"], "baskets": [], "merchant_id": None}, None,
-     "Restaurants within taxi"),
+     "Taxi (Restaurants)"),
     ({"categories": ["Restaurants"], "mcc_groups": [], "baskets": [], "merchant_id": "M0001"}, None,
      "Restaurants at the chosen merchant"),   # no alias found: neutral, never only "Restaurants"
 ])
@@ -166,8 +166,8 @@ def test_the_tool_and_the_evidence_name_a_category_and_a_basket_alike():
 
 
 @pytest.mark.parametrize("language,expected,sentence", [
-    ("en", "Spending in 6 categories", " on several categories "),
-    ("fi", "Kulutus 6 luokassa", " useassa luokassa"),
+    ("en", "Spending in several categories", " on several categories "),   # no digit (review of #528)
+    ("fi", "Kulutus useassa luokassa", " useassa luokassa"),
 ])
 def test_five_or_more_parts_are_counted_not_listed(language, expected, sentence):
     six = sorted(config.CATEGORY_LABELS)[:6]
@@ -209,4 +209,44 @@ def test_an_unfiltered_income_total_is_never_total_spending_in_the_evidence(lang
             "selection": {"direction": "in", "categories": [], "mcc_groups": [], "baskets": [], "merchant_id": None,
                           "group": None}}
     assert evidence_api._label_of(spec, language) == expected
+
+
+# ---- review of #528: Finnish brackets, Finnish casing, the group before its category, counts without digits ----
+
+def test_four_parts_are_listed_and_five_are_counted():
+    four, five = sorted(config.CATEGORY_LABELS)[:4], sorted(config.CATEGORY_LABELS)[:5]
+    assert filter_label(four, [], [], None, "en") == "Entertainment, groceries, health and home & tech"
+    assert filter_label(five, [], [], None, "en") == "Spending in several categories"
+    assert filter_label(five, [], [], None, "fi") == "Kulutus useassa luokassa"
+    five_groups = sorted(config.MCC_GROUP_LABELS)[:5]
+    assert filter_label(["Restaurants"], five_groups, [], None, "fi") == "Kulutus useassa ryhmässä (Ravintolat)"
+    assert not re.search(r"\d", filter_label(five, five_groups, ["everyday_spending"], None, "en"))
+
+
+@pytest.mark.parametrize("keys,en,fi", [
+    ((["Transportation"], ["taxi"], [], None), "Taxi (Transportation)", "Taksi (Liikkuminen)"),
+    ((["Groceries"], ["groceries"], [], None), "Groceries", "Ruokaostokset"),          # the same name once
+    (([], ["taxi"], ["everyday_spending"], None), "Taxi within everyday spending", "Taksi (arjen kulutus)"),
+    ((["Restaurants"], ["taxi"], ["everyday_spending"], "Grocery store A"),
+     "Taxi (Restaurants) within everyday spending at Grocery store A",
+     "Taksi (Ravintolat, arjen kulutus) kauppiaalla Grocery store A"),                # three dimensions
+])
+def test_a_group_comes_before_its_category_and_three_dimensions_read_as_one(keys, en, fi):
+    assert filter_label(*keys, "en") == en and filter_label(*keys, "fi") == fi
+    assert "within groceries" not in en and "joista" not in fi and "josta" not in fi
+
+
+@pytest.mark.parametrize("keys,expected", [
+    ((["Housing", "Restaurants"], [], ["everyday_spending", "regular_essentials"], None),
+     "luokissa Asuminen ja ravintolat (arjen kulutus ja säännölliset välttämättömät)"),
+    ((["Housing"], [], ["everyday_spending"], None), "luokassa Asuminen (arjen kulutus)"),
+    ((["Housing", "Restaurants"], [], [], MERCHANT), "luokissa Asuminen ja ravintolat kauppiaalla " + MERCHANT),
+])
+def test_a_finnish_sentence_across_dimensions_has_no_capital_after_the_first_part(keys, expected):
+    from core.tools.spending import filter_dims
+    dims = [{"kind": k, "labels": names} for k, names in filter_dims(*keys, "fi")]
+    subject = answer_sentences._dims_subject(dims, "fi")
+    assert subject == expected
+    rest = subject.split(" ", 2)[2].replace(MERCHANT, "")
+    assert rest == rest.lower(), subject
 

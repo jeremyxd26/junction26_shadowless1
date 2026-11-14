@@ -164,13 +164,13 @@ TEXT: dict[str, tuple[str, str]] = {
     # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
     "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
     # a filter of FILTER_LABEL_CAP or more parts in one dimension is counted, not listed (#501)
-    "filter_many": ("Spending in {n} {what}", "Kulutus {n} {what}"),
-    "filter_many_short": ("{n} {what}", "{n} {what}"),
-    "filter_many_categories": ("categories", "luokassa"),
-    "filter_many_mcc_groups": ("groups", "ryhmässä"),
-    "filter_many_baskets": ("baskets", "korissa"),
-    # across dimensions the selection is an intersection (core/tools/selection.py): "within", "at" (#501)
-    "filter_within": (" within ", ", joista "),
+    "filter_many": ("Spending in {what}", "Kulutus {what}"),
+    "filter_many_categories": ("several categories", "useassa luokassa"),
+    "filter_many_mcc_groups": ("several groups", "useassa ryhmässä"),
+    "filter_many_baskets": ("several baskets", "useassa korissa"),
+    # across dimensions the selection is an intersection (core/tools/selection.py): a basket "within" (English),
+    # the other parts in brackets (Finnish, no agreement to get wrong), a merchant "at" (#501, review of #528)
+    "filter_within": (" within ", ""),
     "filter_at": (" at ", " kauppiaalla "),
     "filter_at_unnamed": (" at the chosen merchant", " valitulla kauppiaalla"),   # the evidence view, no alias
     "transactions": ("Transactions", "Tapahtumat"),

@@ -122,33 +122,65 @@ def filter_dims(categories, mcc_groups, baskets, merchant: str | None, language:
     return dims
 
 
-def _union(kind: str, names: list[str], language: str, first: bool) -> str:
-    """One dimension's parts: listed, lower-cased after the first part of the label (an alias keeps its case), or
-    counted from FILTER_LABEL_CAP parts on ("Spending in 6 categories", "Kulutus 6 luokassa")."""
-    if kind != "merchant" and len(names) >= config.FILTER_LABEL_CAP:
-        what = config.label(config.TEXT[f"filter_many_{kind}"], language)
-        return config.label(config.TEXT["filter_many" if first else "filter_many_short"], language).format(
-            n=len(names), what=what)
-    return join_names([n if kind == "merchant" or (first and i == 0) else n.lower() for i, n in enumerate(names)],
-                      language)
+def render_filter(dims: list[tuple[str, list[str]]], language: str, sentence: bool = False) -> str | None:
+    """A filter by dimension in words, for the label (the Number, the card, the evidence title) or for a sentence.
+
+    Within one dimension the parts are a union ("Housing and restaurants"). Across dimensions the selection is an
+    intersection (#501, review of #528):
+    - an MCC group with categories is a part of them: the group first, the categories in brackets, "Taxi
+      (Transportation)", "Taksi (Liikenne)"; a group named like its category is said once ("Groceries");
+    - a basket: "Housing within everyday spending"; in Finnish in the brackets too, "Asuminen (arjen kulutus)";
+    - a merchant: "Restaurants at Grocery store A", "Ravintolat kauppiaalla Ruokakauppa A".
+    FILTER_LABEL_CAP parts or more of one dimension are counted, with no digit: "Spending in several categories",
+    "Kulutus useassa luokassa". In a label the parts after the first are lower-cased (a bracketed category keeps its
+    capital); in a sentence every known label is lower-cased in English, and in Finnish all but the first, which
+    follows "luokassa"/"luokissa" ("luokissa Asuminen ja ravintolat (arjen kulutus)"). An alias keeps its case."""
+    named = {kind: list(names) for kind, names in dims if names}
+    if not named:
+        return None
+    fi = language == "fi"
+    text_of = lambda key: config.label(config.TEXT[key], language)  # noqa: E731
+
+    def union(kind: str, names: list[str], cap_first: bool, long_count: bool) -> str:
+        if len(names) >= config.FILTER_LABEL_CAP:
+            what = text_of(f"filter_many_{kind}")
+            return text_of("filter_many").format(what=what) if long_count else what
+        return join_names([n if cap_first and i == 0 else n.lower() for i, n in enumerate(names)], language)
+
+    cats, groups, bsk, merchant = (named.get(k) for k in ("categories", "mcc_groups", "baskets", "merchant"))
+    brackets: list[str] = []
+    if cats and groups:
+        lead_kind, lead = "mcc_groups", groups
+        if {n.lower() for n in groups} != {n.lower() for n in cats}:
+            brackets.append(union("categories", cats, cap_first=not sentence, long_count=False))
+    else:
+        lead_kind = next(k for k in ("categories", "mcc_groups", "baskets", "merchant") if k in named)
+        lead = named[lead_kind]
+    counted = lead_kind != "merchant" and len(lead) >= config.FILTER_LABEL_CAP
+    if lead_kind == "merchant":
+        text = ("kauppiaalla " if fi and sentence else "") + lead[0]
+    else:
+        text = union(lead_kind, lead, cap_first=fi or not sentence, long_count=not sentence)
+        if fi and sentence and not counted:
+            text = ("luokassa " if len(lead) == 1 else "luokissa ") + text
+    if bsk and lead_kind != "baskets":
+        within = union("baskets", bsk, cap_first=False, long_count=False)
+        if fi:
+            brackets.append(within)
+    if brackets:
+        text += " (" + ", ".join(brackets) + ")"
+    if bsk and lead_kind != "baskets" and not fi:
+        text += text_of("filter_within") + within
+    if merchant and lead_kind != "merchant":
+        text += text_of("filter_at") + merchant[0]
+    return text
 
 
 def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
-    """A filter in words, every part named: "Restaurants", "Housing and restaurants", "Asuminen ja ravintolat"
-    (#399); across dimensions an intersection: "Housing within everyday spending", "Restaurants at Grocery store A",
-    "Ravintolat kauppiaalla Grocery store A" (#501); None without a filter. A filtered sum is never labelled as
-    all spending. The tool and the evidence view name one filter the same way."""
-    dims = filter_dims(categories, mcc_groups, baskets, merchant, language)
-    if not dims:
-        return None
-    (kind, names), rest = dims[0], dims[1:]
-    text = _union(kind, names, language, first=True)
-    for kind, names in rest:
-        if kind == "merchant":
-            text += config.label(config.TEXT["filter_at"], language) + names[0]
-        else:
-            text += config.label(config.TEXT["filter_within"], language) + _union(kind, names, language, first=False)
-    return text
+    """A filter in words, every part named (#399), across dimensions an intersection (#501): render_filter. None
+    without a filter: a filtered sum is never labelled as all spending. The tool and the evidence view name one
+    filter the same way."""
+    return render_filter(filter_dims(categories, mcc_groups, baskets, merchant, language), language)
 
 
 def _filter_keys(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str):

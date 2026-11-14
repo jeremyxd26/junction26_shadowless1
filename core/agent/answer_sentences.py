@@ -80,11 +80,6 @@ def _lower_known(p: str) -> str:
     return p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
 
 
-SEVERAL = {"categories": ("several categories", "useassa luokassa"),
-           "mcc_groups": ("several groups", "useassa ryhmässä"),
-           "baskets": ("several baskets", "useassa korissa")}
-
-
 def _dims_subject(dims: list[dict[str, Any]], language: str) -> str | None:
     """A filter across dimensions, or one counted from FILTER_LABEL_CAP parts, as the sentence names it: "restaurants
     at Grocery store A", "luokassa Ravintolat kauppiaalla Grocery store A", "housing within everyday spending",
@@ -95,26 +90,9 @@ def _dims_subject(dims: list[dict[str, Any]], language: str) -> str | None:
     many = [k for k, ps in clean if k != "merchant" and len(ps) >= config.FILTER_LABEL_CAP]
     if not clean or (len(clean) == 1 and not many and clean[0][0] != "merchant"):
         return None
-
-    def union(kind: str, ps: list[str]) -> str:
-        if kind != "merchant" and len(ps) >= config.FILTER_LABEL_CAP:
-            return pick(SEVERAL[kind], language)
-        return _join_filter(ps if kind == "merchant" else [_lower_known(p) if language != "fi" else p for p in ps],
-                            language)
-
-    (kind, ps), rest = clean[0], clean[1:]
-    if kind == "merchant":
-        text = ("kauppiaalla " if language == "fi" else "") + ps[0]
-    elif kind in many:
-        text = union(kind, ps)
-    else:
-        text = (("luokassa " if len(ps) == 1 else "luokissa ") if language == "fi" else "") + union(kind, ps)
-    for kind, ps in rest:
-        if kind == "merchant":
-            text += pick(config.TEXT["filter_at"], language) + ps[0]
-        else:
-            text += pick(config.TEXT["filter_within"], language) + union(kind, ps)
-    return text
+    # the label's own renderer in its sentence form (review of #528): the same order, brackets and counts
+    from core.tools.spending import render_filter
+    return render_filter(clean, language, sentence=True)
 
 
 def _subject(label: str, language: str, parts: list[str] | None = None,
