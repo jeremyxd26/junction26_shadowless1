@@ -1,9 +1,9 @@
 # Sentti design system
 
-The design foundation for the Sentti money-coach module: a mobile web app, 375 px wide, embedded in S-mobiili through a WebView. Every screen uses these tokens and rules.
+The design foundation for the Sentti money-coach module: an embeddable web module for S-mobiili, 375 px, inside a WebView. Its first screen is one chat thread that Sentti opens (section 3, "Thread"). Every screen uses these tokens and rules.
 
 - Tokens: [`design/tokens.css`](design/tokens.css). These are CSS custom properties. Colour, type, radius, shadow and easing tokens use Tailwind v4 theme namespaces; spacing, durations, `--gutter` and `--tap-min` are mapped by hand.
-- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.2.0. This file never redefines a field; it only says how to show one.
+- Data shapes: [`contracts/api.md`](../contracts/api.md), version 0.3.0 (draft, on `dev`). This file never redefines a field; it only says how to show one.
 - The style is "in the spirit of" S-mobiili. It was derived only from public materials: the s-pankki.fi website and the S-mobiili listings in the App Store and Google Play. Colour values follow that look closely (the greens, neutrals and page tint of S-mobiili); the components and icons are our own. This repository contains no S-Pankki or S-Group logo, icons, images or font files.
 
 Component code and screens are built in their own issues and follow these rules. Section 8 lists what is still owed by other issues.
@@ -120,7 +120,7 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
 | `--text-review-amount` | 30 / 34 | 700, tabular | The amount on the review card (#35) |
 | `--text-2xl` | 24 / 30 | 700 | Greeting, secondary big numbers |
 | `--text-hero` | 40 / 44 | 700, −0.02em, `--color-on-hero` | Safe to spend, white on the green block |
-| `--text-stage` | 56 / 60 | 700 | Projector mode (`[data-stage]`) |
+| `--text-stage` | 56 / 60 | 700 | Reserved; no screen uses it yet |
 
 ### 2.4 Spacing, radii, elevation
 - **Spacing** has a 4 px base: `--space-1` 4, `-2` 8, `-3` 12, `-4` 16, `-5` 20, `-6` 24, `-8` 32, `-10` 40. `--gutter` is 16 px, `--tap-min` is 44 px.
@@ -146,9 +146,78 @@ Typeface: **Figtree** (SIL OFL 1.1), self-hosted, through `--font-sans` (Figtree
 ## 3. Components
 
 ### Shell
-- **Header:** 52 px, with a back chevron (44 px target), the title "Sentti" with a small "AI" tag, and the EN/FI switch. The module has no logo and no bottom navigation, because it lives inside S-mobiili.
-- **Composer:** pinned to the bottom. The input is 48 px high with 16 px text; the send button is a 48 px circle in `--color-deep`. Bottom padding adds `env(safe-area-inset-bottom)`.
-- **Disclosure:** the overview's `ai_disclosure`, shown as is in `--text-xs` with an info icon. It is also the first message of an empty chat.
+- **Header:** 52 px, with a back chevron (44 px target) and the title "Sentti". The module has no logo and no bottom navigation, because it lives inside S-mobiili. A small "AI" tag and an EN/FI switch in the header are planned; today the language comes from `?lang=` and the persona sheet.
+- **Back chevron:** shown only when there is somewhere to go: a host is listening, or the module has its own history (an inner screen or an open sheet). On the first screen of a plain browser it is hidden and its cell stays, so the title stays centred (#175, `canGoBack()` in `src/lib/url.ts`).
+- **Host messages:** every message to the host is `{type: 'sentti.<name>', v: 1, payload}` with a camelCase name: `close` (back on the first screen), `paymentDraft` and `openHostScreen`. iOS gets the object through `webkit.messageHandlers.sentti`, Android a JSON string through `window.sentti` (#175, `src/lib/hostBridge.ts`). Without a host nothing is sent and the module uses its own navigation.
+- **Composer:** pinned to the bottom. The input is 48 px high with 16 px text; the send button is a 48 px circle in `--color-deep`. Bottom padding adds `env(safe-area-inset-bottom)`. The whole bar is 73 px high at 375 px with no inset (12 + 48 + 12 + border).
+- **Disclosure:** the overview's `ai_disclosure`, shown as is in `--text-xs` with an info icon, directly under the greeting of the opening turn (see "Opening turn").
+
+### Thread
+- The first screen is **one thread on `/`** that Sentti opens. `/chat` redirects to `/` with `replace`, so Back never returns to it.
+- **Turn 0 is the opening** (see "Opening turn"); every question and answer after it is a later turn in the same thread.
+- The thread scrolls with the **document** (window scroll). There is no inner scroll container, because the review flight (#35) measures window scroll.
+- The composer stays pinned to the bottom; the thread gets bottom padding equal to the composer's height, so the last turn is never under it.
+- The module has no navigation of its own. The overview is reached from a row in the opening turn (and later a header button) and opens as a bottom sheet (see "Overview sheet").
+
+### Opening turn
+The opening is a client template built only from `GET /api/overview` fields, until the contract has a server-written opening. In this order:
+1. **Greeting bubble:** `greeting` as received.
+2. **Disclosure:** `ai_disclosure` directly under the greeting (4 px gap).
+3. **Compact hero:** the safe-to-spend title and the Estimate badge on one row; the amount (`hero.primary` as a number chip in `--text-review-amount`) with the status label beside it. No reserve line and no links; those are in the overview sheet.
+4. **Basket strip:** a `section` with a heading and a `ul` in 2 columns: the three baskets and, while a review is pending, the "Waiting for your answer" cell. Each cell is icon + label + colour and the amount as a number chip. The strip is not a button and has no chevron; the flight lands in its cells.
+5. **"Sentti asks" card:** the compact review card (see the "Sentti asks" review card below), when `reviews` has one.
+6. **Quick replies:** the four `suggested_questions` in server order, stacked, plus chips registered by client turns (for example the what-if entry).
+7. **Insights** and the **what-if entry**, until the overview sheet holds them.
+8. **Overview row:** a list row with a chevron that opens the overview sheet.
+
+No client sentence carries a number: every number is an API `display` in a chip, and the template's own words never state or compare amounts.
+
+**Fallbacks:**
+- `hero: null`: the compact hero is left out (contract 0.2.2); the strip moves up.
+- `reviews` empty: no "Sentti asks" card, and the strip has three cells.
+- An overview error: the opening shows the error card (see "States") and the composer offers 3 starter chips.
+
+### Fit budget
+One set of numbers that later issues cite. The hero amount, both rows of the strip and the review buttons must be on screen together, so the flight between them can be seen.
+
+**Test sizes:** a 375 × 812 window, and the demo frame's module iframe, 375 × 768.
+
+**Measured** on a local build of PR #157 (`fab214d`, mock mode, Sanna with the review pending, Chromium, both sizes give the same block heights):
+
+| What | 375 × 812 | 375 × 768 |
+|---|---|---|
+| Header bottom | 52 | 52 |
+| Composer top (bar height 73) | 739 | 695 |
+| Toast top (height 124 for a 3-line message, 16 above the bottom) | 672 | 628 |
+| Greeting line / disclosure (2 lines in EN) | 28 / 32 | 28 / 32 |
+| Full hero (title row 52, amount 64, status 20, reserve line 65, link 44, plus padding) | 313 | 313 |
+| Full "Sentti asks" card / collapsed after an answer | 390 / 144 | 390 / 144 |
+| One basket row (#157 form) | 74–75 | 74–75 |
+| Basket amount chips (API `display`, width) | 134–147 | 134–147 |
+
+The full stack cannot fit: hero and review card alone are 703 px, against 687 px between the header and the composer at 812.
+
+**Target heights** (in px; the thread starts at 60, the header plus an 8 px top padding):
+
+| Block | Target |
+|---|---|
+| Greeting bubble | ≤ 56 |
+| Disclosure | ≤ 32 (two lines of `--text-xs`; the EN text wraps at 375) |
+| Compact hero | ≤ 104 (12 padding, a 24 title row, 8, a 44 amount chip, 12) |
+| Basket strip | ≤ 140 (a 20 heading, 8, two rows of 52, 8 between rows) |
+| Compact "Sentti asks" | ≤ 230 (header row, amount and merchant on one line, a 2-line question, 56 answer buttons) |
+| Gaps | 12; 4 between the greeting and the disclosure |
+
+Sum: 56 + 4 + 32 + 12 + 104 + 12 + 140 + 12 + 230 = 602, so the review buttons end at 662: 77 px above the composer at 812 and 33 px at 768. A Finnish question that wraps to 3 lines adds 24 and still fits.
+
+**Flight floor:** one expression, **composer top − toast height** (615 at 812, 571 at 768). The hero amount and both strip rows sit above the flight floor (the strip ends at 420), and the review buttons sit above the composer.
+
+**When the budget is not met** (320 px wide, 200 % zoom, large text, a longer question): the glide sequence built in #157 is the specified behaviour. The hero counts first, the page glides to the basket rows, then the amount flies.
+
+### Overview sheet
+- Opens from the overview row of the opening turn (and later from a header button), as a bottom sheet and a history entry, so Back closes it.
+- **Contents:** the full hero with its reserve line and links (see "Safe-to-spend widget"), the baskets, bills, safe to save, insights and the what-if entry.
+- **No review card and no motion** in the sheet; the review lives only in the thread.
 
 ### Basket chip and basket row
 - **Chip:** a pill in the basket tint with a white circle holding the emoji, and the label in the strong colour (600).
@@ -203,7 +272,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
   - the title and the total;
   - "N transactions · reconciles ✓";
   - a "How it was counted" box in plain words, built from `method` and `query`;
-  - transaction rows: merchant label, date and time, and the amount. The amount is the one number the app formats itself (section 4);
+  - transaction rows: merchant label, date and time, and the amount. Until #135 the app formats this amount itself (section 4); after it, the row's `display`;
   - "Show all N";
   - `privacy_note` with a lock icon.
 
@@ -218,6 +287,7 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 
 ### "Sentti asks" review card (#35)
 - **Surface:** `--color-deep` (darker than the hero green), `--radius-xl`, a mint question icon and "Sentti asks". It must never look like an answer.
+- **In the opening turn** the card is compact (at most 230 px, see "Fit budget"): the header row, the amount with the date and merchant on one line, the question, and the two answer buttons.
 - **Header row:** "Not sure" sits at the right. It only closes the card, with no API call.
 - **Contents:** the amount (`--text-review-amount`, 700, tabular); the date, category and merchant label; the question text. `question` is `{en, fi}`: show `question[language]`, the language of the request.
 - **Answers:** two answer buttons side by side, white, at least 56 px high, each with a basket tile and a 4 px basket-colour stripe. Labels are `options[].label[language]`.
@@ -238,19 +308,19 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 - At most one per screen. Never used for safe to spend, Health or other sensitive categories.
 
 ### What-if slider
-- The track has a 44 px hit area, a 6 px line and a 28 px thumb, in steps of 5 %.
+- The track has a 44 px hit area, a 6 px line and a 28 px thumb, in whole percent from 1 to 100. The request is sent on the input's native `change` event, so VoiceOver and TalkBack update it too (#154).
 - The result is in `--text-2xl`, with per month, week and year below, and the "Estimate" badge.
 - The previous value stays until the new response arrives.
 
 ### Persona picker (demo only)
-- **Opens:** with a long-press (`--duration-long-press`, 600 ms) on the header title, or with `?persona=`.
-- **Contents:** a bottom sheet titled "Demo personas", plus a stage mode switch (`data-stage` on the root, which swaps in `--text-stage`) and "Reset reviews".
+- **Opens:** with a long-press (`--duration-long-press`, 600 ms) on the header title, or with `?persona=`. A visible button opens it too, but only outside a host: when neither `webkit.messageHandlers.sentti` nor `window.sentti` exists. Inside S-mobiili the customer comes from the bank, so there is no visible picker.
+- **Contents:** a bottom sheet titled "Demo personas" with the personas and the EN/FI language switch.
 
 ### States
 | State | Rule |
 |---|---|
 | Loading | Stage lines from `status` events, using their `label`. Done stages get a check, and the current one a spinner. A card skeleton appears at once. The send button becomes a stop button. |
-| Empty | An empty chat is never "Ask me anything". It says what Sentti can and can't do, shows the disclosure and 3 question chips, near the thumb. |
+| Opening (no "empty") | The thread is never empty: Sentti opens it (see "Opening turn"). On an overview error the opening shows the error card, and the composer offers 3 starter chips near the thumb. Never "Ask me anything". |
 | Error | A `--color-danger-tint` card with `error.message` as is. "Try again" appears only when `retryable` is true. |
 | Clarify | `clarify.question` in the takeaway style and `clarify.options` as chips that send at once. Typing still works. |
 | Off-topic / refusal | A normal bubble with a grey left rule, `refusal.label` in xs, the template text and the `follow_ups` chips. |
@@ -258,7 +328,8 @@ The `lesson` sits in a `--color-sunken` box before the chips. The stream never a
 
 ## 4. Numbers and language
 - **The app does not format or translate numbers.** It shows `display` and the localised labels from the API. EN looks like `€1,080.42`, FI like `1 080,42 €`.
-- **One exception: evidence rows.** In `GET /api/evidence/{ref}` a row's `amount` is a raw decimal string in the bank sign (for example `"-24.50"`, contract section 9). The app formats it with `Intl.NumberFormat` for the current language (`en-GB` or `fi-FI`, style `currency`, currency `EUR`). A negative amount is money out and keeps its minus sign: `-€24.50` in EN, `−24,50 €` in FI. A positive amount shows no plus sign.
+- **The one exception: counter frames.** When a number changes after a review answer (#35), it counts from one API `display` to the next. The frames in between are computed by `src/lib/motion.ts` (#157); the first and the last frame are the API's `display` strings. The frames are `aria-hidden`, and the accessible text is the final `display`. The chip cannot be tapped while it counts. With reduced motion there are no frames: the number cross-fades to the new `display`.
+- **Until #135: evidence rows.** In `GET /api/evidence/{ref}` a row's `amount` is a raw decimal string in the bank sign (for example `"-24.50"`, contract section 9). The app formats it with `Intl.NumberFormat` for the current language (`en-GB` or `fi-FI`, style `currency`, currency `EUR`). A negative amount is money out and keeps its minus sign: `-€24.50` in EN, `−24,50 €` in FI. A positive amount shows no plus sign. Contract 0.2.2 adds `rows[].display`; #135 switches the app to it and removes this exception.
 - **Signs:** amounts never get a plus sign. Changes use an arrow and words ("was €221.58", "▲ €91.70").
 - **Language:** the EN/FI switch sets `?lang=` and `language`. Long Finnish words wrap inside chips and never truncate.
 

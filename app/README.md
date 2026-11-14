@@ -1,6 +1,6 @@
 # Sentti app
 
-The mobile web module of Sentti: a 375 px wide app that runs inside the bank's mobile app (a WebView). It opens on the overview: this week's safe to spend, the three spending baskets and questions to ask. Every number is a chip that opens how it was calculated.
+Sentti is an embeddable web module for S-mobiili, 375 px, inside a WebView. It opens on this week's safe to spend, the three spending baskets and questions to ask; the chat-first thread is specified in `DESIGN.md` section 3. Every number is a chip that opens how it was calculated.
 
 Stack: Vite, React, TypeScript and Tailwind CSS. The build is static. In production it is served from the same host as the core, so the API is `/api` on the same origin.
 
