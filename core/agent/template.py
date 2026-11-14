@@ -403,12 +403,13 @@ SMALL_SENTENCE = {
     "summary": ("You spent {total} on {count} small purchases{limit} {period}{month}, {where_part}.",
                 "Käytit {total} pieniin ostoksiin {period}: {count} ostosta{limit}{month}, {where_part}."),
     "few": ("Only {count} {noun}{limit} {period}, {total} in all: not much to see here.",
-            "Vain {count} {noun}{limit} {period}, yhteensä {total}: tässä ei ole paljon nähtävää."),
-    "none": ("No small purchases{limit} {period}.", "Ei yhtään pientä ostosta{limit} {period}."),
+            "Vain {count} {noun} {period}{limit}, yhteensä {total}: tässä ei ole paljon nähtävää."),
+    "none": ("No small purchases{limit} {period}.", "Ei yhtään pientä ostosta {period}{limit}."),
     # the monthly Number's display already says "a month" / "/ kk" (eur_per_month)
     "month": (", about {month}", ", noin {month}"),
-    # a limit other than the default (#465): its Number, in the place of the monthly average
-    "limit": (" of {limit} or less", " rajalla {limit}"),
+    # a limit other than the default (#465): its Number, in the place of the monthly average. Finnish says
+    # "enintään" ("at most"); "rajalla" read as "right at the limit" (review of #476)
+    "limit": (" of {limit} or less", ", enintään {limit}"),
     # SMALL_PURCHASE_WHERE carries each category's preposition ("at restaurants and cafés", "on entertainment")
     "most": ("most of them {where}", "suurin osa {where}"),
     "largest": ("the largest part {where}", "eniten {where}"),

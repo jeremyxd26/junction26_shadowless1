@@ -773,7 +773,7 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 - **Where:** each category takes its own preposition (`config.SMALL_PURCHASE_WHERE`, #465): "at restaurants and cafés", "on entertainment", "on lifestyle shopping", and "on <label>" for any other category. Finnish uses the case of each phrase ("ravintoloissa ja kahviloissa", "viihteessä"), and "luokassa <label>" otherwise.
 - **Fewer than 5** (`config.SMALL_PURCHASE_MIN_COUNT`): "Only 4 small purchases in the last three months, €28.73 in all: not much to see here."
 - **None:** it says so.
-- **The limit:** the default (€10.00) stays on the card. A limit the user asked for is named with its own Number, in the place of the monthly average, so there are still at most three numbers (#465): "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at restaurants and cafés." In Finnish: "… 31 ostosta rajalla 25,00 €, …".
+- **The limit:** the default (€10.00) stays on the card. A limit the user asked for is named with its own Number, in the place of the monthly average, so there are still at most three numbers (#465): "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at restaurants and cafés." In Finnish: "… 31 ostosta, enintään 25,00 €, …" (review of #476: "rajalla" read as "right at the limit").
 
 **The rule** (`core/agent/rules.py`) claims only the plain question. After the trigger (plural forms only), the default period and a fixed list of filler words are removed, nothing may be left. An amount, another period, a filter or a "stop", in words or digits, hands the message on to the next planner (review of #390).
 

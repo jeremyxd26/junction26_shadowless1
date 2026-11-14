@@ -175,8 +175,8 @@ def test_one_month_has_no_monthly_average():
 @pytest.mark.parametrize("language,expected", [
     ("en", "You spent €96.10 on 31 small purchases of €25.00 or less in the last three months, most of them at "
            "restaurants and cafés."),
-    ("fi", "Käytit 96,10 € pieniin ostoksiin viimeisen kolmen kuukauden aikana: 31 ostosta rajalla 25,00 €, suurin "
-           "osa ravintoloissa ja kahviloissa."),
+    ("fi", "Käytit 96,10 € pieniin ostoksiin viimeisen kolmen kuukauden aikana: 31 ostosta, enintään 25,00 €, "
+           "suurin osa ravintoloissa ja kahviloissa."),
 ])
 def test_a_limit_other_than_the_default_is_named_in_place_of_the_monthly_average(language, expected):
     """#465: "of €25.00 or less", the limit's own Number; still three numbers (the monthly average gives way)."""
@@ -189,13 +189,14 @@ def test_a_limit_other_than_the_default_is_named_in_place_of_the_monthly_average
 def test_a_limit_other_than_the_default_in_the_few_and_none_sentences():
     assert rendered(restaurants(4), max_amount=25) == ("Only 4 small purchases of €25.00 or less in the last three "
                                                       "months, €12.40 in all: not much to see here.")
-    assert rendered(restaurants(4), "fi", max_amount=25) == ("Vain 4 pientä ostosta rajalla 25,00 € viimeisen "
-                                                            "kolmen kuukauden aikana, yhteensä 12,40 €: tässä ei ole "
-                                                            "paljon nähtävää.")
+    assert rendered(restaurants(4), "fi", max_amount=25) == ("Vain 4 pientä ostosta viimeisen kolmen kuukauden "
+                                                            "aikana, enintään 25,00 €, yhteensä 12,40 €: tässä ei "
+                                                            "ole paljon nähtävää.")
     none = [tx(1, date(2026, 8, 3), "Groceries", "-30.00")]
     assert rendered(none, max_amount=25) == "No small purchases of €25.00 or less in the last three months."
-    assert rendered(none, "fi", max_amount=25) == ("Ei yhtään pientä ostosta rajalla 25,00 € viimeisen kolmen "
-                                                  "kuukauden aikana.")
+    assert rendered(none, "fi", max_amount=25) == ("Ei yhtään pientä ostosta viimeisen kolmen kuukauden aikana, "
+                                                  "enintään 25,00 €.")
+    assert not any("rajalla" in rendered(h, "fi", max_amount=25) for h in (restaurants(31), restaurants(4), none))
 
 
 def test_the_largest_part_when_no_category_has_more_than_half():
