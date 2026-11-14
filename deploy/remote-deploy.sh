@@ -356,7 +356,7 @@ docker images shadowless1-core --format '{{.Tag}}' | grep -vxE "current|$sha|$pr
 # writes the sqlite file the service reads (/srv/var/cache on the persistent var/). It never fails the
 # deploy: bounded by a timeout, its exit code ignored, its output masked like every other line here.
 echo "warming the tool cache for the demo personas"
-if ! timeout 300 docker exec shadowless1-core python -m core.tools.warmup 2>&1 | mask; then
+if ! timeout 300 docker exec shadowless1-core timeout 280 python -m core.tools.warmup 2>&1 | mask; then
   echo "warm-up did not finish; the service computes those results on the first request instead" >&2
 fi
 

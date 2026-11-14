@@ -340,11 +340,13 @@ def test_overview_through_the_tool_cache_is_the_same_and_runs_no_tool_twice(tool
         calls.append("hero")
         return _stub_hero(ctx, args)
 
-    monkeypatch.setattr(tool_cache_off, "mode", "memory")
     monkeypatch.setitem(overview.CACHEABLE, hero, ("stub_hero", HeroArgs))
+    uncached = overview.build(_ctx(), hero_tool=hero).model_dump_json()        # the cache is off here
+    monkeypatch.setattr(tool_cache_off, "mode", "memory")
+    calls.clear()
     first = overview.build(_ctx(), hero_tool=hero).model_dump_json()
     second = overview.build(_ctx(), hero_tool=hero).model_dump_json()
-    assert first == second and calls == ["hero"]
+    assert uncached == first == second and calls == ["hero"]       # cached is byte-identical to uncached
     assert tool_cache_off.stats.hits == 4 and tool_cache_off.stats.misses == 4   # hero, baskets, save, bills
 
 
