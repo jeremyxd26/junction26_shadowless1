@@ -44,7 +44,8 @@ from core.tools.classify import classify
 from core.tools.context import ToolContext
 from core.tools.db import ROOT
 from core.tools.formatting import display, money
-from core.tools.models import Action, Args, Card, Number, PeriodArg, ToolResult, Unit
+from core.tools.models import Action, Args, Card, Number, PeriodArg, ToolResult, Unit, assumption
+from core.tools.models import Estimate as CardEstimate
 from core.tools.numbers import NumberBuilder, model_number
 from core.tools.selection import Selection
 
@@ -296,6 +297,13 @@ def get_bonus_estimate(ctx: ToolContext, args: GetBonusEstimateArgs | dict | Non
                       model_view=_model_view(data))
 
 
+def _assumptions(data: BonusEstimateData, language: str) -> list:
+    """#380: the share bought at S Group stores (all of it by default, or the user's own share) and the
+    Bonus level that spending reaches; their Numbers are the card's own."""
+    share = "bonus.bonus_all_at_s_group" if float(data.share.value) >= 100 else "bonus.bonus_share"
+    return [assumption(share, language, data.share), assumption("bonus.bonus_level", language, data.bonus_percent)]
+
+
 def _card(data: BonusEstimateData, language: str) -> Card:
     ref = data.total_month.evidence_ref
     # When nothing is offered, the reason comes first: the card says why the Bonus is 0.
@@ -306,7 +314,8 @@ def _card(data: BonusEstimateData, language: str) -> Card:
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
         type="metric", title=_t("title", language), subtitle=data.scenario, evidence_ref=ref,
-        estimate={"label": _t("estimate_label", language), "text": text},
+        estimate=CardEstimate(label=_t("estimate_label", language), text=text, observed=[data.grocery_month],
+                              assumptions=_assumptions(data, language)),
         actions=[Action(type="open_evidence", label=_t("how", language), evidence_ref=ref),
                  # #267: one step into the bank's Bonus to fund, only when the estimate is offered
                  *([Action(type="open_host_screen", target="bonus_to_fund", label=_t("host_bonus_to_fund", language))]
