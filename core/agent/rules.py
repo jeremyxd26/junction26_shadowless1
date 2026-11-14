@@ -1054,9 +1054,9 @@ def _cost_subject(q: str) -> str | None:
         return None   # "Paljonko bonusta työnantaja maksoi?": money paid to the user, no thing bought
     first = phrase.split()[0]
     if first in COST_NO_THING or first in OBJECT_STOP or not _is_thing(first) or re.fullmatch(_M, first) or \
-            re.search(fold_pattern(PERIOD_NOUN_AFTER), " " + phrase) or \
+            re.search(fold_pattern(PERIOD_NOUN_AFTER), " " + phrase) or re.search(HEALTH, phrase) or \
             any(re.search(rx, phrase) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
-        return None
+        return None   # a category, group, period, or a health word (the Health rule's: "my doctor visits", #607)
     return phrase
 
 
