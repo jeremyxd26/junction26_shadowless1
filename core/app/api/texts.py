@@ -195,6 +195,32 @@ METHODS["peer_benchmark.you_month_eur@1"] = MethodInfo(
      "Oma kulutuksesi vertailtavassa ryhmässä jaettuna kuukausilla, joilta on tietoja."),
     METRICS_DOC + "#6-peer-benchmark")
 
+# S-Bonus what-if estimate (#158): composites of the grocery month average and the rules file.
+BONUS_DOC = "docs/domain/s-group-benefits.md#4-how-the-coach-can-estimate-s-bonus-a-what-if-only"
+for _id, _unit, _name, _summary in [
+    ("share_pct", Unit.PERCENT, ("Assumed share at S-Group stores", "Oletettu osuus S-ryhmän kaupoissa"),
+     ("The what-if share of grocery spending, from the rules file when not given.",
+      "Ruokaostosten oletettu osuus; sääntötiedostosta, ellei sitä anneta.")),
+    ("level_base_eur", Unit.EUR_PER_MONTH, ("Purchases that set the Bonus level", "Bonustason määräävät ostot"),
+     ("Grocery spending a month times the what-if share.", "Ruokaostokset kuukaudessa kertaa oletettu osuus.")),
+    ("bonus_percent", Unit.PERCENT, ("Bonus level", "Bonustaso"),
+     ("The percentage of the highest row of the default Bonus table at or below those purchases.",
+      "Tavallisen Bonustaulukon korkeimman tason prosentti, jonka raja ei ylitä ostoja.")),
+    ("bonus_month_eur", Unit.EUR_PER_MONTH, ("Bonus a month", "Bonus kuukaudessa"),
+     ("The Bonus percentage of those purchases.", "Bonusprosentti näistä ostoista.")),
+    ("payment_benefit_month_eur", Unit.EUR_PER_MONTH, ("Payment benefit a month", "Maksutapaetu kuukaudessa"),
+     ("The payment benefit rate of those purchases, paid with an S-Etukortti Visa.",
+      "Maksutapaedun osuus näistä ostoista S-Etukortti Visalla maksettuna.")),
+    ("total_month_eur", Unit.EUR_PER_MONTH, ("Bonus and payment benefit a month", "Bonus ja maksutapaetu kuukaudessa"),
+     ("The Bonus and the payment benefit together.", "Bonus ja maksutapaetu yhteensä.")),
+    ("total_year_eur", Unit.EUR_PER_YEAR, ("Bonus and payment benefit a year", "Bonus ja maksutapaetu vuodessa"),
+     ("The monthly sum times twelve.", "Kuukausisumma kertaa kaksitoista.")),
+    ("lowest_level_eur", Unit.EUR_PER_MONTH, ("Lowest Bonus level", "Alin Bonustaso"),
+     ("The purchases a month the lowest row of the default Bonus table needs.",
+      "Ostot kuukaudessa, joita tavallisen Bonustaulukon alin taso edellyttää.")),
+]:
+    METHODS[f"bonus_estimate.{_id}@1"] = MethodInfo(_unit, _name, _summary, BONUS_DOC)
+
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {
     "age_band+area3": ("same age group and postal area", "sama ikäryhmä ja postinumeroalue"),
