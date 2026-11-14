@@ -179,3 +179,24 @@ def test_hero_subtitle_is_the_weeks_dates(start, end, language, subtitle):
     assert card.subtitle == subtitle
     assert card.primary.period.label == ("Seuraavat 7 päivää" if language == "fi" else "Next 7 days")
     assert card.primary.method == "safe_to_spend.safe_to_spend_7d_eur@1" and card.primary.value == 180.26
+
+
+# ---- #346: a merchant-category group by its name -------------------------------------------------------
+
+@pytest.mark.parametrize("name, codes", [("taxi", "4121"), ("public transport", "4111"), ("Fuel", "5541,5542"),
+                                         ("parking", "7523")])
+def test_an_mcc_group_name_stands_for_its_codes(name, codes):
+    from core.tools.what_if import WhatIfSelection
+
+    assert WhatIfSelection(kind="mcc", value=name).value == codes
+
+
+def test_the_health_group_by_name_is_still_refused():
+    from pydantic import ValidationError
+
+    from core.tools.what_if import WhatIfSelection
+
+    with pytest.raises(ValidationError):
+        WhatIfSelection(kind="mcc", value="health")
+    with pytest.raises(ValidationError):
+        WhatIfSelection(kind="mcc", value="taxis please")

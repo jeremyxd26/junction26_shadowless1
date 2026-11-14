@@ -53,6 +53,11 @@ class WhatIfSelection(Args):
             if self.value not in config.BASKETS:
                 raise ValueError(f"unknown basket {self.value!r}")
         elif self.kind == "mcc":
+            # A merchant-category group by its name ("taxi", "fuel", "parking", ...) stands for its codes:
+            # both models wrote {"kind": "mcc", "value": "taxi"} for a taxi what-if (#346).
+            group = self.value.strip().lower().replace(" ", "_")
+            if group in config.MCC_GROUPS:
+                self.value = ",".join(config.MCC_GROUPS[group])
             codes = [c.strip() for c in self.value.split(",") if c.strip()]
             if not codes or any(not MCC_CODE.fullmatch(c) for c in codes):
                 raise ValueError("mcc must be one or more 4-digit codes, comma-separated")

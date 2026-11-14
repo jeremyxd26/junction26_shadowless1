@@ -56,8 +56,10 @@ KNOWN_TOOLS = [
               "never says where the user shops. Returns numbers with ids; cite them as {{id}}.",
               ("Estimating your S-Bonus", "Arvioin S-Bonuksesi")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
-              "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
-              "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              "Savings from cutting a selection by a percentage, from the last 6 complete months. The selection "
+              "is a spending category, a basket, a merchant-category group (kind mcc, value taxi, "
+              "public_transport, fuel, parking, restaurants, groceries or electronics_home) or a merchant alias. "
+              "An estimate. Returns numbers with ids; cite them as {{id}}.",
               ("Calculating the saving", "Lasken säästön")),
     # Issue #69: the spender profile and the peer benchmark (core/tools/profile.py, core/tools/peer.py).
     KnownTool("core.tools.profile", "get_spender_profile", "GetSpenderProfileArgs",
