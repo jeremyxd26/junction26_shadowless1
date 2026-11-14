@@ -88,6 +88,15 @@ PRESETS = [
     (r"last week|viime viikolla", "last_week"),
     (r"this year|year to date|tänä vuonna", "year_to_date"),
 ]
+# A range of months (#379). Groups: first month (English, Finnish), its year, second month, its year.
+_M = (r"(?:\b(january|february|march|april|may|june|july|august|september|october|november|december|"
+      r"jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b\.?|\b(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|"
+      r"loka|marras|joulu)kuu\w*)")
+RANGE_EN = _M + r"(?:\s+(\d{4}))?\s*(?:-|–|\bto\b|\buntil\b|\btill\b|\bthrough\b|\bthru\b)\s*" + _M + r"(?:\s+(\d{4}))?"
+RANGE_BETWEEN = r"\bbetween\s+" + _M + r"(?:\s+(\d{4}))?\s+and\s+" + _M + r"(?:\s+(\d{4}))?"
+RANGE_FI = (r"\b(?!x)(x)?(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuusta(?:\s+(\d{4}))?\s+"
+            r"(?:-\s*)?\b(?!x)(x)?(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)"
+            r"kuu(?:hun|n loppuun)(?:\s+(\d{4}))?")
 COMPARE = r"\bcompare|\bthan\b|\bvs\.?\b|versus|verrattuna|vertautuu|\bvertaa\w*|enemmän kuin|vähemmän kuin"
 TOTAL = r"in total|so far in total|\bever\b|since (my|the) data|yhteensä|kaikkiaan"
 ALL_TIME = r"so far in total|\bever\b|since (my|the) data"
@@ -118,6 +127,23 @@ def _months_mentioned(question: str, as_of: date) -> list[tuple[int, int]]:
     return out
 
 
+def _named_range(q: str, as_of: date) -> tuple[date, date] | None:
+    """The months of "from October 2024 to January 2025", "between June and August", "lokakuusta 2024
+    tammikuuhun 2025": the first month's start to the second month's end. A missing year is the first
+    month's (the second's, plus one if the months wrap); the first month without a year reads as usual."""
+    m = re.search(RANGE_EN, q) or re.search(RANGE_BETWEEN, q) or re.search(RANGE_FI, q)
+    if not m:
+        return None
+    g = m.groups()
+    m1, y1, m2, y2 = MONTHS[g[0] or g[1]], g[2], MONTHS[g[3] or g[4]], g[5]
+    if y1 is None and y2 is not None:
+        y1 = int(y2) if m1 <= m2 else int(y2) - 1
+    y1 = int(y1) if y1 is not None else (as_of.year if m1 <= as_of.month else as_of.year - 1)
+    y2 = int(y2) if y2 is not None else (y1 if m2 >= m1 else y1 + 1)
+    start, end = date(y1, m1, 1), _month_range(y2, m2)[1]
+    return (start, end) if start < end else None
+
+
 def plan_spending(question: str, as_of: date) -> dict | None:
     """get_spending arguments for a spending question, or None if no period can be found."""
     q = fold(question)
@@ -141,7 +167,10 @@ def plan_spending(question: str, as_of: date) -> dict | None:
     if compare and {"this_month", "last_month"} <= set(presets):
         preset = "this_month"   # "compare this month with last month": this month, against the one before
 
-    if between:
+    named_range = None if compare else _named_range(q, as_of)
+    if named_range:
+        args["period"] = {"preset": "custom", "start": named_range[0].isoformat(), "end": named_range[1].isoformat()}
+    elif between:
         month = MONTHS[between.group(3) or between.group(4)]
         year = int(between.group(5))
         args["period"] = {"preset": "custom", "start": date(year, month, int(between.group(1))).isoformat(),
@@ -329,6 +358,7 @@ NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borro
             r"\bnext week\w*|\bcoming week\b|\bensi viiko\w*|\bmonthly\b|\bkuukausibudjet\w*|\bkuukauden budjet\w*|"
             r"\bin a year\b|\bnext \d+ days\b|\bend of (the|this) month\b|\bkuun loppuun\b|\bvuoden päästä\b|"
             r"\bvuodessa\b|\bseuraava\w* \d+ päivä\w*|\bkuukauden loppuun\b|\btuleva\w* viiko\w*|"
+            r"\bseuraava\w* viiko\w*|\bkuukaudessa\b|(?<!tässä )(?<!viime )\bkuussa\b|"
             r"\bensi (vuonna|vuodeksi|kuussa|kesänä|talvena|jouluna)\b|\bhäi\w*|\bhäät\b|\btulevaisuude\w*")
 # 3. A message about a total, or a spending question without "I" ("How much was spent?", "Paljonko meni
 #    elokuussa?"), stands on its own in a conversation.
@@ -340,7 +370,8 @@ SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these
              r"(rules|instructions|guidelines|limits)\b|"
              r"\b(pretend|imagine|act as if|suppose)\b.*\bno (rules|limits|restrictions|instructions|guidelines)\b|"
              r"\b(unohda|ohita)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
-             r"\b(esitä|kuvittele|oleta)\b.*\b(ei|ettei)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)")
+             r"\b(esitä|kuvittele|oleta)\b.*\b(ei|ettei)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)|"
+             r"\bälä (noudata|seuraa|välitä)\b.*\b(säänn\w*|sääntö\w*|ohje\w*|rajoitu\w*)")
 # 4. What other people spend most on is no question about the user's own money.
 WHERE_OTHERS = r"\bwho\b|\bpeople\b|\bothers?\b|\beveryone\b|\bmuut\b|\bmuiden\b|\bihmiset\b|\bkuka\b"
 # Another person's profile ("what kind of spender is Marjatta?") is not the user's own (#298).
@@ -359,6 +390,26 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
               r"\bmy (spending|money|expenses|budget|income|salary|bills)\b|"
               r"\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bkulutukse\w*|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
               r"\bmaksoin\b|\bostin\b|\bvoinko\b|\btienaan\b|\bmenoni\b|\brahani\b")
+# A question about the future ("what will I spend next month?", "how much will I have saved by Christmas?",
+# "can I afford a holiday in March?"): the rules plan the future period, the tool reports period_in_future,
+# and the answer says what Sentti can show instead (#379). Never "outside my lane".
+FUTURE = (r"\b(will|shall) i (spend|have|save|need|be able)\b|\bam i going to (spend|have|save)\b|"
+          r"\bi('ll| will) (spend|have|save)\b|\bnext (month|year)\b|\bby (christmas|new year|the end of the year)\b|"
+          r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bjouluun\b")
+FUTURE_MONEY = r"\bspen[dt]\w*|\bsav(e|ed|ing)\b|\bafford\b|\bbudget\w*|\bcost\w*|\bkulut\w*|\bkäyt\w*|\bsäästä\w*|\bvaraa\b"
+# A thing the user names that no category or merchant group maps ("the gym", "Netflix", "flurbles",
+# "kuntosaliin"): the rules never answer it with the unfiltered total (#395). Health keeps its spending plan.
+OBJECT_EN = (r"\b(?:spen[dt]\w*|paid|pay|bought|buy|cost\w*)\b(?:\s+\S+){0,3}?\s+(?:on|at|for)\s+"
+             r"(?:the |my |a |an |some |all )?([a-z][a-z'-]{2,})")
+OBJECT_FI = (r"\b(?:käytin|käytän|kulutin|kulutan|käyttää|kuluttaa|maksoin|maksan)\b(?:\s+\S+){0,2}?\s+"
+             r"(\w{4,}(?:iin|aan|ään|hin|hun|seen|yyn|uun|oon|öön))\b")
+OBJECT_STOP = frozenset({
+    "average", "total", "it", "them", "this", "that", "these", "those", "things", "stuff", "everything",
+    "anything", "all", "me", "us", "time", "card", "cards", "account", "weekend", "weekends", "weekdays", "week",
+    "month", "months", "year", "years", "day", "days", "now", "myself", "each", "every", "least", "most", "what",
+    "which", "whom", "purchases", "spending", "money", "bills", "purchase", "things", "items",
+    "viime", "kaikkeen", "siihen", "tähän", "mihin", "johon", "yhteensä",
+})
 INTENTS = [
     ("where_money_went", WHERE),
     ("safe_to_spend", SAFE),
@@ -369,6 +420,7 @@ INTENTS = [
     ("bonus", BONUS),
     ("peers", PEERS),
     ("what_if", WHAT_IF),  # plan_what_if: a cut, or "how could I save more?"
+    ("future", FUTURE),    # with a money word, in _matched
 ]
 # "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
 # section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
@@ -403,6 +455,10 @@ MONTH_RX = fold_pattern(MONTH_RX)
 PRESETS = [(fold_pattern(rx), p) for rx, p in PRESETS]
 COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY = (
     fold_pattern(rx) for rx in (COMPARE, TOTAL, ALL_TIME, WHAT_IF, HALF, HEALTH, SELECTION_CODE, RECENTLY))
+RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE_BETWEEN, RANGE_FI))
+_M = fold_pattern(_M)
+FUTURE_MONEY, OBJECT_EN, OBJECT_FI = (fold_pattern(rx) for rx in (FUTURE_MONEY, OBJECT_EN, OBJECT_FI))
+OBJECT_STOP = frozenset(fold(w) for w in OBJECT_STOP)
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 
 
@@ -450,6 +506,9 @@ def meta_intent(question: str) -> str | None:
 # without a category; save more over income only with the save-more words; a what-if over spending only
 # with a cut the user stated.
 PRECEDENCE = {
+    # the future comes before spending, safe to spend, the breakdown and the what-if; the forecast before it
+    ("future", "spending"), ("future", "safe_to_spend"), ("future", "where_money_went"), ("future", "what_if"),
+    ("future", "recurring_bills"), ("balance_forecast", "future"),
     ("bonus", "recurring_bills"), ("bonus", "what_if"), ("bonus", "spending"), ("bonus", "peers"),
     ("safe_to_spend", "spending"), ("safe_to_spend", "recurring_bills"),
     ("balance_forecast", "recurring_bills"), ("balance_forecast", "spending"),   # payday words (#257)
@@ -484,6 +543,35 @@ BASELINE_LAST_YEAR = (r"\blast year\b|\ba year (ago|before|earlier)\b|\bsame (mo
 BASELINE_TYPICAL = r"\b(typical|usual|normal|average)\w*|\btavallis\w*|\bkeskimäär\w*|\bnormaali\w*"
 LAST_MONTH_WORDS = r"\blast month\b|\bprevious month\b|\bviime kuu\w*|\bedelli\w* kuu\w*"
 FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
+
+
+def _unknown_object(q: str) -> str | None:
+    """The thing a spending question names when no category, merchant group or health word maps it."""
+    m = re.search(OBJECT_EN, q) or re.search(OBJECT_FI, q)
+    if not m:
+        return None
+    word, tail = m.group(1), q[m.start(1):]
+    if word in OBJECT_STOP or re.fullmatch(_M, word) or re.search(HEALTH, tail) or \
+            any(re.search(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+        return None
+    return word
+
+
+def _future_period(question: str, q: str, as_of: date) -> dict:
+    """The future period a question names: a month's next occurrence, next year, until Christmas, or next month."""
+    if re.search(r"\bnext year\b|\bensi (vuonna|vuoden)\b", q):
+        return {"preset": "custom", "start": f"{as_of.year + 1}-01-01", "end": f"{as_of.year + 1}-12-31"}
+    if re.search(r"\bchristmas\b|\bjouluun\b", q):
+        year = as_of.year if (as_of.month, as_of.day) < (12, 25) else as_of.year + 1
+        return {"preset": "custom", "start": date.fromordinal(as_of.toordinal() + 1).isoformat(), "end": f"{year}-12-25"}
+    named = [m for _, m in _months_mentioned(question, as_of)]
+    if named and not re.search(r"\bnext month\b|\bensi (kuussa|kuun)\b", q):
+        month = named[0]
+        year = as_of.year if month > as_of.month else as_of.year + 1
+    else:
+        year, month = (as_of.year, as_of.month + 1) if as_of.month < 12 else (as_of.year + 1, 1)
+    start, end = _month_range(year, month)
+    return {"preset": "custom", "start": start.isoformat(), "end": end.isoformat()}
 BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS = (
     fold_pattern(rx) for rx in (BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS))
 
@@ -522,6 +610,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue  # what others spend, a named person, or no "I": not the peer benchmark
         if intent == "safe_to_spend" and re.search(NOT_SAFE, q):
             continue  # a card or credit limit, a loan, a raise, another horizon
+        if intent == "future" and not re.search(FUTURE_MONEY, q):
+            continue  # "what will the weather be next month?" is no money question
         if intent == "where_money_went" and re.search(WHERE_OTHERS, q):
             continue  # "who spent the most", "what do people spend the most on"
         if intent == "spender_type" and re.search(SPENDER_OTHER, q):
@@ -529,7 +619,14 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
         found.append(intent)
     if "recurring_bills" in found and "bonus" not in found and re.search(BONUS_WORD, q):
         found.append("bonus")  # "earn in bonus": an employer's bonus or the S-Bonus (#357)
-    if spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
+    if "future" not in found and "safe_to_spend" in found and re.search(r"\bafford\b|\bvaraa\b", q) and \
+            re.search(_M, q):
+        found.append("future")  # "can I afford a holiday in March?": that March is ahead, not behind
+    if _unknown_object(q):
+        pass                    # "how much did I spend on Netflix last month?": never the unfiltered total
+    elif re.search(r"\b(kuun|kuukauden) loppuun\b|\bend of (the|this) month\b|\buntil the end\b", q):
+        pass                    # "paljonko voin käyttää tämän kuun loppuun": ahead, not past spending
+    elif spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
         found.append("spending")
     elif ("safe_to_spend" in found and (re.search(PAST, q) or _other_period(spending))) or \
             (_filter_of(q) and {"safe_to_spend", "where_money_went", "spender_type"} & set(found)):
@@ -593,6 +690,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return _claimed(intent, [("get_basket_breakdown", {"period": period})], tools, lang)
     if intent == "safe_to_spend":
         return _claimed(intent, [("get_safe_to_spend", {})], tools, lang)
+    if intent == "future":
+        return _claimed(intent, [("get_spending", {"period": _future_period(question, q, as_of)})], tools, lang)
     if intent == "spender_type":
         return _claimed(intent, [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})],
                         tools, lang)
@@ -627,6 +726,8 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
             not ("spending" in found and not re.search(PERCENT + "|" + HALF, q)):
         return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if not found:
+        if _unknown_object(q):
+            return Claim(None, reason="unknown_object")   # the model's planner, or the general question back
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
     winner, competing = _resolve(found, q, spending)
     if winner is None:

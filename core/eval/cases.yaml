@@ -521,6 +521,32 @@ cases:
   expected_tools: []
   tags: [edge, edge_future_date, r5, lead]
 
+- id: sanna-future-next-month
+  persona: CUST00860
+  question: {en: 'What will I spend next month?', fi: 'Paljonko kulutan ensi kuussa?'}
+  intent: spending
+  expect: no_data
+  expected_tools: [get_spending]
+  tags: [edge, edge_future_date, missing_data]
+
+- id: eetu-before-data-september-2024
+  persona: CUST00349
+  question: {en: 'How much did I spend in September 2024?'}
+  intent: spending
+  expect: no_data
+  expected_tools: [get_spending]
+  tags: [edge, edge_before_data, missing_data]
+
+- id: sanna-range-october-to-january
+  persona: CUST00860
+  question: {en: 'How much did I spend from October 2024 to January 2025?', fi: 'Paljonko käytin lokakuusta 2024 tammikuuhun 2025?'}
+  intent: spending
+  expect: answered
+  expected_tools: [get_spending]
+  tags: [period_custom, missing_data]
+  numbers:
+  - {name: total_eur, value: 8896.68, unit: eur, tolerance: 0.005, source: {query: spending, start: '2024-10-01', end: '2025-01-31', column: total_eur}}
+
 - id: marja-investments-never-used
   persona: CUST00493
   question: {en: 'How much have I put into investments in total?'}
