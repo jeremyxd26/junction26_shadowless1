@@ -265,6 +265,52 @@ def test_two_parallel_lanes_run_the_metric_file_once(monkeypatch):
     assert got[0] is got[1] and got[0]["safe_to_save_monthly_eur"] == Decimal("184.61")
 
 
+def host_actions(card: dict) -> list[dict]:
+    return [a for a in card["actions"] if a["type"] == "open_host_screen"]
+
+
+@pytest.mark.parametrize("language, label", [("en", "See monthly saving in S-mobiili"),
+                                             ("fi", "Katso kuukausisäästäminen S-mobiilissa")])
+def test_a_month_that_leaves_money_offers_the_host_monthly_saving_screen(language, label):
+    """#267: one step into the bank's monthly saving, naming the destination only."""
+    result, _ = run(row(), language)
+    card = result.card.model_dump(mode="json")
+    assert card["monthly"]["value"] > 0
+    assert host_actions(card) == [{"type": "open_host_screen", "label": label, "evidence_ref": None,
+                                   "prompt": None, "target": "monthly_saving"}]
+    assert not re.search(r"[0-9]", label)                         # no number in the label (answer-text check)
+    assert len(card["actions"]) <= 2                              # the API allows two actions per card
+
+
+def test_a_month_that_leaves_nothing_has_no_host_screen_action():
+    result, _ = run(row(free_month_eur="-1.59", everyday_month_eur="250.00", safe_to_save_monthly_eur="0.00",
+                        essentials_shortfall_month_eur="1.59", save_reason="essentials_exceed_income",
+                        save_reason_month_eur="1.59"))
+    card = result.card.model_dump(mode="json")
+    assert card["monthly"]["value"] == 0 and host_actions(card) == []
+    assert [a["type"] for a in card["actions"]] == ["open_evidence"]
+
+
+def test_the_host_screen_target_list_is_closed():
+    from pydantic import ValidationError
+
+    from core.tools.models import HOST_SCREEN_TARGETS, Action
+
+    assert HOST_SCREEN_TARGETS == ("monthly_saving", "bonus_to_fund")
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x", target="some_fund")       # not in the list
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x")                          # target required
+    with pytest.raises(ValidationError):
+        Action(type="open_evidence", label="x", evidence_ref="ev_1", target="monthly_saving")  # only here
+    # the destination only: no evidence and no prompt on a host screen action (review of #308)
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x", target="monthly_saving", evidence_ref="ev_1")
+    with pytest.raises(ValidationError):
+        Action(type="open_host_screen", label="x", target="monthly_saving", prompt="How could I save more?")
+    assert Action(type="open_host_screen", label="x", target="bonus_to_fund").target == "bonus_to_fund"
+
+
 def test_no_row_raises_in_both_lanes_after_one_run(monkeypatch):
     runs, got = _two_lanes(monkeypatch, None)
     assert runs == ["03_safe_to_spend.sql"]

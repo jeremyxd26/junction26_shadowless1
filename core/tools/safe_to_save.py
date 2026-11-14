@@ -186,7 +186,10 @@ def _card(data: SafeToSaveData, language: str) -> Card:
         estimate={"label": config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
                   "text": _t("estimate_text", language)},
         actions=[Action(type="open_evidence", label=config.label(config.SAFE_TO_SPEND_TEXT["how"], language),
-                        evidence_ref=ref)],
+                        evidence_ref=ref),
+                 # #267: one step into the bank's monthly saving, only when a typical month leaves money
+                 *([Action(type="open_host_screen", target="monthly_saving",
+                           label=_t("host_monthly_saving", language))] if data.monthly.value > 0 else [])],
         monthly=data.monthly,
         monthly_components=[c.model_dump() for c in data.monthly_components],
         stock=data.stock,
