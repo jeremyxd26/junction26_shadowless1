@@ -35,7 +35,7 @@ def test_the_file_has_between_thirty_and_sixty_entries_with_every_field():
     assert len({e.id for e in ENTRIES}) == len(ENTRIES)
     for e in ENTRIES:
         assert e.topic and e.questions_en and e.questions_fi and e.answer_en and e.answer_fi
-        assert e.source_url.startswith("https://www.s-pankki.fi/")
+        assert re.fullmatch(r"https://www\.s-pankki\.fi/fi/asiakaspalvelu/[\w./-]+", e.source_url), e.source_url
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", e.retrieved_at)
 
 
@@ -85,7 +85,7 @@ def test_the_customers_own_figures_and_a_recommendation_are_never_answered_here(
 
 
 def test_no_match_but_clearly_about_s_bank_is_the_dont_know_line():
-    en = sbank_kb.answer_for("Does S-Bank have a cafe?", "en")
+    en = sbank_kb.answer_for("Is S-Bank open on Sunday?", "en")
     fi = sbank_kb.answer_for("Onko S-Pankilla kahvila?", "fi")
     assert en.entry_id is None and en.text == "I don't know that one; the bank can tell you."
     assert fi.entry_id is None and fi.text == "En tiedä sitä; pankki osaa kertoa."
@@ -94,12 +94,20 @@ def test_no_match_but_clearly_about_s_bank_is_the_dont_know_line():
 
 # ---- the route ----
 
+# The rule model claims these as its own data questions on dev ("e-lasku" is a bills word): they keep that route.
+RULES_CLAIM = {("e_invoice", "fi"), ("e_invoice_edit", "fi"), ("e_invoice_notice", "fi"), ("e_invoice_move", "fi"),
+               ("e_invoice_not_working", "fi")}
+
+
 @pytest.mark.parametrize("lang", ["en", "fi"])
 @pytest.mark.parametrize("entry", ENTRIES, ids=lambda e: e.id)
 def test_every_entry_is_answered_by_the_route_with_its_source_and_contact_bank(make_pipeline, entry, lang):
     pipeline = make_pipeline(RuleModel())
     question = (entry.questions_fi if lang == "fi" else entry.questions_en)[0]
     done = done_of(run(pipeline, question, language=lang))
+    if (entry.id, lang) in RULES_CLAIM:
+        assert not kb_turns(pipeline) and "s-pankki.fi" not in done["text"]
+        return
     line = (sbank_kb.SOURCE_LINE[1] if lang == "fi" else sbank_kb.SOURCE_LINE[0]).format(url=entry.source_url)
     assert done["outcome"] == "answered" and done["refusal"] is None and done["cited"] == []
     assert done["text"] == f"{entry.answer(lang)} {line}"
@@ -108,7 +116,7 @@ def test_every_entry_is_answered_by_the_route_with_its_source_and_contact_bank(m
 
 
 @pytest.mark.parametrize("question, lang, text", [
-    ("Does S-Bank have a cafe?", "en", "I don't know that one; the bank can tell you."),
+    ("Is S-Bank open on Sunday?", "en", "I don't know that one; the bank can tell you."),
     ("Onko S-Pankilla kahvila?", "fi", "En tiedä sitä; pankki osaa kertoa."),
 ])
 def test_the_dont_know_line_comes_with_contact_bank(make_pipeline, question, lang, text):

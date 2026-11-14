@@ -73,17 +73,23 @@ SOURCE_LINE = ("From S-Bank's public help pages: {url}", "S-Pankin julkisilta oh
 UNKNOWN = ("I don't know that one; the bank can tell you.", "En tiedä sitä; pankki osaa kertoa.")
 
 # The message names S-Bank, S-mobiili or an S-Bank card (folded: lower case, no diacritics).
-ABOUT_SBANK = r"\bs[- ]?(?:bank|pankk|pankin|mobiil|etukort)\w*"
+ABOUT_SBANK = r"\bs[- ]?(?:bank|pank|mobiil|etukort)\w*"
+# The bank's name inside a phrase, dropped for a second look: "my S-Bank card", "S-Pankin korttini".
+BANK_NAME = r"(?<![\w-])s[- ]?(?:bank's|bank|pankin|pankki)\s+"
 # The customer's own figures: a data question, never a knowledge-base answer.
 OWN_FIGURES = (r"\d|€|\beur(?:o|os)?\b|\bhow (?:much|many)\b|\bbalance\b|\b(?:did|have|had) (?:i|we) "
                r"(?:spend|spent|pay|paid|buy|bought|earn|earned|get|got|receive|received|save|saved)\b|"
-               r"\bi (?:spent|paid|bought|earned|saved)\b|\bmy (?:spending|money|income|salary|budget|savings|"
+               r"\bi (?:spent|paid|bought|earned|saved)\b|\bmy (?:spending|income|salary|budget|savings|"
                r"expenses|bills|purchases|transactions)\b|"
                r"\bpaljonko\b|\bkuinka (?:paljon|monta)\b|\bmontako\b|\bsaldo\w*|\bkaytin\b|\bkulutin\b|"
                r"\bmaksoin\b|\bostin\b|\bsaastin\b|\bkulutukse\w*|\btuloni\b|\bmenoni\b|\bostokseni\b|"
                r"\btapahtumani\b|\brahani (?:menivat|meni|riittavat|riittaa)\b")
+# Loans, credit, investments and insurance: the refusals and the model decide these, never this route.
+OUT_OF_SCOPE = (r"\bloan\w*|\bborrow\w*|\bmortgage\w*|\bcredit (?:limit|decision|score)\w*|\binvest\w*|\bfunds?\b|"
+                r"\bstocks?\b|\bshares?\b|\binsurance\w*|\blain\w*|\bluot\w*|\bsijoit\w*|\brahasto\w*|\bosake\w*|"
+                r"\bvakuutu\w*")
 # A recommendation or a comparison: out of scope (the mentor rule), never a knowledge-base answer.
-ADVICE = (r"\bshould i\b|\bwhich (?:\w+ )?(?:is|would be) (?:better|best)\b|\bbest\b|\bbetter\b|\brecommend\w*|"
+ADVICE = (r"\bshould i\b(?! do\b)|\bwhich (?:\w+ )?(?:is|would be) (?:better|best)\b|\bbest\b|\bbetter\b|\brecommend\w*|"
           r"\bworth it\b|\bcompare\w*|\bkannattaako\b|\bkannattaa\b|\bparas\w*|\bparempi\w*|\bsuosittel\w*|"
           r"\bvertaa\w*")
 
@@ -110,7 +116,7 @@ def own_figures(question: str) -> bool:
 
 
 def asks_advice(question: str) -> bool:
-    return bool(re.search(ADVICE, _norm(question)))
+    return bool(re.search(ADVICE, _norm(question)) or re.search(OUT_OF_SCOPE, _norm(question)))
 
 
 def find_bank_entry(question: str, lang: str) -> Entry | None:
@@ -118,10 +124,11 @@ def find_bank_entry(question: str, lang: str) -> Entry | None:
     the entry whose phrases (keywords and question variants) cover the most characters of the message; a tie
     goes to the earlier entry in the file."""
     text = _norm(question)
+    texts = (text, re.sub(BANK_NAME, "", text))   # "block my S-Bank card" is also "block my card"
     lang = "fi" if lang == "fi" else "en"
     best, best_score = None, 0
     for entry in ENTRIES:
-        score = sum(size for rx, size in _KEYWORDS[entry.id][lang] if rx.search(text))
+        score = sum(size for rx, size in _KEYWORDS[entry.id][lang] if any(rx.search(t) for t in texts))
         if score > best_score:
             best, best_score = entry, score
     return best
@@ -130,19 +137,24 @@ def find_bank_entry(question: str, lang: str) -> Entry | None:
 @dataclass(frozen=True)
 class KbAnswer:
     entry_id: str | None   # None: the "I don't know that one" line
-    text: str
+    body: str              # the entry's answer (or the line): what the validator checks
+    source: str = ""       # "From S-Bank's public help pages: <url>", fixed here from the file's source_url
+
+    @property
+    def text(self) -> str:
+        return f"{self.body} {self.source}".strip()
 
 
 def answer_for(question: str, lang: str) -> KbAnswer | None:
     """The route's answer, or None (the usual path): the entry's text and its source line; for a message
     clearly about S-Bank with no entry, the "I don't know that one" line. Never for the customer's own figures,
-    a recommendation, or a message with more than one line."""
+    a recommendation, a loan, credit, investment or insurance question, or a message with more than one line."""
     if not question.strip() or "\n" in question.strip() or own_figures(question) or asks_advice(question):
         return None
     i = 1 if lang == "fi" else 0
     entry = find_bank_entry(question, lang)
     if entry is not None:
-        return KbAnswer(entry.id, f"{entry.answer(lang)} {SOURCE_LINE[i].format(url=entry.source_url)}")
+        return KbAnswer(entry.id, entry.answer(lang), SOURCE_LINE[i].format(url=entry.source_url))
     if about_sbank(question):
         return KbAnswer(None, UNKNOWN[i])
     return None

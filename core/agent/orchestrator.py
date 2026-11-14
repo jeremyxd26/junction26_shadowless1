@@ -1295,7 +1295,9 @@ class Pipeline:
         if rules.recognised or any(c.name == "decline" for c in rules.calls):
             return False
         numbers = ctx.numbers.all()
-        draft, errors = validate({"language": lang, "text": kb.text, "cited": [], "lesson_key": None},
+        # The validator checks the entry's text. The source line after it is fixed here from the file's
+        # source_url (an s-pankki.fi help page, held by the tests); the no-URL rule is for model drafts.
+        draft, errors = validate({"language": lang, "text": kb.body, "cited": [], "lesson_key": None},
                                  language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
         if errors or draft is None:
             log.warning("knowledge-base answer %s failed the validator (%d problems)", kb.entry_id, len(errors))
@@ -1304,7 +1306,7 @@ class Pipeline:
         a.planner_turns.append({"round": 1, "source": "rules", "sbank_kb": kb.entry_id or "unknown", "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        text = self._deliver(draft.text, numbers, emit)
+        text = self._deliver(f"{draft.text} {kb.source}".strip(), numbers, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,

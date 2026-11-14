@@ -155,7 +155,7 @@ entries:
     topic: accounts
     questions_en: ["Is my money safe in S-Bank?", "How are deposits protected at S-Bank?"]
     questions_fi: ["Ovatko rahani turvassa S-Pankissa?", "Miten talletukset on turvattu?"]
-    answer_en: "S-Bank's help pages say the Finnish Financial Supervisory Authority supervises banks and their capital. Deposits are also covered by the deposit guarantee fund, which pays depositors up to a legal limit if a bank cannot."
+    answer_en: "S-Bank's help pages say the Finnish Financial Supervisory Authority supervises banks and their capital. Deposits are also covered by the deposit protection fund, which pays depositors up to a legal limit if a bank cannot."
     answer_fi: "S-Pankin ohjeiden mukaan Finanssivalvonta valvoo pankkeja ja niiden vakavaraisuutta. Talletuksia turvaa lisäksi talletussuojarahasto, joka korvaa tallettajien saatavat lain mukaiseen rajaan asti, jos pankki ei itse pysty maksamaan."
     source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-s-pankin-tileilla-olevat-varat-on-turvattu-ovatko-rahani-turvassa-s-pankissa/"
     retrieved_at: "2026-11-15"
@@ -405,7 +405,7 @@ entries:
 
   - id: customer_owner
     topic: customer
-    questions_en: ["Do I need to be a co-op member to be an S-Bank customer?", "Can I use S-Bank without being a customer-owner?"]
+    questions_en: ["Do I have to be a co-op member to bank with S-Bank?", "Can I use S-Bank without being a customer-owner?"]
     questions_fi: ["Pitääkö olla asiakasomistaja, jotta pääsee S-Pankin asiakkaaksi?", "Voinko olla S-Pankin asiakas ilman asiakasomistajuutta?"]
     answer_en: "S-Bank's help pages say a customer does not need to be a co-op customer-owner, and S-Bank serves other consumers too, with a narrower range of products and services. The pages add that S-Bank's products are aimed mainly at customer-owners and their households."
     answer_fi: "S-Pankin ohjeiden mukaan S-Pankin asiakkaaksi ei tarvitse olla asiakasomistaja, ja S-Pankki palvelee myös muita kuluttajia suppeammalla tuote- ja palveluvalikoimalla. Ohjeiden mukaan tuotteet on suunnattu ensisijaisesti asiakasomistajille ja heidän talouksilleen."
