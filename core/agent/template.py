@@ -175,10 +175,14 @@ def brief_questions(language: str) -> list[str]:
     return [pick(q, language) for q in BRIEF_QUESTIONS]
 
 
-def follow_ups(question: str, language: str, refused: bool = False) -> list[str]:
-    """The partner's four questions minus the one just asked (agent-core.md section 7.6)."""
+def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
+    """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
+    question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the
+    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411)."""
     asked = question.strip().lower()
-    out = [pick(q, language) for q in BRIEF_QUESTIONS if pick(q, language).lower() != asked]
+    offered = [v["follow_up"] for v in views or [] if isinstance(v, dict) and isinstance(v.get("follow_up"), str)
+               and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
+    out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
 
 
@@ -471,6 +475,91 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     return text[:1].upper() + text[1:], ids
 
 
+# The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
+# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
+# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
+# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# numbers; two equal shares are said once ("each a fifth less"), so a share is cited once. The levers' own
+# amounts stay on the card; the S-Bonus is never here, it is the answer's first follow-up. Nothing quotes safe
+# to spend (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
+PLAN_SENTENCE = {
+    "plan": ("These changes could add about {total}, about {year}: {cuts}.",
+             "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
+    "plan_no_year": ("These changes could add about {total}: {cuts}.",
+                     "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
+    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
+    "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
+    "each": ("eating out and spending on {other}, each {cut} less",
+             "ulkona syöminen ja luokka {other}, kumpikin {cut} vähemmän"),
+    "and": (" and ", " ja "),
+    "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
+    "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
+                  "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
+}
+PLAN_MAX_NUMBERS = 3
+
+
+def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
+    """The savings-plan takeaway (at most two sentences, three numbers) and the ids it cites; None when it
+    cannot be built."""
+    if view.get("tool") != "get_savings_plan":
+        return None
+
+    def num(node: Any) -> dict[str, Any] | None:
+        return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
+
+    save = num(view.get("safe_to_save"))
+    save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
+    s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
+    tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    if view.get("kind") != "plan":
+        return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
+    total, year = num(view.get("total_month")), num(view.get("total_year"))
+    levers = view.get("levers") or []
+    if not (total and year and levers):
+        return None
+    first_key = tools_config.SAVINGS_PLAN_FIRST[0]
+    shares, cut_ids = {}, []                 # lever key -> its share in words or as a token
+    for lever in levers:
+        words, cut = lever.get("cut_words"), num(lever.get("cut"))
+        if isinstance(words, str) and words and not re.search(r"\d", words):
+            shares[lever.get("key")] = words
+        elif cut is not None:
+            shares[lever.get("key")] = tok(cut)   # "15.0%": a cut share without words is cited, never typed
+            if cut["id"] not in cut_ids:           # two equal shares are one Number: said and counted once
+                cut_ids.append(cut["id"])
+        else:
+            return None
+    first = next((lv for lv in levers if lv.get("key") == first_key), None)
+    other_lever = next((lv for lv in levers if lv.get("key") != first_key), None)
+    other = ""
+    if other_lever is not None:
+        other = other_lever.get("category") or ""
+        if not other or re.search(r"\d", other):
+            return None
+        other = other.lower() if language == "en" else other   # "luokassa Ostokset ja vapaa-aika"
+    if first and other_lever and shares[first["key"]] == shares[other_lever["key"]]:
+        cuts = [s("each").format(cut=shares[first["key"]], other=other)]
+    else:
+        cuts = ([s("first").format(cut=shares[first["key"]])] if first else []) + \
+               ([s("other").format(cut=shares[other_lever["key"]], other=other)] if other_lever else [])
+    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
+    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
+        return None
+    cuts_text = s("and").join(cuts)
+    if with_year:
+        sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
+    else:
+        sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
+    if with_save:
+        sentences.append(s("save").format(save=tok(save)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    return " ".join(sentences), ids
+
+
 def lead_sentences(view: dict[str, Any], language: str) -> list[str]:
     """Text that comes before a tool's numbers. None today: the spender profile names its type in its own
     sentence (answer_sentences.profile, #342), so the answer stays within two sentences."""
@@ -547,7 +636,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         chosen, extra = takeaway(view, question, language)
         sentences += [s for s in lead_sentences(view, language) if ok(s, is_note=True)]
         custom = (safe_to_spend_sentence(view, language)
-                  or small_purchases_sentence(view, language))
+                  or small_purchases_sentence(view, language)
+                  or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])
             cited += custom[1]
