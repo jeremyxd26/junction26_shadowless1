@@ -33,7 +33,7 @@ from core.tools import config, evidence, metric_sql, periods, recurring
 from core.tools.context import ToolContext
 from core.tools.models import Action, Args, Card, Number, Period, ToolResult, Unit
 from core.tools.numbers import NumberBuilder, model_number
-from core.tools.safe_to_spend import metric_row
+from core.tools.safe_to_spend import metric_row, weekly_numbers
 
 TOOL = "get_safe_to_save"
 METRIC = "safe_to_spend"
@@ -66,6 +66,9 @@ class SafeToSaveData(BaseModel):
     stock_explanation: str
     stock_components: list[SaveComponent]
     reason: SaveReason | None
+    savings_goal: Number            # the hero's goal (#391): quoted next to safe to spend, so the two add up
+    safe_to_spend_week: Number      # the hero's own weekly figure, after the goal
+    subtitle: str                   # card text: how safe to save relates to the goal (displays)
 
 
 def _t(key: str, language: str, **kw) -> str:
@@ -156,10 +159,22 @@ def build(ctx: ToolContext, settings: dict[str, str], row: dict[str, Any]) -> To
         amount = number("reason", column, unit, amount_label)
         reason = SaveReason(kind=kind, category=category, amount=amount, text=text)
 
+    # Pay yourself first (#391): safe to spend is computed after the savings goal, so the figure quoted
+    # next to it is the goal; the headline stays safe to save by its own formula.
+    weekly = weekly_numbers(ctx, nb, settings, row)
+    goal, safe_week = reg(weekly["savings_goal"][0]), reg(weekly["safe_to_spend"][0])
+    if goal.value <= 0:
+        subtitle = _t("subtitle", lang)
+    elif monthly.value >= goal.value:
+        subtitle = _t("subtitle_with_goal", lang, goal=goal.display, weekly=safe_week.display)
+    else:
+        subtitle = _t("subtitle_below_goal", lang, goal=goal.display, monthly=monthly.display)
+
     _check(row, free_month, free_until_payday)
     data = SafeToSaveData(
         monthly=monthly, monthly_components=monthly_components, stock=stock,
         stock_explanation=_t("stock_explanation", lang), stock_components=stock_components, reason=reason,
+        savings_goal=goal, safe_to_spend_week=safe_week, subtitle=subtitle,
     )
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(tool=TOOL, data=data, card=_card(data, lang), notes=[], evidence=list(nb.specs),
@@ -182,7 +197,7 @@ def _card(data: SafeToSaveData, language: str) -> Card:
     ref = data.monthly.evidence_ref
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{ref}".encode()).hexdigest()[:12],
-        type="safe_to_save", title=_t("title", language), subtitle=_t("subtitle", language), evidence_ref=ref,
+        type="safe_to_save", title=_t("title", language), subtitle=data.subtitle, evidence_ref=ref,
         estimate={"label": config.label(config.SAFE_TO_SPEND_TEXT["estimate_label"], language),
                   "text": _t("estimate_text", language)},
         actions=[Action(type="open_evidence", label=config.label(config.SAFE_TO_SPEND_TEXT["how"], language),
@@ -219,4 +234,6 @@ def _model_view(data: SafeToSaveData) -> dict[str, Any]:
             "amount": model_number(data.reason.amount),
             "text": data.reason.text,
         },
+        "savings_goal": model_number(data.savings_goal),
+        "safe_to_spend_week": model_number(data.safe_to_spend_week),
     }

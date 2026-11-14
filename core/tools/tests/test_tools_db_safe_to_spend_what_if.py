@@ -28,15 +28,16 @@ PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
 EVERYONE = SAMPLE + PERSONAS
 D = Decimal
 
-# metrics.md section 3 and personas.md Q3 (as_of 2026-09-30): safe to spend 7d, binding limit, status
+# metrics.md section 3 and personas.md Q3 (as_of 2026-09-30): safe to spend 7d after the savings goal (#391),
+# binding limit, status
 SAFE_WORKED = {
-    "CUST00001": ("103.18", "budget", "ok"),
+    "CUST00001": ("93.98", "budget", "ok"),
     "CUST00002": ("0.00", "budget", "nothing_free"),
-    "CUST00006": ("31.35", "budget", "ok"),
-    "CUST00860": ("180.26", "budget", "ok"),
-    "CUST00493": ("175.46", "budget", "ok"),
-    "CUST00349": ("285.21", "budget", "ok"),
-    "CUST00849": ("166.84", "budget", "ok"),
+    "CUST00006": ("12.95", "budget", "ok"),
+    "CUST00860": ("97.46", "budget", "below_usual"),
+    "CUST00493": ("78.86", "budget", "ok"),
+    "CUST00349": ("147.23", "budget", "below_usual"),
+    "CUST00849": ("123.15", "budget", "ok"),
 }
 # metrics.md section 4 and personas.md Q4: dining out (category Restaurants) -20%
 WHAT_IF_WORKED = {  # baseline / month, saving / month, / week, / year
@@ -152,12 +153,15 @@ def test_safe_to_spend_evidence_and_card(conn, customer_id):
     result = get_safe_to_spend(ctx_for(conn, customer_id))
     assert_reconciles(conn, customer_id, result.evidence)
     top = evidence.resolve(conn, result.data.safe_to_spend.evidence_ref, customer_id)
-    assert top.kind == "composite" and {p["role"] for p in top.parts} == {"a", "b"}
+    # #391: the evidence lists the savings goal next to the two limits ("why this number" shows it)
+    assert top.kind == "composite" and {p["role"] for p in top.parts} == {"a", "b", "goal"}
+    goal_part = next(p for p in top.parts if p["role"] == "goal")
+    assert goal_part["ref"] == result.data.savings_goal.evidence_ref and goal_part["method"] == "safe_to_spend.savings_goal_eur@1"
     card = result.card
     assert card.type == "metric" and card.status == result.data.status and card.estimate["text"]
     assert [n.method for n in card.secondary] == [
         "safe_to_spend.free_until_payday_eur@1", "safe_to_spend.balance_limit_7d_eur@1",
-        "safe_to_spend.budget_limit_7d_eur@1"]
+        "safe_to_spend.budget_limit_7d_eur@1", "safe_to_spend.savings_goal_eur@1"]
     assert_model_view_clean(result.model_view, customer_id)
 
 
@@ -195,7 +199,7 @@ def test_what_if_rejects_an_mcc_the_customer_uses_for_health(conn):
 
 def test_safe_to_spend_in_finnish(conn):
     result = get_safe_to_spend(ctx_for(conn, "CUST00001", "fi"))
-    assert result.data.safe_to_spend.display == "103,18 €"
+    assert result.data.safe_to_spend.display == "93,98 €"
     assert result.card.title.startswith("Turvallisesti")
 
 

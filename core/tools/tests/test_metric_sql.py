@@ -89,7 +89,7 @@ def test_a_normal_call_sets_the_one_customer_range_and_as_of():
     # the real sequence: no labels (#68) and no bill (#242), the caller's settings, then the server's date
     # and customer range
     assert conn.set_configs() == [
-        ("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),
+        ("app.tx_labels", ""), ("app.extra_bill_due_eur", ""), ("app.savings_goal_eur", ""),
         ("app.whatif", "category:Restaurants"), ("app.whatif_pct", "20"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]
@@ -105,7 +105,7 @@ def test_the_range_is_set_last_even_if_a_name_slipped_past_the_check(monkeypatch
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF,
                    {"customer_from": "CUST00000", "customer_to": "CUST99999", "demo_today": "2099-01-01"})
     assert conn.set_configs() == [
-        ("app.tx_labels", ""), ("app.extra_bill_due_eur", ""),                  # no labels (#68), no bill (#242)
+        ("app.tx_labels", ""), ("app.extra_bill_due_eur", ""), ("app.savings_goal_eur", ""),   # no labels, bill, goal
         ("app.customer_from", "CUST00000"), ("app.customer_to", "CUST99999"), ("app.demo_today", "2099-01-01"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]

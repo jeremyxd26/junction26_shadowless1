@@ -31,7 +31,7 @@ def num(value, ref="ev_000000000001"):
 class Stub:
     """The service's demo path, with switches for the failure cases."""
 
-    def __init__(self, saving=45.91, off=(), hero_after_needed=180.26, undo="ok", reconciles=True, ask_429=False,
+    def __init__(self, saving=45.91, off=(), hero_after_needed=97.46, undo="ok", reconciles=True, ask_429=False,
                  malformed_whatif=False, needed_delay=0.0, label_list=False):
         self.needed_delay = needed_delay   # a slow "Needed", applied after the delay (maybe after the undo)
         self.label_list = label_list
@@ -55,7 +55,7 @@ class Stub:
             items.append({"key": "unclassified", "amount": num(180.07, "ev_000000000005")})
         reviews = [{"type": "review", "tx_ref": TX_REF, "amount": num(1080.42, "ev_000000000006"),
                     "current_basket": {"key": "unclassified"}}] if pending else []
-        hero_value = 221.58 if pending else self.hero_after_needed
+        hero_value = 138.79 if pending else self.hero_after_needed
         return {"customer_id": LEAD, "hero": {"type": "metric", "primary": num(hero_value, "ev_000000000001")},
                 "cards": [{"type": "breakdown", "evidence_ref": "ev_000000000007", "items": items}],
                 "reviews": reviews}
@@ -98,12 +98,12 @@ class Stub:
                 time.sleep(self.needed_delay)
             self.state = "answered"
             return 200, {"review_state": "answered",
-                         "changes": [{"key": "safe_to_spend", "before": num(221.58), "after": num(180.26)}]}
+                         "changes": [{"key": "safe_to_spend", "before": num(138.79), "after": num(97.46)}]}
         if path == "/api/ask" and method == "POST" and self.ask_429:
             return 429, {"error": {"code": "rate_limited", "message": "Too many requests."}}
         if path == "/api/ask" and method == "POST" and "ask" not in self.off:
             return 200, {"outcome": "answered", "warnings": list(self.ask_warnings), "cited": ["n1"],
-                         "numbers": {"n1": num(180.26, "ev_000000000008")}}
+                         "numbers": {"n1": num(97.46, "ev_000000000008")}}
         return not_found
 
 
@@ -213,7 +213,7 @@ def test_no_ask_and_ask_limit(serve):
 def test_a_failed_undo_is_loud_whatever_happened_before(serve, mode, earlier_failure):
     # Review of PR #180: the undo is judged in every case; a failed one names the persona, the tx_ref,
     # the status and the repair commands, and the run exits 1.
-    stub = Stub(undo=mode, hero_after_needed=999.0 if earlier_failure else 180.26)
+    stub = Stub(undo=mode, hero_after_needed=999.0 if earlier_failure else 97.46)
     code, lines = run(serve(stub), "--no-ask")
     text = "\n".join(lines)
     assert code == 1

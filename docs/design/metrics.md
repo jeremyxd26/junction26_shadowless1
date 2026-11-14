@@ -167,13 +167,14 @@ It is never a Health purchase or a health MCC (5912, 8011, 8099, 8021). Those sp
 | Irregular reserve (15 days) | 256.30 | 167.74 | 167.74 |
 | Free until payday | 12,567.56 | 12,656.12 | 12,656.12 |
 | Irregular spending per month (budget limit input) | 520.08 | 340.38 | 340.38 |
-| Budget limit 7d | 180.26 | 221.58 | 221.58 |
-| **Safe to spend 7d** (binding: budget) | **180.26** | **221.58** | **221.58** |
+| Savings goal (#391, the same in every state) | 360 | 360 | 360 |
+| Budget limit 7d (after the goal) | 97.46 | 138.79 | 138.79 |
+| **Safe to spend 7d** (binding: budget) | **97.46** | **138.79** | **138.79** |
 | Usual everyday spending per 7 days | 137.80 | 137.80 | 137.80 (the purchase is still a one-off) |
 | Safe to save (3.1) | 12,272.28 | 12,360.83 | 12,360.83 |
 | Safe to save monthly (3.1) | 184.61 | 364.31 | 364.31 |
 
-From pending, "needed" moves 1,080.42 into unexpected necessities and grows the reserve by 1,080.42 / 183 × 15 = 88.56. Irregular spending per month rises by 1,080.42 / 183 × 30.4375 = 179.70, so the budget limit and safe to spend fall from 221.58 to 180.26. "I chose it" moves 1,080.42 into everyday spending and changes no limit. Both basket totals move by exactly the labelled amount. Shares are rounded on their own, so a column may add up to 99.9%.
+From pending, "needed" moves 1,080.42 into unexpected necessities and grows the reserve by 1,080.42 / 183 × 15 = 88.56. Irregular spending per month rises by 1,080.42 / 183 × 30.4375 = 179.70, so the free month falls by 179.70 and, with the goal fixed at 360, the budget limit and safe to spend fall from 138.79 to 97.46 (before #391: from 221.58 to 180.26). "I chose it" moves 1,080.42 into everyday spending and changes no limit. Both basket totals move by exactly the labelled amount. Shares are rounded on their own, so a column may add up to 99.9%.
 
 **How the columns were computed.**
 - `02_baskets.sql` and `03_safe_to_spend.sql` were run for the range `CUST00860` … `CUST00861`:
@@ -253,12 +254,24 @@ A. balance limit
    free_until_payday = balance - bills_due - (essentials/day + irregular/day) * N - cushion
    balance_limit_7d  = max(free_until_payday, 0) / N * min(7, N)
 
-B. budget limit
+B. budget limit, after the savings goal (pay yourself first, #391)
    free_month       = income/month - sweep/month - committed/month - (essentials/day + irregular/day) * 30.4375
-   budget_limit_7d  = max(free_month, 0) * 7 / 30.4375
+   savings_goal     = app.savings_goal_eur if set (the tool's argument), else
+                      floor10( max(free_month' - everyday/day' * 30.4375, 0) )       never below 0
+   budget_limit_7d  = max(free_month - savings_goal, 0) * 7 / 30.4375
 
 safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 ```
+
+**The savings goal (#391, product decision).** Safe to spend is computed after a monthly savings goal, so the money Sentti says can be spent and the money it says can be set aside are different euros and add up.
+- **The default goal** is safe to save monthly (section 3.1), rounded down to a multiple of 10 €.
+  - It is computed with the spike review's purchase left out of the run rates (the primed terms above), in every state: the labelled purchases once a review exists, else the purchase a review would ask about (`core/tools/reviews.py` `candidates`).
+  - So it is one figure per customer for the month. It does not move when a review appears or is answered: with no review it equals the pending state's goal (Sanna 360, not 180).
+- **"Needed"** grows the irregular reserve, so safe to spend falls (Sanna 138.79 → 97.46) while the goal stays 360. **"My choice"** changes nothing.
+- **Safe to save keeps its own formula** (section 3.1). After "Needed" it can be below the goal (Sanna 184.61 against 360), and the safe-to-save card then says so.
+- **The figure quoted next to safe to spend is the goal** (hero, answers): "You can spend about €138.79 this week, after setting aside about €360.00 a month." When safe to spend is more than `USUAL_PACE_MARGIN_EUR` (5 €) a week under the usual everyday pace: "To keep setting aside €360.00 a month, about €97.46 a week is safe to spend, below your usual €137.80 a week." With a goal of 0 the sentences stay as before.
+- **Invariant**, asserted for the four personas in every review state (`core/tools/tests/test_tools_db_pay_yourself_first.py`): safe_to_spend_7d × 30.4375/7 + savings_goal ≤ free_month, with equality when the budget side sets the limit. There is no overlap any more (the #381 finding).
+- **Evidence:** the goal is `safe_to_spend.savings_goal_eur@1`, an output column of 03. The safe-to-spend composite (`minimum_after_goal`) lists it as a part next to the two limits.
 
 - `balance`: the last `balance_after` on or before today, summed over the customer's accounts (`balance_tx_id`).
 - `bills_due`: every recurring outflow except Salary Sweep, due after today and on or before payday. A once-a-month bill counts its typical amount at its typical day in each month of the horizon. This month's unpaid bill counts as due tomorrow if at most 7 days late, and is taken as skipped if later. A bill paid several times a month counts `typical_month * N / 30.4375`. A recurring investment deposit counts too (team-lead decision): it is the customer's own saving plan, and the explanation says so ("your monthly saving of X € is set aside").
@@ -330,7 +343,7 @@ else:                reason = largest_everyday_category, amount = that category'
 **Not the same as the down-payment capacity.** `safe_to_save_monthly` uses the planning income of section 3 (`income_month_eur`, the median of the recurring income series) and keeps both reserves. The down-payment capacity of section 11 uses the average income that actually arrived (`net_income_month_eur`, see "Two income figures" in section 5) and no reserves. The two numbers differ on purpose: for Sanna, 184.61 against 547.79 a month.
 
 - **What it means.** Free until payday is what is left after the bills due before payday, both reserves and the cushion. Safe to save also keeps the usual everyday spending until payday. If the customer moves the whole amount, what is left still covers bills, reserves, the cushion and a normal everyday spending pace until payday.
-- **Not additive with safe to spend.** Both come out of the same free money. Moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday. The coach never presents the two as separate pots.
+- **Pay yourself first (#391).** Safe to spend is computed after the savings goal (section 3), whose default is this figure before the review's answer, rounded down to 10 €. So safe to spend × 30.4375/7 + goal is the free month, and the two never overlap. Safe to save keeps this formula. The card's subtitle quotes the goal next to safe to spend ("You could set aside about €360.00 a month on top of spending about €138.79 a week."), or, when safe to save is below the goal, compares the two ("Your goal is €360.00 a month; at your usual pace about €184.61 a month would be left."). The stock figure is unchanged: moving money to savings lowers the balance limit of section 3 by the same amount spread over the days to payday.
 - **R13 and R7.** It is an estimate, shown with its formula in plain words. It is not investment advice: the coach never says where to put the money (no product, no instrument).
 - **Edge cases.**
   - Free until payday at or below the usual everyday spending until payday gives 0, and the coach says there is nothing to spare before payday.
@@ -696,7 +709,7 @@ Decisions 2 to 7 were taken by the team lead and are the documented defaults; Re
 7. **Peer groups. Decided:** at least 20 other peers; the area widens first, the age band last (section 6). Paavo open data is a later issue.
 8. **Spike labels. Decided** (owner, on issue #33):
    - A spike with a pending review is `unclassified`: in no basket and not in the reserve.
-   - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 221.58 → 180.26).
+   - "Needed" adds it to the reserve, so safe to spend goes down (Sanna 138.79 → 97.46 after the savings goal of #391; 221.58 → 180.26 before it).
    - "I chose it" leaves safe to spend unchanged.
    - No answer raises safe to spend above the value shown while the question was pending, and an expired review cannot be answered.
    - A customer without a pending review keeps every published number (section 1.1).
