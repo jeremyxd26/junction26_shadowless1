@@ -334,3 +334,15 @@ def test_a_failed_model_still_answers_with_the_warning_and_the_reason_error():
     done = ask(p)
     assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
     assert audit.records[-1]["model_unavailable"] == "error"
+
+
+def test_when_even_the_template_fails_the_outcome_is_fallback(tmp_path, monkeypatch):
+    from core.agent import template as tmpl
+
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = off_pipeline(tmp_path, transport, "off")
+    monkeypatch.setattr(tmpl, "template_draft", lambda *a, **k: {"language": "en", "text": "You spent 1146 euros.",
+                                                                   "cited": [], "lesson_key": None})
+    done = ask(p)
+    assert done["outcome"] == "fallback" and "llm_unavailable" in done["warnings"]
+    assert "1146" not in done["text_rendered"] and transport.requests == []

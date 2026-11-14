@@ -153,6 +153,7 @@ class _Answer:
     # Why the language model was not used although it would have been (#244): "model_window" (#232),
     # "off", "budget", "pause" (decided before planning), or "error" (it was asked and failed).
     model_unavailable: str | None = None
+    template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
@@ -312,9 +313,10 @@ class Pipeline:
                                              skip_model=planner_fallback or a.model_unavailable is not None, a=a)
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
-        # A plan was made and the tools ran; the text passed the validator (the template's always does):
-        # "answered", whoever wrote it. The template in the model's place carries the warning (#244).
-        a.outcome = "answered"
+        # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
+        # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
+        # template in the model's place carries the warning (#244).
+        a.outcome = "fallback" if a.template_failed else "answered"
         if used_template:
             a.model_unavailable = a.model_unavailable or "error"
             self._warn_llm_unavailable(a)
@@ -510,6 +512,7 @@ class Pipeline:
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
+            a.template_failed = True
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
 
