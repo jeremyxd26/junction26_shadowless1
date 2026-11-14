@@ -521,11 +521,25 @@ def _length_case():
             "tags": ["t"], "numbers": [{"name": "total", "value": 1102.0, "unit": "eur", "tolerance": 0.005}]}
 
 
-def test_an_answer_over_two_sentences_fails_the_length_rule():
+def test_an_answer_over_three_sentences_fails_the_length_rule():
     q3 = {"start": "2026-07-01", "end": "2026-09-30"}
-    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual.",
+    ans = Answer(text="From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+                      "Most of it was at weekends.",
                  outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
-    assert run.check(_length_case(), ans, "en") == ["length: too long: 3 sentences, at most 2"]
+    assert run.check(_length_case(), ans, "en") == ["length: too long: 4 sentences, at most 3"]
+
+
+def test_a_why_answer_may_have_four_sentences_and_not_five():
+    # #572: a why or how question gets up to four sentences; an ordinary one three
+    q3 = {"start": "2026-07-01", "end": "2026-09-30"}
+    case = dict(_length_case(), question={"en": "Why did I spend so much on restaurants in the last 3 months?"})
+    four = ("From 1 Jul – 30 Sep 2026 you spent €1,102.00 on restaurants. That is a lot. It is more than usual. "
+            "Most of it was at weekends.")
+    ans = Answer(text=four, outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)], labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == []
+    ans = Answer(text=four + " Lunches were the rest.", outcome="answered", numbers=[num(1102.0, "eur", "€1,102.00", q3)],
+                 labels=[], tool_calls=[])
+    assert run.check(case, ans, "en", case["question"]["en"]) == ["length: too long: 5 sentences, at most 4"]
 
 
 def test_a_short_answer_passes_the_length_rule_and_a_finnish_display_counts_as_one_word():

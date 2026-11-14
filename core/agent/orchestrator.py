@@ -52,7 +52,7 @@ from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
-from core.answer_text import find_dates, length_problems, scan_numbers
+from core.answer_text import answer_kind, find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -330,6 +330,7 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary or why (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
     health_dropped: str | None = None
@@ -404,6 +405,7 @@ class Pipeline:
                       "as_of": self.as_of.isoformat()})
         emit("status", {"stage": "understanding", "tool": None, "label": template.pick(template.STATUS_UNDERSTANDING, lang)})
         a.flags = guard.flags(message, raw=req.message)   # #537: the line starts as typed
+        a.kind = answer_kind(message)   # a why/how answer may be longer (#572)
         # A question about Sentti itself (#287): answered here, with no plan, no tool, no number and no
         # model request, whatever the model's state. A refusal rule always wins (meta_intent checks).
         meta = meta_intent(message)
@@ -905,7 +907,7 @@ class Pipeline:
                 if not errors:
                     # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
                     # gets the reason and the template writes after it.
-                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))), kind=a.kind)
                     claim = None if request.errors else unavailable_claim(draft.text)
                     if claim:
                         # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
