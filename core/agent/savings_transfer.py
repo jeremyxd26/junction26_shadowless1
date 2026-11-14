@@ -31,6 +31,12 @@ MOVED = fold_pattern(
     r"[^.?!]{0,40}?" + _TO_SAVINGS + r"|\bsavings?\s+transfers?\b|"
     r"\b(siirs|siirr|siirt|laito|laita|laitet|pistin|pistä|panin|panen|men(ee|i|evät|ivät)\b)\w*[^.?!]{0,40}?"
     + _FI_SAVINGS + r"|\bsäästösiirto\w*")
+# "How much did I save last month?", "Paljonko säästin viime kuussa?" (#668): what went to savings, never the spending
+# total. Not a saving on something, by or from something, or for something ("How much did I save on groceries?").
+SAVED = fold_pattern(
+    r"\b(did|do|does|have|has)\s+(i|we)\s+(usually\s+|normally\s+|typically\s+|actually\s+|really\s+)?sav(e|ed)\b"
+    r"(?!\s+(on|by|from|with|if|for|up)\b)|"
+    r"\b(säästin|säästimme|säästän|säästämme|säästänyt|säästäneet)\b(?!\s+\w+(sta|stä|lla|llä)\b)")
 # A question about the user's own money, past or usual ...
 ASKS = fold_pattern(
     r"\b(how much|how often|what (was|were|is|are)|when (did|was)|did (i|we)|do (i|we)|have (i|we)|does|is there|"
@@ -64,9 +70,18 @@ HAVE_TRANSFER = fold_pattern(
     r"(to|into)\s+(my\s+|the\s+|our\s+)?savings?(\s+accounts?)?"
     r"(\s+(at|in|with)\s+(another|a\s+different|an\s+other|my\s+other|other)\s+banks?)?"
     r"(\s*,?\s*(please|pls))?\s*[.?!]*\s*")
-NOT_OWN = fold_pattern(
+# "How much should I transfer to savings (each month)?" (#668) as the whole message, nothing before or after it but a
+# month or a closing "please": how much to set aside, the savings plan's question. As with HAVE_TRANSFER, only this
+# message has its "transfer" exempted from the move-money refusal (rules._declines), and only when it is claimed
+# (`set_aside`); "… or invest in stocks?", "… at another bank?", "… next month?" and any later clause keep the refusal.
+SET_ASIDE_TRANSFER = fold_pattern(
+    r"\s*how\s+much\s+(should|can|could|shall)\s+(i|we)\s+transfer\s+(to|into)\s+(my\s+|the\s+|our\s+)?savings?"
+    r"(\s+accounts?)?(\s+(each|every|per|a)\s+month|\s+monthly)?(\s*,?\s*(please|pls))?\s*[.?!]*\s*")
+# A request to move money as the message's first word or after "can you", "voitko" (#668: never how much to set aside)
+REQUEST = fold_pattern(
     r"^\W*(please\s+|pls\s+)?(transfer|put|move|send|set|pay|make|start|stop|cancel|siirrä|siirtäkää|laita|pistä|"
-    r"pane|tee|aloita|lopeta)\b|\b(can|could|would|will)\s+you\b|\bvoi(tko|sitko|tteko)\b|"
+    r"pane|tee|aloita|lopeta)\b|\b(can|could|would|will)\s+you\b|\bvoi(tko|sitko|tteko)\b")
+NOT_OWN = REQUEST + "|" + fold_pattern(
     r"\b(should|could|can|would|might|will|shall|must|ought|may)\s+(i|we)\b|\b(have|need|want|ought)\s+to\b|"
     r"\bwhat if\b|\bif (i|we)\b|\bnext (month|year|week)\b|\b(tomorrow|tonight|huomenna)\b|"
     r"\b(pitäisi|pitäis|kannattaa|kannattaisi|voin|voit|voimme|voisin|voisimme|voinko|voiko|voisiko|pitääkö|"
@@ -74,11 +89,26 @@ NOT_OWN = fold_pattern(
     r"\bensi (kuussa|vuonna|viikolla)\b|"
     # fees, costs, interest or tax on savings are another question (review of #670)
     r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b") + "|" + MOVE_WITH_AMOUNT
+# "How much did I save?" is what went to savings only without a discount, a deadline ahead, a why or a comparison
+# (#668): "I used a promo code, how much did I save?", "paljonko olen säästänyt jouluun mennessä?", "why did I save
+# less last month?" are other questions. Read only when SAVED, not MOVED, makes the question one about savings.
+SAVED_OTHER = fold_pattern(
+    r"\b(promo(tion)?s?|discounts?|coupons?|vouchers?|offers?|deals?|cashback|rebates?|alennu\w*|tarjou\w*|"
+    r"kuponki\w*|kupongi\w*)\b|"
+    r"\bby\s+(christmas|the end|end of|new year|easter|summer|midsummer|then)\b|\bmennessä\b|\bjouluun\b|"
+    r"\b(why|how come|miksi)\b|\b(less|more|fewer|vähemmän|enemmän)\b|"
+    # ... nor a comparison with people or a year, a judgement or a goal: "How much do I save compared to people like
+    # me?", "Do I save enough?", "How much have I saved towards my goal?", "Paljonko säästän verrattuna kaltaisiini?"
+    r"\b(compared?|comparison|than|versus|vs|as much as|others|people like (me|us)|verrattuna|kuin|muihin|muut|"
+    r"muiden|kaltais\w*|enough|tarpeeksi|riittävästi|goals?|targets?|towards?|tavoit\w*)\b|"
+    # ... nor a saving in a kind of spending, a saving on something ("Paljonko säästimme ruokakuluissa?")
+    r"\b\w*(kuluissa|kuluista|menoissa|menoista|ostoksissa|ostoksista|laskuissa|laskuista)\b")
 # The past: a month, the last transfer, a past verb. Otherwise the question is about the usual transfer.
 PAST = fold_pattern(
     r"\b(did|was|were|went|last|latest|previous|recent|ago|transferred|moved|sent|paid|this year|so far)\b|"
     r"\b(january|february|march|april|june|july|august|september|october|november|december)\b|\bin may\b|"
     r"\b(siirsin\w*|siirsimme|siirrettiin|siirtänyt|laitoin\w*|laitettiin|pistin|panin|meni|menivät|viime|"
+    r"säästin|säästimme|säästänyt|säästäneet|saved|"
     r"viimeisin\w*|viimeksi|edellinen|edellisen|edellisellä|tänä vuonna)\b|"
     r"\b(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu\w*")
 ONE_TRANSFER = fold_pattern(r"\b(last|latest|previous|recent)\s+(savings\s+)?transfer\b|"
@@ -116,10 +146,20 @@ def lead_key(q: str, kind: str) -> str | None:
     return None
 
 
+# "How much should I transfer to savings?", "Paljonko voin siirtää säästöön kuukaudessa?" (#668): how much to set
+# aside is the savings plan's question (the rule `save_more`), never a refusal and never what already goes to savings
+HOW_MUCH = fold_pattern(r"\b(how much|paljonko|kuinka paljon)\b")
+SET_ASIDE_MODAL = fold_pattern(r"\b(should|can|could|shall)\s+(i|we)\b|"
+                               r"\b(pitäisi|pitäis|kannattaa|kannattaisi|voin|voisin|voimme|voisimme)\b")
+HYPOTHESIS = fold_pattern(r"\bwhat if\b|\bif (i|we)\b|\bjos\b|\bentä jos\b")
+
+
 def asks(q: str) -> str | None:
-    """"past" or "usual" when the folded message is one question about the user's own transfers to savings, else
-    None."""
-    if not re.fullmatch(ONE_QUESTION, q) or not (re.search(MOVED, q) and re.search(ASKS, q)) or re.search(NOT_OWN, q):
+    """"past" or "usual" when the folded message is one question about the user's own transfers to savings (or how
+    much they saved, #668), else None."""
+    saved = re.search(SAVED, q) and not re.search(SAVED_OTHER, q)
+    if not re.fullmatch(ONE_QUESTION, q) or not ((re.search(MOVED, q) or saved) and re.search(ASKS, q)) \
+            or re.search(NOT_OWN, q):
         return None
     return "past" if re.search(PAST, q) else "usual"
 
@@ -128,6 +168,20 @@ def have_transfer(q: str) -> bool:
     """The whole folded message asks whether the user has a regular transfer to savings, and the rules claim it: its
     "transfer" is no request to move money (rules._declines)."""
     return bool(re.fullmatch(HAVE_TRANSFER, q)) and asks(q) is not None
+
+
+def set_aside(q: str) -> bool:
+    """The folded message is one question how much the user should or can move to savings (#668), with no amount and
+    no request."""
+    return bool(re.fullmatch(ONE_QUESTION, q) and re.search(MOVED, q) and re.search(HOW_MUCH, q)
+                and re.search(SET_ASIDE_MODAL, q) and not re.search(HYPOTHESIS, q) and not re.search(REQUEST, q)
+                and not re.search(MOVE_WITH_AMOUNT, q))
+
+
+def set_aside_transfer(q: str) -> bool:
+    """The whole folded message asks how much the user should transfer to savings, and the rules claim it: its
+    "transfer" is no request to move money (rules._declines)."""
+    return bool(re.fullmatch(SET_ASIDE_TRANSFER, q)) and set_aside(q)
 
 
 def sentence(view: dict[str, Any], language: str, q: str, already: dict[str, tuple[str, str]]) -> \
