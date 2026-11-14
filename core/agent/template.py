@@ -15,6 +15,7 @@ from typing import Any
 
 from core import answer_text
 from core.tools import config as tools_config
+from core.agent import answer_sentences
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -364,6 +365,7 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
 
     sentences: list[str] = []
     cited: list[str] = []
+    q = fold(question)
     for view in views:
         # One sentence per tool: "<period>: <label>: {{n1}}; <label>: {{n2}}." Items are joined with
         # semicolons, so a number is never followed by ". " and a label (a count then "10. heinäkuu 2026"
@@ -378,6 +380,16 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             sentences.append(custom[0])
             cited += custom[1]
             chosen = []  # the sentence above cites them
+        # #342: one to three human sentences for the tools answer_sentences writes; the others (profile,
+        # peer, S-Bonus, an unknown tool) keep their own form below.
+        own = answer_sentences.for_view(view, language, ok, save_more=bool(re.search(SAVE_MORE, q)),
+                                        asks_income=asks_income(q), bill_typical=bool(re.search(BILL_TYPICAL, q)))
+        if own and not set(own[1]) & set(cited) and len(cited) + len(own[1]) <= MAX_TEMPLATE_NUMBERS:
+            sentences += own[0]
+            cited += own[1]
+            sentences += [n for n in view.get("notes") or []
+                          if isinstance(n, str) and ok(n, is_note=True) and n not in answer_sentences.SAID_BY_SENTENCE]
+            continue
         for label, number_id in chosen:
             if number_id in cited or len(cited) >= MAX_TEMPLATE_NUMBERS:
                 continue
