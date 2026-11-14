@@ -46,6 +46,7 @@ def has(text, needle):
     "Cut your rent where you can.",
     "Voisit vähentää asumiskuluja.",
     "Kokeile leikata vuokraa.",
+    "Why not cut your rent a little?",
 ])
 def test_a_suggestion_to_cut_a_regular_essential_is_rejected(text):
     assert has(text, "never suggest cutting"), problems(text)
@@ -63,6 +64,7 @@ def test_a_suggestion_to_cut_a_regular_essential_is_rejected(text):
     "Cutting dining out by 20% saves {{n3}}; your rent stays at {{n7}}.",
     "You cut spending on restaurants and housing stayed at {{n7}}.",
     "You could cut restaurants; your rent stays at {{n7}}.",
+    "You could cut restaurants and rent stays at {{n7}}.",
 ])
 def test_a_statement_about_essentials_is_not_a_cut_suggestion(text):
     assert not has(text, "never suggest cutting"), problems(text)
@@ -116,6 +118,8 @@ def test_ranking_words_next_to_a_peer_number_are_rejected(text):
 
 @pytest.mark.parametrize("text", [
     "You spend {{n5}} than the median of people like you; the top category is restaurants.",
+    "You spend {{n5}} than the median of people like you; restaurants are in the top category.",
+    "Kulutat parhaillaan {{n5}} kuin kaltaisesi.",
     "You spend {{n5}} than the median of people like you, and a what-if can show what a cut would save.",
 ])
 def test_a_peer_comparison_without_ranking_words_passes(text):
@@ -136,6 +140,10 @@ def test_a_peer_comparison_without_ranking_words_passes(text):
     "You could take out a small loan to cover the repair.",
     "Consider using your credit card and pay it later.",
     "Voit ottaa lainaa korjaukseen.",
+    "Why not take out a loan?",
+    "Don't hesitate to use your credit card.",
+    "It's not a bad idea to take a loan.",
+    "Miksi et ottaisi lainaa?",
 ])
 def test_a_borrowing_suggestion_is_found(text):
     assert borrowing_suggestion(text) is not None, text
@@ -146,6 +154,7 @@ def test_a_borrowing_suggestion_is_found(text):
     "I would not use a credit card for this.",
     "Sentti does not suggest using credit.",
     "Älä ota lainaa tähän.",
+    "En ottaisi lainaa tähän.",
     "You spent {{n1}} using your credit card in August 2026.",
     "You can get your credit card statement from the bank app.",
     "Your pay later purchases cost {{n1}}.",

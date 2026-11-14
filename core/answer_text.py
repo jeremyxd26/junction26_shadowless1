@@ -233,6 +233,21 @@ _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|et
 NEGATION = re.compile(
     r"\b(?:not|never|cannot|no\s+need|avoid\w*|instead\s+of|rather\s+than|ei|älä|älkää|en|et|eivät|emme|ette"
     r"|ilman)\b|n['’]t\b|\bnothing\s+to\b", re.I)
+# A negation that still suggests: "Why not take out a loan?", "Don't hesitate to use your credit card", "It's
+# not a bad idea to…" (review of #437).
+SUGGESTING_NEGATION = re.compile(
+    r"\bwhy\s+not\b|\bdon['’]?t\s+(?:hesitate|forget|be\s+afraid)\b|\bnever\s+hesitate\b"
+    r"|\bnot\s+(?:a\s+)?(?:bad|terrible|crazy)\s+(?:idea|option|choice|move)\b|\bnothing\s+wrong\s+with\b"
+    r"|\bno\s+reason\s+not\s+to\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
+    r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b", re.I)
+
+
+def negated(clause: str) -> bool:
+    """A clause with a negation that makes it a statement ("I can't recommend a loan"), not one that still
+    suggests ("why not take a loan?")."""
+    return bool(NEGATION.search(clause)) and not SUGGESTING_NEGATION.search(clause)
+
+
 _CLAUSE_START = re.compile(r"[.!?;:,]|\b(?:but|so|mutta|joten|vaan)\b", re.I)
 _CREDIT_DATA = r"(?!\s+(?:cards?|statements?|bills?|numbers?|purchases?|spending|transactions?|repayments?|payments?|fees?|interest|debt|balance|limits?))"
 _BORROW_NOUN = (r"(?:(?:small|personal|short-term|quick|payday|consumer|cheap)\s+)?"
@@ -253,7 +268,8 @@ BORROWING_SUGGESTION = re.compile(
     r"|charges?|costs?))|\bpay\s+(?:for\s+it\s+|it\s+|this\s+)?in\s+instal{1,2}ments\b"
     r"|\bbuy\s+now,?\s+pay\s+later\b|\bbnpl\b|\bput\s+it\s+on\s+(?:a|your)\s+credit\s+card\b"
     r"|\bfinanc(?:e|ing)\s+(?:it|this|that|the\s+\w+)\b"
-    r"|\b(?:ota|ottaa|otat|ottamalla|hae|hakea|haet|käytä|käyttää|käytät|harkitse|harkita)\s+(?:\w+\s+)?"
+    r"|\b(?:ota|ottaa|otat|ottamalla|ottaisi\w*|hae|hakea|haet|hakisi\w*|käytä|käyttää|käytät|käyttäisi\w*"
+    r"|harkitse|harkita)\s+(?:\w+\s+)?"
     r"(?:laina|lainaa|lainan|luottoa|luoton|luottokorttia|tililuottoa|osamaksu\w*|pikavippi\w*|rahoitusta"
     r"|kulutusluottoa)\b"
     r"|\blainaa\s+(?:rahaa|\w+(?:lta|ltä))\b"
@@ -269,7 +285,7 @@ def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
         text = re.sub(re.escape(label), " ", text, flags=re.I)
     for m in BORROWING_SUGGESTION.finditer(text):
         starts = [c.end() for c in _CLAUSE_START.finditer(text, 0, m.start())]
-        if not NEGATION.search(text[starts[-1] if starts else 0:m.end()]):
+        if not negated(text[starts[-1] if starts else 0:m.end()]):
             return m.group(0).strip()
     return None
 
