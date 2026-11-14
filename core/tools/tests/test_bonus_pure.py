@@ -59,27 +59,45 @@ def test_below_the_lowest_row_is_not_offered_but_the_payment_benefit_stays():
     assert bonus.estimate(D("50"), 100).status == "estimate"          # the lowest row itself counts
 
 
+@pytest.mark.parametrize("grocery, share, percent, bonus_month, payment, status", [
+    ("399.99", 50, "1.0", "2.00", "1.00", "estimate"),    # 199.995: the 1.0 % row, never rounded up to 200
+    ("99.99", 50, "0", "0.00", "0.25", "not_offered"),    # 49.995: below the lowest row
+    ("400.00", 50, "1.5", "3.00", "1.00", "estimate"),    # exactly 200: the 1.5 % row
+])
+def test_the_level_is_decided_on_the_unrounded_base(grocery, share, percent, bonus_month, payment, status):
+    e = bonus.estimate(D(grocery), share)
+    assert (e.bonus_percent, e.bonus_month, e.payment_benefit_month, e.status) == (
+        D(percent), D(bonus_month), D(payment), status)
+
+
 def test_the_rules_come_from_the_yaml_file():
     r = bonus.RULES
     assert r.levels[0] == (D("50"), D("1.0")) and r.levels[-1] == (D("900"), D("5.0"))
     assert (r.payment_percent, r.default_share_pct, r.table_sources) == (D("0.5"), 100, ("G2", "G3"))
+    assert (r.table, r.base_category, r.payment_sources) == ("default", "Groceries", ("G4", "G7", "G8"))
 
 
 def test_a_missing_or_malformed_rules_file_fails_with_a_clear_message(tmp_path):
-    with pytest.raises(RuntimeError, match="missing"):
+    with pytest.raises(RuntimeError, match="missing: nope.yaml not found"):
         bonus.load_rules(tmp_path / "nope.yaml")
+    with pytest.raises(RuntimeError, match="core/config/absent.yaml"):     # relative inside the repository
+        bonus.load_rules(bonus.ROOT / "core" / "config" / "absent.yaml")
     good = bonus.CONFIG_FILE.read_text(encoding="utf-8")
     for broken in (good.replace("min_monthly_purchases_eur: 200", "min_monthly_purchases_eur: 20"),  # not ascending
                    good.replace("percent: 0.5 ", "percent: half "),
+                   good.replace("source: [G4, G7, G8]", "source: []"),           # the payment benefit's sources
+                   good.replace("bonus_table: default", "bonus_table: regional"),  # no such table
+                   good.replace("base_category: Groceries", "base_category: Food"),  # not a category
                    good.replace("default:", "standard:"),
                    "bonus: [1, 2"):
         path = tmp_path / "rules.yaml"
         path.write_text(broken, encoding="utf-8")
-        with pytest.raises(RuntimeError, match="malformed"):
+        with pytest.raises(RuntimeError, match="malformed in rules.yaml"):
             bonus.load_rules(path)
 
 
 @pytest.mark.parametrize("args", [{"share_pct": 0}, {"share_pct": 101}, {"share_pct": 50.5},
+                                  {"share_pct": True}, {"share_pct": "50"},
                                   {"customer_id": "CUST00860"}, {"share": 50}])
 def test_arguments_are_validated(args):
     with pytest.raises(ValidationError):
@@ -152,24 +170,34 @@ def test_the_tool_on_400_a_month_matches_the_first_worked_example():
             d.payment_benefit_month.value, d.total_month.value, d.total_year.value) == (
         400.0, 400.0, 2.5, 10.0, 2.0, 12.0, 144.0)
     assert d.status == "estimate" and d.lowest_level is None and d.reason is None
-    assert d.share.method == "bonus_estimate.share_pct@1" and d.share.value == 100     # the rules' default
     assert d.grocery_month.method == "spender_profile.spend_month_eur@1"
 
 
-def test_a_typed_share_is_user_input():
-    result, _ = run(share_pct=50)
+def test_the_default_share_is_a_rule_value_with_evidence():
+    result, store = run()
+    share = result.data.share
+    assert (share.method, share.value, share.display) == ("bonus_estimate.share_pct@1", 100, "100%")
+    spec = store.rows[share.evidence_ref]                              # a ref, unlike a typed share
+    assert (spec["formula"], spec["params"]["rule"], spec["params"]["value"]) == (
+        "rule_value", "what_if_assumptions.default_share", "100")
+
+
+@pytest.mark.parametrize("language, shown", [("en", "50%"), ("fi", "50 %")])
+def test_a_typed_share_is_user_input_shown_as_a_whole_percentage(language, shown):
+    result, _ = run(share_pct=50, language=language)
     d = result.data
-    assert (d.share.method, d.share.value, d.level_base.value, d.bonus_percent.value) == (
-        config.USER_INPUT_METHOD, 50, 200.0, 1.5)
+    assert (d.share.method, d.share.value, d.share.evidence_ref, d.share.display) == (
+        config.USER_INPUT_METHOD, 50, None, shown)
+    assert (d.level_base.value, d.bonus_percent.value) == (200.0, 1.5)
 
 
 def test_every_number_has_a_formatter_display_and_derived_ones_reconcile():
     result, store = run(language="fi")
     d = result.data
     numbers = [d.grocery_month, d.level_base, d.bonus_percent, d.bonus_month, d.payment_benefit_month,
-               d.total_month, d.total_year]
-    for n in [*numbers, d.share]:
-        assert n.display == display(D(str(n.value)), n.unit, "fi")
+               d.total_month, d.total_year, d.share]
+    for n in numbers:
+        assert n.display == display(D(str(n.value)), n.unit, "fi", n.method)
     for n in numbers:
         assert n.evidence_ref in store.rows
         spec = store.rows[n.evidence_ref]
@@ -179,6 +207,8 @@ def test_every_number_has_a_formatter_display_and_derived_ones_reconcile():
             assert evidence.compute_formula(spec["formula"], parts, spec.get("params")) == D(spec["value"])
     level = store.rows[d.bonus_percent.evidence_ref]["params"]
     assert level["source"] == ["G2", "G3"] and level["table"] == "default"     # the rule and its source
+    rate = store.rows[d.payment_benefit_month.evidence_ref]["params"]
+    assert (rate["source"], rate["rule"]) == (["G4", "G7", "G8"], "payment_benefit.percent")
 
 
 def test_below_the_lowest_level_the_card_says_why():
@@ -188,6 +218,9 @@ def test_below_the_lowest_level_the_card_says_why():
         "not_offered", 0.0, 0.0, 0.2)
     assert d.lowest_level.value == 50.0 and d.reason
     assert store.rows[d.lowest_level.evidence_ref]["params"]["rule"] == "bonus.tables.default.levels[0]"
+    card = result.card.model_dump()
+    assert card["estimate"]["text"].startswith(d.reason)               # the card itself says why
+    assert d.lowest_level.evidence_ref in [n["evidence_ref"] for n in card["secondary"]]
 
 
 def test_card_and_model_view_carry_the_assumptions_and_name_no_merchant():
@@ -202,3 +235,45 @@ def test_card_and_model_view_carry_the_assumptions_and_name_no_merchant():
     for leak in ("MRC-", "store_", "merchant", "evidence_ref", "ev_", "CUST", "rows"):
         assert leak not in text
     assert all(not any(ch.isdigit() for ch in s) for s in view["assumptions"])   # no number outside Numbers
+
+
+@pytest.mark.parametrize("language, opener", [(0, "Assumes "), (1, "Oletus: ")])
+def test_the_assumptions_read_as_assumptions_and_claim_no_membership(language, opener):
+    for key in config.BONUS_ASSUMPTIONS:
+        text = config.BONUS_TEXT[key][language]
+        assert text.startswith(opener), text
+        for claim in ("your co-op", "you are a member", "osuuskauppasi", "jäsenenä"):
+            assert claim not in text.lower(), text
+
+
+class SpecStore:
+    """Stand-in for evidence.load: ref -> (customer, spec)."""
+
+    def __init__(self, specs: dict[str, dict]) -> None:
+        self.specs = specs
+
+    def execute(self, sql, params):
+        row = ("CUST00860", self.specs[params[0]]) if params[0] in self.specs else None
+
+        class Res:
+            def fetchone(self):
+                return row
+
+        return Res()
+
+
+@pytest.mark.parametrize("params", [
+    {"levels": [["abc", "1.0"]], "below_lowest_percent": "0"},     # not a number: InvalidOperation
+    {"levels": None, "below_lowest_percent": "0"},                 # not a list: TypeError
+    {"levels": [["50", "1.0"]], "below_lowest_percent": "0", "share_num": 1, "share_den": 0},  # division by 0
+])
+def test_a_crafted_composite_spec_resolves_without_a_check_not_a_500(params):
+    part = evidence.transactions_spec("CUST00860", AS_OF, "spender_profile.spend_month_eur@1",
+                                      bonus.Selection(direction="out", start=AS_OF, end=AS_OF), D("400.00"),
+                                      {"n_months": 6})
+    part_ref = evidence.make_ref(part)
+    spec = evidence.composite_spec("CUST00860", AS_OF, "bonus_estimate.bonus_percent@1", "bonus_level",
+                                   {"base": part_ref}, D("2.5"), params)
+    ref = evidence.make_ref(spec)
+    res = evidence.resolve(SpecStore({ref: spec, part_ref: part}), ref, "CUST00860")
+    assert (res.kind, res.reconciles) == ("composite", None)
