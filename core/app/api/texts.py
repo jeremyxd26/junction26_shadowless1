@@ -135,6 +135,22 @@ METHODS: dict[str, MethodInfo] = {
         Unit.EUR, ("Bills before payday", "Laskut ennen palkkapäivää"),
         ("All bills due after today and up to payday.", "Kaikki tämän päivän jälkeen palkkapäivään mennessä "
                                                          "erääntyvät laskut."), METRICS_DOC + "#3-safe-to-spend"),
+    "balance_forecast.daily_pace_eur@1": MethodInfo(
+        Unit.EUR_PER_DAY, ("Usual spending a day", "Tavallinen kulutus päivässä"),
+        ("Everyday spending and essentials without bills, per day, in each of the last three full months; "
+         "the middle one of the three.",
+         "Arkikulutus ja välttämättömät menot ilman laskuja päivää kohden kolmena viimeisenä täytenä "
+         "kuukautena; kolmesta keskimmäinen."), METRICS_DOC + "#33-balance-forecast-until-payday-257"),
+    "balance_forecast.bills_to_date_eur@1": MethodInfo(
+        Unit.EUR, ("Bills due by then", "Siihen mennessä erääntyvät laskut"),
+        ("The bills before payday that fall due after today and up to this day.",
+         "Ennen palkkapäivää erääntyvät laskut, jotka erääntyvät tämän päivän jälkeen tähän päivään mennessä."),
+        METRICS_DOC + "#33-balance-forecast-until-payday-257"),
+    "balance_forecast.balance_eur@1": MethodInfo(
+        Unit.EUR, ("Balance on a day before payday", "Saldo päivänä ennen palkkapäivää"),
+        ("Today's balance minus the bills due by that day and the usual spending a day for each day.",
+         "Tämän päivän saldo miinus siihen mennessä erääntyvät laskut ja tavallinen päiväkulutus jokaiselta "
+         "päivältä."), METRICS_DOC + "#33-balance-forecast-until-payday-257"),
 }
 
 
@@ -240,7 +256,7 @@ for _id, _unit, _name, _summary in [
 
 # The bill explanation (#242, contracts/api.md section 11; the rules in metrics.md section 3.3). The two
 # input methods appear in an evidence view only as the inline part of a bill composite: an amount in euros.
-BILL_DOC = METRICS_DOC + "#33-a-bill-and-safe-to-spend-242"
+BILL_DOC = METRICS_DOC + "#34-a-bill-and-safe-to-spend-242"
 for _id, _unit, _name, _summary in [
     ("user_input@1", Unit.EUR, ("Typed by you", "Itse kirjoitettu"),
      ("A value you typed or confirmed.", "Arvo, jonka kirjoitit tai vahvistit.")),

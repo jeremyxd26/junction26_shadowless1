@@ -2,10 +2,10 @@
 // `type` in the shared answer-card frame (DESIGN.md "Answer card"). Card `actions` are not
 // drawn here: the chat shows them as action chips under the explanation.
 import { Component, type ReactNode } from 'react'
-import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, Comparison, MetricCard, Num, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
-import { BasketsCard, CARD_TITLE, CardShell, ReviewPlaceholder } from './cards.tsx'
+import { BasketsCard, CARD_TITLE, CardShell } from './cards.tsx'
 import { EstimateBadge } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 import { SafeToSaveCard } from './SafeToSaveCard.tsx'
@@ -144,10 +144,9 @@ function CardBody({ card }: { card: Card }) {
       const breakdown = card as BreakdownCard
       return isBasketsBreakdown(breakdown) ? <BasketsCard card={breakdown} /> : <BreakdownAnswer card={breakdown} />
     }
-    case 'review':
-      return <ReviewPlaceholder card={card as ReviewCard} />
     case 'safe_to_save':
       return <SafeToSaveCard card={card as SafeToSaveData} />
+    // Any other type gets the generic card, `review` included: it is answered in "Sentti asks" (#35).
     default:
       return <GenericAnswer card={card} />
   }

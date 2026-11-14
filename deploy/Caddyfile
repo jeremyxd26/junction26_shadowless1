@@ -41,8 +41,12 @@ __SITE__ {
 		# API answers depend on the customer and the viewer cookie: never stored by a browser or a shared
 		# cache (#272). Set at once, so Caddy's own errors on these routes (413, 502) carry it, and again
 		# when the response is written, so a Cache-Control the service might send is replaced.
-		header Cache-Control "no-store"
-		header {
+		# The one exception is the sample bill images (#249): they depend on no customer or viewer, so the
+		# service's own Cache-Control passes (a year, immutable, when the URL carries the image's current
+		# hash; no-cache otherwise). The listing /api/bill/samples itself stays no-store.
+		@api_no_store not path /api/bill/samples/*.png
+		header @api_no_store Cache-Control "no-store"
+		header @api_no_store {
 			Cache-Control "no-store"
 			defer
 		}

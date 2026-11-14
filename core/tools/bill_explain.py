@@ -9,7 +9,7 @@ number of the answer is one of these:
 - computed: the comparison with the typical amount and what the bill adds to the bills due before payday
   are composites whose bill part is stored inline (evidence.composite_spec); free until payday and safe to
   spend after the bill are recomputed by 03_safe_to_spend.sql itself, with the bill as
-  app.extra_bill_due_eur, never by subtracting from safe to spend (rules in docs/design/metrics.md 3.3).
+  app.extra_bill_due_eur, never by subtracting from safe to spend (rules in docs/design/metrics.md 3.4).
 
 The texts the customer sent (payee, IBAN, reference) are data only: they are returned, never interpreted,
 never used in a query, and the payee as sent is never put into a sentence. Only the amount goes into an
@@ -188,7 +188,7 @@ def match_bill(payee: str | None, items: list[BillItem]) -> tuple[str, BillItem 
 
 
 def bill_effect(due: date, next_payday: date, amount: Decimal, reserved: Decimal | None) -> tuple[str, Decimal | None]:
-    """(effect, counted): what the bill adds to the bills due before payday (docs/design/metrics.md 3.3).
+    """(effect, counted): what the bill adds to the bills due before payday (docs/design/metrics.md 3.4).
     - due after the next payday: `after_payday`, nothing;
     - due on or before it, and the matched bill already counted there (`reserved` > 0): `excess_only`,
       only the excess over the amount already counted;

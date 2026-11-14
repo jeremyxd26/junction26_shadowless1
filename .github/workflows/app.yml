@@ -1,0 +1,47 @@
+# Continuous integration for the app (issue #137): install, lint, typecheck, build and the unit
+# tests. A separate workflow, so the core jobs in ci.yml stay as they are.
+# No job uses a repository secret, calls an API or deploys anything.
+name: App
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/app.yml"
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (npm ci, lint, typecheck, build, test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: Lint (ESLint)
+        run: npm run lint
+      - name: Typecheck (tsc)
+        run: npm run typecheck
+      - name: Build (Vite, mock mode)
+        run: npm run build
+      - name: Unit tests (vitest)
+        run: npm test

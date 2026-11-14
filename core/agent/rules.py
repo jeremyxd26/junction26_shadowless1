@@ -22,16 +22,22 @@ from core.agent.guard import fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
+# A spouse or partner named in the question: another person, whose data the coach never shows (#216).
+# Spending on or for them ("a gift for my wife") is the user's own spending.
+RELATION = (r"(?<!on my )(?<!for my )(?<!to my )(?<!with my )"
+            r"\b(wife|wives|husbands?|spouses?|(girl|boy)friends?|vaimo\w*|puoliso\w*|kumppani\w*|"
+            r"tyttöystäv\w*|poikaystäv\w*|mies(tä)?|mieh\w+)\b|(?<!on )(?<!for )(?<!to )(?<!with )\b(my|our) partners?\b")
+
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
                r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|my (friend|colleague|partner)'?s?\b|"
-                          r"someone else|other (people|customers)|muiden|toisen"),
+                          r"someone else|other (people|customers)|muiden|toisen|" + RELATION),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
-                          r"\binvest (in|into)\b|\bput (my|the) (money|savings) into\b|"
+                          r"\binvest(ing)? (in|into)\b|\bput (my|the) (money|savings) into\b|"
                           r"kannattaako.*(sijoit|osak|rahasto)|mihin (minun )?(pitäisi|kannattaa) sijoittaa"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|what illness|diagnos|olenko (sairas|raskaana)"),
     ("out_of_scope", r"just (estimate|guess)|any number|python|javascript|\bcode\b|\bvote\b|äänestää|election|vaali|"
@@ -68,12 +74,12 @@ PRESETS = [
     (r"last (6|six) months|past (6|six) months|viimeisen (6|kuuden) kuukauden", "last_6_months"),
     (r"last (12|twelve) months|past year|viimeisen (12|vuoden)", "last_12_months"),
     (r"last month|previous month|viime kuussa|viime kuun|edellisen kuun", "last_month"),
-    (r"this month|so far|tässä kuussa|tämän kuun|tähän mennessä", "this_month"),
+    (r"this month|so far|tässä kuussa|tämän kuun|tämä kuu\b|tämä kuukausi|tähän mennessä", "this_month"),
     (r"this week|tällä viikolla", "this_week"),
     (r"last week|viime viikolla", "last_week"),
     (r"this year|year to date|tänä vuonna", "year_to_date"),
 ]
-COMPARE = r"\bcompare|\bthan\b|\bvs\.?\b|versus|verrattuna|enemmän kuin|vähemmän kuin"
+COMPARE = r"\bcompare|\bthan\b|\bvs\.?\b|versus|verrattuna|vertautuu|enemmän kuin|vähemmän kuin"
 TOTAL = r"in total|so far in total|\bever\b|since (my|the) data|yhteensä|kaikkiaan"
 
 
@@ -188,6 +194,77 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     return "run", {"selection": {"kind": "category", "value": categories.pop()}, "cut_pct": cut}
 
 
+# The S-Bonus question (#216): "S-Bonus", "S-Group"/"S-ryhmä", or a bonus in a grocery context; an
+# employer's bonus is not it. The share of groceries comes only from the user: "half" and "all" as words
+# they typed, a whole percentage from 1 to 100 as typed. A share they stated that cannot be read or is
+# outside that range is asked back, as the what-if does; no stated share means the tool's default (R1).
+BONUS = (r"(?<!['’])\bs[- ]?bonu\w*|\bs-?ryhm\w*|\bs[- ]group\b|\bs-?etukortti\w*|"
+         r"\bbonu\w*\b.*\b(grocer\w*|ruoka\w*|ostok\w*|kauppa\w*)|\b(grocer\w*|ruoka\w*|ostok\w*)\b.*\bbonu\w*|"
+         r"\bbonusta\b(?!.*\b(työ\w*|palk\w*|esimie\w*)).*\b(saisin|saan|kertyy|kertyisi)\b")
+SHARE_WORDS = [(r"\bhalf\b|\bpuolet\b|\bpuolella\b|\bpuolesta\b|puoleen", 50),
+               (r"\ball\b|\bkaikki\w*", 100)]
+# A share stated in a form the rules cannot read: a fraction or a number written as a word.
+SHARE_UNREADABLE = (r"\b(a |one )?(third|quarter|fifth|tenth)s?\b|\b\w+sosa\w*|\b\d+\s?/\s?\d+\b|"
+                    r"\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b|"
+                    r"\b(kymmenen|kaksikymmentä|kolmekymmentä|neljäkymmentä|viisikymmentä|sata)\b")
+BONUS_SHARE_ASK = ("Which share of your groceries should I count? Tell me as a whole percentage, or say half or all.",
+                   "Minkä osuuden ruokaostoksistasi lasken? Kerro se kokonaisena prosenttina tai sano puolet tai kaikki.")
+
+
+def plan_bonus(question: str) -> dict | None:
+    """get_bonus_estimate arguments: the share the user typed, or none (the tool's default); None when
+    the user stated a share that cannot be read or lies outside 1 to 100 (ask back)."""
+    q = fold(question)
+    m = re.search(PERCENT, q)
+    if m:
+        signed = re.search(r"[-\u2212\u2013]\s?$", q[:m.start()])
+        value = float(m.group(1).replace(",", "."))
+        if signed or value != int(value) or not 1 <= value <= 100:
+            return None
+        return {"share_pct": int(value)}
+    if re.search(r"%|\bpercent\w*|\bprosent\w*", q) or re.search(fold_pattern(SHARE_UNREADABLE), q):
+        return None
+    for rx, share in SHARE_WORDS:
+        if re.search(rx, q):
+            return {"share_pct": share}
+    return {}
+
+
+# The peer comparison (#216): how I compare with people like me. It needs a peer word and the user
+# themselves ("I", "my", a Finnish -ni form); it never falls into the month-over-month rule. What OTHER
+# people spend, or their transactions, stays a refusal (another person's data), as does a named person.
+PEERS = (r"people like me|people my age|others? (of )?my age|other people|others like me|\bmy peers\b|\bpeers?\b|"
+         r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
+         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
+SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
+OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
+               r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
+SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
+                   + RELATION)
+
+
+# "Will my money last until payday?" (#257). It needs the money or balance phrasing, so a bills
+# question that only mentions payday still goes to the bills; Finnish with or without ä and ö. A
+# question about the past ("since last payday", "what was my balance") is not a forecast.
+PAYDAY = (r"(?:pay ?day|next salary|(?:my )?salary (?:arrives|comes|lands|is paid)|palkkap[äa]iv\w*|palkka\w*|"
+          r"palkan tulo\w*)")
+FORECAST_PAST = (r"\b(?:was|were|did|had|since|oli|olivat|oliko|olivatko)\b|"
+                 r"\blast (?:month|week|year|payday)\b|\bviime\w*\b")
+FORECAST = (r"^(?!.*(?:" + FORECAST_PAST + r")).*?(?:"
+            r"\b(?:money|cash|balance|savings|it)\b.{0,20}\blast\s+(?:until|till|to|through|before)\b.{0,15}"
+            + PAYDAY + "|"
+            r"\benough (?:money|cash)\b.{0,25}" + PAYDAY + "|"
+            r"\benough\b.{0,20}\blast\s+(?:until|till|to)\b.{0,15}" + PAYDAY + "|"
+            r"\bbalance\b.{0,30}\b(?:before|until|till|by)\b.{0,10}" + PAYDAY + "|"
+            r"what will my balance be|balance forecast|forecast (?:of )?my balance|how low will my balance|"
+            r"\blowest (?:point|balance)\b.{0,30}\b(?:before|until|till)\b.{0,10}" + PAYDAY + "|"
+            r"run out of money|make it (?:to|until|till) " + PAYDAY + "|"
+            r"riitt(?:[äa]v[äa]tk[öo]|[äa][äa]k[öo])\b.{0,40}" + PAYDAY + "|"
+            r"\bsaldo\w*\b.{0,30}\bennen\b.{0,10}" + PAYDAY + "|"
+            r"\bsaldo\w*\b.{0,30}" + PAYDAY + r"\s+(?:asti|mennessä|mennessa)\b|"
+            r"p[äa]rj[äa][äa]nk[öo]\b.{0,30}" + PAYDAY + "|"
+            r"loppu(?:vatko|uko)\b.{0,20}\brah|\brah\w*\b.{0,20}loppu(?:vatko|uko))")
+
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
 # a specific period or category falls through to get_spending.
 BRIEF = [
@@ -199,13 +276,17 @@ BRIEF = [
      lambda q, as_of: [("get_safe_to_spend", {})]),
     ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
      lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
-    ("recurring_bills", r"\bbills?\b|payday|pay ?day|palkkapäivä|laskut|laskuni",
+    ("balance_forecast", FORECAST, lambda q, as_of: [("get_balance_forecast", {})]),
+    # Bills, payday and income: the template's own matchers, so the answer cites what was asked.
+    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS,
      lambda q, as_of: [("get_recurring_bills", {})]),
+    ("bonus", BONUS, lambda q, as_of: [("get_bonus_estimate", plan_bonus(q))]),
+    ("peers", PEERS, lambda q, as_of: [("get_peer_benchmark", {"metric": "spend_total"})]),
     ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
 ]
 # "How could I save more?": where the money goes (the baskets) and the bills, the tools of design
 # section 7.5 that need no number from the user. A safe-to-save figure joins once a tool exposes it.
-SAVE_MORE_CALLS = [("get_basket_breakdown", {"period": {"preset": "last_6_months"}}), ("get_recurring_bills", {})]
+SAVE_MORE_CALLS = [("get_safe_to_save", {}), ("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]
 # The what-if questions back never suggest an amount (review of PR #126): the user says how much.
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
                   "Kuinka paljon haluaisit vähentää? Kerro se prosentteina.")
@@ -222,6 +303,8 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 
 
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
+BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON = (
+    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -288,7 +371,13 @@ class RuleModel:
         if request.responses:  # round 2: the data is in; write the answer
             return [FunctionCall("finish")], True
         q = fold(request.question)  # "kayttaa" and "käyttää" match the same rules
+        # A comparison with people like me is the peer benchmark (aggregates), not another person's data;
+        # a named or specific person still is (#216).
+        peer_question = (bool(re.search(PEERS, q)) and bool(re.search(SELF, q))
+                         and not re.search(SPECIFIC_PERSON, q, re.I) and not re.search(OTHERS_DATA, q))
         for kind, rx in DECLINE_RULES:
+            if kind == "other_person_data" and peer_question:
+                continue
             if re.search(rx, q, re.I):
                 return [FunctionCall("decline", {"kind": kind})], True
         tools = {t["name"] for t in request.tools}
@@ -302,6 +391,14 @@ class RuleModel:
             # a plain spending question with a period goes to get_spending below.
             if intent == "what_if" and spending is not None and not re.search(PERCENT + "|" + HALF, q):
                 break
+            if intent == "what_if" and re.search(r"\bsave (more )?time\b", q):
+                continue  # saving time is no money question
+            if intent == "recurring_bills" and re.search(template.SAVE_MORE, q):
+                continue  # "save more of my income" is the save-more question, not the income
+            if intent == "peers" and not peer_question:
+                continue  # what others spend, a named person, or no "I": not the peer benchmark
+            if intent == "bonus" and plan_bonus(q) is None:
+                return self._clarify(BONUS_SHARE_ASK, ((), ()), lang), True
             if intent == "what_if":
                 kind, what_if = plan_what_if(q)
                 if kind == "health":

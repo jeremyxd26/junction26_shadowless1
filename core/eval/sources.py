@@ -25,7 +25,8 @@ from core import answer_text
 
 # Data tools of agent-core.md section 6.2. decline, ask_clarifying_question and finish read no data.
 DATA_TOOLS = {"get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if",
-              "get_spender_profile", "get_peer_benchmark", "compare_store_prices", "down_payment_plan"}
+              "get_spender_profile", "get_peer_benchmark", "compare_store_prices", "down_payment_plan",
+              "get_balance_forecast"}
 
 
 @dataclass
@@ -93,6 +94,8 @@ def label_of(name: str) -> str:
 def method_of(src: dict) -> str:
     if "metric" in src:
         return f"{src['metric']}.{src['column']}@1"
+    if src.get("query") == "bonus":  # the tool's own method ids (core/tools/bonus.py, #216)
+        return f"bonus_estimate.{src['column']}_eur@1"
     return {"total_eur": "spending.total@1", "n_tx": "spending.n_tx@1",
             "change_eur": "spending.change@1", "change_pct": "spending.change_pct@1"}[src["column"]]
 

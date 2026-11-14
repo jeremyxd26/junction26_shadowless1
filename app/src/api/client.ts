@@ -1,12 +1,14 @@
 import type {
   EvidenceResponse,
+  LabelRequest,
+  LabelResponse,
   Language,
   OverviewResponse,
   PersonasResponse,
   WhatIfResponse,
   WhatIfScenarioRequest,
 } from './types.ts'
-import { ApiError, isErrorEnvelope } from './errors.ts'
+import { ApiError, isErrorEnvelope, parseRetryAfter } from './errors.ts'
 import { strings } from '../lib/i18n.ts'
 
 export type ApiMode = 'mock' | 'live'
@@ -18,6 +20,8 @@ export interface ApiClient {
   overview(customerId: string, lang: Language): Promise<OverviewResponse>
   /** `cursor` is the previous page's `next_cursor` (contract section 9). */
   evidence(ref: string, customerId: string, lang: Language, cursor?: string): Promise<EvidenceResponse>
+  /** The customer's answer to a review card; `basket: null` undoes it (contract section 10). */
+  label(request: LabelRequest): Promise<LabelResponse>
   /** Contract section 8: the deterministic what-if calculator. Errors come in `lang`. */
   whatIf(customerId: string, scenario: WhatIfScenarioRequest, lang: Language): Promise<WhatIfResponse>
 }
@@ -41,6 +45,8 @@ const isOverview = (body: Body) =>
   (body.safe_to_save == null || isRecord(body.safe_to_save)) &&
   hasArrays(body, 'cards', 'reviews', 'insights', 'suggested_questions')
 const isEvidence = (body: Body) => isRecord(body.number) && isRecord(body.method) && hasArrays(body, 'rows', 'parts')
+const isLabel = (body: Body) =>
+  typeof body.review_state === 'string' && isRecord(body.message) && hasArrays(body, 'changes', 'refetch')
 const isWhatIf = (body: Body) =>
   isRecord(body.scenario) &&
   isRecord(body.saving_per_month) &&
@@ -53,24 +59,25 @@ const isWhatIf = (body: Body) =>
 
 /** The core is on the same origin under /api (no CORS). VITE_API_BASE can prefix it if ever needed. */
 function createLiveClient(base: string): ApiClient {
-  async function get<T>(path: string, params: Record<string, string>, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+  // Default fetch credentials (same-origin), so the core's session cookie travels with every call.
+  async function request<T>(url: string, init: RequestInit, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
     // Errors the app makes itself use the app's own texts; errors from the core come localised.
     const t = strings(lang)
-    const query = new URLSearchParams({ ...params, lang }).toString()
     let response: Response
     try {
-      response = await fetch(`${base}${path}?${query}`, { headers: { Accept: 'application/json' } })
+      response = await fetch(url, { ...init, headers: { Accept: 'application/json', ...init.headers } })
     } catch {
       throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
     }
     const body: unknown = await response.json().catch(() => null)
     if (!response.ok) {
-      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
-      throw new ApiError(response.status, {
-        code: 'internal',
-        message: t.errorRetry,
-        retryable: response.status >= 500,
-      })
+      const retryAfter = parseRetryAfter(response.headers.get('Retry-After'))
+      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error, retryAfter)
+      throw new ApiError(
+        response.status,
+        { code: 'internal', message: t.errorRetry, retryable: response.status >= 500 },
+        retryAfter,
+      )
     }
     // A 200 that is not the expected JSON object (for example a static host answering /api with
     // index.html, an array, or an object without the fields the screen reads) must not reach the
@@ -81,32 +88,15 @@ function createLiveClient(base: string): ApiClient {
     return body as T
   }
 
+  function get<T>(path: string, params: Record<string, string>, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    const query = new URLSearchParams({ ...params, lang }).toString()
+    return request<T>(`${base}${path}?${query}`, {}, lang, isShape)
+  }
+
   /** POST with a JSON body; the core answers errors in the body's `language`. */
-  async function post<T>(path: string, payload: unknown, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
-    const t = strings(lang)
-    let response: Response
-    try {
-      response = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-    } catch {
-      throw new ApiError(0, { code: 'network', message: t.errorOffline, retryable: true })
-    }
-    const body: unknown = await response.json().catch(() => null)
-    if (!response.ok) {
-      if (isErrorEnvelope(body)) throw new ApiError(response.status, body.error)
-      throw new ApiError(response.status, {
-        code: 'internal',
-        message: t.errorRetry,
-        retryable: response.status >= 500,
-      })
-    }
-    if (!isRecord(body) || !isShape(body)) {
-      throw new ApiError(response.status, { code: 'bad_response', message: t.errorRetry, retryable: true })
-    }
-    return body as T
+  function post<T>(path: string, payload: unknown, lang: Language, isShape: (body: Body) => boolean): Promise<T> {
+    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+    return request<T>(`${base}${path}`, init, lang, isShape)
   }
 
   return {
@@ -121,6 +111,7 @@ function createLiveClient(base: string): ApiClient {
         lang,
         isEvidence,
       ),
+    label: (labelRequest) => post<LabelResponse>('/api/baskets/label', labelRequest, labelRequest.language, isLabel),
     whatIf: (customerId, scenario, lang) =>
       post<WhatIfResponse>('/api/whatif', { customer_id: customerId, scenario, language: lang }, lang, isWhatIf),
   }
@@ -134,6 +125,7 @@ function createLazyMockClient(): ApiClient {
     personas: (lang) => client.then((mock) => mock.personas(lang)),
     overview: (customerId, lang) => client.then((mock) => mock.overview(customerId, lang)),
     evidence: (ref, customerId, lang, cursor) => client.then((mock) => mock.evidence(ref, customerId, lang, cursor)),
+    label: (labelRequest) => client.then((mock) => mock.label(labelRequest)),
     whatIf: (customerId, scenario, lang) => client.then((mock) => mock.whatIf(customerId, scenario, lang)),
   }
 }

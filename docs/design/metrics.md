@@ -404,7 +404,47 @@ The bills behind `bills_due_eur`, one row per bill that falls due after today an
 | CUST00006 | utilities_payment | spread, 133.45 × 15 / 30.4375 (the sweep is not a bill) | 65.76 |
 | | **total** | | **65.76** |
 
-### 3.3 A bill and safe to spend (#242)
+### 3.3 Balance forecast until payday (#257)
+
+"Will my money last until payday?" The tool is `get_balance_forecast` (`core/tools/forecast.py`). It takes no arguments, and its result is an estimate.
+
+- **Days.** Every day after today and before payday, where payday is as in section 3. When payday is tomorrow there is no day in between, and the forecast is today's balance.
+- **Start.** The hero's balance Number, `safe_to_spend.balance_eur@1`: 03's `balance_eur`, the latest `balance_after` of the account. It has the same spec, so the same evidence ref.
+- **Bills.** Exactly 03's bills due before payday (section 3.2), each on its expected date:
+  - a once-a-month bill counts on each of its due dates;
+  - a bill paid several times a month counts typical month / 30.4375 a day.
+  - For a day d, `balance_forecast.bills_to_date_eur@1` is the section 3.2 terms with the factors of the days after today up to d, summed and rounded once. At payday it equals `bills_due_eur`, and the tool checks this.
+  - The total shown is the hero's `safe_to_spend.bills_due_eur@1`, with the same ref.
+  - A bill due on payday itself is in that total but not in the balance the day before.
+- **Daily pace.** `balance_forecast.daily_pace_eur@1` is the one estimate.
+  - It counts the spend flow in the baskets `everyday_spending` and `regular_essentials`, without the transactions of the hero's bill series (selection field `series_not_in`), in the last three full months (section 0).
+  - For each month it takes the month's total divided by its number of days, then the median of the three, rounded to cents.
+  - One-offs, unexpected necessities and a purchase whose review is pending (`unclassified`) are not in it.
+- **The balance on a day d.** `balance_forecast.balance_eur@1` uses the composite formula `balance_forecast`: balance − bills up to d − pace × days, in cents. Its evidence opens the hero's balance, the bills up to d and the pace.
+- **Lowest point.** The lowest balance over the days, the earliest day on a tie. Since the forecast has only outflows, it is the day before payday unless the pace is 0.
+- **First day below zero.** The first day whose balance is under 0.
+- **Status:**
+  - `below_zero`: the lowest point is under 0.
+  - `comfortable`: the lowest point is at least the bills before payday, so the money left would pay those bills once more.
+  - `above_zero`: anything in between.
+- **Card.** A `breakdown` card with `display_hint: time_series`. Its `total` is the lowest point.
+  - The items are one per day, in date order: today, each day a once-a-month bill falls due, the first day below zero, the lowest point and the day before payday. Each item's `key` is the ISO date.
+  - The estimate marker states the pace.
+  - Actions: "How is this calculated?", and, unless the status is `comfortable`, the question "What if I cut my spending?", which leads into the what-if flow. The core `Action` has no `scenario` for `open_whatif`.
+- **Answer.** The model view lists the lowest point first. Then come the first day below zero and the day before payday (when they are other days), today's balance, the bills before payday and the pace. The notes say the status in plain words and give the below-zero date.
+- **Why this differs from the hero's "free until payday".** Free until payday is balance − bills − essentials reserve − irregular reserve − cushion (section 3): the money left for everyday spending until payday. The forecast takes the usual everyday spending off as well, at the pace of the last three months, and it has no cushion or irregular reserve. So the balance the day before payday can be lower or higher than "free until payday" (lower for CUST00860 and CUST00849 below, higher for CUST00493). The two answer different questions: what is free to spend, and where the balance ends up if you spend as usual.
+- **Worked numbers** (today 2026-09-30, payday 2026-10-15, the lowest point on 2026-10-14):
+
+| Customer | Balance today | Bills before payday | Pace a day | Lowest point | Status | Free until payday (hero) |
+|---|---|---|---|---|---|---|
+| CUST00860 | 14,276.35 | 928.50 | 66.79 | 12,418.91 | comfortable | 12,567.56 |
+| CUST00493 | 10,745.42 | 1,290.78 | 14.71 | 9,254.15 | comfortable | 9,140.80 |
+| CUST00349 | 24,310.32 | 754.25 | 46.70 | 22,906.97 | comfortable | 23,031.39 |
+| CUST00849 | 1,902.64 | 662.59 | 42.99 | 641.43 | above_zero | 819.62 |
+
+For CUST00849: 1,902.64 − (613.93 rent on 6 Oct + 98.74 × 14 / 30.4375 utilities = 659.35) − 42.99 × 14 = 641.43.
+
+### 3.4 A bill and safe to spend (#242)
 
 A bill the customer shows (`POST /api/bill/explain`, contracts/api.md section 11; tool `core/tools/bill_explain.py`) is applied to the balance side exactly as a bill due before payday is, and the definition above runs again with it. Nothing is subtracted from safe to spend directly.
 

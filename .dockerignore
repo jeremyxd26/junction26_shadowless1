@@ -12,6 +12,9 @@
 !core/answer_text.py
 !core/metrics/*.sql
 !core/config/*.yaml
+# of the sample bills (#249) only the images and samples.json are served: no PDFs, no README
+core/bills/samples/*.pdf
+core/bills/samples/README.md
 
 # never in the image: tests, caches
 **/tests/

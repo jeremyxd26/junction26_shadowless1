@@ -66,7 +66,7 @@ export default function App() {
               suggestions={ready?.suggested_questions.length ? ready.suggested_questions : chatStrings(lang).starters}
             />
           ) : overview.status === 'ready' ? (
-            <Overview overview={overview.data} />
+            <Overview overview={overview.data} onRefresh={overview.refresh} />
           ) : overview.status === 'error' || personas.status === 'error' ? (
             <ErrorBlock
               message={errorMessage(overview.status === 'error' ? overview.error : personas.status === 'error' ? personas.error : null)}
