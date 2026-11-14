@@ -595,3 +595,20 @@ def test_a_forbid_text_item_needs_a_compiling_pattern():
     doc = {"cases": [dict(ANY, forbid_text=[{"name": "x", "pattern": "("}, {"name": "y"}])]}
     errors = expected.validate(doc)
     assert any("does not compile" in e for e in errors) and any("needs a name and a pattern" in e for e in errors)
+
+
+def test_the_below_median_case_forbids_the_invitation_and_passes_its_own_sentence():
+    """#418: below the median the answer says "that is already your saving" and invites no change; the case's
+    forbid_text catches both invitations of the above-median sentence and not the below-median one."""
+    import re
+
+    import expected
+
+    from core.agent.answer_sentences import PEER, PEER_BELOW
+
+    case = next(c for c in expected.load(expected.CASES)["cases"] if c["id"] == "marja-peer-comparison")
+    pattern = case["forbid_text"][0]["pattern"]
+    below = [t.format(vs="40.5% less", metric="restaurants") for t in PEER_BELOW["total"] + PEER_BELOW["metric"]]
+    above = [t.format(vs="14.6% more", metric="restaurants") for t in PEER["total"] + PEER["metric"]]
+    assert not any(re.search(pattern, t, re.I) for t in below), below
+    assert all(re.search(pattern, t, re.I) for t in above), above

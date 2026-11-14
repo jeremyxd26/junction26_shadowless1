@@ -96,8 +96,9 @@ SENTTI_QUESTION = re.compile(
 # After the question phrase and the amount, only these may be left, or the message asks something else
 # ("why do you ask, will the bank give me a 1080 euro loan?" takes the normal path; review of #402).
 REVIEW_FILLER = re.compile(
-    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euros?|eur|tulee|iso|isosta|minulta"
-    r"|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*|euro\w*)", re.I)
+    r"(?:about|me|my|this|that|the|it|on|big|large|purchase|question|euro|euros|euroa|eurosta|euron|eur|tulee|iso"
+    r"|isosta|minulta|siitä|tästä|tuosta|sitä|tätä|siita|tasta|tuosta|sita|tata|osto\w*|kysym\w*)", re.I)
+# The euro words are their exact forms: "eurobonds" or "eurojackpot" is not filler (#447).
 # A question about Sentti's question without an amount needs one of these (in the phrase or after it), or
 # nothing left but a pointer to the purchase ("why do you ask?", "why are you asking about it?").
 REVIEW_ANCHOR = re.compile(r"(?:purchase|question|osto\w*|kysym\w*)", re.I)

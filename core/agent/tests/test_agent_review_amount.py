@@ -166,6 +166,8 @@ def test_a_question_about_senttis_question_with_another_amount_takes_the_normal_
     "why do you ask so many questions",      # decided: the normal path ("so many questions" is not filler)
     "why are you asking about my neighbour's purchase",   # "my" is filler only before filler
     "why are you asking me about my purchase on 3 May 2026?",   # another date than the purchase's
+    "why are you asking me about 1080 eurobonds?",              # #447: only the exact euro forms are filler
+    "miksi kysyt 1080 eurojackpotista?",
 ])
 def test_a_message_asking_something_else_takes_the_normal_path(question):
     from core.agent.rules import RuleModel
@@ -216,3 +218,13 @@ def test_these_ask_about_senttis_question_and_get_the_why_answer(question, langu
     assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"], question
     assert done["text_rendered"].startswith("I asked because" if language == "en" else "Kysyin, koska")
     assert ("usual purchases in that category" if language == "en" else "tavallisista ostoksistasi") in done["text_rendered"]
+
+
+@pytest.mark.parametrize("question, language", [
+    ("why are you asking me about 1080 euro?", "en"), ("why are you asking me about 1080 eur?", "en"),
+    ("miksi kysyt 1080 euroa?", "fi"), ("miksi kysyt 1080 euron ostoksesta?", "fi"),
+])
+def test_each_exact_euro_form_is_filler(question, language):
+    """#447: euro, euros, euroa, eurosta, euron and eur stay filler."""
+    done, events, _ = ask(question, language)
+    assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"]
