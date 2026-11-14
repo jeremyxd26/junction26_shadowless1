@@ -81,6 +81,11 @@ export default function CardGallery() {
           <SafeToSaveCard card={examples[name] as SafeToSaveData} />
         </section>
       ))}
+      {/* Safe to save inside a chat answer (#477): the card draws no actions there (AnswerView does). */}
+      <section id="card.safe_to_save-answer" aria-label="card.safe_to_save in an answer" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">card.safe_to_save → in an answer</p>
+        <AnswerCard card={examples['card.safe_to_save'] as Card} />
+      </section>
       <section id="overview.response-bills" aria-label="overview.response bills" className="flex flex-col gap-2">
         <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">overview.response → cards[type=bills]</p>
         <BillsCards cards={OVERVIEW_CARDS} />
