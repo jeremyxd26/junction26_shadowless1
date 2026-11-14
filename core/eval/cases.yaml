@@ -359,6 +359,58 @@ cases:
   dates:
   - {name: housing_next_due, value: '2026-10-03', unit: date, source: {metric: recurring, where: {series_key: housing_payment}, column: next_expected_date}}
 
+- id: sanna-balance-forecast
+  persona: CUST00860
+  question: {en: 'Will my money last until payday?', fi: 'Riittävätkö rahat palkkapäivään?'}
+  intent: balance_forecast
+  expect: answered
+  expected_tools: [get_balance_forecast]
+  tags: [forecast, lead]
+  numbers:
+  - {name: balance_now, value: 14276.35, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 928.5, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  dates:
+  - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
+
+- id: marja-balance-forecast
+  persona: CUST00493
+  question: {en: 'What will my balance be before payday?', fi: 'Mikä on saldoni ennen palkkapäivää?'}
+  intent: balance_forecast
+  expect: answered
+  expected_tools: [get_balance_forecast]
+  tags: [forecast]
+  numbers:
+  - {name: balance_now, value: 10745.42, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 1290.78, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  dates:
+  - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
+
+- id: eetu-balance-forecast
+  persona: CUST00349
+  question: {en: 'Do I have enough money until payday?'}
+  intent: balance_forecast
+  expect: answered
+  expected_tools: [get_balance_forecast]
+  tags: [forecast]
+  numbers:
+  - {name: balance_now, value: 24310.32, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 754.25, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  dates:
+  - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
+
+- id: aleksi-balance-forecast
+  persona: CUST00849
+  question: {en: 'Will my money last until payday?', fi: 'Riittääkö rahani palkkaan asti?'}
+  intent: balance_forecast
+  expect: answered
+  expected_tools: [get_balance_forecast]
+  tags: [forecast, young_adult]
+  numbers:
+  - {name: balance_now, value: 1902.64, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: balance_eur}}
+  - {name: bills_until_payday, value: 662.59, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  dates:
+  - {name: next_payday, value: '2026-10-15', unit: date, source: {metric: safe_to_spend, column: next_payday}}
+
 - id: sanna-next-payday
   persona: CUST00860
   question: {en: 'When is my next payday and how much do I usually get?'}

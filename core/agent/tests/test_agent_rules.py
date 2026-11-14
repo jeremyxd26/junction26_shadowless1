@@ -8,7 +8,7 @@ from core.agent.model import PlanInput
 from core.agent.rules import RuleModel
 
 ALL = ["get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if",
-       "get_spender_profile", "get_peer_benchmark"]
+       "get_spender_profile", "get_peer_benchmark", "get_balance_forecast"]
 
 
 def plan(question, tools=ALL, language="en"):
@@ -34,6 +34,37 @@ def names(result):
     ("How much did I spend on taxis last month?", "en", ["get_spending"]),
 ])
 def test_brief_and_spending_questions_map_to_their_tools(question, lang, tools):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == tools + ["finish"]
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("Will my money last until payday?", "en"),
+    ("What will my balance be before payday?", "en"),
+    ("Do I have enough money until payday?", "en"),
+    ("Will I run out of money before payday?", "en"),
+    ("Riittävätkö rahat palkkapäivään?", "fi"),
+    ("Riittavatko rahat palkkapaivaan?", "fi"),                  # without ä and ö
+    ("Riittääkö rahani palkkaan asti?", "fi"),
+    ("Mikä on saldoni ennen palkkapäivää?", "fi"),
+    ("Loppuvatko rahani ennen palkkapäivää?", "fi"),
+])
+def test_balance_forecast_questions(question, lang):
+    """#257: the money-lasting and balance-before-payday questions, in English and Finnish."""
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["get_balance_forecast", "finish"]
+
+
+@pytest.mark.parametrize("question,lang,tools", [
+    ("What can I safely spend this week?", "en", ["get_safe_to_spend"]),
+    ("Paljonko minulla on turvallisesti käytettävissä tällä viikolla?", "fi", ["get_safe_to_spend"]),
+    ("When is my next payday and how much do I usually get?", "en", ["get_recurring_bills"]),
+    ("Which bills are due before payday?", "en", ["get_recurring_bills"]),
+    ("Mitä laskuja erääntyy ennen palkkapäivää?", "fi", ["get_recurring_bills"]),
+    ("Milloin on palkkapäivä?", "fi", ["get_recurring_bills"]),
+])
+def test_payday_questions_that_are_not_a_forecast_keep_their_tools(question, lang, tools):
+    """A question that only mentions payday stays with the bills, and safe to spend stays safe to spend."""
     result = plan(question, language=lang)
     assert result.recognised and names(result) == tools + ["finish"]
 
