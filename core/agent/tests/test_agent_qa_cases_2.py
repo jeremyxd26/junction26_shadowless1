@@ -221,21 +221,29 @@ def _number(ctx, value: str, unit: Unit, period: Period, method: str, ref: str, 
 
 
 def fake_safe_to_spend(ctx, args: NoArgs) -> ToolResult:
-    """Sanna on dev 281c6d1: €138.79 is safe to spend, the monthly budget binds after €360.00 a month set aside."""
+    """Sanna on dev 281c6d1: €138.79 is safe to spend, the monthly budget binds after €360.00 a month set aside
+    (the balance would allow €5,906.19). The view carries the same keys as the real tool's model view."""
     safe = _number(ctx, "138.79", Unit.EUR, WEEK, "safe_to_spend.safe_to_spend_7d_eur@1", "ev_qa552000001", "Safe to spend")
     usual = _number(ctx, "159.45", Unit.EUR_PER_WEEK, WINDOW, "safe_to_spend.usual_week_eur@1", "ev_qa552000002",
                     "Usual everyday pace")
     goal = _number(ctx, "360.00", Unit.EUR_PER_MONTH, WINDOW, "safe_to_spend.savings_goal_eur@1", "ev_qa552000003",
                    "Set aside first each month")
+    balance = _number(ctx, "5906.19", Unit.EUR, WEEK, "safe_to_spend.balance_limit_7d_eur@1", "ev_qa552000004",
+                      "Your balance allows")
+    budget = _number(ctx, "138.79", Unit.EUR, WEEK, "safe_to_spend.budget_limit_7d_eur@1", "ev_qa552000005",
+                     "Your monthly budget allows")
     card = Card(card_id="card_qa552_01", type="metric", title="Safe to spend in the next 7 days", subtitle=None,
                 evidence_ref=safe.evidence_ref, primary=safe, secondary=[goal])
     view = {"tool": "get_safe_to_spend", "binding_limit": "budget",
             "safe_to_spend": {"id": safe.id, "value": safe.value, "unit": "eur", "label": safe.label},
             "usual_week": {"id": usual.id, "value": usual.value, "unit": "eur_per_week", "label": usual.label},
             "savings_goal": {"id": goal.id, "value": goal.value, "unit": "eur_per_month", "label": goal.label},
+            "balance_limit": {"id": balance.id, "value": balance.value, "unit": "eur", "label": balance.label},
+            "budget_limit": {"id": budget.id, "value": budget.value, "unit": "eur", "label": budget.label},
             "notes": []}
     return ToolResult(tool="get_safe_to_spend", data={}, card=card,
-                      evidence=[safe.evidence_ref, usual.evidence_ref, goal.evidence_ref], model_view=view)
+                      evidence=[safe.evidence_ref, usual.evidence_ref, goal.evidence_ref, balance.evidence_ref,
+                                budget.evidence_ref], model_view=view)
 
 
 def _live_draft(text: str):
@@ -262,3 +270,5 @@ def test_the_safe_to_spend_answer_names_the_savings_goal(make_pipeline, question
     done = dict(run(make_pipeline(model, registry(spec)), question, language="en"))["done"]
     assert done["outcome"] == "answered"
     assert "€360.00" in done["text_rendered"], done["text_rendered"]
+    if question.startswith("why"):  # the binding limit is the budget, never "your balance and upcoming bills"
+        assert "budget" in done["text_rendered"] and "upcoming bills" not in done["text_rendered"], done["text_rendered"]
