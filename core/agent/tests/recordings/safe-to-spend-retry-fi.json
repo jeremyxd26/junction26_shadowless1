@@ -1,0 +1,291 @@
+{
+ "question": "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?",
+ "language": "fi",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.8-flash",
+ "tools": [
+  {
+   "name": "get_safe_to_spend",
+   "args": {},
+   "numbers": [
+    {
+     "value": 14276.35,
+     "unit": "eur",
+     "period": {
+      "start": "2026-09-30",
+      "end": "2026-09-30",
+      "label": "30.9.2026"
+     },
+     "method": "safe_to_spend.balance_eur@1",
+     "evidence_ref": "ev_bb521762fd8b",
+     "label": "Saldo",
+     "display": "14 276,35 €",
+     "id": "n1"
+    },
+    {
+     "value": 928.5,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Palkkapäivään 15.10. asti"
+     },
+     "method": "safe_to_spend.bills_due_eur@1",
+     "evidence_ref": "ev_e6923f27178b",
+     "label": "Laskut ennen palkkapäivää",
+     "display": "928,50 €",
+     "id": "n2"
+    },
+    {
+     "value": 423.99,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Palkkapäivään 15.10. asti"
+     },
+     "method": "safe_to_spend.essentials_reserve_eur@1",
+     "evidence_ref": "ev_46c6337a1b84",
+     "label": "Varaus välttämättömiin",
+     "display": "423,99 €",
+     "id": "n3"
+    },
+    {
+     "value": 256.3,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Palkkapäivään 15.10. asti"
+     },
+     "method": "safe_to_spend.irregular_reserve_eur@1",
+     "evidence_ref": "ev_01e9d5d03443",
+     "label": "Varaus odottamattomiin",
+     "display": "256,30 €",
+     "id": "n4"
+    },
+    {
+     "value": 100.0,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Palkkapäivään 15.10. asti"
+     },
+     "method": "safe_to_spend.cushion_eur@1",
+     "evidence_ref": "ev_f82ccddbbebc",
+     "label": "Puskuri",
+     "display": "100,00 €",
+     "id": "n5"
+    },
+    {
+     "value": 180.26,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Seuraavat 7 päivää"
+     },
+     "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+     "evidence_ref": "ev_41548ab6348b",
+     "label": "Turvallisesti käytettävissä",
+     "display": "180,26 €",
+     "id": "n6"
+    },
+    {
+     "value": 12567.56,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Palkkapäivään 15.10. asti"
+     },
+     "method": "safe_to_spend.free_until_payday_eur@1",
+     "evidence_ref": "ev_0e53e72b8afb",
+     "label": "Vapaana palkkapäivään asti",
+     "display": "12 567,56 €",
+     "id": "n7"
+    },
+    {
+     "value": 5864.86,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Seuraavat 7 päivää"
+     },
+     "method": "safe_to_spend.balance_limit_7d_eur@1",
+     "evidence_ref": "ev_5ab79c8b7e75",
+     "label": "Saldosi sallii",
+     "display": "5 864,86 €",
+     "id": "n8"
+    },
+    {
+     "value": 180.26,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-07",
+      "label": "Seuraavat 7 päivää"
+     },
+     "method": "safe_to_spend.budget_limit_7d_eur@1",
+     "evidence_ref": "ev_ee3593cf5bff",
+     "label": "Kuukausibudjettisi sallii",
+     "display": "180,26 €",
+     "id": "n9"
+    }
+   ],
+   "model_view": {
+    "tool": "get_safe_to_spend",
+    "period": "Seuraavat 7 päivää",
+    "safe_to_spend": {
+     "id": "n6",
+     "value": 180.26,
+     "unit": "eur",
+     "label": "Turvallisesti käytettävissä"
+    },
+    "status": "ok",
+    "binding_limit": "budget",
+    "free_until_payday": {
+     "id": "n7",
+     "value": 12567.56,
+     "unit": "eur",
+     "label": "Vapaana palkkapäivään asti"
+    },
+    "balance_limit": {
+     "id": "n8",
+     "value": 5864.86,
+     "unit": "eur",
+     "label": "Saldosi sallii"
+    },
+    "budget_limit": {
+     "id": "n9",
+     "value": 180.26,
+     "unit": "eur",
+     "label": "Kuukausibudjettisi sallii"
+    },
+    "components": [
+     {
+      "key": "balance",
+      "label": "Rahaa tililläsi",
+      "operation": "add",
+      "amount": {
+       "id": "n1",
+       "value": 14276.35,
+       "unit": "eur",
+       "label": "Saldo"
+      }
+     },
+     {
+      "key": "bills_due",
+      "label": "Ennen palkkapäivää erääntyvät laskut",
+      "operation": "subtract",
+      "amount": {
+       "id": "n2",
+       "value": 928.5,
+       "unit": "eur",
+       "label": "Laskut ennen palkkapäivää"
+      }
+     },
+     {
+      "key": "essentials_reserve",
+      "label": "Tavalliset välttämättömät palkkapäivään asti",
+      "operation": "subtract",
+      "amount": {
+       "id": "n3",
+       "value": 423.99,
+       "unit": "eur",
+       "label": "Varaus välttämättömiin"
+      }
+     },
+     {
+      "key": "irregular_reserve",
+      "label": "Varaus odottamattomiin välttämättömiin",
+      "operation": "subtract",
+      "amount": {
+       "id": "n4",
+       "value": 256.3,
+       "unit": "eur",
+       "label": "Varaus odottamattomiin"
+      }
+     },
+     {
+      "key": "cushion",
+      "label": "Puskuri",
+      "operation": "subtract",
+      "amount": {
+       "id": "n5",
+       "value": 100.0,
+       "unit": "eur",
+       "label": "Puskuri"
+      }
+     }
+    ],
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\"language\":\"fi\",\"text\":\"Sinulla on **turvallisesti käytettävissä** arviolta {{n6}} ajanjaksolle Seuraavat 7 päivää ennen seuraavaa palkkapäivää 15.10.2026. Arvio ottaa huomioon kuukausibudjettisi ja tulevat menosi.\",\"cited\":[\"n6\"],\"lesson_key\":\"safety_buffer\"}",
+         "thought_signature": "EmkKZwFpFH0TKoCfpZuFo6ESak2pcdy4Xat6btF3HFY2v-yQNXDkUpg4pKC2WkxjEfRSrc7O1iIJb2Xs3bp-fahlPtwXwCb47V3U3ccTSOQlM--WKlKXU_hndo4ez4p42qbX_eyMU-wwNpc="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2495,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 93
+    }
+   }
+  },
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\"language\":\"fi\",\"text\":\"Sinulla on **turvallisesti käytettävissä** arviolta {{n6}} ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin.\",\"cited\":[\"n6\"],\"lesson_key\":\"safety_buffer\"}",
+         "thought_signature": "EmkKZwFpFH0TsjQVVNKJsQevAu0X8r7kqZWOA8Yacme5QftxSZLOiGGHf5SomEK62plbLbi66qy13BHT2HOXI9nuV5pKT2qAzRb3jjJ3q0Me6nlnWlzTV4xT3ygIWI67PeCq1D0WjEP-Q2w="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 2538,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 87
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_safe_to_spend",
+   "finish"
+  ],
+  "text": "Sinulla on **turvallisesti käytettävissä** arviolta {{n6}} ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin.",
+  "text_rendered": "Sinulla on **turvallisesti käytettävissä** arviolta 180,26 € ennen seuraavaa palkkapäivää 15.10.2026. Tämä arvio perustuu kuukausibudjettiisi sekä tuleviin laskuihin ja varauksiin."
+ }
+}

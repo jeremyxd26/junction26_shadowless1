@@ -149,7 +149,9 @@ def test_invented_finnish_number_fails():
 def test_invented_number_that_the_source_also_declares_fails():
     ans = safe_answer(text="Safe to spend this week: €180.26, plus €30.00 of extra room.",
                       numbers=[num(180.26, "eur", "€180.26"), num(30.0, "eur", "€30.00")])
-    fails_with(SAFE, ans, "en", "R1: Number object 30.0 eur is not an expected value")
+    fails_with(SAFE, ans, "en", "unverified: Number object 30.0 eur")          # tools unknown: never a pass
+    ans.tool_numbers = [{"id": None, "value": 180.26, "unit": "eur"}]               # the tools returned only 180.26
+    fails_with(SAFE, ans, "en", "R1: Number object 30.0 eur was not returned by a tool of this answer")
 
 
 def test_display_that_does_not_state_its_value_fails():
@@ -208,7 +210,7 @@ def test_number_from_the_question_turned_into_money_fails():
                  numbers=[num(45.91, "eur_per_month", "€45.91 a month"),
                           num(20.0, "eur_per_month", "€20.00 a month", method="user_input@1")],
                  labels=[], tool_calls=[])
-    fails_with(CUT, ans, "en", "R1: Number object 20.0 eur_per_month is not an expected value", CUT["question"]["en"])
+    fails_with(CUT, ans, "en", "R1: Number object 20.0 eur_per_month is declared as user input", CUT["question"]["en"])
 
 
 # ---- dates ---------------------------------------------------------------------------------------
@@ -450,3 +452,61 @@ def test_more_unit_words_after_a_count_fail(word):
     lang = "fi" if word in ("senttiä", "e") else "en"
     total = "€52.84" if lang == "en" else f"52,84{NBSP}€"
     fails_with(TAXI, taxi_answer(f"Taxis: {total}, 1 ride and 1 {word} extra.", lang), lang, "R1")
+
+
+# ---- issue #112: verified tool numbers beyond the case's list -------------------------------------
+
+class FakeDeriver:
+    """Stands in for derive.Deriver: SQL says the yearly saving is 550.95."""
+
+    def problem(self, case, number):
+        if number.get("method") == "what_if.saving_year_eur@1" and number["value"] != 550.95:
+            return f"Number object {number['value']} {number['unit']} (what_if.saving_year_eur@1) does not match the SQL value"
+        return None
+
+
+def cut_answer(text, extra):
+    numbers = [dict(num(45.91, "eur_per_month", "€45.91 a month", method="what_if.saving_month_eur@1"), id="n2"), extra]
+    return Answer(text=text, outcome="answered", labels=[], tool_calls=[], numbers=numbers,
+                  tool_numbers=[{"id": n["id"], "value": n["value"], "unit": n["unit"], "method": n.get("method")}
+                                for n in numbers])
+
+
+def test_a_verified_tool_number_beyond_the_case_passes():
+    year = dict(num(550.95, "eur_per_year", "€550.95 a year", method="what_if.saving_year_eur@1"), id="n4")
+    ans = cut_answer("Cutting dining out saves €45.91 a month, or €550.95 a year.", year)
+    assert run.check(CUT, ans, "en", CUT["question"]["en"], FakeDeriver()) == []
+
+
+def test_a_tool_number_that_does_not_match_sql_fails():
+    year = dict(num(560.0, "eur_per_year", "€560.00 a year", method="what_if.saving_year_eur@1"), id="n4")
+    ans = cut_answer("Cutting dining out saves €45.91 a month, or €560.00 a year.", year)
+    fails = run.check(CUT, ans, "en", CUT["question"]["en"], FakeDeriver())
+    assert any("does not match the SQL value" in f for f in fails), fails
+
+
+def test_the_yearly_figure_where_the_monthly_one_is_asked_fails():
+    """Red-team probe of #112: a correct tool number with the wrong meaning for the question. The case
+    requires the monthly saving, so an answer that gives only the yearly one fails as "missing"."""
+    year = dict(num(550.95, "eur_per_year", "€550.95 a year", method="what_if.saving_year_eur@1"), id="n4")
+    ans = Answer(text="Cutting dining out saves €550.95 a year.", outcome="answered", labels=[], tool_calls=[],
+                 numbers=[year], tool_numbers=[{"id": "n4", "value": 550.95, "unit": "eur_per_year",
+                                                "method": "what_if.saving_year_eur@1"}])
+    fails_with(CUT, ans, "en", "missing saving", CUT["question"]["en"])
+
+
+def test_a_tool_number_matches_only_by_a_non_empty_id_and_the_same_method():
+    """Review of PR #126: the same value under another method, or a declared number without an id,
+    was not returned by a tool of this answer."""
+    year = dict(num(550.95, "eur_per_year", "€550.95 a year", method="what_if.saving_year_eur@1"), id="n4")
+    other = {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "spending.total@1"}
+    ans = cut_answer("Cutting dining out saves €45.91 a month, €550.95 a year.", year)
+    ans.tool_numbers = [t for t in ans.tool_numbers if t["id"] != "n4"] + [other]
+    fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])
+    no_id = {k: v for k, v in year.items() if k != "id"}
+    month = dict(num(45.91, "eur_per_month", "€45.91 a month", method="what_if.saving_month_eur@1"), id="n2")
+    ans = Answer(text="Cutting dining out saves €45.91 a month, €550.95 a year.", outcome="answered", labels=[],
+                 tool_calls=[], numbers=[month, no_id],
+                 tool_numbers=[{"id": "n2", "value": 45.91, "unit": "eur_per_month", "method": "what_if.saving_month_eur@1"},
+                               {"id": "n4", "value": 550.95, "unit": "eur_per_year", "method": "what_if.saving_year_eur@1"}])
+    fails_with(CUT, ans, "en", "was not returned by a tool", CUT["question"]["en"])

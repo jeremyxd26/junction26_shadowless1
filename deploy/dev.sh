@@ -61,8 +61,9 @@ headers=$(curl -sS -D - -o /dev/null --max-time 10 "$url/healthz" 2>/dev/null | 
 missing=""
 grep -qi '^strict-transport-security: max-age=' <<<"$headers" || missing+=" Strict-Transport-Security"
 grep -qi '^x-content-type-options: nosniff' <<<"$headers" || missing+=" X-Content-Type-Options"
+grep -qi '^cache-control: no-store' <<<"$headers" || missing+=" Cache-Control:no-store"   # #272, API routes
 if [[ -n $missing ]]; then
   echo "security headers missing on $url/healthz:$missing" >&2
   exit 1
 fi
-echo "security headers present: Strict-Transport-Security, X-Content-Type-Options"
+echo "security headers present: Strict-Transport-Security, X-Content-Type-Options, Cache-Control: no-store"

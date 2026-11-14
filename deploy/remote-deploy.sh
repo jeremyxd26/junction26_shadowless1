@@ -353,4 +353,12 @@ fi
 docker images shadowless1-core --format '{{.Tag}}' | grep -vxE "current|$sha|$prev" \
   | xargs -r -I{} docker rmi -f "shadowless1-core:{}" >/dev/null 2>&1 || true
 
+# Warm the tool cache for the four demo personas (#86), inside the running service container, so it
+# writes the sqlite file the service reads (/srv/var/cache on the persistent var/). It never fails the
+# deploy: bounded by a timeout, its exit code ignored, its output masked like every other line here.
+echo "warming the tool cache for the demo personas"
+if ! timeout 300 docker exec shadowless1-core timeout 280 python -m core.tools.warmup 2>&1 | mask; then
+  echo "warm-up did not finish; the service computes those results on the first request instead" >&2
+fi
+
 echo "deployed $sha; local /healthz: $(curl -fsS --max-time 2 http://127.0.0.1:8000/healthz)"

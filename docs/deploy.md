@@ -150,6 +150,13 @@ The only writes are the label answer and its undo. The undo always runs and is a
 
 Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
 
+### Limits of `/api/ask` at the venue
+
+At the venue, every visitor on the shared Wi-Fi arrives from one client address.
+- **Model windows:** 10 a minute per address, 60 globally, 10 per address and persona. They protect the language-model budget. When one is used up, questions are still answered, by the rules and the template, with the "model unavailable" warning.
+- **Hard ceiling:** 120 a minute per address, 600 globally. It protects the service. Only it answers 429.
+- **Presenter:** use a network of your own (a phone hotspot), so the room's questions never share your address or your model window.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
@@ -177,6 +184,20 @@ The core writes its own data under `var/` at the repository root, which is `/srv
 | `/var/lib/shadowless1/var` | `/srv/var` | uid 10001 (the container user `app`), `700` |
 
 The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
+
+### The tool cache (#86)
+
+The service keeps tool results in memory and in `/srv/var/cache/tools.sqlite3` (host: `/var/lib/shadowless1/var/cache/tools.sqlite3`). `TOOL_CACHE=off|memory|disk` switches it (default `disk`). The end of `remote-deploy.sh` fills it for the four demo personas (`docker exec shadowless1-core timeout 280 python -m core.tools.warmup`, at most 300 s, never fatal). Run the same line by hand to warm it again. It prints one line per call: `tool` (computed now), `disk` or `memory` (already cached) or `recomputed` (its evidence was missing).
+
+A cached number's evidence ref points into `coach_evidence` in the database.
+
+**After a database reset or a data reload:**
+1. Stop the service.
+2. Delete the cache file: `rm /var/lib/shadowless1/var/cache/tools.sqlite3*`.
+3. Start the service.
+4. Run the warm-up.
+
+A warm-up alone is not enough. It recomputes only the entries whose refs it checks, and entries for other keys would still point at evidence rows that no longer exist. A changed `DATABASE_URL` needs no step: the database's identity is part of every key.
 
 ## Roll back
 
@@ -319,7 +340,7 @@ Write values without quotes. Docker's `--env-file` keeps quotes literally, and a
   | Applies to | Header |
   |---|---|
   | every response | `Strict-Transport-Security: max-age=31536000` (no `preload`: the parent domain is shared), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; the `Server` header is removed, also the core's `server: uvicorn` |
-  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` |
+  | `/api/*`, `/healthz`, `/readyz` (JSON) | `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` (#272: answers depend on the customer and the viewer cookie; set at once for Caddy's own errors and again when the response is written, replacing anything the service sends) |
   | the app (`index.html` and the other non-asset paths) | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'` |
 
   The app's policy follows the app owner's needs on #102: the Vite build emits external script and style files, no inline script, and the font is bundled. The app calls `/api` on its own origin. Images come from the app or `data:` URIs, so rendered markdown cannot load an outside image. Only the app's own origin may frame it; the S-mobiili WebView loads the module top-level and is not affected. A demo page on another origin that frames the app needs that origin added to `frame-ancestors`.
