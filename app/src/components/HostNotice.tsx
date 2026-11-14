@@ -10,6 +10,7 @@ export const NOTICE_MS = 4000
  * "This continues in the bank app.": shown when a hand-over found no host (a plain browser).
  * Fixed above the composer, mounted by its caller. It closes after a few seconds or on tap. The
  * live region is always mounted, so screen readers announce the text once when it appears.
+ * `data-sheet-keep`: an open bottom sheet leaves it live (#440), so it is tappable and announced.
  */
 export function HostNotice() {
   const { lang } = useSettings()
@@ -30,7 +31,10 @@ export function HostNotice() {
   }, [])
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-40 mx-auto flex max-w-[480px] justify-center px-4">
+    <div
+      data-sheet-keep=""
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-40 mx-auto flex max-w-[480px] justify-center px-4"
+    >
       <div role="status" aria-live="polite">
         {open && (
           <button
