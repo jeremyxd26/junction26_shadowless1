@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { REVEAL_MAX_MS, REVEAL_TICK_MS, firstWords, remainingMs, revealStep, wordEnds, wordsToShow } from './reveal.ts'
+import { REVEAL_MAX_MS, REVEAL_TICK_MS, firstWords, holdsCards, remainingMs, revealStep, wordEnds, wordsToShow } from './reveal.ts'
 
 const TEXT = 'You can spend {{n1}} this week. That keeps {{n2}} for bills.'
 
@@ -40,5 +40,15 @@ describe('the typing reveal (#686)', () => {
     expect(remainingMs(0, 10)).toBe(10 * REVEAL_TICK_MS)
     expect(remainingMs(10, 10)).toBe(0)
     expect(remainingMs(Number.POSITIVE_INFINITY, 10)).toBe(0)
+  })
+
+  it('keeps a live answer\'s cards behind the skeleton while it streams and while its text types in', () => {
+    expect(holdsCards(0, { streaming: true, revealing: false })).toBe(true)
+    expect(holdsCards(4, { streaming: false, revealing: true })).toBe(true)
+    expect(holdsCards(10, { streaming: false, revealing: false })).toBe(false)
+  })
+
+  it('never holds the cards when the reveal is off (history, reduced motion, a tap)', () => {
+    expect(holdsCards(Number.POSITIVE_INFINITY, { streaming: true, revealing: false })).toBe(false)
   })
 })
