@@ -1,8 +1,15 @@
 # Exact versions of everything the service installs, direct and transitive (#121), so that every
 # install (the image on the dev host, CI, a laptop) gets the set that was tested.
-# To change a version: edit the direct pin, install the file into a fresh Python 3.11 venv, run the
-# tests, then refresh the transitive block from `pip freeze`. Keep the Windows-only packages under
-# their marker. Hash checking (`--require-hashes`) is a follow-up of #121.
+# To change a version, resolve from the direct block only (installing this whole file keeps the old
+# transitive pins in force, so a bumped direct pin either conflicts or changes nothing):
+#   1. Change the pin in the "direct" block.
+#   2. Copy the direct block to a scratch file and resolve it for the image's platform, either with
+#        uv pip compile --python-platform x86_64-manylinux_2_28 --python-version 3.11 direct.txt
+#      or by installing it into a fresh Python 3.11 venv on Linux and running `pip freeze`.
+#   3. Replace the transitive block with the result, without the direct packages. Keep the
+#      Windows-only packages under their marker.
+#   4. Run the tests and `pip-audit -r core/requirements.txt`.
+# Hash checking (`--require-hashes`) is #194.
 
 # direct
 psycopg[binary,pool]==3.3.9
