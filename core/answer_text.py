@@ -225,10 +225,19 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
     """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
-    display (or a {{nK}} token) counts as one word."""
+    display (or a {{nK}} token) counts as one word, and so does each date or period ("1 Apr – 30 Sep
+    2026" names one thing, so it is one word, and its dots end no sentence)."""
     plain = re.sub(r"\{\{n\d+\}\}", "N", text)
     for d in sorted((d for d in displays if d), key=len, reverse=True):
         plain = plain.replace(d, "N")
+    spans, blanked = find_dates(plain, blank_all=True)
+    if spans:
+        chars = list(blanked)
+        for span in spans:   # one word in the place of each blanked expression
+            at = normalise(plain).find(span.text)
+            if at >= 0:
+                chars[at] = "D"
+        plain = "".join(chars)
     problems = []
     sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
     if sentences > MAX_SENTENCES:

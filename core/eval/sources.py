@@ -42,6 +42,9 @@ class Answer:
     # outside a case's list passes only if it is one of these. None = unknown.
     tool_numbers: list[dict] | None = None
     follow_ups: list[str] | None = None  # the chips the answer offers (done.follow_ups); None = unknown
+    # The reference source states every expected value to check the values: it is not an answer, so the
+    # answer-length rule (#288) does not apply to it.
+    length_exempt: bool = False
 
 
 # ---- reference source ------------------------------------------------------------------------------
@@ -158,7 +161,7 @@ class ReferenceSource:
             labels.append(value)
             parts.append(f"{label_of(item['name'])}: {label_of(value)}.")
         return Answer(text=" ".join(parts), outcome="answered", numbers=numbers, dates=dates, labels=labels,
-                      tool_calls=list(case.get("expected_tools") or []),
+                      tool_calls=list(case.get("expected_tools") or []), length_exempt=True,
                       tool_numbers=[{"id": f"n{i + 1}", **n} for i, n in enumerate(numbers)])
 
 
