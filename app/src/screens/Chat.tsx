@@ -53,6 +53,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // A paste over the limit was cut to fit; the note stays until the draft changes again (#716).
   const [cut, setCut] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const composer = useRef<HTMLFormElement>(null)
   const left = MAX_QUESTION - draft.length
   const note = cut ? s.cut : left <= NEAR_LIMIT ? s.charactersLeft(left) : null
 
@@ -173,8 +174,9 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         )
       })}
 
-      <ScrollToLatest thinking={busy} enabled={turns.length > 0} />
+      <ScrollToLatest thinking={busy} enabled={turns.length > 0} composer={composer} />
       <form
+        ref={composer}
         onSubmit={submit}
         // The icon buttons and their gaps keep their pixel size at any text size, so the input keeps
         // its room at 200 % text (#705); the text and the input grow.

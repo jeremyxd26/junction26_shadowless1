@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { prefersReducedMotion } from '../lib/motion.ts'
-import { isAway } from '../lib/scrollAway.ts'
+import { buttonLift, isAway } from '../lib/scrollAway.ts'
 import { useSettings } from '../lib/settings.ts'
 
 function measure(): boolean {
@@ -9,14 +9,44 @@ function measure(): boolean {
 }
 
 /**
- * A round button above the composer, at the bottom right, while the customer is scrolled up from the
- * latest message. While an answer streams it shows three dots bouncing one after another; otherwise a
- * down arrow. A tap brings the thread to its end (smooth, or at once under reduced motion).
+ * A round button above the composer, while the customer is scrolled up from the latest message.
+ * While an answer streams it shows three dots bouncing one after another; otherwise a down arrow.
+ * A tap brings the thread to its end (smooth, or at once under reduced motion). It sits on the
+ * composer's measured top (#762), so a taller composer (200 % text, the length note, a new layout)
+ * or the mic's status line above it never covers it, and it paints above the composer.
  */
-export function ScrollToLatest({ thinking, enabled }: { thinking: boolean; enabled: boolean }) {
+export function ScrollToLatest({ thinking, enabled, composer }: { thinking: boolean; enabled: boolean; composer: RefObject<HTMLElement | null> }) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
   const [away, setAway] = useState(false)
+  const [lift, setLift] = useState<number | null>(null)
+
+  useEffect(() => {
+    const form = composer.current
+    if (!enabled || !form) return
+    let frame = 0
+    const place = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() =>
+        setLift(buttonLift(window.innerHeight, form.getBoundingClientRect().top, [...form.querySelectorAll('*')].map((el) => el.getBoundingClientRect()))),
+      )
+    }
+    place()
+    // The composer grows with the text size and the length note; the mic's line appears above it.
+    const resize = new ResizeObserver(place)
+    resize.observe(form)
+    const changes = new MutationObserver(place)
+    changes.observe(form, { childList: true, subtree: true, characterData: true })
+    window.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('resize', place)
+    return () => {
+      cancelAnimationFrame(frame)
+      resize.disconnect()
+      changes.disconnect()
+      window.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('resize', place)
+    }
+  }, [composer, enabled])
 
   useEffect(() => {
     if (!enabled) return
@@ -41,7 +71,10 @@ export function ScrollToLatest({ thinking, enabled }: { thinking: boolean; enabl
 
   if (!enabled || !away) return null
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 mx-auto flex max-w-[480px] justify-center px-4">
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-[35] mx-auto flex max-w-[480px] justify-center px-4"
+      style={lift === null ? undefined : { bottom: lift }}
+    >
       <button
         type="button"
         aria-label={s.toLatest}
