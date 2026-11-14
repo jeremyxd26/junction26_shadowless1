@@ -497,3 +497,12 @@ def test_a_complete_question_in_a_conversation_is_planned_on_its_own():
 def test_without_a_conversation_a_follow_up_keeps_todays_plan():
     assert data_calls(plan("compared to August?")) == [
         ("get_spending", {"period": {"preset": "last_month"}, "compare_to": "previous_period"})]
+
+
+@pytest.mark.parametrize("question,lang", [("do people like me save more than me?", "en"),
+                                           ("Is my income higher than people my age?", "en"),
+                                           ("Säästänkö enemmän kuin muut?", "fi"),
+                                           ("Do I earn more than others?", "en")])
+def test_savings_and_income_are_never_compared_with_other_people(question, lang):
+    # #418: no peer number for savings or income; the user's own figures at most.
+    assert "get_peer_benchmark" not in [c.name for c in plan(question, lang).calls]

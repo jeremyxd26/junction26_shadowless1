@@ -46,11 +46,11 @@ cases:
   tags: [brief, q2_profile, lead, peers]
   numbers:
   - {name: keep_rate, value: 15.4, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: one_off_share, value: 6.0, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: one_off_share_pct}}
+  - {name: one_off_share, value: 6.0, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: one_off_share_pct}}
   - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: big_ticket, source: {metric: spender_profile, column: profile}}
 
@@ -106,7 +106,7 @@ cases:
   numbers:
   - {name: grocery_month, value: 628.86, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: spending, categories: [Groceries], start: '2026-04-01', end: '2026-09-30', column: total_eur, multiply: 0.16666666666666666}}
   - {name: bonus_total_month, value: 25.15, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}}
-  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, required: false, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
+  - {name: bonus_total_year, value: 301.8, unit: eur_per_year, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_year}}
   forbid:
   - {name: bonus_total_month_at_half, value: 7.86, unit: eur_per_month, tolerance: 0.005, source: {query: bonus, start: '2026-04-01', end: '2026-09-30', share_pct: 50, column: total_month}}
 
@@ -136,6 +136,16 @@ cases:
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
   - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
 
+- id: marja-peer-comparison
+  persona: CUST00493
+  question: {en: 'How do I compare with people like me?', fi: 'Miten kulutukseni vertautuu kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, below_median]
+  numbers:
+  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+
 - id: marja-q1-where-money-went
   persona: CUST00493
   question: {en: 'Where did my money go?'}
@@ -160,12 +170,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, peers]
   numbers:
-  - {name: keep_rate, value: 17.6, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: keep_rate, value: 17.6, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: everyday_share, value: 15.7, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
   - {name: peer_median_spend_month, value: 3567.81, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 8.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 121, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: steady, source: {metric: spender_profile, column: profile}}
 
@@ -215,11 +225,11 @@ cases:
   tags: [brief, q2_profile, peers]
   numbers:
   - {name: keep_rate, value: 22.6, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
-  - {name: everyday_share, value: 30.1, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
+  - {name: everyday_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: everyday_share_pct}}
   - {name: peer_median_spend_month, value: 1894.55, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 67.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 24, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: 29.1, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: 29.1, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: everyday_heavy, source: {metric: spender_profile, column: profile}}
 
@@ -268,12 +278,12 @@ cases:
   expected_tools: [get_spender_profile, get_peer_benchmark]
   tags: [brief, q2_profile, young_adult, peers]
   numbers:
-  - {name: keep_rate, value: 9.4, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: keep_rate_pct}}
+  - {name: keep_rate, value: 9.4, unit: percent, tolerance: 0.01, source: {metric: spender_profile, column: keep_rate_pct}}
   - {name: everyday_share, value: 28.0, unit: percent, tolerance: 0.01, required: false, source: {metric: spender_profile, column: everyday_share_pct}}
   - {name: peer_median_spend_month, value: 2202.21, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_percentile_spend, value: 31.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_group_size, value: 39, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: -14.6, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: -14.6, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
   labels:
   - {name: profile, value: steady, source: {metric: spender_profile, column: profile}}
 
