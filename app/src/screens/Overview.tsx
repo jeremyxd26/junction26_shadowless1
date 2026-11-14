@@ -43,6 +43,8 @@ interface ToastState {
   undo: boolean
   retry: boolean
   retryUntil: number | null
+  /** No visual toast: Sentti's reply already shows the confirmation. The live region still reads it. */
+  silent: boolean
 }
 
 type Motion = NumberMotion & { seq: number }
@@ -219,18 +221,18 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       waiting: flies ? 'keep' : null,
     })
 
-    // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), the toast
-    // does not repeat it over the reply: one short line with Undo. Screen readers still hear the
-    // whole message (`text_rendered`) through the live region.
-    const repeated = answered && Boolean(response.effect)
+    // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), there is
+    // no visual toast over it: Undo stays on the answered card, and the live region reads the whole
+    // message (`text_rendered`) once. Without `effect`, the toast works as before.
     setToast({
       seq: run,
-      text: repeated ? t.answerSaved : response.message.text,
+      text: response.message.text,
       rendered: response.message.text_rendered,
-      numbers: repeated ? {} : response.message.numbers,
+      numbers: response.message.numbers,
       undo: answered,
       retry: false,
       retryUntil: null,
+      silent: answered && Boolean(response.effect),
     })
     focusCard.current = true
     if (answered) {
@@ -287,7 +289,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       const until = wait ? Date.now() + wait * 1000 : null
       if (basket === null) {
         const run = ++seq.current
-        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable, retryUntil: until })
+        setToast({ seq: run, text: message, rendered: message, numbers: {}, undo: false, retry: retryable, retryUntil: until, silent: false })
         setShowToast(run)
       } else {
         setError({ message, retryable, until })
@@ -344,15 +346,18 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
         // Sentti's short reply: where the purchase went, and the mini row the amount flies into.
         <div ref={replyRef} data-opening-part="reply" className="card-enter flex flex-col gap-2">
           <SenttiLabel s={chatStrings(lang)} />
-          <div className="rounded-lg border border-line bg-surface p-4">
-            <p className="mb-2 text-base font-bold text-ink">
-              {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
-            </p>
+          <div className="rounded-lg border border-line bg-surface p-3">
+            {/* With `effect`, its text under the row says it all; the client title is for older cores. */}
+            {!replyNote && (
+              <p className="mb-2 text-base font-bold text-ink">
+                {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
+              </p>
+            )}
             <BasketStrip card={baskets} motion={motion ?? undefined} keys={['unclassified', reply]} title={null} flight />
             {/* Under the strip: the text arrives with the answer, so above it would move the flight's
                 target while the amount flies. */}
             {replyNote && (
-              <p className="mt-2 text-sm leading-8 text-ink-2">
+              <p className="mt-1 text-sm leading-7 text-ink-2">
                 <TokenText text={replyNote.text} numbers={replyNote.numbers} />
               </p>
             )}
@@ -381,7 +386,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       <p role="status" className="sr-only">
         {visibleToast?.rendered ?? ''}
       </p>
-      {visibleToast && (
+      {visibleToast && !visibleToast.silent && (
         <Toast
           text={visibleToast.text}
           numbers={visibleToast.numbers}
