@@ -48,6 +48,7 @@ from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -200,13 +201,14 @@ class _InCallOrder(NumberRegistry):
 HEALTH_MERCHANT = tuple(f"{kind.lower()} " for kind in tool_config.MERCHANT_KIND_BY_CATEGORY["Health"])
 
 
-def _health_spending(call: FunctionCall) -> bool:
+def _health_spending(call: dict[str, Any] | FunctionCall) -> bool:
     """A get_spending call filtered on Health, on the health MCC group or on a health merchant's alias ("Health
-    service A", "Terveyspalvelu A") (#598)."""
-    flt = (call.args or {}).get("filter") or {}
-    return call.name == "get_spending" and ("Health" in (flt.get("categories") or [])
-                                            or "health" in (flt.get("mcc_groups") or [])
-                                            or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
+    service A", "Terveyspalvelu A") (#598); a planned call or a call record of the answer (#571)."""
+    name, args = (call.name, call.args) if isinstance(call, FunctionCall) else (call["name"], call.get("args"))
+    flt = (args or {}).get("filter") or {}
+    return name == "get_spending" and ("Health" in (flt.get("categories") or [])
+                                       or "health" in (flt.get("mcc_groups") or [])
+                                       or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
 
 
 def _health_what_if(call: FunctionCall) -> bool:
@@ -574,17 +576,19 @@ class Pipeline:
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         # Designed template answers, one rule for all (the coordinator's decision): the rule planner's own template
         # (#552/#574); a model-planned Health total that was dropped before it ran (#598): the template says the thing
-        # can't be seen on its own, then answers the other question; a peer comparison with the national context line
-        # (#569), only when it is the answer's only data tool. The template writes, never the composer, and as the
-        # model was not needed, it did not fail: no llm_unavailable warning, in any model state.
+        # can't be seen on its own, then answers the other question; a Health total that ran, the per-tool template
+        # with the other tool's sentence (#571, R9); a peer comparison with the national context line (#569), only when
+        # it is the answer's only data tool. The template writes, never the composer, and as the model was not needed,
+        # it did not fail: no llm_unavailable warning, in any model state.
         national = len(views) == 1 and isinstance(views[0], dict) and views[0].get("tool") == "get_peer_benchmark" \
             and bool(views[0].get("national"))
-        guarded = a.health_dropped is not None
-        designed = ("rule_template" if template_answer else "health_filter_dropped" if guarded
-                    else "national_context" if national else None)
+        dropped = a.health_dropped is not None
+        health_total = any(_health_spending(c) for c in a.calls)
+        designed = ("rule_template" if template_answer else "health_filter_dropped" if dropped
+                    else "health" if health_total else "national_context" if national else None)
         unavailable = planner_fallback or a.composer_unavailable is not None
         draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or designed is not None,
-                                             a=a, lead=template.unknown_lead(a.health_dropped, lang) if guarded else None)
+                                             a=a, lead=template.unknown_lead(a.health_dropped, lang) if dropped else None)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -596,7 +600,7 @@ class Pipeline:
         a.outcome = "fallback" if a.template_failed else "answered"
         if designed and not a.template_failed:
             # a designed template answer never warns, in any model state: the template writes it either way; the planner
-            # turns record the template and why (#552, #598, #569; one rule, #610 and #585)
+            # turns record the template and why (#552, #598, #571, #569; one rule, #610 and #585)
             a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": designed})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
@@ -985,13 +989,13 @@ class Pipeline:
 
     def _health_filter_guard(self, message: str, calls: list[FunctionCall], source: str,
                              a: _Answer) -> list[FunctionCall]:
-        """#598: a Health total the model planned never runs, whatever the question (health stays declined as the rules
-        decline it; "the gym", "yoga", "a massage" are no health spending). The call is dropped before anything runs
-        and the thing is answered as the rules answer an unknown thing: beside another question, the other calls
-        still run and the template says Sentti can't see the thing on its own; alone, the call becomes the category
-        breakdown of the same period, the rule path's answer. Never a Health card from the model's plan."""
+        """#598: a Health total the model planned runs only when the question itself names health (the rules' HEALTH
+        words, #571); "the gym", "yoga", "a massage" are no health spending. Otherwise the call is dropped before
+        anything runs and the thing is answered as the rules answer an unknown thing: beside another question, the
+        other calls still run and the template says Sentti can't see the thing on its own; alone, the call becomes the
+        category breakdown of the same period, the rule path's answer. Never a Health card for such a word."""
         health = [c for c in calls if _health_spending(c)]
-        if source != "model" or not health:
+        if source != "model" or not health or re.search(RULE_HEALTH, guard.fold(message)):
             return calls
         a.health_dropped = unknown_object(message) or ""
         others = [c for c in calls if c not in health]

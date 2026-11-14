@@ -43,6 +43,9 @@ const NEEDED = [
   'ask.json.response_fi',
   'ask.json.request_refusal',
   'ask.json.response_refusal',
+  // A refusal as the first answer of a conversation: the contact_bank action and the AI disclosure (0.3.3, #439)
+  'ask.json.request_refusal_first',
+  'ask.json.response_refusal_first',
   'ask.json.request_clarify',
   'ask.json.response_clarify',
   'card.safe_to_save',

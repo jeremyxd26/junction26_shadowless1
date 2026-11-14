@@ -78,8 +78,9 @@ AS_ON_DEV = [
     ("why pharmacy spending lower?", "en", DECLINED),
     ("miksi apteekkikulut ovat pienemmät?", "fi", DECLINED),
     ("why is my health spending so low?", "en", DECLINED),
-    ("why is my budget so low, what if I cut doctor visits by 10%?", "en", ("what_if", "", ("decline",))),
-    ("miksi budjettini on pieni, mitä jos vähennän lääkärikäyntejä 10 %?", "fi", ("what_if", "", ("decline",))),
+    # the same decline, now by the health rule before the what-if rule (#571: a scenario about health declines whole)
+    ("why is my budget so low, what if I cut doctor visits by 10%?", "en", DECLINED),
+    ("miksi budjettini on pieni, mitä jos vähennän lääkärikäyntejä 10 %?", "fi", DECLINED),
     ("why is salary lower?", "en", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
     ("why is income lower?", "en", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
     ("miksi palkka on pieni?", "fi", ("recurring_bills", "", ("get_recurring_bills", "finish"))),
