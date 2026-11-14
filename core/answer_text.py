@@ -239,7 +239,20 @@ SUGGESTING_NEGATION = re.compile(
     r"\bwhy\s+not\b|\bdon['’]?t\s+(?:hesitate|forget|be\s+afraid)\b|\bnever\s+hesitate\b"
     r"|\bnot\s+(?:a\s+)?(?:bad|terrible|crazy)\s+(?:idea|option|choice|move)\b|\bnothing\s+wrong\s+with\b"
     r"|\bno\s+reason\s+not\s+to\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
-    r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b", re.I)
+    r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b"
+    r"|\bcan['’]?t\s+go\s+wrong\b|\bcannot\s+go\s+wrong\b|\bwhy\s+(?:you\s+)?wouldn['’]?t\b|\bdon['’]?t\s+see\s+why\b",
+    re.I)
+# A borrowing question quoted back before a decline ("You asked whether to take a loan; I can't advise on
+# that", "Kysyit, kannattaako ottaa lainaa; en voi neuvoa"): with a negation anywhere in the sentence, such a
+# frame makes the words a quote, not a suggestion. A bare "if" is no frame: "If you do not have enough,
+# consider a loan" suggests (review of #437).
+QUOTING_FRAME = re.compile(
+    r"\bwhether\b|\basked\b|\bask(?:ing)?\s+(?:about|if|whether)\b|\bquestion\s+(?:about|of|whether)\b"
+    r"|\bkannattaako\b|\bkysyit\b|\bkysymy\w*|\bpitäisikö\b", re.I)
+# The borrowing words as the subject of a negated predicate: "Taking a loan is not something I suggest".
+_NEGATED_PREDICATE = re.compile(
+    r"[^.!?;:,]*?\b(?:(?:is|are|was|would\s+be)\s+(?:not|never)|isn['’]t|aren['’]t|wasn['’]t|ei\s+ole)\b", re.I)
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 
 def negated(clause: str) -> bool:
@@ -253,7 +266,8 @@ _CREDIT_DATA = r"(?!\s+(?:cards?|statements?|bills?|numbers?|purchases?|spending
 _BORROW_NOUN = (r"(?:(?:small|personal|short-term|quick|payday|consumer|cheap)\s+)?"
                 r"(?:loans?|credit(?:\s+cards?|\s+line)?|overdraft\w*|instal{1,2}ment\s+plans?|instal{1,2}ments|financing)")
 BORROWING_SUGGESTION = re.compile(
-    r"\b(?:take|taking|get|getting|use|apply\s+for|applying\s+for|consider|try|open|opening"
+    r"\b(?:take|taking|get|getting|use|apply\s+for|applying\s+for|consider|try|open|opening|suggest|suggesting"
+    r"|recommend|recommending"
     r"|(?:consider|try|start|recommend|suggest|by|keep|think\s+about)\s+using)\s+(?:out\s+)?"
     r"(?:a\s+|an\s+|your\s+|some\s+|the\s+)?" + _BORROW_NOUN + r"\b" + _CREDIT_DATA +
     r"|\b(?:an?\s+|your\s+|the\s+)?" + _BORROW_NOUN + r"\s+(?:could|can|would|might|may|will)\s+(?:\w+\s+)?"
@@ -277,15 +291,34 @@ BORROWING_SUGGESTION = re.compile(
     r"|\bmaksa\s+myöhemmin\b|\blainaamalla\b|\blainata\b", re.I)
 
 
+def _a_statement(text: str, m: re.Match) -> bool:
+    """The borrowing words at `m` are a statement, not a suggestion (review of #437):
+    - a negation in the same clause before them ("I can't recommend taking a loan", "Älä ota lainaa");
+    - a quoting frame before them and a negation anywhere in the sentence ("You asked whether to take a loan;
+      I can't advise on that", "En voi neuvoa, kannattaako ottaa lainaa");
+    - they are the subject of a negated predicate ("Taking a loan is not something I suggest").
+    A negation that still suggests ("why not", "can't go wrong") never makes a statement."""
+    ends = [e.end() for e in _SENTENCE_END.finditer(text, 0, m.start())]
+    sentence_start = ends[-1] if ends else 0
+    after = _SENTENCE_END.search(text, m.end())
+    sentence_end = after.end() if after else len(text)
+    sentence = text[sentence_start:sentence_end]
+    starts = [c.end() for c in _CLAUSE_START.finditer(text, sentence_start, m.start())]
+    if negated(text[starts[-1] if starts else sentence_start:m.end()]):
+        return True
+    if QUOTING_FRAME.search(text, sentence_start, m.start()) and negated(sentence):
+        return True
+    return bool(_NEGATED_PREDICATE.match(text, m.end(), sentence_end)) and not SUGGESTING_NEGATION.search(sentence)
+
+
 def borrowing_suggestion(text: str, labels: Iterable[str] = ()) -> str | None:
     """The words in which a text suggests borrowing, or None. Labels from the user's own data (a
-    category or bill such as "Loan repayment") are taken out first; a negation in the same clause
-    ("I can't recommend taking a loan") makes it a statement (review of #437)."""
+    category or bill such as "Loan repayment") are taken out first; a negation or a quoted-back question
+    makes the words a statement (`_a_statement`, review of #437)."""
     for label in sorted((x for x in labels if x), key=len, reverse=True):
         text = re.sub(re.escape(label), " ", text, flags=re.I)
     for m in BORROWING_SUGGESTION.finditer(text):
-        starts = [c.end() for c in _CLAUSE_START.finditer(text, 0, m.start())]
-        if not negated(text[starts[-1] if starts else 0:m.end()]):
+        if not _a_statement(text, m):
             return m.group(0).strip()
     return None
 

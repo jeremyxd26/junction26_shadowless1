@@ -498,14 +498,14 @@ JOINED_COMPARISON = re.compile(r"\{\{n\d+\}\}\s+(?:and|ja)\s+\{\{n\d+\}\}\s+(?:c
 # statement, not a suggestion. "Lower" is left out: "lower than usual" is a comparison (review of #437).
 _FIXED_EN = r"(?:housing|rent|utilities|utility\s+bills?|insurance|loans?|mortgage)"
 _FIXED_FI = r"(?:asumi\w*|vuokra\w*|vakuutu\w*|laina\w*|asunto\w*|sähkö\w*)"
-_CUT_EN = r"(?:cut|cuts|cutting|reduce|reducing|trim|trimming)"
+_CUT_EN = r"(?:cut|cuts|cutting|reduce|reducing|trim|trimming|bring\s+down|bringing\s+down)"
 _CUT_FI = r"(?:vähen\w*|leikka\w*|leikat\w*|karsi\w*|pienen\w*|tinki\w*)"
 # Up to two words may stand between the cut and the essential ("cut your monthly rent"), never a conjunction:
 # "cut restaurants and rent stays" cuts restaurants (review of #437).
 _FREE = r"(?:\s+(?!(?:and|or|but|while|so|ja|tai|mutta|kun|joten)\b)\w+)"
 _OBJECT_EN = rf"(?:\s+(?:back|down))?(?:\s+on)?(?:\s+(?:your|the|some|of|a))*{_FREE}{{0,2}}?\s+{_FIXED_EN}\b"
 _SUGGEST_EN = (r"\b(?:why\s+not|could|can|try|trying|consider|considering|want\s+to\s+see|would\s+you\s+like\s+to|how\s+about"
-               r"|what\s+if\s+you|should|might|may\s+want\s+to|recommend|suggest)\b")
+               r"|what\s+if\s+you|should|might|may\s+want\s+to|recommend|suggest|maybe|perhaps)\b")
 _SUGGEST_FI = (r"\b(?:voisit|voit|voisitte|kokeile|kokeilla|kokeilisit|harkitse|harkita|harkitsisit|kannattaa"
                r"|kannattaisi|haluatko\s+nähdä|mitä\s+jos|entä\s+jos|suosittelen|ehdotan)\b")
 FIXED_CUT = re.compile(
@@ -514,7 +514,10 @@ FIXED_CUT = re.compile(
     rf"|(?:^|[.!?]\s+)(?:cut|reduce|trim){_OBJECT_EN}"
     rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_CUT_FI}{_FREE}{{0,2}}?\s+{_FIXED_FI}"
     rf"|{_SUGGEST_FI}[^.!?;:,]{{0,30}}?\b{_FIXED_FI}{_FREE}{{0,2}}?\s+{_CUT_FI}"
-    rf"|(?:^|[.!?]\s+)(?:vähennä|leikkaa|karsi|pienennä){_FREE}{{0,2}}?\s+{_FIXED_FI}", re.I)
+    rf"|(?:^|[.!?]\s+)(?:vähennä|leikkaa|karsi|pienennä){_FREE}{{0,2}}?\s+{_FIXED_FI}"
+    # "by cutting your rent you would save", "tinkimällä vuokrasta säästäisit": the means of a saving
+    rf"|\bby\s+(?:cutting|reducing|trimming|bringing\s+down){_OBJECT_EN}"
+    rf"|\b(?:vähentämällä|leikkaamalla|karsimalla|pienentämällä|tinkimällä){_FREE}{{0,2}}?\s+{_FIXED_FI}", re.I)
 # Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
 # "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
 KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
@@ -532,9 +535,12 @@ _COUNT_NOUN_BEFORE = re.compile(
 RANKING = re.compile(
     r"\b(?:near|at|in|among|to)\s+the\s+(?:very\s+)?(?:top|bottom)\b(?!\s+(?:categor\w*|rows?|lines?|items?))"
     r"|\b(?:top|bottom)\s+(?:\{\{n\d+\}\}|\d|percent|tier|spenders?|savers?|half|third|quarter|group|of\s+the)\b"
-    r"|\b(?:best|worst|better\s+than|worse\s+than|beat|beats|beating|outperform\w*|outrank\w*|outspend\w*|outsave\w*"
+    r"|\b(?:better\s+than|worse\s+than|beat|beats|beating|outperform\w*|outrank\w*|outspend\w*|outsave\w*"
     r"|ahead\s+of|rank\w*)\b"
-    r"|\b(?:paras|parhai(?!llaan|mmillaan)\w*|huonoin\w*|huonoim(?!millaan)\w*|paremp\w*|huonomp\w*|kärj\w*|kärki\w*"
+    # "best" / "worst" rank only the user ("you're the best saver", "among the best"), not "the best way to see".
+    r"|\b(?:you(?:['’]re|\s+are)|you['’]ve\s+been)\s+(?:the\s+|one\s+of\s+the\s+)?(?:very\s+)?(?:best|worst)\b"
+    r"|\b(?:among|one\s+of)\s+the\s+(?:best|worst)\b|\b(?:best|worst)\s+(?:spenders?|savers?|in\s+(?:your|the)\s+group)\b"
+    r"|\b(?:paras(?!\s+(?:tapa|keino|vaihtoehto))|parhai(?!llaan|mmillaan|ten\s+(?:näet|näkee))\w*|huonoin\w*|huonoim(?!millaan)\w*|paremp\w*|huonomp\w*|kärj\w*|kärki\w*"
     r"|häntäpää\w*"
     r"|sijoitu\w*|sijalla|voitat|peittoat)\b", re.I)
 
