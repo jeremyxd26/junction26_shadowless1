@@ -49,7 +49,8 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
-from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, plain_text, render, validate
+from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, plain_text, render,
+                                  unavailable_claim, validate)
 from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
@@ -672,6 +673,10 @@ class Pipeline:
                     # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
                     # gets the reason and the template writes after it.
                     errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
+                    claim = None if request.errors else unavailable_claim(draft.text)
+                    if claim:
+                        # Nothing failed, so "not available" describes a wrong plan, not the data (#316).
+                        errors.append(f"'{claim}': no calculation failed; say what the data shows instead")
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

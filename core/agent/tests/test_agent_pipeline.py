@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from agent_fakes import CANARY, FakeArgs, FakeData, audit_records, db_down_tool, failing_tool, registry, run
 
 from core.agent.model import FunctionCall, ModelError, ScriptedModel
@@ -347,3 +349,27 @@ def test_two_drafts_over_the_length_rule_end_in_the_template(make_pipeline):
     done = dict(run(pipe))["done"]
     assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
     assert audit_records(pipe)[-1]["composer_attempts"][-1]["raw"] == "template"
+
+
+# ---- #316: no "not available" when nothing failed ----------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "I do not have a calculated safe-to-spend limit available for this week, but August 2026 cost {{n1}}.",
+    "That figure cannot be calculated; August 2026 cost {{n1}}.",
+])
+def test_a_draft_saying_a_figure_is_not_available_is_rejected_when_nothing_failed(make_pipeline, text):
+    bad = {"language": "en", "text": text, "cited": ["n1"], "lesson_key": None}
+    good = {"language": "en", "text": "August 2026 cost {{n1}}.", "cited": ["n1"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == good["text"]
+    assert "no calculation failed" in audit_records(pipe)[-1]["composer_attempts"][0]["validation"][0]
+
+
+def test_saying_a_failed_part_could_not_be_calculated_is_fine(make_pipeline):
+    draft = {"language": "en", "text": "August 2026 cost {{n1}}; the rest could not be calculated right now.",
+             "cited": ["n1"], "lesson_key": None}
+    model = ScriptedModel(plans=[[SPEND[0], FunctionCall("broken_tool", {}), FunctionCall("finish")]], drafts=[draft])
+    pipe = make_pipeline(model, registry(ToolSpec("broken_tool", "Fails.", FakeArgs, failing_tool, ("x", "x"))))
+    done = dict(run(pipe))["done"]
+    assert done["text"] == draft["text"] and "tool_failed" in done["warnings"]

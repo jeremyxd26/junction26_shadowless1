@@ -267,6 +267,22 @@ def plain_text(text: str) -> str:
     return _MD_EMPHASIS.sub("", text).strip()
 
 
+# "I do not have a calculated safe-to-spend limit available" next to an overview showing it (#316): when
+# no calculation failed, a draft that says a figure is unavailable describes the plan, not the data, and is
+# rejected. With a failed calculation, saying so is right (the composer prompt asks for it).
+UNAVAILABLE_CLAIM = re.compile(
+    r"\b(?:not|n't|no)\b[^.!?]{0,40}\b(?:available|calculated|computed|calculate|compute|work(?:ed)? out)\b"
+    r"|\bunavailable\b|\bcannot be (?:calculated|computed|shown)\b"
+    r"|\bei\b[^.!?]{0,40}\b(?:saatavilla|saatavissa|laskettu\w*|laskea|voida laskea|voitu laskea)\b",
+    re.I)
+
+
+def unavailable_claim(text: str) -> str | None:
+    """The words in which a draft says a figure is not available or cannot be calculated, or None."""
+    m = UNAVAILABLE_CLAIM.search(text)
+    return m.group(0) if m else None
+
+
 def check_text(text: str, allowed: Allowed) -> list[str]:
     """Rules 3, 5 and 6 on any text the model wrote (answer text, clarify question or options)."""
     errors = answer_text.leftover_digits(TOKEN.sub(" ", text), dates=allowed.dates, periods=allowed.periods)
