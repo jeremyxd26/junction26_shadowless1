@@ -96,7 +96,13 @@ SAVED_OTHER = fold_pattern(
     r"\b(promo(tion)?s?|discounts?|coupons?|vouchers?|offers?|deals?|cashback|rebates?|alennu\w*|tarjou\w*|"
     r"kuponki\w*|kupongi\w*)\b|"
     r"\bby\s+(christmas|the end|end of|new year|easter|summer|midsummer|then)\b|\bmennessä\b|\bjouluun\b|"
-    r"\b(why|how come|miksi)\b|\b(less|more|fewer|vähemmän|enemmän)\b")
+    r"\b(why|how come|miksi)\b|\b(less|more|fewer|vähemmän|enemmän)\b|"
+    # ... nor a comparison with people or a year, a judgement or a goal: "How much do I save compared to people like
+    # me?", "Do I save enough?", "How much have I saved towards my goal?", "Paljonko säästän verrattuna kaltaisiini?"
+    r"\b(compared?|comparison|than|versus|vs|as much as|others|people like (me|us)|verrattuna|kuin|muihin|muut|"
+    r"muiden|kaltais\w*|enough|tarpeeksi|riittävästi|goals?|targets?|towards?|tavoit\w*)\b|"
+    # ... nor a saving in a kind of spending, a saving on something ("Paljonko säästimme ruokakuluissa?")
+    r"\b\w*(kuluissa|kuluista|menoissa|menoista|ostoksissa|ostoksista|laskuissa|laskuista)\b")
 # The past: a month, the last transfer, a past verb. Otherwise the question is about the usual transfer.
 PAST = fold_pattern(
     r"\b(did|was|were|went|last|latest|previous|recent|ago|transferred|moved|sent|paid|this year|so far)\b|"

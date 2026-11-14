@@ -101,6 +101,11 @@ PLAN = default_registry().tools["get_savings_plan"]
     ("why did I save less last month?", None),
     ("Did I save more than last month?", None),
     ("How much did I save last month? And the month before?", None),
+    ("How much do I save compared to people like me?", None), ("Do I save as much as others my age?", None),
+    ("Do I save enough?", None), ("How much have I saved towards my goal?", None),
+    ("How much do I save compared to last year?", None), ("Paljonko säästän verrattuna kaltaisiini?", None),
+    ("Paljonko olen säästänyt tavoitteeseeni?", None), ("Paljonko säästimme ruokakuluissa?", None),
+    ("How much have I saved this year?", "past"), ("Paljonko säästin viime vuonna?", "past"),
     # ... and a comparison word keeps a question about the user's own transfers what it was on dev
     ("How much more did I transfer to savings last month?", "past"),
 ])
