@@ -54,10 +54,11 @@ def test_a_two_category_total_names_both_in_its_label_card_and_evidence(language
 
 def test_three_parts_and_mixed_filters():
     assert filter_label(["Housing", "Restaurants", "Travel"], [], [], None, "en") == "Housing, restaurants and travel"
-    assert filter_label(["Restaurants"], ["taxi"], [], None, "en") == "Restaurants and taxi"
-    assert filter_label(["Restaurants"], [], ["everyday_spending"], None, "fi") == "Ravintolat ja arjen kulutus"
+    # across dimensions the selection is an intersection, so the label is one too (#501)
+    assert filter_label(["Restaurants"], ["taxi"], [], None, "en") == "Restaurants within taxi"
+    assert filter_label(["Restaurants"], [], ["everyday_spending"], None, "fi") == "Ravintolat, joista arjen kulutus"
     assert filter_label([], [], [], "Grocery store A", "en") == "Grocery store A"          # an alias keeps its case
-    assert filter_label(["Restaurants"], [], [], "Grocery store A", "en") == "Restaurants and Grocery store A"
+    assert filter_label(["Restaurants"], [], [], "Grocery store A", "en") == "Restaurants at Grocery store A"
     assert filter_label([], [], [], None, "en") is None
 
 
@@ -69,7 +70,7 @@ def test_a_later_part_is_lower_cased_whole():
 
 @pytest.mark.parametrize("args,expected", [
     ({"filter": {"categories": ["Home & Tech", "Housing"]}}, " on home & tech and housing "),
-    ({"filter": {"mcc_groups": ["electronics_home", "taxi"]}}, " electronics and home and taxi "),   # none: "for …"
+    ({"filter": {"mcc_groups": ["electronics_home", "taxi"]}}, " electronics and home, and taxi "),  # #501: readable
 ])
 def test_the_sentence_is_built_from_the_parts(args, expected):
     """Review of #496, R3: a part that itself contains "and" is not split again."""
@@ -121,3 +122,91 @@ def test_the_sentence_names_the_filter(language, expected):
         (result.model_view["tx_count"], result.data.tx_count.display))}[m.group(1)], " ".join(sentences))
     assert expected in text, text
     assert "your spending" not in text.lower() and "kulutuksesi" not in text
+
+
+# ---- #501: filters on more than one dimension, long filters, a part holding the joiner, income ----------------
+
+MERCHANT = "Home and tech store A"
+
+
+@pytest.mark.parametrize("keys,language,expected", [
+    ((["Restaurants"], [], [], MERCHANT), "en", "Restaurants at Home and tech store A"),
+    ((["Restaurants"], [], [], MERCHANT), "fi", "Ravintolat kauppiaalla Home and tech store A"),
+    ((["Housing"], [], ["everyday_spending"], None), "en", "Housing within everyday spending"),
+    ((["Housing"], [], ["everyday_spending"], None), "fi", "Asuminen, joista arjen kulutus"),
+    ((["Restaurants"], ["taxi"], [], None), "en", "Restaurants within taxi"),
+    ((["Restaurants"], ["taxi"], [], None), "fi", "Ravintolat, joista taksi"),
+])
+def test_a_filter_across_dimensions_is_worded_as_an_intersection(keys, language, expected):
+    assert filter_label(*keys, language) == expected
+    assert "luokissa" not in expected and not re.search(r"\band\b.*\band\b", expected.replace(MERCHANT, "M"))
+
+
+@pytest.mark.parametrize("keys,merchant_label,expected", [
+    ({"categories": ["Restaurants"], "mcc_groups": [], "baskets": [], "merchant_id": "M0001"}, MERCHANT,
+     "Restaurants at Home and tech store A"),
+    ({"categories": ["Housing"], "mcc_groups": [], "baskets": ["everyday_spending"], "merchant_id": None}, None,
+     "Housing within everyday spending"),
+    ({"categories": ["Restaurants"], "mcc_groups": ["taxi"], "baskets": [], "merchant_id": None}, None,
+     "Restaurants within taxi"),
+    ({"categories": ["Restaurants"], "mcc_groups": [], "baskets": [], "merchant_id": "M0001"}, None,
+     "Restaurants at the chosen merchant"),   # no alias found: neutral, never only "Restaurants"
+])
+def test_the_evidence_title_of_a_filter_across_dimensions_equals_the_number_label(keys, merchant_label, expected):
+    spec = {"kind": "transactions", "method": config.METHODS["total"],
+            "selection": {"direction": "out", "group": None, **keys}}
+    assert evidence_api._label_of(spec, "en", merchant_label) == expected
+
+
+def test_the_tool_and_the_evidence_name_a_category_and_a_basket_alike():
+    result, store = run({"filter": {"categories": ["Housing"], "baskets": ["regular_essentials"]}})
+    label = result.data.total.label
+    assert label == "Housing within regular essentials" and result.card.title == label
+    assert evidence_api._label_of(store.rows[result.data.total.evidence_ref], "en") == label
+
+
+@pytest.mark.parametrize("language,expected,sentence", [
+    ("en", "Spending in 6 categories", " on several categories "),
+    ("fi", "Kulutus 6 luokassa", " useassa luokassa"),
+])
+def test_five_or_more_parts_are_counted_not_listed(language, expected, sentence):
+    six = sorted(config.CATEGORY_LABELS)[:6]
+    assert filter_label(six, [], [], None, language) == expected
+    result, store = run({"filter": {"categories": six}}, language)
+    assert result.data.total.label == expected and len(expected) < 40
+    assert evidence_api._label_of(store.rows[result.data.total.evidence_ref], language) == expected
+    sentences, _ = answer_sentences.spending(result.model_view, language, lambda s, **kw: True)
+    assert sentence in " ".join(sentences) and not re.search(r"\d", re.sub(r"\{\{n\d+\}\}", "", " ".join(
+        sentences)).replace("2026", ""))
+
+
+def test_a_part_that_holds_the_joiner_keeps_the_list_readable():
+    assert filter_label(["Home & Tech", "Lifestyle"], [], [], None, "fi") == \
+        "Koti ja tekniikka sekä ostokset ja vapaa-aika"
+    assert filter_label([], ["electronics_home", "taxi"], [], None, "en") == "Electronics and home, and taxi"
+    assert filter_label(["Housing", "Restaurants", "Travel"], [], [], None, "fi") == "Asuminen, ravintolat ja matkailu"
+
+
+@pytest.mark.parametrize("language,expected", [
+    ("en", " on restaurants at Home and tech store A "),
+    ("fi", "luokassa Ravintolat kauppiaalla Home and tech store A"),
+])
+def test_the_sentence_names_a_merchant_without_luokissa(language, expected):
+    restaurants = config.label(config.CATEGORY_LABELS["Restaurants"], language)
+    view = {"total": {"id": "n1", "value": 55.5, "unit": "eur", "label": "x"}, "tx_count": {"id": "n2", "value": 2,
+            "unit": "count", "label": "x"}, "period": "September 2026", "direction": "out", "comparison": None,
+            "filter_labels": [restaurants, MERCHANT],
+            "filter_dims": [{"kind": "categories", "labels": [restaurants]}, {"kind": "merchant", "labels": [MERCHANT]}]}
+    view["total"]["label"] = filter_label(["Restaurants"], [], [], MERCHANT, language)
+    sentences, _ = answer_sentences.spending(view, language, lambda s, **kw: True)
+    text = " ".join(sentences)
+    assert expected in text and "luokissa" not in text, text
+
+
+@pytest.mark.parametrize("language,expected", [("en", "Income"), ("fi", "Tulot")])
+def test_an_unfiltered_income_total_is_never_total_spending_in_the_evidence(language, expected):
+    spec = {"kind": "transactions", "method": config.METHODS["total"],
+            "selection": {"direction": "in", "categories": [], "mcc_groups": [], "baskets": [], "merchant_id": None,
+                          "group": None}}
+    assert evidence_api._label_of(spec, language) == expected
+

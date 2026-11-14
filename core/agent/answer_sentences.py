@@ -76,17 +76,63 @@ _KNOWN_LABELS = {lab for table in (config.CATEGORY_LABELS, config.BASKET_LABELS,
                  for pair in table.values() for lab in pair}
 
 
-def _subject(label: str, language: str, parts: list[str] | None = None) -> str | None:
+def _lower_known(p: str) -> str:
+    return p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+
+
+SEVERAL = {"categories": ("several categories", "useassa luokassa"),
+           "mcc_groups": ("several groups", "useassa ryhmässä"),
+           "baskets": ("several baskets", "useassa korissa")}
+
+
+def _dims_subject(dims: list[dict[str, Any]], language: str) -> str | None:
+    """A filter across dimensions, or one counted from FILTER_LABEL_CAP parts, as the sentence names it: "restaurants
+    at Grocery store A", "luokassa Ravintolat kauppiaalla Grocery store A", "housing within everyday spending",
+    "several categories" (#501). None when the parts alone say it (one dimension, few parts)."""
+    clean = [(d.get("kind"), [p for p in d.get("labels") or [] if isinstance(p, str)]) for d in dims
+             if isinstance(d, dict)]
+    clean = [(k, ps) for k, ps in clean if k in ("categories", "mcc_groups", "baskets", "merchant") and ps]
+    many = [k for k, ps in clean if k != "merchant" and len(ps) >= config.FILTER_LABEL_CAP]
+    if not clean or (len(clean) == 1 and not many and clean[0][0] != "merchant"):
+        return None
+
+    def union(kind: str, ps: list[str]) -> str:
+        if kind != "merchant" and len(ps) >= config.FILTER_LABEL_CAP:
+            return pick(SEVERAL[kind], language)
+        return _join_filter(ps if kind == "merchant" else [_lower_known(p) if language != "fi" else p for p in ps],
+                            language)
+
+    (kind, ps), rest = clean[0], clean[1:]
+    if kind == "merchant":
+        text = ("kauppiaalla " if language == "fi" else "") + ps[0]
+    elif kind in many:
+        text = union(kind, ps)
+    else:
+        text = (("luokassa " if len(ps) == 1 else "luokissa ") if language == "fi" else "") + union(kind, ps)
+    for kind, ps in rest:
+        if kind == "merchant":
+            text += pick(config.TEXT["filter_at"], language) + ps[0]
+        else:
+            text += pick(config.TEXT["filter_within"], language) + union(kind, ps)
+    return text
+
+
+def _subject(label: str, language: str, parts: list[str] | None = None,
+             dims: list[dict[str, Any]] | None = None) -> str | None:
     """None for plain spending or income; else how the sentence names it ("restaurants", "luokassa Ravintolat",
     and for a filter of two or more parts "housing and restaurants", "luokissa Asuminen ja ravintolat", #399). A
     filter of several parts is built from its parts, never by re-reading the joined label (review of #496)."""
     if label in (pick(config.TEXT["spending"], language), pick(config.TEXT["income"], language)):
         return None
+    if dims:
+        across = _dims_subject(dims, language)
+        if across:
+            return across
     if parts and len(parts) > 1:
         if language == "fi":
-            return "luokissa " + _join(parts, language)
-        return _join([p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
-                      for p in parts], language)
+            return "luokissa " + _join_filter(parts, language)
+        return _join_filter([p.lower() if p in _KNOWN_LABELS or p[:1].upper() + p[1:] in _KNOWN_LABELS else p
+                             for p in parts], language)
     if language == "fi":
         return f"luokassa {label}"
     return label.lower() if label in _KNOWN_LABELS else label
@@ -131,6 +177,13 @@ LARGEST_GROUPS = ("The largest parts were {items}.", "Suurimmat osat olivat {ite
 TIME_GROUPS = ("By period: {items}.", "Jaksoittain: {items}.")
 
 
+def _join_filter(parts: list[str], language: str) -> str:
+    """A filter's parts joined as its label joins them (spending.join_names): "sekä" / a serial comma when a part
+    itself contains the joiner (#501)."""
+    from core.tools.spending import join_names
+    return join_names(parts, language)
+
+
 def _join(items: list[str], language: str) -> str:
     if len(items) <= 1:
         return "".join(items)
@@ -144,7 +197,9 @@ def spending(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
         return None
     label = (view.get("total") or {}).get("label") or ""
     parts = view.get("filter_labels")
-    what = _subject(label, language, [p for p in parts if isinstance(p, str)] if isinstance(parts, list) else None)
+    dims = view.get("filter_dims") if isinstance(view.get("filter_dims"), list) else None
+    what = _subject(label, language, [p for p in parts if isinstance(p, str)] if isinstance(parts, list) else None,
+                    dims)
     lang = 1 if language == "fi" else 0
     phrase = in_period(period, language)
     fmt = {"total": total, "count": count, "what": what or "", "period": phrase, "Period": _cap(phrase)}

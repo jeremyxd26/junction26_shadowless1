@@ -157,11 +157,22 @@ MERCHANT_KIND_BY_CATEGORY: dict[str, tuple[str, str]] = {
 }
 MERCHANT_KIND_DEFAULT = ("Merchant", "Kauppias")
 
+FILTER_LABEL_CAP = 5   # parts of one dimension from which a filter label counts them (#501)
 TEXT: dict[str, tuple[str, str]] = {
     "spending": ("Spending", "Kulutus"),
     "income": ("Income", "Tulot"),
     # a merchant-filtered sum in the evidence view, which cannot name the merchant's alias (#399)
     "spending_merchant": ("Spending at the chosen merchant", "Kulutus valitulla kauppiaalla"),
+    # a filter of FILTER_LABEL_CAP or more parts in one dimension is counted, not listed (#501)
+    "filter_many": ("Spending in {n} {what}", "Kulutus {n} {what}"),
+    "filter_many_short": ("{n} {what}", "{n} {what}"),
+    "filter_many_categories": ("categories", "luokassa"),
+    "filter_many_mcc_groups": ("groups", "ryhmässä"),
+    "filter_many_baskets": ("baskets", "korissa"),
+    # across dimensions the selection is an intersection (core/tools/selection.py): "within", "at" (#501)
+    "filter_within": (" within ", ", joista "),
+    "filter_at": (" at ", " kauppiaalla "),
+    "filter_at_unnamed": (" at the chosen merchant", " valitulla kauppiaalla"),   # the evidence view, no alias
     "transactions": ("Transactions", "Tapahtumat"),
     "share": ("Share of total", "Osuus kokonaisuudesta"),
     "change_vs": ("Change vs {label}", "Muutos verrattuna: {label}"),

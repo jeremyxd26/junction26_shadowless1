@@ -96,32 +96,80 @@ def filter_names(categories, mcc_groups, baskets, merchant: str | None, language
 
 
 def join_names(names: list[str], language: str) -> str:
-    """"Housing and restaurants", "Housing, restaurants and travel", "Asuminen ja ravintolat"."""
+    """"Housing and restaurants", "Housing, restaurants and travel", "Asuminen ja ravintolat". When a part itself
+    contains the joiner, the last one is "sekä" in Finnish and a serial comma in English, so the list stays
+    readable: "Koti ja tekniikka sekä ostokset ja vapaa-aika", "Electronics and home, and taxi" (#501)."""
     if len(names) <= 1:
         return "".join(names)
-    return ", ".join(names[:-1]) + (" ja " if language == "fi" else " and ") + names[-1]
+    word = " ja " if language == "fi" else " and "
+    last = (" sekä " if language == "fi" else ", and ") if any(word in f" {n} " for n in names) else word
+    return ", ".join(names[:-1]) + last + names[-1]
+
+
+def filter_dims(categories, mcc_groups, baskets, merchant: str | None, language: str) -> list[tuple[str, list[str]]]:
+    """The filter by dimension, each label once and sorted as the selection sorts them: categories, MCC groups,
+    baskets, then a merchant's alias. Within a dimension the parts are a union; across dimensions the selection is
+    an intersection (core/tools/selection.py), #501."""
+    dims = []
+    for kind, keys, table in (("categories", categories, config.CATEGORY_LABELS),
+                              ("mcc_groups", mcc_groups, config.MCC_GROUP_LABELS),
+                              ("baskets", baskets, config.BASKET_LABELS)):
+        names = list(dict.fromkeys(config.label(table[k], language) for k in keys if k in table))
+        if names:
+            dims.append((kind, names))
+    if merchant:
+        dims.append(("merchant", [merchant]))
+    return dims
+
+
+def _union(kind: str, names: list[str], language: str, first: bool) -> str:
+    """One dimension's parts: listed, lower-cased after the first part of the label (an alias keeps its case), or
+    counted from FILTER_LABEL_CAP parts on ("Spending in 6 categories", "Kulutus 6 luokassa")."""
+    if kind != "merchant" and len(names) >= config.FILTER_LABEL_CAP:
+        what = config.label(config.TEXT[f"filter_many_{kind}"], language)
+        return config.label(config.TEXT["filter_many" if first else "filter_many_short"], language).format(
+            n=len(names), what=what)
+    return join_names([n if kind == "merchant" or (first and i == 0) else n.lower() for i, n in enumerate(names)],
+                      language)
 
 
 def filter_label(categories, mcc_groups, baskets, merchant: str | None, language: str) -> str | None:
     """A filter in words, every part named: "Restaurants", "Housing and restaurants", "Asuminen ja ravintolat"
-    (#399); None without a filter. A filtered sum is never labelled as all spending. The tool and the evidence view
-    name one filter the same way (filter_names)."""
-    names = filter_names(categories, mcc_groups, baskets, merchant, language)
-    return join_names(names, language) if names else None
+    (#399); across dimensions an intersection: "Housing within everyday spending", "Restaurants at Grocery store A",
+    "Ravintolat kauppiaalla Grocery store A" (#501); None without a filter. A filtered sum is never labelled as
+    all spending. The tool and the evidence view name one filter the same way."""
+    dims = filter_dims(categories, mcc_groups, baskets, merchant, language)
+    if not dims:
+        return None
+    (kind, names), rest = dims[0], dims[1:]
+    text = _union(kind, names, language, first=True)
+    for kind, names in rest:
+        if kind == "merchant":
+            text += config.label(config.TEXT["filter_at"], language) + names[0]
+        else:
+            text += config.label(config.TEXT["filter_within"], language) + _union(kind, names, language, first=False)
+    return text
 
 
-def _filter_names_of(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> list[str]:
+def _filter_keys(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str):
     f = args.filter or Filter()
     merchant = (alias_map.for_merchant(alias_map.merchant_id(f.merchant)).label(language)
                 if f.merchant is not None else None)
-    return filter_names(sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
-                        sorted({b.value for b in f.baskets or []}), merchant, language)
+    return (sorted({c.value for c in f.categories or []}), sorted({g.value for g in f.mcc_groups or []}),
+            sorted({b.value for b in f.baskets or []}), merchant)
+
+
+def _filter_names_of(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> list[str]:
+    return filter_names(*_filter_keys(args, alias_map, language), language)
+
+
+def _filter_dims_of(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> list[tuple[str, list[str]]]:
+    return filter_dims(*_filter_keys(args, alias_map, language), language)
 
 
 def _total_label(args: GetSpendingArgs, alias_map: aliases.AliasMap, language: str) -> str:
-    names = _filter_names_of(args, alias_map, language)
-    return join_names(names, language) if names else _text("spending" if args.direction is Direction.OUT else "income",
-                                                             language)
+    label = filter_label(*_filter_keys(args, alias_map, language), language)
+    return label or _text("spending" if args.direction is Direction.OUT else "income", language)
 
 
 def _group_label(by: str, key: str, period: Period, alias_map: aliases.AliasMap, language: str) -> tuple[str, str]:
@@ -270,7 +318,8 @@ def get_spending(ctx: ToolContext, args: GetSpendingArgs | dict) -> ToolResult:
         card=_card(args, data, lang),
         notes=notes,
         evidence=list(nb.specs),
-        model_view=_model_view(data, base.direction, notes, group_counts, _filter_names_of(args, alias_map, lang)),
+        model_view=_model_view(data, base.direction, notes, group_counts, _filter_names_of(args, alias_map, lang),
+                               _filter_dims_of(args, alias_map, lang)),
     )
 
 
@@ -292,7 +341,8 @@ def _card(args: GetSpendingArgs, data: SpendingData, language: str) -> Card:
 
 
 def _model_view(data: SpendingData, direction: str, notes: list[str], counts: list[int] | None = None,
-                filter_names: list[str] | None = None) -> dict[str, Any]:
+                filter_names: list[str] | None = None,
+                filter_dims: list[tuple[str, list[str]]] | None = None) -> dict[str, Any]:
     """The compact projection the model may see: no rows, no merchant ids, no customer, no refs (R3).
 
     A group's amount is the total of all its transactions in the period. The view says so, and gives
@@ -317,6 +367,8 @@ def _model_view(data: SpendingData, direction: str, notes: list[str], counts: li
         # what the total's label names (#399): each part once, as the sentence names it ("luokissa" for two or more)
         "filter_parts": len(filter_names or []),
         "filter_labels": list(filter_names or []),
+        # the same filter by dimension (#501): a union inside one, an intersection across them
+        "filter_dims": [{"kind": kind, "labels": list(names)} for kind, names in filter_dims or []],
         "tx_count": _model_number(data.tx_count),
         "comparison": comparison,
         "groups": [

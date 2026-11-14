@@ -45,12 +45,22 @@ def _period_of(spec: dict[str, Any], load: Loader) -> tuple[date, date]:
     return as_of, as_of
 
 
-def _label_of(spec: dict[str, Any], language: str) -> str:
+def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = None) -> str:
     info = texts.method_info(spec["method"])
     if spec["kind"] != "transactions":
         return texts.pick(info.name, language)
     sel = spec["selection"]
     group = sel.get("group") or {}
+    dims = sum(bool(sel.get(k)) for k in ("categories", "mcc_groups", "baskets", "merchant_id"))
+    if spec["method"] == config.METHODS["total"] and not group and dims > 1:
+        # A filter across dimensions is named as the tool names it, never by its first part alone (#501); the
+        # merchant by its alias when the resolver could name it, else neutrally.
+        if sel.get("merchant_id") and not merchant_label:
+            named = spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], None, language)
+            return named + config.label(config.TEXT["filter_at_unnamed"], language)
+        return spending.filter_label(sel["categories"], sel["mcc_groups"], sel["baskets"], merchant_label, language)
+    if spec["method"] == config.METHODS["total"] and not group and dims == 0 and sel.get("direction") == "in":
+        return config.label(config.TEXT["income"], language)   # an unfiltered income total is income (#501)
     if sel.get("series_key") in config.SERIES_LABELS:
         return config.label(config.SERIES_LABELS[sel["series_key"]], language)
     if group.get("by") == "category" and group.get("key") in config.CATEGORY_LABELS:
@@ -76,7 +86,8 @@ def _label_of(spec: dict[str, Any], language: str) -> str:
     return texts.pick(info.name, language)
 
 
-def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader) -> dict[str, Any]:
+def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader,
+                     merchant_label: str | None = None) -> dict[str, Any]:
     info = texts.method_info(spec["method"])
     value = Decimal(spec["value"])
     start, end = _period_of(spec, load)
@@ -86,7 +97,7 @@ def number_from_spec(ref: str, spec: dict[str, Any], language: str, load: Loader
         "period": {"start": start, "end": end, "label": periods.period_label(start, end, language)},
         "method": spec["method"],
         "evidence_ref": ref,
-        "label": _label_of(spec, language),
+        "label": _label_of(spec, language, merchant_label),
         "display": display(value, info.unit, language, spec["method"]),
     }
 
@@ -130,7 +141,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
 
     spec = res.spec if res.spec is not None else load(res.ref)  # a resolver may not hand back its spec
 
-    number = number_from_spec(res.ref, spec, language, load)
+    number = number_from_spec(res.ref, spec, language, load, merchant_label=res.merchant_label)
     info = texts.method_info(res.method)
     body: dict[str, Any] = {
         "evidence_ref": res.ref,
