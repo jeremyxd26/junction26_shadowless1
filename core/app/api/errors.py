@@ -36,6 +36,7 @@ STATUS = {
     "rate_limited": 429,
     "data_unavailable": 503,
     "llm_unavailable": 503,
+    "model_unavailable": 503,   # a bill reading cannot use the model; the app offers typing the fields (#250)
     "internal": 500,
     "not_found": 404,  # contract addition (#79): an unknown route; the contract has no generic code yet
 }

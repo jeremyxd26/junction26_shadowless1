@@ -58,6 +58,27 @@ function Reason({ reason }: { reason: SafeToSaveReason }) {
 }
 
 /**
+ * The headline a week and a day (contract 0.3.5, #477): two smaller chips on one line under the
+ * month, each the API's `display` and each opening its own evidence. A chip in running text is
+ * 32 px with a 44 px hit area; the line is 44 px, so the hit areas stay inside it. Only figures:
+ * nothing here names the bank's screen or product, and the S-mobiili button is further down.
+ */
+function Scales({ weekly, daily }: { weekly?: Num; daily?: Num }) {
+  return (
+    <div data-save-scales="" className="mt-2 flex min-h-11 flex-wrap items-center gap-x-2 gap-y-3 text-sm text-muted">
+      {weekly && <NumberChip number={weekly} size="inline" wrap />}
+      {/* The dot goes with the day, so with large text a wrapped line starts "· €6.07 a day". */}
+      {daily && (
+        <span className="inline-flex max-w-full items-center gap-x-2">
+          {weekly && <span aria-hidden="true">·</span>}
+          <NumberChip number={daily} size="inline" wrap />
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
  * The safe-to-save card (contract section 3): what a typical month leaves, and the money in
  * the account beyond what is needed until payday. Used on the overview and in chat answers.
  * It never says where to put money, and it is never added to safe to spend.
@@ -86,6 +107,7 @@ export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
           <NumberChip number={card.monthly} size="lg" />
           <span className="text-sm text-muted">{card.monthly.period.label}</span>
         </div>
+        {(card.weekly || card.daily) && <Scales weekly={card.weekly} daily={card.daily} />}
 
         {/* "= monthly" only when it really is the result of the rows. When the month is clamped
             to 0 (a reason is sent), the rows would not add up to it, so the reason explains the 0. */}
@@ -97,7 +119,7 @@ export function SafeToSaveCard({ card }: { card: SafeToSaveData }) {
         {card.reason && <Reason reason={card.reason} />}
 
         {card.actions.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div data-card-actions="" className="mt-3 flex flex-wrap gap-2">
             {card.actions.map((action, index) => (
               <ActionButton key={`${action.type}-${index}`} action={action} />
             ))}
