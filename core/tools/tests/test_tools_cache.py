@@ -246,7 +246,7 @@ def test_code_version_is_part_of_the_key(mem, tool, monkeypatch):
 
 def test_labels_key_is_read_once_per_request(mem, tool, monkeypatch):
     reads = []
-    monkeypatch.setattr(cache_mod.labels, "basket_labels", lambda conn, cid, as_of: reads.append(cid) or {})
+    monkeypatch.setattr(cache_mod.labels, "basket_labels", lambda conn, cid, as_of, viewer=None: reads.append(cid) or {})
     ctx = ToolContext(customer_id="CUST00860", as_of=AS_OF, conn=None)
     for amount in (1, 2, 3):
         mem.run("fake", FakeArgs, tool, ctx, {"amount": amount})

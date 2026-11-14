@@ -37,7 +37,7 @@ def test_the_personas_are_the_four_of_personas_yaml():
 def test_warm_runs_every_call_once_and_then_serves_hits(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
     lines: list[str] = []
     rows = warmup.warm(cache, None, PERSONAS, ["en", "fi"], date(2026, 9, 30), out=lines.append, calls=FAKE_CALLS)
     assert len(rows) == 4 * 2 * 2 and len(lines) == len(rows)
@@ -126,7 +126,7 @@ class EvidenceConn:
 def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
     calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
     warmup.warm(cache, None, ["CUST00860"], ["en", "fi"], date(2026, 9, 30), out=lambda _: None, calls=calls)
     assert len(calls_made) == 2
@@ -142,7 +142,7 @@ def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
 def test_a_failed_evidence_check_does_not_stop_the_other_personas(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda ctx: "no-labels"))
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
     calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
     two = ["CUST00860", "CUST00493"]
     warmup.warm(cache, None, two, ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
@@ -176,7 +176,7 @@ def test_a_label_write_between_two_languages_never_stores_a_value_under_another_
 
     reads = []
 
-    def basket_labels(conn, cid, as_of, now=None):
+    def basket_labels(conn, cid, as_of, now=None, viewer=None):
         reads.append(cid)
         return {} if len(reads) == 1 else {5: "everyday_spending"}   # a label write lands after the first read
 
@@ -195,7 +195,7 @@ def test_a_preset_key_without_its_labels_is_never_trusted(monkeypatch):
     from core.tools.cache import labels_key_of
     from core.tools.context import ToolContext
 
-    monkeypatch.setattr(labels, "basket_labels", lambda conn, cid, as_of, now=None: {5: "everyday_spending"})
+    monkeypatch.setattr(labels, "basket_labels", lambda conn, cid, as_of, now=None, viewer=None: {5: "everyday_spending"})
     ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=None)
     ctx.labels_key = "a key from another context"
     ToolCache(mode="memory").ensure_labels_key(ctx)

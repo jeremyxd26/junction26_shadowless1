@@ -2,9 +2,10 @@
 
 Tool results are deterministic for (customer, tool, validated arguments, as_of, language, label state)
 and the code that computes them (agent-core.md section 6.1). The key holds all of these:
-- the label state is `labels_key`: a hash of the customer's basket labels (core/tools/labels.py). It is
-  read once per request and kept on the ToolContext, so every tool call of the request shares it and
-  a label write changes the key at once;
+- the label state is `labels_key`: a hash of the customer's basket labels as the request's viewer sees
+  them (core/tools/labels.py, #144), never of the viewer itself. It is read once per request and kept
+  on the ToolContext, so every tool call of the request shares it and a label write changes the key at
+  once;
 - the code version is a hash of core/tools/*.py and core/metrics/*.sql, so a deploy never serves a
   result of older code.
 - the database identity is a hash of the database's host, port and name (never the URL), so a changed
@@ -279,27 +280,22 @@ class ToolCache:
 
     # ---- keys ----
 
-    @staticmethod
-    def labels_key(ctx: ToolContext) -> str:
-        """The hash of the customer's label set for this request: `labels.for_context(ctx)`, the very
-        set the tools use (read once per context; the overview fills it from its one reviews read).
-        There is no other path: with per-viewer answers (#144) the set is the viewer's, so two viewers
-        with different answers get different keys and viewers in the same state share entries. The
-        viewer itself is never part of a key or a log."""
-        return labels_key_of(labels.for_context(ctx))
-
     def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
-        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`).
+        """ctx.labels_key: the hash of `labels.for_context(ctx)`, the very label set the tools use, read
+        once per request (with ctx.conn, or a connection from `connection`; the overview fills it from
+        its one reviews read). With per-viewer answers (#144) the set is the viewer's, so two viewers
+        with different answers get different keys and viewers in the same state share entries. The
+        viewer itself is never part of a key, an entry or a log.
 
-        A preset key is trusted only together with the label set it was made from (ctx._labels): without
-        that set the tools would read the labels again, and a label write in between would store a value
-        under the key of other labels. So the key is made here whenever the set is not on the context.
+        The key is always made from the label set on the context (ctx._labels), the set the tools will
+        use, and never taken from a preset value: a key without its set would let the tools read the
+        labels again, and a label write in between would store a value under the key of other labels.
+        Without a set on the context, it is read here once (for the context's viewer, #144).
         """
         if ctx._labels is None:
             with _connected(ctx, connection):
-                ctx.labels_key = self.labels_key(ctx)        # reads the set once and keeps it on ctx
-        elif ctx.labels_key is None:
-            ctx.labels_key = self.labels_key(ctx)            # the set is there: no read
+                ctx._labels = labels.for_context(ctx)        # reads the set once and keeps it on ctx
+        ctx.labels_key = labels_key_of(ctx._labels)          # hashing the set needs no read
         return ctx.labels_key
 
     @staticmethod
@@ -405,9 +401,11 @@ class ToolCache:
         return out  # type: ignore[return-value]
 
     def lookup(self, tool: str, args_model: type[BaseModel], ctx: ToolContext, args: Any = None) -> Prepared | None:
-        """The cached entry for this call, or None; never runs the tool. ctx.labels_key must be set."""
-        if not self.enabled or ctx.labels_key is None:
+        """The cached entry for this call, or None; never runs and never reads anything. Without the
+        context's label set (ctx._labels) there is no key to look under, so it is None."""
+        if not self.enabled or ctx._labels is None:
             return None
+        self.ensure_labels_key(ctx)                          # from the set on the context: no read
         t0 = time.perf_counter()
         _, canonical = args_json(args_model, args)
         key = self.key(ctx, tool, canonical)
