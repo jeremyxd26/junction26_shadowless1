@@ -148,6 +148,9 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
+- Two lying sources prove the checks catch invented numbers (`core/eval/liars.py`); both must fail every answer:
+  - `--source liars:invented_text` adds an invented amount to each answer's text;
+  - `--source liars:declared_invented` also declares it as a Number object with a formatter-correct display, so only the "returned by a tool" check can catch it.
 - The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.
@@ -158,11 +161,11 @@ How numbers are checked (R1). The rule is an allowlist by subtraction in `core/a
 2. Remove every date expression that equals a date or period the tools returned. A date expression followed by € or % is not a date.
 3. If any digit is left (an invented amount, an id, a number glued to letters, an amount after a dash), the answer fails.
 
-Each declared Number object must also match an expected value: same unit, value within tolerance, same sign. A case may mark an expected value `required: false`: the answer may state it (for example the number of transactions next to a total) but need not. Money and percentages match only when the formatter shows them the same (45.915, shown as €45.92, is not 45.91), so a one-cent error fails; counts match exactly. A number from the question passes only as a user-input object with the question's own mark: the "20%" of a what-if question is a percent, never money.
+Each declared Number object must also match an expected value: same unit, value within tolerance, same sign. A case may mark an expected value `required: false`: the answer may state it (for example the number of transactions next to a total) but need not. Money and percentages match only when the formatter shows them the same (45.915, shown as €45.92, is not 45.91), so a one-cent error fails; counts match exactly. A number from the question passes only as a user-input object with the question's own mark: the "20%" of a what-if question is a percent, never money. Any other declared Number object passes only if a tool call of the same answer returned it: the same id, unit, method and value (the audit's model views, so the API source needs `AUDIT_API=1`). Its value is checked against SQL wherever the case can derive it from the method id and period (`core/eval/derive.py`), so `--source api` also needs `DATABASE_URL` for those optional numbers. A number that no tool returned still fails. The deterministic template cites one takeaway per tool: the main number and at most three supporting ones.
 
 - **Refusals and no-data answers** declare no numbers, so no digit is allowed in them. A refusal that quotes an amount from the question fails, and that is intended.
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
-- **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). In the pipeline, the unit and sign of the declared Number object guard the second.
+- **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). A correct tool number with the wrong meaning for the question (the yearly saving where the monthly one is asked) is caught when the case requires the right one, as "missing". If the answer states both, the words around them are not checked. In the pipeline, the unit and sign of the declared Number object guard the second.
 
 ## License
 
