@@ -39,3 +39,20 @@ describe('the one next step (#684)', () => {
     expect(nextStep(done({ outcome: 'clarify' }), [card([whatif])])).toBeNull()
   })
 })
+
+describe("Maxim's decision on the way to a human (#696)", () => {
+  it('a refusal keeps only the way to a human, even with follow-ups', () => {
+    expect(nextStep(done({ outcome: 'refused', actions: [bank] }), [card([whatif])])).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('a fallback offers its first follow-up, and the way to a human only without one', () => {
+    expect(nextStep(done({ outcome: 'fallback', actions: [bank] }), [])).toEqual({ kind: 'question', question: 'How could I save more?' })
+    expect(nextStep(done({ outcome: 'fallback', actions: [bank], follow_ups: ['  '] }), [])).toEqual({ kind: 'action', action: bank })
+  })
+
+  it('so does the "not yet" answer (a clarification with the way to a human); the general clarification still offers nothing', () => {
+    expect(nextStep(done({ outcome: 'clarify', actions: [bank] }), [])).toEqual({ kind: 'question', question: 'How could I save more?' })
+    expect(nextStep(done({ outcome: 'clarify', actions: [bank], follow_ups: [] }), [])).toEqual({ kind: 'action', action: bank })
+    expect(nextStep(done({ outcome: 'clarify' }), [])).toBeNull()
+  })
+})

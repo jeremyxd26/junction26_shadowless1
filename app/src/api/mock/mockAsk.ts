@@ -23,7 +23,8 @@
 //   "Here is what I found for September." (section 7.5), `outcome: "answered"` and the
 //   `llm_unavailable` warning;
 // - `?mock=fallback`: even the template failed the answer check: the fixed short text
-//   "I could not find data for that question.", `outcome: "fallback"`, no warning.
+//   "I could not find data for that question.", `outcome: "fallback"`, no warning, the
+//   `contact_bank` action every fallback carries, and the full stream's follow-ups.
 // `?mock=slow` makes every delay four times longer, to watch the waiting stages.
 import { ApiError } from '../errors.ts'
 import type { AskDone, AskRequest, Card, ErrorEnvelope, Num, SafeToSaveCard } from '../types.ts'
@@ -133,8 +134,8 @@ const TEMPLATE_TEXT = 'Here is what I found for September.'
 /** The core's fixed short text when even the template failed the answer check (section 7.2). */
 const FALLBACK_TEXT = 'I could not find data for that question.'
 
-/** The full stream's cards, then `text` as the only delta and a `done` with `outcome` and `warnings`. */
-function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskDone['warnings']): string[] {
+/** The full stream's cards, then `text` as the only delta and a `done` with `outcome`, `warnings` and `actions`. */
+function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskDone['warnings'], actions: AskDone['actions'] = []): string[] {
   const full = blocksOf(examples['ask.sse.stream'])
   const upToCards = full.filter((part) => /^event: (meta|status|card)$/m.test(part))
   const done: AskDone = {
@@ -145,14 +146,19 @@ function cardsWithText(text: string, outcome: AskDone['outcome'], warnings: AskD
     cited: [],
     lesson: null,
     warnings,
+    actions,
   }
   return [...upToCards, block('delta', { text }), block('done', done)]
 }
 
 /** The AI model was not used: the template answered (`answered` with `llm_unavailable`). */
 const templateStream = () => cardsWithText(TEMPLATE_TEXT, 'answered', ['llm_unavailable'])
-/** Even the template failed the answer check: the fixed short text (`fallback`). */
-const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [])
+/**
+ * Even the template failed the answer check: the fixed short text (`fallback`). Like every fallback
+ * it carries the way to a human (contract 0.3.3), taken from the refusal example, and the full
+ * stream's follow-ups, so the next step shows the follow-up first (#696).
+ */
+const fallbackStream = () => cardsWithText(FALLBACK_TEXT, 'fallback', [], examples['ask.json.response_refusal'].actions ?? [])
 
 /** `?mock=review`: the full stream with the contract's `card.review` after its card (#450). */
 function reviewStream(): string[] {

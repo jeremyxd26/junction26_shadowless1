@@ -3,7 +3,7 @@
 // question) and its own explanation texts, and shows the period once, one main number and at most
 // three "label — value" rows. Which fields go where is decided by card type, never by comparing
 // texts: a live answer paraphrases its card, so a text match would miss the repeats on the demo.
-import type { BreakdownCard, Card, Comparison, MetricCard, Num, SafeToSaveCard } from '../api/types.ts'
+import type { BillsCard, BreakdownCard, Card, Comparison, MetricCard, Num, SafeToSaveCard } from '../api/types.ts'
 
 export const MAX_ROWS = 3
 
@@ -26,6 +26,8 @@ export interface AnswerFigures {
   rows: FigureRow[]
   /** The card's only content when it has no figures (a peer group that is not comparable). */
   note: string | null
+  /** A what-if's caveats, shown as sent when its status is not a plain `estimate` (#696). */
+  caveats: string[]
 }
 
 type ProfileCard = Card & {
@@ -44,7 +46,7 @@ type PeerCard = Card & {
 }
 
 type WhatIfCard = Card & {
-  result: { status?: string; saving_per_month: Num; saving_per_week: Num; saving_per_year: Num; baseline_per_month: Num }
+  result: { status?: string; saving_per_month: Num; saving_per_week: Num; saving_per_year: Num; baseline_per_month: Num; caveats?: string[] }
 }
 
 const row = (number: Num | null | undefined, key: string): FigureRow[] =>
@@ -61,6 +63,7 @@ function figures(main: Num | null, rows: FigureRow[], extra: Partial<AnswerFigur
     main,
     rows: rows.slice(0, MAX_ROWS),
     note: null,
+    caveats: [],
     ...extra,
   }
 }
@@ -89,14 +92,14 @@ export function captionOf(card: Card): string | null {
   }
 }
 
-/** The baskets breakdown keeps its own card (the overview's basket rows). */
+/** The baskets breakdown (the overview's basket rows); in an answer it has the answer-card shape too (#696). */
 export function isBasketsBreakdown(card: BreakdownCard): boolean {
   return card.items.some((item) => item.key === 'regular_essentials')
 }
 
 /**
- * The figures of a card in a chat answer, or null for a type that keeps its own renderer (bills,
- * review, the baskets breakdown, and any type the app does not know).
+ * The figures of a card in a chat answer, or null for a type that keeps its own renderer (the
+ * review, which carries its answer buttons, and any type the app does not know).
  */
 export function answerFigures(card: Card): AnswerFigures | null {
   switch (card.type) {
@@ -109,11 +112,22 @@ export function answerFigures(card: Card): AnswerFigures | null {
     }
     case 'breakdown': {
       const breakdown = card as BreakdownCard
-      if (isBasketsBreakdown(breakdown)) return null
+      const items = breakdown.items.map((item) => ({ key: item.key, label: item.label, number: item.amount }))
+      // The baskets answer the question themselves, so they come before the comparison (#696):
+      // with three baskets and a comparison, the cap of three rows keeps the baskets.
+      if (isBasketsBreakdown(breakdown)) return figures(breakdown.total, [...items, ...comparisonRow(breakdown.comparison)])
       return figures(breakdown.total, [
         ...comparisonRow(breakdown.comparison),
         ...breakdown.items.map((item) => ({ key: item.key, label: item.label, number: item.amount })),
       ])
+    }
+    case 'bills': {
+      // The total due before payday, then the bills (#696).
+      const bills = card as BillsCard
+      return figures(
+        bills.total,
+        bills.items.map((item) => ({ key: item.bill_id, label: item.label, number: item.due_until_payday })),
+      )
     }
     case 'safe_to_save': {
       const save = card as SafeToSaveCard
@@ -125,13 +139,16 @@ export function answerFigures(card: Card): AnswerFigures | null {
     }
     case 'whatif': {
       const result = (card as WhatIfCard).result
-      // Not offered (nothing to cut): no "€0.00 a month" headline; the frame with its title, as before.
-      if (!result?.saving_per_month || result.status === 'not_offered') return null
-      return figures(result.saving_per_month, [
-        ...row(result.saving_per_week, 'week'),
-        ...row(result.saving_per_year, 'year'),
-        ...row(result.baseline_per_month, 'baseline'),
-      ])
+      if (!result) return null
+      // Like the what-if sheet: the caveats show for any status other than a plain estimate (#696).
+      const caveats = result.status !== 'estimate' && Array.isArray(result.caveats) ? result.caveats.filter((text) => typeof text === 'string' && text.trim()) : []
+      // Not offered (nothing to cut): no "€0.00 a month" headline; the card's title and its caveats.
+      if (!result.saving_per_month || result.status === 'not_offered') return { ...figures(null, []), title: card.title, caveats }
+      return figures(
+        result.saving_per_month,
+        [...row(result.saving_per_week, 'week'), ...row(result.saving_per_year, 'year'), ...row(result.baseline_per_month, 'baseline')],
+        { caveats },
+      )
     }
     case 'profile': {
       const profile = card as ProfileCard

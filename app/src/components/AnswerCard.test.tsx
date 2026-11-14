@@ -70,7 +70,7 @@ describe('AnswerCard: profile, peer and bills', () => {
     expect(html).not.toContain(peer.peer_median.display)
   })
 
-  it('bills: the bills card with its bills and total', () => {
+  it('bills: its bills and total', () => {
     const html = render(bills)
     const items = (bills as unknown as { items: { label: string; typical_month: { display: string } }[] }).items
     expect(items.length).toBeGreaterThan(0)
@@ -140,6 +140,44 @@ describe('AnswerCard: profile, peer and bills', () => {
     const html = render({ ...profile, estimate: null } as ProfileData)
     expect(html).not.toContain('From your transactions')
     expect(render({ ...profile, type: 'stores', estimate: null } as unknown as Card)).not.toContain('From your transactions')
+  })
+
+  it('baskets breakdown (#696): the total large, the baskets as rows, no green pills', () => {
+    const baskets = (examples['overview.response'] as { cards: Card[] }).cards.find(
+      (card) => card.type === 'breakdown' && (card as unknown as { items: { key: string }[] }).items.some((item) => item.key === 'regular_essentials'),
+    ) as Card & { total: { display: string }; items: { label: string }[] }
+    const html = render(baskets)
+    expect(html).toContain('data-answer-main')
+    expect(html).toContain(baskets.total.display)
+    const rows = html.split('data-figure-row').slice(1)
+    expect(rows.length).toBe(Math.min(3, baskets.items.length))
+    // The baskets come first, so the cap keeps them rather than a comparison row.
+    baskets.items.slice(0, rows.length).forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+    expect(html).not.toContain('bg-mint')
+    expect(html).not.toContain(`<h3`)
+  })
+
+  it('bills (#696): the total due before payday large, at most three bills as rows', () => {
+    const html = render(bills)
+    expect(html).toContain('data-answer-main')
+    const rows = html.split('data-figure-row').slice(1)
+    const items = (bills as unknown as { items: unknown[] }).items
+    expect(rows.length).toBe(Math.min(3, items.length))
+    expect(html).not.toContain('bg-mint')
+  })
+
+  it('what-if with a caveat (#696): its caveats under the numbers, as the sheet shows them; a plain estimate shows none', () => {
+    const whatif = examples['card.whatif'] as Card & { result: Record<string, unknown> }
+    const caveat = 'Your restaurant spending changes a lot from month to month.'
+    const withCaveat = render({ ...whatif, result: { ...whatif.result, status: 'estimate_with_caveat', caveats: [caveat] } } as unknown as Card)
+    expect(withCaveat).toContain('data-answer-caveats')
+    expect(withCaveat).toContain(escape(caveat))
+    expect(withCaveat).toContain('data-answer-main')
+    const notOffered = render({ ...whatif, result: { ...whatif.result, status: 'not_offered', caveats: [caveat] } } as unknown as Card)
+    expect(notOffered).toContain(escape(caveat))
+    expect(notOffered).not.toContain('data-answer-main')
+    const plain = render({ ...whatif, result: { ...whatif.result, status: 'estimate', caveats: [caveat] } } as unknown as Card)
+    expect(plain).not.toContain('data-answer-caveats')
   })
 
   it('bills and safe to save in an answer draw no action of their own (the chat shows them as chips)', () => {

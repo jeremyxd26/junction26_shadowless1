@@ -1,5 +1,6 @@
 // The one next step under an answer (#684), taken from what the response already carries. Order:
-// 1. the answer's own action (`done.actions`, contract 0.3.3: the way to a human);
+// 1. the answer's own action (`done.actions`, contract 0.3.3: the way to a human); for a fallback
+//    and the "not yet" answer, the first follow-up question comes before it (#696);
 // 2. a card action that leads somewhere: the what-if, the bank's own screen (S-mobiili's monthly
 //    saving, which the demo path taps), or a question;
 // 3. the first follow-up question (the thread shows it on the latest answer only, as before);
@@ -21,14 +22,23 @@ function usable(action: Action): boolean {
 export function nextStep(done: AskDone | null, cards: Card[]): NextStep | null {
   if (!done) return null
   const own = doneActions(done).filter(usable)
+  const firstQuestion = done.follow_ups?.find((text) => typeof text === 'string' && text.trim())
+  // Maxim's decision on #696: the "nothing found" fallback and the "I can't answer that one yet"
+  // answer (a clarification that carries the way to a human, contract 7.2) offer one follow-up
+  // question from the response; the way to a human only when there is none. A refusal keeps only
+  // the way to a human.
+  const notYet = done.outcome === 'clarify' && own.length > 0
+  if (done.outcome === 'fallback' || notYet) {
+    if (firstQuestion) return { kind: 'question', question: firstQuestion }
+    return own.length > 0 ? { kind: 'action', action: own[0] } : null
+  }
   if (own.length > 0) return { kind: 'action', action: own[0] }
   if (done.outcome === 'clarify') return null
   // A refusal offers no card actions (as before).
   const cardActions = done.outcome === 'refused' ? [] : actionsOf(cards).filter(usable)
   const leading = cardActions.find((action) => action.type !== 'open_evidence')
   if (leading) return { kind: 'action', action: leading }
-  const question = done.follow_ups?.find((text) => typeof text === 'string' && text.trim())
-  if (question) return { kind: 'question', question }
+  if (firstQuestion) return { kind: 'question', question: firstQuestion }
   const evidence = cardActions.find((action) => action.type === 'open_evidence')
   return evidence ? { kind: 'action', action: evidence } : null
 }

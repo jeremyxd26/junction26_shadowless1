@@ -2,16 +2,15 @@
 // bubble and the sentence above the card, so a card reads as part of one answer (#684): no title
 // (it restates the question), the period once as a caption, one main number, at most three
 // "label — value" rows, and numbers as text, not pills. `lib/answerFigures.ts` picks the fields
-// by card type. Bills, the review and the baskets breakdown keep their own cards. Card `actions`
+// by card type; the baskets breakdown and the bills too (#696). The review keeps its own card. Card `actions`
 // are not drawn here: the answer shows at most one next step under the text.
 import { Component, type ReactNode } from 'react'
-import type { BreakdownCard, Card, Comparison, Num, ReviewCard } from '../api/types.ts'
-import { answerFigures, asLaterCard, isBasketsBreakdown, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
+import type { Card, Comparison, Num, ReviewCard } from '../api/types.ts'
+import { answerFigures, asLaterCard, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
-import { BillsCards } from './BillsCard.tsx'
-import { BasketsCard, CARD_TITLE, CardShell } from './cards.tsx'
+import { CARD_TITLE, CardShell } from './cards.tsx'
 import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
 import { ReviewPointer } from './ReviewPointer.tsx'
@@ -71,7 +70,7 @@ function Row({ row }: { row: FigureRow }) {
 /** One card of an answer: caption and estimate marker, the result's name, the main number, the rows. */
 function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) {
   const estimate = useEstimateToggle()
-  const { caption, title, tags, main, rows, note } = figures
+  const { caption, title, tags, main, rows, note, caveats } = figures
   return (
     <CardShell>
       {(caption || card.estimate) && (
@@ -103,6 +102,14 @@ function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) 
         </ul>
       )}
       {note && <p className="mt-1 text-sm text-muted">{note}</p>}
+      {/* A what-if's caveats, as the what-if sheet shows them (#696). */}
+      {caveats.length > 0 && (
+        <div data-answer-caveats="" className="mt-2 rounded-md bg-warning-tint p-3 text-base text-ink">
+          {caveats.map((caveat) => (
+            <p key={caveat}>{caveat}</p>
+          ))}
+        </div>
+      )}
     </CardShell>
   )
 }
@@ -128,11 +135,6 @@ function CardBody({ card, later = false, previousCaption = null }: { card: Card 
   const figures = own && later ? asLaterCard(own, previousCaption) : own
   if (figures) return <AnswerFrame card={card} figures={figures} />
   switch (card.type) {
-    case 'breakdown':
-      // Only the baskets breakdown gets here (answerFigures takes the others).
-      return isBasketsBreakdown(card as BreakdownCard) ? <BasketsCard card={card as BreakdownCard} /> : <GenericAnswer card={card} />
-    case 'bills':
-      return <BillsCards cards={[{ ...card, actions: [] }]} />
     // A review is asked once, in the opening; the answer points there (#318).
     case 'review':
       return <ReviewPointer card={card as ReviewCard} />
