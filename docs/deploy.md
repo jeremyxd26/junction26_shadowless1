@@ -186,6 +186,20 @@ The core writes its own data under `var/` at the repository root, which is `/srv
 
 The answer pipeline's audit log goes to `/srv/var/audit` by default (`AUDIT_LOG_DIR` overrides it), so it lands in this directory. It survives deploys, rollbacks and restarts. `remote-deploy.sh` creates it before every switch (`install -d -o 10001 -g 10001 -m 700`), and only root and the container user can read it. To reset the counter or the caches, stop the service, delete the files and start it again.
 
+### The tool cache (#86)
+
+The service keeps tool results in memory and in `/srv/var/cache/tools.sqlite3` (host: `/var/lib/shadowless1/var/cache/tools.sqlite3`). `TOOL_CACHE=off|memory|disk` switches it (default `disk`). The end of `remote-deploy.sh` fills it for the four demo personas (`docker exec shadowless1-core timeout 280 python -m core.tools.warmup`, at most 300 s, never fatal). Run the same line by hand to warm it again. It prints one line per call: `tool` (computed now), `disk` or `memory` (already cached) or `recomputed` (its evidence was missing).
+
+A cached number's evidence ref points into `coach_evidence` in the database.
+
+**After a database reset or a data reload:**
+1. Stop the service.
+2. Delete the cache file: `rm /var/lib/shadowless1/var/cache/tools.sqlite3*`.
+3. Start the service.
+4. Run the warm-up.
+
+A warm-up alone is not enough. It recomputes only the entries whose refs it checks, and entries for other keys would still point at evidence rows that no longer exist. A changed `DATABASE_URL` needs no step: the database's identity is part of every key.
+
 ## Roll back
 
 If a new version fails to start (`systemctl restart` fails), or does not pass `/healthz` within 30 s, `remote-deploy.sh` switches back to the previous commit by itself and exits with an error. It restores both that commit's image and **its** unit file, taken from git, so a broken unit change cannot break the rollback too.

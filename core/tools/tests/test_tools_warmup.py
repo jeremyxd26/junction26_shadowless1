@@ -37,7 +37,7 @@ def test_the_personas_are_the_four_of_personas_yaml():
 def test_warm_runs_every_call_once_and_then_serves_hits(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
     lines: list[str] = []
     rows = warmup.warm(cache, None, PERSONAS, ["en", "fi"], date(2026, 9, 30), out=lines.append, calls=FAKE_CALLS)
     assert len(rows) == 4 * 2 * 2 and len(lines) == len(rows)
@@ -126,7 +126,7 @@ class EvidenceConn:
 def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
     calls_made.clear()
     cache = ToolCache(mode="memory")
-    monkeypatch.setattr(cache, "labels_key", staticmethod(lambda conn, cid, as_of: "no-labels"))
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
     calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
     warmup.warm(cache, None, ["CUST00860"], ["en", "fi"], date(2026, 9, 30), out=lambda _: None, calls=calls)
     assert len(calls_made) == 2
@@ -136,3 +136,67 @@ def test_cached_results_whose_evidence_is_gone_are_computed_again(monkeypatch):
     assert conn.queries == 1                                           # one query for the persona
     assert [(r.language, r.source) for r in rows] == [("en", "memory"), ("fi", "memory"), ("fi", "recomputed")]
     assert calls_made[-1] == ("CUST00860", "fi") and len(calls_made) == 3
+
+
+
+def test_a_failed_evidence_check_does_not_stop_the_other_personas(monkeypatch):
+    calls_made.clear()
+    cache = ToolCache(mode="memory")
+    monkeypatch.setattr("core.tools.labels.basket_labels", lambda *a, **k: {})   # no labels, no read
+    calls = (WarmCall("evidence", __name__, "evidence_tool", "EmptyArgs", {}),)
+    two = ["CUST00860", "CUST00493"]
+    warmup.warm(cache, None, two, ["en"], date(2026, 9, 30), out=lambda _: None, calls=calls)
+
+    class BrokenConn:
+        def execute(self, sql, params=None):
+            raise RuntimeError("database went away")
+
+    lines: list[str] = []
+    rows = warmup.warm(cache, BrokenConn(), two, ["en"], date(2026, 9, 30), out=lines.append, calls=calls)
+    assert [r.source for r in rows] == ["memory", "memory"]            # both personas still served
+    assert sum("evidence check failed (RuntimeError)" in line for line in lines) == 2
+
+
+
+probe_seen: list[tuple] = []
+
+
+def probe_tool(ctx, args):
+    from core.tools import labels
+    from core.tools.cache import labels_key_of
+
+    probe_seen.append((ctx.language, ctx.labels_key, labels_key_of(labels.for_context(ctx))))
+    return ToolResult(tool="probe_tool", data=None, model_view={})
+
+
+def test_a_label_write_between_two_languages_never_stores_a_value_under_another_key(monkeypatch):
+    """The reviewer's probe of #213: the key and the label set travel together into the next language;
+    a label write after the first read changes neither the key nor the tool's labels of that persona."""
+    from core.tools import labels
+
+    reads = []
+
+    def basket_labels(conn, cid, as_of, now=None, viewer=None):
+        reads.append(cid)
+        return {} if len(reads) == 1 else {5: "everyday_spending"}   # a label write lands after the first read
+
+    monkeypatch.setattr(labels, "basket_labels", basket_labels)
+    probe_seen.clear()
+    calls = (WarmCall("probe", __name__, "probe_tool", "EmptyArgs", {}),)
+    warmup.warm(ToolCache(mode="memory"), None, ["CUST00860"], ["en", "fi"], date(2026, 9, 30),
+                out=lambda _: None, calls=calls)
+    assert [lang for lang, _, _ in probe_seen] == ["en", "fi"]
+    assert all(key == tool_labels for _, key, tool_labels in probe_seen)     # the key is the tool's labels
+    assert reads == ["CUST00860"]                                             # one label read per persona
+
+
+def test_a_preset_key_without_its_labels_is_never_trusted(monkeypatch):
+    from core.tools import labels
+    from core.tools.cache import labels_key_of
+    from core.tools.context import ToolContext
+
+    monkeypatch.setattr(labels, "basket_labels", lambda conn, cid, as_of, now=None, viewer=None: {5: "everyday_spending"})
+    ctx = ToolContext(customer_id="CUST00860", as_of=date(2026, 9, 30), conn=None)
+    ctx.labels_key = "a key from another context"
+    ToolCache(mode="memory").ensure_labels_key(ctx)
+    assert ctx.labels_key == labels_key_of({5: "everyday_spending"}) and ctx._labels == {5: "everyday_spending"}

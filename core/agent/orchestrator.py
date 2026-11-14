@@ -51,6 +51,7 @@ from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
 from core.app.api import texts as api_texts
+from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
@@ -150,8 +151,9 @@ class AskRequest:
     message: str
     language: str = "auto"            # en | fi | auto
     conversation_id: str | None = None
-    # SEAM (#144, PR #199): the viewer session key (a hash of the viewer cookie), set by api.py with
-    # core.app.api.viewer.viewer_of(request, response). Never logged, never in a model view or the audit.
+    # The viewer session key (#144, #253): a hash of the viewer cookie, from known_viewer(request). The
+    # answer's labels are this viewer's answers; None reads the shared state. Never logged, never in a
+    # model view or the audit record.
     viewer: str | None = None
     # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
     # with the `llm_unavailable` warning, and no model request is made.
@@ -179,16 +181,16 @@ class _Answer:
     refusal: dict[str, str] | None = None
     clarify: dict[str, Any] | None = None
     text: str | None = None
-    # Why the language model was not used although it would have been (#244): "model_window" (#232),
-    # "no_model" (no key), "off", "budget", "pause" (decided before planning by
-    # Pipeline._model_unavailable), or "error" (it was asked and failed).
-    model_unavailable: str | None = None
-    template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     text_rendered: str | None = None
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
     ok_calls: list[dict[str, Any]] = field(default_factory=list)  # the data calls that returned a result
+    # Why the language model was not used although it would have been (#244): "model_window" (#232),
+    # "no_model" (no key), "off", "budget", "pause" (decided before planning by
+    # Pipeline._model_unavailable), or "error" (it was asked and failed).
+    model_unavailable: str | None = None
+    template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -261,10 +263,10 @@ class Pipeline:
         a.flags = guard.flags(message)
 
         # The customer is bound here, from the request, and never from model output (R4).
-        # SEAM (#144, PR #199): pass viewer=req.viewer here once ToolContext has the field. The label
-        # state below is then this viewer's, and every tool call's copy of ctx keeps it.
+        # The viewer's labels (#253): ensure_pending_for below reads and creates for this viewer, and
+        # every tool call's copy of ctx keeps it.
         ctx = ToolContext(customer_id=req.customer_id, as_of=self.as_of, conn=None, language=lang,
-                          numbers=LockedNumberRegistry())
+                          numbers=LockedNumberRegistry(), viewer=req.viewer)
         # The label state, as the overview establishes it (#196): before the model plans, once per answer.
         review = self._establish_labels(ctx, a)  # `pending` below is the round's list of calls
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
@@ -493,7 +495,14 @@ class Pipeline:
         MAX_PARALLEL - 1 more lanes run only on a connection that is free within SPARE_WAIT_S
         (DataAccess.connection_if_free), so the calls run one by one when the pool is busy. A lane takes its connection BEFORE it takes a call:
         a call that waits for the one before it (ids, cards and audit keys follow the call order) then
-        always waits on a call that holds a connection and can finish."""
+        always waits on a call that holds a connection and can finish.
+        Tool results go through the tool cache (#86): the customer's label state is read once per answer
+        before the lanes start, and a cached result runs no SQL."""
+        if pending and TOOL_CACHE.enabled:
+            try:
+                TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)   # copied into every call's context
+            except (psycopg.OperationalError, PoolTimeout):
+                raise DataUnavailable() from None
         records: list[dict[str, Any] | None] = [None] * len(pending)
         done = [threading.Event() for _ in pending]
         queue = deque(range(len(pending)))
@@ -569,7 +578,9 @@ class Pipeline:
         t = self.clock()
         record: dict[str, Any] = {"name": call.name, "args": call.args}
         try:
-            result = spec.fn(ctx, args)
+            # Through the tool cache (#86), on the lane's connection: a cached result runs no SQL, and its
+            # numbers are registered in call order like a fresh call's.
+            result = TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, ctx, args)
         except DataUnavailable:
             raise
         except (psycopg.OperationalError, PoolTimeout):
@@ -695,10 +706,10 @@ class Pipeline:
             "text_rendered": a.text_rendered,
             "cards": a.cards,
             "warnings": a.warnings,
-            "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
             "error": a.error,
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
+            "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

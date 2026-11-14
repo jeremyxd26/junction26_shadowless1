@@ -33,6 +33,7 @@ from core.agent import guard
 from core.agent.audit import AuditLog
 from core.app.api import deps
 from core.app.api.errors import envelope
+from core.app.api.viewer import known_viewer
 from core.agent.conversation import ConversationStore
 from core.agent.gemini import make_agent_model
 from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, LabelSteps, Pipeline, error_envelope
@@ -311,9 +312,11 @@ async def ask(request: Request):
     if not exists:
         return envelope("customer_not_found", lang)
 
-    # SEAM (#144, PR #199): viewer=viewer_of(request, response), with the cookie set on the response.
+    # The viewer's answers decide the labels (#253), as on the overview. known_viewer never sets a cookie:
+    # this route returns its own Response, and the overview has issued the cookie already.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
-                     conversation_id=body.conversation_id, model_allowed=decision == "model")
+                     conversation_id=body.conversation_id, model_allowed=decision == "model",
+                     viewer=known_viewer(request))
     if "text/event-stream" in request.headers.get("accept", ""):
         return StreamingResponse(_stream(agent.pipeline, req), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
