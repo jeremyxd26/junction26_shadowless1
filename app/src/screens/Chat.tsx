@@ -9,7 +9,7 @@ import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
-import { lastAskId } from '../lib/thread.ts'
+import { isClientTurn, lastAskId } from '../lib/thread.ts'
 import { landBelowHeader } from '../lib/threadScroll.ts'
 import { NEAR_LIMIT, fitPaste } from '../lib/questionLength.ts'
 import { withSpoken } from '../lib/stt.ts'
@@ -88,6 +88,8 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // Follow-ups and the answer's announcement belong to the last ask turn, even when a client turn
   // (#319) came after it while it was still streaming (#332).
   const latestAsk = lastAskId(turns)
+  // Only the first answer carries the visible "Sentti" label, so a long thread reads like a conversation.
+  const firstAsk = turns.find((turn) => !isClientTurn(turn))?.id
   // It lands below the header's measured height, so large text does not hide it under the header (#332).
   useEffect(() => {
     if (lastId === undefined || !many) return
@@ -168,6 +170,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
             <TurnView
               turn={turn}
               latest={turn.id === latestAsk}
+              firstAnswer={turn.id === firstAsk}
               suggestions={suggestions}
               onAsk={send}
               onRetry={() => retry(turn.id, turn.question)}
