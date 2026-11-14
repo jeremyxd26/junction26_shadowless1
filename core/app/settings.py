@@ -41,6 +41,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",  # .env also holds keys for other tools
+        # A validation error names the setting but never echoes its value, so a start-up error cannot
+        # print a secret (#198).
+        hide_input_in_errors=True,
     )
 
     database_url: SecretStr | None = None
