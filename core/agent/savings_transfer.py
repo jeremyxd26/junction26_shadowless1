@@ -24,8 +24,8 @@ from core.agent.guard import fold_pattern
 _TO_SAVINGS = r"\b(to|into)\s+(my\s+|the\s+|our\s+)?savings?\b"
 _FI_SAVINGS = r"\b(säästöön|säästöihin|säästötili\w*)\b"
 MOVED = fold_pattern(
-    r"\b(transfer\w*|put|puts|putting|mov(e|es|ed|ing)|sen(d|ds|t|ding)|go|goes|went|going|set(ting)?\s+aside|"
-    r"pa(y|ys|id))\b[^.?!]{0,40}?" + _TO_SAVINGS + r"|\bsavings?\s+transfers?\b|"
+    r"\b(transfer\w*|put|puts|putting|mov(e|es|ed|ing)|sen(d|ds|t|ding)|go|goes|went|going|set(ting)?\s+aside)\b"
+    r"[^.?!]{0,40}?" + _TO_SAVINGS + r"|\bsavings?\s+transfers?\b|"
     r"\b(siirs|siirr|siirt|laito|laita|laitet|pistin|pistä|panin|panen|men(ee|i|evät|ivät)\b)\w*[^.?!]{0,40}?"
     + _FI_SAVINGS + r"|\bsäästösiirto\w*")
 # A question about the user's own money, past or usual ...
@@ -36,13 +36,23 @@ ASKS = fold_pattern(
 # ... never a request to move money ("Put 100 euros into savings?", "Can you move 50 euros to savings?"), advice, a
 # plan, a hypothesis or a future amount ("How much should I transfer to savings?", "What if I put 100 euros into
 # savings?"): the decline, savings plan and what-if rules answer those
+# A move or change verb with an amount anywhere in the message ("… Also move 200 euros to savings now", "… can you
+# increase it to 500 euros?"): a request, which keeps the decline rules' refusal (review of #670)
+MOVE_WITH_AMOUNT = fold_pattern(
+    r"\b(transfer|move|send|put|deposit|add|pay|increase|raise|lower|reduce|change|set|siirrä|siirtää|laita|laittaa|"
+    r"pistä|pane|talleta|nosta|nostaa|muuta|maksa)\b[^.?!]{0,30}?"
+    r"(€\s?\d|\b\d[\d\s.,]*\s?(€|euros?|eur|euroa?|e)\b|\b(ten|twenty|fifty|hundred|thousand|kymmenen|"
+    r"viisikymmentä|sata|tuhat)\s+(euros?|euroa?)\b)")
 NOT_OWN = fold_pattern(
     r"^\W*(please\s+|pls\s+)?(transfer|put|move|send|set|pay|make|start|stop|cancel|siirrä|siirtäkää|laita|pistä|"
     r"pane|tee|aloita|lopeta)\b|\b(can|could|would|will)\s+you\b|\bvoi(tko|sitko|tteko)\b|"
     r"\b(should|could|can|would|might|will|shall|must|ought|may)\s+(i|we)\b|\b(have|need|want|ought)\s+to\b|"
-    r"\bwhat if\b|\bif (i|we)\b|\bnext (month|year|week)\b|"
-    r"\b(pitäisi|pitäis|kannattaa|kannattaisi|voisin|voinko|voiko|voisiko|pitääkö|tarvitsee|täytyy|jos)\b|"
-    r"\bensi (kuussa|vuonna|viikolla)\b")
+    r"\bwhat if\b|\bif (i|we)\b|\bnext (month|year|week)\b|\b(tomorrow|tonight|huomenna)\b|"
+    r"\b(pitäisi|pitäis|kannattaa|kannattaisi|voin|voit|voimme|voisin|voisimme|voinko|voiko|voisiko|pitääkö|"
+    r"tarvitsee|täytyy|jos)\b|"
+    r"\bensi (kuussa|vuonna|viikolla)\b|"
+    # fees, costs, interest or tax on savings are another question (review of #670)
+    r"\b(fees?|charges?|costs?|interest|tax(es)?|kulut|kuluja|palkkio\w*|korko\w*|korot)\b") + "|" + MOVE_WITH_AMOUNT
 # The past: a month, the last transfer, a past verb. Otherwise the question is about the usual transfer.
 PAST = fold_pattern(
     r"\b(did|was|were|went|last|latest|previous|recent|ago|transferred|moved|sent|paid|this year|so far)\b|"
@@ -52,13 +62,37 @@ PAST = fold_pattern(
     r"\b(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu\w*")
 ONE_TRANSFER = fold_pattern(r"\b(last|latest|previous|recent)\s+(savings\s+)?transfer\b|"
                             r"\b(viimeisin|edellinen)\s+(säästö)?siirto\w*")
+# One month named or meant ("last month", "in August", "viime kuussa", "elokuussa"): the month lead
+MONTH = fold_pattern(
+    r"\b(last|this|previous|past)\s+month\b|"
+    r"\b(january|february|march|april|june|july|august|september|october|november|december)\b|\bin may\b|"
+    r"\b(viime|edellisenä|edellisessä|tässä|tänä)\s+(kuussa|kuukautena|kuukaudessa)\b|"
+    r"\b(tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuussa\b")
+# A year, a total, "ever", a week or a year as the period (review of #670): the period lead, never the month's
+PERIOD_TOTAL = fold_pattern(
+    r"\b(19|20)\d\d\b|\b(in total|altogether|ever|so far|this year|last year|a year|per year|each year|every year|"
+    r"yearly|annually|a week|per week|each week|every week|weekly)\b|"
+    r"\b(yhteensä|koskaan|tähän mennessä|tänä vuonna|viime vuonna|vuodessa|vuosittain|viikossa|viikoittain)\b")
 
 LEAD = {
     "month": ("I can't single out a past month's transfers to savings on their own.",
               "En pysty erottelemaan yksittäisen kuukauden säästösiirtoja erikseen."),
     "transfer": ("I can't single out one transfer to savings on its own.",
                  "En pysty erottelemaan yksittäistä säästösiirtoa erikseen."),
+    "total": ("I can't add up your past transfers to savings for a period.",
+              "En pysty laskemaan aiempia säästösiirtojasi yhteen tietyltä ajalta."),
 }
+
+
+def lead_key(q: str, kind: str) -> str | None:
+    """Which lead the answer opens with: one transfer, one month, a period's total; None for the usual transfer."""
+    if re.search(ONE_TRANSFER, q):
+        return "transfer"
+    if re.search(PERIOD_TOTAL, q):
+        return "total"
+    if kind == "past":
+        return "month" if re.search(MONTH, q) else "total"
+    return None
 
 
 def asks(q: str) -> str | None:
@@ -90,7 +124,7 @@ def sentence(view: dict[str, Any], language: str, q: str, already: dict[str, tup
         body, cited = already["no_transfer"][pick], []
     else:
         return None
-    if kind == "past":
-        lead = LEAD["transfer" if re.search(ONE_TRANSFER, q) else "month"][pick]
-        return f"{lead} {body}", cited
+    key = lead_key(q, kind)
+    if key is not None:
+        return f"{LEAD[key][pick]} {body}", cited
     return body, cited
