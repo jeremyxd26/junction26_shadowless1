@@ -12,7 +12,7 @@ export function LoadingBlock({ lines = 3, announce = true }: { lines?: number; a
     <div role={announce ? 'status' : undefined} aria-live={announce ? 'polite' : undefined} className="flex flex-col gap-3">
       {announce && <span className="sr-only">{t.loading}</span>}
       {Array.from({ length: lines }, (_, index) => (
-        <div key={index} className="h-6 animate-pulse rounded-md bg-sunken" style={{ width: `${90 - index * 12}%` }} />
+        <div key={index} className="h-6 shimmer rounded-md" style={{ width: `${90 - index * 12}%` }} />
       ))}
     </div>
   )

@@ -115,9 +115,9 @@ export function LearnLesson({
               picked === null
                 ? 'border-line bg-surface hover:bg-sunken'
                 : isRight
-                  ? 'border-brand bg-mint'
+                  ? 'answer-pop border-brand bg-mint'
                   : chosen
-                    ? 'border-danger bg-danger-tint'
+                    ? 'answer-pop border-danger bg-danger-tint'
                     : 'border-line bg-surface opacity-60'
             return (
               <button

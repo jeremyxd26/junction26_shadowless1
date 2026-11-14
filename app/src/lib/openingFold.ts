@@ -3,5 +3,5 @@ export const UNFOLD_OPENING = 'sentti:unfold-opening'
 
 /** The element, if it is laid out (not inside a folded opening or another `hidden` part). */
 export function isShown(element: Element): boolean {
-  return element.getClientRects().length > 0
+  return element.getClientRects().length > 0 && !element.closest('[inert]')
 }

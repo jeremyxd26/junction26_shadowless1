@@ -53,8 +53,15 @@ export function OpeningFold({ canFold, foldKey, children }: { canFold: boolean; 
           </svg>
         </button>
       )}
-      <div id={id} hidden={!expanded} className={canFold && expanded ? 'card-enter' : undefined}>
-        {children}
+      {/* The height eases open and shut (grid rows 0fr / 1fr; at once under reduced motion); folded, the
+          opening is inert, so it is out of the tab order and the screen reader's reach. The padding gives
+          focus rings room inside the clip. */}
+      <div
+        id={id}
+        inert={!expanded}
+        className={`-m-1 grid transition-[grid-template-rows] duration-(--duration-base) ease-(--ease-standard) ${expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+      >
+        <div className="min-h-0 overflow-hidden p-1">{children}</div>
       </div>
     </>
   )
