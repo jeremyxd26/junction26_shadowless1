@@ -133,6 +133,12 @@ export interface SafeToSaveReason {
 export interface SafeToSaveCard extends CardBase {
   type: 'safe_to_save'
   monthly: Num
+  /**
+   * The same headline a week and a day (contract 0.3.5, #417): composites whose evidence opens
+   * `monthly`. Optional here, so a core older than 0.3.5 that leaves them out still renders (#477).
+   */
+  weekly?: Num
+  daily?: Num
   monthly_components: Component[]
   stock: Num
   stock_explanation: string
