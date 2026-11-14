@@ -312,6 +312,75 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     ),
 }
 
+# ---- get_safe_to_save (#165, metrics.md section 3.1) ----------------------------------------------
+# Read from the same row of 03_safe_to_spend.sql as get_safe_to_spend (one run per request). Monthly
+# figures describe a typical month of the last 6 complete months; the stock describes today + 1 to payday.
+SAFE_TO_SAVE_NUMBERS = (  # (key, output column, unit value)
+    ("monthly", "safe_to_save_monthly_eur", "eur_per_month"),
+    ("free_month", "free_month_eur", "eur_per_month"),
+    ("everyday_month", "everyday_month_eur", "eur_per_month"),
+    ("essentials_shortfall", "essentials_shortfall_month_eur", "eur_per_month"),
+    ("stock", "safe_to_save_eur", "eur"),
+    ("free_until_payday", "free_until_payday_eur", "eur"),
+    ("everyday_until_payday", "everyday_until_payday_eur", "eur"),
+    ("reason", "save_reason_month_eur", "eur_per_month"),   # only when a typical month leaves nothing
+)
+SENSITIVE_CATEGORIES = frozenset({"Health"})   # never named by the safe-to-save reason (R9)
+
+SAFE_TO_SAVE_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Safe to save", "Turvallisesti säästettävissä"),
+    "subtitle": ("What a typical month leaves", "Mitä tavallisesta kuukaudesta jää"),
+    "estimate_text": (
+        "A typical month of your last six: income minus bills, saving you set up, usual essentials, a "
+        "reserve for unexpected costs and your usual everyday spending.",
+        "Tavallinen kuukausi kuuden viimeisen joukosta: tulot miinus laskut, sopimasi säästöt, tavalliset "
+        "välttämättömät menot, varaus yllättäviin menoihin ja tavallinen arkikulutuksesi.",
+    ),
+    # Number labels
+    "monthly": ("Typically left each month", "Tavallisesti jää kuukaudessa"),
+    "free_month": ("Free in a typical month", "Vapaana tavallisessa kuukaudessa"),
+    "everyday_month": ("Everyday spending in a typical month", "Arkikulutus tavallisessa kuukaudessa"),
+    "essentials_shortfall": ("Bills, essentials and the reserve above income",
+                             "Laskut, välttämättömät menot ja varaus ylittävät tulot"),
+    "stock": ("In your account beyond what you need until payday",
+              "Tililläsi yli sen, mitä tarvitset palkkapäivään asti"),
+    "free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
+    "everyday_until_payday": ("Everyday spending until payday", "Arkikulutus palkkapäivään asti"),
+    # component labels
+    "c_free_month": ("Left after bills, essentials and the reserve",
+                     "Jää laskujen, välttämättömien menojen ja varauksen jälkeen"),
+    "c_everyday_month": ("Usual everyday spending", "Tavallinen arkikulutus"),
+    "c_essentials_shortfall": ("Short before any everyday spending", "Vajaa jo ennen arkikulutusta"),
+    "c_free_until_payday": ("Free until payday", "Vapaana palkkapäivään asti"),
+    "c_everyday_until_payday": ("Usual everyday spending until payday", "Tavallinen arkikulutus palkkapäivään asti"),
+    # one sentence, never a call to action, no digits (R7)
+    "stock_explanation": (
+        "Money in your account beyond what you need until payday, after bills, reserves, a small cushion "
+        "and your usual everyday spending.",
+        "Tililläsi oleva raha yli sen, mitä tarvitset palkkapäivään asti, kun laskut, varaukset, pieni "
+        "puskuri ja tavallinen arkikulutuksesi on otettu huomioon.",
+    ),
+    # the reason when a typical month leaves nothing; no digits (the app shows the amount next to it)
+    "reason_essentials_exceed_income": (
+        "Nothing is left in a typical month: your bills, the saving you set up, usual essentials and the "
+        "reserve for unexpected costs already come to more than your income.",
+        "Tavallisesta kuukaudesta ei jää mitään: laskusi, sopimasi säästöt, tavalliset välttämättömät menot "
+        "ja varaus yllättäviin menoihin ovat jo yhteensä enemmän kuin tulosi.",
+    ),
+    "reason_largest_everyday_category": (
+        "Nothing is left in a typical month. Your largest everyday spending category is {category}.",
+        "Tavallisesta kuukaudesta ei jää mitään. Suurin arkikulutuksesi luokka on {category}.",
+    ),
+    "reason_everyday_uses_it_up": (   # the category would be sensitive (R9): it is not named
+        "Nothing is left in a typical month after your usual everyday spending.",
+        "Tavallisesta kuukaudesta ei jää mitään tavallisen arkikulutuksesi jälkeen.",
+    ),
+    "reason_amount_shortfall": ("Short each month", "Vajaa kuukaudessa"),
+    "reason_amount_category": ("{category} in a typical month", "{category} tavallisessa kuukaudessa"),
+    "reason_amount_everyday": ("Largest everyday category in a typical month",
+                               "Suurin arkikulutuksen luokka tavallisessa kuukaudessa"),
+}
+
 WHAT_IF_TEXT: dict[str, tuple[str, str]] = {
     "scenario": ("Spend {pct}% less on {what}", "Käytä {pct} % vähemmän: {what}"),
     "subtitle": ("Based on your last 6 full months", "Perustuu 6 viimeiseen täyteen kuukauteesi"),
@@ -398,3 +467,41 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
     "still_pending": ("Nothing changed: this purchase is still waiting for your answer.",
                       "Mikään ei muuttunut: tämä ostos odottaa yhä vastaustasi."),
 }
+# ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
+# The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
+# Nothing here names a store or says where the customer shops.
+BONUS_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("S-Bonus estimate", "S-Bonus-arvio"),
+    "scenario": ("If {share} of your grocery spending went to S-Group stores",
+                 "Jos {share} ruokaostoksistasi tehtäisiin S-ryhmän kaupoissa"),
+    "grocery_month": ("Your grocery spending a month", "Ruokaostoksesi kuukaudessa"),
+    "share_typed": ("Share at S-Group stores", "Osuus S-ryhmän kaupoissa"),
+    "share_default": ("Assumed share at S-Group stores", "Oletettu osuus S-ryhmän kaupoissa"),
+    "level_base": ("Purchases that set the Bonus level", "Bonustason määräävät ostot"),
+    "bonus_percent": ("Bonus level", "Bonustaso"),
+    "bonus_month": ("Bonus a month", "Bonus kuukaudessa"),
+    "payment_benefit_month": ("Payment benefit a month", "Maksutapaetu kuukaudessa"),
+    "total_month": ("Bonus and payment benefit a month", "Bonus ja maksutapaetu kuukaudessa"),
+    "total_year": ("Bonus and payment benefit a year", "Bonus ja maksutapaetu vuodessa"),
+    "lowest_level": ("Lowest Bonus level", "Alin Bonustaso"),
+    "estimate_label": ("Estimate", "Arvio"),
+    "estimate_text": (
+        "A what-if on your own grocery spending, not a statement about where you shop.",
+        "Laskelma omista ruokaostoksistasi, ei tieto siitä, missä asioit.",
+    ),
+    # Every assumption reads as one: nothing says the customer is a co-op member or shops anywhere.
+    "assume_household": ("Assumes you are the only shopper in a co-op household.",
+                         "Oletus: olisit osuuskaupan talouden ainoa ostaja."),
+    "assume_table": ("Assumes the default Bonus table, not the KPO or Koillismaa table.",
+                     "Oletus: tavallinen Bonustaulukko, ei KPO:n tai Koillismaan taulukko."),
+    "assume_card": ("Assumes payment with an S-Etukortti Visa, which adds the payment benefit.",
+                    "Oletus: maksu S-Etukortti Visalla, joka tuo maksutapaedun."),
+    "assume_goods": ("Assumes none of it is alcohol, tobacco or lottery, which earn no Bonus.",
+                     "Oletus: ostoksissa ei ole alkoholia, tupakkaa eikä arpoja, joista ei saa Bonusta."),
+    "assume_share": ("Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop.",
+                     "Oletus: osuus S-ryhmän kaupoissa on laskelma, ei tieto siitä, missä asioit."),
+    "reason_below_lowest": ("These purchases stay below the lowest Bonus level, so no Bonus would be paid.",
+                            "Nämä ostot jäävät alimman Bonustason alle, joten Bonusta ei maksettaisi."),
+    "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+}
+BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")

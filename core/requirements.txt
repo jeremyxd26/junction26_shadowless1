@@ -1,11 +1,65 @@
-psycopg[binary,pool]>=3.3
-fastapi>=0.162
-uvicorn>=0.54
-pydantic-settings>=2.16
-pydantic>=2.7
-pyyaml>=6.0
-google-genai==3.3.0
-tzdata>=2024.1  # Europe/Helsinki for the spike-review calendar week, also where the OS has no zoneinfo
+# Exact versions of everything the service installs, direct and transitive (#121), so that every
+# install (the image on the dev host, CI, a laptop) gets the set that was tested: 10 direct pins and
+# 34 transitive ones for Linux and CPython 3.11, plus 1 package that only Windows needs.
+# To change a version, resolve from the direct block only (installing this whole file keeps the old
+# transitive pins in force, so a bumped direct pin either conflicts or changes nothing):
+#   1. Change the pin in the "direct" block.
+#   2. Copy the direct block to a scratch file and resolve it for the image's platform, either with
+#        uv pip compile --python-platform x86_64-manylinux_2_28 --python-version 3.11 direct.txt
+#      or by installing it into a fresh Python 3.11 venv on Linux and running `pip freeze`.
+#   3. Replace the transitive block with the result, without the direct packages. Keep the
+#      Windows-only packages under their marker.
+#   4. Run the tests and `pip-audit -r core/requirements.txt`.
+# Hash checking (`--require-hashes`) is #194.
+
+# direct
+psycopg[binary,pool]==3.3.9
+fastapi==0.162.7
+uvicorn==0.54.0
+pydantic-settings==2.16.3
+pydantic==2.14.3
+PyYAML==6.0.3
+google-genai==3.3.0  # the Gemini adapter (core/agent/gemini_client.py)
+tzdata==2026.6  # Europe/Helsinki for the spike-review calendar week, also where the OS has no zoneinfo
 # tests (Starlette's TestClient is built on httpx2)
-pytest>=9.2
-httpx2>=2.16
+pytest==9.2.0
+httpx2==2.16.0
+
+# transitive (Linux, CPython 3.11)
+annotated-doc==0.0.6
+annotated-types==0.8.0
+anyio==4.16.0
+certifi==2026.10.23
+cffi==2.1.1
+charset-normalizer==3.5.2
+click==8.5.1
+cryptography==50.0.2
+distro==1.9.0
+google-auth==2.62.2
+h11==0.16.0
+httpcore2==2.16.0
+idna==3.20
+iniconfig==2.3.1
+opentelemetry-api==1.45.2
+packaging==26.3
+pluggy==1.7.0
+psycopg-binary==3.3.9
+psycopg-pool==3.3.3
+pyasn1==0.6.5
+pyasn1_modules==0.4.2
+pycparser==3.12
+pydantic_core==2.50.4
+Pygments==2.21.0
+python-dotenv==1.2.4
+requests==2.34.2
+sniffio==1.3.1
+starlette==1.10.0
+tenacity==9.1.4
+truststore==0.10.5
+typing_extensions==4.16.0
+typing-inspection==0.4.5
+urllib3==2.8.0
+websockets==17.4
+
+# transitive, Windows only (local development)
+colorama==0.4.6; sys_platform == "win32"

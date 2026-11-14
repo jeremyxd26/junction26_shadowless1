@@ -122,6 +122,34 @@ public check: https://sentti.jeremyxd.dev/healthz
 GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
 
+### Check the demo path after a deploy
+
+After `bash deploy/dev.sh` (and before the demo), run:
+
+```
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all --no-ask   # no model calls
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --require-all            # plus the four brief questions
+```
+
+Every stage is live on dev now, so use `--require-all`: a stage that answers NOT DEPLOYED then fails the check.
+
+The script checks, against the reference values at its top (`docs/design/personas.md`, `contracts/api.md`):
+- health;
+- the personas;
+- Sanna's overview, and that its evidence refs resolve and reconcile;
+- the persona allowlist;
+- the what-if;
+- the spike review ("Needed", then undo);
+- optionally `/api/ask`.
+
+It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED (with the route and status). It exits 1 on any FAIL.
+
+It uses the standard library only and needs no secrets. It never retries, and the whole run ends within `--time-limit` seconds (default 60).
+
+The only writes are the label answer and its undo. The undo always runs and is always checked. If it fails, the script prints `UNDO FAILED - CUST00860 may be left answered`, with the `tx_ref` and the repair. The reliable repair is `python core/scripts/reset_reviews.py CUST00860`: with per-viewer answers, a bare curl acts as another viewer.
+
+Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them) and stops at a 429. Do not run it in a loop.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
@@ -244,6 +272,8 @@ The service reads `/etc/shadowless1/core.env` every time it starts. The file is 
 | `GEMINI_API_KEY` | |
 | `GEMINI_MODEL` | unset for now |
 | `CORS_ORIGINS` | comma-separated; empty means the local dev servers. Add the app's origin here when it has a URL. |
+| `DB_POOL_MAX` | the pool's most connections, 1 to 20; unset means 10 (the shared database allows 100) |
+| `API_DOCS` | leave unset: the interactive API docs stay off on the dev host (`1` is for local development) |
 
 Set now: `DATABASE_URL`, `DEMO_TODAY` and `GEMINI_API_KEY`. `GEMINI_MODEL` and `CORS_ORIGINS` are unset, so they take their defaults. They were written over SSH stdin, never on a command line, with quotes stripped; on the instance only the URL's shape was checked.
 

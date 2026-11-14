@@ -156,7 +156,7 @@ class Card(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     card_id: str
-    type: Literal["metric", "breakdown", "bills", "peer", "stores", "profile", "whatif"]
+    type: Literal["metric", "breakdown", "bills", "peer", "stores", "profile", "whatif", "safe_to_save"]
     title: str
     subtitle: str | None = None
     evidence_ref: str | None = None

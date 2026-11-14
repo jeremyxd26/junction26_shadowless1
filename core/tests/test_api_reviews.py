@@ -169,6 +169,32 @@ def test_row_count_of_the_unclassified_item_reconciles_before_and_after_needed(c
     assert evidence_of(client, rc_ref)["reconciles"] is True                           # and its row count
 
 
+def save_values(card: dict) -> dict:
+    return {"monthly": card["monthly"]["value"],
+            "monthly_components": [(c["key"], c["amount"]["value"]) for c in card["monthly_components"]],
+            "stock": card["stock"]["value"],
+            "stock_components": [(c["key"], c["amount"]["value"]) for c in card["stock_components"]],
+            "reason": card["reason"]}
+
+
+def test_safe_to_save_follows_the_pending_review(client):
+    """#165: while Sanna's review is pending the card shows contracts/api.md `overview.response_pending`
+    (364.31 a month: the purchase is in no basket and not in the reserve); after "Needed" it is
+    `card.safe_to_save` again (184.61). The hero and the card read one row, so they move together."""
+    first = overview(client)
+    assert save_values(first["safe_to_save"]) == {
+        "monthly": 364.31, "monthly_components": [("free_month", 963.49), ("everyday_month", 599.18)],
+        "stock": 12360.83, "stock_components": [("free_until_payday", 12656.12), ("everyday_until_payday", 295.28)],
+        "reason": None,
+    }
+    hero_free = first["hero"]["secondary"][0]
+    card_free = first["safe_to_save"]["stock_components"][0]["amount"]
+    assert (hero_free["evidence_ref"], hero_free["value"]) == (card_free["evidence_ref"], card_free["value"])
+    label(client, first["reviews"][0]["tx_ref"], "unexpected_necessities")
+    after = overview(client)["safe_to_save"]
+    assert (after["monthly"]["value"], after["stock"]["value"]) == (184.61, 12272.28)
+
+
 def test_label_errors(client):
     tx_ref = overview(client)["reviews"][0]["tx_ref"]
     unknown = client.post("/api/baskets/label", json=body("txr_0000000000000000", language="fi"))

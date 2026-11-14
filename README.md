@@ -18,6 +18,8 @@ uvicorn core.app.main:create_app --factory --port 8000   # start the core servic
 pytest core -q                                            # run the tests
 ```
 
+`core/requirements.txt` pins every package to an exact version. To change one, follow the steps in its header.
+
 `curl localhost:8000/healthz` returns `{"status":"ok","demo_today":"2026-09-30"}`. `curl localhost:8000/readyz` returns 200 when the database answers `SELECT 1`, and 503 with a short reason otherwise.
 
 Settings:
@@ -27,6 +29,8 @@ Settings:
 - `GEMINI_API_KEY`: optional. Without it the coach answers from the rule planner and the templates.
 - `GEMINI_MODEL`: leave it out of `.env` (see below).
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+- `DB_POOL_MAX` (default `10`, 1 to 20): the most database connections the service's pool opens. Every local run and every database-backed test that starts the service opens up to this many.
+- `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
 - `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
@@ -66,7 +70,7 @@ curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "A
 
 Answer pipeline settings:
 - `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
-- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
+- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is read when the service starts. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs. When it is off, the route does not exist, and the path answers like any unknown path.
 - Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
   - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
   - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.

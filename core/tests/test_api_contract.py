@@ -45,6 +45,10 @@ MODELS: dict[str, type[BaseModel]] = {
     "whatif.request": schemas.WhatIfRequest,
     "whatif.request_basket": schemas.WhatIfRequest,
     "whatif.response": schemas.WhatIfResponse,
+    "card.safe_to_save": schemas.SafeToSaveCard,            # #165
+    "card.safe_to_save_aleksi": schemas.SafeToSaveCard,
+    "card.safe_to_save_zero": schemas.SafeToSaveCard,
+    "card.safe_to_save_everyday": schemas.SafeToSaveCard,
 }
 
 # Fields the models have ahead of the contract (agreed additions, the text follows in the next contract
@@ -58,16 +62,9 @@ ADDITIONS: dict[str, dict[str, typing.Callable[[dict], typing.Any]]] = {
 }
 
 # Contract fields the models do not implement yet, by example name, with the issue that adds them.
-# Contract 0.2.0 added these to the overview. Whoever implements one removes it here:
-# test_pending_entries_are_still_missing fails while a field is both implemented and listed.
-PENDING: dict[str, set[str]] = {
-    "overview.response": {
-        "$.safe_to_save",  # the safe_to_save card (#53/#55)
-    },
-    "overview.response_pending": {
-        "$.safe_to_save",  # the safe_to_save card (#53/#55)
-    },
-}
+# Whoever implements one removes it here: test_pending_entries_are_still_missing fails while a field
+# is both implemented and listed. Empty since #165 implemented `safe_to_save` (both overview examples).
+PENDING: dict[str, set[str]] = {}
 # Error codes the models do not have yet (the label endpoint's two codes came with #68).
 PENDING_ERROR_CODES: set[str] = set()
 # Error codes the service has ahead of the contract (agreed additions; the text follows in the next version).
