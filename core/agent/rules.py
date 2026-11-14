@@ -66,8 +66,10 @@ DECLINE_RULES = [
                           r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*|"
                           # whether or how to invest, with any tail ("Should I invest like the average Finn?"), before
                           # the peer rule (#650; R7)
-                          r"\bshould (i|we) (\w+ ){0,2}invest\w*\b|\b(how|where|what) (should|would|could|can|do) (i|we) "
-                          r"(\w+ )?invest\w*\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?invest\w*\b|"
+                          # "invest", "investing", "investments", never "investigate" (review of #655)
+                          r"\bshould (i|we) (\w+ ){0,2}invest(ing|ments?)?\b|\b(how|where|what) (should|would|could|can|"
+                          r"do) (i|we) (\w+ )?invest(ing|ments?)?\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?"
+                          r"invest(ing|ments?)?\b|"
                           r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
                           r"\b(miten|kuinka|mihin) (\w+ )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
                           r"(\w+ )?sijoittaa\b"),
@@ -1889,7 +1891,9 @@ def _claim(request: PlanInput) -> Claim:
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     # "my doctor visits", "dentist bills" in a plain health total: a thing the user paid for, not the doctor's own money
     # (#571); in any other message the people rules read it as before ("my son's dentist", review of #607)
-    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else question,
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else
+                              # in a comparison with people like me, "Finns" is a crowd, never a name (#650)
+                              re.sub(r"\bFinns\b", "people", question, flags=re.I) if peer_question else question,
                               peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))

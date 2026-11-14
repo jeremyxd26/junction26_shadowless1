@@ -85,6 +85,30 @@ def test_spending_less_to_invest_is_no_investment_advice():
     assert calls("Should I spend less so I can invest?", "en")[0][0] != "decline"
 
 
+@pytest.mark.parametrize("question", [
+    "Should I investigate this charge?", "How should I investigate an unknown payment?",
+    "Should we investigate why my balance is low?", "Is it worth it to investigate a duplicate payment?",
+])
+def test_investigating_a_payment_is_no_investment_advice(question):
+    # review of #655: "invest" never matches "investigate"; these ask back, as on dev
+    assert calls(question, "en")[0][0] == "ask_clarifying_question"
+
+
+@pytest.mark.parametrize("question,metric", [
+    ("Do I spend more than Finns on average?", "spend_total"),
+    ("Do I spend more on groceries than Finns on average?", "Groceries"),
+])
+def test_finns_on_average_is_a_crowd_in_a_comparison_with_the_user(question, metric):
+    # dev declined these ("Finns" read as a name), while "than the average Finn" was compared
+    assert calls(question, "en") == [("get_peer_benchmark", {"metric": metric})]
+
+
+@pytest.mark.parametrize("question", ["How much do Finns spend on average?",
+                                      "Does my wife spend more than Finns on average?"])
+def test_finns_on_average_without_the_user_or_with_a_named_person_stays_declined(question):
+    assert calls(question, "en") == [("decline", {"kind": "other_person_data"})]
+
+
 @pytest.mark.parametrize("lang,question", [
     ("en", "What do other Finns spend on groceries?"), ("fi", "Paljonko keskiverto suomalainen kuluttaa?"),
 ])
