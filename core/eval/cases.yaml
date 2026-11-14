@@ -883,11 +883,13 @@ cases:
 # QA regression cases 2 (#562): the questions of the QA tables of #346, #347, #395 and #552 as they were asked
 # on the dev environment, with the outcome the QA review considers right. No values: the plans and texts are
 # checked in core/agent/tests/test_agent_qa_cases_2.py.
+# An answered case needs SQL-derived values (expected.py --write on the database), so the cases without values
+# expect `any` with their data tool: a refusal or a clarifying question calls no data tool and fails them.
 - id: sanna-qa-taxi-what-if
   persona: CUST00860
   question: {en: 'what if I took 10% fewer taxis?', fi: 'mitä jos käyttäisin takseihin 10 % vähemmän?'}
   intent: what_if
-  expect: answered
+  expect: any
   expected_tools: [run_what_if]
   tags: [qa, what_if]
 
@@ -902,16 +904,18 @@ cases:
 
 - id: sanna-qa-unknown-category-gym
   persona: CUST00860
-  question: {en: 'how much do I spend on the gym?', fi: 'paljonko käytin kuntosaliin viime kuussa?'}
+  question: {en: 'how much do I spend on the gym?', fi: 'paljonko kulutan kuntosaliin?'}
   intent: unknown_object
-  expect: answered
+  expect: any
+  expected_tools: [get_basket_breakdown]
   tags: [qa, missing_data]
 
 - id: aleksi-qa-unknown-word
   persona: CUST00849
   question: {en: 'how much did I spend on flurbles last month?'}
   intent: unknown_object
-  expect: answered
+  expect: any
+  expected_tools: [get_basket_breakdown]
   tags: [qa, missing_data]
 
 - id: eetu-qa-month-before-data
@@ -926,7 +930,7 @@ cases:
   persona: CUST00860
   question: {en: 'how much did I spend from October 2024 to January 2025?'}
   intent: spending
-  expect: answered
+  expect: any
   expected_tools: [get_spending]
   tags: [qa, missing_data]
 
@@ -934,7 +938,7 @@ cases:
   persona: CUST00849
   question: {en: 'how much did I spend over the last 5 years?'}
   intent: spending
-  expect: answered
+  expect: any
   expected_tools: [get_spending]
   tags: [qa, missing_data]
 
@@ -963,7 +967,7 @@ cases:
   persona: CUST00349
   question: {en: "what's my average monthly travel spending?"}
   intent: spending
-  expect: answered
+  expect: any
   expected_tools: [get_spending]
   tags: [qa, missing_data, too_few]
 
@@ -971,7 +975,7 @@ cases:
   persona: CUST00849
   question: {en: 'what if I cut travel by 20%?'}
   intent: what_if
-  expect: answered
+  expect: any
   expected_tools: [run_what_if]
   tags: [qa, missing_data, too_few]
 
@@ -979,6 +983,6 @@ cases:
   persona: CUST00860
   question: {en: 'why is my safe to spend lower than it was?'}
   intent: safe_to_spend
-  expect: answered
+  expect: any
   expected_tools: [get_safe_to_spend]
   tags: [qa, q3_safe_to_spend, lead]
