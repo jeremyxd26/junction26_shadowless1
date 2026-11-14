@@ -30,7 +30,9 @@ AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
 PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
-EVERYONE = SAMPLE + PERSONAS
+# the sample customers' cases check the worked numbers of metrics.md: on a private database only (#502, #508)
+SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]
+EVERYONE = SAMPLE_CASES + PERSONAS
 D = Decimal
 
 # metrics.md section 5 and personas.md Q2: profile, traits, keep rate, net income / month, spend / month
@@ -55,6 +57,8 @@ PEER_WORKED = {
     ("CUST00349", "spend_total"): ("2445.52", "1894.55", 67, "25-34 021", 24),
     ("CUST00849", "spend_total"): ("1881.06", "2202.21", 31, "25-34 022", 39),
 }
+PEER_CASES = [pytest.param(*case, marks=pytest.mark.sample_customer) if case[0] in SAMPLE else case
+              for case in sorted(PEER_WORKED)]
 PEER_COLUMNS = {"you": "you_month_eur", "peer_median": "peer_median_month_eur", "peer_p25": "peer_p25_month_eur",
                 "peer_p75": "peer_p75_month_eur", "percentile": "percentile", "vs_median": "vs_median_pct"}
 
@@ -167,6 +171,7 @@ def test_profile_equals_05_and_the_worked_numbers(conn, profile_rows, customer_i
         [D(keep), D(net_income), D(spend)]
 
 
+@pytest.mark.sample_customer   # CUST00002's feature details of metrics.md section 5
 def test_profile_feature_details_of_cust00002(conn):
     features = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00002")).data.features}
     assert features["n_tx_below_zero"].value == 11                       # metrics.md section 5
@@ -176,7 +181,8 @@ def test_profile_feature_details_of_cust00002(conn):
     assert_displays_from_formatter(features.values())
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00001", "CUST00860"])
+@pytest.mark.parametrize("customer_id", [pytest.param("CUST00001", marks=pytest.mark.sample_customer),
+                                         "CUST00860"])
 def test_profile_spending_is_the_same_number_as_the_basket_card(conn, customer_id):
     ctx = ctx_for(conn, customer_id)
     spend = next(f.value for f in get_spender_profile(ctx).data.features if f.key == "spend")
@@ -208,7 +214,7 @@ def test_profile_in_finnish(conn):
 
 # ---- get_peer_benchmark ----------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("customer_id, metric", sorted(PEER_WORKED))
+@pytest.mark.parametrize("customer_id, metric", PEER_CASES)
 def test_peer_benchmark_equals_06_and_the_worked_numbers(conn, peer_rows, customer_id, metric):
     result = get_peer_benchmark(ctx_for(conn, customer_id), {"metric": metric})
     data = result.data
@@ -252,6 +258,7 @@ def test_persona_group_sizes_match_personas_yaml(conn, peer_rows, customer_id):
     assert {r["peer_level"] for r in peer_rows[customer_id].values()} == {"age_band+area3"}
 
 
+@pytest.mark.sample_customer   # CUST00006 moves its salary elsewhere; no persona does
 def test_sweep_customer_is_not_compared(conn, peer_rows):
     result = get_peer_benchmark(ctx_for(conn, "CUST00006"), {"metric": "spend_total"})
     data = result.data
@@ -295,7 +302,7 @@ def test_peer_evidence_is_group_statistics_only(conn, customer_id):
         text = json.dumps(res.parts)
         assert "CUST" not in text and "tx_" not in text                # never another customer's rows
     with pytest.raises(evidence.EvidenceForbidden):
-        evidence.resolve(conn, result.data.peer_median.evidence_ref, "CUST00002")
+        evidence.resolve(conn, result.data.peer_median.evidence_ref, "CUST00493")
 
 
 def test_peer_card_and_model_view(conn):
@@ -324,11 +331,11 @@ def test_peer_in_finnish(conn):
 
 
 def test_negative_difference_says_less(conn, peer_rows):
-    # CUST00001 spends less than the group: the value is negative, the display says "less" (#111)
-    row = peer_rows["CUST00001"]["spend_total"]
+    # CUST00493 spends less than the group: the value is negative, the display says "less" (#111)
+    row = peer_rows["CUST00493"]["spend_total"]
     assert row["vs_median_pct"] < 0
-    vs = get_peer_benchmark(ctx_for(conn, "CUST00001"), {"metric": "spend_total"}).data.vs_median
-    assert vs.value < 0 and vs.display == "31.0% less"
+    vs = get_peer_benchmark(ctx_for(conn, "CUST00493"), {"metric": "spend_total"}).data.vs_median
+    assert vs.value < 0 and vs.display == "40.5% less"
     assert vs.display == display(row["vs_median_pct"], vs.unit, "en", vs.method)
 
 
