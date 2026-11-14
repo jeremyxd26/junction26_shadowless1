@@ -1,6 +1,6 @@
 # Core API contract
 
-**Version:** 0.3.11 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #554 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.11 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
 **Status:** draft 0.3.11. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
@@ -9,6 +9,7 @@ This file is the interface between `core/` (the coach service) and `app/` (the m
 All values in the examples are **illustrative**: they show shapes and consistent arithmetic, not results computed from the dataset. The exceptions are computed from the dataset (`metrics.md` sections 1.1 and 3.1):
 - `overview.response_pending`, `card.review`, `card.safe_to_save` and the label examples in section 10, for CUST00860 (persona Sanna);
 - `card.safe_to_save_aleksi`, for CUST00849 (persona Aleksi);
+- `evidence.response_national` (section 9), for CUST00860 (persona Sanna), as the service returns it;
 - `card.safe_to_save_zero`, for CUST00002, and `card.safe_to_save_everyday`, for CUST00019 (customers of the metrics sample).
 
 Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids, enums and windows here follow it (section 2.1, `method`).
@@ -66,7 +67,7 @@ Every number the coach shows is one of these objects. A number can always be tra
 | `value` | number | The value. Money is in euros, rounded to cents. Each value is rounded on its own, so parts shown next to a total, such as safe-to-spend components, can differ from it by 0.01. For `percent`, `12.5` means 12.5 %. |
 | `unit` | enum | `eur`, `eur_per_day`, `eur_per_week`, `eur_per_month`, `eur_per_year`, `percent`, `percentile`, `count`, `days`, `months` |
 | `period` | [Period](#22-period) | The time span the number describes. |
-| `method` | string | The definition that produced the number, `<metric>.<output column>@<version>`. `<metric>` is a metric of `docs/design/metrics.md` named after its SQL file in `core/metrics/` (`recurring`, `baskets`, `safe_to_spend`, `what_if`, `spender_profile`, `peer_benchmark`, `store_price_index`), and the output column is the one listed there, for example `safe_to_spend.safe_to_spend_7d_eur@1`. The balance forecast until payday (`metrics.md` section 3.3, #257) uses `balance_forecast.daily_pace_eur@1` (usual spending a day, `eur_per_day`), `balance_forecast.bills_to_date_eur@1` (the bills due by that day, `eur`) and `balance_forecast.balance_eur@1` (the projected balance on that day, `eur`, a composite). Plain sums and counts that `metrics.md` does not define use `spending.*` and `evidence.*`, which are defined in the design document (section 6.2). Values the user typed in use `user_input@1`. Values read from a bill's virtual barcode use `bill_barcode@1`, and the numbers the bill explanation computes use `bill.*` (section 11). |
+| `method` | string | The definition that produced the number, `<metric>.<output column>@<version>`. `<metric>` is a metric of `docs/design/metrics.md` named after its SQL file in `core/metrics/` (`recurring`, `baskets`, `safe_to_spend`, `what_if`, `spender_profile`, `peer_benchmark`, `store_price_index`), and the output column is the one listed there, for example `safe_to_spend.safe_to_spend_7d_eur@1`. The balance forecast until payday (`metrics.md` section 3.3, #257) uses `balance_forecast.daily_pace_eur@1` (usual spending a day, `eur_per_day`), `balance_forecast.bills_to_date_eur@1` (the bills due by that day, `eur`) and `balance_forecast.balance_eur@1` (the projected balance on that day, `eur`, a composite). Plain sums and counts that `metrics.md` does not define use `spending.*` and `evidence.*`, which are defined in the design document (section 6.2). Values the user typed in use `user_input@1`. Values read from a bill's virtual barcode use `bill_barcode@1`, and the numbers the bill explanation computes use `bill.*` (section 11). A value cited from a public statistic, not computed from the customer's data, uses `national_context.monthly_eur@1` (since 0.3.10, #569): what households whose reference person is in the customer's age group spend a month per consumption unit, from Statistics Finland's household budget survey (table 14q4, survey year 2022), with unit `eur_per_month` and the survey year as its `period`. Only `/api/ask` carries it: the national line beside the peer comparison of Groceries or Transportation cites it, so it is in the `numbers` event (section 7). No card or estimate carries it, and its `label` there names no age ("Households of your age group, per consumption unit"). |
 | `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. One ref backs exactly one number (one `method` and `value`), and the same number shown in several places carries the same ref. It is `null` in three cases only: values the user typed in (`method` = `user_input@1`), values read from a bill's virtual barcode (`bill_barcode@1`, section 11), and the parts of a `peer_aggregate` evidence view (section 9), which are group statistics with no further drill-down by design. |
 | `label` | string | Short localised name, for example "Restaurants". |
 | `display` | string | Localised formatted value, for example `€312.80` or `312,80 €`. A plus sign is never added. Negative values show a minus. A display with a direction word (`more`, `less`) shows the magnitude without a minus. Every display is written by one formatter on the server from the number's `value`, `unit` and `method`, so the app never formats a number itself:<br>- money and rates: `€1,180.21 a month` / `1 180,21 € / kk`;<br>- percentages with one decimal, `18.9%` / `18,9 %`, except a whole percentage the user typed (`user_input@1`): `20%` / `20 %`;<br>- percentiles as ordinals: `72nd percentile` / `72. persentiili`;<br>- the gap to the peer median (`peer_benchmark.vs_median_pct@1`) with a direction word: `32.3% more`, `31.0% less` / `32,3 % enemmän`, `31,0 % vähemmän`; exactly zero is `0.0%`;<br>- counts: whole counts grouped like money, `4,120` / `4 120`; a fractional count with one decimal, `15.2` / `15,2`; everyday purchases a month (`spender_profile.everyday_tx_month@1`) as `14.2 a month` / `14,2 / kk`;<br>- `days` and `months` with their unit: `1 day`, `12 days` / `1 pv`, `12 pv`;<br>- a value that rounds to zero never shows a minus: `€0.00`, not `-€0.00`. |
@@ -3702,7 +3703,7 @@ Shows how a number was built: the method and either the transactions behind it o
 | `kind` | Filled fields | Used for |
 |---|---|---|
 | `transactions` | `rows`, `row_count`, `reconciles`, `next_cursor` | Sums and counts over the customer's own transactions. |
-| `composite` | `parts`: `{role, number: Number}`[] | Numbers computed from other numbers: changes, safe to spend, savings. Each part has its own `evidence_ref`, except a value from a bill (`bill_barcode@1` or `user_input@1`, section 11), which has none. |
+| `composite` | `parts`: `{role, number: Number}`[] | Numbers computed from other numbers: changes, safe to spend, savings. Each part has its own `evidence_ref`, except a value from a bill (`bill_barcode@1` or `user_input@1`, section 11), which has none. A value cited from a public statistic (`national_context.monthly_eur@1`, since 0.3.10) is a `composite` with no parts: `parts` and `rows` are empty, `reconciles` is `null`, and nothing further opens. Its `title` and the evidence `number`'s `label` name the statistic's age band and category, and `method.summary` cites the table (example `evidence.response_national`). |
 | `metric` | `reconciles`; `rows` | Numbers read from a metric definition of `metrics.md` (safe to spend, safe to save, what-if, spender profile). The core re-runs the definition for the customer, and `reconciles: true` confirms that the re-run gives the same value. `rows` is always a list, empty today. `query` and `row_count` are `null`. |
 | `peer_aggregate` | `parts`: `{role, number: Number}`[] for `peer_median`, `peer_p25`, `peer_p75` and `peer_n` (group size); `reconciles` | Peer benchmarks (#69). Shows group statistics only, never other customers' rows. The parts have `evidence_ref: null` (nothing further to open), and the group's level (section 3, `peer`) is named in the group size's label. `reconciles: true` confirms that a re-run of `06_peer_benchmark.sql` for the customer gives the same statistic. |
 | `store_index` | `parts` | Store price levels. |
@@ -3902,6 +3903,38 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
       }
     }
   ],
+  "next_cursor": null,
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+}
+```
+
+A value cited from a public statistic (since 0.3.10, #569): the national line's number beside Sanna's grocery comparison, as the service returns it. It opens as a `composite` with no parts; the `title` names the age band of the table, which the answer's label does not:
+
+<!-- example: evidence.response_national -->
+```json
+{
+  "evidence_ref": "ev_1bf98fbdc1a9",
+  "kind": "composite",
+  "language": "en",
+  "title": "Households with a reference person aged 35–44: food and non-alcoholic drinks, per consumption unit, 1 Jan – 31 Dec 2022",
+  "number": {
+    "value": 332.33, "unit": "eur_per_month",
+    "period": { "start": "2022-01-01", "end": "2022-12-31", "label": "1 Jan – 31 Dec 2022" },
+    "method": "national_context.monthly_eur@1", "evidence_ref": "ev_1bf98fbdc1a9",
+    "label": "Households with a reference person aged 35–44: food and non-alcoholic drinks, per consumption unit",
+    "display": "€332.33 a month"
+  },
+  "method": {
+    "id": "national_context.monthly_eur@1",
+    "name": "Households' spending per consumption unit",
+    "summary": "Statistics Finland, households' consumption, table 14q4, survey year 2022: the yearly consumption expenditure per consumption unit (an adult-equivalent of the household) of households whose reference person is in this age group, divided by 12; for transport, buying a vehicle is left out. A public statistic, not computed from your transactions.",
+    "doc": "README.md#national-context"
+  },
+  "query": null,
+  "rows": [],
+  "row_count": null,
+  "reconciles": null,
+  "parts": [],
   "next_cursor": null,
   "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
 }
@@ -5344,4 +5377,5 @@ A reading of a sample with a barcode:
 | 0.3.7 | Reading a sample bill is implemented (#250).<br><br>Changed:<br>- Section 11.4 is no longer marked "not implemented yet".<br>- Only an IBAN or a reference can be `checked`, by its own check digits. A language model transcribes the barcode, which has no check digit over the amount or the due date, so `amount`, `due_date`, `payee` and `barcode` are always `unchecked`. The example `bill.read_response` shows this.<br>- A field is also dropped when it is implausible: a due date more than two years from today, an amount of 0 or above 100 000.00, an amount such as "12.345".<br>- A cached reading is served even while the model may not be used; only a reading not in the cache answers 503 `model_unavailable` (sections 4 and 11.4). A reading with no usable field is 503 too.<br>- Section 11.4 also says that an IBAN or a reference failing its check digits is kept as `unchecked` with a note, that a barcode value disagreeing with the printed one keeps the barcode's value as `unchecked` with a note, and that readings have their own rate window (429) (#511). |
 | 0.3.8 | The review card's option texts promise no effect (#416).<br><br>Changed:<br>- A review option's `effect` says only which basket the purchase goes to and that the numbers are recalculated. It no longer says that safe to spend goes down or stays the same, which was not true for every customer; the real effect comes with the answer (section 10, `effect`). The examples `card.review` and `overview.response_pending` show the new texts. The card's shape is unchanged. |
 | 0.3.9 | A clarification, no new field (#433). Section 11.2: a matched bill has a `comparison` only when it fits the customer's regular bill (paid once a month, at least half of its typical month; #400). A matched bill that does not fit has `comparison` `null`, and `match.text` names the payee category ("This bill is from the same payee category as your regular Utilities payments."). New example `bill.response_category`: the gallery's water sample for Sanna, with its `forecast` (0.3.4) as the service returns it. `signals`: for a category match, `amount_above_usual` is measured against the category's whole month and says so. `comparison.change_pct` is never `null` (a comparison needs a typical amount above 0). |
+| 0.3.10 | Documents what the service already returns, no new field (#569, #524). Section 2.1: the method `national_context.monthly_eur@1`, a value cited from Statistics Finland's household budget survey (table 14q4, survey year 2022), not computed from the customer's data. The national line beside the peer comparison of Groceries or Transportation in `/api/ask` cites it, so it is in the `numbers` event; no card or estimate carries it. Section 9: such a value opens as a `composite` with no parts (`parts` and `rows` empty, `reconciles` `null`), and its `title` and evidence `label` name the table's age band, which the answer's label does not. New example `evidence.response_national` for Sanna, as the service returns it. |
 | 0.3.11 | Texts for the screen, no new field (#554).<br>- `GET /api/personas?lang=fi`: every `tagline` is Finnish, like the other texts (section 1).<br>- `GET /api/evidence/{ref}`: `method.summary` says in one plain sentence what the number is made of, in the request language; it never names a file. Examples `evidence.response_metric` and `evidence.response_peer` changed.<br>- The review card's `why` says what an answer changes: "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend." Examples `card.review` and `overview.response_pending` changed. |
