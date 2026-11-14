@@ -568,17 +568,27 @@ class Pipeline:
         if missing is not None:
             return self._missing(missing, numbers, lang, emit, a, views=views)
         prev = conv.turns[-1] if conv.turns else None
+        if len(views) > 1:
+            # the national context line only beside a peer comparison alone; with another tool, the answer as on dev
+            views = [{k: v for k, v in view.items() if k != "national"} if isinstance(view, dict) else view
+                     for view in views]
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        # #598: the model planned a Health total, which was dropped before it ran: the template says the thing can't be
-        # seen on its own, then answers the other question; the composer never writes such an answer. A Health total
-        # that ran is the per-tool template too, never a model draft (#571, R9), and so is the other tool's sentence.
-        guarded = a.health_dropped is not None or any(_health_spending(c) for c in a.calls)
-        draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or template_answer or guarded
-                                             or a.composer_unavailable is not None, a=a,
-                                             lead=template.unknown_lead(a.health_dropped, lang)
-                                             if a.health_dropped is not None else None)
+        # Designed template answers, one rule for all (the coordinator's decision): the rule planner's own template
+        # (#552/#574); a model-planned Health total that was dropped before it ran (#598): the template says the thing
+        # can't be seen on its own, then answers the other question; a Health total that ran, the per-tool template
+        # with the other tool's sentence (#571, R9); a peer comparison with the national context line (#569), only when
+        # it is the answer's only data tool. The template writes, never the composer, and as the model was not needed,
+        # it did not fail: no llm_unavailable warning, in any model state.
+        national = len(views) == 1 and isinstance(views[0], dict) and views[0].get("tool") == "get_peer_benchmark" \
+            and bool(views[0].get("national"))
+        dropped = a.health_dropped is not None
+        health_total = any(_health_spending(c) for c in a.calls)
+        designed = ("rule_template" if template_answer else "health_filter_dropped" if dropped
+                    else "health" if health_total else "national_context" if national else None)
+        unavailable = planner_fallback or a.composer_unavailable is not None
+        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or designed is not None,
+                                             a=a, lead=template.unknown_lead(a.health_dropped, lang) if dropped else None)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -588,14 +598,10 @@ class Pipeline:
         # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
-        # "Why is my safe to spend lower?" (#552): the template is the designed writer, with the model on, off, over
-        # budget or paused alike; no model was going to write it, so no warning, and the planner turns record the
-        # template (the same way as the peer answer with the national line, #569)
-        designed = (template_answer or guarded) and not a.template_failed
-        if designed:
-            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template",
-                                    "designed": "rule_template" if template_answer else
-                                    "health_filter_dropped" if a.health_dropped is not None else "health"})
+        if designed and not a.template_failed:
+            # a designed template answer never warns, in any model state: the template writes it either way; the planner
+            # turns record the template and why (#552, #598, #571, #569; one rule, #610 and #585)
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": designed})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)

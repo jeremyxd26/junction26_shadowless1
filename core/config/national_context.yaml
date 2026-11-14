@@ -1,0 +1,55 @@
+# National context beside the peer comparison (#569): what households of an age group spend a month on a
+# category, from Statistics Finland's household budget survey. Context only, never a verdict and never an input
+# of any other number. Read once at import by core/tools/national.py; nothing fetches it at run time.
+#
+# Fetched once during development from the public statistics API (no key); the query below produced it.
+# Kept categories after the check of #569 (every persona between 0.4 and 2.5 times the table's value):
+# Groceries and Transportation. Restaurants was dropped; health and housing are never compared.
+
+version: 1
+source:
+  en: "Statistics Finland, households' consumption"
+  fi: "Tilastokeskus, kotitalouksien kulutus"
+table_id: "StatFin/ktutk/14q4.px"
+table_title: "Household consumption expenditure by age of reference person, 2012-2022"
+survey_year: 2022
+# Per consumption unit: an adult-equivalent of the household (Finnish "kulutusyksikköä kohti"), current prices.
+unit: "EUR per consumption unit, current prices"
+age_basis: "age of the household's reference person"
+# The table gives the year; the monthly value here is the yearly value divided by 12, rounded to cents.
+monthly_rule: "monthly = yearly / 12, rounded to cents"
+retrieved: "2026-11-14"
+api: "https://pxdata.stat.fi/PXWeb/api/v1/en/StatFin/ktutk/14q4.px"
+query:
+  timeperiod_y: ["2022"]
+  coicop_46_20231201: ["01", "07", "071"]
+  ikaryhma_10_20180101: ["17-24", "25-34", "35-44", "45-54", "55-64", "65-74"]
+  contentscode: ["kulu_kt_hk_2_1"]          # consumption expenditure per consumption unit, current prices, per year
+license: "CC BY 4.0"
+attribution: "Source: Statistics Finland, households' consumption, table 14q4 (2022), CC BY 4.0"
+
+# The age groups of the table the peer tool's age bands fall in. 18-24 lies inside the table's 17-24, and the line
+# names the table's band; 75+ has no single band in the table (75-84 and 85-), so it gets no line.
+age_groups:
+  "18-24": "17-24"
+  "25-34": "25-34"
+  "35-44": "35-44"
+  "45-54": "45-54"
+  "55-64": "55-64"
+  "65-74": "65-74"
+
+categories:
+  Groceries:
+    coicop: "01"
+    coicop_label: "Food and non-alcoholic beverages"
+    yearly: {"17-24": 2519, "25-34": 3501, "35-44": 3988, "45-54": 4147, "55-64": 4321, "65-74": 4341}
+    monthly: {"17-24": "209.92", "25-34": "291.75", "35-44": "332.33", "45-54": "345.58", "55-64": "360.08",
+              "65-74": "361.75"}
+  Transportation:
+    coicop: "07 minus 07.1"
+    coicop_label: "Transport without the purchase of vehicles"
+    # 07 Transport minus 07.1 Purchase of vehicles, per age group: 2223-1038, 3614-1492, 3913-1667, 5032-2182,
+    # 4814-2085, 3367-1249
+    yearly: {"17-24": 1185, "25-34": 2122, "35-44": 2246, "45-54": 2850, "55-64": 2729, "65-74": 2118}
+    monthly: {"17-24": "98.75", "25-34": "176.83", "35-44": "187.17", "45-54": "237.50", "55-64": "227.42",
+              "65-74": "176.50"}
