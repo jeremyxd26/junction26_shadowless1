@@ -25,6 +25,10 @@ const en = {
   stopped: 'You stopped this answer.',
   stoppedForNext: 'Stopped for your next question.',
   askAgain: 'Ask again',
+  /** A paste over the 500-character limit was cut to fit (#716). */
+  cut: 'Cut to the 500-character limit.',
+  /** Shown when 50 characters or fewer are left. */
+  charactersLeft: (left: number) => (left === 1 ? '1 character left' : `${left} characters left`),
   more: 'more',
   less: 'less',
   same: 'no change',
@@ -61,6 +65,8 @@ const fi: ChatStrings = {
   stopped: 'Pysäytit tämän vastauksen.',
   stoppedForNext: 'Keskeytetty seuraavan kysymyksesi vuoksi.',
   askAgain: 'Kysy uudelleen',
+  cut: 'Lyhennetty 500 merkkiin.',
+  charactersLeft: (left: number) => (left === 1 ? '1 merkki jäljellä' : `${left} merkkiä jäljellä`),
   more: 'enemmän',
   less: 'vähemmän',
   same: 'ei muutosta',
