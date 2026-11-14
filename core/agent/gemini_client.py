@@ -443,10 +443,12 @@ class GeminiClient:
             return None, None
         return MAX_REQUESTS_PER_ANSWER - self._answer.requests, self._answer.deadline - self.clock()
 
-    def unavailable_reason(self) -> str | None:
-        """Why no request may be sent now, or None: "off" (the switch file), "budget" (the daily budget is
-        0 or used up in the rolling 24 hours), "pause" (after a 429, a refused key or model, an outage or
-        failures in a row). The pipeline asks this once per answer before planning (#244)."""
+    def unavailable_reason(self, kind: str | None = None) -> str | None:
+        """Why no request may be sent now, or None. For every role: "off" (the switch file), "budget" (the
+        daily budget is 0 or used up in the rolling 24 hours), "pause" (after a 429 or a refused key). With a
+        call kind, also that role's own state: "role_paused" (after its failure streak) and "model_refused"
+        (no usable model id left for it); one role's problem never switches off the other (#383). The
+        pipeline asks this once per answer and role before planning (#244)."""
         if self.ledger is not None:
             if self.ledger.disabled():
                 return "off"
@@ -456,12 +458,10 @@ class GeminiClient:
             now = self.clock()
             if now < self._paused_until:
                 return "pause"
-            if any(now < until for until in self._role_paused_until.values()):
-                return "role_paused"      # a role paused after a failure streak: no futile attempts (#383)
-        for kind in ("plan", "compose"):
-            model, _ = self.models_for(kind)
-            if self._is_refused(model):
-                return "model_refused"    # no usable model id left for a role
+            if kind is not None and now < self._role_paused_until.get(kind, 0.0):
+                return "role_paused"      # this role paused after its failure streak: no futile attempts
+        if kind is not None and self._is_refused(self.models_for(kind)[0]):
+            return "model_refused"        # no usable model id left for this role
         return None
 
     # ---- the two calls ---------------------------------------------------------------------------

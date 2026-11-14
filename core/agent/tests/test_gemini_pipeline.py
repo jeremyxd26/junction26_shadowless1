@@ -484,12 +484,37 @@ def test_a_refused_planner_model_answers_on_its_fallback_without_a_warning():
     assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
 
 
-def test_a_paused_role_means_no_planner_attempt_and_no_note():
-    """Review of #422: a role paused after a streak makes the model unavailable for the answer: the rules
-    plan, no request is tried, and the 'could not work that out' note does not appear."""
+def test_a_composer_without_a_model_leaves_the_planner_asked():
+    """Review of #446: all composer ids refused, the planner healthy: an unrecognised question is still planned
+    by the model; the template writes, with the warning; the audit names the composer's reason."""
     transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
     p, audit = pipeline(transport)
-    p.model.client._role_paused_until["compose"] = p.model.client.clock() + 30
+    c = p.model.client
+    c.compose_model, c.compose_fallback_model = "gemini-3.5-flash-lite", None
+    c._refused["gemini-3.5-flash-lite"] = c.clock() + 600
     done = ask(p, "Tell me something useful about my groceries")
-    assert transport.requests == [] and audit.records[-1]["model_unavailable"] == "role_paused"
-    assert not done["clarify"]["question"].startswith("I could not") and "llm_unavailable" in done["warnings"]
+    assert len(transport.plan.requests) >= 1 and transport.compose.requests == []
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    record = audit.records[-1]
+    assert record["composer_unavailable"] == "model_refused" and record["planner_unavailable"] is None
+
+
+def test_a_paused_planner_leaves_the_composer_writing_a_recognised_question():
+    """Review of #446: the planner paused after its streak, the composer healthy: the rules plan a recognised
+    question and the model writes it, with no warning and no note."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._role_paused_until["plan"] = p.model.client.clock() + 30
+    done = ask(p)
+    assert transport.plan.requests == [] and len(transport.compose.requests) == 1
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+    assert audit.records[-1]["planner_unavailable"] == "role_paused"
+
+
+def test_both_roles_unavailable_is_as_before():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._pause(300, "rate_limited")
+    done = ask(p, "Tell me something useful about my groceries")
+    assert transport.requests == [] and "llm_unavailable" in done["warnings"]
+    assert not done["clarify"]["question"].startswith("I could not")
