@@ -190,16 +190,15 @@ LONG_QUESTION = (
     "Could you tell me honestly where most of my money goes, and what one change would help me save the most?")
 
 
-@pytest.mark.xfail(strict=True, reason="the long question is planned as a Housing + Restaurants sum (ans_bmw2rlnw); issue #399")
 def test_a_long_where_does_my_money_go_question_plans_the_baskets_not_a_sum_of_two_categories():
+    """#399: live on b100a6d this was a Housing + Restaurants sum labelled "Spending" (ans_bmw2rlnw)."""
     calls = data_calls(plan(LONG_QUESTION))
     assert any(name == "get_basket_breakdown" for name, _ in calls), calls
     assert not any(name == "get_spending" and len((args.get("filter") or {}).get("categories") or []) > 1
                    for name, args in calls), calls
 
 
-@pytest.mark.xfail(strict=True, reason="a two-category sum is labelled 'Spending' / 'Total spending'; issue #399")
-@pytest.mark.parametrize("lang", ["en", "fi"])
+@pytest.mark.parametrize("lang", ["en", "fi"])   # #399: the label was 'Spending' / 'Kulutus'
 def test_a_two_category_spending_number_is_labelled_with_its_categories(lang):
     args = spending.GetSpendingArgs(period={"preset": "this_month"}, filter=Filter(categories=["Housing", "Restaurants"]))
     label = spending._total_label(args, None, lang)
