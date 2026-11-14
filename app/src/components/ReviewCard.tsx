@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BasketKey, ReviewCard as ReviewCardData } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { formatDate } from '../lib/i18n.ts'
+import { splitKeepTogether } from '../lib/keepTogether.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useCountdown } from '../lib/useCountdown.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -25,12 +26,28 @@ function fill(text: string, parts: Record<string, ReactNode>): ReactNode[] {
   let last = 0
   for (const match of text.matchAll(TOKEN)) {
     const index = match.index ?? 0
-    if (index > last) out.push(text.slice(last, index))
+    if (index > last) out.push(...together(text.slice(last, index), `t${last}`))
     out.push(<span key={`${match[1]}-${index}`}>{parts[match[1]]}</span>)
     last = index + match[0].length
   }
-  if (last < text.length) out.push(text.slice(last))
+  if (last < text.length) out.push(...together(text.slice(last), `t${last}`))
   return out
+}
+
+/**
+ * Text with each run the API joined with no-break spaces (a date) as one box (#725): it moves to
+ * the next line whole, and wraps at its own spaces only when it is wider than the line (200 % text).
+ */
+function together(text: string, key: string): ReactNode[] {
+  return splitKeepTogether(text).map((part, index) =>
+    typeof part === 'string' ? (
+      part
+    ) : (
+      <span key={`${key}-${index}`} className="inline-block">
+        {part.together}
+      </span>
+    ),
+  )
 }
 
 /** The purchase's evidence and its link label ("See the purchase"). */
@@ -85,13 +102,13 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
     ? fill(question, { n1: amountChip, date: dateChip })
     : amountAt >= 0
       ? [
-          question.slice(0, amountAt),
+          ...together(question.slice(0, amountAt), 'lead'),
           <span key="amount">{amountChip}</span>,
           ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
         ]
       : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
-  // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
-  // touch area at 44px.
+  // A normal line height (about 1.3), relative to the text so that it grows with it (#725: 26px
+  // overlapped at 200 %); the chip's line grows to fit it, and its ::after keeps the touch area at 44px.
   if (inAnswer) {
     return compact ? (
       <p className="mt-2 text-base leading-6 text-ink-2">{sentence}</p>
@@ -100,7 +117,7 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
     )
   }
   return compact ? (
-    <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
+    <p className="mt-2 text-base font-semibold leading-[1.375] text-on-deep-muted">{sentence}</p>
   ) : (
     <p className="mt-1.5 text-lg font-semibold leading-[1.3] text-on-deep">{sentence}</p>
   )
