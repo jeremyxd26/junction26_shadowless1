@@ -11,7 +11,7 @@ import re
 from datetime import date
 
 import pytest
-from agent_fakes import AS_OF, FakeArgs, fake_spending, registry, run
+from agent_fakes import AS_OF, FakeArgs, audit_records, fake_spending, registry, run
 
 from core.agent import template
 from core.agent.model import FunctionCall, PlanInput, ScriptedModel
@@ -208,6 +208,38 @@ def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure
     done = dict(events)["done"]
     assert done["outcome"] == "answered" and done["text_rendered"] == text and model.compose_inputs == []
     assert len(done["cited"]) == (1 if n == 1 else 2)
+
+
+@pytest.mark.parametrize("n", [1, 2])
+@pytest.mark.parametrize("cache", ["off", "memory"])
+def test_the_audit_lists_each_number_a_too_few_answer_cites_as_a_tool_output(make_pipeline, n, cache, tool_cache_off,
+                                                                             monkeypatch):
+    # #609: the eval's R1 check finds a cited number only among the audit's tool outputs
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
+    monkeypatch.setattr(tool_cache_off, "mode", cache)
+    model = ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]])
+    pipe = make_pipeline(model, registry(too_few_tool(n)))
+    done = dict(run(pipe, "What if I cut travel by 20%?", language="en"))["done"]
+    record = audit_records(pipe)[-1]
+    assert record["tool_outputs"] == {"fake_what_if#1": {
+        "error": "too_few_transactions",
+        "total": {"id": "n1", "value": 203.95, "unit": "eur", "label": "Travel"},
+        "count": {"id": "n2", "value": n, "unit": "count", "label": "Purchases"}}}
+    returned = {v["id"]: v for v in record["tool_outputs"]["fake_what_if#1"].values() if isinstance(v, dict)}
+    for i in done["cited"]:
+        cited = record["numbers"][i]
+        assert (returned[i]["value"], returned[i]["unit"]) == (cited["value"], cited["unit"])
+
+
+def test_a_missing_data_reason_without_numbers_is_listed_with_its_reason_only(make_pipeline):
+    def tool(ctx, args: FakeArgs):
+        raise MissingData("too_few_transactions", what="public transport", period="1 Apr – 30 Sep 2026",
+                          span="Between 1 Apr and 30 Sep 2026", n=0)
+    spec = ToolSpec("fake_what_if", "A what-if on nothing bought.", FakeArgs, tool, ("Looking", "Katson"))
+    pipe = make_pipeline(ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]]),
+                         registry(spec))
+    run(pipe, "what if I cut public transport by 20%", language="en")
+    assert audit_records(pipe)[-1]["tool_outputs"] == {"fake_what_if#1": {"error": "too_few_transactions"}}
 
 
 def basket_tool():
