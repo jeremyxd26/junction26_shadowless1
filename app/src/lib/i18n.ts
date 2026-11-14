@@ -49,6 +49,8 @@ const en = {
   aboutSentti: 'About Sentti',
   reviewWhy: 'Why Sentti asks',
   questionsLabel: 'Questions to ask',
+  /** The overview sheet's title and the header button's name (#321, #322). */
+  overview: 'Overview',
   mockBadge: 'Mock data',
   heroPendingTitle: 'Safe to spend this week',
   heroPending: 'Safe to spend is still being calculated. Check back soon.',
@@ -114,6 +116,7 @@ const fi: Strings = {
   aboutSentti: 'Tietoa Senttistä',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
+  overview: 'Yleiskatsaus',
   mockBadge: 'Testidata',
   heroPendingTitle: 'Käyttövara tällä viikolla',
   heroPending: 'Käyttövaraa lasketaan vielä. Katso hetken päästä uudelleen.',
