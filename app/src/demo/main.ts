@@ -419,6 +419,10 @@ function openModule(reset = false) {
 
 /** "Start over": a fresh viewer, so "Sentti asks" and the money flight run again for the lead persona. */
 function startOver() {
+  // A new run starts with an empty message log too.
+  logList.replaceChildren()
+  logEmpty.hidden = false
+  logAnnounce.textContent = ''
   openModule(true)
 }
 
