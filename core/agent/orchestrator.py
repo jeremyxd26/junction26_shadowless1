@@ -43,7 +43,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import glossary, guard, offers, template, validator, why_review
+from core.agent import glossary, guard, offers, sbank_kb, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -432,6 +432,8 @@ class Pipeline:
         if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
             return lang
         if self._answer_glossary(ctx, review, message, lang, emit, a):   # "What is a buffer?" (#568)
+            return lang
+        if self._answer_sbank_kb(ctx, review, message, lang, emit, a):   # "How do I block my card?" (#791)
             return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
@@ -1274,6 +1276,43 @@ class Pipeline:
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})
+        return True
+
+    def _answer_sbank_kb(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """Answer a question about S-Bank or S-mobiili from the knowledge base (#791): the entry's fixed text
+        (ours, from S-Bank's public help pages), its source line and the way to the bank (`contact_bank`); a
+        message clearly about S-Bank that matches no entry gets "I don't know that one; the bank can tell you."
+        No plan, no tool, no number, no model request. False (the normal path answers) when sbank_kb leaves the
+        message (the customer's own figures, a recommendation), a guard flag is set, or the rule model declines
+        it or claims it for one of its own answers (a data rule, a decline, "I can't answer that one yet")."""
+        if a.flags:
+            return False
+        kb = sbank_kb.answer_for(message, lang)
+        if kb is None:
+            return False
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
+        rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        if rules.recognised or any(c.name == "decline" for c in rules.calls):
+            return False
+        numbers = ctx.numbers.all()
+        # The validator checks the entry's text. The source line after it is fixed here from the file's
+        # source_url (an s-pankki.fi help page, held by the tests); the no-URL rule is for model drafts.
+        draft, errors = validate({"language": lang, "text": kb.body, "cited": [], "lesson_key": None},
+                                 language=lang, numbers=numbers, allowed=allowed_from(numbers.values(), [], self.as_of))
+        if errors or draft is None:
+            log.warning("knowledge-base answer %s failed the validator (%d problems)", kb.entry_id, len(errors))
+            return False
+        a.offer_contact = True   # the way to the bank: open_host_screen contact_bank (#420)
+        a.planner_turns.append({"round": 1, "source": "rules", "sbank_kb": kb.entry_id or "unknown", "calls": []})
+        if review is not None:  # the pending review's card, as on the normal path
+            self._attach_review(ctx, review, emit, a)
+        text = self._deliver(f"{draft.text} {kb.source}".strip(), numbers, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})
         return True
 
     def _deliver(self, text: str, numbers: dict[str, Any], emit: Emit) -> str:

@@ -1,0 +1,440 @@
+# S-Bank knowledge base (#791): short answers about S-Bank and S-mobiili, written in our own words from
+# S-Bank's public customer help pages (s-pankki.fi). Each answer says what the help page says, never as
+# the bank. No prices, rates or other numbers, and no advice. The raw pages are not in the repository.
+#
+# Fields: id, topic, questions_en / questions_fi (question variants), answer_en / answer_fi, source_url,
+# retrieved_at (ISO date), and keywords (en / fi phrases the keyword matcher looks for, optional).
+# core/agent/sbank_kb.py reads this file; find_bank_entry() is the one lookup.
+
+entries:
+  - id: e_invoice
+    topic: payments
+    questions_en: ["How do e-invoices work at S-Bank?", "How do I start getting e-invoices in S-mobiili?"]
+    questions_fi: ["Miten e-lasku toimii S-Pankissa?", "Miten tilaan e-laskun S-mobiiliin?"]
+    answer_en: "An e-invoice is an electronic bill that arrives in the S-Bank online bank or in S-mobiili with the payment details already filled in, so it only needs checking and approving. S-Bank's help pages say e-invoices can be ordered from billers that send them, in the online bank or in S-mobiili after paying one of their bills."
+    answer_fi: "E-lasku on sähköinen lasku, joka tulee S-Pankin verkkopankkiin tai S-mobiiliin maksutiedot valmiiksi täytettyinä, joten se vain tarkistetaan ja hyväksytään. S-Pankin ohjeiden mukaan e-laskun voi tilata sitä tarjoavalta laskuttajalta verkkopankissa tai S-mobiilissa laskun maksamisen jälkeen."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-e-lasku/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["e-invoice", "einvoice", "e invoice", "electronic invoice", "electronic bill"]
+      fi: ["e-lask", "verkkolask"]
+
+  - id: direct_debit
+    topic: payments
+    questions_en: ["How does direct debit work at S-Bank?", "How do I set up a direct debit?"]
+    questions_fi: ["Miten suoramaksu toimii?", "Miten otan suoramaksun käyttöön?"]
+    answer_en: "With a direct debit, the biller sends the bill details to the bank, and the bank takes the amount from the account automatically on the due date; the biller also sends a bill that mentions this. S-Bank's help pages say direct debit can be used by customers who do not have S-Bank online banking codes, and it is set up at an S-Bank customer service point."
+    answer_fi: "Suoramaksussa laskuttaja lähettää laskun tiedot pankille, ja pankki veloittaa summan tililtä automaattisesti eräpäivänä; laskuttaja lähettää myös laskun, jossa tästä kerrotaan. S-Pankin ohjeiden mukaan suoramaksua voivat käyttää asiakkaat, joilla ei ole S-Pankin verkkopankkitunnuksia, ja se otetaan käyttöön S-Pankin asiakaspalvelupisteessä."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-suoramaksu/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["direct debit", "direct payment"]
+      fi: ["suoramaks"]
+
+  - id: iban
+    topic: payments
+    questions_en: ["What is an IBAN?", "Where do I find my IBAN account number?"]
+    questions_fi: ["Mikä on IBAN?", "Mistä löydän IBAN-tilinumeroni?"]
+    answer_en: "An IBAN is the international form of a bank account number, and it starts with a letter code for the country; in Finland that code is FI. S-Bank's help pages say your own IBAN is shown in the online bank on the Accounts tab and on your account statement."
+    answer_fi: "IBAN on pankkitilinumeron kansainvälinen muoto, ja sen alussa on maan kirjaintunnus; Suomessa tunnus on FI. S-Pankin ohjeiden mukaan oman IBAN-tilinumeron näkee verkkopankin Tilit-välilehdeltä ja tiliotteelta."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-iban-tilinumero-ja-mista-sen-loytaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["iban", "find my account number", "where is my account number", "international account number"]
+      fi: ["iban", "tilinumeroni", "tilinumeron"]
+
+  - id: bic
+    topic: payments
+    questions_en: ["What is S-Bank's BIC code?", "What is a SWIFT code?"]
+    questions_fi: ["Mikä on S-Pankin BIC-tunnus?", "Mikä on SWIFT-tunnus?"]
+    answer_en: "A BIC, also called a SWIFT code, tells a payment which bank an account number belongs to. S-Bank's help pages give its BIC as SBANFIHH, and it is also shown in the online bank."
+    answer_fi: "BIC-tunnus, jota kutsutaan myös SWIFT-tunnukseksi, kertoo maksussa, mille pankille tilinumero kuuluu. S-Pankin ohjeiden mukaan sen BIC-tunnus on SBANFIHH, ja tunnus näkyy myös verkkopankissa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mika-on-bic-tunnus-ja-mista-sen-loytaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["bic", "swift"]
+      fi: ["bic", "swift"]
+
+  - id: sepa
+    topic: payments
+    questions_en: ["What does SEPA mean?", "What is the SEPA area?"]
+    questions_fi: ["Mitä SEPA tarkoittaa?", "Mikä on SEPA-alue?"]
+    answer_en: "SEPA stands for the Single Euro Payments Area, where a transfer is paid the same way at home and to another country. S-Bank's help pages say every account in the area has an IBAN and the bank has its own BIC, and the area covers the European Union and some nearby countries."
+    answer_fi: "SEPA tarkoittaa yhtenäistä euromaksualuetta, jolla tilisiirto maksetaan samalla tavalla kotimaahan ja ulkomaille. S-Pankin ohjeiden mukaan alueen kaikilla tileillä on IBAN-tilinumero ja pankilla oma BIC-tunnus, ja alueeseen kuuluvat Euroopan unionin maat ja muutama lähimaa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mita-lyhenne-sepa-tarkoittaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["sepa"]
+      fi: ["sepa"]
+
+  - id: e_invoice_edit
+    topic: payments
+    questions_en: ["How do I edit or delete an e-invoice?", "How can I cancel an e-invoice in S-mobiili?"]
+    questions_fi: ["Miten muokkaan tai poistan e-laskun?", "Miten poistan e-laskutilauksen S-mobiilissa?"]
+    answer_en: "S-Bank's help pages say e-invoices can be edited or deleted in S-mobiili under Bank, E-invoices, or in the online bank under Payments, E-invoice orders. To change an e-invoice, the pages suggest deleting the order and ordering it again on a later day, so the biller gets the change."
+    answer_fi: "S-Pankin ohjeiden mukaan e-laskuja voi muokata tai poistaa S-mobiilissa kohdassa Pankki, E-laskut tai verkkopankissa kohdassa Maksut, E-laskutilaukset. Muutosta varten ohjeet neuvovat poistamaan tilauksen ja tilaamaan sen uudelleen myöhempänä päivänä, jotta muutos menee laskuttajalle."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/miten-muokkaan-tai-poistan-e-laskun/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["edit an e-invoice", "edit e-invoice", "edit my e-invoice", "delete an e-invoice", "delete e-invoice", "delete my e-invoice", "cancel an e-invoice", "cancel e-invoice", "cancel my e-invoice", "change an e-invoice", "change my e-invoice", "remove an e-invoice", "remove e-invoice"]
+      fi: ["muokkaan e-lask", "muokata e-lask", "muokkaa e-lask", "poistan e-lask", "poistaa e-lask", "poista e-lask", "e-laskun muokkau", "e-laskun poisto", "e-laskutilauksen poist", "poistan e-laskutilauksen"]
+
+  - id: e_invoice_notice
+    topic: payments
+    questions_en: ["How do I get a notice when an e-invoice arrives?", "Can I get an email about a new e-invoice?"]
+    questions_fi: ["Miten saan ilmoituksen saapuneesta e-laskusta?", "Saanko sähköpostin uudesta e-laskusta?"]
+    answer_en: "S-Bank's help pages say you can order an email notice for each new e-invoice. In S-mobiili it is under Bank, E-invoices, E-invoice service agreement, Arrival notice, and in the online bank under Payments, E-invoice service agreement."
+    answer_fi: "S-Pankin ohjeiden mukaan saapuneesta e-laskusta voi tilata ilmoituksen sähköpostiin. S-mobiilissa se löytyy kohdasta Pankki, E-laskut, E-laskupalvelusopimus, Saapumisilmoitus ja verkkopankissa kohdasta Maksut, E-laskupalvelusopimus."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/miten-saan-ilmoituksen-saapuneesta-e-laskusta/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["e-invoice notification", "e-invoice notice", "notice when an e-invoice", "notification when an e-invoice", "email when an e-invoice", "e-invoice arrives", "new e-invoice arrives", "alert for e-invoice"]
+      fi: ["saapumisilmoitu", "saapuneesta e-lask", "ilmoitus e-lask", "ilmoituksen e-lask", "ilmoitus uudesta e-lask"]
+
+  - id: e_invoice_move
+    topic: payments
+    questions_en: ["How do I move my e-invoices to S-Bank?", "Can I transfer my e-invoices from another bank?"]
+    questions_fi: ["Miten siirrän e-laskuni S-Pankkiin?", "Voinko siirtää e-laskut toisesta pankista?"]
+    answer_en: "S-Bank's help pages say to end the e-invoice orders in the other bank's online bank first, and then order them again in S-mobiili or the S-Bank online bank. In S-mobiili new e-invoices are ordered under Bank, Payments and e-invoices, Order e-invoices, by finding the biller in the list."
+    answer_fi: "S-Pankin ohjeiden mukaan e-laskutilaukset lopetetaan ensin toisen pankin verkkopankissa, ja sen jälkeen ne tilataan uudelleen S-mobiiliin tai S-Pankin verkkopankkiin. S-mobiilissa uudet e-laskut tilataan kohdassa Pankki, Maksut ja e-laskut, Tilaa e-laskuja etsimällä laskuttaja listalta."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/kuinka-voin-siirtaa-e-laskutilaukset-ja-toistuvat-maksut-s-pankkiin/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["move my e-invoices", "move e-invoices", "transfer my e-invoices", "transfer e-invoices", "switch my e-invoices", "e-invoices from another bank", "e-invoices to s-bank"]
+      fi: ["siirran e-lask", "siirtaa e-lask", "siirra e-lask", "e-laskujen siirto", "e-laskut toisesta pankista", "e-laskut s-pankkiin", "e-laskuni s-pankkiin"]
+
+  - id: e_invoice_not_working
+    topic: payments
+    questions_en: ["My e-invoice is not working, what do I do?", "Why doesn't my e-invoice work?"]
+    questions_fi: ["Mitä teen, jos e-laskuni ei toimi?", "Miksi e-lasku ei toimi?"]
+    answer_en: "S-Bank's help pages say to check the bill's payment details in S-mobiili under Bank, Payments and e-invoices, or in the online bank under Payments, E-invoice orders. If something is wrong, the pages suggest deleting the order and making a new one on the next working day; starting e-invoicing can take several weeks, depending on the biller."
+    answer_fi: "S-Pankin ohjeiden mukaan laskun maksutiedot tarkistetaan S-mobiilissa kohdassa Pankki, Maksut ja e-laskut tai verkkopankissa kohdassa Maksut, E-laskutilaukset. Jos tiedoissa on virhe, ohjeet neuvovat poistamaan tilauksen ja tekemään uuden seuraavana arkipäivänä; e-laskun voimaantulo voi laskuttajasta riippuen kestää useita viikkoja."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/maksaminen/mita-teen-jos-e-laskuni-ei-toimi/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["e-invoice is not working", "e-invoice not working", "e-invoice doesn't work", "e-invoice does not work", "e-invoice isn't working", "problem with my e-invoice", "e-invoice problem"]
+      fi: ["e-lasku ei toimi", "e-laskuni ei toimi", "e-lasku ei tule", "e-laskuni ei tule", "ongelma e-lasku"]
+
+  - id: open_account
+    topic: accounts
+    questions_en: ["How do I open an account at S-Bank?", "How do I become an S-Bank customer?"]
+    questions_fi: ["Miten avaan tilin S-Pankkiin?", "Miten minusta tulee S-Pankin asiakas?"]
+    answer_en: "S-Bank's help pages say a new customer can open S-Bank services online or at an S-Bank customer service point, which also helps with switching banks. A customer who already has S-Bank online banking codes can open a new account in S-mobiili under Bank, Accounts, Open account, or in the online bank under Accounts."
+    answer_fi: "S-Pankin ohjeiden mukaan uusi asiakas voi avata S-Pankin palvelut verkossa tai S-Pankin asiakaspalvelupisteessä, jossa autetaan myös pankin vaihdossa. Asiakas, jolla on jo S-Pankin verkkopankkitunnukset, voi avata uuden tilin S-mobiilissa kohdassa Pankki, Tilit, Avaa tili tai verkkopankissa kohdassa Tilit."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-saan-avattua-tilin-s-pankkiin/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["open an account", "open a new account", "open account", "become an s-bank customer", "become a customer", "switch to s-bank", "join s-bank"]
+      fi: ["avata tilin", "avaan tilin", "avaa tili", "tilin avaami", "tilin avaus", "s-pankin asiakkaaksi", "asiakkuuden avaami", "vaihtaa pankkia s-pankkiin"]
+
+  - id: instant_payment
+    topic: accounts
+    questions_en: ["What is an instant payment?", "How is an instant transfer different from a normal transfer?"]
+    questions_fi: ["Mikä on pikasiirto?", "Miten pikasiirto eroaa tilisiirrosta?"]
+    answer_en: "S-Bank's help pages say an instant payment reaches the recipient right away, at any time of day, and can be chosen in S-mobiili or the online bank when making a new payment. A normal transfer suits bills with a later due date and repeating payments, and it moves on working days."
+    answer_fi: "S-Pankin ohjeiden mukaan pikasiirto menee saajalle heti mihin vuorokaudenaikaan tahansa, ja sen voi valita S-mobiilissa tai verkkopankissa uutta maksua tehdessä. Tavallinen tilisiirto sopii laskuihin, joiden eräpäivä on myöhemmin, ja toistuviin maksuihin, ja se välitetään arkipäivisin."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/mika-on-pikasiirto-ja-miten-se-eroaa-tavallisesta-tilisiirrosta/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["instant payment", "instant transfer"]
+      fi: ["pikasiir"]
+
+  - id: payee_check
+    topic: accounts
+    questions_en: ["What is the payee check?", "What does verification of payee mean?"]
+    questions_fi: ["Mikä on maksunsaajan tarkistus?", "Mitä maksunsaajan tarkistus tarkoittaa?"]
+    answer_en: "S-Bank's help pages say that when you make a transfer or an instant payment, the system tells you whether the recipient's name and account number match. The check lowers the risk of a payment going to the wrong person because of a typing mistake or a scam; if they do not match, the payment still goes by the account number you typed."
+    answer_fi: "S-Pankin ohjeiden mukaan tilisiirtoa tai pikasiirtoa tehdessä järjestelmä kertoo, vastaavatko saajan nimi ja tilinumero toisiaan. Tarkistus pienentää riskiä, että maksu menee väärälle saajalle näppäilyvirheen tai huijauksen takia; jos ne eivät vastaa toisiaan, maksu välitetään silti kirjoitetun tilinumeron perusteella."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/mika-on--mita-tarkoittaa-maksunsaajan-tarkistus/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["payee check", "verification of payee", "payee verification", "payee name check", "name check"]
+      fi: ["maksunsaajan tarkistu", "saajan tarkistu"]
+
+  - id: deposit_protection
+    topic: accounts
+    questions_en: ["Is my money safe in S-Bank?", "How are deposits protected at S-Bank?"]
+    questions_fi: ["Ovatko rahani turvassa S-Pankissa?", "Miten talletukset on turvattu?"]
+    answer_en: "S-Bank's help pages say the Finnish Financial Supervisory Authority supervises banks and their capital. Deposits are also covered by the deposit protection fund, which pays depositors up to a legal limit if a bank cannot."
+    answer_fi: "S-Pankin ohjeiden mukaan Finanssivalvonta valvoo pankkeja ja niiden vakavaraisuutta. Talletuksia turvaa lisäksi talletussuojarahasto, joka korvaa tallettajien saatavat lain mukaiseen rajaan asti, jos pankki ei itse pysty maksamaan."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-s-pankin-tileilla-olevat-varat-on-turvattu-ovatko-rahani-turvassa-s-pankissa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["deposit guarantee", "deposit protection", "deposits protected", "money safe in s-bank", "money safe at s-bank", "safe in s-bank", "safe at s-bank", "if s-bank goes bankrupt"]
+      fi: ["talletussuoj", "talletukset turvattu", "turvassa s-pankissa", "s-pankki menee konkurssiin"]
+
+  - id: child_account
+    topic: accounts
+    questions_en: ["How do I open a bank account for my child?", "Can my kid have an S-Bank account?"]
+    questions_fi: ["Miten avaan pankkitilin lapselle?", "Voiko lapselle avata tilin S-Pankkiin?"]
+    answer_en: "S-Bank's help pages say a child's own bank account can be opened in S-Bank's online service or at an S-Bank customer service point. The bank can tell you more about it."
+    answer_fi: "S-Pankin ohjeiden mukaan lapselle voi avata oman pankkitilin S-Pankin sähköisessä asiointipalvelussa tai asiakaspalvelupisteessä. Pankki kertoo asiasta lisää."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-avaan-pankkitilin-lapselle/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["account for my child", "account for a child", "account for my kid", "account for my son", "account for my daughter", "child's account", "child account", "account for children"]
+      fi: ["tilin lapselle", "tili lapselle", "pankkitilin lapselle", "lapsen tili", "lapsen pankkitili", "lapselle tilin", "lapselle pankkitilin"]
+
+  - id: close_account
+    topic: accounts
+    questions_en: ["How do I close an account at S-Bank?", "How can I close an extra account?"]
+    questions_fi: ["Miten lopetan tilini S-Pankissa?", "Miten voin lopettaa ylimääräisen tilin?"]
+    answer_en: "S-Bank's help pages say extra accounts are easiest to close in the online bank, from the account's details with the Close account option, or at a customer service point. A customer-owner who is closing their only account can do it only at a customer service point."
+    answer_fi: "S-Pankin ohjeiden mukaan ylimääräisen tilin voi lopettaa helpoimmin verkkopankissa tilin tiedoista valinnalla Lopeta tili tai asiakaspalvelupisteessä. Asiakasomistaja, joka lopettaa ainoan tilinsä, voi tehdä sen vain asiakaspalvelupisteessä."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/tilit/miten-voin-lopettaa-tilini-s-pankissa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["close my account", "close an account", "close account", "close my s-bank account", "cancel my account", "end my account", "terminate my account"]
+      fi: ["lopettaa tilin", "lopetan tilin", "lopeta tili", "tilin lopetta", "tilin lopetus", "lopettaa tilini", "irtisanoa tilin"]
+
+  - id: lost_card
+    topic: cards
+    questions_en: ["What should I do if my card is lost or stolen?", "How do I block my card?"]
+    questions_fi: ["Mitä teen, jos korttini katoaa tai varastetaan?", "Miten suljen korttini?"]
+    answer_en: "S-Bank's help pages say to close the card at once by calling the card blocking service, which is open around the clock, and then to report a theft to the police. A Visa or S-Etukortti Debit card that is closed this way is replaced with a new card automatically."
+    answer_fi: "S-Pankin ohjeiden mukaan kortti suljetaan heti soittamalla korttien sulkupalveluun, joka on auki ympäri vuorokauden, ja varkaudesta tehdään rikosilmoitus poliisille. Näin suljetun Visa- tai S-Etukortti Debit -kortin tilalle lähetetään uusi kortti automaattisesti."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/korttini-on-varastettu-tai-kadonnut/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["card is lost", "card was lost", "card is stolen", "card was stolen", "card has been stolen", "card gets stolen", "lose my card", "lost my card", "lost card", "stolen card", "block my card", "block a card", "block the card", "lock my card", "freeze my card", "close my card"]
+      fi: ["kortti katoaa", "korttini katoaa", "kortti katosi", "korttini katosi", "kortti on kadonnut", "korttini on kadonnut", "kadonnut kortti", "kortti varastetaan", "korttini varastetaan", "kortti on varastettu", "varastettu kortti", "sulje kortti", "suljen kortti", "sulkea kortti", "kortin sulke", "sulkupalvelu"]
+
+  - id: debit
+    topic: cards
+    questions_en: ["What does debit mean on my card?", "What is a debit card?"]
+    questions_fi: ["Mitä debit tarkoittaa?", "Mikä on debit-kortti?"]
+    answer_en: "Debit means a card linked to a bank account: it is used within the account's balance and the card's limits. S-Bank's help pages say a debit card works for purchases, also online, and for cash withdrawals around the world, and purchases are charged to the account a few days later."
+    answer_fi: "Debit tarkoittaa pankkitiliin liitettyä korttia, jota käytetään tilin saldon ja kortin käyttörajojen puitteissa. S-Pankin ohjeiden mukaan debit-kortilla voi maksaa ostoksia myös verkossa ja nostaa käteistä ympäri maailman, ja ostot veloitetaan tililtä muutaman päivän kuluttua."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/mita-tarkoittaa-debit/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["debit card", "what is debit", "debit mean", "debit side"]
+      fi: ["debit"]
+
+  - id: card_limits
+    topic: cards
+    questions_en: ["How do I change my card's security limits?", "Where can I change the purchase limit of my card?"]
+    questions_fi: ["Miten muutan kortin turvarajoja?", "Missä voin muuttaa kortin ostorajaa?"]
+    answer_en: "S-Bank's help pages say a card's security limits can be changed in the online bank under Cards, in S-mobiili's Bank section under Cards, Details and settings, at a customer service point, or by phone. The card limits do not change the account's own daily payment limit."
+    answer_fi: "S-Pankin ohjeiden mukaan kortin turvarajoja voi muuttaa verkkopankissa kohdassa Kortit, S-mobiilin Pankki-osiossa kohdassa Kortit, Tiedot ja asetukset, asiakaspalvelupisteessä tai puhelimessa. Kortin turvarajat eivät muuta tilin omaa vuorokausikohtaista maksurajaa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/miten-voin-muuttaa-kortin-turvarajoja/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["change my card limit", "change the card limit", "change card limit", "change my card's limit", "change the limits on my card", "security limit", "purchase limit", "online payment limit", "withdrawal limit"]
+      fi: ["turvaraj", "ostoraj", "muutan kortin raj", "muuttaa kortin raj", "kortin rajojen muut", "verkkomaksuraj", "nostoraj"]
+
+  - id: card_region
+    topic: cards
+    questions_en: ["What is the usage area of my card?", "Can I limit where my card works?"]
+    questions_fi: ["Mitä käyttöalue tarkoittaa?", "Voinko rajata, missä korttini toimii?"]
+    answer_en: "S-Bank's help pages say an S-Bank Visa card can be limited to a geographic area: Finland, the Nordic countries and Estonia, Europe, or the whole world. The card then works only in the chosen area, online purchases are not affected, and the area can be set in S-mobiili or the online bank."
+    answer_fi: "S-Pankin ohjeiden mukaan S-Pankin Visa-kortille voi asettaa maantieteellisen käyttöalueen: Suomi, Pohjoismaat ja Viro, Eurooppa tai koko maailma. Kortti toimii silloin vain valitulla alueella, rajaus ei koske verkko-ostoja, ja sen voi asettaa S-mobiilissa tai verkkopankissa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/mita-kayttoalue-tarkoittaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["usage area", "card region", "region of my card", "geographic area", "geographical area", "area where my card works", "limit where my card works"]
+      fi: ["kayttoalue", "aluerajau", "maantieteellinen"]
+
+  - id: card_pin
+    topic: cards
+    questions_en: ["I lost my card's PIN, how do I get it?", "Where can I check my card PIN?"]
+    questions_fi: ["Olen kadottanut korttini tunnusluvun, miten saan uuden?", "Mistä tarkistan kortin tunnusluvun?"]
+    answer_en: "S-Bank's help pages say a card's PIN can be checked in S-mobiili under S-Bank, Cards, My cards, Details and settings, or in the online bank under Cards. The PIN can also be changed there, or a PIN letter can be ordered by post."
+    answer_fi: "S-Pankin ohjeiden mukaan kortin tunnusluvun voi tarkistaa S-mobiilissa kohdassa S-Pankki, Kortit, Omat kortit, Tiedot ja asetukset tai verkkopankissa kohdassa Kortit. Siellä tunnusluvun voi myös vaihtaa, tai sen voi tilata postitse kotiin."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/miten-voin-tilata-tunnusluvun-korttiini/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["pin code", "card pin", "card's pin", "my pin", "the pin", "pin number", "forgot my pin", "lost my pin"]
+      fi: ["kortin tunnusluvu", "korttini tunnusluvu", "kortin tunnusluku", "tunnuslukuni", "pin-koodi", "pin koodi"]
+
+  - id: card_abroad
+    topic: cards
+    questions_en: ["Can I use my S-Bank card abroad?", "Does my card work abroad?"]
+    questions_fi: ["Voinko maksaa S-Pankin kortilla ulkomailla?", "Toimiiko korttini ulkomailla?"]
+    answer_en: "S-Bank's help pages say S-Etukortti Visa cards work abroad in every shop that accepts Visa. With an S-Etukortti Visa Credit/Debit card and a chip reader, the shop may let you choose whether the purchase is paid from the bank account (debit) or on credit."
+    answer_fi: "S-Pankin ohjeiden mukaan S-Etukortti Visa -korteilla voi maksaa ulkomailla kaikissa Visa-tunnuksin varustetuissa liikkeissä. S-Etukortti Visa Credit/Debit -kortilla ja sirukortinlukijalla voi mahdollisesti valita, maksetaanko ostos pankkitililtä (debit) vai luotolla (credit)."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/voinko-maksaa-s-pankin-myontamilla-korteilla-ulkomailla/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["card abroad", "card work abroad", "card works abroad", "pay abroad", "use my card abroad", "abroad with my card", "card in another country"]
+      fi: ["kortilla ulkomailla", "korttini ulkomailla", "kortti ulkomailla", "kortti toimii ulkomailla", "maksaa ulkomailla"]
+
+  - id: click_to_pay
+    topic: cards
+    questions_en: ["What is Click to Pay?", "How do I start using Click to Pay?"]
+    questions_fi: ["Mikä on Click to Pay?", "Miten otan Click to Payn käyttöön?"]
+    answer_en: "Click to Pay is a way to pay by card online without typing the card number or remembering passwords each time, in web shops and apps that offer it. S-Bank's help pages say the shop recognises your email or phone number when your card is linked to Click to Pay, and the service is taken into use in S-mobiili."
+    answer_fi: "Click to Pay on tapa maksaa kortilla verkossa ilman, että korttinumeroa näppäillään tai salasanoja muistetaan joka kerta, niissä verkkokaupoissa ja sovelluksissa, joissa se on käytössä. S-Pankin ohjeiden mukaan kauppa tunnistaa sähköpostin tai puhelinnumeron, kun kortti on liitetty palveluun, ja palvelu otetaan käyttöön S-mobiilissa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/mika-on-click-to-pay-ja-miten-otan-sen-kayttoon/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["click to pay", "click-to-pay"]
+      fi: ["click to pay", "click-to-pay"]
+
+  - id: card_expiry
+    topic: cards
+    questions_en: ["My card is about to expire, do I need to order a new one?", "When do I get a new card?"]
+    questions_fi: ["Korttini voimassaolo päättyy, pitääkö minun tilata uusi kortti?", "Milloin saan uuden kortin?"]
+    answer_en: "S-Bank's help pages say a card is valid until the end of the month printed on it, and a new card is sent to the home address automatically before the old one expires. The new card keeps the same PIN as the current card."
+    answer_fi: "S-Pankin ohjeiden mukaan kortti on voimassa siihen merkityn kuukauden loppuun, ja uusi kortti lähetetään kotiosoitteeseen automaattisesti ennen kuin vanhan voimassaolo päättyy. Uuden kortin tunnusluku on sama kuin nykyisen kortin."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/korttini-voimassaoloaika-on-paattymassa.-pitaako-minun-itse-tilata-uusi-kortti"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["card expires", "card is expiring", "card expiring", "card is about to expire", "card expiry", "card expiration", "renew my card", "card renewal", "get a new card"]
+      fi: ["voimassaolo", "kortti vanhenee", "korttini vanhenee", "uuden kortin", "uusi kortti", "kortin uusimi"]
+
+  - id: contactless
+    topic: cards
+    questions_en: ["What is contactless payment?", "How does contactless payment work?"]
+    questions_fi: ["Mitä lähimaksaminen tarkoittaa?", "Miten lähimaksu toimii?"]
+    answer_en: "Contactless payment means holding the card near the payment terminal instead of putting it in; a card that supports it has the curved-waves symbol. S-Bank's help pages say small purchases usually need no PIN, but the terminal may ask for it now and then for safety."
+    answer_fi: "Lähimaksaminen tarkoittaa, että kortti viedään maksupäätteen lähelle sen sijaan, että se laitetaan päätteeseen; lähimaksukortissa on kaarisymboli. S-Pankin ohjeiden mukaan pienissä ostoksissa tunnuslukua ei yleensä tarvita, mutta pääte voi kysyä sitä satunnaisesti turvallisuussyistä."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/kortit/lahimaksaminen/mita-lahimaksaminen-tarkoittaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["contactless", "tap to pay", "tap payment"]
+      fi: ["lahimaks"]
+
+  - id: smobiili_identification
+    topic: s-mobiili
+    questions_en: ["What does identification with S-mobiili mean?", "Can I log in with S-mobiili instead of the key code list?"]
+    questions_fi: ["Mitä tunnistaminen S-mobiililla tarkoittaa?", "Voinko kirjautua S-mobiililla ilman tunnuslukutaulukkoa?"]
+    answer_en: "S-Bank's help pages say identification with S-mobiili lets you log in to services that need online banking codes and confirm payments with a fingerprint or a code you choose, so the key code list is no longer needed for that. The pages ask you to keep the key code list anyway, for example for a new phone or a forgotten code."
+    answer_fi: "S-Pankin ohjeiden mukaan S-mobiililla tunnistautumalla voi kirjautua verkkopankkitunnuksia vaativiin palveluihin ja vahvistaa maksuja sormenjäljellä tai itse valitulla tunnusluvulla, joten tunnuslukutaulukkoa ei siihen enää tarvita. Ohjeet pyytävät silti säilyttämään taulukon esimerkiksi puhelimen vaihtoa tai unohtunutta koodia varten."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/mita-tunnistaminen-s-mobiililla-tarkoittaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["identification with s-mobiili", "s-mobiili identification", "identify with s-mobiili", "log in with s-mobiili", "login with s-mobiili", "key code list", "code list"]
+      fi: ["tunnistaminen s-mobiili", "tunnistautuminen s-mobiili", "s-mobiililla tunnistau", "s-mobiililla tunnistami", "tunnuslukutaulukko", "kirjautua s-mobiililla"]
+
+  - id: smobiili_identification_setup
+    topic: s-mobiili
+    questions_en: ["How do I take S-mobiili identification into use?", "How do I set up S-mobiili as my login?"]
+    questions_fi: ["Miten saan S-mobiililla tunnistamisen käyttööni?", "Miten otan S-mobiilin tunnistautumisvälineeksi?"]
+    answer_en: "S-Bank's help pages say identification is taken into use in S-mobiili with S-Bank online banking codes or with another bank's online banking codes. After that you can log in to the online bank with a fingerprint, a code you choose or face recognition, and identify yourself at a customer service point or on the phone service too."
+    answer_fi: "S-Pankin ohjeiden mukaan tunnistaminen otetaan käyttöön S-mobiilissa S-Pankin tai toisen pankin verkkopankkitunnuksilla. Sen jälkeen verkkopankkiin voi kirjautua sormenjäljellä, itse valitulla tunnusluvulla tai kasvojentunnistuksella, ja S-mobiililla voi tunnistautua myös asiakaspalvelupisteessä ja puhelinpalvelussa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/miten-saan-s-mobiililla-tunnistamisen-kayttooni/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["set up s-mobiili identification", "set up identification", "take identification into use", "start using s-mobiili identification", "activate s-mobiili identification", "s-mobiili as my login"]
+      fi: ["tunnistamisen kayttoon", "tunnistamisen kayttooni", "tunnistautumisvalinee", "otan tunnistamisen"]
+
+  - id: lost_phone
+    topic: s-mobiili
+    questions_en: ["What do I do if my phone with S-mobiili is lost or stolen?", "I lost my phone, what about S-mobiili?"]
+    questions_fi: ["Mitä teen, jos puhelimeni katoaa tai varastetaan?", "Puhelimeni katosi, mitä teen S-mobiilin kanssa?"]
+    answer_en: "S-Bank's help pages say that if a phone with S-mobiili registered on it is lost or stolen, call the banking codes blocking service right away; it is open around the clock. The number, also for calls from abroad, is on the help page below."
+    answer_fi: "S-Pankin ohjeiden mukaan, jos puhelin, johon S-mobiili on rekisteröity, katoaa tai varastetaan, soitetaan heti pankkitunnusten sulkupalveluun, joka on auki ympäri vuorokauden. Numero, myös ulkomailta soitettaessa, on alla olevalla ohjesivulla."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/mita-teen-jos-puhelimeni-katoaa-tai-varastetaan/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["lost my phone", "lose my phone", "phone is lost", "phone was lost", "phone is stolen", "phone was stolen", "phone gets stolen", "phone has been stolen", "stolen phone", "lost phone"]
+      fi: ["puhelin katoaa", "puhelimeni katoaa", "puhelin katosi", "puhelimeni katosi", "puhelin on kadonnut", "puhelimeni on kadonnut", "puhelin varastetaan", "puhelimeni varastetaan", "puhelin varastettiin", "puhelimeni varastettiin", "kadotin puhelim", "kadonnut puhelin"]
+
+  - id: smobiili_bank_section
+    topic: s-mobiili
+    questions_en: ["What can I do in S-mobiili?", "What does the S-Bank section of S-mobiili do?"]
+    questions_fi: ["Mitä voin tehdä S-mobiilissa?", "Mitä voin tehdä S-Pankki-osiossa?"]
+    answer_en: "S-Bank's help pages say the S-Bank section of S-mobiili shows the same accounts, cards and portfolios as the online bank. It is used, among other things, to pay bills and see upcoming ones, follow account and card transactions, change a card's purchase limits and usage area, and move money between your own accounts."
+    answer_fi: "S-Pankin ohjeiden mukaan S-mobiilin S-Pankki-osiossa näkyvät samat tilit, kortit ja salkut kuin verkkopankissa. Siellä voi muun muassa maksaa laskuja ja katsoa tulevia laskuja, seurata tili- ja korttitapahtumia, muuttaa kortin ostorajoja ja käyttöaluetta sekä siirtää rahaa omien tilien välillä."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/mita_voin_tehda_s-pankki-osiossa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["what can i do in s-mobiili", "what can i do with s-mobiili", "what does s-mobiili do", "s-mobiili features", "s-bank section", "bank section of s-mobiili"]
+      fi: ["mita voin tehda s-mobiili", "mita s-mobiililla voi tehda", "mita s-mobiilissa voi tehda", "s-pankki-osio", "s-pankki osio", "pankkiosio"]
+
+  - id: bonus_in_smobiili
+    topic: s-mobiili
+    questions_en: ["Where can I see my bonus in S-mobiili?", "Where does S-mobiili show my Bonus?"]
+    questions_fi: ["Mistä näen minulle kertyneen Bonuksen?", "Missä S-mobiili näyttää Bonukseni?"]
+    answer_en: "S-Bank's help pages say a co-op customer-owner sees their Bonus in the Oma kauppa section of S-mobiili, where they can follow how it builds up and see the benefits offered to them. The section also keeps warranty receipts and electronic receipts of S-Group purchases, once that service is taken into use in S-mobiili."
+    answer_fi: "S-Pankin ohjeiden mukaan osuuskaupan asiakasomistaja näkee Bonuksensa S-mobiilin Oma kauppa -osiossa, jossa voi seurata Bonuksen kertymistä ja katsoa tarjottuja etuja. Osioon tallentuvat myös takuukuitit ja S-ryhmän ostosten sähköiset kuitit, kun palvelu on otettu S-mobiilissa käyttöön."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/mista-naen-minulle-kertyneen-bonuksen/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["see my bonus", "bonus in s-mobiili", "oma kauppa", "electronic receipts", "warranty receipts"]
+      fi: ["nae bonuks", "naen bonuks", "kertyneen bonuks", "nayttaa bonuks", "oma kauppa", "sahkoiset kuit", "takuukuit"]
+
+  - id: smobiili_provider
+    topic: s-mobiili
+    questions_en: ["Who provides S-mobiili?", "What is S-mobiili?"]
+    questions_fi: ["Kuka S-mobiilin palvelut tarjoaa?", "Mikä on S-mobiili?"]
+    answer_en: "S-Bank's help pages say S-mobiili's services come from S-Bank and SOK, the central company of the Finnish co-operatives. S-Bank is responsible for the banking and investment features, and SOK for the Oma kauppa section and ABC mobile fuelling."
+    answer_fi: "S-Pankin ohjeiden mukaan S-mobiilin palvelut tarjoavat S-Pankki ja Suomen Osuuskauppojen Keskuskunta (SOK). S-Pankki vastaa pankki- ja sijoituspalvelutoiminnoista ja SOK Oma kauppa -osiosta ja ABC-mobiilitankkauksesta."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/s-mobiili/kuka_s-mobiilin_palvelut_tarjoaa/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["who provides s-mobiili", "who runs s-mobiili", "who owns s-mobiili", "who makes s-mobiili", "what is s-mobiili", "what's s-mobiili"]
+      fi: ["kuka s-mobiilin palvelut tarjoaa", "kuka tarjoaa s-mobiili", "kuka s-mobiilin tarjoaa", "kenen s-mobiili", "mika on s-mobiili", "mika s-mobiili on"]
+
+  - id: forgot_password
+    topic: online-bank
+    questions_en: ["I forgot my online bank password, what do I do?", "How do I get a new S-Bank password?"]
+    questions_fi: ["Mitä teen, jos unohdan salasanani?", "Miten saan uuden salasanan S-Pankin verkkopankkiin?"]
+    answer_en: "S-Bank's help pages say a new password can be ordered on S-Bank's website by identifying with another bank's codes or with S-Bank's own codes, and a one-time password then comes by post to the home address. A customer service point can also reset the password; it needs a valid passport or ID card."
+    answer_fi: "S-Pankin ohjeiden mukaan uuden salasanan voi tilata S-Pankin verkkosivuilta tunnistautumalla toisen pankin tai S-Pankin tunnuksilla, ja kertakäyttöinen salasana tulee postitse kotiosoitteeseen. Myös asiakaspalvelupisteessä salasanan voi nollata; mukaan tarvitaan voimassa oleva passi tai henkilökortti."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/verkkopankki/mita-teen-jos-unohdan-salasanani/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["forgot my password", "forgotten my password", "forgot the password", "forget my password", "reset my password", "new password", "lost my password"]
+      fi: ["unohdin salasana", "unohdan salasana", "salasana unohtui", "salasanani unohtui", "uuden salasanan", "uusi salasana", "salasanan nollau"]
+
+  - id: phishing
+    topic: security
+    questions_en: ["I got a message from S-Bank asking for my banking codes, what should I do?", "Does S-Bank ever ask for my codes by email?"]
+    questions_fi: ["Sain S-Pankilta viestin, jossa kysytään pankkitunnuksiani. Mitä teen?", "Kysyykö S-Pankki koskaan tunnuksia sähköpostilla?"]
+    answer_en: "S-Bank's help pages say such a message is a scam and should never be answered. S-Bank says it never asks for banking codes, card details or other sensitive information by email, text message or phone call, and it asks customers to report such messages to its customer service."
+    answer_fi: "S-Pankin ohjeiden mukaan tällainen viesti on huijaus, eikä siihen pidä vastata. S-Pankki kertoo, ettei se koskaan kysy pankkitunnuksia, korttitietoja tai muita arkaluonteisia tietoja sähköpostilla, tekstiviestillä tai puhelimessa, ja se pyytää ilmoittamaan tällaisista viesteistä asiakaspalveluunsa."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/verkkopankki/sain-s-pankilta-viestin-jossa-tiedustellaan-pankkitunnuksiani.-mita-minun-pitaisi-tehda"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["asking for my banking codes", "asking for my codes", "asks for my codes", "ask for my codes", "ask for my banking codes", "phishing", "fake message", "scam message", "suspicious message", "suspicious email", "suspicious text"]
+      fi: ["huijausviest", "kysytaan pankkitunnuk", "tiedustellaan pankkitunnuk", "kysyy pankkitunnuk", "kysyyko s-pankki", "epailyttava viesti", "epailyttavan viestin", "tietojenkalastel"]
+
+  - id: wrong_account
+    topic: payments
+    questions_en: ["I sent money to the wrong account number, what do I do?", "What if I paid to the wrong account?"]
+    questions_fi: ["Siirsin rahaa väärälle tilinumerolle. Mitä teen?", "Maksoin väärälle tilille, mitä nyt?"]
+    answer_en: "S-Bank's help pages say a payment to an account number that does not exist comes back to the account automatically within a few days. If it went to the wrong but existing recipient, the pages say to ask that recipient for the money back; after a typing mistake with an unknown recipient, the bank can look into it through an online bank message."
+    answer_fi: "S-Pankin ohjeiden mukaan maksu tilinumeroon, jota ei ole olemassa, palautuu tilille automaattisesti muutaman päivän kuluessa. Jos maksu meni väärälle olemassa olevalle saajalle, ohjeet neuvovat pyytämään palautusta saajalta; jos kirjoitusvirheen saaja ei ole tiedossa, pankki voi selvittää asiaa verkkopankin viestin perusteella."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/verkkopankki/siirsin-rahaa-virheelliselle-tai-vaaralle-tilinumerolle.-mita-teen"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["wrong account", "wrong account number", "wrong recipient", "sent money to the wrong", "paid to the wrong", "transferred money to the wrong"]
+      fi: ["vaaralle tilinumerolle", "vaaralle tilille", "vaaralle saajalle", "virheelliselle tilinumerolle", "vaaraan tilinumeroon"]
+
+  - id: address_change
+    topic: customer
+    questions_en: ["I moved, how do I update my address at S-Bank?", "How do I change my address?"]
+    questions_fi: ["Olen muuttanut, miten päivitän osoitteeni?", "Miten muutan osoitteeni S-Pankkiin?"]
+    answer_en: "S-Bank's help pages say the address is updated automatically some time after you file a change of address with the Finnish Digital and Population Data Services Agency. If it has not changed after a while, you can send S-Bank a message about it in S-mobiili or the online bank, with the topic Change of address."
+    answer_fi: "S-Pankin ohjeiden mukaan osoite päivittyy automaattisesti jonkin ajan kuluttua siitä, kun muuttoilmoitus on tehty Digi- ja väestötietovirastolle. Jos osoite ei ole päivittynyt, S-Pankille voi lähettää viestin S-mobiilissa tai verkkopankissa aiheella Osoitteenmuutos."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/asiakkuus/palvelujen-avaus/miten-toimin-kun-osoitteeni-on-muuttunut/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["change my address", "update my address", "change of address", "address change", "my new address", "new address"]
+      fi: ["osoitteenmuutos", "osoitteeni", "osoitteen muutos", "uusi osoite", "paivitan osoitteen", "muutan osoitteen"]
+
+  - id: customer_owner
+    topic: customer
+    questions_en: ["Do I have to be a co-op member to bank with S-Bank?", "Can I use S-Bank without being a customer-owner?"]
+    questions_fi: ["Pitääkö olla asiakasomistaja, jotta pääsee S-Pankin asiakkaaksi?", "Voinko olla S-Pankin asiakas ilman asiakasomistajuutta?"]
+    answer_en: "S-Bank's help pages say a customer does not need to be a co-op customer-owner, and S-Bank serves other consumers too, with a narrower range of products and services. The pages add that S-Bank's products are aimed mainly at customer-owners and their households."
+    answer_fi: "S-Pankin ohjeiden mukaan S-Pankin asiakkaaksi ei tarvitse olla asiakasomistaja, ja S-Pankki palvelee myös muita kuluttajia suppeammalla tuote- ja palveluvalikoimalla. Ohjeiden mukaan tuotteet on suunnattu ensisijaisesti asiakasomistajille ja heidän talouksilleen."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/asiakkuus/palvelujen-avaus/pitaako-olla-asiakasomistaja-ennen-kuin-paasee-s-pankin-asiakkaaksi/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["customer-owner", "customer owner", "co-op member", "coop member", "co-operative member", "without being a member"]
+      fi: ["asiakasomistaj"]
+
+  - id: service_point
+    topic: customer
+    questions_en: ["Where is the nearest S-Bank customer service point?", "Where can I visit S-Bank in person?"]
+    questions_fi: ["Mistä löydän lähimmän S-Pankin asiakaspalvelupisteen?", "Missä voin asioida S-Pankissa paikan päällä?"]
+    answer_en: "S-Bank's help pages say the nearest customer service point and its opening hours are listed on S-Bank's Locations page. The bank can tell you more about visiting a service point."
+    answer_fi: "S-Pankin ohjeiden mukaan lähimmän asiakaspalvelupisteen ja sen aukioloajat näkee S-Pankin Toimipaikat-sivulta. Pankki kertoo lisää asioinnista palvelupisteessä."
+    source_url: "https://www.s-pankki.fi/fi/asiakaspalvelu/ukk/kysymykset/palvelukanavat/toimipaikat/mista-loydan-lahimman-asiakaspalvelupisteen-tai-s-pankkiirin/"
+    retrieved_at: "2026-11-15"
+    keywords:
+      en: ["customer service point", "service point", "nearest branch", "s-bank branch", "s-bank office", "opening hours", "visit s-bank", "in person"]
+      fi: ["asiakaspalvelupiste", "toimipaik", "aukioloaj", "konttori"]
