@@ -118,9 +118,10 @@ fi
 # file (for example core/data/*.csv) must be added to these patterns as well as to /.dockerignore.
 # The list is built in the main shell, so a git failure stops the deploy instead of passing an empty
 # list; a list without core/app/main.py is refused too. core/answer_text.py is the one module outside
-# the packages that they import (core.agent, shared with the eval).
-if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/answer_text.py' \
-                  'core/metrics/*.sql' 'core/config/*.yaml'); then
+# the packages that they import (core.agent, shared with the eval). The model prompts are read at run
+# time: a missing one would otherwise deploy green and leave the service on the rule model only.
+if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/agent/prompts/*.md' \
+                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml'); then
   echo "refusing to deploy: cannot list the run-time files of the checkout" >&2
   drop_image
   exit 1

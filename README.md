@@ -4,6 +4,8 @@
 
 Work in progress.
 
+How S-mobiili embeds Sentti, an embeddable web module (WebView): [docs/integration.md](docs/integration.md).
+
 ## Run
 
 The core service is a Python 3.11 FastAPI app. It reads its settings from environment variables, or from `.env` in the repository root (see `.env.example`). Without `DATABASE_URL` it still starts, and `/readyz` returns 503.
@@ -16,6 +18,8 @@ uvicorn core.app.main:create_app --factory --port 8000   # start the core servic
 pytest core -q                                            # run the tests
 ```
 
+`core/requirements.txt` pins every package to an exact version. To change one, follow the steps in its header.
+
 `curl localhost:8000/healthz` returns `{"status":"ok","demo_today":"2026-09-30"}`. `curl localhost:8000/readyz` returns 200 when the database answers `SELECT 1`, and 503 with a short reason otherwise.
 
 Settings:
@@ -25,6 +29,9 @@ Settings:
 - `GEMINI_API_KEY`: optional. Without it the coach answers from the rule planner and the templates.
 - `GEMINI_MODEL`: leave it out of `.env` (see below).
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
+- `DB_POOL_MAX` (default `10`, 1 to 20): the most database connections the service's pool opens. Every local run and every database-backed test that starts the service opens up to this many.
+- `API_DOCS` (default off): `1` serves the interactive API docs (`/docs`, `/redoc`, `/openapi.json`), for local development only.
+- `SPIKE_REVIEWS` (default on): the coach asks about one spending spike, and the answer changes the numbers. Set it to `off` to serve the published numbers with no review: no label is read and no review is created.
 
 The tests that need a database are skipped when `DATABASE_URL` is not set.
 
@@ -63,7 +70,7 @@ curl -N -X POST localhost:8000/api/ask -H "Content-Type: application/json" -H "A
 
 Answer pipeline settings:
 - `AUDIT_LOG_DIR`: where the audit records go. The default is `var/audit`.
-- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs.
+- `AUDIT_API=1`: turns on `GET /api/audit/{answer_id}` for local eval runs. It is read when the service starts. It is off by default, and must stay off on the public dev service: a record holds a customer's question and tool outputs. When it is off, the route does not exist, and the path answers like any unknown path.
 - Rate limits on `POST /api/ask`, per process and per minute, answered with 429 before the stream opens. `0` turns a limit off, which is for local eval runs only.
   - `ASK_RATE_LIMIT_PER_MIN`: per client address, default 10.
   - `ASK_RATE_LIMIT_GLOBAL_PER_MIN`: all asks together, default 60.
@@ -95,6 +102,24 @@ bash deploy/dev.sh
 ```
 
 The instance pulls the code from GitHub itself, so push first. `docs/deploy.md` covers rollback, logs, settings, access and how to delete the instance (billing runs until the instance and its volume are deleted).
+
+## Spike reviews and the demo reset
+
+The first `GET /api/overview/{customer_id}` of a customer with a qualifying spike creates a pending review in the `spike_reviews` table. The service creates that table if it is missing. While the review is pending, the purchase is "Waiting for your answer" (`unclassified`). `POST /api/baskets/label` stores the answer. Design: `docs/design/agent-core.md` section 7.8; contract: `contracts/api.md` sections 6 and 10.
+
+The answers live only in `spike_reviews`, on the shared database that the dev environment also uses. To start the demo again, delete the personas' reviews from any checkout whose `.env` points at that database. The script refuses to run without explicit customer ids:
+
+```
+python core/scripts/reset_reviews.py CUST00860                                  # Sanna
+python core/scripts/reset_reviews.py CUST00860 CUST00493 CUST00349 CUST00849    # the four personas
+python core/scripts/reset_reviews.py --dry-run CUST00860                        # show, delete nothing
+```
+
+Reference answers, such as the eval set's expected values, are the state with no review. Before you compare a running service with them, either set `SPIKE_REVIEWS=off` on that service or reset the personas first.
+
+**Run the reset right before the demo.** A review closes 7 real days after its first serve, while the demo date (`DEMO_TODAY`) stands still. After that, a persona has no card until `reset_reviews.py` is run. No new review is created while the customer's latest one can still be answered or undone, so a customer has at most one open review per 7 days.
+
+The tests run with `SPIKE_REVIEWS=off`, so they see the published numbers whatever the demo answered. The spike-review tests switch it on inside a transaction that is rolled back. They never commit a review, a label or the `spike_reviews` table itself.
 
 ## Data
 
@@ -151,6 +176,7 @@ python core/eval/expected.py --check            # the committed expected values 
 
 - `run.py` prints one line per question, a summary per tag, and exits 1 on any failure. Filters: `--tag red_team`, `--persona CUST00860`, `--case <id>`, `--lang fi`.
 - `--source api --base-url http://localhost:8000` runs the same cases against the coach's `POST /api/ask` once it exists. `--source module:factory` plugs in any other answer source.
+- The expected values are the state with no spike review. Before an `--source api` run, set `SPIKE_REVIEWS=off` on that service or reset the personas (see "Spike reviews and the demo reset"). The `reference` source runs the metric SQL without labels, so it is not affected.
 - After a metric change, `python core/eval/expected.py --write` regenerates the expected values (`--persona CUST00860` for one persona). Review the diff before committing it.
 - `pytest core/eval -q` runs the regression tests of the checks: answers that lie must fail. No database is needed.
 

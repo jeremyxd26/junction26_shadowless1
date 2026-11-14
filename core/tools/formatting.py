@@ -12,8 +12,8 @@ on it. The forms (issue #111):
 | `peer_benchmark.vs_median_pct@1` | `32.3% more`, `31.0% less`, `0.0%` | `32,3 % enemmän`, `31,0 % vähemmän` |
 | count | `118`, `4,120`, a fraction with one decimal: `15.2` | `118`, `4 120`, `15,2` |
 | `spender_profile.everyday_tx_month@1` | `14.2 a month` | `14,2 / kk` |
-| days, months | `1 day`, `12 days`, `1 month` | `1 pv`, `12 pv`, `1 kk` |
-| `user_input@1` percent, whole | `20%` | `20 %` |
+| days, months (rounded half up to whole, grouped) | `1 day`, `12 days`, `1,234 days`, `1 month` | `1 pv`, `12 pv`, `1 234 pv`, `1 kk` |
+| `user_input@1` and `bonus_estimate.share_pct@1` percent, whole | `20%` | `20 %` |
 
 No plus sign is ever added. A negative value shows a minus, unless it rounds to zero (`€0.00`, never
 `-€0.00`); a display with a direction word shows the magnitude without a minus.
@@ -32,6 +32,9 @@ ONE = Decimal("1")
 VS_MEDIAN_METHOD = "peer_benchmark.vs_median_pct@1"
 PER_MONTH_COUNT_METHODS = frozenset({"spender_profile.everyday_tx_month@1"})
 USER_INPUT_METHOD = "user_input@1"
+# Percentages that are whole by construction and read as typed: the user's own input, and the default
+# what-if share of the S-Bonus estimate (#158), which stands where a typed share would.
+WHOLE_PERCENT_METHODS = frozenset({USER_INPUT_METHOD, "bonus_estimate.share_pct@1"})
 
 
 def money(value: Decimal) -> Decimal:
@@ -120,13 +123,15 @@ def display(value: Decimal, unit: Unit, language: str = "en", method: str | None
         return out
 
     if unit in COUNT_SUFFIX:
-        n = int(magnitude)
+        # Rounded half up to a whole number (not truncated) and grouped like counts (#161).
+        n = int(magnitude.quantize(ONE, rounding=ROUND_HALF_UP))
         sign = "-" if negative and n else ""
         en_forms, fi_suffix = COUNT_SUFFIX[unit]
-        return f"{sign}{n}{fi_suffix if fi else en_forms[0 if n == 1 else 1]}"
+        grouped = _group(str(n), " " if fi else ",")
+        return f"{sign}{grouped}{fi_suffix if fi else en_forms[0 if n == 1 else 1]}"
 
     if unit is Unit.PERCENT:
-        if method == USER_INPUT_METHOD and magnitude == magnitude.to_integral_value():
+        if method in WHOLE_PERCENT_METHODS and magnitude == magnitude.to_integral_value():
             text = str(int(magnitude))
         else:
             text = f"{pct(magnitude):.1f}"

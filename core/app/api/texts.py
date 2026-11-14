@@ -22,6 +22,9 @@ ERRORS: dict[str, Pair] = {
                            "Luvun laskentatapaa ei löytynyt."),
     "evidence_forbidden": ("This evidence belongs to another customer.", "Tämä tieto kuuluu toiselle asiakkaalle."),
     "invalid_scenario": ("This scenario cannot be calculated.", "Tätä tilannetta ei voi laskea."),
+    "tx_ref_not_found": ("This question is not open.", "Tämä kysymys ei ole avoinna."),
+    "basket_not_allowed": ("This answer is not one of the options for this question.",
+                           "Tämä vastaus ei ole yksi tämän kysymyksen vaihtoehdoista."),
     "rate_limited": ("Too many requests. Please try again soon.", "Liian monta pyyntöä. Yritä pian uudelleen."),
     "data_unavailable": ("Your data is not available right now. Please try again.",
                          "Tietosi eivät ole juuri nyt saatavilla. Yritä uudelleen."),
@@ -150,6 +153,21 @@ for _col, _unit, _en, _fi in [
     ("cushion_eur", Unit.EUR, "Cushion", "Puskuri"),
 ]:
     METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#3-safe-to-spend")
+# Safe to save (#165), output columns of the same file (metrics.md section 3.1).
+for _col, _unit, _en, _fi in [
+    ("safe_to_save_monthly_eur", Unit.EUR_PER_MONTH, "Typically left each month", "Tavallisesti jää kuukaudessa"),
+    ("free_month_eur", Unit.EUR_PER_MONTH, "Free in a typical month", "Vapaana tavallisessa kuukaudessa"),
+    ("everyday_month_eur", Unit.EUR_PER_MONTH, "Everyday spending in a typical month",
+     "Arkikulutus tavallisessa kuukaudessa"),
+    ("essentials_shortfall_month_eur", Unit.EUR_PER_MONTH, "Bills, essentials and the reserve above income",
+     "Laskut, välttämättömät menot ja varaus ylittävät tulot"),
+    ("safe_to_save_eur", Unit.EUR, "In your account beyond what you need until payday",
+     "Tililläsi yli sen, mitä tarvitset palkkapäivään asti"),
+    ("everyday_until_payday_eur", Unit.EUR, "Everyday spending until payday", "Arkikulutus palkkapäivään asti"),
+    ("save_reason_month_eur", Unit.EUR_PER_MONTH, "Why a typical month leaves nothing",
+     "Miksi tavallisesta kuukaudesta ei jää mitään"),
+]:
+    METHODS[f"safe_to_spend.{_col}@1"] = _metric(_unit, _en, _fi, "03_safe_to_spend.sql", "#31-safe-to-save-33")
 for _col, _unit, _en, _fi in [
     ("baseline_month_eur", Unit.EUR_PER_MONTH, "Usual spending per month", "Tavallinen kulutus kuukaudessa"),
     ("saving_month_eur", Unit.EUR_PER_MONTH, "Saving per month", "Säästö kuukaudessa"),
@@ -191,6 +209,32 @@ METHODS["peer_benchmark.you_month_eur@1"] = MethodInfo(
     ("Your own spending in the compared group, divided by the months with history.",
      "Oma kulutuksesi vertailtavassa ryhmässä jaettuna kuukausilla, joilta on tietoja."),
     METRICS_DOC + "#6-peer-benchmark")
+
+# S-Bonus what-if estimate (#158): composites of the grocery month average and the rules file.
+BONUS_DOC = "docs/domain/s-group-benefits.md#4-how-the-coach-can-estimate-s-bonus-a-what-if-only"
+for _id, _unit, _name, _summary in [
+    ("share_pct", Unit.PERCENT, ("Assumed share at S-Group stores", "Oletettu osuus S-ryhmän kaupoissa"),
+     ("The what-if share of grocery spending, from the rules file when not given.",
+      "Ruokaostosten oletettu osuus; sääntötiedostosta, ellei sitä anneta.")),
+    ("level_base_eur", Unit.EUR_PER_MONTH, ("Purchases that set the Bonus level", "Bonustason määräävät ostot"),
+     ("Grocery spending a month times the what-if share.", "Ruokaostokset kuukaudessa kertaa oletettu osuus.")),
+    ("bonus_percent", Unit.PERCENT, ("Bonus level", "Bonustaso"),
+     ("The percentage of the highest row of the default Bonus table at or below those purchases.",
+      "Tavallisen Bonustaulukon korkeimman tason prosentti, jonka raja ei ylitä ostoja.")),
+    ("bonus_month_eur", Unit.EUR_PER_MONTH, ("Bonus a month", "Bonus kuukaudessa"),
+     ("The Bonus percentage of those purchases.", "Bonusprosentti näistä ostoista.")),
+    ("payment_benefit_month_eur", Unit.EUR_PER_MONTH, ("Payment benefit a month", "Maksutapaetu kuukaudessa"),
+     ("The payment benefit rate of those purchases, paid with an S-Etukortti Visa.",
+      "Maksutapaedun osuus näistä ostoista S-Etukortti Visalla maksettuna.")),
+    ("total_month_eur", Unit.EUR_PER_MONTH, ("Bonus and payment benefit a month", "Bonus ja maksutapaetu kuukaudessa"),
+     ("The Bonus and the payment benefit together.", "Bonus ja maksutapaetu yhteensä.")),
+    ("total_year_eur", Unit.EUR_PER_YEAR, ("Bonus and payment benefit a year", "Bonus ja maksutapaetu vuodessa"),
+     ("The monthly sum times twelve.", "Kuukausisumma kertaa kaksitoista.")),
+    ("lowest_level_eur", Unit.EUR_PER_MONTH, ("Lowest Bonus level", "Alin Bonustaso"),
+     ("The purchases a month the lowest row of the default Bonus table needs.",
+      "Ostot kuukaudessa, joita tavallisen Bonustaulukon alin taso edellyttää.")),
+]:
+    METHODS[f"bonus_estimate.{_id}@1"] = MethodInfo(_unit, _name, _summary, BONUS_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

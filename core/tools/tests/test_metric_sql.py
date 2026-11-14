@@ -86,8 +86,9 @@ def test_malformed_names_are_refused_before_the_database(name):
 def test_a_normal_call_sets_the_one_customer_range_and_as_of():
     conn = FakeConnection()
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF, {"whatif": "category:Restaurants", "whatif_pct": "20"})
-    # the real sequence: the caller's settings, then the server's date and customer range
+    # the real sequence: no labels (#68), the caller's settings, then the server's date and customer range
     assert conn.set_configs() == [
+        ("app.tx_labels", ""),
         ("app.whatif", "category:Restaurants"), ("app.whatif_pct", "20"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]
@@ -103,6 +104,7 @@ def test_the_range_is_set_last_even_if_a_name_slipped_past_the_check(monkeypatch
     metric_sql.run(conn, "04_what_if.sql", "CUST00860", AS_OF,
                    {"customer_from": "CUST00000", "customer_to": "CUST99999", "demo_today": "2099-01-01"})
     assert conn.set_configs() == [
+        ("app.tx_labels", ""),                                                  # no labels (#68)
         ("app.customer_from", "CUST00000"), ("app.customer_to", "CUST99999"), ("app.demo_today", "2099-01-01"),
         ("app.demo_today", "2026-09-30"), ("app.customer_from", "CUST00860"), ("app.customer_to", "CUST00861"),
     ]
