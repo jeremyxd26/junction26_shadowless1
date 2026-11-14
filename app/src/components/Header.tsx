@@ -93,8 +93,11 @@ export function Header({
           At normal size 2.75rem is 44px, as before. Each side column holds up to two buttons (5.5rem,
           kept equal so the title stays centred), so one row needs about 18.3rem; below 19rem (200 %
           text on a phone) the title moves to a second row under the buttons instead of overlapping
-          them. At normal size the header is 20rem or wider (320 px), so it stays one row. */}
-      <div className="grid min-h-13 grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center px-2">
+          them. At normal size the header is 20rem or wider (320 px), so it stays one row.
+          The two equal columns and the left padding need 11.5rem; below that (320 px with 200 % text)
+          they would run past the screen, so the left column, which only ever holds one button, keeps
+          just its 2.75rem (#763). The title is on its own row there, so it stays centred. */}
+      <div className="grid min-h-13 grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center px-2 @max-[11.5rem]:grid-cols-[2.75rem_minmax(0,1fr)_5.5rem]">
         {showBack ? (
           <button
             type="button"
