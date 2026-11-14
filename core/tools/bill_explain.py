@@ -305,7 +305,7 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
     except HERO_KNOWN_FAILURES as exc:
         log.warning("safe to spend unavailable for a bill (%s)", type(exc).__name__)
         hero = None
-    safe_to_spend = _safe_to_spend(ctx, nb, bill, item, amount_n, hero) if hero is not None else None
+    safe_to_spend = _safe_to_spend(ctx, nb, bill, item, amount_n, hero, is_regular) if hero is not None else None
 
     regular = regular_bills(items)
     largest = max(regular, key=lambda i: _value(i.typical_month)).typical_month if regular else None
@@ -355,9 +355,10 @@ def _signal(code: str, lang: str, amount_n: Number, item: BillItem | None, large
 
 
 def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: BillItem | None, amount_n: Number,
-                   hero: Any) -> dict[str, Any]:
+                   hero: Any, regular: bool) -> dict[str, Any]:
     """The bill applied to the balance side like a bill due before payday, and the hero's own computation
-    (03) run again with it: free until payday and safe to spend, each before and after."""
+    (03) run again with it: free until payday and safe to spend, each before and after. `regular`: the bill
+    fits the matched regular bill (#400), so the texts say "your Housing bill", else "your Utilities payments"."""
     lang = ctx.language
     reg = ctx.numbers.register
     before, free_before, budget = hero.safe_to_spend, hero.free_until_payday, hero.budget_limit
@@ -408,10 +409,11 @@ def _safe_to_spend(ctx: ToolContext, nb: NumberBuilder, bill: BillInput, item: B
     out.update(counted=_dump(counted), free_until_payday_after=_dump(free_after), after=_dump(after))
 
     label = item.label if item is not None else ""
+    suffix = "" if regular else "_category"
     if effect == "excess_only" and counted_v == 0:
-        texts = [_t("effect_covered", lang, payday=payday, reserved=reserved.display, label=label)]
+        texts = [_t("effect_covered" + suffix, lang, payday=payday, reserved=reserved.display, label=label)]
     elif effect == "excess_only":
-        texts = [_t("effect_excess", lang, payday=payday, reserved=reserved.display, label=label,
+        texts = [_t("effect_excess" + suffix, lang, payday=payday, reserved=reserved.display, label=label,
                     counted=counted.display, free_before=free_before.display, free_after=free_after.display)]
     else:
         texts = [_t("effect_full", lang, payday=payday, free_before=free_before.display,

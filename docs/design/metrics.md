@@ -477,7 +477,7 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 - the warning sign `amount_above_usual` still applies against the category's typical month, and then names that basis ("much more than all your Utilities payments in a usual month");
 - the basket (regular essentials) and the effect on safe to spend are as for a match.
 
-**Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
+**Comparison and warning signs.** For your regular bill (a matched bill that fits it, #400), `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
 
 | Code | Rule |
 |---|---|

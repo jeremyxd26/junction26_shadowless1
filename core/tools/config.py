@@ -237,15 +237,27 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                             "ennen sitä."),
     # safe_to_spend.text is at most two sentences (contracts/api.md 11.2): one of the effect_* sentences on
     # free until payday, then at most one sts_* sentence on the weekly number.
-    "effect_excess": ("{reserved} is already set aside for your {label} payments before payday on {payday}, so "
-                      "only the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
-                      "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
+    # Your regular bill (it fits, #400) is "your {label} bill"; a bill of the same payee category is set against
+    # "your {label} payments" (review of #425).
+    "effect_excess": ("{reserved} is already set aside for your {label} bill before payday on {payday}, so only "
+                      "the extra {counted} is added: free until payday goes from {free_before} to {free_after}.",
+                      "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, joten vain "
                       "ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
                       "(ennen laskua {free_before})."),
-    "effect_covered": ("{reserved} is already set aside for your {label} payments before payday on {payday}, "
-                       "which covers this one, so nothing changes.",
-                       "Maksuillesi ({label}) on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
+    "effect_covered": ("{reserved} is already set aside for your {label} bill before payday on {payday}, which "
+                       "covers this one, so nothing changes.",
+                       "Laskullesi {label} on jo varattu {reserved} ennen palkkapäivää {payday}, mikä kattaa "
                        "tämän laskun, joten mikään ei muutu."),
+    "effect_excess_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                               "{payday}, so only the extra {counted} is added: free until payday goes from "
+                               "{free_before} to {free_after}.",
+                               "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                               "joten vain ylimenevä {counted} lisätään: palkkapäivään asti vapaana on {free_after} "
+                               "(ennen laskua {free_before})."),
+    "effect_covered_category": ("{reserved} is already set aside for your {label} payments before payday on "
+                                "{payday}, which covers this one, so nothing changes.",
+                                "Maksuillesi luokassa {label} on jo varattu {reserved} ennen palkkapäivää {payday}, "
+                                "mikä kattaa tämän laskun, joten mikään ei muutu."),
     "effect_full": ("Due before your payday on {payday}, it is added to the bills before payday: free until "
                     "payday goes from {free_before} to {free_after}.",
                     "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
@@ -276,8 +288,8 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
     # #400: a bill of the same payee category is compared with the category's whole month, and says so
     "sig_above_category": ("This bill is {amount}, much more than all your {label} payments in a usual month "
                            "({typical}).",
-                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi ({label}) tavallisena "
-                           "kuukautena ({typical})."),
+                           "Tämä lasku on {amount}, paljon enemmän kuin kaikki maksusi luokassa {label} "
+                           "tavallisena kuukautena: {typical}."),
     "sig_above_largest": ("This bill is {amount}, more than your largest regular bill ({largest}).",
                           "Tämä lasku on {amount}, enemmän kuin suurin tavallinen laskusi ({largest})."),
     "sig_short_term": ("The due date is less than a week away.", "Eräpäivään on alle viikko."),

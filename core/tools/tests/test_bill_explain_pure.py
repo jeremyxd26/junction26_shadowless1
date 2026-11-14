@@ -364,10 +364,28 @@ def test_the_sign_amount_above_usual_cites_its_numbers_and_names_its_basis(fake)
     fake.row = {"free_until_payday_eur": Decimal("12441.31"), "balance_limit_7d_eur": Decimal("5806.08")}
     out = explain(fields_bill(payee="Esimerkki Energia Oy", amount="312.70", due=date(2026, 10, 13)), "fi")
     sign = next(s for s in out["signals"] if s["code"] == "amount_above_usual")
-    assert sign["text"] == ("Tämä lasku on 312,70 €, paljon enemmän kuin kaikki maksusi (Utilities) tavallisena "
-                            "kuukautena (186,40 € / kk).")
+    # one bracket at most (review of #425: two brackets in a row read badly)
+    assert sign["text"] == ("Tämä lasku on 312,70 €, paljon enemmän kuin kaikki maksusi luokassa Utilities "
+                            "tavallisena kuukautena: 186,40 € / kk.")
     assert [n["display"] for n in sign["numbers"]] == ["312,70 €", "186,40 € / kk"]
     assert out["comparison"] is None
+
+
+@pytest.mark.parametrize("lang,regular,category", [
+    ("en", "is already set aside for your Housing bill before payday", "is already set aside for your Utilities "
+                                                                       "payments before payday"),
+    ("fi", "Laskullesi Housing on jo varattu", "Maksuillesi luokassa Utilities on jo varattu"),
+])
+def test_the_effect_says_your_bill_for_the_regular_bill_and_payments_for_the_category(fake, lang, regular, category):
+    """Review of #425: "payments" only for a bill of the same payee category; the regular bill stays "bill"."""
+    housing = be.read_barcode(barcode(euros="000886", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy")
+    fake.row = {"free_until_payday_eur": Decimal("12517.56"), "balance_limit_7d_eur": Decimal("5841.53")}
+    assert regular in explain(housing, lang)["safe_to_spend"]["text"]
+    covered = be.read_barcode(barcode(euros="000836", cents="65", yymmdd="261008"), "Esimerkki Asunnot Oy")
+    assert regular.replace("on jo varattu", "") in explain(covered, lang)["safe_to_spend"]["text"]
+    fake.row = {"free_until_payday_eur": Decimal("12441.31"), "balance_limit_7d_eur": Decimal("5806.08")}
+    energy = explain(fields_bill(payee="Esimerkki Energia Oy", amount="312.70", due=date(2026, 10, 13)), lang)
+    assert energy["safe_to_spend"]["effect"] == "excess_only" and category in energy["safe_to_spend"]["text"]
 
 
 # ---- #400: a bill from the same payee category is not "your regular bill" -----------------------------------
