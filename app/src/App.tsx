@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api/client.ts'
 import type { Language } from './api/types.ts'
 import { EvidenceSheet } from './components/EvidenceSheet.tsx'
@@ -17,6 +17,7 @@ import { useChat } from './lib/useChat.ts'
 import { useLoad } from './lib/useLoad.ts'
 import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
+import { Learn } from './screens/Learn.tsx'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
 const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
@@ -56,6 +57,21 @@ export default function App() {
   const chat = useChat(customerId, lang)
   const ready = overview.status === 'ready' ? overview.data : null
   const overviewFailed = overview.status === 'error' || personas.status === 'error'
+  // The first screen's two tabs: the thread stays mounted (hidden) while Learn shows, so the opening's
+  // review state, the streaming answer and the scroll position live on.
+  const tab = path !== '/cards' && path !== '/bill' && params.get('tab') === 'learn' ? 'learn' : 'chat'
+  const chatScroll = useRef(0)
+  const switchTab = useCallback(
+    (next: 'chat' | 'learn') => {
+      if (next === tab) return
+      if (tab === 'chat') chatScroll.current = window.scrollY
+      setParams({ tab: next === 'learn' ? 'learn' : null })
+    },
+    [tab],
+  )
+  useEffect(() => {
+    window.scrollTo({ top: tab === 'chat' ? chatScroll.current : 0 })
+  }, [tab])
 
   return (
     <SettingsContext.Provider value={settings}>
@@ -70,6 +86,8 @@ export default function App() {
             window.scrollTo({ top: 0 })
           }}
           threadEmpty={chat.turns.length === 0}
+          tab={tab}
+          onTab={path === '/cards' || path === '/bill' ? undefined : switchTab}
         />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
         <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
@@ -83,6 +101,8 @@ export default function App() {
             </Suspense>
           ) : (
             <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
+              {tab === 'learn' && <Learn />}
+              <div hidden={tab !== 'chat'}>
               <Chat
                 chat={chat}
                 question={params.get('q')}
@@ -98,6 +118,7 @@ export default function App() {
                 }
                 starters={overviewFailed ? chatStrings(lang).starters : undefined}
               />
+              </div>
             </OpeningProvider>
           )}
           {api.mode === 'mock' && (

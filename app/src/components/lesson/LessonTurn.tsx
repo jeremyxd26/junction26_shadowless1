@@ -2,11 +2,12 @@ import { useEffect, useId, useState } from 'react'
 import { BASKETS } from '../../lib/baskets.ts'
 import { usePrefersReducedMotion } from '../../lib/motion.ts'
 import { useOpening } from '../../lib/openingContext.ts'
+import { markDone, readProgress } from '../../lib/learnProgress.ts'
 import { firstWords, useWordReveal } from '../../lib/reveal.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { openEvidence } from '../../lib/url.ts'
 import type { ClientTurnProps } from '../clientTurns.tsx'
-import { inSentence, lessonsFor, opensOnReveal, revealOf, type Lesson, type PickLesson } from './lessons.ts'
+import { inSentence, lessonKey, lessonsFor, opensOnReveal, revealOf, startIndex, type Lesson, type PickLesson } from './lessons.ts'
 import { lessonStrings } from './lessonStrings.ts'
 
 const HEADING = 'text-lg font-semibold leading-7 text-ink outline-none'
@@ -37,15 +38,17 @@ const THINKING_MS = 500
  * and a bar fills as lessons are done. Under reduced motion everything shows at once.
  */
 export function LessonTurn({ onStep }: ClientTurnProps) {
-  const { lang, t } = useSettings()
+  const { lang, t, customerId } = useSettings()
   const s = lessonStrings(lang)
   const opening = useOpening()
   const reduced = usePrefersReducedMotion()
   // Today's lessons are fixed when the turn opens: a background refresh does not change them mid-way.
   const [lessons] = useState<Lesson[]>(() => lessonsFor(opening?.overview ?? null))
-  const [index, setIndex] = useState(0)
+  // It starts at the first lesson not done yet (the Learn tab's progress), or the first when all are done.
+  const [start] = useState(() => startIndex(lessons, readProgress(customerId).done))
+  const [index, setIndex] = useState(start)
   const [picked, setPicked] = useState<string | null>(null)
-  const [revealed, setRevealed] = useState(() => lessons.length > 0 && opensOnReveal(lessons[0]))
+  const [revealed, setRevealed] = useState(() => lessons.length > 0 && opensOnReveal(lessons[start]))
   // Sentti is "typing" between the pick and its reveal.
   const [thinking, setThinking] = useState(false)
   const questionId = useId()
@@ -75,6 +78,10 @@ export function LessonTurn({ onStep }: ClientTurnProps) {
   useEffect(() => {
     onStep(title)
   }, [onStep, title])
+  // A lesson counts as done once its reveal is shown (the Learn tab's progress).
+  useEffect(() => {
+    if (shown && lesson) markDone(customerId, lessonKey(lesson))
+  }, [shown, lesson, customerId])
 
   if (!lesson) {
     return (
