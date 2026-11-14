@@ -87,14 +87,16 @@ def post_bill_read(request: Request, response: Response, body: BillReadRequest) 
     client = reading_client(request.app)
     if client is None:
         return unavailable(body.language)
-    reason = client.unavailable_reason()
-    if reason is not None:
-        log.info("bill read %s: model unavailable (%s)", body.sample_id, reason)
-        return unavailable(body.language)
+    # No check of the model's state first (review of #250, decision D): a reading in the cache is served even
+    # while the model may not be used (budget, pause, switch file); only a cache miss needs the model, and
+    # the client then refuses it without a request.
     try:
         result = read_bill(client, sample.png.read_bytes(), "image/png", body.language)
     except BillReadUnavailable as exc:
         log.info("bill read %s: model unavailable (%s)", body.sample_id, exc)
+        return unavailable(body.language)
+    except Exception as exc:  # noqa: BLE001 - any failure of the read is 503; only the class name is logged
+        log.warning("bill read %s: failed (%s)", body.sample_id, type(exc).__name__)
         return unavailable(body.language)
     fields = result["fields"]
     found = sum(1 for f in fields.values() if f)

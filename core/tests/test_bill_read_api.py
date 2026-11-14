@@ -59,14 +59,15 @@ def read(app, transport, sample_id="sample_1", language="fi", cache_dir=None, le
         return c.post("/api/bill/read", json={"customer_id": customer, "language": language, "sample_id": sample_id})
 
 
-def test_a_barcode_bill_read_correctly_is_checked_by_code(app):
+def test_a_barcode_bill_read_correctly_checks_only_the_iban_and_the_reference(app):
     r = read(app, Transport(answer(printed("sample_1"))))
     assert r.status_code == 200
     body = r.json()
     assert body["sample_id"] == "sample_1" and body["needs_confirmation"] is True and body["language"] == "fi"
     f = body["fields"]
     assert f["iban"]["value"] == TRUTH["sample_1"]["iban"] and f["iban"]["status"] == "checked"
-    assert f["iban"]["source"] == "barcode" and f["amount"]["value"] == "836.65" and f["amount"]["status"] == "checked"
+    assert f["iban"]["source"] == "barcode" and f["amount"]["value"] == "836.65"
+    assert f["amount"]["status"] == f["due_date"]["status"] == f["barcode"]["status"] == "unchecked"   # decision A
     assert f["due_date"]["value"] == "2026-10-08" and f["payee"]["status"] == "unchecked"
     assert "numbers" not in body and "cited" not in body       # a reading holds no Number object
 
@@ -126,6 +127,65 @@ def test_without_a_key_the_service_answers_model_unavailable(app):
     with TestClient(app, raise_server_exceptions=False) as c:
         r = c.post("/api/bill/read", json={"customer_id": "CUST00860", "language": "en", "sample_id": "sample_1"})
     assert r.status_code == 503 and r.json()["error"]["message"].startswith("The bill cannot be read")
+
+
+@pytest.mark.parametrize("body", [
+    {"sample_id": "../samples/sample_1"}, {"sample_id": "sample_1.png"}, {"sample_id": "https://example.com/a.png"},
+    {"sample_id": "SAMPLE_1"}, {"sample_id": "sample_1", "image": "aGVsbG8="},
+    {"sample_id": "sample_1", "url": "https://example.com/bill.png"}, {"sample_id": ""},
+])
+def test_a_crafted_sample_or_an_extra_field_never_calls_the_model(app, body):
+    """Review of #250: only the repository's own samples reach the model; anything else is 400 with no request."""
+    transport = Transport(answer(printed("sample_1")))
+    app.state.bill_read_client = GeminiClient(MODEL, transport, cache="off", sleep=lambda s: None)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        r = c.post("/api/bill/read", json={"customer_id": "CUST00860", "language": "en", **body})
+    assert r.status_code == 400 and transport.requests == []
+
+
+def test_a_multipart_upload_never_calls_the_model(app):
+    transport = Transport(answer(printed("sample_1")))
+    app.state.bill_read_client = GeminiClient(MODEL, transport, cache="off", sleep=lambda s: None)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        r = c.post("/api/bill/read", data={"customer_id": "CUST00860", "language": "en", "sample_id": "sample_1"},
+                   files={"file": ("bill.png", b"\x89PNG fake", "image/png")})
+    assert r.status_code in (400, 415, 422) and transport.requests == []
+
+
+@pytest.mark.parametrize("entry", ["[]", "{}", '{"response": 5}', "not json"])
+def test_a_cache_entry_of_another_shape_is_a_miss_not_a_500(app, tmp_path, entry):
+    """Review of #250: a broken entry costs one new request and answers normally."""
+    first = Transport(answer(printed("sample_1")))
+    assert read(app, first, cache_dir=tmp_path).status_code == 200
+    for path in tmp_path.glob("*.json"):
+        path.write_text(entry, encoding="utf-8")
+    second = Transport(answer(printed("sample_1")))
+    r = read(app, second, cache_dir=tmp_path)
+    assert r.status_code == 200 and len(second.requests) == 1
+
+
+def test_any_failure_of_the_read_is_503_with_the_class_name_only(app, monkeypatch, caplog):
+    from core.app.api import bill_read
+
+    def broken(*args, **kwargs):
+        raise KeyError("FI0912345600001001")
+
+    monkeypatch.setattr(bill_read, "read_bill", broken)
+    r = read(app, Transport(answer(printed("sample_1"))))
+    assert r.status_code == 503 and r.json()["error"]["code"] == "model_unavailable"
+    assert any("KeyError" in rec.getMessage() for rec in caplog.records)
+    assert not any("FI09" in rec.getMessage() for rec in caplog.records)
+
+
+def test_a_cached_reading_is_served_while_the_model_may_not_be_used(app, tmp_path):
+    """Decision D: the budget used up, the switch file or a pause: a cached reading costs no request and is
+    served; only a miss answers 503."""
+    assert read(app, Transport(answer(printed("sample_1"))), cache_dir=tmp_path).status_code == 200
+    spent = Ledger(tmp_path / "ledger.jsonl", daily_cap=0)
+    none = Transport(answer(printed("sample_1")))
+    assert read(app, none, cache_dir=tmp_path, ledger=spent).status_code == 200 and none.requests == []
+    miss = read(app, none, sample_id="sample_2", cache_dir=tmp_path, ledger=spent)
+    assert miss.status_code == 503 and none.requests == []
 
 
 def test_an_unknown_sample_or_customer_and_the_rate_window(app):

@@ -67,10 +67,19 @@ def run(client: Any, out: Callable[[str], None] = print) -> tuple[int, int]:
     def sent() -> int:
         return ledger.count("extract") if ledger is not None else 0
 
-    truth = {s["sample_id"]: s["truth"] for s in gallery.answer_key()["samples"]}
+    try:
+        truth = {s["sample_id"]: s["truth"] for s in gallery.answer_key()["samples"]}
+        samples = gallery.gallery()
+    except Exception as exc:  # noqa: BLE001 - a deploy never fails here (review of #250)
+        out(f"bill readings skipped: the sample gallery could not be read ({type(exc).__name__})")
+        return 0, 0
     correct = total = 0
-    for sample in gallery.gallery():
-        image = sample.png.read_bytes()
+    for sample in samples:
+        try:
+            image = sample.png.read_bytes()
+        except Exception as exc:  # noqa: BLE001
+            out(f"bill reading {sample.sample_id}: its image could not be read ({type(exc).__name__})")
+            continue
         parts = []
         for attempt in ("first", "second"):
             before = sent()
@@ -105,7 +114,10 @@ def main() -> int:
     if client is None:
         print("bill readings skipped: no model key")
         return 0
-    run(client)
+    try:
+        run(client)
+    except Exception as exc:  # noqa: BLE001 - counts or a class name, never a failed deploy (review of #250)
+        print(f"bill readings stopped ({type(exc).__name__})")
     return 0
 
 
