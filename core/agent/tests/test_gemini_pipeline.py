@@ -408,3 +408,13 @@ def test_after_a_planner_failure_the_clarifying_question_says_it_was_not_worked_
     assert done["clarify"]["question"].startswith("I could not work that out right now. ")
     done = ask(p, "Kerro jotain hyödyllistä ruokaostoksistani", language="fi")
     assert done["clarify"]["question"].startswith("En pystynyt selvittämään tätä juuri nyt. ")
+
+
+
+def test_an_empty_plan_answered_by_the_rules_clarify_carries_the_warning_with_the_note():
+    """#383 (from the review of #368): the note "I could not work that out" and llm_unavailable come together."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and done["clarify"]["question"].startswith("I could not")
+    assert "llm_unavailable" in done["warnings"]

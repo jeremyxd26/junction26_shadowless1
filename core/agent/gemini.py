@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledger, SdkTransport, effective_thinking
@@ -265,6 +265,23 @@ class GeminiSettings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_MODEL
     gemini_fallback_model: str | None = None
+
+    @field_validator("gemini_model", "gemini_fallback_model", "gemini_planner_model", "gemini_composer_model",
+                     mode="before")
+    @classmethod
+    def _trimmed_id(cls, value: Any) -> Any:
+        """Model ids are trimmed; an id of only spaces counts as unset, with one log line (#383)."""
+        if isinstance(value, str):
+            if not value.strip():
+                log.warning("a GEMINI_*MODEL setting holds only spaces; it is ignored")
+                return None
+            return value.strip()
+        return value
+
+    @field_validator("gemini_planner_thinking", "gemini_composer_thinking", mode="before")
+    @classmethod
+    def _trimmed_level(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) and value.strip() else (DEFAULT_THINKING if isinstance(value, str) else value)
     gemini_planner: str = "rules_first"
     gemini_planner_model: str | None = None
     gemini_composer_model: str | None = None
@@ -287,7 +304,7 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     env = GeminiSettings()
     s = settings or env
     key = getattr(s, "gemini_api_key", None)
-    model = getattr(s, "gemini_model", None) or DEFAULT_MODEL
+    model = _model_id(getattr(s, "gemini_model", None)) or DEFAULT_MODEL
     if not key:
         return None
     if model.endswith("-latest"):
@@ -308,18 +325,27 @@ def make_model(settings: Any | None = None, *, ledger_path: Path = DEFAULT_LEDGE
     return GeminiModel(client)
 
 
+def _model_id(value: Any) -> str | None:
+    """A model id from any settings object, trimmed; only spaces count as unset (#383)."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
 def role_settings(s: Any, env: Any | None = None) -> dict[str, dict[str, Any]]:
     """Model, fallback, thinking level and timeout of the planner and the composer (#341). A role's model
     defaults to GEMINI_MODEL; its fallback is GEMINI_FALLBACK_MODEL ("none" turns it off) or the
     model's usual partner (FALLBACK_MODELS); the rest defaults to today's values."""
     env = env or GeminiSettings()
-    model = getattr(s, "gemini_model", None) or DEFAULT_MODEL
-    explicit = getattr(s, "gemini_fallback_model", None) or env.gemini_fallback_model
+    model = _model_id(getattr(s, "gemini_model", None)) or DEFAULT_MODEL
+    explicit = _model_id(getattr(s, "gemini_fallback_model", None)) or env.gemini_fallback_model
     roles = {}
     for role, timeout in (("planner", DEFAULT_PLANNER_TIMEOUT_S), ("composer", DEFAULT_COMPOSER_TIMEOUT_S)):
-        own = getattr(s, f"gemini_{role}_model", None) or getattr(env, f"gemini_{role}_model", None) or model
+        own = (_model_id(getattr(s, f"gemini_{role}_model", None))
+               or _model_id(getattr(env, f"gemini_{role}_model", None)) or model)
         fallback = explicit or FALLBACK_MODELS.get(own)
         level = getattr(s, f"gemini_{role}_thinking", None) or getattr(env, f"gemini_{role}_thinking", DEFAULT_THINKING)
+        level = level.strip().lower() if isinstance(level, str) and level.strip() else DEFAULT_THINKING
         roles[role] = {
             "model": own,
             "fallback": None if fallback in (None, "none") or fallback == own else fallback,

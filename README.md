@@ -56,7 +56,7 @@ With `GEMINI_API_KEY` set, the service uses Gemini (`core/agent/gemini.py`; prom
   - The pipeline retries a failed call once, and the adapter never retries the same model again. A 503 tries the fallback model once, and flash is then skipped for 3 minutes.
   - One answer sends at most 8 requests and gets 15 s for all its model calls: each planner call at most 9 s and each composer call at most 5 s, within those 15 s. A question the rules plan gives the composer its 5 s, not the rest of the 15 s, because the template writes the same answer at once.
   - A timeout, a network error or a 503 (on the fallback model too) fails only that call. It never pauses the model for other users, and the same answer sends no second request of that kind (#341).
-  - A 429, 401, 403 or 404 pauses model calls for 5 minutes, and three malformed, empty or blocked responses in a row pause them for 30 s.
+  - A 429, 401 or 403 pauses model calls for 5 minutes. A 404 (a model id the key cannot use) moves that role to its fallback and pauses nothing; the log says so once. Three malformed, empty or blocked responses in a row pause that role (planner or composer) for 30 s, not the other one.
 
 The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemini-3.8-flash`). Do not put a value for `GEMINI_MODEL` into `.env`: the local commit check treats every `.env` value of 12 or more characters as a secret and would block every commit that names the model. Override it only as a process variable for an experiment, for example `GEMINI_MODEL=gemini-3.1-pro-preview python ...`.
 
