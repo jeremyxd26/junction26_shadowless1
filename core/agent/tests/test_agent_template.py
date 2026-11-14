@@ -64,8 +64,9 @@ def test_at_most_four_numbers_and_the_draft_cites_exactly_them():
     many = {"tool": "unknown_tool", **{f"k{i}": n(i, float(i)) for i in range(1, 9)}}
     assert len(ids(many)) == TAKEAWAY_SIZE
     draft = template_draft([BASKETS], [], "en", None, "Where did my money go?")
-    assert draft["cited"] == ["n9", "n11", "n21", "n31"]
-    assert draft["text"].startswith("1 Apr – 30 Sep 2026, monthly average: Total spending: {{n9}}; Regular essentials: {{n11}}")
+    # #342: the shares in sentences, largest first, then the monthly average.
+    assert draft["cited"] == ["n11", "n21", "n31"]      # the monthly average stays on the card
+    assert draft["text"].startswith("The largest share of your spending, {{n11}}, went to regular essentials.")
 
 
 def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
@@ -73,7 +74,7 @@ def test_a_label_with_a_digit_that_is_not_a_date_is_left_out():
     draft = template_draft([view], [], "en", None, "What can I safely spend this week?")
     assert "7" not in draft["text"] and draft["cited"] == ["n6", "n8", "n9"]
     kept = template_draft([{**SPENDING}], [], "en", None, "How much on taxis last month?")
-    assert kept["text"].startswith("August 2026: ")
+    assert kept["text"] == "You spent {{n1}} on taxi in August 2026, in {{n2}} transaction."   # #342: a count of 1
 
 
 EVERYDAY = {"tool": "get_basket_breakdown", "period": "1 Apr – 30 Sep 2026", "monthly_average": True,
@@ -96,21 +97,21 @@ def test_save_more_cites_four_numbers_and_offers_a_cut_without_an_amount():
     # #216: the monthly safe-to-save figure first, then the three basket shares; the offer names the
     # largest everyday category and asks by how much, never suggesting an amount.
     for question, lang, offer in [
-            ("How could I save more?", "en", "Want to see what cutting restaurants would do? Tell me by how much."),
+            ("How could I save more?", "en", "Tell me how much you would cut restaurants by, and I'll show what you'd save."),
             ("Miten voisin säästää enemmän?", "fi",
-             "Haluatko nähdä, mitä vähentäminen luokassa Restaurants tekisi? Kerro, kuinka paljon.")]:
+             "Kerro, kuinka paljon vähentäisit luokassa Restaurants, niin näytän säästön.")]:
         draft = template_draft([SAVE, EVERYDAY], [], lang, None, question)
-        assert draft["cited"] == ["n50", "n41", "n42", "n43"]
+        assert draft["cited"] == ["n50"]   # #342, Renat's length rule: the shares stay on the basket card
         assert draft["text"].endswith(offer)
         assert not any(w in draft["text"] for w in ("half", "puoleen", "%"))
 
 
 def test_the_offer_only_follows_the_save_more_plan():
     after_what_if = template_draft([WHAT_IF], [], "en", None, "How could I save more by cutting restaurants 20%?")
-    assert "Want to see" not in after_what_if["text"]
-    assert "Want to see" not in template_draft([BILLS], [], "en", None, "Which bills are coming up next?")["text"]
+    assert "Tell me how much" not in after_what_if["text"]
+    assert "Tell me how much" not in template_draft([BILLS], [], "en", None, "Which bills are coming up next?")["text"]
     no_categories = template_draft([BASKETS, BILLS], [], "en", None, "How could I save more?")["text"]
-    assert no_categories.endswith("Name a category and tell me by how much.")
+    assert no_categories.endswith("Name a category and how much you would cut it by, and I'll show what you'd save.")
 
 
 @pytest.mark.parametrize("question", ["Which bills are due before payday?", "Which bills are coming up next?",
@@ -185,7 +186,7 @@ def test_the_offer_names_only_a_category_the_rules_can_cut():
                                                               "amount": n(80, 900.0, "eur_per_month")},
                                                              *b["categories"]]} for b in EVERYDAY["baskets"]]}
     text = template_draft([SAVE, shopping], [], "en", None, "How could I save more?")["text"]
-    assert "health" not in text.lower() and text.endswith("cutting restaurants would do? Tell me by how much.")
+    assert "health" not in text.lower() and text.endswith("cut restaurants by, and I'll show what you'd save.")
 
 
 

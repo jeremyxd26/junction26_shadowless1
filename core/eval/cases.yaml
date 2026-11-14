@@ -86,9 +86,9 @@ cases:
   tags: [brief, q4_save_more, lead]
   numbers:
   - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
-  - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, required: false, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
   forbid:
   - {name: invented_dining_cut_saving, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
 
@@ -484,7 +484,7 @@ cases:
   numbers:
   - {name: september_total, value: 2932.54, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: total_eur}}
   - {name: august_total, value: 4175.17, unit: eur, tolerance: 0.005, source: {query: spending, start: '2026-08-01', end: '2026-08-31', column: total_eur}}
-  - {name: change, value: -1242.63, unit: eur, tolerance: 0.005, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
+  - {name: change, value: -1242.63, unit: eur, tolerance: 0.005, required: false, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_eur}}
   - {name: change_pct, value: -29.8, unit: percent, tolerance: 0.01, source: {query: spending_change, start: '2026-09-01', end: '2026-09-30', prev_start: '2026-08-01', prev_end: '2026-08-31', column: change_pct}}
   - {name: september_purchases, value: 25, unit: count, tolerance: 0, required: false, source: {query: spending, start: '2026-09-01', end: '2026-09-30', column: n_tx}}
 
@@ -498,7 +498,7 @@ cases:
   numbers:
   - {name: august_restaurants, value: 506.19, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: total_eur}}
   - {name: july_restaurants, value: 279.08, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Restaurants], start: '2026-07-01', end: '2026-07-31', column: total_eur}}
-  - {name: change, value: 227.11, unit: eur, tolerance: 0.005, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
+  - {name: change, value: 227.11, unit: eur, tolerance: 0.005, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
   - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
   - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
 
