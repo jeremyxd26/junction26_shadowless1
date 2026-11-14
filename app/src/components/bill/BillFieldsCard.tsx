@@ -54,6 +54,12 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
   const [focusTarget, setFocusTarget] = useState<{ key: FieldKey; at: number } | null>(null)
 
   const result = buildExplainRequest({ customerId, language: lang, reading, inputs })
+  // A read IBAN or reference whose check digit failed (unchecked, with the reader's note) and that the
+  // user has not changed yet: its warning stays the most visible thing until it is fixed.
+  const failed = (['reference', 'iban'] as const).find((key) => {
+    const read = reading?.fields[key]
+    return Boolean(read && read.status === 'unchecked' && read.note && inputs[key] === initial[key])
+  })
   const problems = attempted && !result.ok ? result.problems : {}
   const missingCustomer = attempted && !result.ok && result.missingCustomer
 
@@ -77,6 +83,12 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {error && <ErrorBlock message={error.message} onRetry={error.retryable ? confirm : undefined} until={error.until ?? null} />}
+      {failed && (
+        <div role="alert" className="flex flex-col gap-1 rounded-lg border-2 border-danger bg-danger-tint p-3">
+          <p className="text-base font-semibold text-ink">{s.checkFail[failed]}</p>
+          <p className="text-sm text-ink-2">{s.checkBeforePaying[failed]}</p>
+        </div>
+      )}
       <CardShell>
         <h3 className={CARD_TITLE}>{s.cardTitle}</h3>
         {reading && <p className="text-sm text-muted">{s.cardSubtitle}</p>}
@@ -98,12 +110,12 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
               const mark = reading && inputs[key] === initial[key] ? <ReadMark read={read} /> : null
               if (read && !editingAll) {
                 return (
-                  <li key={key} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5">
+                  <li key={key} className={`flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5 ${failed === key ? '-mx-2 rounded-md bg-danger-tint px-2' : ''}`}>
                     <span className="w-20 shrink-0 text-sm text-muted">{label}</span>
                     <span className="min-w-0 flex-1 basis-20 text-base font-semibold break-words text-ink">{read.display}</span>
                     {mark}
                     {/* A read note (a failed check digit, a barcode that differs from the print), as sent, under its field. */}
-                    {read.note && <p className="basis-full text-sm text-ink-2">{read.note}</p>}
+                    {read.note && <p className={`basis-full text-sm ${failed === key ? 'font-semibold text-danger' : 'text-ink-2'}`}>{read.note}</p>}
                   </li>
                 )
               }
@@ -134,7 +146,7 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
                   />
                   <div id={helpId} className="flex flex-col gap-1">
                     {key === 'amount' && <p className="text-sm text-muted">{s.amountHint}</p>}
-                    {read?.note && <p className="text-sm text-ink-2">{read.note}</p>}
+                    {read?.note && <p className={`text-sm ${failed === key ? 'font-semibold text-danger' : 'text-ink-2'}`}>{read.note}</p>}
                     {problem && <p className="text-sm font-semibold text-danger">{s.problems[problem]}</p>}
                   </div>
                 </li>
@@ -152,8 +164,9 @@ export function BillFieldsCard({ reading, busy, error, onConfirm }: Props) {
         </p>
       )}
 
+      {failed && !busy && <p className="text-sm font-semibold text-danger">{s.checkBeforePaying[failed]}</p>}
       <button type="submit" form={`${id}-form`} disabled={busy} aria-busy={busy} className={PRIMARY}>
-        {busy ? s.explaining : editingAll ? s.confirm : s.looksRight}
+        {busy ? s.explaining : editingAll ? s.confirm : failed ? s.explainAnyway : s.looksRight}
       </button>
       {!editingAll && (
         <button type="button" onClick={() => setEditingAll(true)} className={SECONDARY}>
