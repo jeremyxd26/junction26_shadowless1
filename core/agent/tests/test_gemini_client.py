@@ -540,3 +540,54 @@ def test_the_planner_gets_nine_seconds_and_no_second_request_after_a_timeout():
     with pytest.raises(GeminiError):
         c.plan(*PLAN_ARGS)
     assert len(timeouts) == 2
+
+
+# ---- #341: one answer's time budget ---------------------------------------------------------------------
+
+def test_after_a_composer_timeout_the_answer_sends_no_second_composer_request():
+    """As for the planner: the composer's retry in the same answer raises at once, so the template
+    writes without another wait. The next answer may call the composer again."""
+    clock = Clock()
+    timeouts: list[float] = []
+
+    def slow(model, contents, config, timeout_s):
+        timeouts.append(timeout_s)
+        clock.now += timeout_s
+        raise TimeoutError()
+
+    c = GeminiClient(FLASH, slow, cache="off", sleep=lambda s: None, clock=clock)
+    answer = object()
+    c.start_answer(answer)
+    for _ in range(2):                                      # the call and the pipeline's retry
+        with pytest.raises(GeminiError) as exc:
+            c.compose("s", "u", {"type": "object"})
+        assert exc.value.code == "timeout"
+    assert timeouts == [c.compose_timeout_s]                # the retry sent nothing
+    c.start_answer(object())
+    with pytest.raises(GeminiError):
+        c.compose("s", "u", {"type": "object"})
+    assert len(timeouts) == 2
+
+
+def test_a_planner_timeout_leaves_the_composer_the_rest_of_the_answers_fifteen_seconds():
+    """9 s planner + 8 s composer is more than 15 s: the answer's deadline cuts the composer's share, so
+    every model call of one answer ends within 15 s in total."""
+    clock = Clock()
+    timeouts: list[float] = []
+
+    def slow(model, contents, config, timeout_s):
+        timeouts.append(timeout_s)
+        clock.now += timeout_s
+        raise TimeoutError()
+
+    c = GeminiClient(FLASH, slow, cache="off", sleep=lambda s: None, clock=clock)
+    started = clock.now
+    c.start_answer(object())
+    with pytest.raises(GeminiError):
+        c.plan(*PLAN_ARGS)
+    clock.now += 0.5                                        # the rules plan and the tools run
+    with pytest.raises(GeminiError):
+        c.compose("s", "u", {"type": "object"})
+    assert c.plan_timeout_s == 9.0 and c.compose_timeout_s == 8.0
+    assert timeouts[0] == 9.0 and timeouts[1] == pytest.approx(gc.ANSWER_DEADLINE_S - 9.0 - 0.5)
+    assert clock.now - started <= gc.ANSWER_DEADLINE_S

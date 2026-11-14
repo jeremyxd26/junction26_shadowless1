@@ -14,7 +14,11 @@ Request policy. The model account is shared and policed, and the dev service is 
 request is reserved, bounded and counted:
 - One attempt per call on the active model. The pipeline already retries a failed call once, so
   this layer does not retry the same model again: retries are never multiplied at two levels. After a
-  planner timeout, the pipeline's retry of that answer sends no second planner request (the rules answer).
+  timeout, the pipeline's retry in that answer sends no second request of the same kind: after a
+  planner timeout the rules plan, after a composer timeout the template writes at once.
+- One answer's time adds up: the planner gets 9 s and the composer 8 s, and every call of the answer
+  also ends by its deadline of ANSWER_DEADLINE_S (15 s), so the composer gets whatever is left when
+  that is less (about 5 s after a planner timeout; the composer's slowest call seen on dev was 5.3 s).
 - 5xx ("model overwhelmed"): one attempt on the fallback model (flash <-> pro), if one is set. When
   the fallback answers, the primary model is skipped for PRIMARY_SKIP_S, so an outage of the
   primary costs one request per call, not two. When both fail: a pause of OVERLOAD_COOLDOWN_S.
@@ -377,7 +381,7 @@ class GeminiClient:
         self._answer.key = key
         self._answer.requests = 0
         self._answer.deadline = self.clock() + ANSWER_DEADLINE_S
-        self._answer.plan_timed_out = False
+        self._answer.timed_out = set()   # the call kinds that timed out in this answer
 
     def _answer_left(self) -> tuple[int | None, float | None]:
         """Requests and seconds left for the current answer, or (None, None) outside an answer."""
@@ -524,9 +528,10 @@ class GeminiClient:
             raise GeminiError("cache_miss")
 
         deadline = self.clock() + timeout_s
-        if kind == "plan" and getattr(self._answer, "plan_timed_out", False):
-            # A planner call of this answer already timed out (it thinks long on this question): a second
-            # one would most likely time out too and spend the answer's deadline. The rules answer instead.
+        if kind in getattr(self._answer, "timed_out", ()):
+            # A call of this kind already timed out in this answer (the model thinks long on this
+            # question): a second one would most likely time out too and spend the answer's deadline. The
+            # rules plan instead, or the template writes.
             self._record(kind, model, 0, CallUsage(), error="timeout (not retried)")
             raise GeminiError("timeout")
         try:
@@ -598,8 +603,8 @@ class GeminiClient:
                 self._transient(code)
             elif status not in SERVER_ERROR_CODES:
                 self._failed(code)
-            if code == "timeout" and kind == "plan" and getattr(self._answer, "key", None) is not None:
-                self._answer.plan_timed_out = True
+            if code == "timeout" and getattr(self._answer, "key", None) is not None:
+                self._answer.timed_out.add(kind)
             raise GeminiError(code) from None
         latency_ms = int((self.clock() - t) * 1000)
         try:

@@ -231,13 +231,25 @@ def test_only_an_unmatched_question_is_not_recognised():
 
 # ---- review fixes: requests per answer ---------------------------------------------------------------
 
-def test_a_hanging_provider_costs_at_most_three_requests_then_pauses():
+def test_a_hanging_provider_costs_at_most_three_requests_then_pauses_briefly():
     transport = FakeTransport(TimeoutError())
     p, _ = pipeline(transport)
     p.model.client.fallback_model = None
     for _ in range(3):
         assert ask(p)["outcome"] == "answered"
-    assert len(transport.requests) == 3                   # the failure streak pause stopped the rest
+    assert len(transport.requests) == 3                   # the short timeout breaker stopped the rest (#341)
+    assert p.model.client._paused_until - p.model.client.clock() <= gc.TRANSIENT_BREAKER_S
+
+
+def test_a_composer_timeout_writes_the_template_with_one_composer_request():
+    """#341: after a composer timeout the template writes at once; no second composer request waits for
+    the rest of the answer's deadline."""
+    transport = ByKind(PLAN_OK, TimeoutError())
+    p, audit = pipeline(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert len(transport.compose.requests) == 1
+    assert audit.records[-1]["model_unavailable"] == "error"
 
 
 def test_a_503_storm_with_a_fallback_costs_two_requests_then_pauses():
