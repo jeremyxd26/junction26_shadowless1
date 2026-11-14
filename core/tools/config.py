@@ -859,6 +859,22 @@ SAFE_TO_SPEND_TEXT: dict[str, tuple[str, str]] = {
     "why_equal": ("This week {safe} is safe to spend: your balance and your monthly budget set the same limit.",
                   "Tällä viikolla turvallisesti käytettävissä on {safe}: saldosi ja kuukausibudjettisi asettavat "
                   "saman rajan."),
+    # #575: the purchase of a pending or "Needed" review, in place of the other side's figure (approved texts). "This"
+    # is safe to spend, which the first sentence names; {amount} is the review card's own Number.
+    "why_review_pending_lowers": ("Your {amount} purchase still waits for your answer: marking it needed would lower "
+                                  "this.",
+                                  "Ostoksesi {amount} odottaa vielä vastaustasi: jos merkitset sen välttämättömäksi, "
+                                  "summa pienenee."),
+    "why_review_pending_same": ("Your {amount} purchase still waits for your answer: marking it needed would not "
+                                "change this.",
+                                "Ostoksesi {amount} odottaa vielä vastaustasi: sen merkitseminen välttämättömäksi ei "
+                                "muuttaisi summaa."),
+    "why_review_needed_moved": ("Marking your {amount} purchase as needed lowered this: it now counts as an unexpected "
+                                "necessity.",
+                                "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa pieneni: se lasketaan nyt "
+                                "odottamattomaksi välttämättömäksi menoksi."),
+    "why_review_needed_same": ("Marking your {amount} purchase as needed did not change this.",
+                               "Kun merkitsit ostoksesi {amount} välttämättömäksi, summa ei muuttunut."),
     "usual_week": ("Usual everyday pace", "Tavallinen arkikulutuksen tahti"),            # the display says "a week"
     "balance": ("Balance", "Saldo"),
     "bills_due": ("Bills before payday", "Laskut ennen palkkapäivää"),
@@ -1106,21 +1122,24 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
                  "{amount} {category}, {date} — välttämätön hankinta vai oma valinta?"),
     "option_unexpected_necessities": ("Needed", "Välttämätön"),
     "option_everyday_spending": ("My choice", "Oma valinta"),
+    # The options' effect before the answer (#416): only where the purchase goes and that the numbers are
+    # recalculated, never a promise about safe to spend or safe to save; the real effect comes with the answer
+    # (label_answer.effect_text, #382). The basket words are the effect's own ("now counts as …").
     "effect_unexpected_necessities": (
-        "It counts as an unexpected necessity. {product} keeps a bigger reserve for surprises like this, so "
-        "your safe to spend goes down.",
-        "Se lasketaan välttämättömäksi yllätysmenoksi. {product} varaa jatkossa enemmän rahaa tällaisiin "
-        "yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee.",
+        "It will count as an unexpected necessity. {product} then recalculates your numbers with it.",
+        "Se lasketaan odottamattomaksi välttämättömäksi menoksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "effect_everyday_spending": (
-        "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this "
-        "month is higher than usual.",
-        "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta "
-        "arkikulutuksesi on tässä kuussa tavallista suurempi.",
+        "It will count as everyday spending. {product} then recalculates your numbers with it.",
+        "Se lasketaan arjen kulutukseksi. {product} laskee sen jälkeen lukusi uudelleen.",
     ),
     "why": (
-        "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
-        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi muuttaa vain sitä, miten omat menosi ryhmitellään.",
+        # #554: the answer moves the purchase into a basket, and "Needed" lowers safe to spend (and safe to
+        # save), so the text says that the effect is real, matching the effect text of the toast.
+        "Only you know what this purchase was. Your answer decides which basket it goes into, which can change "
+        "your safe to spend.",
+        "Vain sinä tiedät, mikä tämä ostos oli. Vastauksesi ratkaisee, mihin koriin se kuuluu, ja se voi muuttaa "
+        "turvallisesti käytettävissä olevaa summaa.",
     ),
     "amount": ("{category} purchase", "Ostos: {category}"),
     "see_purchase": ("See the purchase", "Näytä ostos"),
@@ -1260,7 +1279,14 @@ SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the
 SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
 SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
 SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1",
-                        "cut_pct": "savings_plan.cut_pct@1"}
+                        "cut_pct": "savings_plan.cut_pct@1",
+                        # what already goes to savings (#560): the share of income, and a sum when several series do
+                        "already_share": "savings_plan.already_share_pct@1",
+                        "already_month": "savings_plan.already_month_eur@1",
+                        "income_month": "savings_plan.income_month_eur@1"}
+# The recurring outflows that are the customer's own saving (#560): the categories of the recurring series that
+# already move money to savings or investments.
+SAVINGS_CATEGORIES = ("Invest Deposit",)
 # A cut share in words, so no answer needs a digit for it; any other share is cited as its Number (#411).
 SAVINGS_PLAN_CUT_WORDS: dict[int, tuple[str, str]] = {
     10: ("a tenth", "kymmenyksen"), 20: ("a fifth", "viidenneksen"), 25: ("a quarter", "neljänneksen"),
@@ -1283,4 +1309,10 @@ SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
     "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
                       "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
+    # what already goes to savings (#560): the Numbers' labels, and the line when no regular transfer shows
+    "already_month": ("Already goes to savings, a month", "Säästöihin menee jo kuukaudessa"),
+    "already_share": ("Share of your income", "Osuus tuloistasi"),
+    "income_month": ("Your income, a typical month", "Tulosi tavallisena kuukautena"),
+    "already_none": ("In this account I don't see a regular transfer to savings yet.",
+                     "Tällä tilillä en vielä näe säännöllistä siirtoa säästöön."),
 }

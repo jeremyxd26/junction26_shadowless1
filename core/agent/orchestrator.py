@@ -43,11 +43,12 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import glossary, guard, rules, template, validator
+from core.agent import glossary, guard, offers, rules, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
-from core.agent.registry import CallRejected, Registry
+from core.agent.registry import CONTROL, CallRejected, Registry
+from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import RuleModel, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -234,6 +235,19 @@ class _InCallOrder(NumberRegistry):
         return self._shared.all()
 
 
+HEALTH_MERCHANT = tuple(f"{kind.lower()} " for kind in tool_config.MERCHANT_KIND_BY_CATEGORY["Health"])
+
+
+def _health_spending(call: dict[str, Any] | FunctionCall) -> bool:
+    """A get_spending call filtered on Health, on the health MCC group or on a health merchant's alias ("Health
+    service A", "Terveyspalvelu A") (#598); a planned call or a call record of the answer (#571)."""
+    name, args = (call.name, call.args) if isinstance(call, FunctionCall) else (call["name"], call.get("args"))
+    flt = (args or {}).get("filter") or {}
+    return name == "get_spending" and ("Health" in (flt.get("categories") or [])
+                                       or "health" in (flt.get("mcc_groups") or [])
+                                       or str(flt.get("merchant") or "").strip().lower().startswith(HEALTH_MERCHANT))
+
+
 def _health_what_if(call: FunctionCall) -> bool:
     """A planned what-if on Health or on a code of the health MCC group, alone or in a list (R9, #510)."""
     if call.name != "run_what_if":
@@ -354,6 +368,9 @@ class _Answer:
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary, why, general (#572)
     general_fallback: bool = False       # a general answer's fixed text with its fixed offer went out (#572)
+    # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
+    # thing is answered as an unknown one. The user's word, "" when there is none to quote.
+    health_dropped: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
                                                            "output_tokens": 0, "cost_usd": 0.0})
@@ -493,7 +510,8 @@ class Pipeline:
                                         "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)})
                 plan, source = self.fallback.plan(plan_in), "rules"
                 model_failed = True
-            calls = self._unknown_object_guard(message, plan.calls)
+            guarded_calls = self._health_filter_guard(message, plan.calls, source, a)
+            calls = guarded_calls if guarded_calls is not plan.calls else self._unknown_object_guard(message, plan.calls)
             model_turns.append(plan.raw)
             planner_fallback |= source == "fallback"
             # "why is my safe to spend lower?" (#552): the rule planner's own template answer, never the composer's
@@ -504,7 +522,8 @@ class Pipeline:
             turn: dict[str, Any] = {"round": rnd, "mode": "ANY", "source": source, "calls": [],
                                     "latency_ms": self._ms(t_plan), "tokens": a.add_usage(plan.usage)}
             if calls is not plan.calls:
-                turn["guard"] = "unknown_object"   # the planned unfiltered total became the breakdown (B3)
+                # the planned unfiltered total became the breakdown (B3), or a planned Health total was dropped (#598)
+                turn["guard"] = "health_filter" if guarded_calls is not plan.calls else "unknown_object"
             a.planner_turns.append(turn)
 
             parsed, rejected = [], []
@@ -582,13 +601,18 @@ class Pipeline:
             if "finish" in controls or data_calls >= MAX_DATA_CALLS or not (ran_data or rejected):
                 break
 
+        if template_answer:   # "why lower" names the review purchase that moved safe to spend (#575)
+            views = [why_review.with_effect(self.data, self.labels, ctx, review, v) for v in views]
         numbers = ctx.numbers.all()
         # the dates a tool returned in its missing-data error (the customer's first day of data, the last day)
         # may be named too, exactly as returned (#379 part B)
         allowed = allowed_from(numbers.values(), [*views, *(e["details"] for e in errors if e.get("details"))],
                                self.as_of)
+        review_card = False   # whether this answer carries the pending review's card (#572: then no offer)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
+            cards_before = len(a.cards)
             self._attach_review(ctx, review, emit, a)
+            review_card = len(a.cards) > cards_before
         # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
         # total as the answer (#379, review of #443).
         unfiltered = bool(a.calls) and all(c["name"] == "get_spending" and not (c.get("args") or {}).get("filter")
@@ -596,13 +620,19 @@ class Pipeline:
         missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message),
                                                unfiltered_spending=unfiltered)
         if missing is not None:
-            return self._missing(missing, numbers, lang, emit, a)
+            return self._missing(missing, numbers, lang, emit, a, views=views)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
+        # #598: the model planned a Health total, which was dropped before it ran: the template says the thing can't be
+        # seen on its own, then answers the other question; the composer never writes such an answer. A Health total
+        # that ran is the per-tool template too, never a model draft (#571, R9), and so is the other tool's sentence.
+        guarded = a.health_dropped is not None or any(_health_spending(c) for c in a.calls)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or template_answer
-                                             or a.composer_unavailable is not None, a=a)
+                                             skip_model=planner_fallback or template_answer or guarded
+                                             or a.composer_unavailable is not None, a=a,
+                                             lead=template.unknown_lead(a.health_dropped, lang)
+                                             if a.health_dropped is not None else None)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -615,9 +645,11 @@ class Pipeline:
         # "Why is my safe to spend lower?" (#552): the template is the designed writer, with the model on, off, over
         # budget or paused alike; no model was going to write it, so no warning, and the planner turns record the
         # template (the same way as the peer answer with the national line, #569)
-        designed = template_answer and not a.template_failed
+        designed = (template_answer or guarded) and not a.template_failed
         if designed:
-            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": "rule_template"})
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template",
+                                    "designed": "rule_template" if template_answer else
+                                    "health_filter_dropped" if a.health_dropped is not None else "health"})
         elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
@@ -628,8 +660,11 @@ class Pipeline:
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        # #572: the answer's next step, the listed offer's question, comes first among the chips
+        follow_ups = offers.next_step(template.follow_ups(message, lang, views=views), views=views, language=lang,
+                                      question=message, outcome=a.outcome, review_pending=review_card)
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.follow_ups(message, lang, views=views),
+                      "cited": cited, "follow_ups": follow_ups,
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
@@ -886,7 +921,7 @@ class Pipeline:
         return record
 
     def _compose(self, request: ComposeInput, numbers, allowed: Allowed, *, skip_model: bool,
-                 a: _Answer) -> tuple[AnswerDraft, bool]:
+                 a: _Answer, lead: str | None = None) -> tuple[AnswerDraft, bool]:
         lang = request.language
         if not skip_model:
             errors: list[str] = []
@@ -932,6 +967,8 @@ class Pipeline:
                 if not errors:
                     return draft, False
         fallback = template.template_draft(request.data, request.errors, lang, allowed, request.question)
+        if lead:   # #598: the sentence on the thing that can't be seen on its own, before the other answer
+            fallback = {**fallback, "text": f"{lead} {fallback['text']}".strip()}
         draft, errors = validate(fallback, language=lang, numbers=numbers, allowed=allowed)
         a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
         if errors or draft is None:
@@ -1083,8 +1120,26 @@ class Pipeline:
         return [FunctionCall("get_basket_breakdown", {"period": period}, unfiltered[0].id), *others,
                 FunctionCall("finish")]
 
+    def _health_filter_guard(self, message: str, calls: list[FunctionCall], source: str,
+                             a: _Answer) -> list[FunctionCall]:
+        """#598: a Health total the model planned runs only when the question itself names health (the rules' HEALTH
+        words, #571); "the gym", "yoga", "a massage" are no health spending. Otherwise the call is dropped before
+        anything runs and the thing is answered as the rules answer an unknown thing: beside another question, the
+        other calls still run and the template says Sentti can't see the thing on its own; alone, the call becomes the
+        category breakdown of the same period, the rule path's answer. Never a Health card for such a word."""
+        health = [c for c in calls if _health_spending(c)]
+        if source != "model" or not health or re.search(RULE_HEALTH, guard.fold(message)):
+            return calls
+        a.health_dropped = unknown_object(message) or ""
+        others = [c for c in calls if c not in health]
+        if any(c.name not in CONTROL for c in others) or "get_basket_breakdown" not in self.registry.tools:
+            return others or [FunctionCall("finish")]
+        period = (health[0].args or {}).get("period") or {"preset": "last_6_months"}
+        return [FunctionCall("get_basket_breakdown", {"period": period}, health[0].id),
+                *[c for c in others if c.name != "finish"], FunctionCall("finish")]
+
     def _missing(self, missing: tuple[str, list[str]], numbers: dict[str, Any], lang: str, emit: Emit,
-                 a: _Answer) -> str:
+                 a: _Answer, views: list[dict[str, Any]] = ()) -> str:
         """An answer that is only a missing-data reason (#379, the coordinator's decision A): the template
         writes it, whoever planned the tool, with the model on or off; no compose request. Outcome
         "answered"; it cites only numbers the tool registered (too few purchases: the purchases themselves);
@@ -1096,8 +1151,11 @@ class Pipeline:
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "missing_data": True})
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
-                      "warnings": a.warnings})
+                      "cited": cited, "follow_ups": offers.missing_step(   # #572: the breakdown is the next step
+                          missing[1], lang, breakdown_answered=any(isinstance(v, dict) and
+                                                                   v.get("tool") == "get_basket_breakdown"
+                                                                   for v in views)),
+                      "lesson": None, "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": a.calls, "views": [], "answer": text})
         return lang
 
@@ -1323,7 +1381,8 @@ class Pipeline:
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
-                      "cited": cited, "follow_ups": template.brief_questions(lang), "lesson": None,
+                      "cited": cited, "follow_ups": offers.glossary_step(term.key, template.brief_questions(lang), lang),
+                      "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})

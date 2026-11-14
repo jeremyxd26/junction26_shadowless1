@@ -543,6 +543,36 @@ FIXED_CUT = re.compile(
 # Words the composer got wrong on the stand, in the tester's exact forms: "Salgosi" for "Saldosi" (row 5) and
 # "luokittelemattomat" for the app's own label (row 8). "luokittelematon" and "luokittelematta" are real words.
 KNOWN_WRONG = re.compile(r"\bsalgo\w*|\bluokittelemattomat\b", re.I)
+# A budget, goal or limit the customer set or did not set (#547): "You did not set a budget for August 2026" was a
+# claim no tool returned. A draft may say it only when the answer's data holds such a figure (a label that names a
+# budget, goal or limit: the safe-to-spend card's "Your monthly budget allows", the savings goal).
+_SETTING_EN = r"(?:budgets?|goals?|limits?|targets?|caps?)"
+_SETTING_FI = r"\w*(?:budjet|tavoit|raja|katto)\w*"   # with a compound: "säästötavoitetta", "kuukausibudjettia"
+_SET_EN = r"(?:set|set\s+up|created|defined|made|chosen|picked|entered|added|agreed(?:\s+on)?)"
+SETTING_CLAIM = re.compile(
+    rf"\byou(?:\s+have|['’]ve|\s+had|['’]d)?\s+(?:not\s+|never\s+|yet\s+to\s+)?{_SET_EN}\s+(?:up\s+)?"
+    rf"(?:a|an|any|your|no|yourself\s+a)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:did\s*n['’]?t|did\s+not|have\s*n['’]?t|have\s+not|had\s*n['’]?t|had\s+not|never)\s+(?:yet\s+)?"
+    rf"(?:{_SET_EN}|have|had|got)\s+(?:up\s+)?(?:a|an|any|your)?\s*(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\byou\s+(?:do\s*n['’]?t|do\s+not)\s+have\s+(?:a|an|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\b"
+    rf"|\b(?:no|any)\s+(?:[\w-]+\s+){{0,2}}?{_SETTING_EN}\s+(?:was|were|is|are|has\s+been|have\s+been)\s+(?:set|defined|set\s+up)\b"
+    rf"|\b{_SETTING_EN}\s+(?:that\s+)?you(?:\s+have|['’]ve)?\s+{_SET_EN}\b"
+    rf"|\byour\s+(?:[\w-]+\s+)?budget\s+(?:was|is|for|of)\b"
+    rf"|\bet\s+(?:ole\s+)?(?:asettanut|määrittänyt|määritellyt|laatinut|tehnyt|valinnut|asettaneet)\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b(?:asetit|määritit|laadit|olet\s+(?:asettanut|määrittänyt|laatinut))\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\bsinulla\s+ei\s+ole\s+(?:\w+\s+)?{_SETTING_FI}"
+    rf"|\b{_SETTING_FI}\s+ei\s+ole\s+(?:asetettu|määritetty|määritelty)"
+    rf"|\bbudjettisi\s+(?:oli|on)\b", re.I)
+_SETTING_LABEL = re.compile(r"budget|goal|limit|target|budjet|tavoit|raja", re.I)
+
+
+def setting_claim(text: str, labels: Iterable[str] = ()) -> str | None:
+    """The words in which a draft says the customer set or did not set a budget, goal or limit, when no label in the
+    answer's data names one; None otherwise (#547)."""
+    if any(_SETTING_LABEL.search(label) for label in labels):
+        return None
+    m = SETTING_CLAIM.search(text)
+    return m.group(0).strip() if m else None
 # The stand's count without its noun (row 2): "cost {{n1}} across {{n2}}." The count follows across / over / in
 # / yhteensä and no noun follows it. A count whose noun comes first ("the number of transactions was {{n2}}",
 # "tapahtumien määrä oli {{n2}}") is fine (review of #437).
@@ -592,6 +622,49 @@ def count_without_noun(text: str, numbers: dict[str, Number]) -> str | None:
     return None
 
 
+# A Health total is stated plainly (#571, R9): the total, the period and the count, nothing more. A draft that
+# cites a Health Number never adds a tip, an offer, a comparison or a judgement, in any language the answer uses.
+_HEALTH_LABEL = re.compile(r"\bhealth\b|\bterveys|\bterveyteen\b", re.I)
+_HEALTH_EXTRA = re.compile(
+    r"\b(a lot|too much|quite|only|little|high|low|higher|lower|more than|less than|usual|unusual|normal|average|"
+    r"try|consider|could|should|might|maybe|tip|tips|advice|save|saving|cut|reduce|compare|compared|people like you|"
+    r"worry|healthy|unhealthy|good|bad|great|"
+    # an offer, a trend or advice on it (security review of #607): "want to see …", "up from …", "keep an eye"
+    r"want|wants|see|show|up from|down from|since|keep|keeping|remember|notable|notably|look after|take care)\b|"
+    r"\b(paljon|vähän|liikaa|korkea|matala|tavallista|tavallinen|normaali|keskimäär\w*|kannattaa|kannattaisi|voisit|"
+    r"kokeile|vinkk\w*|neuvo\w*|säästä\w*|vähennä\w*|vertaa\w*|verrattuna|kaltaisi\w*|huoli\w*|hyvä|huono|"
+    r"haluat\w*|näe\w*|näet|nähdä|näytä\w*|näytän|katso\w*|nous\w*|lask(i|ivat|enut)|lähtien|pidä\w*|muista\w*|"
+    r"huomattava\w*|huolehdi\w*|huolehti\w*)\b", re.I)
+
+
+def health_extra(text: str, numbers: dict[str, Number]) -> str | None:
+    """The first tip, offer, comparison or judgement word in a draft that cites a Health Number, or None."""
+    if not any(_HEALTH_LABEL.search(numbers[i].label or "") for i in TOKEN.findall(text) if i in numbers):
+        return None
+    m = _HEALTH_EXTRA.search(TOKEN.sub(" ", text))
+    if m:
+        return m.group(0)
+    return "?" if "?" in text else None   # a question back is an offer too
+
+
+# #598: a model draft that talks about its own rules or process ("Your health spending is declined before I write.")
+# is rejected and retried, then the template writes. Refusals are fixed texts and never pass through this check. A
+# payment that "was declined" / "hylättiin" is data, not process: only the present "is declined" / "hylätään" counts.
+_META_TEXT = re.compile(
+    r"\b(is|are|gets?) declined\b|\bdeclined before\b|\bdeclined by my\b|\bbefore i (write|answer|reply)\b|"
+    r"\bi(?: am|['’]m) not (allowed|permitted)\b|\bi(?: am|['’]m|'ve been| have been) (instructed|programmed)\b|"
+    r"\bi was (told|instructed|programmed|set up)\b|\bhow i(?: was|['’]ve been| have been| am|['’]m) set up\b|"
+    r"\bmy (instructions|rules|guidelines|prompt|system prompt|programming)\b|\bper my\b|"
+    r"\bhylätään\b|\bennen kuin (kirjoitan|vastaan)\b|\ben saa (kertoa|kommentoida|sanoa|antaa|vastata)\b|"
+    r"\bminulla ei ole lupaa\b|\bminulla on ohjeet\b|\bohje(eni|ideni|issani)\b|\bsääntö(ni|jeni|jäni)\b", re.I)
+
+
+def meta_text(text: str) -> str | None:
+    """The first words in a draft about the model's own rules, instructions or process, or None."""
+    m = _META_TEXT.search(TOKEN.sub(" ", text))
+    return m.group(0) if m else None
+
+
 def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
                    labels: Iterable[str] = (), views: Iterable[Any] = ()) -> list[str]:
     """What a model draft gets wrong of the stand's defects (#398), as retry reasons; [] when nothing.
@@ -619,9 +692,19 @@ def draft_problems(text: str, numbers: dict[str, Number], *, has_data: bool,
     m = KNOWN_WRONG.search(text)
     if m:
         problems.append(f"'{m.group(0)}': a wrong word; use correct Finnish and the labels in <data>")
+    setting = setting_claim(text, labels)
+    if setting:
+        problems.append(f"'{setting}': no tool returned a budget, goal or limit; never say the user set or did not "
+                        "set one, answer with the figures in <data>")
     alone = count_without_noun(text, numbers)
     if alone:
         problems.append(f"a count keeps its noun: write '{{{{{alone}}}}} transactions', not the number alone")
+    extra = health_extra(text, numbers)
+    if extra:
+        problems.append(f"'{extra}': a Health total is stated plainly: no tip, offer, comparison or judgement (#571)")
+    meta = meta_text(text)
+    if meta:
+        problems.append(f"'{meta}': never write about your own rules, instructions or process; answer the user")
     used = TOKEN.findall(text)
     if len(used) != len(set(used)):
         problems.append("cite each number once; a result is not its own reason")

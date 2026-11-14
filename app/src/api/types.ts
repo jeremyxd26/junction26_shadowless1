@@ -133,6 +133,12 @@ export interface SafeToSaveReason {
 export interface SafeToSaveCard extends CardBase {
   type: 'safe_to_save'
   monthly: Num
+  /**
+   * The same headline a week and a day (contract 0.3.5, #417): composites whose evidence opens
+   * `monthly`. Optional here, so a core older than 0.3.5 that leaves them out still renders (#477).
+   */
+  weekly?: Num
+  daily?: Num
   monthly_components: Component[]
   stock: Num
   stock_explanation: string
@@ -322,6 +328,10 @@ export interface AskDone {
   /** Tokens replaced by `display`: for screen readers and copying. */
   text_rendered: string
   cited: string[]
+  /** Since 0.3.3: the answer's actions (a refusal carries `contact_bank`); absent in older streams. */
+  actions?: Action[]
+  /** Since 0.3.3: the AI disclosure on the first answer of a conversation, else null. */
+  ai_disclosure?: string | null
   follow_ups: string[]
   lesson: { key: string; title: string; text: string } | null
   refusal: { kind: string; label: string } | null

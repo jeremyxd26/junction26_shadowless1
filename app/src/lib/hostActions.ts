@@ -16,7 +16,7 @@ export type PaymentDraft = {
 }
 
 /** The host's own screens of the action `open_host_screen` (contract 0.3.1, PR #308). */
-export type HostScreenTarget = 'monthly_saving' | 'bonus_to_fund'
+export type HostScreenTarget = 'monthly_saving' | 'bonus_to_fund' | 'contact_bank'
 
 /** Every message the module hands over, by name (camelCase), with its payload. */
 export type HandOverPayloads = {
@@ -27,7 +27,7 @@ export type HandOverPayloads = {
 
 export type HandOverName = keyof HandOverPayloads
 
-const HOST_SCREEN_TARGETS: readonly HostScreenTarget[] = ['monthly_saving', 'bonus_to_fund']
+const HOST_SCREEN_TARGETS: readonly HostScreenTarget[] = ['monthly_saving', 'bonus_to_fund', 'contact_bank']
 
 /** The action's `target` when the app knows it, else null: an unknown target renders nothing. */
 export function hostScreenTarget(target: unknown): HostScreenTarget | null {

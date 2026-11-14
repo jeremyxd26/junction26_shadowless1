@@ -54,15 +54,24 @@ def _limiters(request: Request) -> tuple[SlidingWindowLimiter, SlidingWindowLimi
 
 
 def reading_client(app: Any) -> Any | None:
-    """The service's model client, or None when the service runs without a model (no key). Tests put their
-    own client on app.state.bill_read_client."""
+    """The reader of bill images: Nemotron with the Gemini extract role as its fallback when Nemotron is set up
+    (#573), else the service's Gemini client, or None when neither has a key. Tests put their own client on
+    app.state.bill_read_client."""
     client = getattr(app.state, "bill_read_client", None)
     if client is not None:
         return client
+    reader = getattr(app.state, "bill_reader", None)
+    if reader is not None:
+        return reader
     from core.agent.api import get_agent   # at call time: core.agent.api imports this package
+    from core.bills.nemotron import make_reader
 
     model = get_agent(app).pipeline.model
-    return getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None)
+    gemini = getattr(model, "client", None) or getattr(getattr(model, "model", None), "client", None)
+    reader = make_reader(gemini)
+    if reader is not None:
+        app.state.bill_reader = reader   # built once: one ledger, one cache and one single flight per process
+    return reader
 
 
 def unavailable(language: str) -> JSONResponse:

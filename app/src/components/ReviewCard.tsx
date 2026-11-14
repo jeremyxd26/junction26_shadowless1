@@ -220,12 +220,15 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
-              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px; breaking anywhere is
-                  only the last resort on very narrow screens. */}
+              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px. With large text the label
+                  hyphenates in the UI language ("Vält-tä-mä-tön", #541); breaking without a hyphen is
+                  only the last resort, where no hyphenation point fits. */}
               <span aria-hidden="true" className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md text-base ${look.tint}`}>
                 {look.icon}
               </span>
-              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{option.label[lang]}</span>
+              <span lang={lang} className="min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
             </button>
           )
         })}
