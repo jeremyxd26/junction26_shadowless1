@@ -24,7 +24,9 @@ def profile(v: Views, lang: str, key: str = "big_ticket") -> dict:
     label, feature, value = {"big_ticket": (fi(lang, "Big ticket", "Isot ostokset"), "one_off_share", 6.0),
                              "steady": (fi(lang, "Steady", "Tasainen"), "keep_rate", 9.4),
                              "everyday_heavy": (fi(lang, "Everyday heavy", "Arkipainotteinen"), "everyday_share_pct",
-                                                30.1)}[key]
+                                                30.1),
+                             "not_enough_income_data": (fi(lang, "Not enough income data", "Liian vähän tulotietoja"),
+                                                        "keep_rate", 0.0)}[key]
     features = [{"key": feature, "decides_label": True,
                  "value": v.n(value, "percent", WINDOW, f"spender_profile.{feature}@1", feature)},
                 {"key": "spend", "decides_label": False,
@@ -35,9 +37,12 @@ def profile(v: Views, lang: str, key: str = "big_ticket") -> dict:
             "traits": [], "features": features, "top_everyday_category": None, "notes": []}
 
 
+LABELS = {"Groceries": ("Groceries", "Ruokaostokset"), "Restaurants": ("Restaurants", "Ravintolat")}
+
+
 def peer(v: Views, lang: str, vs: float = 1.2, metric: str = "spend_total", shown: bool = True) -> dict:
     return {"tool": "get_peer_benchmark", "metric": metric,
-            "metric_label": fi(lang, "Groceries", "Ruokaostokset") if metric != "spend_total" else "Total",
+            "metric_label": fi(lang, *LABELS[metric]) if metric in LABELS else "Total",
             "period": v.label(*WINDOW), "shown": shown, "reason": None if shown else "group_too_small",
             "you": v.n(3010.59, "eur_per_month", WINDOW, "peer_benchmark.you_month_eur@1", "You"),
             "peer_median": v.n(2975.65, "eur_per_month", WINDOW, "peer_benchmark.peer_median_month_eur@1",
@@ -97,6 +102,16 @@ CASES = {
                     lambda v, lang: [peer(v, lang, -40.5)]),
     "peers_within_margin": (("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
                             lambda v, lang: [peer(v, lang, 0.8)]),
+    "peers_tiny_negative": (("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
+                            lambda v, lang: [peer(v, lang, -0.04)]),
+    "peers_slightly_below": (("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
+                             lambda v, lang: [peer(v, lang, -1.2)]),
+    "peers_restaurants": (("How do my restaurants compare?", "Miten ravintolani vertautuvat?"),
+                          lambda v, lang: [peer(v, lang, 14.6, metric="Restaurants")]),
+    "peers_groceries": (("How do my groceries compare?", "Miten ruokaostokseni vertautuvat?"),
+                        lambda v, lang: [peer(v, lang, 14.6, metric="Groceries")]),
+    "profile_no_income": (("What kind of spender am I?", "Millainen kuluttaja olen?"),
+                          lambda v, lang: [profile(v, lang, "not_enough_income_data")]),
     "forecast": (("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
                  lambda v, lang: [forecast(v, lang)]),
     "forecast_below_zero": (("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
@@ -139,9 +154,9 @@ def test_the_profile_peer_and_bonus_answers_keep_the_length_rule(key, lang):
 
 @pytest.mark.parametrize("lang,text", [
     ("en", "Your spender profile is Big ticket: occasional big purchases make up {{n1}} of your spending. "
-           "You spend {{n6}} than the median of people like you, and a what-if can show what a cut would save."),
+           "You spend {{n6}} than the median of people like you, and a savings plan can show where to start."),
     ("fi", "Kuluttajaprofiilisi on Isot ostokset: kertaostosten osuus kulutuksestasi on {{n1}}. "
-           "Kulutat {{n6}} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi."),
+           "Kulutat {{n6}} kuin kaltaistesi mediaani, ja säästösuunnitelma näyttää, mistä aloittaa."),
 ])
 def test_what_kind_of_spender_names_the_profile_the_deciding_feature_and_the_difference(lang, text):
     draft, _, _ = answer("spender_type", lang)
@@ -161,7 +176,7 @@ def test_the_rendered_answers_read_as_sentences():
     draft, v, _ = answer("spender_type", "en")
     assert render(draft["text"], v.numbers) == ("Your spender profile is Big ticket: occasional big purchases make up 6.0% "
                                                 "of your spending. You spend 1.2% more than the median of people "
-                                                "like you, and a what-if can show what a cut would save.")
+                                                "like you, and a savings plan can show where to start.")
     draft, v, _ = answer("peers_same", "en")
     assert render(draft["text"], v.numbers) == "You spend about the same as the median of people like you."
     draft, v, _ = answer("bonus", "en")
@@ -182,14 +197,20 @@ def test_a_hidden_peer_comparison_and_an_unoffered_bonus_keep_their_reason():
 @pytest.mark.parametrize("key,lang,text", [
     # #418: above the median by more than the margin, a what-if is offered; at it, "about the same", no
     # number; below it, "that is already your saving", no invitation to change
-    ("peers", "en", "You spend 1.2% more than the median of people like you, and a what-if can show what a cut "
-                    "would save."),
+    ("peers", "en", "You spend 1.2% more than the median of people like you, and a savings plan can show where to start."),
     ("peers_within_margin", "en", "You spend about the same as the median of people like you."),
     ("peers_same", "en", "You spend about the same as the median of people like you."),
     ("peers_below", "en", "You spend 40.5% less than the median of people like you: that is already your saving."),
     ("peers_below", "fi", "Kulutat 40,5 % vähemmän kuin kaltaistesi mediaani: se on jo säästösi."),
-    ("peers", "fi", "Kulutat 1,2 % enemmän kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen "
-                    "säästäisi."),
+    ("peers", "fi", "Kulutat 1,2 % enemmän kuin kaltaistesi mediaani, ja säästösuunnitelma näyttää, mistä aloittaa."),
+    ("peers_tiny_negative", "en", "You spend about the same as the median of people like you."),
+    ("peers_slightly_below", "en", "You spend 1.2% less than the median of people like you: that is already your "
+                                   "saving."),
+    ("peers_restaurants", "en", "On restaurants you spend 14.6% more than the median of people like you, and a "
+                                "what-if can show what a cut would save."),
+    ("peers_groceries", "en", "On groceries you spend 14.6% more than the median of people like you."),
+    ("profile_no_income", "en", "There is not enough income data yet to name your spender profile."),
+    ("profile_no_income", "fi", "Tulotietoja ei ole vielä tarpeeksi kuluttajaprofiilin nimeämiseen."),
 ])
 def test_the_peer_sentence_invites_a_change_only_above_the_median(key, lang, text):
     draft, v, _ = answer(key, lang)
@@ -210,3 +231,31 @@ def test_the_peer_sentence_invites_a_change_only_above_the_median(key, lang, tex
 def test_the_forecast_says_the_low_point_and_its_date_first(key, lang, text):
     draft, v, _ = answer(key, lang)
     assert render(draft["text"], v.numbers) == text
+
+
+@pytest.mark.parametrize("metric", ["spend_total", "Restaurants", "Groceries", "Housing", "Utilities",
+                                    "regular_essentials", "everyday_spending"])
+@pytest.mark.parametrize("vs", [14.6, 1.06, 1.04, 0.5, 0.0, -0.04, -1.04, -1.2, -40.5])
+def test_the_text_offers_a_cut_exactly_when_the_card_does(metric, vs):
+    # Review of #432: the sentence's offer and the card's action always appear together.
+    from datetime import date
+
+    from core.agent.answer_sentences import peer as peer_sentence
+    from core.tools import peer as peer_tool
+    from core.tools.models import Number, Period, Unit
+
+    span = Period(start=date(2026, 4, 1), end=date(2026, 9, 30), label="1 Apr – 30 Sep 2026")
+    num = lambda value, unit=Unit.PERCENT: Number(value=value, unit=unit, period=span, method="m@1",  # noqa: E731
+                                                   evidence_ref="ev_000000000001", label="x", display="x")
+    data = peer_tool.PeerBenchmarkData(
+        metric=metric, metric_label=metric.replace("_", " "), period=span, shown=True, reason=None,
+        you=num(1.0, Unit.EUR_PER_MONTH), peer_median=num(1.0, Unit.EUR_PER_MONTH), peer_p25=None, peer_p75=None,
+        percentile=None, vs_median=num(vs), peer_group=peer_tool.PeerGroup(level="all", label="All", size=None,
+                                                                            comparable=True), peer_source="marts")
+    card = peer_tool._card(data, {"label": "Estimate", "text": "x"}, "en")
+    view = {"tool": "get_peer_benchmark", "metric": metric, "metric_label": metric.replace("_", " "), "shown": True,
+            "vs_median": {"id": "n1", "value": vs, "unit": "percent", "label": "x"}}
+    text = " ".join(peer_sentence(view, "en", lambda t: True)[0])
+    offered = "savings plan" in text or "what-if" in text
+    assert offered is bool(card.actions), (metric, vs, text)
+    assert "0.0%" not in text

@@ -370,6 +370,8 @@ def safe_to_save(view: dict[str, Any], language: str, save_more: bool) -> Senten
 # median and the group stay on the cards.
 
 PROFILE = ("Your spender profile is {label}: {feature}.", "Kuluttajaprofiilisi on {label}: {feature}.")
+PROFILE_NO_INCOME = ("There is not enough income data yet to name your spender profile.",
+                     "Tulotietoja ei ole vielä tarpeeksi kuluttajaprofiilin nimeämiseen.")
 PROFILE_ONLY = ("Your spender profile is {label}.", "Kuluttajaprofiilisi on {label}.")
 # The features that decide a profile (metrics.md section 5; "steady" lists the three whose rules did not
 # match, keep rate first), as the clause that explains it.
@@ -382,6 +384,8 @@ PROFILE_FEATURE = {
 
 
 def profile(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    if (view.get("profile") or {}).get("key") == "not_enough_income_data":
+        return [pick(PROFILE_NO_INCOME, language)], []
     label = (view.get("profile") or {}).get("label")
     if not isinstance(label, str) or not ok(label):
         return None
@@ -397,13 +401,17 @@ def profile(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
 # The difference from the median: the tool's display carries "more" or "less" ("14.6% less"). Above the
 # median by more than the margin, the sentence invites a what-if; below it, it says that is already a
 # saving; never a ranking word or a judgement (#418).
-PEER = {"total": ("You spend {vs} than the median of people like you, and a what-if can show what a cut would "
-                  "save.",
-                  "Kulutat {vs} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi."),
+# The offer names what the card's button does: the save-more flow for total spending, the what-if for a
+# category (#418, review of #432); spending that is not cut gets the difference alone.
+PEER = {"total": ("You spend {vs} than the median of people like you, and a savings plan can show where to start.",
+                  "Kulutat {vs} kuin kaltaistesi mediaani, ja säästösuunnitelma näyttää, mistä aloittaa."),
         "metric": ("On {metric} you spend {vs} than the median of people like you, and a what-if can show what a "
                    "cut would save.",
                    "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen "
                    "säästäisi.")}
+PEER_PLAIN = {"total": ("You spend {vs} than the median of people like you.", "Kulutat {vs} kuin kaltaistesi mediaani."),
+              "metric": ("On {metric} you spend {vs} than the median of people like you.",
+                         "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani.")}
 PEER_BELOW = {"total": ("You spend {vs} than the median of people like you: that is already your saving.",
                         "Kulutat {vs} kuin kaltaistesi mediaani: se on jo säästösi."),
               "metric": ("On {metric} you spend {vs} than the median of people like you: that is already your "
@@ -424,12 +432,13 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if kind == "metric" and not (metric and ok(metric)):
         return None
     metric = metric.lower() if language == "en" else metric
-    value = _value(view.get("vs_median")) or 0.0
+    value = config.peer_gap_shown(_value(view.get("vs_median")) or 0.0)
+    if abs(value) <= config.PEER_ACTION_MARGIN_PCT:
+        return [pick(PEER_SAME[kind], language).format(metric=metric)], []   # within the margin either way
     if value < 0:
         return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
-    if value <= config.PEER_ACTION_MARGIN_PCT:
-        return [pick(PEER_SAME[kind], language).format(metric=metric)], []
-    return [pick(PEER[kind], language).format(vs=vs, metric=metric)], _ids(vs)
+    offer = config.peer_offers_cut(view.get("metric") or "", value)
+    return [pick((PEER if offer else PEER_PLAIN)[kind], language).format(vs=vs, metric=metric)], _ids(vs)
 
 
 # The balance forecast until payday: the lowest point and its date first, then the bills due before then
