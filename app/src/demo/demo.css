@@ -80,6 +80,10 @@ body {
   cursor: pointer;
 }
 
+.start-over {
+  padding: 0 16px;
+}
+
 .toggle[aria-pressed='true'] {
   border-color: var(--frame-ink);
   background: var(--frame-ink);
