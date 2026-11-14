@@ -214,6 +214,33 @@ def parse_number(raw: str, language: str) -> float:
     return float(raw.replace(",", ""))
 
 
+# One main takeaway and at most one more short sentence (Renat's answer-length rule, #288): the rest
+# stays on the cards and behind the chips. Shared by the pipeline (a longer model draft is rejected) and
+# the eval (an answered outcome over it fails). The introduction and the decline texts are exempt.
+MAX_SENTENCES = 2
+MAX_SHORT_WORDS = 35
+MAX_NUMBERS = 3
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def length_problems(text: str, numbers: int, displays: Iterable[str] = ()) -> list[str]:
+    """Why a text breaks the answer-length rule, or []. `numbers` is how many numbers it states; each
+    display (or a {{nK}} token) counts as one word."""
+    plain = re.sub(r"\{\{n\d+\}\}", "N", text)
+    for d in sorted((d for d in displays if d), key=len, reverse=True):
+        plain = plain.replace(d, "N")
+    problems = []
+    sentences = len([s for s in _SENTENCE_END.split(plain) if s.strip()])
+    if sentences > MAX_SENTENCES:
+        problems.append(f"too long: {sentences} sentences, at most {MAX_SENTENCES}")
+    words = len(plain.split())
+    if words > MAX_SHORT_WORDS:
+        problems.append(f"too long: {words} words, at most {MAX_SHORT_WORDS}")
+    if numbers > MAX_NUMBERS:
+        problems.append(f"too many numbers: {numbers}, at most {MAX_NUMBERS}; the cards show the rest")
+    return problems
+
+
 def scan_numbers(text: str, language: str) -> list[tuple[float, str | None]]:
     """(value, mark) of every number in a free text, for numbers the user typed in a question."""
     _, text = find_dates(text, blank_all=True)

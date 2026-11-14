@@ -34,12 +34,12 @@ def test_spending_question_end_to_end(make_pipeline):
 
 
 def test_numbers_event_comes_before_the_first_sentence_that_cites_it(make_pipeline):
-    draft = {"language": "en", "text": "Here is August 2026. It cost {{n1}}. There were {{n2}} visits.",
-             "cited": ["n1", "n2"], "lesson_key": None}
+    draft = {"language": "en", "text": "August 2026 cost {{n1}}. There were {{n2}} visits.",
+             "cited": ["n1", "n2"], "lesson_key": None}   # two sentences: the answer-length rule (#288)
     events = run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[draft])))
     stream = [(e, p) for e, p in events if e in ("numbers", "delta")]
-    assert [e for e, _ in stream] == ["delta", "numbers", "delta", "numbers", "delta"]
-    assert list(stream[1][1]["numbers"]) == ["n1"] and list(stream[3][1]["numbers"]) == ["n2"]
+    assert [e for e, _ in stream] == ["numbers", "delta", "numbers", "delta"]
+    assert list(stream[0][1]["numbers"]) == ["n1"] and list(stream[2][1]["numbers"]) == ["n2"]
 
 
 def test_invented_number_is_rejected_retried_then_template(make_pipeline):
@@ -323,3 +323,27 @@ def test_no_later_card_before_the_error_when_a_call_finds_the_database_down(make
     events = run(make_pipeline(model, reg=reg, data=FakeData()))
     order = [e if e != "card" else p["card"]["card_id"] for e, p in events if e in ("card", "error", "done")]
     assert order == ["card_tool0", "error"]
+
+
+# ---- #288: the answer-length rule ---------------------------------------------------------------------------
+
+def test_a_draft_over_the_length_rule_is_retried_with_the_reason(make_pipeline):
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    short = {"language": "en", "text": "August 2026 cost {{n1}}, over {{n2}} visits.", "cited": ["n1", "n2"],
+             "lesson_key": None}
+    model = ScriptedModel(plans=[SPEND], drafts=[long, short])
+    pipe = make_pipeline(model)
+    done = dict(run(pipe))["done"]
+    assert done["outcome"] == "answered" and done["text"] == short["text"] and "llm_unavailable" not in done["warnings"]
+    attempts = audit_records(pipe)[-1]["composer_attempts"]
+    assert attempts[0]["validation"] == ["too long: 3 sentences, at most 2"] and attempts[1]["validation"] == "ok"
+
+
+def test_two_drafts_over_the_length_rule_end_in_the_template(make_pipeline):
+    long = {"language": "en", "text": "August 2026 cost {{n1}}. That is a lot. There were {{n2}} visits.",
+            "cited": ["n1", "n2"], "lesson_key": None}
+    pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[long, long]))
+    done = dict(run(pipe))["done"]
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    assert audit_records(pipe)[-1]["composer_attempts"][-1]["raw"] == "template"

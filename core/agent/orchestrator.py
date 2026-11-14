@@ -50,7 +50,7 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel, meta_intent
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, plain_text, render, validate
-from core.answer_text import scan_numbers
+from core.answer_text import length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
 from core.tools.cache import TOOL_CACHE
@@ -668,6 +668,10 @@ class Pipeline:
                     a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                     continue
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
+                if not errors:
+                    # The answer-length rule (#288): a longer draft is rejected like any other, so the retry
+                    # gets the reason and the template writes after it.
+                    errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))))
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
