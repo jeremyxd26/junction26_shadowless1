@@ -744,9 +744,13 @@ Also returned: the lowest and highest monthly keep in the window and how many mo
 | `share_pct` | The total's share of everyday spending; per category, its share of the small total | composite `share_pct` |
 | `max_amount_eur` | The limit used | composite `rule_value` |
 
-**The answer.** With fewer than 5 small purchases (`config.SMALL_PURCHASE_MIN_COUNT`) the answer is a plain "not much to see here" with the count and the total. With none, it says so. Otherwise one sentence:
-- it gives the count, the limit, the total and the monthly average;
-- it says where most of them happen: "most of them at restaurants and cafés" when the largest category holds more than half of the small total, else "the largest part at …".
+**The answer.** One sentence, at most three numbers, the period in words:
+- **Five or more:** the total first, the count and the monthly average, and where most of them happen. Example: "You spent €156.04 on 31 small purchases in the last three months, about €52.01 a month, most of them at restaurants and cafés." It says "the largest part at …" when no category holds more than half of the small total.
+- **Fewer than 5** (`config.SMALL_PURCHASE_MIN_COUNT`): "Only 4 small purchases in the last three months, €28.73 in all: not much to see here."
+- **None:** it says so.
+- **The limit** (€10.00) stays on the card.
+
+**The rule** (`core/agent/rules.py`) claims only the plain question. After the trigger (plural forms only), the default period and a fixed list of filler words are removed, nothing may be left. An amount, another period, a filter or a "stop", in words or digits, hands the message on to the next planner (review of #390).
 
 The card's second action asks the what-if question for the largest category with no amount ("What if I cut restaurants?"), so the user says how much (#142).
 

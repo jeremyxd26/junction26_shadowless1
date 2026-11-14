@@ -74,9 +74,9 @@ KNOWN_TOOLS = [
     # Issue #256: small everyday purchases (core/tools/small_purchases.py).
     KnownTool("core.tools.small_purchases", "get_small_purchases", "GetSmallPurchasesArgs",
               "Small everyday purchases (restaurants, entertainment, lifestyle) of at most max_amount euros in a "
-              "period, by default last month and 10 euros: count, total, average, share of everyday spending and "
-              "the total per category. Pass max_amount or a period only if the user named them. Returns numbers "
-              "with ids; cite them as {{id}}.",
+              "period, by default the last 3 complete months and 10 euros: count, total, average, a month, share "
+              "of everyday spending and the total per category. Pass max_amount or a period only if the user named "
+              "them. Returns numbers with ids; cite them as {{id}}.",
               ("Adding up your small purchases", "Lasken pienet ostoksesi yhteen")),
 ]
 

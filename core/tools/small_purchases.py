@@ -172,7 +172,7 @@ def get_small_purchases(ctx: ToolContext, args: GetSmallPurchasesArgs | dict) ->
     )
     evidence.write(ctx.conn, nb.specs)
     return ToolResult(tool=TOOL, data=data, card=_card(data, lang), notes=notes, evidence=list(nb.specs),
-                      model_view=_model_view(data, notes))
+                      model_view=_model_view(data, notes, args.period.preset.value))
 
 
 def _card(data: SmallPurchasesData, language: str) -> Card:
@@ -193,12 +193,13 @@ def _card(data: SmallPurchasesData, language: str) -> Card:
     )
 
 
-def _model_view(data: SmallPurchasesData, notes: list[str]) -> dict[str, Any]:
+def _model_view(data: SmallPurchasesData, notes: list[str], preset: str) -> dict[str, Any]:
     """The compact projection the model may see: numbers and category labels only, no rows, no merchant
     ids, no customer, no refs (R3). `takeaway` tells the template which sentence to write."""
     return {
         "tool": TOOL,
         "period": data.period.label,
+        "period_preset": preset,   # the template names a preset period in words ("in the last three months")
         "max_amount": model_number(data.max_amount),
         "count": model_number(data.count),
         "total": model_number(data.total),
