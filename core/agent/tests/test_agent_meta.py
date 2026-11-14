@@ -55,7 +55,7 @@ class Recording(ScriptedModel):
     ("kuka olet?", "fi", template.INTRO[1]),
     ("Kuka olet?", "auto", template.INTRO[1]),        # detected as Finnish without the request saying so
     ("Hei!", "auto", template.INTRO[1]),
-    ("Кто ты?", "fi", template.INTRO[0]),           # Russian gets the English text
+    ("Кто ты?", "fi", f"{template.INTRO[0]} {template.LANGUAGE[0]}"),   # Russian: English, and the language line
     ("Kiitos!", "fi", template.THANKS[1]),
 ])
 def test_the_introduction_has_the_texts_and_the_four_chips_and_no_model_request(make_pipeline, message, language, text):
@@ -78,7 +78,9 @@ def test_the_generic_decline_is_warmer_and_offers_the_chips(make_pipeline):
     model = Recording(plans=[[FunctionCall("decline", {"kind": "out_of_scope"})]], drafts=[GOOD])
     done = dict(run(make_pipeline(model), "Write a Python function that sorts a list."))["done"]
     assert done["outcome"] == "refused" and done["refusal"]["kind"] == "out_of_scope"
-    assert done["text"] == "That's outside my lane — I'm your money coach. I can help with things like:"
+    # #352: a complete sentence without the chips, which stay in follow_ups
+    assert done["text"] == ("That's outside my lane — I'm your money coach. I can help with things like your spending "
+                            "or your bills.")
     assert done["follow_ups"] == template.brief_questions("en")
 
 
@@ -90,7 +92,9 @@ def test_a_specific_decline_keeps_its_text(make_pipeline):
 
 def test_the_texts_pass_the_validator_and_hold_no_number():
     allowed = Allowed(frozenset(), frozenset())
-    texts = [*template.INTRO, *template.THANKS, *template.REFUSAL["out_of_scope"]["text"]]
+    texts = [*template.INTRO, *template.THANKS, *template.REFUSAL["out_of_scope"]["text"],
+             *[t for pair in template.AGAIN.values() for t in pair], *template.PRIVACY, *template.LANGUAGE,
+             *template.MADE_UP_REFUSAL["text"]]
     for text in texts:
         assert check_text(text, allowed) == [], text
         assert not any(w in text.lower() for w in ("four", "neljä", "neljan"))
