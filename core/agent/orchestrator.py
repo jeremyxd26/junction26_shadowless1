@@ -42,6 +42,7 @@ from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model
 from core.agent.registry import CallRejected, Registry
 from core.agent.rules import RuleModel
 from core.agent.validator import TOKEN, Allowed, AnswerDraft, allowed_from, check_text, render, validate
+from core.app.api import texts as api_texts
 from core.tools.context import NumberRegistry, ToolContext
 from core.tools.periods import PeriodOutOfRange
 
@@ -55,11 +56,9 @@ MAX_PARALLEL = 2   # data calls of one turn running at the same time, one pool c
 # second connection that another request needs (core/app/db.py holds a small pool).
 SPARE_WAIT_S = 0.05
 
-ERRORS = {
-    "data_unavailable": (("Your data can't be loaded right now. Please try again in a minute.",
-                          "Tietojasi ei voi ladata juuri nyt. Yritä uudelleen hetken kuluttua."), True),
-    "internal": (("Something went wrong. Please try again.", "Jokin meni vikaan. Yritä uudelleen."), True),
-}
+# The `error` event's texts are the API's catalogue (core/app/api/texts.py), so a failure reads the same
+# before the stream (503) and inside it.
+ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", "internal")}
 
 Emit = Callable[[str, dict[str, Any]], None]
 

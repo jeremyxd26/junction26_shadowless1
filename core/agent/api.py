@@ -249,11 +249,14 @@ async def ask(request: Request):
     except (ValidationError, ValueError, TypeError):
         return envelope("invalid_request", "en")  # a body that cannot be read has no language
     # Every error from here on is in the request's language (as /api/whatif): the body's `language`,
-    # else the question's detected language.
+    # else the question's detected language. The length is checked first, so a huge message is refused
+    # before any work on its text, and the detector never sees more than MAX_MESSAGE characters.
+    if len(body.message) > MAX_MESSAGE:
+        return envelope("invalid_request", body.language if body.language in ("en", "fi") else "en")
     lang = body.language if body.language in ("en", "fi") else guard.detect_language(guard.clean(body.message)) or "en"
     request.state.language = lang
     message = body.message.strip()
-    if not message or len(body.message) > MAX_MESSAGE:
+    if not message:
         return envelope("invalid_request", lang)
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
     allowed, retry_after = agent.limits.allow(client_address(request), body.customer_id)

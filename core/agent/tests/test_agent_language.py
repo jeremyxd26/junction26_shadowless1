@@ -70,3 +70,19 @@ def test_language_the_request_field_wins_over_detection(make_pipeline):
                                                                  "text": "Elokuussa 2026 käytit {{n1}}."}])),
              "Paljonko kulutin viime kuussa?")
     assert dict(fi)["meta"]["language"] == "fi"
+
+
+@pytest.mark.parametrize("text", ["K-Ruoka spent?", "My Ravintola Savoy bill", "Spending on Lasku app",
+                                  "How much at Käpylä store?"])
+def test_language_a_finnish_name_inside_an_english_sentence_stays_english(text):
+    # Review of PR #195: a capitalised word that does not start a sentence is a name, never Finnish.
+    assert detect_language(text) == "en"
+
+
+def test_language_swedish_with_a_ring_is_unsure_not_finnish():
+    assert detect_language("Hur mycket spenderade jag på mat?") is None
+
+
+def test_language_a_capitalised_word_that_starts_a_sentence_still_counts():
+    assert detect_language("Kerro kulutukseni. Paljonko?") == "fi"
+    assert detect_language("Paljonko kulutin K-Marketissa?") == "fi"

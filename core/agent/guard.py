@@ -17,9 +17,11 @@ FLAGS = {
 }
 # Language detection (R14, issue #140) works on words with the dots taken off ("mitä" and "mita" are
 # one word), because people often type Finnish on a phone without ä and ö.
-# - FI_STRONG: words that are Finnish and never English; each counts 2.
+# - FI_STRONG: words that are Finnish and never English, and any word with ä or ö; each counts 2.
 # - FI_WEAK: short Finnish function words; each counts 1. "on" is left out: it is English too.
 # - EN_WORDS: English function words; each counts 1.
+# A capitalised word that does not start a sentence is a name ("K-Ruoka", "Ravintola Savoy", "Käpylä")
+# and never counts as Finnish. "å" alone is no Finnish signal: Swedish has it too.
 # Finnish needs a score of at least 2 and more than the English score; English needs one English word.
 # Anything else is unsure (None): the request's language, then the conversation's, then English.
 FI_STRONG = re.compile(
@@ -31,7 +33,7 @@ FI_STRONG = re.compile(
 FI_WEAK = re.compile(r"ja|ei|en|se|etta|kun|jos|mutta|tai|nyt|vai|kanssa|siita|mina|sina")
 EN_WORDS = re.compile(
     r"the|a|an|i|me|my|you|your|is|are|was|were|did|do|does|can|could|would|should|how|what|where|"
-    r"when|which|why|much|many|and|or|of|to|in|on|at|for|with|this|that|last|month|week|spend|spent|"
+    r"when|which|why|much|many|and|or|of|to|in|on|at|for|with|this|that|last|month|week|spend|spent|spending|"
     r"money|save|cut|if|tell|show|give|it")
 
 
@@ -56,13 +58,23 @@ def _without_dots(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
+def _finnish_score(word: str) -> int:
+    if re.search(r"[äö]", word, re.I):
+        return 2
+    plain = _without_dots(word)
+    return 2 if FI_STRONG.fullmatch(plain) else 1 if FI_WEAK.fullmatch(plain) else 0
+
+
 def detect_language(text: str) -> str | None:
     """'fi', 'en', or None when unsure. Typed with or without ä and ö (issue #140)."""
-    if re.search(r"[äöå]", text, re.I):
-        return "fi"
-    words = re.findall(r"[a-z]+", _without_dots(text))
-    fi = sum(2 for w in words if FI_STRONG.fullmatch(w)) + sum(1 for w in words if FI_WEAK.fullmatch(w))
-    en = sum(1 for w in words if EN_WORDS.fullmatch(w))
+    fi = en = 0
+    for m in re.finditer(r"[^\W\d_]+", text):
+        word = m.group(0)
+        before = text[:m.start()].rstrip()
+        starts_sentence = not before or before[-1] in ".!?"
+        if starts_sentence or not word[0].isupper():  # a capitalised word inside a sentence is a name
+            fi += _finnish_score(word)
+        en += 1 if EN_WORDS.fullmatch(_without_dots(word)) else 0
     if fi >= 2 and fi > en:
         return "fi"
     if en >= 1:

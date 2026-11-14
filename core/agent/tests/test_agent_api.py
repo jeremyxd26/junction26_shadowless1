@@ -203,3 +203,29 @@ def test_the_real_wiring_without_a_database_answers_503(tmp_path, monkeypatch):
     with TestClient(create_app(Settings(_env_file=None))) as c:
         r = c.post("/api/ask", json=BODY, headers={"Accept": "text/event-stream"})
     assert r.status_code == 503 and r.json()["error"]["code"] == "data_unavailable"
+
+
+def test_a_huge_auto_message_is_refused_before_any_detection(client, monkeypatch):
+    # Review of PR #195: the length is checked first; the detector never sees more than MAX_MESSAGE.
+    import time
+
+    from core.agent import api as ask_api
+
+    seen = []
+    monkeypatch.setattr(ask_api.guard, "detect_language", lambda text: seen.append(len(text)) or "en")
+    client.install()
+    started = time.perf_counter()
+    r = client.post("/api/ask", json={**BODY, "message": "x" * 3_000_000, "language": "auto"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_request"
+    assert seen == [] and time.perf_counter() - started < 2.0
+    client.post("/api/ask", json={**BODY, "message": "y" * ask_api.MAX_MESSAGE, "language": "auto"})
+    assert seen and max(seen) <= ask_api.MAX_MESSAGE
+
+
+def test_one_finnish_data_unavailable_text_before_and_inside_the_stream(client):
+    from core.agent.orchestrator import error_envelope
+
+    client.install(data=FakeData(down=True))
+    r = client.post("/api/ask", json={**BODY, "language": "fi"})
+    assert r.status_code == 503
+    assert r.json()["error"]["message"] == error_envelope("data_unavailable", "fi")["message"]
