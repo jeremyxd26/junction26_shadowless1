@@ -93,16 +93,17 @@ TOOL_FAILED = ("Some of the data could not be computed right now.",
                "Osaa tiedoista ei voitu laskea juuri nyt.")
 NOTHING = ("I could not find data for that question.", "En löytänyt tietoja tähän kysymykseen.")
 # Missing data (#379): what is missing, then what Sentti can answer instead, as chips the rules recognise.
-# The future names the last day of the data (a returned date); the past names no date, the chip does.
+# The future names the last day of the data (a returned date); the past names the data's first and last month (#805).
 MISSING = {
     "period_in_future": ("My data ends on {end}, so I can't see future months. I can show what you typically have "
                          "left each month, or whether your money lasts until payday.",
                          "Tietoni ulottuvat {end} asti, joten en näe tulevia kuukausia. Voin näyttää, paljonko "
                          "sinulle tavallisesti jää kuukaudessa tai riittävätkö rahasi palkkapäivään."),
-    "period_before_data": ("My data does not reach back that far, so I can't see that period. I can show any month "
-                           "since my data starts, or the past year.",
-                           "Tietoni eivät ulotu niin kauas taaksepäin, joten en näe sitä jaksoa. Voin näyttää minkä "
-                           "tahansa kuukauden aineiston alusta lähtien tai viimeisen vuoden."),
+    # the range from the data's first month to its last (#805)
+    "period_before_data": ("My data covers {first} to {last}, so I can't see that period. I can show any month in "
+                           "that range, or the past year.",
+                           "Tietoni ulottuvat {first} {last}, joten en näe sitä jaksoa. Voin näyttää minkä "
+                           "tahansa kuukauden siltä ajalta tai viimeisen vuoden."),
 }
 MISSING_CHIPS = {
     "period_in_future": (("How could I save more?", "Will my money last until payday?"),
@@ -438,7 +439,15 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
     chips = [c.format(month_en=f"{calendar.month_name[first.month]} {first.year}",
                       month_fi=f"{FI_MONTH_STEMS[first.month - 1]}kuussa {first.year}")
              for c in pick(MISSING_CHIPS[reason], language)]
-    return pick(MISSING[reason], language).format(end=end), chips
+    # the error's own first and last day (returned dates), else the dataset's range (#805)
+    last = min(_iso_day((by_reason.get("period_before_data") or {}).get("last")) or last, last)
+    if language == "fi":   # "lokakuusta 2024 syyskuuhun 2026" (#805)
+        span = {"first": f"{FI_MONTH_STEMS[first.month - 1]}kuusta {first.year}",
+                "last": f"{FI_MONTH_STEMS[last.month - 1]}kuuhun {last.year}"}
+    else:
+        span = {"first": f"{calendar.month_name[first.month]} {first.year}",
+                "last": f"{calendar.month_name[last.month]} {last.year}"}
+    return pick(MISSING[reason], language).format(end=end, **span), chips
 
 
 def lesson(key: str | None, language: str) -> dict[str, str] | None:

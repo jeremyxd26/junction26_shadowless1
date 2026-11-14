@@ -43,12 +43,18 @@ def test_a_period_outside_the_data_says_which_side(start, end, reason):
 def test_each_reason_text_is_short_has_no_number_and_its_chips_are_questions_the_rules_answer(reason, lang):
     text, chips = template.missing_data_answer([], [{"tool": "get_spending", "error": "period_out_of_range",
                                                      "reason": reason}], lang, AS_OF)
+    span = {"first": "lokakuusta 2024", "last": "syyskuuhun 2026"} if lang == "fi" else \
+        {"first": "October 2024", "last": "September 2026"}
     assert text == template.pick(template.MISSING[reason], lang).format(
-        end="30.9.2026" if lang == "fi" else "30 September 2026")
+        end="30.9.2026" if lang == "fi" else "30 September 2026", **span)
     sentences = [x for x in re.split(r"[.?](?=\s+[A-ZÄÖÅ]|\s*$)", text) if x.strip()]
     assert len(text.split()) <= 35 and len(sentences) <= 2
-    # The only date in the text is the last day of the data (a returned date); no other digit.
-    assert check_text(text, Allowed(frozenset({AS_OF}), frozenset())) == []
+    # The only dates in the text are the last day of the data, or the data's first and last month (#805), as the
+    # tool's error returns them; no other digit.
+    months = frozenset({(date(2024, 10, 1), date(2024, 10, 31)), (date(2026, 9, 1), date(2026, 9, 30))})
+    assert check_text(text, Allowed(frozenset({AS_OF}), months)) == []
+    if reason == "period_before_data":
+        assert span["first"] in text and span["last"] in text
     tools = [{"name": t, "description": "", "parameters_json_schema": {}} for t in ALL]
     for chip in chips:
         assert RuleModel().plan(PlanInput(question=chip, language=lang, as_of=AS_OF.isoformat(), tools=tools)).recognised, chip

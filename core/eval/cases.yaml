@@ -653,6 +653,38 @@ cases:
   expected_tools: []
   tags: [edge, edge_before_data, r5]
 
+# A list of transactions for a period outside the data (#805): one missing-data answer that names the data's range,
+# with chips for periods inside it; never totals of another period.
+- id: sanna-transactions-before-data
+  persona: CUST00860
+  question: {en: 'Show my transactions in 2021', fi: 'Näytä tapahtumani vuonna 2021'}
+  intent: spending
+  expect: no_data
+  expected_tools: [get_spending]
+  tags: [edge, edge_before_data, missing_data]
+
+# A limit the user states is kept (#804): rent and essentials ruled out are never the what-if's selection. The rules
+# ask which flexible spending (no data call); a model may answer, so `any`, with no data call either way.
+- id: sanna-save-more-rent-ruled-out
+  persona: CUST00860
+  question: {en: 'If I cannot reduce rent, what is one realistic way to save more without cutting essentials?', fi: 'Jos en voi vähentää vuokraa, miten voisin säästää enemmän ilman että leikkaan välttämättömistä?'}
+  intent: what_if
+  expect: any
+  no_data_tool_call: true
+  tags: [edge, what_if, kept_out]
+
+- id: sanna-cut-restaurants-rent-ruled-out
+  persona: CUST00860
+  question: {en: 'If I cannot reduce rent, what if I cut restaurants by 20%?', fi: 'Jos en voi vähentää vuokraa, entä jos vähentäisin ravintoloita 20 %?'}
+  intent: what_if
+  expect: answered
+  expected_tools: [run_what_if]
+  tags: [edge, what_if, kept_out]
+  numbers:
+  - {name: dining_saving_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+  labels:
+  - {name: what_if_status, value: estimate, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: status}}
+
 - id: sanna-cut-housing-not-offered
   persona: CUST00860
   question: {en: 'What if I cut my housing costs by 20%?'}

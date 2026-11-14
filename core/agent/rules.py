@@ -704,6 +704,58 @@ HEALTH_TOTAL_WORDS = r"medicines?|lääke(?!r)\w*|lääkk\w*"
 CARE_VISITS = r"\b(?:doctors?|dentists?)(?:'s|s')?\s+(visits?|appointments?|bills?|fees?|costs?|check-?ups?)\b"
 # A selection the rules do not map (an MCC, a merchant): never replaced by a category of their own.
 SELECTION_CODE = r"\bmcc\b|\bmerchants?\b|\bcode\b|kauppia\w*|koodi\w*"
+# #804: a part of a what-if or save-more question that the user rules out, to the end of its clause ("If I cannot
+# reduce rent, …", "… without cutting essentials", "except rent", "jos en voi vähentää vuokraa", "ilman että
+# leikkaan välttämättömistä"). What it names is never a selection and never cut. Matched on the folded question.
+KEEP_OUT_SPAN = fold_pattern(
+    r"\b(?:if|since|as|because) (?:i|we) (?:can ?not|can[’']?t|could ?not|couldn[’']?t|won[’']?t|will not|"
+    r"don[’']?t want to|do not want to|am not able to|am unable to) (?:reduce|cut|lower|change|touch|give up|move)"
+    r"\b[^,.;?!]*"
+    r"|\b(?:without|except|excluding|other than|apart from|besides|leaving out|not counting)\b[^,.;?!]*"
+    r"|\bjos (?:en|emme) (?:voi|pysty|halua|saa) (?:vähentää|leikata|pienentää|muuttaa|karsia|koskea)\w*[^,.;?!]*"
+    r"|\bilman\b[^,.;?!]*|\bpaitsi\b[^,.;?!]*|\bmuuta kuin\b[^,.;?!]*")
+KEEP_OUT_ESSENTIALS = fold_pattern(r"\bessentials?\b|\bnecessit\w*|\bbasics\b|välttämättöm\w*|perustarpe\w*|"
+                                   r"pakollis\w*")
+# With the essentials ruled out, these are never cut either: the regular essentials of the what-if (#346).
+KEEP_OUT_ESSENTIAL_CATEGORIES = frozenset({"Groceries", "Housing", "Utilities"})
+KEEP_OUT_ESSENTIAL_GROUPS = ("fuel", "public_transport", "parking")
+# The question back keeps the limit; the options are the flexible spending a what-if estimates for every persona
+# (WHAT_IF_WHICH below) and the savings plan, which cuts only flexible categories (#369). At most 3 options and 140
+# characters (registry.ClarifyArgs), no digit and no number word (the clarify text rules).
+KEEP_OUT_WHICH = ("I'll leave out what you ruled out and your essentials. Which flexible spending would you like to "
+                  "cut?",
+                  "Jätän pois rajaamasi kulut ja välttämättömät menot. Mitä joustavaa kulutusta haluaisit vähentää?")
+KEEP_OUT_OPTIONS = (("Restaurants", "Entertainment", "Not sure — show ideas"),
+                    ("Ravintolat", "Viihde", "En tiedä — näytä ideoita"))
+KEEP_OUT_IDEAS = fold_pattern(r"\bnot sure\b|\bshow (me )?(some )?ideas\b|\bideas?\b|\bdon[’']?t know\b|"
+                              r"\ben tiedä\b|\bideoi\w*|\bnäytä ideoita\b")
+KEEP_OUT_TURNS = 3   # the question that set the limit and at most two replies to the questions back
+
+
+def _kept_out_ask(what_if: dict | None, lang: str) -> Claim:
+    """The question back with the limit kept (#804); a category the user ruled out is never one of its options."""
+    ruled_out = set((what_if or {}).get("ruled_out") or ())
+    en, fi = KEEP_OUT_OPTIONS
+    keep = [i for i, c in enumerate(("Restaurants", "Entertainment", None)) if c not in ruled_out]
+    options = (tuple(en[i] for i in keep), tuple(fi[i] for i in keep))
+    return Claim("what_if", tuple(RuleModel._clarify(KEEP_OUT_WHICH, options, lang)))
+
+
+def _kept_out(q: str) -> tuple[str, frozenset[str], bool]:
+    """(the folded question without what the user rules out, the categories and groups ruled out, whether the
+    ruled-out part names any spending). A part that names no spending ("without a budget") changes nothing."""
+    spans = [m.group(0) for m in re.finditer(KEEP_OUT_SPAN, q)]
+    if not spans:
+        return q, frozenset(), False
+    text = " ".join(spans)
+    out = {c for rx, c in CATEGORY_WORDS if re.search(rx, text)}
+    out |= {g for rx, g in MCC_GROUP_WORDS if re.search(rx, text)}
+    out |= {b for rx, b in WHAT_IF_BASKET_WORDS if re.search(rx, text)}
+    if re.search(KEEP_OUT_ESSENTIALS, text):
+        out |= KEEP_OUT_ESSENTIAL_CATEGORIES | set(KEEP_OUT_ESSENTIAL_GROUPS) | {"unexpected_necessities"}
+    if not out:
+        return q, frozenset(), False
+    return re.sub(KEEP_OUT_SPAN, " ", q), frozenset(out), True
 
 
 def plan_what_if(question: str) -> tuple[str, dict | None]:
@@ -718,10 +770,13 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
       everyday word of WHAT_IF_MCC_WORDS), or a code or merchant the user typed: not recognised, so the next
       planner, or a clarifying question, takes it;
     - ("amount", None): one selection but no cut, or a cut outside 1..100 % or not whole: ask how much;
+    - ("kept_out", None): the user ruled spending out ("If I cannot reduce rent, …", #804) and named no other
+      selection: ask which flexible spending, with the limit kept; what they ruled out is never a selection;
     - ("run", args): run_what_if with that selection and the user's own cut ("half" is 50 %)."""
     q = fold(question)
     if re.search(HEALTH, q):
         return "health", None
+    q, ruled_out, kept_out = _kept_out(q)
     # An everyday word is its own selection: "fast food" and "pikaruoka" are MCC 5814 in a what-if, never also the
     # Restaurants or Groceries category the category words find inside them (#534 with #488). A food compound
     # ("food delivery", "pet food") is no selection the rules know, never Groceries: a cut of it asks which spending.
@@ -738,6 +793,10 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
         return "unmapped", None   # "the Barbarian pub" is a place, not all bars (#497)
     pct = re.search(PERCENT, q)
     half = re.search(HALF, q)
+    if kept_out and (not selections or (categories | baskets | {g for rx, g in MCC_GROUP_WORDS if re.search(rx, q)})
+                     & ruled_out):
+        # #804: never a cut of what the user ruled out, nor of their essentials
+        return "kept_out", {"ruled_out": sorted(ruled_out)}
     if not selections and not pct and not half and re.search(template.SAVE_MORE, q):
         return "save_more", None
     if categories == {"Groceries"} and selections == 1 and not pct and not half and re.search(template.SAVE_MORE, q) \
@@ -1719,6 +1778,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS, lang)))
     if kind == "amount":
         return Claim(intent, tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
+    if kind == "kept_out":   # #804: the limit the user stated is kept
+        return _kept_out_ask(what_if, lang)
     if kind == "save_more":
         return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
     return _claimed(intent, [("run_what_if", what_if)], tools, lang)
@@ -2077,6 +2138,61 @@ def _baseline(question: str, q: str, period, as_of: date) -> str | None:
     return None
 
 
+# #805: a list of the user's transactions ("Show my transactions in 2021", "Näytä tapahtumani vuonna 2021") for a
+# period wholly outside the data. It is the spending call for that period alone, so the template's missing-data
+# answer (template.MISSING) names the data's range, with chips for periods inside it, and nothing else is planned.
+TX_LIST_WORDS = fold_pattern(r"\btransactions?\b|\btapahtum\w*|\btilitapahtum\w*")
+
+
+def _outside_data_list(question: str, q: str, as_of: date, tools: set[str]) -> Claim | None:
+    if "get_spending" not in tools or not re.search(TX_LIST_WORDS, q):
+        return None
+    args = plan_spending(question, as_of)
+    period = (args or {}).get("period") or {}
+    if period.get("preset") != "custom":
+        return None
+    try:
+        start, end = date.fromisoformat(str(period["start"])), date.fromisoformat(str(period["end"]))
+    except (KeyError, ValueError):
+        return None
+    if end >= config.DATA_START and start <= as_of:
+        return None   # a period inside the data: read as before
+    return Claim("spending", (FunctionCall("get_spending", args), FunctionCall("finish")))
+
+
+def _kept_out_reply(request: PlanInput, q: str, tools: set[str], lang: str) -> Claim | None:
+    """#804: a reply to the questions back of a what-if or save-more question whose limit the user stated ("If I
+    cannot reduce rent, …"). The questions since then, each a turn with no calls, are read with the reply, so the
+    limit holds in every turn: "not sure" is the savings plan (flexible categories only), a flexible selection with
+    a cut runs the what-if, one with no cut asks how much, and anything else (a cut with no selection, what was ruled
+    out, an essential) asks the question back again. None when there is no such limit or the reply is a question of
+    its own; then the other rules read it as before."""
+    if len(q.split()) > 6 or any(re.search(rx, q) for name, rx in INTENTS if name != "what_if"):
+        return None
+    if re.search(SELF_SPEND, q) or re.search(COMPLETE_WORDS, q) or re.search(r"\bhow much\b|\bpaljonko\b", q) or \
+            (plan_spending(request.question, date.fromisoformat(request.as_of)) or {}).get("period"):
+        return None   # a spending question of its own ("How much did I spend?", "Restaurants last month")
+    chain: list[str] = []
+    for turn in reversed(request.history[-KEEP_OUT_TURNS:]):
+        if not isinstance(turn, dict) or turn.get("calls") or not isinstance(turn.get("question"), str):
+            break
+        chain.insert(0, turn["question"])
+    start = next((i for i, before in enumerate(chain)
+                  if re.search(dict(INTENTS)["what_if"], fold(before)) and _kept_out(fold(before))[2]), None)
+    if start is None:
+        return None
+    if re.search(KEEP_OUT_IDEAS, q):
+        return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
+    kind, what_if = plan_what_if(". ".join(chain[start:] + [request.question]))
+    if kind == "health":
+        return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if kind == "run":
+        return _claimed("what_if", [("run_what_if", what_if)], tools, lang)
+    if kind == "amount":
+        return Claim("what_if", tuple(RuleModel._clarify(WHAT_IF_AMOUNT, ((), ()), lang)))
+    return _kept_out_ask({"ruled_out": sorted(_kept_out(fold(chain[start]))[1])}, lang)
+
+
 def _follow_up(request: PlanInput, q: str, as_of: date, tools: set[str]) -> Claim:
     """A message that is not complete on its own, in a running conversation (#300). It keeps the previous
     turn's tool, period and filter and changes what it names: a baseline ("compared to August?"), a period
@@ -2203,6 +2319,12 @@ def _claim(request: PlanInput) -> Claim:
         # "How much should I transfer to savings?" (#668) is exempted from the move-money refusal only to be claimed, so
         # it is claimed before the follow-up rule too: the savings plan, as "How could I save more?"
         return _claimed("save_more", SAVE_MORE_PLAN if "get_savings_plan" in tools else SAVE_MORE_CALLS, tools, lang)
+    outside = _outside_data_list(question, q, as_of, tools)
+    if outside is not None:   # "Show my transactions in 2021" (#805): one missing-data answer
+        return outside
+    kept = _kept_out_reply(request, q, tools, lang) if request.history else None
+    if kept is not None:   # a reply after a what-if with a stated limit (#804)
+        return kept
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     if "get_savings_plan" in tools and savings_transfer.asks(q):
