@@ -82,6 +82,14 @@ METHODS = {
     # get_balance_forecast (#257, metrics.md section 3.3)
     "daily_pace": "balance_forecast.daily_pace_eur@1",
     "bills_to_date": "balance_forecast.bills_to_date_eur@1",
+    # get_small_purchases (#256; metrics.md section 12, 08_small_purchases.sql: the output columns)
+    "small_count": "small_purchases.count@1",
+    "small_total": "small_purchases.total_eur@1",
+    "small_avg": "small_purchases.avg_eur@1",
+    "small_share": "small_purchases.share_pct@1",
+    "small_flexible": "small_purchases.flexible_total_eur@1",
+    "small_max": "small_purchases.max_amount_eur@1",
+    "small_month_avg": "small_purchases.month_avg_eur@1",
 }
 
 # ---- labels (en, fi) ------------------------------------------------------------------------------
@@ -922,3 +930,36 @@ BONUS_TEXT: dict[str, tuple[str, str]] = {
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }
 BONUS_ASSUMPTIONS = ("assume_household", "assume_table", "assume_card", "assume_goods", "assume_share")
+
+# ---- small purchases (#256, metrics.md section 12, 08_small_purchases.sql) --------------------------
+# The flexible everyday categories whose small purchases are counted: the everyday_spending basket's
+# categories except Travel (classify.basket_of). The default limit is a setting; the tool allows 1..25.
+SMALL_PURCHASE_CATEGORIES: tuple[str, ...] = ("Entertainment", "Lifestyle", "Restaurants")
+SMALL_PURCHASE_MAX_EUR = "10.00"     # euros, the default of max_amount (and 08's app.small_max)
+SMALL_PURCHASE_MAX_RANGE = (1, 25)   # the allowed max_amount, in euros
+SMALL_PURCHASE_MIN_COUNT = 5         # fewer small purchases: "not much here" (decision 5 of #256)
+# The default period: the last 3 complete months; one month holds too few small purchases for any of the
+# personas (coordinator, #256, after the persona data). 08_small_purchases.sql has the same default.
+SMALL_PURCHASE_DEFAULT_PERIOD = "last_3_months"
+# Where the small purchases of a category happen, as the takeaway sentence names them ("most of them at
+# restaurants and cafés"); a category's label otherwise.
+SMALL_PURCHASE_WHERE: dict[str, tuple[str, str]] = {
+    "Restaurants": ("restaurants and cafés", "ravintoloissa ja kahviloissa"),
+    "Entertainment": ("entertainment", "viihteessä"),
+    "Lifestyle": ("lifestyle shopping", "lifestyle-ostoksissa"),
+}
+SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
+    "title": ("Small purchases", "Pienet ostokset"),
+    "count": ("Small purchases", "Pieniä ostoksia"),
+    "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
+    "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "month_average": ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
+    "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
+    "flexible": ("Everyday spending", "Arjen kulutus"),
+    "max_amount": ("Largest amount counted as small", "Suurin pieneksi laskettu summa"),
+    "category_share": ("Share of small purchases", "Osuus pienistä ostoksista"),
+    "show": ("Show the purchases", "Näytä ostokset"),
+    # The what-if question for the largest category, with no amount: the user says how much (#142).
+    "action_label": ("What if I cut {what}?", "Kokeile vähentää: {what}"),
+    "action_prompt": ("What if I cut {what}?", "Mitä jos vähentäisin kulutusta luokassa {what}?"),
+}

@@ -268,6 +268,27 @@ PEERS = (r"people like me|people my age|others? (of )?my age|other people|others
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
          r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
+# Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
+# snacks?", "Mihin pienet ostokset menevät?". Plural forms only: "that small purchase" is one purchase, not
+# the tool's question. Never the baskets question ("Where did my money go?").
+SMALL_PURCHASES = (r"\bsmall (purchases|buys|expenses)\b|\blittle (purchases|buys|things)\b|"
+                   r"\bcoffees? and snacks\b|\bsnacks and coffees?\b|"
+                   r"\bpien(et|iä|ten|iin|issä|istä|illä|ille) "
+                   r"(ostoks(et|ia|ien|iin|issa|ista|illa|ille|eni|iani|iini|issani|istani)|"
+                   r"hankin(nat|toja|tojen|toihin|noissa|noista))\b|"
+                   r"\bpikkuostoks(et|ia|ien|iin|issa|ista|illa|ille|eni|iani)\b|"
+                   r"\bkahvi\w* ja (välipalo|naposte)\w*")
+# The rule claims a small-purchases question only when nothing is left after removing the trigger, the
+# default period ("the last 3 months") and these words: anything else (an amount, a period, a filter, a
+# what-if) may change the question, so the next planner reads it (a rule claims only a confident full
+# match; review of #390). Folded, like every rule pattern.
+SMALL_FILLERS = frozenset({
+    "where", "do", "does", "did", "my", "go", "goes", "went", "how", "much", "many", "show", "me", "count",
+    "add", "adds", "added", "up", "to", "spend", "spent", "on", "i", "make", "made", "the", "in", "over",
+    "during", "cost", "costs", "what", "are", "all",
+    "mihin", "minun", "menevat", "menivat", "menee", "meni", "paljonko", "kuinka", "paljon", "montako",
+    "nayta", "kaytan", "kaytin", "kulutan", "kulutin", "rahani", "rahat", "rahaa", "mita", "ovat", "aikana",
+})
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
 SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|someone else|\bcustomer\b|toisen|"
@@ -360,6 +381,9 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
               r"\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bkulutukse\w*|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
               r"\bmaksoin\b|\bostin\b|\bvoinko\b|\btienaan\b|\bmenoni\b|\brahani\b")
 INTENTS = [
+    # Small everyday purchases (#256): only the plain question is claimed (small_purchases_whole); a cut or a
+    # comparison of them goes to the what-if or peer rule (in _matched).
+    ("small_purchases", SMALL_PURCHASES),
     ("where_money_went", WHERE),
     ("safe_to_spend", SAFE),
     ("spender_type", SPENDER),
@@ -389,8 +413,8 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 
 
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
-BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD = (
-    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD))
+BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD, SMALL_PURCHASES = (
+    fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD, SMALL_PURCHASES))
 WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND, COMPLETE_WORDS, SET_ASIDE, MAY_MONTH = (
     fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND, COMPLETE_WORDS,
                                 SET_ASIDE, MAY_MONTH))
@@ -422,6 +446,15 @@ META = [
 ]
 
 
+def small_purchases_whole(q: str) -> bool:
+    """A folded question is the plain small-purchases question and nothing more: after removing the trigger,
+    the default period ("the last 3 months", which the tool uses anyway) and SMALL_FILLERS, no word is left.
+    An amount, another period, a filter or a what-if in words or digits leaves a word, so it is not claimed."""
+    default = next(rx for rx, p in PRESETS if p == config.SMALL_PURCHASE_DEFAULT_PERIOD)
+    rest = re.sub(default, " ", re.sub(SMALL_PURCHASES, " ", q))
+    return all(word in SMALL_FILLERS for word in re.findall(r"[\w']+", rest))
+
+
 def meta_intent(question: str) -> str | None:
     """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
     q = fold(question)
@@ -450,6 +483,8 @@ def meta_intent(question: str) -> str | None:
 # without a category; save more over income only with the save-more words; a what-if over spending only
 # with a cut the user stated.
 PRECEDENCE = {
+    # the small purchases come before spending and the breakdown (#390)
+    ("small_purchases", "spending"), ("small_purchases", "where_money_went"), ("small_purchases", "safe_to_spend"),
     ("bonus", "recurring_bills"), ("bonus", "what_if"), ("bonus", "spending"), ("bonus", "peers"),
     ("safe_to_spend", "spending"), ("safe_to_spend", "recurring_bills"),
     ("balance_forecast", "recurring_bills"), ("balance_forecast", "spending"),   # payday words (#257)
@@ -469,6 +504,7 @@ CANDIDATE_QUESTIONS = {
     "spending": ("How much did I spend this month?", "Paljonko käytin tässä kuussa?"),
     "recurring_bills": ("Which bills are coming up next?", "Mitkä laskut ovat tulossa seuraavaksi?"),
     "bonus": ("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"),
+    "small_purchases": ("Where do my small purchases go?", "Mihin pienet ostokset menevät?"),
     "balance_forecast": ("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
     "peers": ("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
 }
@@ -520,6 +556,8 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue  # "save more of my income" is the save-more question, not the income (#296)
         if intent == "peers" and not peer_question:
             continue  # what others spend, a named person, or no "I": not the peer benchmark
+        if intent == "small_purchases" and (re.search(WHAT_IF, q) or peer_question):
+            continue  # a cut or a comparison of the small purchases: the what-if or peer rule (#390)
         if intent == "safe_to_spend" and re.search(NOT_SAFE, q):
             continue  # a card or credit limit, a loan, a raise, another horizon
         if intent == "where_money_went" and re.search(WHERE_OTHERS, q):
@@ -593,6 +631,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return _claimed(intent, [("get_basket_breakdown", {"period": period})], tools, lang)
     if intent == "safe_to_spend":
         return _claimed(intent, [("get_safe_to_spend", {})], tools, lang)
+    if intent == "small_purchases":
+        return _claimed(intent, [("get_small_purchases", {})], tools, lang)
     if intent == "spender_type":
         return _claimed(intent, [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})],
                         tools, lang)
@@ -623,6 +663,10 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending)
+    if "small_purchases" in found and not small_purchases_whole(q):
+        # more than the plain small-purchases question (an amount, a period, a filter): the next planner reads
+        # it, never answered for the defaults (#142, #390)
+        return Claim(None, reason="period")
     if "what_if" in found and plan_what_if(q)[0] == "health" and \
             not ("spending" in found and not re.search(PERCENT + "|" + HALF, q)):
         return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
