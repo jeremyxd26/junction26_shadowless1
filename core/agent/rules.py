@@ -69,7 +69,7 @@ DECLINE_RULES = [
                           r"\bshould (i|we) (\w+ ){0,2}invest\w*\b|\b(how|where|what) (should|would|could|can|do) (i|we) "
                           r"(\w+ )?invest\w*\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?invest\w*\b|"
                           r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
-                          r"\b(miten|kuinka|mihin) (minun |meidän )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
+                          r"\b(miten|kuinka|mihin) (\w+ )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
                           r"(\w+ )?sijoittaa\b"),
     ("unsafe", r"\bam i (ill|sick|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
