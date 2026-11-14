@@ -110,6 +110,8 @@ MISSING_CHIPS = {
 ABSENT = ("I can't find any {what} spending in your data. Your largest categories are {categories}.",
           "Tiedoistasi ei löydy kulutusta luokassa {what}. Suurimmat luokkasi ovat {categories}.")
 ABSENT_PLAIN = ("I can't find any {what} spending in your data.", "Tiedoistasi ei löydy kulutusta luokassa {what}.")
+UNKNOWN_PLAIN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories.",
+                 "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin.")
 UNKNOWN = ("I can't see \u201c{word}\u201d on its own in your transactions: they are grouped into categories, and your "
            "largest are {categories}.",
            "En löydä tapahtumistasi erikseen sanaa \u201d{word}\u201d: kulutus on ryhmitelty luokkiin, ja suurimmat ovat "
@@ -235,8 +237,22 @@ def _category_chips(labels: list[str], language: str) -> list[str]:
     return [pick(CATEGORY_CHIP, language).format(category=label) for label in labels] or list(brief_questions(language)[:2])
 
 
+def _iso_day(raw: Any) -> date | None:
+    try:
+        return date.fromisoformat(raw) if isinstance(raw, str) else None
+    except ValueError:
+        return None
+
+
+def _first_month(details: dict[str, Any]) -> date:
+    """The customer's own first day of data from the tool's error (#379), else the dataset's first day."""
+    first = _iso_day(details.get("first"))
+    return max(first, tools_config.DATA_START) if first else tools_config.DATA_START
+
+
 def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]], language: str,
-                        as_of: date, unknown: str | None = None) -> tuple[str, list[str]] | None:
+                        as_of: date, unknown: str | None = None,
+                        unfiltered_spending: bool = False) -> tuple[str, list[str]] | None:
     """The answer and its chips when the tools found nothing but a missing-data reason (#379): no view, and
     every error carries a reason this module writes; or an object no category maps, answered with the
     breakdown of the customer's categories only. None for anything else (the composer writes)."""
@@ -250,6 +266,10 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
             return pick(UNKNOWN, language).format(word=word, categories=_listed(labels, language)), \
                 _category_chips(labels, language)
         return None
+    if unknown and views and not errors and unfiltered_spending and \
+            re.fullmatch(r"[^\W\d_][\w'-]{1,23}", unknown):
+        # the model planned the unfiltered total for it: the thing is named, the total is not given
+        return pick(UNKNOWN_PLAIN, language).format(word=unknown), list(brief_questions(language)[:2])
     if views or not errors or not all(e.get("reason") in (*MISSING, "category_absent", "too_few_transactions")
                                       for e in errors):
         return None
@@ -277,9 +297,10 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
         return pick(ABSENT_PLAIN, language).format(what=what), list(brief_questions(language)[:2])
     reasons = set(by_reason)
     reason = "period_in_future" if "period_in_future" in reasons else "period_before_data"
-    end = f"{as_of.day}.{as_of.month}.{as_of.year}" if language == "fi" else \
-        f"{as_of.day} {calendar.month_name[as_of.month]} {as_of.year}"
-    first = tools_config.DATA_START
+    last = min(_iso_day((by_reason.get("period_in_future") or {}).get("last")) or as_of, as_of)   # the tool's last day
+    end = f"{last.day}.{last.month}.{last.year}" if language == "fi" else \
+        f"{last.day} {calendar.month_name[last.month]} {last.year}"
+    first = _first_month(by_reason.get("period_before_data") or {})
     chips = [c.format(month_en=f"{calendar.month_name[first.month]} {first.year}",
                       month_fi=f"{FI_MONTH_STEMS[first.month - 1]}kuussa {first.year}")
              for c in pick(MISSING_CHIPS[reason], language)]

@@ -15,9 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from core.tools import aliases, evidence
+from core.tools import aliases, config, evidence
 from core.tools.bills import get_recurring_bills
 from core.tools.context import ToolContext
+from core.tools.missing import MissingData
 from core.tools.safe_to_spend import binding_limit, get_safe_to_spend, status_of
 from core.tools.what_if import run_what_if
 
@@ -235,19 +236,30 @@ def test_what_if_statuses_equal_04(conn, scenario, status):
     assert len(result.data.caveats) == (1 if status == "estimate" else 2)
 
 
+def _restaurant_with_a_habit(conn):
+    """The first customer (samples, then personas) and the restaurant they bought from most in the window,
+    with 3 purchases at least: a what-if on fewer derives no monthly figure (#379)."""
+    for customer_id in EVERYONE:
+        history = ctx_for(conn, customer_id).history()
+        in_window = [t.merchant_id for t in history if date(2026, 4, 1) <= t.tx_date <= AS_OF
+                     and t.category == "Restaurants" and t.merchant_id and t.amount_eur < 0]
+        if in_window:
+            restaurant = max(sorted(set(in_window)), key=in_window.count)
+            if in_window.count(restaurant) >= config.TOO_FEW_TRANSACTIONS:
+                return customer_id, restaurant
+    pytest.fail("no customer has 3 purchases at one restaurant in the window")
+
+
 def test_what_if_merchant_alias_maps_to_the_merchant_and_never_reaches_the_model(conn):
-    ctx = ctx_for(conn, "CUST00001")
-    history = ctx.history()
-    alias_map = aliases.build(history, AS_OF)
-    restaurant = next(t.merchant_id for t in sorted(history, key=lambda t: t.tx_date, reverse=True)
-                      if t.category == "Restaurants" and t.merchant_id)
-    alias = alias_map.for_merchant(restaurant).key
+    customer_id, restaurant = _restaurant_with_a_habit(conn)
+    ctx = ctx_for(conn, customer_id)
+    alias = aliases.build(ctx.history(), AS_OF).for_merchant(restaurant).key
     result = run_what_if(ctx, {"selection": {"kind": "merchant", "value": alias}, "cut_pct": 50})
-    row = sql_row(conn, "04_what_if.sql", "CUST00001", {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
+    row = sql_row(conn, "04_what_if.sql", customer_id, {"whatif": f"merchant:{restaurant}", "whatif_pct": "50"})[0]
     assert dec(result.data.saving_per_month) == row["saving_month_eur"]
     assert result.data.scenario.selection == {"kind": "merchant", "value": restaurant}   # app side
     assert result.model_view["selection"] == {"kind": "merchant", "value": alias}        # model side
-    assert_model_view_clean(result.model_view, "CUST00001")
+    assert_model_view_clean(result.model_view, customer_id)
 
 
 def test_what_if_rejects_a_health_merchant(conn):
@@ -345,3 +357,21 @@ def test_safe_to_spend_refuses_a_bills_total_that_differs_from_03(conn, monkeypa
     monkeypatch.setattr(safe_to_spend.recurring, "bills_due_numbers", off_by_a_cent)
     with pytest.raises(safe_to_spend.BillsDueMismatch):
         get_safe_to_spend(ctx_for(conn, "CUST00001"))
+
+
+def test_what_if_on_fewer_than_three_purchases_shows_them_and_derives_no_monthly_figure(conn):
+    # #395 row 15 (#379): one trip in six months is no monthly habit; the purchases as they are, no saving
+    ctx = ctx_for(conn, "CUST00849")
+    with pytest.raises(MissingData) as raised:
+        run_what_if(ctx, {"selection": {"kind": "category", "value": "Travel"}, "cut_pct": 20})
+    d = raised.value.details
+    assert raised.value.reason == "too_few_transactions" and 0 < d["n"] < config.TOO_FEW_TRANSACTIONS
+    total, count = ctx.numbers.get(d["total"]), ctx.numbers.get(d["count"])
+    row = conn.execute(
+        """SELECT COALESCE(sum(-amount_eur), 0), count(*) FROM transactions
+           WHERE customer_id = %s AND tx_date <= %s AND tx_date BETWEEN %s AND %s
+             AND category = 'Travel' AND amount_eur < 0""",
+        ("CUST00849", AS_OF, total.period.start, total.period.end)).fetchone()
+    assert (dec(total), count.value) == (D(row[0]), row[1]) and row[1] == d["n"]
+    assert {total.method, count.method} == {"spending.total@1", "spending.n_tx@1"}
+    assert_reconciles(conn, "CUST00849", [total.evidence_ref, count.evidence_ref])

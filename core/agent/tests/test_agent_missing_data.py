@@ -61,6 +61,17 @@ def test_the_chips_name_the_first_month_of_the_data():
     assert chips[0] == f"Paljonko käytin lokakuussa {config.DATA_START.year}?"
 
 
+@pytest.mark.parametrize("first,en,fi", [
+    ("2025-01-14", "How much did I spend in January 2025?", "Paljonko käytin tammikuussa 2025?"),
+    ("2023-05-01", "How much did I spend in October 2024?", "Paljonko käytin lokakuussa 2024?"),  # never before the data
+    ("not a date", "How much did I spend in October 2024?", "Paljonko käytin lokakuussa 2024?"),
+])
+def test_the_chip_names_the_customers_own_first_month_when_the_tool_reports_it(first, en, fi):
+    errors = [{"reason": "period_before_data", "details": {"first": first, "last": "2026-09-30"}}]
+    assert template.missing_data_answer([], errors, "en", AS_OF)[1][0] == en
+    assert template.missing_data_answer([], errors, "fi", AS_OF)[1][0] == fi
+
+
 def test_a_view_with_data_or_an_error_without_a_reason_is_not_a_missing_data_answer():
     assert template.missing_data_answer([{"tool": "x"}], [{"reason": "period_in_future"}], "en", AS_OF) is None
     assert template.missing_data_answer([], [{"error": "tool_failed"}], "en", AS_OF) is None
@@ -197,3 +208,13 @@ def test_the_pipeline_answers_an_unknown_object_with_the_template_and_no_compose
     done = dict(events)["done"]
     assert done["outcome"] == "answered" and "\u201cgym\u201d" in done["text"] and model.compose_inputs == []
     assert done["follow_ups"][0] == "How much did I spend on restaurants last month?"
+
+
+def test_the_future_text_names_the_last_day_the_tool_reports():
+    errors = [{"reason": "period_in_future", "details": {"first": "2024-10-03", "last": "2026-09-29"}}]
+    assert template.missing_data_answer([], errors, "en", AS_OF)[0].startswith("My data ends on 29 September 2026,")
+    assert template.missing_data_answer([], errors, "fi", AS_OF)[0].startswith("Tietoni ulottuvat 29.9.2026 asti,")
+    # never a day after the data's own last day
+    errors = [{"reason": "period_in_future", "details": {"last": "2027-01-01"}}]
+    assert template.missing_data_answer([], errors, "en", AS_OF)[0].startswith("My data ends on 30 September 2026,")
+

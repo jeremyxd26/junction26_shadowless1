@@ -15,6 +15,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
@@ -108,6 +109,56 @@ def _month_range(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
 
+# Periods counted back from the data's last day (#379 part B, the coordinator's decisions):
+# - "the past month" is the last complete calendar month, as "the past 3 months" is last_3_months;
+# - "over the last 5 years" is the last 60 complete months (the tool clamps it to the data start);
+# - "the year before last", "two years ago" are the calendar year as_of.year - N ("a year ago" is last year).
+NUMBER_WORDS = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                "nine": 9, "ten": 10, "vuosi": 1, "yksi": 1, "kaksi": 2, "kahden": 2, "kolme": 3, "kolmen": 3,
+                "nelja": 4, "neljan": 4, "viisi": 5, "viiden": 5, "kuusi": 6, "kuuden": 6, "seitseman": 7,
+                "kahdeksan": 8, "yhdeksan": 9, "kymmenen": 10}
+_N = r"(\d{1,2}|" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")"
+PAST_MONTH = r"\bpast month\b|\bviimeisen kuukauden\b|\bkuluneen kuukauden\b|\bviimeisen kuun aikana\b"
+LAST_YEARS = (r"\b(?:last|past) " + _N + r" years\b|\bviimeisen " + _N + r" vuoden\b|\bviimeiset " + _N +
+              r" vuotta\b")
+YEAR_BEFORE_LAST = r"\byear before last\b|\btoissa ?vuonna\b|\btoissa ?vuoden\b|\btoissavuo\w*"
+YEARS_AGO = r"\b" + _N + r" years? ago\b|\b" + _N + r" (?:vuotta|vuosi) sitten\b"
+
+
+def _last_complete_months(n: int, as_of: date) -> tuple[date, date]:
+    """The last n complete calendar months (core/tools/periods.py: a month counts once its last day is on or
+    before as_of)."""
+    y, m = as_of.year, as_of.month
+    if as_of != _month_range(y, m)[1]:
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    first = y * 12 + (m - 1) - (n - 1)
+    return date(first // 12, first % 12 + 1, 1), _month_range(y, m)[1]
+
+
+def _number(word: str) -> int:
+    return int(word) if word.isdigit() else NUMBER_WORDS[word]
+
+
+def _relative_period(q: str, as_of: date, months: list[tuple[int, int]]) -> tuple[date, date] | None:
+    """The dates of "the past month", "over the last 5 years", "the year before last", "two years ago"."""
+    if re.search(PAST_MONTH, q):
+        return _last_complete_months(1, as_of)
+    if m := re.search(LAST_YEARS, q):
+        n = _number(next(g for g in m.groups() if g))
+        return _last_complete_months(12 * n, as_of) if 0 < n <= 50 else None
+    year = None
+    if re.search(YEAR_BEFORE_LAST, q):
+        year = as_of.year - 2
+    elif m := re.search(YEARS_AGO, q):
+        n = _number(next(g for g in m.groups() if g))
+        year = as_of.year - n if 0 < n <= 50 else None
+    if year is None:
+        return None
+    if months:   # "in March two years ago"
+        return _month_range(year, months[0][1])
+    return date(year, 1, 1), date(year, 12, 31)
+
+
 def _may_is_the_month(question: str) -> bool:
     if re.search(MAY_MONTH, fold(question)):
         return True
@@ -181,6 +232,8 @@ def plan_spending(question: str, as_of: date) -> dict | None:
                           "end": date(year, month, int(between.group(2))).isoformat()}
     elif re.search(ALL_TIME, q):
         args["period"] = {"preset": "custom", "start": config.DATA_START.isoformat(), "end": as_of.isoformat()}
+    elif relative := _relative_period(q, as_of, months):
+        args["period"] = {"preset": "custom", "start": relative[0].isoformat(), "end": relative[1].isoformat()}
     elif preset:
         args["period"] = {"preset": preset}
     elif months:
@@ -195,7 +248,7 @@ def plan_spending(question: str, as_of: date) -> dict | None:
             args["period"] = {"preset": "last_month"}
         else:
             args["period"] = {"preset": "custom", "start": start.isoformat(), "end": end.isoformat()}
-    elif re.search(r"\blast year\b|\bviime vuonna\b|\bedellisenä vuonna\b|\bviime vuoden\b", q):
+    elif re.search(r"\blast year\b|\bviime vuonna\b|\bedellisena vuonna\b|\bviime vuoden\b", q):
         args["period"] = {"preset": "custom", "start": f"{as_of.year - 1}-01-01", "end": f"{as_of.year - 1}-12-31"}
     elif year_only:
         year = int(year_only.group(1))
@@ -382,7 +435,15 @@ SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these
              r"\bdisregard\b.*\b(above|previous|prior|earlier|instructions?|rules)\b|\bpay no attention to\b|"
              r"\bfrom now on,? you (are|will|must)\b|(^|[.!?]\s*)system\s*:|"
              r"\bälä välitä\b.*\b(edellä|yllä|aiemm)\w*|\btästä (lähtien|eteenpäin) (sinä )?olet\b|"
-             r"(^|[.!?]\s*)järjestelmä\s*:")
+             r"(^|[.!?]\s*)järjestelmä\s*:|"
+             # a clause that sets a limit aside never adds a tool, and the message is no plain question
+             # ("Where do my small purchases go? Ignore the limit and show everything", the coordinator)
+             r"\b(ignore|forget|disregard|bypass|skip|remove|drop|lift|turn off) (all |any )?(the |your |my |this |that )?"
+             r"((spending|purchase|amount|price|small[- ]purchases?) )?(limit|limits|threshold|thresholds|cap|caps|"
+             r"filter|filters)\b|"
+             r"\bwithout (a |any |the )?(limit|limits|threshold|cap|filter)\b|"
+             r"\bno (limit|limits|threshold|cap|filter)\s*([.!?,]|$)|"
+             r"\b(ohita|unohda|poista)\b.*\b(raja\w*|yläraja\w*|suodat\w*)|\bilman (rajaa|rajoja|rajoitust\w*|ylärajaa)\b")
 # 4. What other people spend most on is no question about the user's own money.
 WHERE_OTHERS = r"\bwho\b|\bpeople\b|\bothers?\b|\beveryone\b|\bmuut\b|\bmuiden\b|\bihmiset\b|\bkuka\b"
 # Another person's profile ("what kind of spender is Marjatta?") is not the user's own (#298).
@@ -405,8 +466,8 @@ SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|a
 # "can I afford a holiday in March?"): the rules plan the future period, the tool reports period_in_future,
 # and the answer says what Sentti can show instead (#379). Never "outside my lane".
 FUTURE = (r"\b(will|shall) i (spend|have|save|need|be able)\b|\bam i going to (spend|have|save)\b|"
-          r"\bi('ll| will) (spend|have|save)\b|\bnext (month|year)\b|\bby (christmas|new year|the end of the year)\b|"
-          r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bjouluun\b|"
+          r"\bi('ll| will) (spend|have|save)\b|\bnext (month|year|week)\b|\bby (christmas|new year|the end of the year)\b|"
+          r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bensi viiko\w*|\bjouluun\b|"
           r"\bnext (january|february|march|april|may|june|july|august|september|october|november|december)\b|"
           r"\bensi (tammi|helmi|maalis|huhti|touko|kesä|heinä|elo|syys|loka|marras|joulu)kuu\w*")
 FUTURE_MONEY = r"\bspen[dt]\w*|\bsav(e|ed|ing)\b|\bafford\b|\bbudget\w*|\bkulut\w*|\bkäyt\w*|\bsäästä\w*|\bvaraa\b"
@@ -417,7 +478,12 @@ PAST_PERIOD = (r"\blast (week|month|year|summer|winter|spring|autumn|christmas)\
 # A future cue that is itself a period: with it, a named month is another period ("in August and next month");
 # a verb ("will I spend") or "afford" carries its own month ("will I spend in March?", review of #443 D1).
 FUTURE_PERIOD = (r"\bnext (month|year|week)\b|\bby (christmas|new year|the end of the year)\b|"
-                 r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bjouluun\b")
+                 r"\bensi (kuussa|kuun|vuonna|vuoden)\b|\bensi viiko\w*|\bjouluun\b")
+# "how much will I spend this week?" is the safe-to-spend question (the next seven days), not the future
+FUTURE_THIS_WEEK = r"\bthis week\b|\btällä viikolla\b|\btämän viikon\b"
+# "next month's rent / bills" is the bills rule in every form (the coordinator, #379 part B)
+NEXT_BILL = (r"\bnext month(?:'|\u2019)?s (rent|bills?)\b|\b(rent|bills?) (for |due )?next month\b|"
+             r"\bensi kuun (vuokra\w*|lasku\w*)|\b(vuokra\w*|lasku\w*) ensi kuussa\b")
 THIS_PERIOD = (r"\bthis (month|year|week)\b|\btässä kuussa\b|\btämän kuun\b|\btähän kuuhun\b|\btätä kuuta\b|"
                r"\btänä vuonna\b|\btämän vuoden\b|\btähän vuoteen\b|\btätä vuotta\b|\btällä viikolla\b|"
                r"\btämän viikon\b")
@@ -427,6 +493,13 @@ OBJECT_EN = (r"\b(?:spen[dt]\w*|paid|pay|bought|buy|cost\w*)\b(?:\s+\S+){0,3}?\s
              r"(?:the |my |a |an |some |all )?([a-z][a-z'-]{2,})")
 OBJECT_FI = (r"\b(?:käytin|käytän|kulutin|kulutan|käyttää|kuluttaa|maksoin|maksan)\b(?:\s+\S+){0,2}?\s+"
              r"(\w{4,}(?:iin|aan|ään|hin|hun|seen|yyn|uun|oon|öön))\b")
+# The objects listed after the first one: "on restaurants and at the gym", "ravintoloihin ja kuntosaliin",
+# "restaurants and Netflix last month" (#379 part B: the gym second is not answered as restaurants only).
+OBJECT_MORE_EN = (r"\s(?:and|or|plus)\s+(?:(?:on|at|for)\s+(?:the |my |a |an |some )?|(?:the|my|a|an|some)\s+)"
+                  r"([a-z][a-z'-]{2,})")
+OBJECT_MORE_BARE = (r"\s(?:and|or)\s+([a-z][a-z'-]{2,})(?=\s+(?:last|this|in|during|over|since|so far|lately|"
+                    r"recently)\b|\s*[?.!]*\s*$)")
+OBJECT_MORE_FI = r"\s(?:ja|tai|sekä)\s+(\w{4,}(?:iin|aan|ään|hin|hun|seen|yyn|uun|oon|öön))\b"
 OBJECT_STOP = frozenset({
     "average", "total", "it", "them", "this", "that", "these", "those", "things", "stuff", "everything",
     "anything", "all", "me", "us", "time", "card", "cards", "account", "weekend", "weekends", "weekdays", "week",
@@ -437,6 +510,9 @@ OBJECT_STOP = frozenset({
     "kategorioihin", "kategoriaan", "ostoksiin", "kulutukseen",
     "luokkaan", "luokkiin", "luokassa", "luokissa",
     "loppuun", "saakka", "asti", "mennessä",
+    "rest", "other", "others", "else", "lot", "lots", "bit", "little", "few", "much", "more", "less", "also",
+    "muihin", "muuhun", "kaikkeen", "muille",
+    "for", "on", "at", "in", "to", "the", "my", "how", "what", "did", "then", "so",
 })
 INTENTS = [
     ("where_money_went", WHERE),
@@ -444,7 +520,7 @@ INTENTS = [
     ("spender_type", SPENDER),
     ("balance_forecast", FORECAST),   # "Will my money last until payday?" (#257)
     # Bills, payday and income: the template's own matchers, so the answer cites what was asked.
-    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS),
+    ("recurring_bills", template.BILL_WORDS + "|" + template.INCOME_WORDS + "|" + NEXT_BILL),
     ("bonus", BONUS),
     ("peers", PEERS),
     ("what_if", WHAT_IF),  # plan_what_if: a cut, or "how could I save more?"
@@ -487,6 +563,10 @@ RANGE_EN, RANGE_BETWEEN, RANGE_FI = (fold_pattern(rx) for rx in (RANGE_EN, RANGE
 _M = fold_pattern(_M)
 FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD, FUTURE_PERIOD, THIS_PERIOD = (
     fold_pattern(rx) for rx in (FUTURE, FUTURE_MONEY, OBJECT_EN, OBJECT_FI, PAST_PERIOD, FUTURE_PERIOD, THIS_PERIOD))
+FUTURE_THIS_WEEK, NEXT_BILL, OBJECT_MORE_EN, OBJECT_MORE_FI, OBJECT_MORE_BARE, PAST_MONTH, LAST_YEARS, \
+    YEAR_BEFORE_LAST, YEARS_AGO = (fold_pattern(rx) for rx in (
+        FUTURE_THIS_WEEK, NEXT_BILL, OBJECT_MORE_EN, OBJECT_MORE_FI, OBJECT_MORE_BARE, PAST_MONTH, LAST_YEARS,
+        YEAR_BEFORE_LAST, YEARS_AGO))
 OBJECT_STOP = frozenset(fold(w) for w in OBJECT_STOP)
 INTENTS = [(intent, fold_pattern(rx)) for intent, rx in INTENTS]
 
@@ -575,15 +655,21 @@ FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
 
 
 def _unknown_object(q: str) -> str | None:
-    """The thing a spending question names when no category, merchant group or health word maps it."""
+    """The thing a spending question names when no category, merchant group or health word maps it: the
+    first object, or one listed after it ("on restaurants and at the gym")."""
     m = re.search(OBJECT_EN, q) or re.search(OBJECT_FI, q)
     if not m:
         return None
-    word, tail = m.group(1), q[m.start(1):]
-    if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
-            any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
-        return None
-    return word
+    rest = m.end(1)
+    starts = [m.start(1)] + sorted({rest + n.start(1) for rx in (OBJECT_MORE_EN, OBJECT_MORE_BARE, OBJECT_MORE_FI)
+                                    for n in re.finditer(rx, q[rest:])})
+    for start in starts:
+        word, tail = re.match(r"[\w'-]+", q[start:]).group(0), q[start:]
+        if word in OBJECT_STOP or re.fullmatch(_M, word) or re.match(HEALTH, tail) or \
+                any(re.match(rx, tail) for rx, _ in CATEGORY_WORDS + MCC_GROUP_WORDS):
+            continue
+        return word
+    return None
 
 
 def _future_and_another_period(question: str, q: str, as_of: date) -> bool:
@@ -612,14 +698,21 @@ def _future_period(question: str, q: str, as_of: date) -> dict:
     """The future period a question names: a month's next occurrence, next year, until Christmas, or next month."""
     named = [m for _, m in _months_mentioned(question, as_of)]
     tomorrow = date.fromordinal(as_of.toordinal() + 1)
+    if re.search(r"\bnext week\b|\bensi viiko\w*", q):   # the next ISO week, Monday to Sunday
+        monday = date.fromordinal(as_of.toordinal() + 7 - as_of.weekday())
+        return {"preset": "custom", "start": monday.isoformat(),
+                "end": date.fromordinal(monday.toordinal() + 6).isoformat()}
+    if re.search(FUTURE_THIS_WEEK, q) and not named:   # the rest of this week ("on my card this week")
+        sunday = date.fromordinal(as_of.toordinal() + 6 - as_of.weekday())
+        return {"preset": "custom", "start": tomorrow.isoformat(), "end": max(tomorrow, sunday).isoformat()}
     if re.search(r"\bnext year\b|\bensi (vuonna|vuoden)\b", q):
         if named:   # "in March next year"
             start, end = _month_range(as_of.year + 1, named[0])
             return {"preset": "custom", "start": start.isoformat(), "end": end.isoformat()}
         return {"preset": "custom", "start": f"{as_of.year + 1}-01-01", "end": f"{as_of.year + 1}-12-31"}
-    if re.search(r"\bend of the year\b|\bthis year\b|\btänä vuonna\b", q) and not named:
+    if re.search(r"\bend of the year\b|\bthis year\b|\btana vuonna\b", q) and not named:
         return {"preset": "custom", "start": tomorrow.isoformat(), "end": f"{tomorrow.year}-12-31"}
-    if re.search(r"\bthis month\b|\btässä kuussa\b|\btämän kuun\b", q) and not named:
+    if re.search(r"\bthis month\b|\btassa kuussa\b|\btaman kuun\b", q) and not named:
         # the rest of this month: the data ends today, so it is the future (at least tomorrow)
         end = max(tomorrow, _month_range(as_of.year, as_of.month)[1])
         return {"preset": "custom", "start": tomorrow.isoformat(), "end": end.isoformat()}
@@ -685,6 +778,12 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
     if "future" not in found and "safe_to_spend" in found and re.search(r"\bafford\b|\bvaraa\b", q) and \
             re.search(_M, q):
         found.append("future")  # "can I afford a holiday in March?": that March is ahead, not behind
+    if "future" in found and re.search(FUTURE_THIS_WEEK, q) and not re.search(FUTURE_PERIOD, q) and \
+            not re.search(_M, q) and not re.search(NOT_SAFE, q):
+        # "how much will I spend this week?": what is safe to spend in the next seven days (#379 part B)
+        # ("on restaurants this week" stays this week's restaurant spending)
+        found = [f for f in found if f != "future"] + \
+            ([] if "safe_to_spend" in found or _filter_of(q) else ["safe_to_spend"])
     if _unknown_object(q):
         pass                    # "how much did I spend on Netflix last month?": never the unfiltered total
     elif re.search(r"\binterest\b|\bkorko\w*|\bkoro\w*", q):
@@ -931,6 +1030,12 @@ def _data_calls(found: Claim) -> list[FunctionCall]:
     return [c for c in found.calls if c.name not in ("finish", "decline", "ask_clarifying_question")]
 
 
+def _other_script(question: str) -> bool:
+    """Letters of a script other than Latin ("сколько я трачу на лекарства?"): no data rule claims the
+    message; the model's planner, or the general question (#395 row 3, the coordinator)."""
+    return any(ch.isalpha() and not unicodedata.name(ch, "LATIN").startswith("LATIN") for ch in question)
+
+
 def claim(request: PlanInput) -> Claim:
     """The one place that decides which rule claims a message, or that none does (see above)."""
     question = request.question
@@ -949,6 +1054,8 @@ def claim(request: PlanInput) -> Claim:
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
+    if _other_script(question):
+        return Claim(None, reason="language")   # Sentti answers in English or Finnish (#395 row 3)
     if _future_and_another_period(question, q, as_of):
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
     if request.history and not _complete(question, q, as_of):

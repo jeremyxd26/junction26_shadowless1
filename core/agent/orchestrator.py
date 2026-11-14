@@ -388,7 +388,12 @@ class Pipeline:
         allowed = allowed_from(numbers.values(), views, self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
             self._attach_review(ctx, review, emit, a)
-        missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message))
+        # The model's planner may plan an unfiltered total for an object no category maps ("gym"): never that
+        # total as the answer (#379, review of #443).
+        unfiltered = bool(a.calls) and all(c["name"] == "get_spending" and not (c.get("args") or {}).get("filter")
+                                           for c in a.calls)
+        missing = template.missing_data_answer(views, errors, lang, self.as_of, unknown=unknown_object(message),
+                                               unfiltered_spending=unfiltered)
         if missing is not None:
             return self._missing(missing, numbers, lang, emit, a)
         prev = conv.turns[-1] if conv.turns else None
@@ -628,7 +633,8 @@ class Pipeline:
         except (psycopg.OperationalError, PoolTimeout):
             raise DataUnavailable() from None
         except PeriodOutOfRange as exc:
-            record.update(status="error", error="period_out_of_range", reason=exc.reason)
+            record.update(status="error", error="period_out_of_range", reason=exc.reason,
+                          **({"details": exc.details} if getattr(exc, "details", None) else {}))
         except MissingData as exc:   # a category never used, too few purchases (#379)
             record.update(status="error", error=exc.reason, reason=exc.reason, details=exc.details)
         except ValueError:

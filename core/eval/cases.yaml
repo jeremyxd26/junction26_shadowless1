@@ -551,12 +551,10 @@ cases:
   persona: CUST00493
   question: {en: 'How much have I put into investments in total?'}
   intent: spending
-  expect: answered
+  # never used in the whole data (#379 part B): category_absent, the customer's largest categories as chips
+  expect: no_data
   expected_tools: [get_spending]
-  tags: [edge, edge_category_never_used, r7_own_history, period_custom]
-  numbers:
-  - {name: invest_deposit_total, value: 0.0, unit: eur, tolerance: 0.005, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: total_eur}}
-  - {name: invest_deposits, value: 0, unit: count, tolerance: 0, source: {query: spending, categories: [Invest Deposit], start: '2024-10-01', end: '2026-09-30', column: n_tx}}
+  tags: [edge, edge_category_never_used, r7_own_history, period_custom, missing_data]
 
 - id: eetu-before-data-starts
   persona: CUST00349
