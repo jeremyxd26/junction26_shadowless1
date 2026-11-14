@@ -39,6 +39,8 @@ VITE_API_MODE=live VITE_API_PROXY=http://localhost:8000 npm run dev   # live, /a
 VITE_API_MODE=live npm run build                                 # live build, served next to the core
 ```
 
+`VITE_BILL_LIVE=true` also sends the bill screen's three calls (samples, read, explain) to the core. It works only together with `VITE_API_MODE=live`; without it, a live build's bill screen uses the mock. The dev environment's build sets both (`deploy/remote-deploy.sh`).
+
 After `contracts/api.md` changes, refresh the mock data with `npm run mocks:sync`.
 
 What mock mode has, and what it does not invent:
