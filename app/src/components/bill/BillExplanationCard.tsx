@@ -58,7 +58,7 @@ function ComparisonCard({ response }: { response: BillExplainResponse }) {
           <h3 className={CARD_TITLE}>{comparison ? s.vsUsualTitle : s.thisBillTitle}</h3>
           {comparison && <p className="text-sm text-muted">{comparison.label}</p>}
         </div>
-        {comparison && <span className="max-w-[45%] min-w-0 pt-0.5 text-right text-xs break-words text-muted">{chatStrings(lang).fact}</span>}
+        {comparison && <span className="max-w-[45%] min-w-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
