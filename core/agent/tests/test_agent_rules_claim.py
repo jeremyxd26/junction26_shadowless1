@@ -148,8 +148,8 @@ TABLE = [
     ("fi", "Mitkä ovat säännölliset kuukausilaskuni?", "recurring_bills"),
     # near misses: a bare word of one rule inside another question is no claim
     ("en", "can I afford to buy bitcoin?", NOT_CLAIMED),            # an investment word: the planner decides
-    ("fi", "Mihin voin sijoittaa rahani?", NOT_CLAIMED),            # where money SHOULD go, not where it went
-    ("fi", "Mihin rahat kannattaa sijoittaa?", NOT_CLAIMED),
+    ("fi", "Mihin voin sijoittaa rahani?", "decline"),       # where to invest, not where money went: R7 (#650)
+    ("fi", "Mihin rahat kannattaa sijoittaa?", "decline"),
     ("en", "where should my money go?", NOT_CLAIMED),
     ("en", "how many days do I have left until payday?", "recurring_bills"),
     ("fi", "Kuinka monta päivää on jäljellä palkkapäivään?", "recurring_bills"),

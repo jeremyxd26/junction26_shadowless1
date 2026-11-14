@@ -99,14 +99,21 @@ DECLINE_RULES = [
                           r"\b(think|opinion) (about|of|on) (bitcoin|crypto\w*|stocks?|shares|funds?|etfs?)\b|"
                           r"\b(are|is) (etfs?|stocks?|shares|crypto\w*|bitcoin|index funds?|gold) (worth|a good|good)\b|"
                           r"\bwhat (is|are) (a |an )?(bitcoins?|crypto\w*|stocks?|etfs?|index funds?)\b|"
-                          r"\b(should|could|would|can|shall) (i|we) (invest|start investing)\b|\bwhere (should|could|can) (i|we) "
-                          r"invest\b|"
+                          r"\b(could|would|can|shall) (i|we) (invest|start investing)\b|"   # "should" and "where": the #650 forms below
                           # "invest in" stays refused as before: the spending rule would read "invest" as the Invest
                           # Deposit category, a wrong total for "invest in my garden" (#627, written down)
                           r"\binvest(ing)? (in|into)\b|\bshould (i|we) put (my|our|the) (money|savings) into\b|"
                           r"\bkannattaako\b.*\b(sijoit|osak|rahasto|bitcoin|krypto)\w*|"
-                          r"\bmihin (minun )?(pitäisi|kannattaa) sijoittaa\b|"
-                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*"),
+                          r"\bpitäisikö (minun )?(ostaa|myydä|sijoittaa)\b.*\b(osak|rahasto|bitcoin|krypto|etf)\w*|"
+                          # whether or how to invest, with any tail ("Should I invest like the average Finn?"), before
+                          # the peer rule (#650; R7)
+                          # "invest", "investing", "investments", never "investigate" (review of #655)
+                          r"\bshould (i|we) (\w+ ){0,2}invest(ing|ments?)?\b|\b(how|where|what) (should|would|could|can|"
+                          r"do) (i|we) (\w+ )?invest(ing|ments?)?\b|\bis it (smart|wise|worth it|a good idea) to (\w+ )?"
+                          r"invest(ing|ments?)?\b|"
+                          r"\bpitäisikö (minun |meidän )?(\w+ )?sijoittaa\b|\bsijoittaisinko\b|"
+                          r"\b(miten|kuinka|mihin) (\w+ )?(pitäisi|kannattaa|kannattaisi|voisin|voin) "
+                          r"(\w+ )?sijoittaa\b"),
     ("unsafe", r"\bam i (ill|sick(?! of\b)|pregnant)\b|\bwhat illness(es)?\b|\bdiagnos(e|ed|es|ing|is)\b|"
                r"\bolenko (sairas|raskaana)\b"),
     # A request to move money (the security read of #550): "Send 20 euros to my friend.", "Move fifty euros to my
@@ -669,7 +676,12 @@ def plan_bonus(question: str) -> dict | None:
 # people spend, or their transactions, stays a refusal (another person's data), as does a named person.
 PEERS = (r"people like me|people my age|others? (of )?my age|other people|others like me|\bmy peers\b|\bpeers?\b|"
          r"than others|than other people|compared? (with|to) (others|other people|people like me)|"
-         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla")
+         r"kaltais\w*|ikäis\w*|ikätoveri\w*|muihin|muiden kanssa|verrattuna muihin|kuin muut\b|kuin muilla|"
+         # Finns as a whole, the wording of the Statistics Finland comparison (#585, #650); "what do Finns spend" with
+         # no "I" or "my" is no comparison and stays the people rules'
+         r"other finns|average finns?|finns on average|typical finns?|ordinary finns?|the finnish average|"
+         r"people in finland|keskiverto ?suomalai\w*|suomalaiset keskimäärin|suomalaisia keskimäärin|suomalaisiin|"
+         r"kuin suomalaiset|tavalli\w* suomalai\w*|keskimääräi\w* suomalai\w*|suomalaisten keskiarvo\w*")
 SELF = r"\b(i|me|my|mine|minä|minun|minulla|minua|olenko|kulutanko|kulutan|käytänkö)\b|\w{3,}ni\b"
 # Small everyday purchases (#256): "Where do my small purchases go?", "How much do I spend on coffees and
 # snacks?", "Mihin pienet ostokset menevät?". Plural forms only: "that small purchase" is one purchase, not
@@ -1926,7 +1938,9 @@ def _claim(request: PlanInput) -> Claim:
         return Claim("decline", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     # "my doctor visits", "dentist bills" in a plain health total: a thing the user paid for, not the doctor's own money
     # (#571); in any other message the people rules read it as before ("my son's dentist", review of #607)
-    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else question,
+    verdict = people.classify(re.sub(CARE_VISITS, r"\1", question, flags=re.I) if health_total else
+                              # in a comparison with people like me, "Finns" is a crowd, never a name (#650)
+                              re.sub(r"\bFinns\b", "people", question, flags=re.I) if peer_question else question,
                               peer_question)   # #350, #405
     if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
