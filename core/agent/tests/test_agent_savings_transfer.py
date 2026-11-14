@@ -77,6 +77,20 @@ PLAN = default_registry().tools["get_savings_plan"]
     # ... but a follow-up question in a later sentence is no request
     ("How much did I transfer to savings last month? And the month before?", "past"),
     ("Paljonko siirsin säästöön viime kuussa? Entä sitä edellisenä?", "past"),
+    # #668: how much the user saved is what went to savings; never a saving on, by or from something, a discount, a
+    # deadline ahead, a why or a comparison
+    ("How much did I save last month?", "past"),
+    ("How much did I save in August?", "past"),
+    ("How much do I save each month?", "usual"),
+    ("Paljonko säästin viime kuussa?", "past"),
+    ("Paljonko säästän kuukaudessa?", "usual"),
+    ("How much did I save on groceries last month?", None),
+    ("How much did I save by cutting restaurants?", None),
+    ("How much could I save?", None),
+    ("I used a promo code a friend sent me, how much did I save last month?", None),
+    ("paljonko olen säästänyt jouluun mennessä?", None),
+    ("why did I save less last month?", None),
+    ("Did I save more than last month?", None),
 ])
 def test_which_questions_are_about_the_users_own_transfers_to_savings(question, kind):
     assert savings_transfer.asks(fold(question)) == kind
@@ -96,6 +110,59 @@ def test_the_lead_fits_the_period_asked(question, key):
     # review of #670: a year, a total, "ever", a week or a year gets the period lead, never the month's
     q = fold(question)
     assert savings_transfer.lead_key(q, savings_transfer.asks(q)) == key
+
+
+@pytest.mark.parametrize("question, expected", [
+    ("How much should I transfer to savings each month?", True),
+    ("How much can I transfer to savings?", True),
+    ("How much should I put into savings each month?", True),
+    ("Paljonko voin siirtää säästöön kuukaudessa?", True),
+    ("Paljonko minun pitäisi siirtää säästöön?", True),
+    ("How much did I transfer to savings last month?", False),
+    ("What if I put 100 euros into savings every month?", False),
+    ("Can you move 50 euros to my savings account?", False),
+    ("How much can I transfer to my friend?", False),
+])
+def test_how_much_to_set_aside_is_the_savings_plans_question(question, expected):
+    assert savings_transfer.set_aside(fold(question)) is expected
+
+
+@pytest.mark.parametrize("question, language", [
+    ("How much should I transfer to savings each month?", "en"), ("How much can I transfer to savings?", "en"),
+    ("How much should I put into savings each month?", "en"), ("Paljonko voin siirtää säästöön kuukaudessa?", "fi"),
+])
+def test_how_much_to_set_aside_gets_the_savings_plan_not_a_refusal(question, language):
+    # #668's decision: the user asks what they could set aside, which the savings plan answers with evidence; no
+    # amount and no order to move money, no product. The composer writes, as for "How could I save more?"
+    request = plan_input(question, language)
+    result = RuleModel().plan(request)
+    assert claim(request).rule == "save_more" and not result.template_answer
+    assert [c.name for c in result.calls] == ["get_savings_plan", "finish"]
+
+
+@pytest.mark.parametrize("question, language", [
+    ("Laita 100 euroa säästöön", "fi"), ("Laita sata euroa säästöön", "fi"), ("Pistä 50 euroa säästöön", "fi"),
+    ("Pane 200 euroa säästötilille", "fi"), ("Talleta 100 euroa säästötilille", "fi"),
+    ("Voitko laittaa 100 euroa säästöön?", "fi"), ("Put 100 euros into savings", "en"),
+    ("Put 100 euros into savings?", "en"), ("Deposit 50 euros into my savings account", "en"),
+    ("Add 100 euros to my savings", "en"), ("Please put 20 euros in my savings account", "en"),
+    ("Can you put 50 euros into savings?", "en"),
+])
+def test_a_request_to_put_money_into_savings_is_declined(question, language):
+    # #668: as a request (a sentence's first word, or after please, can you, voitko), like #550's send, move or pay
+    calls = RuleModel().plan(plan_input(question, language)).calls
+    assert [(c.name, c.args.get("kind")) for c in calls] == [("decline", "unsafe")]
+
+
+@pytest.mark.parametrize("question, language", [
+    ("What if I put 100 euros into savings every month?", "en"), ("How much did I put into savings in August?", "en"),
+    ("Paljonko laitoin säästöön elokuussa?", "fi"), ("Entä jos laittaisin 100 euroa säästöön joka kuukausi?", "fi"),
+    ("Put the restaurants budget at 300 euros", "en"), ("Laita ravintolabudjetiksi 300 euroa", "fi"),
+    ("Add 100 euros to my savings goal", "en"), ("what if I pay 50 euros to savings", "en"),
+])
+def test_put_words_in_a_question_or_a_setting_are_no_request_to_move_money(question, language):
+    calls = RuleModel().plan(plan_input(question, language)).calls
+    assert [c.name for c in calls] != ["decline"]
 
 
 def plan_input(question, language):
@@ -198,6 +265,13 @@ NONE_SEEN = ([], [SALARY])
     ("Paljonko siirsin säästöön yhteensä tänä vuonna?", "fi", NONE_SEEN,
      "En pysty laskemaan aiempia säästösiirtojasi yhteen tietyltä ajalta. Tällä tilillä en vielä näe säännöllistä "
      "siirtoa säästöön."),
+    # #668: how much the user saved, never the spending total
+    ("How much did I save last month?", "en", FLOW,
+     "I can't single out a past month's transfers to savings on their own. A regular transfer of about €242.95 a month "
+     "already goes to savings (7.7% of your income)."),
+    ("Paljonko säästin viime kuussa?", "fi", NONE_SEEN,
+     "En pysty erottelemaan yksittäisen kuukauden säästösiirtoja erikseen. Tällä tilillä en vielä näe säännöllistä "
+     "siirtoa säästöön."),
 ])
 def test_the_answer_states_what_goes_to_savings_and_never_a_months_amount(make_pipeline, monkeypatch, fake,  # noqa: F811
                                                                          question, language, flows, expected):
@@ -212,9 +286,11 @@ def test_the_answer_states_what_goes_to_savings_and_never_a_months_amount(make_p
         assert record["numbers"][done["cited"][0]]["unit"] == "eur_per_month"   # a month's typical, never one month
 
 
-def test_a_save_more_question_keeps_the_plans_answer(make_pipeline, monkeypatch, fake):  # noqa: F811
+@pytest.mark.parametrize("question", ["How could I save more?", "How much should I transfer to savings each month?"])
+def test_a_save_more_question_keeps_the_plans_answer(make_pipeline, monkeypatch, fake, question):  # noqa: F811
     monkeypatch.setattr(sp, "already_saving", lambda ctx: FLOW)
-    done = dict(run(make_pipeline(RuleModel(), registry(PLAN)), "How could I save more?", customer_id="CUST00349",
+    done = dict(run(make_pipeline(RuleModel(), registry(PLAN)), question, customer_id="CUST00349",
                     language="en"))["done"]
+    assert done["outcome"] == "answered"
     assert done["text_rendered"].startswith("A regular transfer of about €242.95 a month already goes to savings")
     assert re.search(r"These changes could add about €63\.17 a month", done["text_rendered"])
