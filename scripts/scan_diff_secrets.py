@@ -17,7 +17,7 @@ the base. `--net-only` reads the final diff alone. Only added lines count. Files
 ones included; a file git still reports as binary is listed (path only) as skipped.
 
 What it reports:
-- common key shapes (Google, GitHub, OpenAI or Anthropic, AWS, private key blocks, Slack, JWT), and
+- common key shapes (Google, GitHub, OpenAI or Anthropic, AWS, NVIDIA, private key blocks, Slack, JWT), and
   values assigned to a key, secret, password or token name, quoted (`token = "..."`) or not
   (`export API_TOKEN=...`, `password: ...`);
 - postgres URLs with a password, unless the `postgres-url-password` allowlist of `.gitleaks.toml`
@@ -52,6 +52,7 @@ KEY_SHAPES = {
     "openai_or_anthropic_key": re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_\-]{20,}"),
     "aws_key_id": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "private_key_block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"),
+    "nvidia_api_key": re.compile(r"\bnvapi-[A-Za-z0-9_-]{20,}"),
     "slack_token": re.compile(r"\bxox[abpors]-[A-Za-z0-9-]{10,}"),
     "jwt": re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
 }

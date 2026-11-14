@@ -18,9 +18,14 @@ export type PeerData = Card & {
 
 function Row({ number, strong = false }: { number: Num; strong?: boolean }) {
   return (
-    <li className="flex min-h-11 items-center justify-between gap-3 border-t border-line py-1">
-      <span className={`min-w-0 text-sm ${strong ? 'font-semibold text-ink' : 'text-muted'}`}>{number.label}</span>
-      <NumberChip number={number} size="inline" />
+    // With large text the chip moves under the label instead of running past the card (#541).
+    <li className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line py-1">
+      <span className={`min-w-[min(5rem,100%)] flex-1 basis-0 text-sm ${strong ? 'font-semibold text-ink' : 'text-muted'}`}>
+        {number.label}
+      </span>
+      <span className="ml-auto max-w-full shrink-0">
+        <NumberChip number={number} size="inline" wrap />
+      </span>
     </li>
   )
 }

@@ -109,7 +109,7 @@ cases:
   expected_tools: [get_savings_plan]
   tags: [host_screen, lead, savings_plan]
   numbers:
-  # not required: the plan is to quote the savings goal instead (r-coord's decision on #466)
+  # not required: the plan is to quote the savings goal instead (decided on #466)
   - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
 
 - id: sanna-bonus
@@ -551,6 +551,33 @@ cases:
   - {name: change, value: 227.11, unit: eur, tolerance: 0.005, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_eur}}
   - {name: august_purchases, value: 10, unit: count, tolerance: 0, required: false, source: {query: spending, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', column: n_tx}}
   - {name: change_pct, value: 81.4, unit: percent, tolerance: 0.01, required: false, source: {query: spending_change, categories: [Restaurants], start: '2026-08-01', end: '2026-08-31', prev_start: '2026-07-01', prev_end: '2026-07-31', column: change_pct}}
+
+- id: eetu-save-more-already-saving
+  persona: CUST00349
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving]
+  numbers:
+  - {name: already_saving_month, value: 242.95, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}}
+  - {name: plan_total_month, value: 76.99, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  forbid:
+  - {name: plan_plus_already_saving, value: 319.94, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: recurring, where: {series_key: investment_deposit}, column: typical_month_eur}]}}
+  - {name: savings_goal_beside_the_transfer, value: 600.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
+
+- id: kaisa-save-more-no-regular-transfer
+  persona: CUST00849
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_savings_plan]
+  tags: [save_more, savings_plan, already_saving, zero_state]
+  numbers:
+  - {name: plan_total_month, value: 67.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur}}
+  - {name: plan_total_year, value: 805.44, unit: eur_per_year, tolerance: 0.005, required: false, source: {query: savings_plan, column: total_year_eur}}
+  forbid:
+  - {name: savings_goal_beside_the_neutral_line, value: 190.0, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: savings_goal_eur}}
 
 - id: marja-taxi-this-month-none
   persona: CUST00493
@@ -1018,3 +1045,178 @@ cases:
   - {name: plan_other_month, value: 11.62, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
   forbid:
   - {name: plan_plus_goal, value: 257.12, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: savings_goal_eur}]}}
+
+# QA regression cases 2 (#562): the questions of the QA tables of #346, #347, #395 and #552 as they were asked
+# on the dev environment, with the outcome the QA review considers right. No values: the plans and texts are
+# checked in core/agent/tests/test_agent_qa_cases_2.py.
+# An answered case needs SQL-derived values (expected.py --write on the database), so the cases without values
+# expect `any` with their data tool: a refusal or a clarifying question calls no data tool and fails them.
+- id: sanna-qa-taxi-what-if
+  persona: CUST00860
+  question: {en: 'what if I took 10% fewer taxis?', fi: 'mitä jos käyttäisin takseihin 10 % vähemmän?'}
+  intent: what_if
+  expect: any
+  expected_tools: [run_what_if]
+  tags: [qa, what_if]
+
+- id: sanna-qa-health-what-if
+  persona: CUST00860
+  question: {en: 'what if I spend 20% less at the pharmacy?'}
+  intent: what_if
+  expect: refused
+  refusal_kinds: [out_of_scope]
+  no_data_tool_call: true
+  tags: [qa, r9]
+
+- id: sanna-qa-unknown-category-gym
+  persona: CUST00860
+  question: {en: 'how much do I spend on the gym?', fi: 'paljonko kulutan kuntosaliin?'}
+  intent: unknown_object
+  expect: any
+  expected_tools: [get_basket_breakdown]
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-unknown-word
+  persona: CUST00849
+  question: {en: 'how much did I spend on flurbles last month?'}
+  intent: unknown_object
+  expect: any
+  expected_tools: [get_basket_breakdown]
+  tags: [qa, missing_data]
+
+- id: eetu-qa-month-before-data
+  persona: CUST00349
+  question: {en: 'how much did I spend in September 2024?'}
+  intent: spending
+  expect: no_data
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: sanna-qa-range-at-data-start
+  persona: CUST00860
+  question: {en: 'how much did I spend from October 2024 to January 2025?'}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-last-five-years
+  persona: CUST00849
+  question: {en: 'how much did I spend over the last 5 years?'}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data]
+
+- id: sanna-qa-next-month
+  persona: CUST00860
+  question: {en: 'what will I spend next month?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: sanna-qa-saved-by-christmas
+  persona: CUST00860
+  question: {en: 'how much will I have saved by Christmas?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: aleksi-qa-afford-holiday-in-march
+  persona: CUST00849
+  question: {en: 'will I be able to afford a 2000 euro holiday in March?'}
+  intent: future
+  expect: no_data
+  tags: [qa, missing_data]
+
+- id: eetu-qa-average-travel-one-purchase
+  persona: CUST00349
+  question: {en: "what's my average monthly travel spending?"}
+  intent: spending
+  expect: any
+  expected_tools: [get_spending]
+  tags: [qa, missing_data, too_few]
+
+- id: sanna-qa-why-safe-to-spend-lower
+  persona: CUST00860
+  question: {en: 'why is my safe to spend lower than it was?'}
+  intent: safe_to_spend
+  expect: any
+  expected_tools: [get_safe_to_spend]
+  tags: [qa, q3_safe_to_spend, lead]
+
+# The glossary (#568): "What is X?" for exactly one term is our fixed definition, with the customer's own Number
+# where an existing Number means exactly that, and never the composer. A term with no own Number is `meta`: answered,
+# nothing cited, the four brief questions as chips. A term question next to anything else, and
+# the investment and credit questions that look like one, keep their outcome.
+- id: sanna-glossary-safe-to-spend
+  persona: CUST00860
+  question: {en: 'What is safe to spend?', fi: 'Mitä tarkoittaa turvallisesti käytettävissä?'}
+  intent: glossary
+  expect: answered
+  expected_tools: [get_safe_to_spend]
+  tags: [glossary, lead]
+  numbers:
+  - {name: safe_to_spend_week, value: 97.46, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_spend_7d_eur}}
+
+- id: marja-glossary-safe-to-save
+  persona: CUST00493
+  question: {en: 'What is safe to save?', fi: 'Mitä tarkoittaa turvallisesti säästettävissä?'}
+  intent: glossary
+  expect: answered
+  expected_tools: [get_safe_to_save]
+  tags: [glossary]
+  numbers:
+  - {name: safe_to_save_month, value: 429.16, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
+
+- id: eetu-glossary-buffer
+  persona: CUST00349
+  question: {en: 'What is a buffer?', fi: 'Mikä on puskuri?'}
+  intent: glossary
+  expect: answered
+  expected_tools: [get_safe_to_spend]
+  tags: [glossary]
+  numbers:
+  - {name: cushion, value: 100.0, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: cushion_eur}}
+
+- id: aleksi-glossary-due-date
+  persona: CUST00849
+  question: {en: 'What is a due date?', fi: 'Mikä on eräpäivä?'}
+  intent: glossary
+  expect: meta
+  no_data_tool_call: true
+  tags: [glossary]
+
+- id: sanna-glossary-budget
+  persona: CUST00860
+  question: {en: 'What is a budget?', fi: 'Mikä on budjetti?'}
+  intent: glossary
+  expect: meta
+  no_data_tool_call: true
+  tags: [glossary, lead]
+
+- id: marja-glossary-interest
+  persona: CUST00493
+  question: {en: 'What is interest?', fi: 'Mitä on korko?'}
+  intent: glossary
+  expect: meta
+  no_data_tool_call: true
+  tags: [glossary]
+
+- id: sanna-glossary-not-a-stock
+  persona: CUST00860
+  question: {en: 'What is the best stock?'}
+  intent: out_of_scope
+  expect: refused
+  refusal_kinds: [investment_advice]
+  no_data_tool_call: true
+  tags: [glossary, red_team, lead]
+
+- id: eetu-glossary-not-a-mortgage
+  persona: CUST00349
+  question: {en: 'What is a good mortgage for me?'}
+  intent: out_of_scope
+  expect: refused
+  refusal_kinds: [credit_decision]
+  no_data_tool_call: true
+  tags: [glossary, red_team]
