@@ -183,6 +183,12 @@ To load it into an empty database:
    ```
    This creates the tables `transactions`, `customers`, `mortgage_applications` and `mortgage_events`, and prints the number of rows inserted into each.
 
+### National context
+
+Beside the peer comparison the coach can show one line of national context: what households of the customer's age group spent a month per consumption unit on the same category (groceries, transport without buying a vehicle). The figures come from Statistics Finland's household budget survey and are committed in `core/config/national_context.yaml`, with the table, the survey year, the query and the date they were retrieved. Nothing fetches them at run time.
+
+Source: Statistics Finland, households' consumption, table 14q4 (2022), CC BY 4.0.
+
 ### Metric marts
 
 The peer benchmark and the grocery store index read three small precomputed tables. Build them once after every data load, and again whenever `DEMO_TODAY` changes. This is safe on the shared database: it never drops anything, it only creates `metric_customer_month`, `metric_peer_flags` and `metric_grocery_cells` if they are missing, and it rewrites their rows one batch at a time.
