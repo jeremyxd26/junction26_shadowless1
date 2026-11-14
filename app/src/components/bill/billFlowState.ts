@@ -1,11 +1,24 @@
 // The bill flow's steps as a pure reducer: gallery → reading → fields → explaining → explanation.
 // No bill field is ever written to the URL or history: the whole state lives here, in memory.
 import type { BillExplainRequest, BillExplainResponse, BillReadResponse } from '../../api/billTypes.ts'
+import { ApiError } from '../../api/errors.ts'
 
 /** A message from the API (already localised) and whether trying again may help. */
 export interface FlowError {
   message: string
   retryable: boolean
+  /** The time (`Date.now()`) the server's `Retry-After` allows the next try (a 429); null or absent when it gave none. */
+  until?: number | null
+}
+
+/** An API error as the flow keeps it; anything else becomes `fallback`, retryable. */
+export function toFlowError(error: unknown, fallback: string, now: number = Date.now()): FlowError {
+  if (error instanceof ApiError) {
+    // A 429 `rate_limited` carries `Retry-After`: Try again stays off until then.
+    const until = error.retryAfter ? now + error.retryAfter * 1000 : null
+    return { message: error.message, retryable: error.retryable, until }
+  }
+  return { message: fallback, retryable: true, until: null }
 }
 
 export type FlowState =

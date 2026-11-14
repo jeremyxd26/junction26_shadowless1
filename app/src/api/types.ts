@@ -43,9 +43,23 @@ export interface Comparison {
   label: string
 }
 
+/** One assumption of an estimate (contract 0.3.6): the app shows `text` and `value`, never the code. */
+export interface EstimateAssumption {
+  /** From the contract's closed list; the app does not branch on it, so an unknown code is fine. */
+  code: string
+  /** One plain sentence, no digits. */
+  text: string
+  /** A complete Number, or null. `user_input@1` (the what-if's own cut) has no evidence ref. */
+  value: Num | null
+}
+
 export interface Estimate {
   label: string
   text: string
+  /** Since 0.3.6: the Numbers the estimate is built from, complete objects with evidence refs. */
+  observed?: Num[]
+  /** Since 0.3.6: what the estimate assumes. */
+  assumptions?: EstimateAssumption[]
 }
 
 export type Action =

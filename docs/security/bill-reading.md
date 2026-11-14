@@ -54,7 +54,17 @@ Accuracy on the four sample bills with the real model (2026-11-14, `gemini-3.8-f
 - `POST /api/bill/read` reads only the gallery's sample ids. A crafted id, an extra body field or a multipart upload is 400, and no model request is made.
 - The route goes through the persona allowlist and the viewer session. Its own read window allows 6 readings a minute per address and 30 an hour per viewer; over it, 429 `rate_limited` with `Retry-After`. The address window counts cache hits too, so behind one venue address the 6 a minute are shared by everyone there.
 - No audit record is written for a reading. One log line holds counts only (fields found, fields checked), never a field value. A failure of the read is 503 `model_unavailable`, and only its class name is logged.
-- At deploy (`deploy/remote-deploy.sh`, `python -m core.bills.warmup`) each sample is read twice: once with the model (a cached sample costs nothing), then from the cache. The step prints counts against the answer key and never fails the deploy, whatever goes wrong. It reads with the Gemini reader. The warm-up calls the Nemotron provider (#573) only with `--reader nemotron`, by hand; start-up, the health check and the tests never call it. The service itself reads with Nemotron first (Gemini as the fallback) whenever `VERDA_INFERENCE_KEY` is set; `BILL_READER=gemini` turns that off.
+- At deploy (`deploy/remote-deploy.sh`, `python -m core.bills.warmup`) each sample is read twice: once with the model (a cached sample costs nothing), then from the cache. The step prints counts against the answer key and never fails the deploy, whatever goes wrong. It reads with the Gemini reader. The warm-up calls the Nemotron provider (#573) only with `--reader nemotron`, by hand; start-up, the health check and the tests never call it. The service itself reads with Nemotron first (Gemini as the fallback) whenever `VERDA_INFERENCE_KEY` is set; `BILL_READER=gemini` turns that off. `--reader nemotron-only` (#637) reads with Nemotron alone and never sends an image to Gemini. `NEMOTRON_TIMEOUT_S` (default 30 s, at most 30) bounds each network wait until the answer's headers arrive, as before. It is also one deadline for reading the answer's body (#637):
+- no part of the body is read after it, so an answer that trickles in cannot hold a reading open;
+- a wait already under way ends by the same timeout;
+- headers that trickle in are bounded per wait only.
+
+A cold endpoint is slow (the real check on #616):
+- it answered its first text request in 58 s;
+- it finished no image reading within 240 s;
+- its image readings were fast (6.5–24.5 s) about ten minutes later.
+
+Until it is warm, a reading that is not cached goes to Gemini after the Nemotron timeout. To warm it without sending an image to Gemini, run `python -m core.bills.warmup --reader nemotron-only` in the service container (`docs/deploy.md`).
 
 ## Budget and privacy
 - **One request per reading not in the cache.** There is no retry and no fallback model.

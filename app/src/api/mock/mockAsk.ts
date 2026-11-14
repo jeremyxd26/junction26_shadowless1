@@ -236,8 +236,12 @@ function normalise(message: string): string {
 
 const sameQuestion = (message: string, request: AskRequest) => normalise(message) === normalise(request.message)
 
-/** The stream that answers `message` (exported for the mock's tests). */
-export function pickStream(message: string, scenario: string | null, first = true): string[] {
+/**
+ * The stream that answers `message` (exported for the mock's tests). `language` is the request's:
+ * a Finnish question without an example of its own gets the contract's Finnish answer, so its text
+ * and its follow-up chips are Finnish (#374); the contract has no other Finnish answer.
+ */
+export function pickStream(message: string, scenario: string | null, first = true, language?: string): string[] {
   if (scenario === 'error') return blocksOf(examples['ask.sse.stream_error'])
   if (scenario === 'template') return templateStream()
   if (scenario === 'fallback') return fallbackStream()
@@ -253,6 +257,7 @@ export function pickStream(message: string, scenario: string | null, first = tru
   if (SAVE_QUESTIONS.some((question) => normalise(question) === normalise(message))) return saveStream()
   // `?mock=refusal`: the refusal with the contact_bank chip, whatever the question.
   if (scenario === 'refusal') return streamOfJson(examples[first ? 'ask.json.response_refusal_first' : 'ask.json.response_refusal'])
+  if (language === 'fi') return streamOfJson(examples['ask.json.response_fi'])
   return blocksOf(examples['ask.sse.stream'])
 }
 
@@ -337,5 +342,9 @@ export async function mockAsk(request: AskRequest, signal?: AbortSignal): Promis
   if (!KNOWN_CUSTOMERS.has(request.customer_id)) throw new ApiError(404, examples['error.response'].error)
   const scenario = scenarioFromUrl()
   const first = !request.conversation_id
-  return wireStream(onlyFirstDiscloses(pickStream(request.message, scenario, first), first), scenario === 'slow' ? 4 : 1, signal)
+  return wireStream(
+    onlyFirstDiscloses(pickStream(request.message, scenario, first, request.language), first),
+    scenario === 'slow' ? 4 : 1,
+    signal,
+  )
 }

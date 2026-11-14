@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { BasketKey } from '../api/types.ts'
+import type { ClientTurnRequest } from './thread.ts'
 
 /**
  * The "Sentti asks" card the opening shows right now, as the overview reports it (#450). Once it is
@@ -38,6 +39,11 @@ export interface Opening {
   refresh: () => void
   /** Bring the review card for `txRef` into view (the opening's first) and move focus to it. */
   scrollToReview: (txRef: string) => void
+  /**
+   * Push a client turn into the thread (#319), for an opening chip: nothing is sent to the API.
+   * A second push with the same `id` brings the first turn back into view instead.
+   */
+  pushClientTurn: (request: ClientTurnRequest) => void
 }
 
 export const OpeningContext = createContext<Opening | null>(null)
