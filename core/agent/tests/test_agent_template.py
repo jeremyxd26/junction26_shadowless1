@@ -179,7 +179,9 @@ PEER = {"tool": "get_peer_benchmark", "metric": "spend_total", "period": "1 Apr 
 def test_the_peer_answer_states_position_difference_median_and_group_size():
     draft = template_draft([PEER], [], "en", None, "How do I compare with people like me?")
     # Renat's length rule (#342): the difference from the median in one sentence; the rest on the card.
-    assert draft["cited"] == ["n75"] and draft["text"] == "You spend {{n75}} than the median of people like you."
+    # #418: 1.2% is above the 1% margin, so the sentence offers a what-if.
+    assert draft["cited"] == ["n75"] and draft["text"] == ("You spend {{n75}} than the median of people like you, "
+                                                           "and a what-if can show what a cut would save.")
     hidden = {**PEER, "shown": False, "reason": "group_too_small"}
     draft = template_draft([hidden], [], "en", None, "How do I compare with people like me?")
     assert draft["cited"] == [] and "too few people like you" in draft["text"]

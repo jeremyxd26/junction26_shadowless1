@@ -133,6 +133,16 @@ cases:
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}, required: false}
   - {name: peer_vs_median_spend, value: 1.2, unit: percent, tolerance: 0.05, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
 
+- id: marja-peer-comparison
+  persona: CUST00493
+  question: {en: 'How do I compare with people like me?', fi: 'Miten kulutukseni vertautuu kaltaisiini?'}
+  intent: peers
+  expect: answered
+  expected_tools: [get_peer_benchmark]
+  tags: [peers, below_median]
+  numbers:
+  - {name: peer_vs_median_spend, value: -40.5, unit: percent, tolerance: 0.05, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+
 - id: marja-q1-where-money-went
   persona: CUST00493
   question: {en: 'Where did my money go?'}

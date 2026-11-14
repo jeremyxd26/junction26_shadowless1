@@ -394,11 +394,21 @@ def profile(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     return [pick(PROFILE_ONLY, language).format(label=label)], []
 
 
-# The difference from the median: the tool's display carries "more" or "less" ("14.6% less").
-PEER = {"total": ("You spend {vs} than the median of people like you.",
-                  "Kulutat {vs} kuin kaltaistesi mediaani."),
-        "metric": ("On {metric} you spend {vs} than the median of people like you.",
-                   "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani.")}
+# The difference from the median: the tool's display carries "more" or "less" ("14.6% less"). Above the
+# median by more than the margin, the sentence invites a what-if; below it, it says that is already a
+# saving; never a ranking word or a judgement (#418).
+PEER = {"total": ("You spend {vs} than the median of people like you, and a what-if can show what a cut would "
+                  "save.",
+                  "Kulutat {vs} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi."),
+        "metric": ("On {metric} you spend {vs} than the median of people like you, and a what-if can show what a "
+                   "cut would save.",
+                   "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen "
+                   "säästäisi.")}
+PEER_BELOW = {"total": ("You spend {vs} than the median of people like you: that is already your saving.",
+                        "Kulutat {vs} kuin kaltaistesi mediaani: se on jo säästösi."),
+              "metric": ("On {metric} you spend {vs} than the median of people like you: that is already your "
+                         "saving.",
+                         "Luokassa {metric} kulutat {vs} kuin kaltaistesi mediaani: se on jo säästösi.")}
 PEER_SAME = {"total": ("You spend about the same as the median of people like you.",
                        "Kulutat suunnilleen saman verran kuin kaltaistesi mediaani."),
              "metric": ("On {metric} you spend about the same as the median of people like you.",
@@ -414,9 +424,41 @@ def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
     if kind == "metric" and not (metric and ok(metric)):
         return None
     metric = metric.lower() if language == "en" else metric
-    if _value(view.get("vs_median")) == 0:
+    value = _value(view.get("vs_median")) or 0.0
+    if value < 0:
+        return [pick(PEER_BELOW[kind], language).format(vs=vs, metric=metric)], _ids(vs)
+    if value <= config.PEER_ACTION_MARGIN_PCT:
         return [pick(PEER_SAME[kind], language).format(metric=metric)], []
     return [pick(PEER[kind], language).format(vs=vs, metric=metric)], _ids(vs)
+
+
+# The balance forecast until payday: the lowest point and its date first, then the bills due before then
+# (or the balance today); two sentences, at most three numbers (the length rule, review of #401).
+FORECAST = ("Your balance is forecast to dip to {low} on {date}, before your next payday.",
+            "Saldosi ennustetaan laskevan {date} tasolle {low} ennen seuraavaa palkkapäivää.")
+FORECAST_BELOW = ("Your balance is forecast to turn negative on {date} and reach {low} before your next payday.",
+                  "Saldosi ennustetaan menevän miinukselle {date} ja laskevan tasolle {low} ennen seuraavaa "
+                  "palkkapäivää.")
+FORECAST_BILLS = ("Bills of {bills} are due before then.", "Sitä ennen erääntyy laskuja {bills} edestä.")
+FORECAST_NOW = ("Your balance today is {now}.", "Saldosi on tänään {now}.")
+
+
+def forecast(view: dict[str, Any], language: str) -> Sentences | None:
+    low = _tok(view.get("lowest_balance"))
+    below = view.get("status") == "below_zero" and isinstance(view.get("first_below_zero_date"), str)
+    day = _date(view.get("first_below_zero_date") if below else view.get("lowest_date"), language)
+    if not low or not day:
+        return None
+    sentences = [pick(FORECAST_BELOW if below else FORECAST, language).format(low=low, date=day)]
+    cited = [low]
+    bills, now = _tok(view.get("bills_until_payday")), _tok(view.get("balance_now"))
+    if bills and (_value(view.get("bills_until_payday")) or 0) > 0:
+        sentences.append(pick(FORECAST_BILLS, language).format(bills=bills))
+        cited.append(bills)
+    elif now:
+        sentences.append(pick(FORECAST_NOW, language).format(now=now))
+        cited.append(now)
+    return sentences, _ids(*cited)
 
 
 # The estimate with its assumption in one sentence: the share (typed or the default) is named, so a
@@ -460,4 +502,6 @@ def for_view(view: dict[str, Any], language: str, ok: Ok, *, save_more: bool, as
         return peer(view, language, ok)
     if tool == "get_bonus_estimate":
         return bonus(view, language)
+    if tool == "get_balance_forecast":
+        return forecast(view, language)
     return None

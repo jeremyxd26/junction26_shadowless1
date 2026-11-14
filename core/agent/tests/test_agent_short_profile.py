@@ -17,6 +17,8 @@ from core.agent import template
 from core.agent.validator import allowed_from, render, validate
 from core.tools.formatting import USER_INPUT_METHOD, VS_MEDIAN_METHOD
 
+PAYDAY_SPAN = (AS_OF, AS_OF.replace(month=10, day=15))
+
 
 def profile(v: Views, lang: str, key: str = "big_ticket") -> dict:
     label, feature, value = {"big_ticket": (fi(lang, "Big ticket", "Isot ostokset"), "one_off_share", 6.0),
@@ -47,6 +49,22 @@ def peer(v: Views, lang: str, vs: float = 1.2, metric: str = "spend_total", show
                            "comparable": True}}
 
 
+def forecast(v: Views, lang: str, status: str = "above_zero", bills: float = 928.5) -> dict:
+    below = status == "below_zero"
+    return {"tool": "get_balance_forecast", "kind": "estimate", "period": v.label(*PAYDAY_SPAN), "status": status,
+            "lowest_balance": v.n(-120.4 if below else 641.43, "eur", PAYDAY_SPAN, "balance_forecast.lowest_eur@1",
+                                  fi(lang, "Lowest point", "Alin kohta")),
+            "first_below_zero": None, "day_before_payday": None,
+            "balance_now": v.n(1902.64, "eur", PAYDAY_SPAN, "safe_to_spend.balance_eur@1",
+                               fi(lang, "Balance today", "Saldo tänään")),
+            "bills_until_payday": v.n(bills, "eur", PAYDAY_SPAN, "balance_forecast.bills_to_date_eur@1",
+                                      fi(lang, "Bills before payday", "Laskut ennen palkkapäivää")),
+            "daily_pace": v.n(45.2, "eur_per_day", PAYDAY_SPAN, "balance_forecast.daily_pace_eur@1",
+                              fi(lang, "Spending a day", "Kulutus päivässä")),
+            "today": "2026-09-30", "next_payday": "2026-10-15", "lowest_date": "2026-10-14",
+            "first_below_zero_date": "2026-10-09" if below else None, "salary_status": "upcoming", "notes": []}
+
+
 def bonus(v: Views, lang: str, share: float = 80, typed: bool = False, status: str = "estimate") -> dict:
     return {"tool": "get_bonus_estimate", "kind": "estimate", "status": status,
             "share": v.n(share, "percent", WINDOW, USER_INPUT_METHOD if typed else "bonus_estimate.share_pct@1",
@@ -75,6 +93,16 @@ CASES = {
                    lambda v, lang: [peer(v, lang, 0.0)]),
     "peers_category": (("How do my groceries compare with people like me?", "Miten ruokaostokseni vertautuvat?"),
                        lambda v, lang: [peer(v, lang, -8.3, metric="Groceries")]),
+    "peers_below": (("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
+                    lambda v, lang: [peer(v, lang, -40.5)]),
+    "peers_within_margin": (("How do I compare with people like me?", "Miten kulutukseni vertautuu kaltaisiini?"),
+                            lambda v, lang: [peer(v, lang, 0.8)]),
+    "forecast": (("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
+                 lambda v, lang: [forecast(v, lang)]),
+    "forecast_below_zero": (("Will my money last until payday?", "Riittävätkö rahani palkkapäivään?"),
+                            lambda v, lang: [forecast(v, lang, "below_zero")]),
+    "forecast_no_bills": (("What will my balance be before payday?", "Mikä on saldoni ennen palkkapäivää?"),
+                          lambda v, lang: [forecast(v, lang, "comfortable", bills=0.0)]),
     "bonus": (("How much S-Bonus could I get?", "Paljonko S-Bonusta voisin saada?"), lambda v, lang: [bonus(v, lang)]),
     "bonus_half": (("What would my Bonus be if half my groceries were S-Group?",
                     "Mikä olisi Bonukseni, jos puolet ruokaostoksista olisi S-ryhmästä?"),
@@ -111,9 +139,9 @@ def test_the_profile_peer_and_bonus_answers_keep_the_length_rule(key, lang):
 
 @pytest.mark.parametrize("lang,text", [
     ("en", "Your spender profile is Big ticket: occasional big purchases make up {{n1}} of your spending. "
-           "You spend {{n6}} than the median of people like you."),
+           "You spend {{n6}} than the median of people like you, and a what-if can show what a cut would save."),
     ("fi", "Kuluttajaprofiilisi on Isot ostokset: kertaostosten osuus kulutuksestasi on {{n1}}. "
-           "Kulutat {{n6}} kuin kaltaistesi mediaani."),
+           "Kulutat {{n6}} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi."),
 ])
 def test_what_kind_of_spender_names_the_profile_the_deciding_feature_and_the_difference(lang, text):
     draft, _, _ = answer("spender_type", lang)
@@ -133,7 +161,7 @@ def test_the_rendered_answers_read_as_sentences():
     draft, v, _ = answer("spender_type", "en")
     assert render(draft["text"], v.numbers) == ("Your spender profile is Big ticket: occasional big purchases make up 6.0% "
                                                 "of your spending. You spend 1.2% more than the median of people "
-                                                "like you.")
+                                                "like you, and a what-if can show what a cut would save.")
     draft, v, _ = answer("peers_same", "en")
     assert render(draft["text"], v.numbers) == "You spend about the same as the median of people like you."
     draft, v, _ = answer("bonus", "en")
@@ -149,3 +177,36 @@ def test_a_hidden_peer_comparison_and_an_unoffered_bonus_keep_their_reason():
     v = Views("en")
     draft = template.template_draft([bonus(v, "en", status="not_offered")], [], "en", None, "How much S-Bonus?")
     assert draft["cited"] == [] and "below the lowest Bonus level" in draft["text"]
+
+
+@pytest.mark.parametrize("key,lang,text", [
+    # #418: above the median by more than the margin, a what-if is offered; at it, "about the same", no
+    # number; below it, "that is already your saving", no invitation to change
+    ("peers", "en", "You spend 1.2% more than the median of people like you, and a what-if can show what a cut "
+                    "would save."),
+    ("peers_within_margin", "en", "You spend about the same as the median of people like you."),
+    ("peers_same", "en", "You spend about the same as the median of people like you."),
+    ("peers_below", "en", "You spend 40.5% less than the median of people like you: that is already your saving."),
+    ("peers_below", "fi", "Kulutat 40,5 % vähemmän kuin kaltaistesi mediaani: se on jo säästösi."),
+    ("peers", "fi", "Kulutat 1,2 % enemmän kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen "
+                    "säästäisi."),
+])
+def test_the_peer_sentence_invites_a_change_only_above_the_median(key, lang, text):
+    draft, v, _ = answer(key, lang)
+    assert render(draft["text"], v.numbers) == text
+    assert not re.search(r"\b(rank|ranking|top|bottom|best|worst|better|worse|winner)\b", text, re.I)
+
+
+@pytest.mark.parametrize("key,lang,text", [
+    ("forecast", "en", "Your balance is forecast to dip to €641.43 on 14 October 2026, before your next payday. "
+                       "Bills of €928.50 are due before then."),
+    ("forecast", "fi", "Saldosi ennustetaan laskevan 14.10.2026 tasolle 641,43 € ennen seuraavaa palkkapäivää. "
+                       "Sitä ennen erääntyy laskuja 928,50 € edestä."),
+    ("forecast_below_zero", "en", "Your balance is forecast to turn negative on 9 October 2026 and reach -€120.40 "
+                                  "before your next payday. Bills of €928.50 are due before then."),
+    ("forecast_no_bills", "en", "Your balance is forecast to dip to €641.43 on 14 October 2026, before your next "
+                                "payday. Your balance today is €1,902.64."),
+])
+def test_the_forecast_says_the_low_point_and_its_date_first(key, lang, text):
+    draft, v, _ = answer(key, lang)
+    assert render(draft["text"], v.numbers) == text
