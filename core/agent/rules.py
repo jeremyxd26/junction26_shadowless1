@@ -776,6 +776,11 @@ def unknown_object(question: str) -> str | None:
     """The thing a spending question names that no category maps (for the pipeline's answer, #379), in the
     user's own spelling: "Café Müller", not "cafe" (a name's capitalised words that follow it come along)."""
     q = fold(question)
+    food = re.search(FOOD_COMPOUND, q)
+    if food:
+        # "food delivery", "my dog food": no category maps the compound, so a planned unfiltered total becomes
+        # the breakdown as for any unknown thing, and the answer quotes the compound (review of #534)
+        return question[food.start():food.end()] if len(q) == len(question) else food.group(0)
     word = _unknown_object(q)
     if word is None or not _is_thing(word):
         return None    # "on the whole of 2025": no thing to name

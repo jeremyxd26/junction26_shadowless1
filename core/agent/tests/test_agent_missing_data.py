@@ -277,6 +277,44 @@ def test_a_planned_unfiltered_total_for_an_unknown_object_becomes_the_breakdown(
     assert done["follow_ups"][0] == "How much did I spend on restaurants last month?"
 
 
+@pytest.mark.parametrize("question,word", [
+    ("how much did I spend on food delivery last month?", "food delivery"),
+    ("how much did I spend at a food court last month?", "food court"),
+    ("how much did I spend at food trucks last month?", "food trucks"),
+    ("how much did I spend at food stalls last month?", "food stalls"),
+    ("how much did I spend on my dog food last month?", "dog food"),
+    ("how much did I spend on my dog's food last month?", "dog's food"),
+    ("how much did I spend on pet food last month?", "pet food"),
+    ("how much did I spend on street food last month?", "street food"),
+])
+def test_a_planned_unfiltered_total_for_a_food_compound_becomes_the_breakdown(make_pipeline, question, word):
+    # review of #534: the rules claim none of these, so a model may plan the total; "food" is a category word, so
+    # the compound itself is the unknown thing, and the answer quotes it in the user's words
+    from core.tools.models import Card, ToolResult
+
+    ran: list[str] = []
+
+    def spending(ctx, args):
+        ran.append("get_spending")
+        return fake_spending(ctx, args)
+
+    def baskets(ctx, args):
+        ran.append("get_basket_breakdown")
+        card = Card(card_id="card_baskets001", type="breakdown", title="Where your money went",
+                    subtitle="1 Apr – 30 Sep 2026", evidence_ref="ev_aaaaaaaaaaa3")
+        return ToolResult(tool="get_basket_breakdown", data={}, card=card, evidence=[], model_view=basket_view())
+
+    specs = (ToolSpec("get_spending", "Spending.", PeriodArgs, spending, ("Looking", "Katson")),
+             ToolSpec("get_basket_breakdown", "Baskets.", PeriodArgs, baskets, ("Looking", "Katson")))
+    model = ScriptedModel(plans=[[FunctionCall("get_spending", {"period": {"preset": "last_month"}}),
+                                  FunctionCall("finish")]])
+    events = run(make_pipeline(model, registry(*specs)), question, language="en")
+    done = dict(events)["done"]
+    assert ran == ["get_basket_breakdown"] and model.compose_inputs == []
+    assert [p["card"]["card_id"] for e, p in events if e == "card"] == ["card_baskets001"]
+    assert done["outcome"] == "answered" and f"“{word}”" in done["text"] and "147" not in done["text"]
+
+
 def test_the_guard_leaves_a_filtered_plan_and_a_question_without_an_unknown_object_alone(make_pipeline):
     from core.tools.models import ToolResult
 
