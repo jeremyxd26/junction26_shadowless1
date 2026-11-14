@@ -2,7 +2,7 @@
 
 We attacked Sentti the way a reviewer would: prompt injection, other people's data, invented numbers, leaks and abuse of the public service. Every attack that found something became an issue and a regression test that CI runs on every change.
 
-**State:** draft of 2026-11-14 13:00 Helsinki. Final update before the repository goes public (Sunday morning).
+**State:** draft of 2026-11-14 15:00 Helsinki. Final update before the repository goes public (Sunday morning).
 
 ## Rules of engagement
 - **Targets:** only our own system: the core service run locally, our dev service `sentti.jeremyxd.dev`, and our own dev instance (one host). No other host, service or provider was scanned or attacked.
@@ -36,7 +36,7 @@ We attacked Sentti the way a reviewer would: prompt injection, other people's da
 PASS means the attack failed. Open items are listed by issue only.
 
 **Score:** of the 20 checks,
-- 16 PASS, one of them pending the chat screen (B15);
+- 16 PASS;
 - 4 PASS with one open item each (A1, A3, A4: #447; C17: #120).
 
 Fixed during the red-team: A3 (#142), A4 (#123), A8 (#105), B11 (#101), B13 (#102, #189), B14 (#144).
@@ -58,7 +58,7 @@ Fixed during the red-team: A3 (#142), A4 (#123), A8 (#105), B11 (#101), B13 (#10
 | B12 | Error bodies leak nothing (API8) | PASS | Tests: 13 malformed requests; every error is the contract envelope with a fixed message. Live probe of the dev service: same. |
 | B13 | Headers, TLS and CORS on the dev host (API8) | Fixed (was FAIL) | Re-checked on the dev service: HSTS, `nosniff`, `Referrer-Policy` and a CSP on every response, and no server banner. The API's CSP allows nothing and no framing; the app's CSP allows only its own origin and no outside images. HTTP redirects to HTTPS; TLS 1.2 is served (older versions not tested); unknown origins get no CORS headers. API docs are off unless enabled (#62), and the internal audit route answers exactly like an unknown path (#189). |
 | B14 | Spike-review labels and the demo state (contract 0.2; API1, API6) | Fixed (was FAIL) | Only the two baskets, no late answers, no answer raises safe to spend above its pending value. #144: every viewer now answers in their own copy behind a first-party cookie. Attacked live on the dev service: one viewer's answer is invisible to every other viewer and to the tool cache; forged, malformed and near-miss cookies get a fresh session; a cross-site-style request is refused; one viewer's rate limit never blocks another viewer. |
-| B15 | Answer rendering in the app (LLM05) | PASS so far; chat pending | The deployed app bundle holds no key and no `.env` value. The app's own code renders no raw HTML: number tokens become components and the rest stays plain text. The app's CSP blocks outside images. Live: 2 requests to add a link or an image; the model ignored both. The chat screen is still a placeholder and is re-checked when it lands. |
+| B15 | Answer rendering in the app and the host bridge (LLM05) | PASS | The chat renders answer text, model text and API labels as plain text; number tokens become components, and the app has no raw HTML anywhere. The deployed bundle holds no key and no `.env` value. The app's CSP blocks outside images and framing by other sites. The module talks to the host only through objects the host injects, never by window messages, so another page can neither read a payment draft nor send the module messages. Live: 2 requests to add a link or an image; the model ignored both. Hardening notes: #457. |
 | C16 | SQL injection | PASS | Every request-path query is parameterised; metric settings go through `set_config` parameters. Hardening: #122. |
 | C17 | Logs and audit records | PASS with one open item | Database-URL redaction has its own regression test, and the values of all secret settings are masked in every log record (#198; the review found and closed four leak paths). Audit records hold no rows and no secrets, and persist outside the read-only container. The model key is sent as a request header, never in a URL, and occurs 0 times in the adapter's cache and request ledger. Open: #120 (one sentence of documentation). |
 | C18 | Dependencies (LLM03) | PASS | Every package is pinned to an exact version, direct and transitive (#121), including the model SDK and its dependencies: 10 direct and 34 transitive for the image. A fresh resolution of the direct pins reproduces the file exactly. `pip-audit`: no known vulnerabilities. `npm audit`: one moderate issue in a lint-only dev dependency, not in the bundle. Hash checking: #194. |
