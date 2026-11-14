@@ -816,16 +816,26 @@ def test_rent_or_bills_next_month_is_the_bills_rule(question, lang):
     assert [name for name, _ in data_calls(plan(question, lang))] == ["get_recurring_bills"]
 
 
+# "fast food": the Restaurants category on this chain alone (#534); the takeaway sub-group (MCC 5814, "Takeaway and
+# fast food") once #514's sub-groups are in the tree, which strip group words before the categories. The sub-group
+# wins where it exists: narrower and true (the coordinator, #551). Bare "food" stays Groceries either way.
+FAST_FOOD = ({"categories": ["Restaurants"]}, {"mcc_groups": ["takeaway"]})
+
+
+def accepted(flt) -> tuple:
+    return flt if isinstance(flt, tuple) else (flt,)
+
+
 @pytest.mark.parametrize("question,lang,flt", [
     # #527: a known category word behind a possessive keeps its filter; "food" is food shopping as "ruoka" is
     ("how much did I spend on my kids' clothes last month", "en", {"categories": ["Lifestyle"]}),
     ("How much did we spend on food last month?", "en", {"categories": ["Groceries"]}),
     ("paljonko käytimme ruokaan viime kuussa?", "fi", {"categories": ["Groceries"]}),
-    ("how much did I spend on fast food last month?", "en", {"categories": ["Restaurants"]}),
+    ("how much did I spend on fast food last month?", "en", FAST_FOOD),
 ])
 def test_a_possessive_keeps_the_category_and_food_is_groceries(question, lang, flt):
     calls = data_calls(plan(question, lang))
-    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == flt
+    assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(flt)
 
 
 def test_a_possessive_before_no_category_is_still_an_unknown_thing():
@@ -834,10 +844,11 @@ def test_a_possessive_before_no_category_is_still_an_unknown_thing():
 
 
 @pytest.mark.parametrize("question,expected", [
-    # review of #534: bare "food" stays food shopping; a noun that changes its meaning leaves it to the model
+    # review of #534: bare "food" stays food shopping; a noun that changes its meaning is a thing no category maps,
+    # answered with the customer's categories as any unknown thing (#551): never the total, never Groceries
     ("how much did I spend on food last month?", {"categories": ["Groceries"]}),
     ("how much did I spend on food shopping last month?", {"categories": ["Groceries"]}),
-    ("how much did I spend on fast food last month?", {"categories": ["Restaurants"]}),
+    ("how much did I spend on fast food last month?", FAST_FOOD),
     ("how much did I spend on food delivery last month?", None),
     ("how much did I spend at a food court last month?", None),
     ("how much did I spend at the food truck last month?", None),
@@ -851,9 +862,115 @@ def test_a_possessive_before_no_category_is_still_an_unknown_thing():
 def test_food_alone_is_groceries_and_a_food_compound_is_not_claimed(question, expected):
     calls = data_calls(plan(question))
     if expected is None:
-        assert claimed_rule(question) == NOT_CLAIMED and calls == []
+        assert claimed_rule(question) == "unknown_object" and [name for name, _ in calls] == ["get_basket_breakdown"]
+        assert calls[0][1]["period"] == {"preset": "last_month"}
     else:
-        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] == expected
+        assert [name for name, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(expected)
+
+
+@pytest.mark.parametrize("question,expected", [
+    # #551 (the coordinator, after #534 in dev): "fast-food" with a hyphen is "fast food"; saving on bare "food" with
+    # no cut is the save-more question, never a cut of Groceries (a regular essential: a dead end)
+    ("how much did I spend on fast-food last month?", ("get_spending", FAST_FOOD)),
+    ("What if I spent 20% less on fast-food?", ("run_what_if", {"kind": "mcc", "value": "5814"})),
+    ("How could I save on food?", ("save_more", None)),
+    ("How can I save money on food?", ("save_more", None)),
+    ("How could I save on food delivery?", ("save_more", None)),
+])
+def test_fast_food_with_a_hyphen_and_saving_on_food(question, expected):
+    calls = data_calls(plan(question))
+    name, want = expected
+    if name == "save_more":
+        assert claimed_rule(question) == "save_more" and [n for n, _ in calls][:1] == ["get_safe_to_save"]
+    elif name == "get_spending":
+        assert [n for n, _ in calls] == ["get_spending"] and calls[0][1]["filter"] in accepted(want)
+    else:
+        assert [n for n, _ in calls] == ["run_what_if"] and calls[0][1]["selection"] == want
+
+
+def test_a_spending_question_on_a_food_compound_beside_another_rules_question_asks_back():
+    result = plan("How much did I spend on food delivery last month and what can I safely spend this week?")
+    assert data_calls(result) == [] and result.calls[0].args["question"] == CLARIFY_WHICH[0]
+    assert template.pick(CANDIDATE_QUESTIONS["safe_to_spend"], "en") in result.calls[0].args["options"]
+
+
+# ---- #545: a spending question about an unknown thing beside another rule's question asks back ------------------
+
+ASK_BACK_545 = [
+    ("en", "How much did I spend at Barsa last month? What can I safely spend this week?", "safe_to_spend"),
+    ("en", "How much did I spend at Barsa last month? And what kind of spender am I?", "spender_type"),
+    ("en", "Spent at Barsa last month, and what kind of spender am I?", "spender_type"),
+    ("en", "Hi! Quick one please: how much did I spend at Barsa last month? And also, what can I safely spend this "
+           "week? Thanks!", "safe_to_spend"),
+    ("en", "Hello, could you tell me how much I spent at Barsa last month, and what kind of spender am I? Thank you so "
+           "much.", "spender_type"),
+    ("en", "How much did I spend on parking fines last month? What can I safely spend this week?", "safe_to_spend"),
+    ("en", "How much did I spend on parking fines last month? And what kind of spender am I?", "spender_type"),
+    ("en", "Hi! Quick one please: how much did I spend on parking fines last month? And also, what can I safely spend "
+           "this week? Thanks!", "safe_to_spend"),
+    ("en", "Hello, could you tell me how much I spent on parking fines last month, and what kind of spender am I? Thank "
+           "you so much.", "spender_type"),
+    ("fi", "Paljonko käytin Barsaan viime kuussa? Paljonko voin turvallisesti käyttää tällä viikolla?", "safe_to_spend"),
+    ("fi", "Paljonko käytin Barsaan viime kuussa? Millainen kuluttaja olen?", "spender_type"),
+    ("fi", "Paljonko käytin Barsaan viime kuussa ja millainen kuluttaja olen?", "spender_type"),
+    ("fi", "Hei! Paljonko käytin Barsaan viime kuussa? Ja paljonko voin turvallisesti käyttää tällä viikolla? Kiitos!",
+     "safe_to_spend"),
+    ("fi", "Paljonko maksoin pysäköintisakkoihin viime kuussa? Millainen kuluttaja olen?", "spender_type"),
+    ("fi", "Hei! Paljonko maksoin pysäköintisakkoihin viime kuussa? Ja millainen kuluttaja olen? Kiitos!",
+     "spender_type"),
+]
+
+
+@pytest.mark.parametrize("lang,question,other", ASK_BACK_545)
+def test_an_unknown_things_spending_question_beside_another_rule_asks_back(lang, question, other):
+    assert claimed_rule(question, lang) == NOT_CLAIMED
+    result = plan(question, lang)
+    assert data_calls(result) == [] and result.calls[0].name == "ask_clarifying_question"
+    assert result.calls[0].args["question"] == template.pick(CLARIFY_WHICH, lang)
+    assert template.pick(CANDIDATE_QUESTIONS[other], lang) in result.calls[0].args["options"]
+
+
+@pytest.mark.parametrize("lang,question,expected", [
+    ("en", "How much did I spend at Barsa last month?", "unknown_object"),
+    ("fi", "Paljonko käytin Barsaan viime kuussa?", "unknown_object"),
+    ("en", "How much do I spend on the gym?", "unknown_object"),
+    # the thing is the other rule's own: still that rule's question
+    ("en", "Is it ok to spend money on therapy?", "safe_to_spend"),
+    ("en", "Can I safely spend 50 euros on a gift this week?", "safe_to_spend"),
+    ("en", "What can I safely spend on Barsa this week?", "safe_to_spend"),
+    ("fi", "Voinko käyttää rahaa terapiaan?", "safe_to_spend"),
+    # a small-purchases or what-if question naming a thing keeps its own rule
+    ("en", "How much do I spend on coffees and snacks?", "small_purchases"),
+    ("en", "How could I save on streaming?", "save_more"),
+])
+def test_a_single_question_naming_an_unknown_thing_keeps_its_decision(lang, question, expected):
+    assert claimed_rule(question, lang) == expected
+
+
+def test_a_what_if_naming_an_unknown_thing_keeps_its_own_question_back():
+    result = plan("What if I spent 20% less at Barsa?")
+    assert data_calls(result) == [] and result.calls[0].args["question"] != CLARIFY_WHICH[0]
+
+
+UNKNOWN_545 = {"en": ["How much did I spend at Barsa last month", "How much did I spend on the gym in August",
+                      "How much did I spend on Netflix last month"],
+               "fi": ["Paljonko käytin Barsaan viime kuussa", "Paljonko käytin kuntosaliin elokuussa"]}
+OTHER_545 = {"en": ["What can I safely spend this week?", "What kind of spender am I?",
+                    "Which bills are coming up next?", "Where did my money go last month?"],
+             "fi": ["Paljonko voin turvallisesti käyttää tällä viikolla?", "Millainen kuluttaja olen?",
+                    "Mitkä laskut ovat tulossa seuraavaksi?", "Mihin rahani menivät viime kuussa?"]}
+
+
+@pytest.mark.parametrize("lang,unknown,other,joiner", [
+    (lang, u, o, j) for lang in ("en", "fi") for u in UNKNOWN_545[lang] for o in OTHER_545[lang]
+    for j in ("? ", " and " if lang == "en" else " ja ")])
+def test_an_unknown_things_spending_question_never_leaves_another_rule_answering_alone(lang, unknown, other, joiner):
+    # the invariant of #545: whatever the other question, the message is asked back, never answered by it alone
+    question = unknown + joiner + (other if joiner == "? " else other[0].lower() + other[1:])
+    alone = data_calls(plan(other, lang))
+    assert alone, other
+    result = plan(question, lang)
+    assert data_calls(result) != alone and data_calls(result) == [], (question, data_calls(result))
 
 
 @pytest.mark.parametrize("question,lang,expected", [
