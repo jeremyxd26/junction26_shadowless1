@@ -129,7 +129,7 @@ def test_every_part_of_the_key_counts(mem, tool, change):
     if change == "as_of":
         ctx.as_of = date(2026, 9, 14)
     if change == "labels":
-        ctx.labels_key = labels_key_of({4711: "everyday_spending"})
+        ctx._labels, ctx.labels_key = {4711: "everyday_spending"}, None   # another label set
     result = mem.run("other" if change == "tool" else "fake", FakeArgs, tool, ctx, {})
     assert tool.calls == 2
     assert result.model_view["language"] == ctx.language

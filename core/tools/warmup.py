@@ -154,11 +154,13 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
         return prepared
 
     for customer_id in customers:
-        history, labels_key = None, None   # one transactions read and one label read per customer
+        # One transactions read and one label read per customer: the label set and the key made from it
+        # travel together into every language, so no language reads the labels again.
+        history, labels_by_tx, labels_key = None, None, None
         hits = []                          # cached results of this persona, checked against coach_evidence
         for lang in languages:
             ctx = ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=lang)
-            ctx._history, ctx.labels_key = history, labels_key
+            ctx._history, ctx._labels, ctx.labels_key = history, labels_by_tx, labels_key
             cache.ensure_labels_key(ctx)
             for call, fn, args_model in tools:
                 if fn is None:
@@ -167,7 +169,7 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
                 prepared = prepare(ctx, call, fn, args_model)
                 if prepared is not None and prepared.hit:
                     hits.append((ctx, call, fn, args_model, prepared))
-            history, labels_key = ctx._history, ctx.labels_key
+            history, labels_by_tx, labels_key = ctx._history, ctx._labels, ctx.labels_key
         refs = {ref for *_, p in hits for ref in p.entry.result.evidence}
         try:
             gone = missing_evidence(conn, customer_id, refs)

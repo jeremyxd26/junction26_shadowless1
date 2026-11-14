@@ -289,10 +289,17 @@ class ToolCache:
         return labels_key_of(labels.for_context(ctx))
 
     def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
-        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`)."""
-        if ctx.labels_key is None:
+        """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`).
+
+        A preset key is trusted only together with the label set it was made from (ctx._labels): without
+        that set the tools would read the labels again, and a label write in between would store a value
+        under the key of other labels. So the key is made here whenever the set is not on the context.
+        """
+        if ctx._labels is None:
             with _connected(ctx, connection):
-                ctx.labels_key = self.labels_key(ctx)
+                ctx.labels_key = self.labels_key(ctx)        # reads the set once and keeps it on ctx
+        elif ctx.labels_key is None:
+            ctx.labels_key = self.labels_key(ctx)            # the set is there: no read
         return ctx.labels_key
 
     @staticmethod
