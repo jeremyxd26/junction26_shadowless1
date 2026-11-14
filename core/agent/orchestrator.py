@@ -358,6 +358,12 @@ class Pipeline:
                     ctx.conn = None
         except (psycopg.OperationalError, PoolTimeout):
             raise DataUnavailable() from None
+        if ctx._labels is not None:
+            # The tool cache (#86) keys results by the label state and would read the labels again for
+            # every call whose context has no key; the answer's labels give it the same key at once.
+            from core.tools.cache import labels_key_of
+
+            ctx.labels_key = labels_key_of(ctx._labels)
         values = list((ctx._labels or {}).values())
         a.label_state = {"spike_reviews": "on" if self.labels.enabled() else "off",
                          "labels": sum(v != UNCLASSIFIED for v in values),

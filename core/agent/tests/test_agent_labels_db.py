@@ -1,6 +1,8 @@
 """The answer's label state on the shared database (#196): the lead persona, one connection, every
-write rolled back (force_rollback), and her review rows deleted inside that transaction first, so the
-dev demo state neither affects the test nor is changed by it. Skipped without DATABASE_URL."""
+write rolled back (force_rollback), on session-private copies of the review tables
+(reviews.private_tables, PR #199), so the live `spike_reviews` table is never touched or locked.
+Skipped without DATABASE_URL, and until reviews.private_tables exists: no test may reset, answer or
+create reviews on the live table (coordinator, 14.11)."""
 
 from __future__ import annotations
 
@@ -108,10 +110,12 @@ def db_conn():
 
 @pytest.fixture
 def rolled_back(db_conn, monkeypatch, tmp_path):
+    if not hasattr(reviews, "private_tables"):
+        pytest.skip("waits for reviews.private_tables (#199): no test may touch the live spike_reviews table")
     monkeypatch.setenv("SPIKE_REVIEWS", "on")
     monkeypatch.setenv("AUDIT_LOG_DIR", str(tmp_path / "audit"))
     with db_conn.transaction(force_rollback=True):
-        reviews.reset(db_conn, [LEAD])
+        reviews.private_tables(db_conn)  # empty private copies: the "very first request" state
         yield db_conn
 
 

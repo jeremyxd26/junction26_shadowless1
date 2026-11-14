@@ -70,12 +70,19 @@ def test_the_model_plan_cannot_change_whether_the_label_state_is_established(mak
     assert log[:2] == ["establish", "plan"] and log.count("establish") == 1
 
 
-def test_every_tool_call_shares_the_answers_labels_and_reads_none(make_pipeline):
+def test_every_tool_call_shares_the_answers_labels_and_reads_none(make_pipeline, monkeypatch):
+    from core.tools.cache import labels_key_of
+
+    def no_read(*args, **kwargs):
+        raise AssertionError("a tool call read the labels again")
+
+    monkeypatch.setattr(labels, "basket_labels", no_read)  # the cache's key read goes through it too
     seen = []
 
     def spy(ctx, args):
         seen.append(ctx._labels)
         assert labels.for_context(ctx) is ctx._labels  # served from the context: no query (ctx.conn is a fake)
+        assert ctx.labels_key == labels_key_of(ctx._labels)  # the tool cache's key, without a read
         return fake_spending(ctx, args)
 
     reg = registry(ToolSpec("second", "second", FakeArgs, spy, ("x", "x")))
