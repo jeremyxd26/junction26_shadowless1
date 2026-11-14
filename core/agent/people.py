@@ -46,7 +46,9 @@ PERSON_EN = {
     "parent", "parents", "son", "sons", "daughter", "daughters", "kid", "kids", "child", "children", "baby",
     "grandma", "grandpa", "grandmother", "grandfather", "grandparents", "aunt", "uncle", "cousin", "cousins",
     "niece", "nephew", "stepdad", "stepmom", "stepfather", "stepmother", "stepson", "stepdaughter",
-    "sister-in-law", "brother-in-law", "mother-in-law", "father-in-law",
+    "sister-in-law", "brother-in-law", "mother-in-law", "father-in-law", "owner", "owners", "ceo", "founder",
+    "director", "employee", "employees", "staff", "cashier", "waiter", "waitress", "worker", "workers", "seller",
+    "woman", "women", "man", "men", "guy", "girl", "boy", "lady", "gentleman", "somebody", "someone",
 }
 # Finnish relation and role words in the forms that name the spender or the owner: nominative, "my X" (px),
 # genitive, plural; folded (no accents). The allative "vaimolleni" (for my wife) and "X kanssa" are not here.
@@ -60,7 +62,9 @@ PERSON_FI = {
     "aitini", "aidin", "isa", "isani", "isan", "poika", "poikani", "pojan", "tytar", "tyttareni", "tyttaren",
     "lapsi", "lapseni", "lapsen", "lapset", "lasteni", "lasten", "lapsella", "lapsellani", "lapselle", "lapselleni", "naapuri", "naapurini", "naapurin", "mies",
     "mieheni", "miehen", "miehet", "vanhemmat", "vanhempani", "vanhempien", "mummo", "mummoni", "ukki", "ukkini",
-    "isoaiti", "isoisa", "tati", "seta", "eno", "serkku", "serkkuni",
+    "isoaiti", "isoisa", "tati", "seta", "eno", "serkku", "serkkuni", "omistaja", "omistajan", "omistajat",
+    "toimitusjohtaja", "toimitusjohtajan", "johtaja", "johtajan", "tyontekija", "tyontekijan", "tyontekijat",
+    "myyja", "myyjan", "tarjoilija", "nainen", "naisen", "henkilo", "henkilon", "joku",
 }
 # The user's own household: "our household", "our family", "perheemme" (review of #458).
 HOUSEHOLD = {"household", "family", "home", "perhe", "perheeni", "perheemme", "perheen", "kotitalous", "talouteni",
@@ -113,6 +117,7 @@ STEMS = ("s-market", "s-mark", "prisma", "alepa", "sale", "lidl", "k-market", "k
          "klarna", "paypal", "mobilepay", "kela", "verottaja", "vero", "fortum", "helen", "vattenfall", "elisa",
          "telia", "dna", "netflix", "spotify", "hbo", "disney", "apple", "google", "amazon", "steam", "youtube",
          "suomi", "suome", "kuukau", "kuu", "viiko", "vuode", "vuosi", "paiva", "tama", "viime", "edellis")
+_NOT_SHOPS = ("suomi", "suome", "kuukau", "kuu", "viiko", "vuode", "vuosi", "paiva", "tama", "viime", "edellis")
 _ENDING = r"(?:n|in|an|en|un|yn|on|ssa|sta|lla|lta|lle|ksi|a|ta|na|t|ja|ihin|iin|seen|lle|kin)?"
 _LABELS = {fold(lab) for table in (config.CATEGORY_LABELS, config.BASKET_LABELS, config.MCC_GROUP_LABELS)
            for pair in table.values() for lab in pair}
@@ -167,6 +172,8 @@ PATTERNS = {
     "subject_base": re.compile(rf"{_NP1} (?P<verb>spend|spends|earn|earns|buy|buys|save|saves|shop|shops)\b", re.I),
     "group_of": re.compile(rf"\b(?:one|some|any|both|all|each|most|none|two|three|several) of "
                            rf"(?P<np>(?:my|our|the|his|her|their) {_TOKEN})(?: (?P<verb>{VERB_ANY}))?", re.I),
+    "aux_subject_of": re.compile(rf"\b(?:{_AUX}) (?P<np>(?:(?:the|a|an|my|our) )?{_TOKEN}) of (?:(?:the|a|an) )?"
+                                 rf"{_TOKEN}(?: {_TOKEN})? (?P<verb>{VERB_ANY})\b", re.I),
     "is_spending": re.compile(rf"\b(?:is|are|was|were) {_NP1} (?P<verb>spending|earning|saving)\b", re.I),
     "fi_subject": re.compile(rf"(?<=\w )(?P<np>{_TOKEN}(?: (?:ja|tai) {_TOKEN})?) (?P<verb>{FI_VERB})\b", re.I),
     "fi_question": re.compile(rf"\b(?P<verb>{FI_QUESTION_VERB}) (?P<np>{_TOKEN})\b", re.I),
@@ -204,7 +211,7 @@ STRONG_OWNER_NOUN = re.compile(rf"^(?:{MONEY_EN_STRONG}|{FI_MONEY})$", re.I)
 # A bonus, interest or points question is about a company, whatever its name ("Does Ruohonjuuri pay S-Bonus?").
 COMPANY_TALK = re.compile(r"\b(?:s-?bonus\w*|bonus\w*|interest|points?|cashback|rewards?|korko\w*|pistei\w*)\b", re.I)
 PAY_TO_ME = re.compile(r"pay|paid|pays|give|gave|gives|send|sent|sends|transfer|transferred|transfers|lend|lent|lends|"
-                       r"refund|refunded|owe|owes|return|returned|returns|gift|gifted|gifts|maksoi|maksaa|maksoivat|"
+                       r"refund|refunded|owe|owes|return|returned|returns|gift|gifted|gifts|maksoi|maksaa|maksoivat|maksavat|antavat|lahettavat|"
                        r"antoi|antaa|antoivat|lahetti|lahettivat|siirsi|siirsivat|lainasi|lainasivat|palautti|"
                        r"palauttivat|lahjoitti|lahjoittivat", re.I)
 # A: a bonus, interest or points question makes a name a company only when it pays, gives or offers
@@ -255,6 +262,23 @@ def _first_person(plain: str, question: str = "") -> bool:
 def _calendar(token: str) -> bool:
     t = re.sub(r"['’]s?$", "", fold(token).strip(".'’"))
     return t in CALENDAR_EN or any(re.fullmatch(re.escape(s) + r"\w{0,4}", t) for s in CALENDAR_FI)
+
+
+def _shop(token: str) -> bool:
+    """A shop, bank, utility or service of the known list (with a Finnish case ending), or a payee alias."""
+    t = re.sub(r"['’]s?$", "", fold(token).strip(".'’"))
+    return t in _PAYEES or any(re.fullmatch(re.escape(s) + _ENDING, t) for s in STEMS if s not in _NOT_SHOPS)
+
+
+# A company as the owner of spending, income or salary is not the user's (#486): "Prisma's spending",
+# "Lidl's income", "Netflix's salary", "Lidlin tulot". "Lidlin ostokset / kulutus" stays the user's purchases at Lidl.
+COMPANY_MONEY_EN = re.compile(r"spending|income|salary|salaries|earnings|wages?|revenue|profits?|money|budget|"
+                              r"finances|net worth", re.I)
+COMPANY_MONEY_FI = re.compile(r"palk\w*|tulo\w*|liikevaihto\w*|voito\w*|voitto\w*", re.I)
+GET_VERBS = re.compile(r"get|got|gets|receive|received|receives", re.I)
+# "I, my wife and our kids spent": a comma list that starts with the user is the user's household (#486)
+JOINT_LIST = re.compile(r"\b(?:i|me|we)(?:, (?:my|our|the) \w+)+,? (?:and|&) (?:my|our|the) \w+(?: \w+)? "
+                        r"(?:spend|spent|paid|bought|earned|saved|pay|buy)\b", re.I)
 
 
 def _known(token: str) -> bool:
@@ -308,6 +332,8 @@ def kind_of(np: str) -> str:
 FI_STOP = {"miten", "kuinka", "paljonko", "milloin", "mihin", "mista", "missa", "mika", "mita", "ennen",
            "on", "kun", "niin", "jos", "nyt", "sen", "taman", "tan", "sinun", "kaiken", "koko", "jokaisen", "oman",
            "minun", "meidan", "kuin"}
+TO_ME_SKIP = re.compile(r"cost|costs|earn|earned|earns|save|saved|saves|charge|charged|charges|get|got|"
+                        r"gets|receive|received|receives|maksoi|maksaa|kulutti|kaytti|osti", re.I)
 FI_COST = re.compile(r"maksoi|maksaa", re.I)
 FI_MODAL = (r"voin|voit|voi|voimme|voitte|voivat|voisin|voisit|voisi|haluan|haluat|haluaa|pitaa|pitaisi|"
             r"saan|saat|kannattaa|kannattaisi|pystyn|pystyt|pystyy|aion|aiot|aikoo|taytyy|tarvitsee")
@@ -342,6 +368,8 @@ def _head(np: str) -> str | None:
 def classify(question: str, peer_question: bool = False) -> str | None:
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
     plain = " ".join(plain.split())
+    if JOINT_LIST.search(_plain(question)):
+        return None                                   # "I, my wife and our kids spent": the user's household
     first = _first_person(plain, _plain(question))
     verdicts: list[str] = []
 
@@ -357,7 +385,7 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             if COMPANY_TALK.search(plain) and (not verb or PAYS_OUT.fullmatch(verb)):
                 return                                # "Does Zalando pay bonus?": a company; "did Jane get" is not
             kind = "person"
-        if kind == "person" and subject and not person_verb and not re.search(
+        if kind == "person" and subject and not person_verb and not GET_VERBS.fullmatch(verb) and not re.search(
                 r"[A-Z]", np) and {fold(w) for w in np.split()} <= PRONOUN | DETERMINER:
             return                                    # "how do they compare": a pronoun spends, earns or owns
         if kind == "thing" and spends:
@@ -372,9 +400,14 @@ def classify(question: str, peer_question: bool = False) -> str | None:
 
     # Owners: another person's money, whoever asks ("my husband's account", "Marjan palkka"). A bill's,
     # a fee's or a payment's owner is a company. With the user as the speaker, an unknown owner is the user's.
+    company_owned = {m.group("np") for m in PATTERNS["owner"].finditer(plain) if COMPANY_NOUN.match(m.group("noun"))
+                     and any(_shop(tok) or _known(tok) for tok in m.group("np").split())}
     for m in list(PATTERNS["owner_direct"].finditer(plain)) + list(PATTERNS["owner"].finditer(plain)):
         noun = m.group("noun")
-        if COMPANY_NOUN.match(noun):
+        if COMPANY_NOUN.match(noun) or m.group("np") in company_owned:
+            continue                                  # "Helen's bill", "Nordea's account fee": a company
+        if COMPANY_MONEY_EN.fullmatch(noun) and any(_shop(tok) for tok in m.group("np").split()):
+            verdicts.append(UNCLAIMED)                # "Prisma's spending", "Lidl's income": not the user's
             continue
         strong = bool(STRONG_OWNER_NOUN.match(noun))
         if not strong and first:
@@ -395,14 +428,19 @@ def classify(question: str, peer_question: bool = False) -> str | None:
             continue                                  # "Miten kulutukseni", "on palkka": no owner
         if COMPANY_NOUN.match(m.group("noun")) or not re.search(r"(?:n|ni)$", fold(m.group("np"))):
             continue                                  # a bill's or a fee's owner is a company; not a genitive
+        if COMPANY_MONEY_FI.fullmatch(m.group("noun")) and _shop(m.group("np")):
+            verdicts.append(UNCLAIMED)                # "Lidlin tulot", "Prisman palkka": not the user's
+            continue
         judge(m.group("np"), unclaim=not first)
 
     # Subjects: only when the user is not the subject, or a question clause asks about someone else.
-    for name in ("aux_subject", "subject", "subject_base", "what_if", "is_spending", "group_of", "fi_subject",
+    for name in ("aux_subject", "aux_subject_of", "subject", "subject_base", "what_if", "is_spending", "group_of",
+                 "fi_subject",
                  "fi_verb_first",
                  "fi_question", "fi_what_if", "fi_onko", "fi_lead"):
         for m in PATTERNS[name].finditer(plain):
-            if ME_AFTER_VERB.match(plain[m.end():]):
+            if ME_AFTER_VERB.match(plain[m.end():]) and (PAY_TO_ME.fullmatch(m.groupdict().get("verb") or "")
+                                                          or TO_ME_SKIP.fullmatch(m.groupdict().get("verb") or "")):
                 verb = m.groupdict().get("verb") or ""
                 payer = kind_of(_head(m.group("np")) or "")
                 if PAY_TO_ME.fullmatch(verb) and (payer == "person" or (payer == "name" and not COMPANY_TALK.search(plain))):
@@ -424,12 +462,13 @@ def classify(question: str, peer_question: bool = False) -> str | None:
                                                                                          "yhteensa", "kuussa"))
                 if payer == "person" or (payer == "name" and has_object):
                     verdicts.append(DECLINE)
-                elif payer in ("name", "noun"):
+                elif payer == "name" or (payer == "noun" and m.group("np")[:1].isupper()):
                     verdicts.append(UNCLAIMED)
                 continue
             if name == "group_of" and first:
                 continue                              # "I spent on one of my friends"
-            if first and name in ("aux_subject", "subject", "subject_base", "fi_subject", "fi_verb_first"):
+            if first and name in ("aux_subject", "aux_subject_of", "subject", "subject_base", "fi_subject",
+                                  "fi_verb_first"):
                 before = plain[:m.start()].lower().strip()
                 np_lead = m.group("np").split()[0].lower()
                 if not (re.search(rf"\b(?:{_QUESTION})$", before) or fold(np_lead) in _LEAD):
