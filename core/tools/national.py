@@ -40,7 +40,8 @@ class NationalFigure:
     def params(self) -> dict[str, Any]:
         """What the Number's evidence cites: the source, the table, the year, the unit and the age group, and the
         place of the value in the file (rule_value evidence, as the S-Bonus rules cite theirs)."""
-        return {"value": str(self.monthly), "rule": f"categories.{self.category}.monthly.{self.age_group}",
+        return {"value": str(self.monthly), "category": self.category,
+                "rule": f"categories.{self.category}.monthly.{self.age_group}",
                 "source": self.source["en"], "table": self.table_id, "survey_year": self.survey_year,
                 "unit": self.unit, "age_group": self.age_group, "yearly": self.yearly,
                 "monthly_rule": RULES.monthly_rule, "config": CONFIG_PATH, "version": RULES.version}

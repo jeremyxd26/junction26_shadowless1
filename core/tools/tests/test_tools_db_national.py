@@ -43,6 +43,10 @@ def test_a_kept_category_carries_the_table_value_of_the_age_group_with_its_cited
     body = evidence_api.build(conn, res, customer, "en")       # the evidence view the app opens
     assert body.title.endswith("1 Jan – 31 Dec 2022") and body.parts == [] and body.rows == []
     assert "Statistics Finland" in body.method.summary and "14q4" in body.method.summary
+    # the opened view names the table's age band, and for transport that buying a vehicle is left out (#585 review)
+    assert PERSONAS[customer].replace("-", "\u2013") in body.title
+    assert ("without buying a vehicle" in body.title) is (metric == "Transportation")
+    assert "buying a vehicle is left out" in body.method.summary
     view = result.model_view["national"]
     assert view["amount"]["id"] == nat.amount.id and view["context_only"] is True and "age" not in view
 

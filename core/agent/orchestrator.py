@@ -542,18 +542,22 @@ class Pipeline:
         if missing is not None:
             return self._missing(missing, numbers, lang, emit, a)
         prev = conv.turns[-1] if conv.turns else None
+        if len(views) > 1:
+            # the national context line only beside a peer comparison alone; with another tool, the answer as on dev
+            views = [{k: v for k, v in view.items() if k != "national"} if isinstance(view, dict) else view
+                     for view in views]
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
-        # #569: a peer answer with the national context line is written by the template, which states the survey's
-        # figure with its source and period beside the comparison and compares nothing; no model draft can turn it
-        # into a verdict. No prompt change; no model request, so no warning either (the model did not fail).
-        national = any(isinstance(v, dict) and v.get("tool") == "get_peer_benchmark" and v.get("national")
-                       for v in views)
-        unavailable = planner_fallback or template_answer or a.composer_unavailable is not None
-        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or national, a=a)
-        if national and not unavailable:
-            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "national_context": True})
-            used_template = False
+        # Designed template answers: the rule planner's own template (#552/#574) and a peer comparison with the
+        # national context line (#569), which the template states with its source and period and compares nothing.
+        # The template writes; the model was not needed, it did not fail, so no llm_unavailable warning (the
+        # coordinator's decision, one rule for both). The national line only beside a peer comparison alone.
+        national = len(views) == 1 and isinstance(views[0], dict) and views[0].get("tool") == "get_peer_benchmark" \
+            and bool(views[0].get("national"))
+        designed = "rule_template" if template_answer else "national_context" if national else None
+        unavailable = planner_fallback or a.composer_unavailable is not None
+        draft, used_template = self._compose(compose_in, numbers, allowed, skip_model=unavailable or designed is not None,
+                                             a=a)
         # With no key ("no_model") the template writes directly: running the rule model's own template
         # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
         # own state decides, not the planner's (#383).
@@ -563,7 +567,11 @@ class Pipeline:
         # it. When even the template's text failed and the fixed "nothing" text went out: "fallback". The
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
-        if used_template:
+        if designed and not a.template_failed:
+            # a designed template answer never warns, in any model state: the template writes it either way (one
+            # rule with #574/#610, agreed with r-w3)
+            a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "designed": designed})
+        elif used_template:
             a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":

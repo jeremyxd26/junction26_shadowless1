@@ -47,6 +47,12 @@ def _period_of(spec: dict[str, Any], load: Loader) -> tuple[date, date]:
 
 def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = None) -> str:
     info = texts.method_info(spec["method"])
+    params = spec.get("params") or {}
+    if spec["method"] == config.METHODS["national_month"] and params.get("category") in config.NATIONAL_WHAT:
+        # #569: the table's age band and what the survey's category holds ("transport without buying a vehicle")
+        return texts.pick(texts.NATIONAL_LABEL, language).format(
+            band=str(params.get("age_group", "")).replace("-", "\u2013"),
+            what=config.label(config.NATIONAL_WHAT[params["category"]], language))
     if spec["kind"] != "transactions":
         return texts.pick(info.name, language)
     sel = spec["selection"]

@@ -1230,10 +1230,14 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         return _claimed(intent, [("get_bonus_estimate", share)], tools, lang)
     if intent == "peers":
         # a comparison of one named category is that category's ("How does my grocery spending compare with people
-        # like me?"); the total otherwise (#569: the national context line sits beside a category's comparison)
+        # like me?") only when it is the message's single subject: no second category or subject ("groceries and
+        # transport", "ruoka- ja terveysmenoni", "…? And how do I compare overall?", a spending question after a
+        # comma) and no health word; otherwise the total, as before (#569, the review of #585)
         named = _filter_of(q).get("categories") or []
-        metric = named[0] if len(named) == 1 and named[0] in config.PEER_METRICS else "spend_total"
-        return _claimed(intent, [("get_peer_benchmark", {"metric": metric})], tools, lang)
+        single = len(named) == 1 and named[0] in config.PEER_METRICS and not re.search(HEALTH, q) and \
+            not re.search(r"\b(and|or|plus|ja|tai|seka|overall|altogether|kokonai\w*|yhteensa)\b|,", q) and \
+            q.count("?") <= 1
+        return _claimed(intent, [("get_peer_benchmark", {"metric": named[0] if single else "spend_total"})], tools, lang)
     kind, what_if = plan_what_if(question)
     if kind == "health":
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))

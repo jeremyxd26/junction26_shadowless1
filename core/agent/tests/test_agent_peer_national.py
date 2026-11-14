@@ -176,3 +176,66 @@ def test_a_peer_answer_with_the_line_is_written_by_the_template_and_no_model_dra
     assert "Statistics Finland" in done["text"] and "more than households" not in done["text"]
     assert "llm_unavailable" not in done["warnings"]
 
+
+# ---- review of #585: a single subject for the category; the line only beside a peer comparison alone ------------
+
+@pytest.mark.parametrize("question,lang", [
+    ("How do my groceries and transport spending compare with people like me?", "en"),
+    ("How do my groceries compare with people like me? And how do I compare overall?", "en"),
+    ("Miten kulutukseni vertautuu kaltaisiini, ja paljonko käytin ruokaan elokuussa?", "fi"),
+    ("Paljonko käytin ruokaan elokuussa, ja miten kulutukseni vertautuu kaltaisiini?", "fi"),
+    ("Miten ruoka- ja terveysmenoni vertautuvat kaltaisiini?", "fi"),
+])
+def test_a_second_subject_keeps_the_total_comparison_as_before(question, lang):
+    plan = RuleModel().plan(PlanInput(question=question, language=lang, as_of="2026-09-30",
+                                      tools=[{"name": t, "description": "", "parameters_json_schema": {}} for t in ALL]))
+    peer_calls = [c.args for c in plan.calls if c.name == "get_peer_benchmark"]
+    assert all(a == {"metric": "spend_total"} for a in peer_calls), (question, peer_calls)
+
+
+def _second_tool(name):
+    from agent_fakes import FakeArgs
+
+    from core.agent.registry import ToolSpec
+    from core.tools.models import ToolResult
+
+    def tool(ctx, args):
+        return ToolResult(tool=name, data={}, card=None, evidence=[], model_view={"tool": name, "notes": []})
+    return ToolSpec(name, "Another.", FakeArgs, tool, ("Looking", "Katson"))
+
+
+def _peer_spec(name="get_peer_benchmark"):
+    from agent_fakes import FakeArgs
+
+    from core.agent.registry import ToolSpec
+    from core.tools.models import ToolResult, Unit
+
+    def peer_tool(ctx, args):
+        nums = _numbers()
+        n6 = ctx.numbers.register(nums["n1"].model_copy(update={"id": None, "value": 14.2, "unit": Unit.PERCENT,
+                                                               "method": "peer_benchmark.vs_median_pct@1",
+                                                               "display": "14.2% more"}))
+        n8 = ctx.numbers.register(nums["n8"].model_copy(update={"id": None}))
+        v = view(ctx.language)
+        v["vs_median"]["id"], v["national"]["amount"]["id"] = n6.id, n8.id
+        return ToolResult(tool="get_peer_benchmark", data={}, card=None, evidence=[], model_view=v)
+    return ToolSpec(name, "Peers.", FakeArgs, peer_tool, ("Looking", "Katson"))
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+@pytest.mark.parametrize("second", ["get_safe_to_spend", "get_spending", "get_safe_to_save", "second_peer"])
+def test_with_another_tool_the_answer_is_written_as_before_without_the_line(make_pipeline, language, second):
+    from agent_fakes import registry, run
+
+    from core.agent.model import FunctionCall, ScriptedModel
+    specs = [_peer_spec()]
+    specs.append(_peer_spec("second_peer") if second == "second_peer" else _second_tool(second))
+    draft = {"language": language, "text": "Here is what I found." if language == "en" else "Tässä tulokset.",
+             "cited": [], "lesson_key": None}
+    model = ScriptedModel(plans=[[FunctionCall("get_peer_benchmark", {}), FunctionCall(second, {}),
+                                  FunctionCall("finish")]], drafts=[draft, draft])
+    events = run(make_pipeline(model, registry(*specs)), "How do I compare with people like me?", language=language)
+    done = dict(events)["done"]
+    assert model.compose_inputs, "the composer writes, as on dev"
+    assert all("national" not in v for v in model.compose_inputs[0].data if isinstance(v, dict))
+    assert "Statistics Finland" not in done["text"] and "Tilastokeskus" not in done["text"]
