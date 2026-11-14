@@ -88,15 +88,19 @@ EVERYDAY = {"tool": "get_basket_breakdown", "period": "1 Apr – 30 Sep 2026", "
                                          "amount": n(45, 229.56, "eur_per_month")}]}]}
 
 
+SAVE = {"tool": "get_safe_to_save", "monthly": n(50, 364.31, "eur_per_month", "Safe to save a month"),
+        "stock": n(51, 2100.0, "eur", "Beyond what you need until payday"), "reason": None}
+
+
 def test_save_more_cites_four_numbers_and_offers_a_cut_without_an_amount():
-    # Review of PR #126: the three basket shares and the bills due; the offer names the largest everyday
-    # category and asks by how much, never suggesting an amount.
+    # #216: the monthly safe-to-save figure first, then the three basket shares; the offer names the
+    # largest everyday category and asks by how much, never suggesting an amount.
     for question, lang, offer in [
             ("How could I save more?", "en", "Want to see what cutting restaurants would do? Tell me by how much."),
             ("Miten voisin säästää enemmän?", "fi",
              "Haluatko nähdä, mitä vähentäminen luokassa Restaurants tekisi? Kerro, kuinka paljon.")]:
-        draft = template_draft([EVERYDAY, BILLS], [], lang, None, question)
-        assert draft["cited"] == ["n41", "n42", "n43", "n5"]
+        draft = template_draft([SAVE, EVERYDAY], [], lang, None, question)
+        assert draft["cited"] == ["n50", "n41", "n42", "n43"]
         assert draft["text"].endswith(offer)
         assert not any(w in draft["text"] for w in ("half", "puoleen", "%"))
 
@@ -120,3 +124,57 @@ def test_a_bills_question_gets_the_bills_due_even_when_it_names_payday(question)
                                       "Paljonko tuloni ovat kuukaudessa?"])
 def test_a_payday_question_without_bills_gets_the_income(question):
     assert ids(BILLS, question) == ["n6"]
+
+
+
+def test_safe_to_save_with_nothing_left_gives_the_tools_reason():
+    zero = {**SAVE, "monthly": n(50, 0, "eur_per_month", "Safe to save a month"),
+            "reason": {"kind": "essentials_exceed_income", "category": None, "amount": n(52, 120.0, "eur_per_month"),
+                       "text": "Bills and essentials already use up your income."}}
+    draft = template_draft([zero], [], "en", None, "How much could I save a month?")
+    assert draft["cited"][0] == "n50" and "Bills and essentials already use up your income." in draft["text"]
+
+
+BONUS = {"tool": "get_bonus_estimate", "kind": "estimate", "status": "estimate",
+         "share": n(60, 100, "percent", "Share at S-Group stores"), "grocery_month": n(61, 410.2, "eur_per_month", "Groceries a month"),
+         "level_base": n(62, 410.2, "eur_per_month"), "bonus_percent": n(63, 2.0, "percent"),
+         "bonus_month": n(64, 21.05, "eur_per_month", "Bonus a month"),
+         "payment_benefit_month": n(65, 4.1, "eur_per_month", "Payment benefit a month"),
+         "total_month": n(66, 25.15, "eur_per_month", "Bonus and payment benefit a month"),
+         "total_year": n(67, 301.8, "eur_per_year", "Bonus and payment benefit a year"), "lowest_level": None,
+         "reason": None, "assumptions": ["Assumes you are the only shopper in a co-op household.",
+                                         "Assumes the share at S-Group stores; it is a what-if, not a fact about where you shop."]}
+
+
+def test_the_bonus_answer_states_the_estimate_and_its_assumption():
+    draft = template_draft([BONUS], [], "en", None, "How much S-Bonus could I get?")
+    assert draft["cited"] == ["n66", "n67", "n61", "n64"]          # the user's share stays out of the text
+    assert draft["text"].endswith("not a fact about where you shop.")
+    nothing = {**BONUS, "status": "not_offered", "reason": "These purchases stay below the lowest Bonus level, so no Bonus would be paid."}
+    draft = template_draft([nothing], [], "en", None, "How much S-Bonus could I get?")
+    assert draft["cited"] == [] and "below the lowest Bonus level" in draft["text"]
+
+
+PEER = {"tool": "get_peer_benchmark", "metric": "spend_total", "period": "1 Apr – 30 Sep 2026", "shown": True, "reason": None,
+        "you": n(70, 3010.59, "eur_per_month", "You"), "peer_median": n(71, 2975.65, "eur_per_month", "Median of people like you"),
+        "peer_p25": n(72, 2313.0, "eur_per_month"), "peer_p75": n(73, 3713.9, "eur_per_month"),
+        "percentile": n(74, 51, "percentile", "Your position"), "vs_median": n(75, 1.2, "percent", "Compared with the median"),
+        "peer_group": {"level": "age_band+area3", "label": "35-44, 005xx", "size": n(76, 118, "count", "People in the group"),
+                       "comparable": True}}
+
+
+def test_the_peer_answer_states_position_difference_median_and_group_size():
+    draft = template_draft([PEER], [], "en", None, "How do I compare with people like me?")
+    assert draft["cited"] == ["n74", "n75", "n71", "n76"]
+    hidden = {**PEER, "shown": False, "reason": "group_too_small"}
+    draft = template_draft([hidden], [], "en", None, "How do I compare with people like me?")
+    assert draft["cited"] == [] and "too few people like you" in draft["text"]
+
+
+def test_the_offer_names_only_a_category_the_rules_can_cut():
+    shopping = {**EVERYDAY, "baskets": [b if b["key"] != "everyday_spending" else
+                                        {**b, "categories": [{"key": "Health", "label": "Health",
+                                                              "amount": n(80, 900.0, "eur_per_month")},
+                                                             *b["categories"]]} for b in EVERYDAY["baskets"]]}
+    text = template_draft([SAVE, shopping], [], "en", None, "How could I save more?")["text"]
+    assert "health" not in text.lower() and text.endswith("cutting restaurants would do? Tell me by how much.")

@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from core import answer_text
+from core.tools import config as tools_config
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -64,6 +65,13 @@ WHAT_IF_OFFER = ("Want to see what cutting {category} would do? Tell me by how m
                  "Haluatko nähdä, mitä vähentäminen luokassa {category} tekisi? Kerro, kuinka paljon.")
 WHAT_IF_OFFER_ANY = ("Want to see what a cut would do? Name a category and tell me by how much.",
                      "Haluatko nähdä, mitä vähentäminen tekisi? Kerro luokka ja kuinka paljon.")
+# The peer benchmark's reasons for showing nothing (#216): the reason only, never a number.
+PEER_REASON = {
+    "group_too_small": ("There are too few people like you in the data to compare with.",
+                        "Aineistossa on liian vähän kaltaisiasi vertailuun."),
+    "not_comparable": ("Your spending cannot be compared with people like you for this period.",
+                       "Kulutustasi ei voi verrata kaltaisiisi tällä jaksolla."),
+}
 NO_DATA = ("There are no transactions for that period in your data.",
            "Tältä jaksolta ei ole tapahtumia aineistossasi.")
 TOOL_FAILED = ("Some of the data could not be computed right now.",
@@ -195,6 +203,34 @@ def takeaway(view: dict[str, Any], question: str = "", language: str = "en") -> 
         if not re.search(SAVE_MORE, q):  # "save more": the three shares, the rest stays in the card
             picks.append(_num(view.get("total")))
         picks += [_num(b.get("share"), b.get("label")) for b in view.get("baskets") or []]
+    elif tool == "get_safe_to_save":
+        # The monthly figure is the main number (#216); "save more" cites it alone next to the basket
+        # shares. When it is 0, the tool's reason says why (a text without digits), never a negative.
+        picks.append(_num(view.get("monthly")))
+        if not re.search(SAVE_MORE, q):
+            picks.append(_num(view.get("stock")))
+        reason = view.get("reason") or {}
+        if (view.get("monthly") or {}).get("value") == 0 and isinstance(reason.get("text"), str):
+            extra.append(reason["text"])
+    elif tool == "get_bonus_estimate":
+        # The estimate and its assumptions sentence; the user's share stays out of the text (#216).
+        if view.get("status") == "not_offered":
+            if isinstance(view.get("reason"), str):
+                extra.append(view["reason"])
+        else:
+            picks += [_num(view.get(k)) for k in ("total_month", "total_year", "grocery_month", "bonus_month")]
+            assumptions = [a for a in view.get("assumptions") or [] if isinstance(a, str)]
+            if assumptions:
+                extra.append(assumptions[-1])  # "...a what-if, not a fact about where you shop."
+    elif tool == "get_peer_benchmark":
+        # The position, the difference from the median with the tool's own display (it carries its
+        # direction word), the median and the group size; nothing but the reason when not shown (#216).
+        if view.get("shown") is False:
+            if view.get("reason") in PEER_REASON:
+                extra.append(pick(PEER_REASON[view["reason"]], language))
+        else:
+            picks += [_num(view.get("percentile")), _num(view.get("vs_median")), _num(view.get("peer_median")),
+                      _num((view.get("peer_group") or {}).get("size"))]
     elif tool == "get_safe_to_spend":
         picks += [_num(view.get(k)) for k in ("safe_to_spend", "balance_limit", "budget_limit")]
     elif tool == "run_what_if":
@@ -232,6 +268,8 @@ def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
             if basket.get("key") != "everyday_spending":
                 continue
             for c in basket.get("categories") or []:
+                if c.get("key") not in tools_config.WHAT_IF_CATEGORIES:  # only a cut the rules can plan
+                    continue
                 amount = (c.get("amount") or {}).get("value")
                 if isinstance(amount, (int, float)) and c.get("label") and (largest is None or amount > largest[0]):
                     largest = (amount, c["label"])

@@ -7,8 +7,8 @@ import pytest
 from core.agent.model import PlanInput
 from core.agent.rules import RuleModel
 
-ALL = ["get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if",
-       "get_spender_profile", "get_peer_benchmark"]
+ALL = ["get_spending", "get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "get_safe_to_save",
+       "run_what_if", "get_spender_profile", "get_peer_benchmark", "get_bonus_estimate"]
 
 
 def plan(question, tools=ALL, language="en"):
@@ -92,10 +92,11 @@ def clarify_text(result):
 
 @pytest.mark.parametrize("question,lang", [("How could I save more?", "en"), ("Miten voisin säästää enemmän?", "fi")])
 def test_what_if_save_more_plans_the_tools_that_need_no_user_number(question, lang):
-    # No category and no cut: the baskets and the bills, never a what-if with a cut of the rules' own.
-    result = plan(question, language=lang)
-    assert result.recognised and names(result) == ["get_basket_breakdown", "get_recurring_bills", "finish"]
-    assert result.calls[0].args == {"period": {"preset": "last_6_months"}}
+    # No category and no cut: safe to save first, then the baskets (#216); never a cut of the rules' own.
+    for q in (question, question.translate(str.maketrans("äöÄÖ", "aoAO"))):
+        result = plan(q, language=lang)
+        assert result.recognised and names(result) == ["get_safe_to_save", "get_basket_breakdown", "finish"]
+        assert result.calls[1].args == {"period": {"preset": "last_6_months"}}
 
 
 def test_what_if_without_a_category_is_left_to_the_next_planner():
@@ -184,3 +185,50 @@ def test_an_unmapped_question_is_asked_about_the_period_only_when_it_is_about_sp
     assert "period" not in general["question"].lower() and "money" in general["question"].lower()
     spending = clarify_text(plan("How much did I spend on taxis?"))
     assert "period" in spending["question"].lower()
+
+
+
+# ---- #216: the S-Bonus and the peer comparison ------------------------------------------------------
+
+@pytest.mark.parametrize("question,lang,args", [
+    ("How much S-Bonus could I get?", "en", {}),                                       # the tool's default
+    ("Paljonko S-Bonusta voisin saada?", "fi", {}),
+    ("What would my Bonus be if half my groceries were S-Group?", "en", {"share_pct": 50}),
+    ("Mikä olisi Bonukseni, jos puolet ruokaostoksista olisi S-ryhmästä?", "fi", {"share_pct": 50}),
+    ("Mika olisi Bonukseni, jos kaikki ruokaostokset olisivat S-ryhmasta?", "fi", {"share_pct": 100}),
+    ("What Bonus would I get with all my groceries there?", "en", {"share_pct": 100}),
+    ("What would my bonus be at 30%?", "en", {"share_pct": 30}),
+    ("What would my bonus be at 150%?", "en", {}),                                    # never clamped or guessed
+])
+def test_the_bonus_question_takes_only_the_share_the_user_typed(question, lang, args):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["get_bonus_estimate", "finish"]
+    assert result.calls[0].args == args
+
+
+@pytest.mark.parametrize("question,lang", [
+    ("How do I compare with people like me?", "en"),
+    ("Compare my spending with my peers", "en"),
+    ("Compare my spending with other people", "en"),
+    ("How does my spending compare with others my age this month?", "en"),   # never month over month
+    ("Miten kulutukseni vertautuu muihin?", "fi"),
+    ("Miten kulutukseni vertautuu kaltaisiini?", "fi"),
+    ("Kulutanko enemmän kuin ikäiseni?", "fi"),
+])
+def test_a_peer_comparison_is_the_peer_benchmark(question, lang):
+    for q in (question, question.translate(str.maketrans("äöÄÖ", "aoAO"))):
+        result = plan(q, language=lang)
+        assert result.recognised and names(result) == ["get_peer_benchmark", "finish"], q
+        assert result.calls[0].args == {"metric": "spend_total"}
+
+
+def test_a_specific_person_is_still_declined():
+    result = plan("How much did my neighbour spend compared with me?")
+    assert names(result) == ["decline"] and result.calls[0].args == {"kind": "other_person_data"}
+
+
+@pytest.mark.parametrize("question,lang", [("How much is my salary?", "en"), ("Paljonko tuloni ovat kuukaudessa?", "fi"),
+                                           ("What is my income?", "en")])
+def test_a_salary_question_reads_the_recurring_income(question, lang):
+    result = plan(question, language=lang)
+    assert result.recognised and names(result) == ["get_recurring_bills", "finish"]
