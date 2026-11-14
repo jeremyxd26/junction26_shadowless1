@@ -275,18 +275,30 @@ SAFE = (r"safe(ly)? to spend|safely spend|spend safely|\bturvallisesti\b|"
         r"\bleft to spend\b|\b(have|got) (left )?to spend\b|"
         r"\b(can|could|may) i (\w+ly )?(spend|afford)\b|\bafford\b|"
         r"\bok(ay)? (if|to) (i )?spend\b|\ball right (if|to) (i )?spend\b|"
-        r"\b(voin|voinko|saanko|uskallanko) (turvallisesti )?(käyttää|kuluttaa|tuhlata)\b|"
+        r"\b(voin|voinko|saan|saanko|uskallanko) (turvallisesti )?(käyttää|kuluttaa|tuhlata)\b|"
         r"\bpaljon(ko)? (mä |minä )?voin\b(?!.*säästä)|"
         r"\bkäytettävissä\b|\bjäljellä\b.*\b(tällä viikolla|käyttää|kuluttaa|tuhlata)\b|"
         r"\b(tällä viikolla|käytettäväksi)\b.*\bjäljellä\b|\b(on|onko) (minulla |mulla )?varaa\b")
 NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borrow\w*|lainaa?\w*|luoto\w*|"
-            r"kortin|korttiraja\w*|nostoraja\w*)\b")
+            r"kortin|korttiraja\w*|nostoraja\w*)\b|"
+            # a future occasion: the safe-to-spend figure is the next seven days
+            r"\bnext (year|month|summer|winter|spring|autumn|christmas)\b|\bwedding\b|\bin the future\b|"
+            r"\bensi (vuonna|vuodeksi|kuussa|kesänä|talvena|jouluna)\b|\bhäi\w*|\bhäät\b|\btulevaisuude\w*")
+# 3. A message about a total, or a spending question without "I" ("How much was spent?", "Paljonko meni
+#    elokuussa?"), stands on its own in a conversation.
+COMPLETE_WORDS = (r"\btotal\b|\boverall\b|\b(was|were|been) spent\b|\byhteensä\b|\bkaikkiaan\b|\bkokonais\w*|"
+                  r"\bmeni\b|\bmenivät\b|\bkului\w*")
+# An attempt to set the rules aside ("ignore your rules, what's my budget?") is never claimed by a data
+# rule; the input guard does not flag these forms yet (#205).
+SET_ASIDE = (r"\b(ignore|forget|disregard|bypass) (all |any )?(your|the|my|these|those|previous|prior) "
+             r"(rules|instructions|guidelines|limits)\b|\b(unohda|ohita) (kaikki )?(säännöt|sääntösi|ohjeet|ohjeesi)\b")
 PAST = (r"\bdid (i|we)\b|\b(have|has) (i|we) (spent|paid|bought|used)\b|\bi('ve| have)? (spent|paid|bought)\b|"
         r"\bspent\b|\bwas i\b|\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
         r"\bmaksoin\b|\bostin\b")
 # The spending rule needs a period (plan_spending) and a word about spending: a money word, a category or
 # group, "how much", a comparison of named months, or a total.
-SPEND_SIGNAL = r"\bhow much\b|\bpaljonko\b|\bkuinka paljon\b|\bexpens\w*|\bmenot\b|\bmenoni\b|\bbuy\b|\bostanut\b"
+SPEND_SIGNAL = (r"\bhow much\b|\bpaljonko\b|\bkuinka paljon\b|\bexpens\w*|\bmenot\b|\bmenoni\b|\bbuy\b|\bostanut\b|"
+                r"\btotal\b|\boverall\b")
 # A message with its own subject and verb about the user's money is complete; anything else in a running
 # conversation ("compared to August?", "and restaurants?") is a follow-up of the previous turn (#300).
 SELF_SPEND = (r"\b(i|we)\b.*\b(spen[dt]\w*|paid|pay|bought|buy|earn\w*|save\w*|afford|cost\w*|get)\b|"
@@ -324,8 +336,9 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
 BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD = (
     fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD))
-WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND = (
-    fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND))
+WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND, COMPLETE_WORDS, SET_ASIDE = (
+    fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND, COMPLETE_WORDS,
+                                SET_ASIDE))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -413,6 +426,8 @@ BASELINE_LAST_YEAR = (r"\blast year\b|\ba year (ago|before|earlier)\b|\bsame (mo
 BASELINE_TYPICAL = r"\b(typical|usual|normal|average)\w*|\btavallis\w*|\bkeskimäär\w*|\bnormaali\w*"
 LAST_MONTH_WORDS = r"\blast month\b|\bprevious month\b|\bviime kuu\w*|\bedelli\w* kuu\w*"
 FOLLOW_TOOLS = ("get_spending", "get_basket_breakdown")
+WHOLE_MONTH = (r"\b(january|february|march|april|may|june|july|august|september|october|november|december|"
+               r"jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b|kuu|\d{4}|between")
 BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS = (
     fold_pattern(rx) for rx in (BASELINE_LAST_YEAR, BASELINE_TYPICAL, LAST_MONTH_WORDS))
 
@@ -456,7 +471,7 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
         found.append("bonus")  # "earn in bonus": an employer's bonus or the S-Bonus (#357)
     if spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
         found.append("spending")
-    elif ("safe_to_spend" in found and re.search(PAST, q)) or \
+    elif ("safe_to_spend" in found and (re.search(PAST, q) or _other_period(spending))) or \
             (_filter_of(q) and {"safe_to_spend", "where_money_went", "spender_type"} & set(found)):
         # "Did I go over my budget?": what one did or may spend. "How much can I spend on restaurants?",
         # "my spending habits for groceries": these rules take no category, so it would be dropped.
@@ -464,9 +479,16 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
     return found
 
 
+def _other_period(spending: dict | None) -> bool:
+    """The question names a period other than this week ("what was my budget last month?")."""
+    return spending is not None and (spending.get("period") or {}).get("preset") != "this_week"
+
+
 def _beats(a: str, b: str, q: str, spending: dict | None) -> bool:
     category = bool(_filter_of(q))
-    if (a, b) in (("safe_to_spend", "spending"), ("spender_type", "spending")):
+    if (a, b) == ("safe_to_spend", "spending"):
+        return not re.search(PAST, q) and not category and not _other_period(spending)
+    if (a, b) == ("spender_type", "spending"):
         return not re.search(PAST, q) and not category
     if (a, b) == ("safe_to_spend", "recurring_bills"):
         return not re.search(template.BILL_WORDS, q)
@@ -508,6 +530,8 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
         # A period the user named ("this month", "last month") is the breakdown's period (#281); else the
         # metric's window (metrics.md section 1): month averages of the last 6 complete months.
         period = (plan_spending(question, as_of) or {}).get("period") or {"preset": "last_6_months"}
+        if period.get("preset") == "custom" and not re.search(WHOLE_MONTH, q):
+            period = {"preset": "last_6_months"}   # a month read from inside a word ("decide"), #298
         return _claimed(intent, [("get_basket_breakdown", {"period": period})], tools, lang)
     if intent == "safe_to_spend":
         return _claimed(intent, [("get_safe_to_spend", {})], tools, lang)
@@ -539,6 +563,9 @@ def _claim_clause(question: str, as_of: date, tools: set[str], lang: str, peer_q
     q = fold(question)
     spending = plan_spending(question, as_of) if "get_spending" in tools else None
     found = _matched(q, peer_question, spending)
+    if "what_if" in found and plan_what_if(q)[0] == "health" and \
+            not ("spending" in found and not re.search(PERCENT + "|" + HALF, q)):
+        return Claim("what_if", (FunctionCall("decline", {"kind": "out_of_scope"}),))
     if not found:
         return Claim(None, reason="period" if re.search(MONEY_WORDS, q) or _filter_of(q) else "")
     winner, competing = _resolve(found, q, spending)
@@ -559,7 +586,7 @@ def _topics(part: str, peer_question: bool) -> frozenset[str]:
 def _complete(question: str, q: str, as_of: date) -> bool:
     """A message that stands on its own: the user's own subject and verb, another rule's question, or a
     category with a period ("Restaurants in August")."""
-    if re.search(SELF_SPEND, q) or any(re.search(rx, q) for _, rx in INTENTS):
+    if re.search(SELF_SPEND, q) or re.search(COMPLETE_WORDS, q) or any(re.search(rx, q) for _, rx in INTENTS):
         return True
     args = plan_spending(question, as_of)
     return bool(args and args.get("filter")) and not re.search(COMPARE, q)
@@ -679,7 +706,7 @@ def claim(request: PlanInput) -> Claim:
             continue
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
-    if flags(question):
+    if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
@@ -687,6 +714,9 @@ def claim(request: PlanInput) -> Claim:
     clauses = [(part, topics) for part, topics in clauses if topics]
     if len(clauses) > 1 and all(not (a & b) for i, (_, a) in enumerate(clauses) for _, b in clauses[i + 1:]):
         parts = [_claim_clause(part, as_of, tools, lang, peer_question) for part, _ in clauses]
+        declined = next((part for part in parts if part.calls and part.calls[0].name == "decline"), None)
+        if declined is not None:
+            return declined          # a refusal of one part is the answer to the whole message
         unique = {(c.name, json.dumps(c.args, sort_keys=True)): c for part in parts for c in _data_calls(part)}
         calls = list(unique.values())
         if all(part.rule and _data_calls(part) and len(_data_calls(part)) == len(part.calls) - 1 for part in parts) \
