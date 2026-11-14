@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react'
 import { InfoIcon, QUESTION_CHIP, TurnView } from '../components/AnswerView.tsx'
 import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
@@ -8,6 +8,7 @@ import { useSettings } from '../lib/settings.ts'
 import { stopSpeaking } from '../lib/speech.ts'
 import { lastAskId } from '../lib/thread.ts'
 import { landBelowHeader } from '../lib/threadScroll.ts'
+import { NEAR_LIMIT, fitPaste } from '../lib/questionLength.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
 
 interface Props {
@@ -45,7 +46,22 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     [chatSend],
   )
   const [draft, setDraft] = useState('')
+  // A paste over the limit was cut to fit; the note stays until the draft changes again (#716).
+  const [cut, setCut] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const left = MAX_QUESTION - draft.length
+  const note = cut ? s.cut : left <= NEAR_LIMIT ? s.charactersLeft(left) : null
+
+  /** A paste that would go over 500 characters is cut to fit, at a word break when one is near. */
+  const paste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const field = event.currentTarget
+    const fitted = fitPaste(draft, field.selectionStart ?? draft.length, field.selectionEnd ?? draft.length, event.clipboardData.getData('text'))
+    if (!fitted) return
+    event.preventDefault()
+    setDraft(fitted.value)
+    setCut(true)
+    requestAnimationFrame(() => field.setSelectionRange(fitted.caret, fitted.caret))
+  }
 
   // Send `?q=` once, then drop it, so Back or a reload does not ask again. The timeout is
   // cleared if the effect is torn down first (React's strict mode runs effects twice).
@@ -87,6 +103,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     }
     send(draft)
     setDraft('')
+    setCut(false)
     input.current?.blur()
   }
 
@@ -154,8 +171,18 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         onSubmit={submit}
         // The icon buttons and their gaps keep their pixel size at any text size, so the input keeps
         // its room at 200 % text (#705); the text and the input grow.
-        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] items-center gap-[12px] border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
+        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] flex-wrap items-center gap-[12px] border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
       >
+        {/* How much room is left near the limit, or that a paste was cut (#716): a line of its own above the row. */}
+        {note && (
+          <p id="chat-input-note" className="order-first basis-full text-sm text-muted">
+            {note}
+          </p>
+        )}
+        {/* A cut paste is announced once; the count is read with the field, not on every key. */}
+        <p role="status" className="sr-only">
+          {cut ? s.cut : ''}
+        </p>
         <ComposerBillButton />
         <label htmlFor="chat-input" className="sr-only">
           {s.inputLabel}
@@ -164,7 +191,12 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
           id="chat-input"
           ref={input}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setCut(false)
+          }}
+          onPaste={paste}
+          aria-describedby={note ? 'chat-input-note' : undefined}
           maxLength={MAX_QUESTION}
           placeholder={s.placeholder}
           enterKeyHint="send"
