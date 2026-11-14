@@ -400,7 +400,8 @@ class Pipeline:
                     views.append(record.pop("view"))
                     responses.append(FunctionResponse(call.name, views[-1], call.id))
                 else:
-                    errors.append({"tool": call.name, "error": record["error"]})
+                    errors.append({"tool": call.name, "error": record["error"],
+                                   **({"reason": record["reason"]} if record.get("reason") else {})})
                     responses.append(FunctionResponse(call.name, {"error": record["error"]}, call.id))
             ran_data = any(k == "data" for _, k, _ in parsed)
             if "finish" in controls or data_calls >= MAX_DATA_CALLS or not (ran_data or rejected):
@@ -410,6 +411,9 @@ class Pipeline:
         allowed = allowed_from(numbers.values(), views, self.as_of)
         if review is not None:  # after `numbers`: the card's amount is not the composer's to cite
             self._attach_review(ctx, review, emit, a)
+        missing = template.missing_data_answer(views, errors, lang, self.as_of)
+        if missing is not None:
+            return self._missing(missing, lang, emit, a)
         prev = conv.turns[-1] if conv.turns else None
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
@@ -647,8 +651,8 @@ class Pipeline:
             raise
         except (psycopg.OperationalError, PoolTimeout):
             raise DataUnavailable() from None
-        except PeriodOutOfRange:
-            record.update(status="error", error="period_out_of_range")
+        except PeriodOutOfRange as exc:
+            record.update(status="error", error="period_out_of_range", reason=exc.reason)
         except ValueError:
             record.update(status="error", error="invalid_arguments")
         except Exception as exc:  # noqa: BLE001 - one tool failing is a normal answer with a warning
@@ -726,6 +730,19 @@ class Pipeline:
                       "follow_ups": template.brief_questions(lang), "lesson": None, "refusal": None,
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _missing(self, missing: tuple[str, list[str]], lang: str, emit: Emit, a: _Answer) -> str:
+        """An answer that is only a missing-data reason (#379, the coordinator's decision A): the template
+        writes it, whoever planned the tool, with the model on or off; no compose request. Outcome
+        "answered", nothing cited, the chips are questions the rules answer for this customer."""
+        text = self._deliver(missing[0], {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": len(a.planner_turns) + 1, "source": "template", "missing_data": True})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": missing[1], "lesson": None, "refusal": None, "clarify": None,
+                      "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": a.calls, "views": [], "answer": text})
         return lang
 
     def _refuse(self, kind: str, lang: str, emit: Emit, a: _Answer) -> str:
