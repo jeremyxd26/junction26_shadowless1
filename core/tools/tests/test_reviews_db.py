@@ -132,7 +132,7 @@ def test_unknown_foreign_and_malformed_refs_are_not_found(tx):
     conn = tx
     now = reviews.utcnow()
     pending = reviews.ensure_pending(conn, LEAD, AS_OF, load_transactions(conn, LEAD, AS_OF), now)
-    for customer, ref in ((LEAD, "txr_0000000000000000"), ("CUST00001", pending.tx_ref), (LEAD, "606016"),
+    for customer, ref in ((LEAD, "txr_0000000000000000"), ("CUST00493", pending.tx_ref), (LEAD, "606016"),
                           (LEAD, "")):
         with pytest.raises(reviews.ReviewNotFound):
             label_answer.answer(conn, customer, AS_OF, ref, "unexpected_necessities", "en", now)

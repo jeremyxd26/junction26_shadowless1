@@ -174,9 +174,12 @@ def test_label_errors(client):
     unknown = client.post("/api/baskets/label", json=body("txr_0000000000000000", language="fi"))
     assert_error(unknown, 404, "tx_ref_not_found")
     assert unknown.json()["error"]["message"] == "Tämä kysymys ei ole avoinna."   # the body's language
-    foreign = client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST00001"))
+    foreign = client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST00493"))  # another persona
     assert_error(foreign, 404, "tx_ref_not_found")                           # the same answer (R4)
     assert foreign.json() == client.post("/api/baskets/label", json=body("txr_0000000000000000")).json()
+    # a customer the demo does not serve: 404 customer_not_found, as on the overview (#101)
+    assert_error(client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST00001")), 404,
+                 "customer_not_found")
     assert_error(client.post("/api/baskets/label", json=body(tx_ref, "regular_essentials")), 422,
                  "basket_not_allowed")
     assert_error(client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST99999")), 404,
