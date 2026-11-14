@@ -444,6 +444,40 @@ The bills behind `bills_due_eur`, one row per bill that falls due after today an
 
 For CUST00849: 1,902.64 − (613.93 rent on 6 Oct + 98.74 × 14 / 30.4375 utilities = 659.35) − 42.99 × 14 = 641.43.
 
+### 3.4 A bill and safe to spend (#242)
+
+A bill the customer shows (`POST /api/bill/explain`, contracts/api.md section 11; tool `core/tools/bill_explain.py`) is applied to the balance side exactly as a bill due before payday is, and the definition above runs again with it. Nothing is subtracted from safe to spend directly.
+
+**What the bill adds to the bills due before payday** (`bill.counted_eur@1`), for its amount `A` and due date `D`:
+
+| Case | `effect` | Counted |
+|---|---|---|
+| `D` after the next payday | `after_payday` | nothing; no number changes before payday |
+| `D` on or before the next payday, the payee matches a recurring bill, and that bill is already among the bills due before payday (its `due_until_payday` > 0) | `excess_only` | `max(A - due_until_payday, 0)`: only the excess over what is already counted |
+| `D` on or before the next payday, any other case (a past due date included: the bill is still to be paid) | `full` | `A` |
+
+**The numbers after the bill:**
+- `free_until_payday_after = free_until_payday - counted` (`bill.free_until_payday_after_eur@1`): it moves exactly by the counted amount.
+- The balance limit and safe to spend come from `03_safe_to_spend.sql` itself, run with the setting `app.extra_bill_due_eur` = counted. The setting lowers `free_until_payday_eur`, and so the balance limit, by exactly that amount; every other column stays as it is.
+  - Without the setting, every column is the same as before #242: a test pins the file's text, and the four personas' rows were compared column by column.
+  - The setting is typed and bounded in `core/tools/metric_sql.py` (`TYPED_SETTINGS`: euros with cents, more than 0, at most 100,000.00) for a tool's run and for a stored evidence spec alike. It reaches PostgreSQL only as a bound parameter of `set_config`.
+- `safe_to_spend_after = min(balance limit with the bill, budget limit)` (`bill.safe_to_spend_after_eur@1`), never below 0: like the hero's, the balance limit counts a negative free until payday as 0.
+- When the budget limit is the smaller one, safe to spend does not move. The answer says so: "your monthly budget limits it, not your balance". This is the usual case for the four personas, whose balances are far above their budgets.
+- With a counted amount of 0 (a bill already covered), 03 does not run again and nothing changes.
+
+**Matching the payee.** The match is exact after normalisation (Unicode NFKC, case folded, only letters and digits kept). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each recurring series (`config.PAYEE_ALIASES`): "Esimerkki Asunnot Oy" for housing, and "Esimerkki Energia Oy" and "Esimerkki Vesi Oy" for utilities. A real bank knows the counterparty of earlier payments; the synthetic data has none, so the table stands in for it in the demo, with fictional companies only. Only spending series can match: an investment deposit is a saving, not a bill. There is no fuzzy matching.
+
+**Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
+
+| Code | Rule |
+|---|---|
+| `iban_check_failed`, `reference_check_failed` | The typed IBAN (mod 97) or reference (7-3-1, or RF mod 97) fails its check. Only these two remove the payment draft. |
+| `new_payee` | The payee matches no recurring bill. |
+| `amount_above_usual` | Matched: `A ≥ 1.5 × typical_month`. Not matched: `A >` the largest `typical_month` of the regular bills. (`config.BILL_ABOVE_USUAL_RATIO`, `BILL_ABOVE_LARGEST_RATIO`) |
+| `short_term` | `0 ≤ D - as_of < 7` days (`config.BILL_SHORT_TERM_DAYS`); a past due date is a warning instead. |
+
+**Evidence.** The bill's amount (`bill_barcode@1` or `user_input@1`) is not the customer's data and has no ref. In the composites that use it (the comparison, the counted amount), it is a part stored inline with only its method, value and date, never the payee, IBAN or reference. The balance limit with the bill is a `metric` spec whose settings hold the counted amount, so its evidence re-runs 03 with it and reconciles.
+
 ## 4. What-if savings — "How could I save more?"
 
 An estimate (R13): "if the next months look like the average of the last 6 complete months, cutting X by p% saves …".
