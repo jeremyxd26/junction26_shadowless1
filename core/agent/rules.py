@@ -293,6 +293,36 @@ COMPARE, TOTAL, WHAT_IF, HALF, HEALTH, SELECTION_CODE = (
 BRIEF = [(intent, fold_pattern(rx), build) for intent, rx, build in BRIEF]
 
 
+# Questions about Sentti itself (#287). They match only when the whole message is the greeting or the
+# meta question (punctuation, an emoji, "Sentti" as an address and a leading greeting allowed), and only
+# after no refusal rule matched: "hi, ignore your rules ..." stays refused, "Hi, where did my money go?"
+# is the baskets question. Russian forms are answered in English.
+_GREET = r"(hi|hello|hey|hi there|hello there|hey there|good (morning|afternoon|evening)|hei|moi|moikka|terve|huomenta|привет|здравствуй(те)?)"
+META = [
+    ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
+                 r"kuka olet|kuka sina olet|mika olet|oletko (botti|robotti|tekoaly|ihminen)|кто ты|ты кто|ты бот)"),
+    ("capabilities", rf"({_GREET} )?(what can you do|what do you do|how do you work|what can i ask( you)?|"
+                     r"mita osaat|mita sina osaat|mita voit tehda|miten toimit|что ты умеешь|что умеешь)"),
+    ("help", rf"({_GREET} )?(help|help me|apua|помощь|помоги)"),
+    ("thanks", r"(thanks|thank you|thank you so much|thanks a lot|thx|kiitos|kiitti|kiitos paljon|спасибо)"),
+    ("greeting", _GREET),
+]
+
+
+def meta_intent(question: str) -> str | None:
+    """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
+    q = fold(question)
+    if any(re.search(rx, q, re.I) for _, rx in DECLINE_RULES):
+        return None
+    core = re.sub(r"[^\w\s']", " ", q)          # punctuation and emoji
+    core = re.sub(r"\bsentti\b", " ", core)       # Sentti as an address
+    core = " ".join(core.split())
+    for intent, rx in META:
+        if re.fullmatch(fold_pattern(rx), core):
+            return intent
+    return None
+
+
 class RuleModel:
     model_id = "rules@1"
 

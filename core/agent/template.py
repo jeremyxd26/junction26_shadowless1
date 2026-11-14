@@ -39,8 +39,9 @@ REFUSAL: dict[str, dict[str, Any]] = {
     },
     "out_of_scope": {
         "label": ("This is outside what I can help with", "Tämä ei kuulu siihen, missä voin auttaa"),
-        "text": ("I can only help with questions about your own money, such as your spending, bills and savings.",
-                 "Voin auttaa vain omiin raha-asioihisi liittyvissä kysymyksissä, kuten kulutuksessa, laskuissa ja säästämisessä."),
+        # The warmer generic decline (#287, the product owner's text); the four brief questions follow as chips.
+        "text": ("That's outside my lane — I'm your money coach. I can help with things like:",
+                 "Tämä menee ohi osaamiseni — olen rahavalmentajasi. Voin auttaa esimerkiksi näissä:"),
     },
     "unsafe": {
         "label": ("I can't help with that request", "En voi auttaa tässä pyynnössä"),
@@ -127,6 +128,27 @@ def pick(pair: tuple[str, str], language: str) -> str:
 def refusal(kind: str, language: str) -> tuple[str, dict[str, str]]:
     entry = REFUSAL[kind]
     return pick(entry["text"], language), {"kind": kind, "label": pick(entry["label"], language)}
+
+
+# Sentti introduces itself (#287): greeting, identity, capabilities and help get the introduction, thanks
+# gets one short sentence; both are followed by the four brief questions as chips (done.follow_ups).
+# The product owner's texts, word for word; no digits and no number words.
+INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your own transactions and explain where "
+         "your money goes, what's safe to spend this week and how you could save more. Every number comes from your "
+         "transactions — tap it to see them. Sometimes I'll ask you a question too.",
+         "Hei, olen Sentti — tekoälyvalmentaja S-mobiilissa. Katson omia tilitapahtumiasi ja kerron, mihin rahasi "
+         "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
+         "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
+THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+
+
+def meta_text(intent: str, language: str) -> str:
+    return pick(THANKS if intent == "thanks" else INTRO, language)
+
+
+def brief_questions(language: str) -> list[str]:
+    """All four brief questions, the chips of an introduction and of the generic decline (#287)."""
+    return [pick(q, language) for q in BRIEF_QUESTIONS]
 
 
 def follow_ups(question: str, language: str, refused: bool = False) -> list[str]:
