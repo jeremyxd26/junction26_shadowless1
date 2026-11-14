@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from core.agent import template
-from core.agent.guard import fold, fold_pattern
+from core.agent.guard import flags, fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
@@ -257,10 +257,11 @@ SPECIFIC_PERSON = (r"\bCUST\d+|neighbou?r|naapuri|my (friend|colleague|partner)|
 # The intents the rules know, each with its own full pattern (#316, #340). Which one claims a message is
 # decided in claim() below.
 # 1. "Where did my money go?": where the money goes, what it goes to most, a breakdown.
-WHERE = (r"\bwhere\b.*\bmoney\b.*\b(go|goes|went|gone|going|disappear\w*|vanish\w*)\b|"
+WHERE = (r"\bwhere('s| is| did| does| do| has| have| was)\b.*\bmoney\b.*\b(go|goes|went|gone|going|disappear\w*|vanish\w*)\b|"
          r"\b(spend|spending|spent) (the )?most\b|\bmost of my money\b|\bbiggest (expenses?|spending|costs?)\b|"
          r"\b(spending )?break ?down\b|\bwhat do i spend (my )?money on\b|"
-         r"\bmihin\b.*\braha\w*|\bmihin\b.*\beniten\b|\beniten rahaa\b")
+         r"\bmihin\b.*\braha\w*\b.*\b(meni\w*|menee|menev\w*|mennyt|menneet|kulu\w*|katoa\w*|hävi\w*)|"
+         r"\bmihin\b.*\beniten\b|\beniten rahaa\b")
 # 2. "What kind of spender am I?": the user's type, style or habits.
 SPENDER = (r"\bwhat (kind|type|sort) of (spender|saver|consumer)\b|\b\w+ of (spender|saver) am i\b|"
            r"\bspending (style|habits?|personality|profile|type|pattern)s?\b|\bdescribe (my )?spending\b|"
@@ -271,12 +272,15 @@ SPENDER = (r"\bwhat (kind|type|sort) of (spender|saver|consumer)\b|\b\w+ of (spe
 #    they can afford (#316). A question about what they DID spend (PAST) is the spending rule's.
 SAFE = (r"safe(ly)? to spend|safely spend|spend safely|\bturvallisesti\b|"
         r"(?<!credit )\b(spending )?limit\b|\bbudget\w*|\bbudjet\w*|"
-        r"\bleft to spend\b|\b(have|got) (left )?to spend\b|\bmoney left\b|\b(have|got) left\b|"
+        r"\bleft to spend\b|\b(have|got) (left )?to spend\b|"
         r"\b(can|could|may) i (\w+ly )?(spend|afford)\b|\bafford\b|"
         r"\bok(ay)? (if|to) (i )?spend\b|\ball right (if|to) (i )?spend\b|"
         r"\b(voin|voinko|saanko|uskallanko) (turvallisesti )?(käyttää|kuluttaa|tuhlata)\b|"
         r"\bpaljon(ko)? (mä |minä )?voin\b(?!.*säästä)|"
-        r"\bkäytettävissä\b|\bjäljellä\b|\b(on|onko) (minulla |mulla )?varaa\b")
+        r"\bkäytettävissä\b|\bjäljellä\b.*\b(tällä viikolla|käyttää|kuluttaa|tuhlata)\b|"
+        r"\b(tällä viikolla|käytettäväksi)\b.*\bjäljellä\b|\b(on|onko) (minulla |mulla )?varaa\b")
+NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borrow\w*|lainaa?\w*|luoto\w*|"
+            r"kortin|korttiraja\w*|nostoraja\w*)\b")
 PAST = (r"\bdid (i|we)\b|\b(have|has) (i|we) (spent|paid|bought|used)\b|\bi('ve| have)? (spent|paid|bought)\b|"
         r"\bspent\b|\bwas i\b|\bkulutin\b|\bkäytin\b|\bkäytinkö\b|\bolen (käyttänyt|kuluttanut|maksanut)\b|"
         r"\bmaksoin\b|\bostin\b")
@@ -320,8 +324,8 @@ NOT_YET_OPTIONS = (("How much did I spend last month?", "How much did I spend on
 # Every rule pattern is matched against a folded question, so the patterns are folded too.
 BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD = (
     fold_pattern(rx) for rx in (BONUS, PEERS, SELF, OTHERS_DATA, SPECIFIC_PERSON, BONUS_WORD))
-WHERE, SPENDER, SAFE, PAST, SPEND_SIGNAL, SELF_SPEND = (
-    fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, PAST, SPEND_SIGNAL, SELF_SPEND))
+WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND = (
+    fold_pattern(rx) for rx in (WHERE, SPENDER, SAFE, NOT_SAFE, PAST, SPEND_SIGNAL, SELF_SPEND))
 DECLINE_RULES = [(kind, fold_pattern(rx)) for kind, rx in DECLINE_RULES]
 CATEGORY_WORDS = [(fold_pattern(rx), c) for rx, c in CATEGORY_WORDS]
 MCC_GROUP_WORDS = [(fold_pattern(rx), g) for rx, g in MCC_GROUP_WORDS]
@@ -379,6 +383,7 @@ def meta_intent(question: str) -> str | None:
 PRECEDENCE = {
     ("bonus", "recurring_bills"), ("bonus", "what_if"), ("bonus", "spending"), ("bonus", "peers"),
     ("safe_to_spend", "spending"), ("safe_to_spend", "recurring_bills"),
+    ("bonus", "where_money_went"), ("bonus", "safe_to_spend"),
     ("where_money_went", "spending"),
     ("spender_type", "peers"), ("spender_type", "spending"),
     ("recurring_bills", "spending"),
@@ -444,23 +449,33 @@ def _matched(q: str, peer_question: bool, spending: dict | None) -> list[str]:
             continue  # "save more of my income" is the save-more question, not the income (#296)
         if intent == "peers" and not peer_question:
             continue  # what others spend, a named person, or no "I": not the peer benchmark
+        if intent == "safe_to_spend" and re.search(NOT_SAFE, q):
+            continue  # a card or credit limit, a loan, a raise
         found.append(intent)
     if "recurring_bills" in found and "bonus" not in found and re.search(BONUS_WORD, q):
         found.append("bonus")  # "earn in bonus": an employer's bonus or the S-Bonus (#357)
     if spending is not None and (_spending_words(q) or re.search(TOTAL, q) or re.search(COMPARE, q)):
         found.append("spending")
-    elif "safe_to_spend" in found and re.search(PAST, q):
-        found.append("spending")  # "Did I go over my budget?": what one did or what one may spend
+    elif ("safe_to_spend" in found and re.search(PAST, q)) or \
+            (_filter_of(q) and {"safe_to_spend", "where_money_went", "spender_type"} & set(found)):
+        # "Did I go over my budget?": what one did or may spend. "How much can I spend on restaurants?",
+        # "my spending habits for groceries": these rules take no category, so it would be dropped.
+        found.append("spending")
     return found
 
 
 def _beats(a: str, b: str, q: str, spending: dict | None) -> bool:
-    if (a, b) == ("safe_to_spend", "spending"):
-        return not re.search(PAST, q)
+    category = bool(_filter_of(q))
+    if (a, b) in (("safe_to_spend", "spending"), ("spender_type", "spending")):
+        return not re.search(PAST, q) and not category
     if (a, b) == ("safe_to_spend", "recurring_bills"):
         return not re.search(template.BILL_WORDS, q)
     if (a, b) == ("where_money_went", "spending"):
-        return not (spending or {}).get("filter")
+        return not category and not re.search(COMPARE, q)   # the breakdown compares nothing
+    if (a, b) == ("spending", "where_money_went"):
+        return category and spending is not None and not re.search(COMPARE, q)   # "break down my restaurant spending"
+    if (a, b) == ("what_if", "safe_to_spend"):
+        return bool(re.search(PERCENT + "|" + HALF, q))   # "cut my restaurant budget by 20%"
     if (a, b) == ("what_if", "recurring_bills"):
         return bool(re.search(template.SAVE_MORE, q))
     if {a, b} == {"what_if", "spending"}:
@@ -547,7 +562,7 @@ def _complete(question: str, q: str, as_of: date) -> bool:
     if re.search(SELF_SPEND, q) or any(re.search(rx, q) for _, rx in INTENTS):
         return True
     args = plan_spending(question, as_of)
-    return bool(args and args.get("filter"))
+    return bool(args and args.get("filter")) and not re.search(COMPARE, q)
 
 
 def _prev_month(ym: tuple[int, int]) -> tuple[int, int]:
@@ -664,6 +679,8 @@ def claim(request: PlanInput) -> Claim:
             continue
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
+    if flags(question):
+        return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
     clauses = [(part, _topics(part, peer_question)) for part in re.split(CLAUSE_BREAK, q) if part.strip()]
