@@ -12,8 +12,9 @@ import { BASKETS } from '../../lib/baskets.ts'
 import { billStrings } from '../../lib/billStrings.ts'
 import { chatStrings } from '../../lib/chatStrings.ts'
 import { useSettings } from '../../lib/settings.ts'
+import { useEstimateToggle } from '../../lib/useEstimateToggle.ts'
 import { CARD_TITLE, CardShell } from '../cards.tsx'
-import { EstimateBadge } from '../EstimateBadge.tsx'
+import { EstimateBadge, EstimateNote } from '../EstimateBadge.tsx'
 import { NumberChip } from '../NumberChip.tsx'
 import { TermSheet } from './TermSheet.tsx'
 
@@ -101,12 +102,15 @@ function SafeToSpendCard({ safe }: { safe: BillSafeToSpend }) {
   const { lang } = useSettings()
   const s = billStrings(lang)
   const after = safe.effect === 'after_payday' ? null : safe.after
+  // Controlled, so the open estimate text runs full width under the header, not beside the title.
+  const estimate = useEstimateToggle()
   return (
     <CardShell>
       <div className="flex items-start justify-between gap-3">
         <h3 className={`min-w-0 pt-2.5 ${CARD_TITLE}`}>{s.safeTitle}</h3>
-        <EstimateBadge estimate={s.estimate} />
+        <EstimateBadge estimate={s.estimate} control={estimate.control} />
       </div>
+      {estimate.open && <EstimateNote estimate={s.estimate} id={estimate.id} />}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="sr-only">{s.before}</span>
         <NumberChip number={safe.before} />
