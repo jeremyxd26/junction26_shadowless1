@@ -1,0 +1,207 @@
+{
+ "question": "what are my regular bills?",
+ "language": "en",
+ "as_of": "2026-09-30",
+ "planner": "rules_first",
+ "model": "gemini-3.5-flash-lite",
+ "compose_model": "gemini-3.5-flash-lite",
+ "tools": [
+  {
+   "name": "get_recurring_bills",
+   "args": {
+    "include_income": true
+   },
+   "numbers": [
+    {
+     "value": 836.65,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "recurring.typical_month_eur@1",
+     "evidence_ref": "ev_a6191c8295cd",
+     "label": "Usual amount",
+     "display": "€836.65 a month",
+     "id": "n1"
+    },
+    {
+     "value": 836.65,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.bill_due_eur@1",
+     "evidence_ref": "ev_d402a88b25e4",
+     "label": "Due before payday",
+     "display": "€836.65",
+     "id": "n2"
+    },
+    {
+     "value": 186.4,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "recurring.typical_month_eur@1",
+     "evidence_ref": "ev_12eb5bf40155",
+     "label": "Usual amount",
+     "display": "€186.40 a month",
+     "id": "n3"
+    },
+    {
+     "value": 91.86,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.bill_due_eur@1",
+     "evidence_ref": "ev_c1f2a09e11d2",
+     "label": "Due before payday, pro rata",
+     "display": "€91.86",
+     "id": "n4"
+    },
+    {
+     "value": 928.5,
+     "unit": "eur",
+     "period": {
+      "start": "2026-10-01",
+      "end": "2026-10-15",
+      "label": "Until payday on 15 Oct"
+     },
+     "method": "safe_to_spend.bills_due_eur@1",
+     "evidence_ref": "ev_f4f52cdce555",
+     "label": "Bills before payday",
+     "display": "€928.50",
+     "id": "n5"
+    },
+    {
+     "value": 3187.25,
+     "unit": "eur_per_month",
+     "period": {
+      "start": "2026-04-01",
+      "end": "2026-09-30",
+      "label": "1 Apr – 30 Sep 2026"
+     },
+     "method": "recurring.typical_month_eur@1",
+     "evidence_ref": "ev_6b1cd80a9bc9",
+     "label": "Usual amount",
+     "display": "€3,187.25 a month",
+     "id": "n6"
+    }
+   ],
+   "model_view": {
+    "tool": "get_recurring_bills",
+    "window": "1 Apr – 30 Sep 2026",
+    "due_period": "Until payday on 15 Oct",
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "upcoming_total": {
+     "id": "n5",
+     "value": 928.5,
+     "unit": "eur",
+     "label": "Bills before payday"
+    },
+    "bills": [
+     {
+      "bill_id": "bill_housing_payment",
+      "label": "Housing",
+      "status": "done_this_month",
+      "typical_day": 3,
+      "typical_month": {
+       "id": "n1",
+       "value": 836.65,
+       "unit": "eur_per_month",
+       "label": "Usual amount"
+      },
+      "due_until_payday": {
+       "id": "n2",
+       "value": 836.65,
+       "unit": "eur",
+       "label": "Due before payday"
+      },
+      "next_expected": "2026-10-03"
+     },
+     {
+      "bill_id": "bill_utilities_payment",
+      "label": "Utilities",
+      "status": "spread",
+      "typical_day": null,
+      "typical_month": {
+       "id": "n3",
+       "value": 186.4,
+       "unit": "eur_per_month",
+       "label": "Usual amount"
+      },
+      "due_until_payday": {
+       "id": "n4",
+       "value": 91.86,
+       "unit": "eur",
+       "label": "Due before payday, pro rata"
+      },
+      "next_expected": null
+     }
+    ],
+    "income": [
+     {
+      "key": "salary",
+      "label": "Salary",
+      "status": "done_this_month",
+      "typical_day": 15,
+      "typical_month": {
+       "id": "n6",
+       "value": 3187.25,
+       "unit": "eur_per_month",
+       "label": "Usual amount"
+      },
+      "next_expected": "2026-10-15"
+     }
+    ],
+    "notes": []
+   }
+  }
+ ],
+ "exchanges": [
+  {
+   "kind": "compose",
+   "response": {
+    "candidates": [
+     {
+      "content": {
+       "parts": [
+        {
+         "text": "{\n  \"language\": \"en\",\n  \"text\": \"Your bills before payday on 15 October 2026 total {{n5}}. This includes Housing at {{n1}} and Utilities at {{n3}}.\",\n  \"cited\": [\n    \"n5\",\n    \"n1\",\n    \"n3\"\n  ],\n  \"lesson_key\": \"fixed_vs_flexible\"\n}",
+         "thought_signature": "EmAKXgFpFH0TWWkwWD3_jc6ExaUuxAdgtB9LYnbrZA4G9-BhRumhAh2xqW7jl-AXzWD17KcUhQALqBEDWM5IogwNhzDynyRi6TOYjh4sKmz2t-UId-eCiEEMjew1WeumQ7g="
+        }
+       ],
+       "role": "model"
+      },
+      "finish_reason": "STOP"
+     }
+    ],
+    "usage_metadata": {
+     "prompt_token_count": 3356,
+     "thoughts_token_count": 0,
+     "candidates_token_count": 93
+    }
+   }
+  }
+ ],
+ "expect": {
+  "outcome": "answered",
+  "refusal_kind": null,
+  "tool_calls": [
+   "get_recurring_bills",
+   "finish"
+  ],
+  "text": "Your bills before payday on 15 October 2026 total {{n5}}. This includes Housing at {{n1}} and Utilities at {{n3}}.",
+  "text_rendered": "Your bills before payday on 15 October 2026 total €928.50. This includes Housing at €836.65 a month and Utilities at €186.40 a month."
+ }
+}
