@@ -968,22 +968,32 @@ SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
 # "How could I save more?": a few cuts below the usual pace, from the what-if tool, with one total a month and
 # a year. The two cut levers are always different categories, so nothing is counted twice; small purchases are
 # no lever (in the data they are restaurant visits, which the first lever covers). The S-Bonus estimate is a
-# separate extra line, never part of the total (product owner, #369).
+# separate extra in the card's estimate text, never part of the total (product owner, #369). The bank button
+# uses the one label of SAFE_TO_SAVE_TEXT["host_monthly_saving"] (#267).
 SAVINGS_PLAN_FIRST = ("Restaurants", 20)             # eating out, cut by 20 %
 SAVINGS_PLAN_OTHER_CATEGORIES = ("Entertainment", "Lifestyle", "Travel")   # the flexible everyday categories
 SAVINGS_PLAN_OTHER_CUT_PCT = 10                     # the largest of them, cut by 10 %
 SAVINGS_PLAN_MIN_EUR = Decimal("5.00")              # a lever counts only from 5 euros a month
-SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1"}
+SAVINGS_PLAN_METHODS = {"total_month": "savings_plan.total_month_eur@1", "total_year": "savings_plan.total_year_eur@1",
+                        "cut_pct": "savings_plan.cut_pct@1"}
+# A cut share in words, so no answer needs a digit for it; any other share is cited as its Number (#411).
+SAVINGS_PLAN_CUT_WORDS: dict[int, tuple[str, str]] = {
+    10: ("a tenth", "kymmenyksen"), 20: ("a fifth", "viidenneksen"), 25: ("a quarter", "neljänneksen"),
+    50: ("half", "puolet"),
+}
+# No lever reaches the threshold: the baskets card, where the money goes (coordinator, #411), over the same
+# window as the earlier save-more answer.
+SAVINGS_PLAN_NONE_BASKETS = {"period": {"preset": "last_6_months"}}
 SAVINGS_PLAN_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Your savings plan", "Säästösuunnitelmasi"),
     "total_month": ("These changes together, a month", "Nämä muutokset yhteensä kuukaudessa"),
     "total_year": ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
     "lever": ("{what} {pct}% less", "{what} {pct} % vähemmän"),
-    "bonus": ("Extra, if you shopped at S Group stores (not in the total)",
-              "Lisäksi, jos ostaisit S-ryhmän kaupoista (ei mukana summassa)"),
+    "cut": ("Cut in {what}", "Vähennys: {what}"),
+    "bonus": ("Shopping at S Group stores could add about {bonus} in S-Bonus, not in the total.",
+              "Ostokset S-ryhmän kaupoista voisivat tuoda lisäksi noin {bonus} S-Bonusta, ei mukana summassa."),
     "estimate_label": ("Estimate", "Arvio"),
     "estimate_text": ("About, if you cut these as shown and the rest of your spending stays as it is.",
                       "Noin, jos vähennät näitä kuten näytetään ja muu kulutuksesi pysyy ennallaan."),
-    "host_monthly_saving": ("Start saving in S-mobiili", "Aloita säästäminen S-mobiilissa"),
     "how": ("How is this calculated?", "Miten tämä lasketaan?"),
 }

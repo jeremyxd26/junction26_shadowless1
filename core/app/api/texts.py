@@ -316,6 +316,11 @@ METHODS["savings_plan.total_month_eur@1"] = MethodInfo(
 METHODS["savings_plan.total_year_eur@1"] = MethodInfo(
     Unit.EUR_PER_YEAR, ("These changes together, a year", "Nämä muutokset yhteensä vuodessa"),
     ("The monthly total times twelve.", "Kuukausisumma kertaa kaksitoista."), PLAN_DOC)
+METHODS["savings_plan.cut_pct@1"] = MethodInfo(
+    Unit.PERCENT, ("Cut share", "Vähennyksen osuus"),
+    ("How much of a category's usual spending the plan cuts, a setting of the plan.",
+     "Kuinka suuren osan luokan tavallisesta kulutuksesta suunnitelma vähentää; suunnitelman asetus."),
+    PLAN_DOC)
 
 # The peer group a peer_aggregate compares with (06_peer_benchmark.sql `peer_level`).
 PEER_LEVELS: dict[str, Pair] = {

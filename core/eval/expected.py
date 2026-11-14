@@ -199,7 +199,8 @@ def evaluate(db: Db, cid: str, src: dict):
             return next((r for r in rows if r.get("customer_id") == cid), None)
 
         first_cat, first_pct = tools_config.SAVINGS_PLAN_FIRST
-        others = {c: what_if(c, tools_config.SAVINGS_PLAN_OTHER_CUT_PCT) for c in tools_config.SAVINGS_PLAN_OTHER_CATEGORIES}
+        others = {c: what_if(c, tools_config.SAVINGS_PLAN_OTHER_CUT_PCT) for c in tools_config.SAVINGS_PLAN_OTHER_CATEGORIES
+                  if c != first_cat}   # never the first lever's category again, as the tool
         offered = sorted((-Decimal(str(r["baseline_month_eur"])), c) for c, r in others.items()
                          if r is not None and r["status"] != "not_offered")
         levers = {"first": what_if(first_cat, first_pct), "other": others[offered[0][1]] if offered else None}
@@ -213,6 +214,8 @@ def evaluate(db: Db, cid: str, src: dict):
         raise ValueError(f"unknown source {src}")
     if "multiply" in src and value is not None:
         value = Decimal(str(value)) * Decimal(str(src["multiply"]))
+    if "plus" in src and value is not None:   # a sum a confused coach would give (forbid), e.g. plan + safe to save
+        value = Decimal(str(value)) + sum((Decimal(str(evaluate(db, cid, s))) for s in src["plus"]), Decimal("0"))
     return value
 
 

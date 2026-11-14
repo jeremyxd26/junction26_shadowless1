@@ -13,7 +13,7 @@ from core.tools import config, evidence
 from core.tools import savings_plan as sp
 from core.tools.context import ToolContext
 from core.tools.formatting import display
-from core.tools.models import Number, Period, Unit
+from core.tools.models import Card, Number, Period, Unit
 from core.tools.what_if import WhatIfRefused
 
 AS_OF = date(2026, 9, 30)
@@ -35,9 +35,19 @@ SANNA = {"Restaurants": what_if("229.56", "45.91", ref="ev_rest"), "Entertainmen
          "Lifestyle": what_if("172.58", "17.26", ref="ev_life"), "Travel": what_if("63.19", "6.32", ref="ev_trav")}
 
 
+def baskets_card():
+    """A minimal baskets breakdown card, as get_basket_breakdown returns it (numbers with private ids)."""
+    total = num("1650.00", "ev_bask_total", "baskets.month_avg_eur@1").model_copy(update={"id": "n1"})
+    item = num("980.00", "ev_bask_every", "baskets.month_avg_eur@1").model_copy(update={"id": "n2"})
+    return Card(card_id="card_baskets", type="breakdown", title="Where your money goes", subtitle="Apr-Sep 2026",
+                evidence_ref="ev_bask_total", estimate=None, actions=[], display_hint="stacked_bar", total=total,
+                comparison=None, items=[{"key": "everyday_spending", "label": "Everyday spending",
+                                         "amount": item.model_dump(), "share": None, "change": None, "flags": []}])
+
+
 @pytest.fixture
 def fake(monkeypatch):
-    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate")
+    state = SimpleNamespace(what_ifs=dict(SANNA), calls=[], specs={}, bonus_status="estimate", baskets_calls=[])
 
     def run_what_if(ctx, args):
         category, pct = args["selection"]["value"], args["cut_pct"]
@@ -53,6 +63,12 @@ def fake(monkeypatch):
     monkeypatch.setattr(sp, "get_bonus_estimate", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(
         status=state.bonus_status, total_month=num("25.15", "ev_bonus", "bonus_estimate.total_month_eur@1"))))
     monkeypatch.setattr(evidence, "write", lambda conn, specs: state.specs.update(specs))
+
+    def get_basket_breakdown(ctx, args):
+        state.baskets_calls.append(args)
+        return SimpleNamespace(card=baskets_card(), evidence=["ev_bask_total", "ev_bask_every"])
+
+    monkeypatch.setattr(sp, "get_basket_breakdown", get_basket_breakdown)
     return state
 
 
@@ -69,11 +85,16 @@ def test_two_levers_their_total_and_twelve_times_it(fake):
     assert (d.total_month.method, d.total_year.method) == ("savings_plan.total_month_eur@1", "savings_plan.total_year_eur@1")
     total_spec = fake.specs[d.total_month.evidence_ref]
     assert total_spec["formula"] == "sum" and [p["ref"] for p in total_spec["parts"]] == ["ev_rests", "ev_lifes"]
+    assert [p["role"] for p in total_spec["parts"]] == ["restaurants", "lifestyle"]   # roles named by category
     year_spec = fake.specs[d.total_year.evidence_ref]
     assert year_spec["formula"] == "scale" and year_spec["parts"][0]["ref"] == d.total_month.evidence_ref
     assert fake.calls[0] == ("Restaurants", 20) and set(fake.calls[1:]) == {(c, 10) for c in config.SAVINGS_PLAN_OTHER_CATEGORIES}
-    # only what the plan shows is registered: two levers, two totals, safe to save, the S-Bonus extra
-    assert len(ctx.numbers.all()) == 6
+    # each cut share is a rule value, so an answer cites it as a number
+    assert [(lv.cut.value, lv.cut.method, lv.cut.unit.value) for lv in d.levers] == [
+        (20, "savings_plan.cut_pct@1", "percent"), (10, "savings_plan.cut_pct@1", "percent")]
+    assert all(fake.specs[lv.cut.evidence_ref]["formula"] == "rule_value" for lv in d.levers)
+    # only what the plan shows is registered: two levers and their cut shares, two totals, safe to save, the S-Bonus
+    assert len(ctx.numbers.all()) == 8
 
 
 def test_the_two_cut_levers_are_always_different_categories(fake):
@@ -83,6 +104,15 @@ def test_the_two_cut_levers_are_always_different_categories(fake):
     d = plan()[0].data
     keys = [lv.key for lv in d.levers]
     assert keys == ["Restaurants", "Entertainment"] and len(set(keys)) == len(keys)
+
+
+def test_the_tool_skips_the_first_category_even_when_the_settings_list_it(fake, monkeypatch):
+    """Review of #411: with Restaurants among the other categories and the largest, the tool still never counts
+    it twice (it was 45.91 + 45.91 in the review); the next largest is the second lever."""
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CATEGORIES", ("Restaurants", "Lifestyle"))
+    d = plan()[0].data
+    assert [lv.key for lv in d.levers] == ["Restaurants", "Lifestyle"] and d.total_month.value == 63.17
+    assert ("Restaurants", config.SAVINGS_PLAN_OTHER_CUT_PCT) not in fake.calls
 
 
 def test_the_largest_other_category_by_baseline_and_ties_by_name(fake):
@@ -110,12 +140,42 @@ def test_a_cut_the_what_if_does_not_offer_or_refuses_is_no_lever(fake):
     assert d.total_month.value == 10.01
 
 
-def test_no_lever_at_all_gives_no_card_and_says_none(fake):
+def test_no_lever_at_all_gives_the_baskets_card_and_safe_to_save(fake):
+    """Decision of #411: no lever reaches the threshold, so the card is where the money goes (the baskets card,
+    computed on the private context) next to safe to save; its numbers carry the answer's ids."""
     fake.what_ifs = {c: what_if("20.00", "2.00", ref=f"ev_{c[:3]}") for c in SANNA}
-    result, _ = plan()
+    result, ctx = plan()
     assert result.data.levers == [] and result.data.total_month is None and result.data.total_year is None
-    assert result.card is None and result.model_view["kind"] == "none"
+    assert result.model_view["kind"] == "none"
     assert result.model_view["safe_to_save"]["value"] == 184.61       # today's answer is still there
+    assert fake.baskets_calls == [config.SAVINGS_PLAN_NONE_BASKETS]
+    card = result.card
+    assert (card.card_id, card.type, card.total.evidence_ref) == ("card_baskets", "breakdown", "ev_bask_total")
+    registered = ctx.numbers.all()
+    item = card.items[0]["amount"]
+    assert registered[card.total.id].evidence_ref == "ev_bask_total" and registered[item["id"]].evidence_ref == "ev_bask_every"
+    assert {"ev_bask_total", "ev_bask_every"} <= set(result.evidence)
+
+
+def test_a_failing_baskets_card_leaves_the_no_lever_answer_without_a_card(fake, monkeypatch):
+    fake.what_ifs = {c: what_if("20.00", "2.00", ref=f"ev_{c[:3]}") for c in SANNA}
+    monkeypatch.setattr(sp, "get_basket_breakdown", lambda ctx, args: (_ for _ in ()).throw(RuntimeError("down")))
+    result, _ = plan()
+    assert result.card is None and result.model_view["safe_to_save"]["value"] == 184.61
+
+
+def test_a_failing_safe_to_save_or_s_bonus_never_takes_the_plan_down(fake, monkeypatch):
+    """Review of #411: any failure of the two extras leaves them out; the plan, its card and totals stand."""
+    def boom(ctx, args):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(sp, "get_safe_to_save", boom)
+    monkeypatch.setattr(sp, "get_bonus_estimate", lambda ctx, args: (_ for _ in ()).throw(ValueError("bad")))
+    result, _ = plan()
+    d = result.data
+    assert (d.safe_to_save, d.bonus) == (None, None) and d.total_month.value == 63.17 and result.card is not None
+    assert result.model_view["safe_to_save"] is None and result.model_view["bonus_extra"] is None
+    assert "S-Bonus" not in result.card.estimate["text"]
 
 
 def test_the_s_bonus_and_safe_to_save_are_never_in_the_total(fake):
@@ -126,22 +186,61 @@ def test_the_s_bonus_and_safe_to_save_are_never_in_the_total(fake):
     assert plan()[0].data.bonus is None
 
 
-def test_the_card_is_a_breakdown_with_the_levers_and_the_extra_line(fake):
+def test_the_card_is_a_breakdown_with_the_levers_and_the_s_bonus_in_the_estimate(fake):
+    """Every row key is a category (contract section 3, breakdown items); the S-Bonus extra is in the estimate
+    text, never a row or part of the total. The bank button has the one label of #267 and no amount."""
     card = plan()[0].card
     assert (card.type, card.display_hint, card.title) == ("breakdown", "list", "Your savings plan")
     assert card.total.method == "savings_plan.total_month_eur@1"
-    assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle", "s_bonus_extra"]
+    assert [i["key"] for i in card.items] == ["Restaurants", "Lifestyle"]
     assert card.items[0]["label"] == "Restaurants 20% less"
-    assert "not in the total" in card.items[2]["label"]
+    assert card.estimate["text"].endswith("could add about €25.15 a month in S-Bonus, not in the total.")
     show, host = card.actions
     assert (show.type, host.type, host.target, host.label) == ("open_evidence", "open_host_screen", "monthly_saving",
-                                                               "Start saving in S-mobiili")
+                                                               "See monthly saving in S-mobiili")
+    assert not any(ch.isdigit() for ch in host.label)
     fi = plan("fi")[0].card
-    assert fi.items[0]["label"] == "Ravintolat 20 % vähemmän" and fi.actions[1].label == "Aloita säästäminen S-mobiilissa"
+    assert fi.items[0]["label"] == "Ravintolat 20 % vähemmän"
+    assert fi.actions[1].label == "Katso kuukausisäästäminen S-mobiilissa"
+    assert "S-Bonusta, ei mukana summassa." in fi.estimate["text"]
 
 
-def test_the_model_view_has_numbers_and_labels_only(fake):
-    view = plan()[0].model_view
+def strings_outside_numbers(node):
+    if isinstance(node, dict):
+        if {"id", "value", "unit"} <= set(node):   # a model Number
+            return
+        for v in node.values():
+            yield from strings_outside_numbers(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from strings_outside_numbers(v)
+    elif isinstance(node, str):
+        yield node
+
+
+@pytest.mark.parametrize("language", ["en", "fi"])
+def test_the_model_view_gives_every_number_as_a_number(fake, language):
+    """Review of #411: no digit outside a Number in the model view (no "Restaurants 20% less", no bare cut_pct),
+    so the composer never copies bare digits; each cut share is a Number and, for the default shares, words."""
+    view = plan(language)[0].model_view
     assert "ev_" not in repr(view) and "CUST" not in repr(view)
     assert set(view) == {"tool", "kind", "levers", "total_month", "total_year", "safe_to_save", "bonus_extra"}
     assert view["kind"] == "plan" and [lv["key"] for lv in view["levers"]] == ["Restaurants", "Lifestyle"]
+    assert all(set(lv) == {"key", "category", "cut", "cut_words", "saving"} for lv in view["levers"])
+    assert [lv["cut"]["value"] for lv in view["levers"]] == [20, 10]
+    assert [lv["cut_words"] for lv in view["levers"]] == (["a fifth", "a tenth"] if language == "en"
+                                                          else ["viidenneksen", "kymmenyksen"])
+    assert not [s for s in strings_outside_numbers(view) if any(ch.isdigit() for ch in s)]
+
+
+@pytest.mark.parametrize("pct,en,fi", [(10, "a tenth", "kymmenyksen"), (20, "a fifth", "viidenneksen"),
+                                       (25, "a quarter", "neljänneksen"), (50, "half", "puolet"), (15, None, None)])
+def test_cut_words_come_from_the_setting(pct, en, fi):
+    assert (sp.cut_words(pct, "en"), sp.cut_words(pct, "fi")) == (en, fi)
+
+
+def test_a_share_without_words_is_a_number_only(fake, monkeypatch):
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
+    result = plan()[0]
+    other = result.model_view["levers"][1]
+    assert other["cut_words"] is None and other["cut"]["value"] == 15 and result.data.levers[1].cut.display == "15.0%"

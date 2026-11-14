@@ -10,7 +10,8 @@
 # expect: answered | no_data (answered, but no number: the period has no data) | refused (a refusal
 # template of one of refusal_kinds, and no data tool call).
 # Each item's `source` is the metric file and output column, or the plain spending query, that
-# produced `value` (core/eval/expected.py). Values are for as_of. Do not edit values by hand:
+# produced `value` (core/eval/expected.py); `multiply` scales it and `plus` adds other sources to it (a sum
+# a confused coach would give, for `forbid`). Values are for as_of. Do not edit values by hand:
 # python core/eval/expected.py --write regenerates them, and --check proves they are current.
 # Period presets, resolved for as_of 2026-09-30: last month = 2026-08; this month = 2026-09-01 to
 # today; last 3 months = the last 3 complete calendar months, 2026-07 to 2026-09 (as last_6_months in
@@ -90,6 +91,9 @@ cases:
   - {name: safe_to_save_month, value: 184.61, unit: eur_per_month, tolerance: 0.005, source: {metric: safe_to_spend, column: safe_to_save_monthly_eur}}
   - {name: plan_eating_out_month, value: 45.91, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: first_saving_eur}}
   - {name: plan_other_month, value: 17.26, unit: eur_per_month, tolerance: 0.005, required: false, source: {query: savings_plan, column: other_saving_eur}}
+  forbid:
+  - {name: plan_plus_safe_to_save, value: 247.78, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{metric: safe_to_spend, column: safe_to_save_monthly_eur}]}}
+  - {name: plan_plus_s_bonus, value: 88.32, unit: eur_per_month, tolerance: 0.005, source: {query: savings_plan, column: total_month_eur, plus: [{query: bonus, start: '2026-04-01', end: '2026-09-30', column: total_month}]}}
 
 - id: sanna-bonus
   persona: CUST00860

@@ -428,64 +428,80 @@ def small_purchases_sentence(view: dict[str, Any], language: str) -> tuple[str, 
     return text[:1].upper() + text[1:], ids
 
 
-# The savings plan (#369) in two sentences and at most three numbers: what can already be set aside and what
-# the cuts would add (the plan's total a month), then the total a year and the cuts in words. The levers'
-# own amounts, the S-Bonus extra and the rest stay on the card. Nothing quotes safe to spend (coordinator).
-# The monthly and yearly displays already carry "a month" / "a year", so the sentences do not repeat them.
+# The savings plan (#369) in at most two sentences and three numbers, the plan's total a month first
+# (coordinator, #411): the total and the total a year with the cuts, then what can already be set aside. A cut
+# share is said in words when the setting has them (the view's `cut_words`), else cited as its Number; a cited
+# cut share takes the place of the year, then of safe to save, so the answer never cites more than three
+# numbers. The levers' own amounts and the S-Bonus extra stay on the card. Nothing quotes safe to spend
+# (coordinator). The monthly and yearly displays already carry "a month" / "a year"; the sentences do not.
 PLAN_SENTENCE = {
-    "frame": ("You could already set aside about {save}; these changes could add about {total}.",
-              "Voisit jo nyt säästää noin {save}; nämä muutokset voisivat lisätä noin {total}."),
-    "frame_only_total": ("These changes could add about {total}.", "Nämä muutokset voisivat lisätä noin {total}."),
-    "both": ("That is about {year}, from eating out {first} less and spending {second} less on {other}.",
-             "Se tekee noin {year}: ulkona syöminen {first} vähemmän ja luokassa {other} {second} vähemmän."),
-    "first": ("That is about {year}, from eating out {first} less.",
-              "Se tekee noin {year}: ulkona syöminen {first} vähemmän."),
-    "other": ("That is about {year}, from spending {second} less on {other}.",
-              "Se tekee noin {year}: luokassa {other} {second} vähemmän."),
+    "plan": ("These changes could add about {total}, about {year}: {cuts}.",
+             "Nämä muutokset voisivat lisätä noin {total}, noin {year}: {cuts}."),
+    "plan_no_year": ("These changes could add about {total}: {cuts}.",
+                     "Nämä muutokset voisivat lisätä noin {total}: {cuts}."),
+    "save": ("You could already set aside about {save}.", "Voisit jo nyt säästää noin {save}."),
+    "first": ("eating out {cut} less", "ulkona syöminen {cut} vähemmän"),
+    "other": ("spending {cut} less on {other}", "luokassa {other} {cut} vähemmän"),
+    "and": (" and ", " ja "),
     "none": ("None of the usual cuts would add much here.", "Tavalliset vähennykset eivät lisäisi tässä paljon."),
     "none_save": ("None of the usual cuts would add much here; you could already set aside about {save}.",
                   "Tavalliset vähennykset eivät lisäisi tässä paljon; voisit jo nyt säästää noin {save}."),
 }
-# A cut share in words, so the text carries no digit outside a number token.
-CUT_WORDS = {20: ("a fifth", "viidenneksen"), 10: ("a tenth", "kymmenyksen")}
+PLAN_MAX_NUMBERS = 3
 
 
 def savings_plan_sentence(view: dict[str, Any], language: str) -> tuple[str, list[str]] | None:
-    """The savings-plan takeaway (at most two sentences) and the ids it cites; None when it cannot be built."""
+    """The savings-plan takeaway (at most two sentences, three numbers) and the ids it cites; None when it
+    cannot be built."""
     if view.get("tool") != "get_savings_plan":
         return None
 
-    def num(key: str) -> dict[str, Any] | None:
-        n = view.get(key)
-        return n if isinstance(n, dict) and isinstance(n.get("id"), str) else None
+    def num(node: Any) -> dict[str, Any] | None:
+        return node if isinstance(node, dict) and isinstance(node.get("id"), str) else None
 
-    save = num("safe_to_save")
+    save = num(view.get("safe_to_save"))
     save = save if save and isinstance(save.get("value"), (int, float)) and save["value"] > 0 else None
     s = lambda key: pick(PLAN_SENTENCE[key], language)  # noqa: E731
     tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
     if view.get("kind") != "plan":
         return (s("none_save").format(save=tok(save)), [save["id"]]) if save else (s("none"), [])
-    total, year = num("total_month"), num("total_year")
+    total, year = num(view.get("total_month")), num(view.get("total_year"))
     levers = view.get("levers") or []
     if not (total and year and levers):
         return None
     first_key = tools_config.SAVINGS_PLAN_FIRST[0]
-    first = next((lv for lv in levers if lv.get("key") == first_key), None)
-    other = next((lv for lv in levers if lv.get("key") != first_key), None)
-    words = {lv["key"]: CUT_WORDS.get(lv.get("cut_pct")) for lv in levers}
-    if any(w is None for w in words.values()):
-        return None                     # a cut share without words would need a digit in the text
-    other_label = (other or {}).get("category") or ""
-    if re.search(r"\d", other_label):
+    cuts, cut_ids = [], []
+    for lever in levers:
+        words, cut = lever.get("cut_words"), num(lever.get("cut"))
+        if isinstance(words, str) and words and not re.search(r"\d", words):
+            share = words
+        elif cut is not None:
+            share = tok(cut)              # "15.0%": a cut share without words is cited, never typed
+            cut_ids.append(cut["id"])
+        else:
+            return None
+        if lever.get("key") == first_key:
+            cuts.append(s("first").format(cut=share))
+            continue
+        other = lever.get("category") or ""
+        if not other or re.search(r"\d", other):
+            return None
+        other = other.lower() if language == "en" else other   # "luokassa Ostokset ja vapaa-aika"
+        cuts.append(s("other").format(cut=share, other=other))
+    # The total and any cited cut share first, then safe to save, then the year, within three numbers.
+    with_save = bool(save) and len(cut_ids) + 2 <= PLAN_MAX_NUMBERS
+    with_year = len(cut_ids) + 2 + with_save <= PLAN_MAX_NUMBERS
+    if len(cut_ids) + 1 > PLAN_MAX_NUMBERS:
         return None
-    other_label = other_label.lower() if language == "en" else other_label   # "luokassa Ostokset ja vapaa-aika"
-    fill = {"year": tok(year), "other": other_label,
-            "first": pick(words[first["key"]], language) if first else "",
-            "second": pick(words[other["key"]], language) if other else ""}
-    second_key = "both" if first and other else "first" if first else "other"
-    frame = s("frame").format(save=tok(save), total=tok(total)) if save else s("frame_only_total").format(total=tok(total))
-    ids = ([save["id"]] if save else []) + [total["id"], year["id"]]
-    return f"{frame} {s(second_key).format(**fill)}", ids
+    cuts_text = s("and").join(cuts)
+    if with_year:
+        sentences = [s("plan").format(total=tok(total), year=tok(year), cuts=cuts_text)]
+    else:
+        sentences = [s("plan_no_year").format(total=tok(total), cuts=cuts_text)]
+    if with_save:
+        sentences.append(s("save").format(save=tok(save)))
+    ids = [total["id"]] + ([year["id"]] if with_year else []) + cut_ids + ([save["id"]] if with_save else [])
+    return " ".join(sentences), ids
 
 
 PROFILE_LEAD = ("Your spender profile: {label}. {description}", "Kuluttajaprofiilisi: {label}. {description}")

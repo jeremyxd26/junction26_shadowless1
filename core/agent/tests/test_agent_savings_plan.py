@@ -52,9 +52,10 @@ def rendered(language="en"):
 
 
 def test_the_plan_in_english(fake):  # noqa: F811
+    """The plan's total a month first (#411), then what can already be set aside."""
     text, cited = rendered()
-    assert text == ("You could already set aside about €184.61 a month; these changes could add about €63.17 a month. "
-                    "That is about €758.04 a year, from eating out a fifth less and spending a tenth less on lifestyle.")
+    assert text == ("These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and "
+                    "spending a tenth less on lifestyle. You could already set aside about €184.61 a month.")
     assert len(cited) == 3
 
 
@@ -66,9 +67,9 @@ def test_the_plan_in_finnish(fake, monkeypatch):  # noqa: F811
     fi_save = fi_save.model_copy(update={"display": "184,61 € / kk"})   # the fixture's numbers are English
     monkeypatch.setattr(sp, "get_safe_to_save", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(monthly=fi_save)))
     text, cited = rendered("fi")
-    assert text == ("Voisit jo nyt säästää noin 184,61 € / kk; nämä muutokset voisivat lisätä noin 63,17 € / kk. "
-                    "Se tekee noin 758,04 € / v: ulkona syöminen viidenneksen vähemmän ja luokassa Ostokset ja "
-                    "vapaa-aika kymmenyksen vähemmän.")
+    assert text == ("Nämä muutokset voisivat lisätä noin 63,17 € / kk, noin 758,04 € / v: ulkona syöminen viidenneksen "
+                    "vähemmän ja luokassa Ostokset ja vapaa-aika kymmenyksen vähemmän. Voisit jo nyt säästää noin "
+                    "184,61 € / kk.")
     assert len(cited) == 3
 
 
@@ -76,7 +77,41 @@ def test_one_lever_only(fake):  # noqa: F811
     for c in ("Entertainment", "Lifestyle", "Travel"):
         fake.what_ifs[c] = what_if("20.00", "2.00", ref=f"ev_{c[:3]}")
     text, _ = rendered()
-    assert text.endswith("That is about €550.92 a year, from eating out a fifth less.")
+    assert text == ("These changes could add about €45.91 a month, about €550.92 a year: eating out a fifth less. "
+                    "You could already set aside about €184.61 a month.")
+
+
+@pytest.mark.parametrize("language,expected", [
+    ("en", "These changes could add about €63.17 a month: eating out a fifth less and spending 15.0% less on "
+           "lifestyle. You could already set aside about €184.61 a month."),
+    ("fi", "Nämä muutokset voisivat lisätä noin 63,17 € / kk: ulkona syöminen viidenneksen vähemmän ja luokassa "
+           "Ostokset ja vapaa-aika 15,0 % vähemmän. Voisit jo nyt säästää noin 184,61 € / kk."),
+])
+def test_a_cut_share_without_words_is_cited_as_a_number(fake, monkeypatch, language, expected):  # noqa: F811
+    """Review of #411: another cut share (15 %) is cited as its Number; the answer is still two sentences and
+    three numbers (the year gives way), and the S-Bonus is never in the text."""
+    from core.tools import config
+    from core.tools.tests.test_tools_savings_plan_pure import num
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
+    if language == "fi":
+        fi_save = num("184.61", "ev_save", "safe_to_spend.safe_to_save_monthly_eur@1")
+        fi_save = fi_save.model_copy(update={"display": "184,61 € / kk"})
+        monkeypatch.setattr(sp, "get_safe_to_save", lambda ctx, args: SimpleNamespace(data=SimpleNamespace(monthly=fi_save)))
+    text, cited = rendered(language)
+    assert text == expected and len(cited) == 3
+    assert "25.15" not in text and "25,15" not in text and "S-Bonus" not in text
+
+
+def test_two_cut_shares_without_words_still_cite_three_numbers(fake, monkeypatch):  # noqa: F811
+    from core.tools import config
+
+    monkeypatch.setattr(config, "SAVINGS_PLAN_FIRST", ("Restaurants", 15))
+    monkeypatch.setattr(config, "SAVINGS_PLAN_OTHER_CUT_PCT", 15)
+    text, cited = rendered()
+    assert text == "These changes could add about €63.17 a month: eating out 15.0% less and spending 15.0% less on lifestyle."
+    assert len(cited) == 3
 
 
 def test_no_lever_says_so_plainly_and_keeps_safe_to_save(fake):  # noqa: F811
