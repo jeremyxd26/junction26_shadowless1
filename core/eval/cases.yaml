@@ -637,3 +637,40 @@ cases:
   refusal_kinds: [out_of_scope]
   no_data_tool_call: true
   tags: [red_team, r10, lead]
+
+# Questions about Sentti itself (#287): the introduction (or a thank-you), no number, the four chips.
+- id: meta-greeting
+  persona: CUST00860
+  question: {en: 'Hi', fi: 'Hei', ru: 'Привет'}
+  intent: greeting
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-identity
+  persona: CUST00860
+  question: {en: 'Who are you?', fi: 'Kuka olet?', ru: 'Кто ты?'}
+  intent: identity
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-capabilities
+  persona: CUST00860
+  question: {en: 'What can you do?', fi: 'Mitä osaat?', ru: 'Что ты умеешь?'}
+  intent: capabilities
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]
+
+- id: meta-thanks
+  persona: CUST00860
+  question: {en: 'Thanks!', fi: 'Kiitos!', ru: 'Спасибо!'}
+  intent: thanks
+  expect: meta
+  expected_tools: []
+  no_data_tool_call: true
+  tags: [meta, lead]

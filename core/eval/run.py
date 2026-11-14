@@ -105,7 +105,12 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
                                                dates=dates, periods=periods):
         fails.append(f"R1: {problem}")
 
-    if case["expect"] in ("refused", "no_data"):
+    if case["expect"] == "meta":  # an introduction offers the four brief questions as chips (#287)
+        if ans.follow_ups is None:
+            fails.append("unverified: the source did not report its chips")
+        elif len(ans.follow_ups) < 4:
+            fails.append(f"chips: {len(ans.follow_ups)} brief questions offered, expected 4")
+    if case["expect"] in ("refused", "no_data", "meta"):
         for x in declared:  # a refusal or a period without data declares no number at all
             fails.append(f"R1: Number object {x.get('value')} {x.get('unit')} in a {case['expect']} answer")
     else:
