@@ -1,11 +1,14 @@
 # Allowlist: ignore everything, then re-include only what the service imports or reads at run time.
 # deploy/Dockerfile copies `core` as a whole, so this file alone decides what is in the image. A path
-# listed here that does not exist yet (core/agent) is simply absent. Later lines win.
+# listed here that does not exist yet is simply absent. Later lines win. A module outside these
+# packages that they import (core/answer_text.py, shared by the answer pipeline and the eval) is
+# listed by name, here and in the completeness check of deploy/remote-deploy.sh.
 *
 !core/requirements.txt
 !core/app/
 !core/tools/
 !core/agent/
+!core/answer_text.py
 !core/metrics/*.sql
 !core/config/*.yaml
 

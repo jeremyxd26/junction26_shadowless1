@@ -28,6 +28,11 @@ DEFAULT_UNITS = {
 }
 
 
+def json_value(value: Decimal, unit: Unit) -> int | float:
+    """A whole count as an integer; anything else, a fractional count too (14.2 a month), as a float."""
+    return int(value) if unit is Unit.COUNT and value == value.to_integral_value() else float(value)
+
+
 def model_number(n: Number | None) -> dict[str, Any] | None:
     """What the model may see of a Number: id, value, unit and label; no evidence ref (R3)."""
     if n is None:
@@ -46,9 +51,9 @@ class NumberBuilder:
     def number(self, value: Decimal, unit: Unit, period: Period, method: str, spec: dict, label: str) -> Number:
         ref = evidence.make_ref(spec)
         self.specs[ref] = spec
-        return Number(value=int(value) if unit is Unit.COUNT else float(value), unit=unit, period=period,
+        return Number(value=json_value(value, unit), unit=unit, period=period,
                       method=method, evidence_ref=ref, label=label,
-                      display=display(value, unit, self.ctx.language))
+                      display=display(value, unit, self.ctx.language, method))
 
     def transactions(self, sel: Selection, method: str, period: Period, label: str, *,
                      unit: Unit | None = None, params: dict[str, Any] | None = None) -> tuple[Number, Decimal]:

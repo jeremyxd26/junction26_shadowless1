@@ -13,7 +13,7 @@ COPY core/requirements.txt core/requirements.txt
 RUN pip install -r core/requirements.txt
 
 # Everything under core that /.dockerignore lets through: the service (core/app), the tools
-# (core/tools), the answer pipeline (core/agent, once it exists), the metric SQL the tools run
+# (core/tools), the answer pipeline (core/agent and core/answer_text.py), the metric SQL the tools run
 # (core/metrics/*.sql) and the config files (core/config/*.yaml). No tests, data or scripts.
 COPY core core
 
