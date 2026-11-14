@@ -1756,10 +1756,10 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 | `error` | Last, once, on failure | `error`: `{code, message, retryable}`, the same envelope as an HTTP error (section 4) |
 
 `outcome` is one of:
-- `answered`: a normal answer.
+- `answered`: a normal answer. A plan was made (by the rules or the AI model), the tools ran, and the text passed the validator, whoever wrote it. When the AI model would have written the text and could not, the text is the template of the question and `warnings` contains `llm_unavailable`.
 - `clarify`: the coach asks a question back.
 - `refused`: out of scope; see `refusal.kind`.
-- `fallback`: the AI model was unavailable, so the text is a template built from the tool results.
+- `fallback`: reserved for an answer with no plan at all: the rules did not recognise the question and the AI model could not be asked. The core currently answers that case with its general clarifying question, as `clarify` with `llm_unavailable`, so the app should treat `fallback` like `answered`.
 
 `refusal.kind` is one of `investment_advice`, `credit_decision` (for example "Will the bank approve my mortgage?"), `out_of_scope`, `other_person_data` or `unsafe`.
 
@@ -1768,7 +1768,7 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 - `options` holds up to 3 short answers. The app shows them as chips, and a tap sends the option's text as the next message in the same conversation.
 
 `warnings` holds codes the app may show as a small note:
-- `llm_unavailable`: the text is a template.
+- `llm_unavailable`: the AI model would have been used and was not, so the text is a template. Possible reasons: it is switched off, its daily budget is used up, it is paused after errors, the request's model window is used up, or it failed. The outcome stays `answered`, or `clarify` for a question the rules did not recognise.
 - `tool_failed`: some data could not be computed, and the answer says which.
 - `period_clamped`: the period was moved to fit the data window.
 - `conversation_reset`: a new conversation was started.
@@ -2198,7 +2198,7 @@ Refusal texts are fixed, reviewed templates, not free AI text. A refusal looks l
 }
 ```
 
-- **`fallback`:** if the AI model fails after the tools have run, the core still sends the cards and a template text built from them, for example "Here is what I found for September." `warnings` then contains `llm_unavailable`.
+- **AI model unavailable:** if the AI model may not be used or fails after the tools have run, the core still sends the cards and the template text of the question, built from them. The outcome is `answered`, and `warnings` contains `llm_unavailable`. A question the rules did not recognise gets the general clarifying question instead: outcome `clarify`, with `llm_unavailable`.
 
 ---
 
