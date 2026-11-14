@@ -117,3 +117,31 @@ def test_a_matching_amount_without_a_purchase_reference_takes_the_normal_path(qu
 
     done, events, _ = ask(question, "en", model=RuleModel())
     assert not [e for e, _ in events if e == "card"] and "1,080.42" not in done.get("text_rendered", "")
+
+
+# ---- #398: a question about Sentti's own question -----------------------------------------------------------
+
+@pytest.mark.parametrize("question, language, day", [
+    ("why are you asking me about 1080 euros?", "en", "28 September 2026"),    # the stand, ans_nfy7d4eh
+    ("Why are you asking about €1,080?", "en", "28 September 2026"),
+    ("what is this question about 1080?", "en", "28 September 2026"),
+    ("why are you asking me about that purchase?", "en", "28 September 2026"),  # no amount
+    ("why do you ask?", "en", "28 September 2026"),
+    ("miksi kysyt 1080 eurosta?", "fi", "28.9.2026"),
+    ("miksi kysyt siitä ostoksesta?", "fi", "28.9.2026"),                       # no amount
+    ("mistä tämä kysymys 1080 eurosta?", "fi", "28.9.2026"),
+])
+def test_a_question_about_senttis_question_is_answered_from_the_review_card(question, language, day):
+    done, events, audit = ask(question, language)
+    assert done["outcome"] == "answered" and done["warnings"] == []
+    assert [d["card"]["card_id"] for e, d in events if e == "card"] == ["card_review_01"]
+    assert ("€1,080.42" if language == "en" else "1 080,42 €") in done["text_rendered"] and day in done["text_rendered"]
+    assert audit.records[-1]["planner_turns"] == [{"round": 1, "source": "rules", "review_amount": True}]
+
+
+@pytest.mark.parametrize("question", ["why are you asking me about 500 euros?", "miksi kysyt 500 eurosta?"])
+def test_a_question_about_senttis_question_with_another_amount_takes_the_normal_path(question):
+    from core.agent.rules import RuleModel
+
+    done, events, _ = ask(question, "en" if question.startswith("why") else "fi", model=RuleModel())
+    assert not [e for e, _ in events if e == "card"] and "1,080.42" not in done.get("text_rendered", "")

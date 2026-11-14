@@ -85,6 +85,13 @@ WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bif i\b|\bcut\b|\breduc|\bjos\b|vähen
 PURCHASE_REFERENCE = re.compile(
     r"\bwhat\s+(?:was|is|were)\b|\bwhat'?s\b|\bthat\b|\bpurchase\w*|\bpayment\b|\bcharge\b|\bbought\b"
     r"|\bostos\w*|\bmaksu\w*|\bmikä\s+(?:se|oli|tämä|tuo)\b|\bmitä\s+(?:se|oli)\b|\bostin\b", re.I)
+# A question about Sentti's own question (#398): "why are you asking me about 1080 euros?", "miksi kysyt
+# siitä ostoksesta?". With a pending review it means the review's purchase, with its amount or with none.
+SENTTI_QUESTION = re.compile(
+    r"\bwhy\s+(?:are|do|did)\s+you\s+ask(?:ing)?\b|\bwhy\s+(?:this|that|the)\s+question\b"
+    r"|\bwhat\s+is\s+(?:this|that|the|your)\s+question\b|\bwhat\s+are\s+you\s+asking\b"
+    r"|\bmiksi\s+kysy(?:t|tte|it|tit)\b|\bmiksi\s+(?:tämä|tuo|se)\s+kysymys\b"
+    r"|\b(?:mitä|mistä)\s+(?:tämä|tuo|se)\s+kysymys\b|\bmitä\s+kysyt\b", re.I)
 REVIEW_AMOUNT_TOLERANCE_EUR = 1.0   # "€1,080" for a purchase of €1,080.42
 
 
@@ -727,11 +734,16 @@ class Pipeline:
     def _answer_review_amount(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                               a: _Answer) -> bool:
         """Answer "what was that €1,080?" (#341) when an amount in the question is within a euro of the
-        pending review's purchase: the purchase's category, date and amount, why Sentti asks, and the
-        review card. False (the normal path answers) for any other question."""
+        pending review's purchase, and "why are you asking me about 1080 euros?" or "why are you asking
+        about that purchase?" (#398), a question about Sentti's own question, with the review's amount or
+        with none: the purchase's category, date and amount, why Sentti asks, and the review card. False
+        (the normal path answers) for any other question."""
         asked = [v for v, mark in scan_numbers(message, lang) if mark != "pct" and v >= 1]
-        if not asked or WHAT_IF_WORDS.search(message) or not PURCHASE_REFERENCE.search(message) or a.flags:
+        about_question = bool(SENTTI_QUESTION.search(message))
+        if WHAT_IF_WORDS.search(message) or a.flags:
             return False   # a guard flag (an injection marker) goes the normal way, to the planner's checks
+        if not about_question and (not asked or not PURCHASE_REFERENCE.search(message)):
+            return False
         # A refusal rule always wins, as for the introduction (#287): "should I invest €1,080 in bitcoin?"
         # or "will the bank approve my €1,080 loan?" is refused on the normal path.
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in a.conversation.turns]
@@ -741,8 +753,11 @@ class Pipeline:
             return False
         # A probe on a private registry first, so a question with another amount registers no number.
         probe = self._review_card(dataclasses.replace(ctx, numbers=NumberRegistry()), review)
-        if probe is None or not any(abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR
-                                    for v in asked):
+        if probe is None:
+            return False
+        # Any amount in the question must be the purchase's; a question about Sentti's question may name none.
+        if (asked or not about_question) and not any(
+                abs(v - float(probe["amount"]["value"])) <= REVIEW_AMOUNT_TOLERANCE_EUR for v in asked):
             return False
         card = self._review_card(ctx, review)
         if card is None:
