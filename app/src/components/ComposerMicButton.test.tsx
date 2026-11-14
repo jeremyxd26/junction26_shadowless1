@@ -34,13 +34,36 @@ describe('ComposerMicButton (#735)', () => {
     expect(await render(true, false)).toBe('')
   })
 
-  it('a live build shows a 44 px mic named in the language, not pressed, with no motion until it records', async () => {
+  it('a live build shows a 44 px mic named in the language, with no motion until it records', async () => {
     const en = await render(true, true)
     expect(en).toContain('aria-label="Speak your question"')
-    expect(en).toContain('aria-pressed="false"')
     expect(en).toContain('size-[44px]')
     expect(en).not.toContain('animate-')
     const fi = await render(true, true, 'fi')
     expect(fi).toContain('aria-label="Sano kysymyksesi"')
+  })
+
+  it('the recording bar (#751): cancel, a waveform from the levels, the timer and stop, all 44 px', async () => {
+    vi.resetModules()
+    const { RecordingBar } = await import('./ComposerMicButton.tsx')
+    const bar = (props: { sending: boolean; lang: 'en' | 'fi' }) =>
+      renderToStaticMarkup(createElement(RecordingBar, { ...props, levels: [0.5, 1], elapsed: 3200, onCancel: () => {}, onStop: () => {} }))
+    const en = bar({ sending: false, lang: 'en' })
+    expect(en).toContain('aria-label="Cancel recording"')
+    expect(en).toContain('aria-label="Stop and transcribe"')
+    expect(en).toContain('0:03')
+    expect(en.match(/size-\[44px\]/g)).toHaveLength(2)
+    expect(en).toContain('height:28px')              // the loudest level fills the bar
+    expect(en).toContain('height:14px')
+    // Reduced motion: the bars are hidden and a still dot with "Recording" shows instead.
+    expect(en).toContain('motion-reduce:hidden')
+    expect(en).toContain('motion-reduce:inline-flex')
+    expect(en).not.toContain('disabled=""')
+    const fi = bar({ sending: true, lang: 'fi' })
+    expect(fi).toContain('aria-label="Peru nauhoitus"')
+    expect(fi).toContain('aria-label="Lopeta ja kirjoita teksti"')
+    expect(fi).toContain('disabled=""')              // stop waits while the clip is turned into text
+    expect(fi.match(/motion-safe:animate-pulse/g)).toHaveLength(3)   // the three dots, still under reduced motion
+    expect(fi).not.toContain('height:28px')
   })
 })
