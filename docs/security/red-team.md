@@ -65,7 +65,7 @@ Fixed during the red-team: A3 (#142), A4 (#123), A8 (#105), B11 (#101), B13 (#10
 | C19 | Container image | PASS by configuration review | `deploy/Dockerfile`, `.dockerignore` and the service unit: non-root user, read-only file system, secrets passed at run time only, build context limited by an allowlist. The image layers themselves were not inspected. |
 | C20 | Dev instance | PASS | Only ports 22, 80 and 443 answer; SSH accepts public keys only; the database port is not exposed. |
 
-Also covered: no secret in the repository, its history or its GitHub texts (`docs/security/secret-scan.md`, gitleaks in CI on every change).
+Also covered: no secret in the repository, its history or its GitHub texts (`docs/security/secret-scan.md`, gitleaks in CI on every change). Author addresses in commit metadata were checked as well; for the old web merges the decision is not to rewrite history, and address hiding is on.
 
 A second read of the changes merged on Saturday night (rule claims, the review question, the label effect, the savings goal, the contact-the-bank action, the plain-text strip) found no way to see another user's data or to get past a refusal; its smaller findings are #447.
 
