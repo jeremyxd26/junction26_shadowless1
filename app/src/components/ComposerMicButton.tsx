@@ -177,10 +177,11 @@ export function ComposerMicButton({ onText }: { onText: (text: string) => void }
 
   return (
     <>
-      {/* A short line above the composer: listening, writing it down, or what went wrong. */}
+      {/* A short line above the composer: listening, writing it down, or what went wrong. It keeps the
+          bottom-right corner free for a round button there (scroll to the latest answer). */}
       {status && (
         <p
-          className={`pointer-events-none absolute inset-x-4 bottom-full mb-2 rounded-lg border px-3 py-2 text-sm text-ink shadow-sm ${
+          className={`pointer-events-none absolute right-[72px] bottom-full left-4 mb-2 rounded-lg border px-3 py-2 text-sm text-ink shadow-sm ${
             failure && !active && phase !== 'sending' ? 'border-danger bg-danger-tint' : 'border-line bg-surface'
           }`}
         >
