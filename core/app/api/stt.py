@@ -11,8 +11,10 @@
   long (a WAV header over 15 s, or more audio than about 17 s by the model's token count): 413
   `invalid_request`; an unknown type or an empty or unreadable clip: 400.
 - The text goes back as JSON and nowhere else: no audit record, no file, no log line with audio or text.
+- No speech heard (an empty text, or the model saying there was none) is not an error (#759): 200 with
+  `{"text": "", "empty": true}`, so the app asks the user to try again.
 - Errors as /api/tts: 429 `rate_limited` with Retry-After (the windows, the budget or too many at once), 503
-  `model_unavailable` (no key, switched off, an API error, a timeout, or no speech heard).
+  `model_unavailable` (no key, switched off, an API error or a timeout).
 """
 
 from __future__ import annotations
@@ -100,6 +102,8 @@ async def post_stt(request: Request, customer_id: str = "", language: str = "en"
         text = await run_in_threadpool(stt_service(request.app).transcribe, audio, content_type, lang)
     except SttError as exc:
         log.info("stt: %s, %d bytes", exc.code, len(audio))   # the code and the size only
+        if exc.code == "no_speech":
+            return {"text": "", "language": lang, "empty": True}
         if exc.code in ("too_large", "too_long"):
             return too_large(lang)
         if exc.code in ("empty", "unsupported"):

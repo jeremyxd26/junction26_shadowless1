@@ -52,6 +52,8 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   const [draft, setDraft] = useState('')
   // A paste over the limit was cut to fit; the note stays until the draft changes again (#716).
   const [cut, setCut] = useState(false)
+  // While the mic records or sends, its bar takes the whole composer row (#751).
+  const [voice, setVoice] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const left = MAX_QUESTION - draft.length
   const note = cut ? s.cut : left <= NEAR_LIMIT ? s.charactersLeft(left) : null
@@ -177,8 +179,9 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
       <form
         onSubmit={submit}
         // The icon buttons and their gaps keep their pixel size at any text size, so the input keeps
-        // its room at 200 % text (#705); the text and the input grow.
-        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] flex-wrap items-center gap-[12px] border-t border-line bg-page px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
+        // its room at 200 % text (#705); the text and the input grow. The mic sits inside the input's pill,
+        // and the side gutters stay 16 px, so the input keeps over 60 % of the row at 320 px (#751).
+        className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] flex-wrap items-center gap-[8px] border-t border-line bg-page px-[16px] pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]"
       >
         {/* How much room is left near the limit, or that a paste was cut (#716): a line of its own above the row. */}
         {note && (
@@ -190,33 +193,45 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
         <p role="status" className="sr-only">
           {cut ? s.cut : ''}
         </p>
-        <ComposerBillButton />
-        <ComposerMicButton
-          onText={(text) => {
-            setDraft((current) => withSpoken(current, text))
-            setCut(false)
-          }}
-        />
-        <label htmlFor="chat-input" className="sr-only">
-          {s.inputLabel}
-        </label>
-        <input
-          id="chat-input"
-          ref={input}
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value)
-            setCut(false)
-          }}
-          onPaste={paste}
-          aria-describedby={note ? 'chat-input-note' : undefined}
-          maxLength={MAX_QUESTION}
-          placeholder={s.placeholder}
-          enterKeyHint="send"
-          autoComplete="off"
-          className="h-12 min-w-0 flex-1 rounded-pill border border-line-strong bg-surface px-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted"
-        />
-        {busy ? (
+        <div className={voice ? 'hidden' : 'contents'}>
+          <ComposerBillButton />
+        </div>
+        {/* Not positioned, so the mic's status line still sits above the whole composer. */}
+        <div
+          className={
+            voice
+              ? 'flex min-w-0 flex-1 items-center'
+              : 'flex h-12 min-w-0 flex-1 items-center rounded-pill border border-line-strong bg-surface pr-px'
+          }
+        >
+          <label htmlFor="chat-input" className="sr-only">
+            {s.inputLabel}
+          </label>
+          <input
+            id="chat-input"
+            ref={input}
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value)
+              setCut(false)
+            }}
+            onPaste={paste}
+            aria-describedby={note ? 'chat-input-note' : undefined}
+            maxLength={MAX_QUESTION}
+            placeholder={s.placeholder}
+            enterKeyHint="send"
+            autoComplete="off"
+            className={`${voice ? 'hidden' : ''} h-full min-w-0 flex-1 rounded-pill bg-transparent pr-1 pl-[min(1.25rem,20px)] text-base text-ellipsis text-ink-2 placeholder:text-muted last:pr-[min(1.25rem,20px)]`}
+          />
+          <ComposerMicButton
+            onText={(text) => {
+              setDraft((current) => withSpoken(current, text))
+              setCut(false)
+            }}
+            onActive={setVoice}
+          />
+        </div>
+        {voice ? null : busy ? (
           <button
             type="button"
             onClick={stop}

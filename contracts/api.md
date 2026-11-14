@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.14 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #752 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.15 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.14. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.15. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -1409,7 +1409,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. On `POST /api/tts` also a used-up daily voice budget, or too many voice requests at once (section 12). On `POST /api/stt` the same for spoken questions, which also have a window per viewer (section 13). |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
-| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). On `POST /api/stt`, a spoken question cannot be turned into text, also when no speech was heard; the app asks the user to type the question (section 13). |
+| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). On `POST /api/stt`, a spoken question cannot be turned into text; the app asks the user to type the question. No speech heard is not an error: it is a 200 with `empty: true` (section 13). |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -5487,7 +5487,7 @@ The core checks in this order:
    - `GEMINI_API_KEY` is set, `STT_DAILY_BUDGET` is above 0, and the switch file `var/model-off` does not exist (503 `model_unavailable` otherwise);
    - fewer than two requests to the model are running (429, `Retry-After: 5`);
    - the daily budget is not used up (429, section 13.3).
-9. The request to the model, and then its answer: a prompt over 644 tokens (413), a failed request (503), or no text (503).
+9. The request to the model, and then its answer: a prompt over 644 tokens (413), a failed request (503), or no speech heard (200 with `empty: true`, section 13.2).
 
 ### 13.2 Response
 
@@ -5495,14 +5495,26 @@ The core checks in this order:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `text` | string | The words heard, as one line, never empty. White space is collapsed and surrounding double quotes are removed. At most 500 characters, the composer's limit, cut at a word break near the end when there is one. The prompt asks the model for the spoken words only, with numbers as digits, and not to answer the question. |
+| `text` | string | The words heard, as one line. Empty only when no speech was heard (`empty`). White space is collapsed and surrounding double quotes are removed. At most 500 characters, the composer's limit, cut at a word break near the end when there is one. The prompt asks the model for the spoken words only, with numbers as digits, and not to answer the question. |
 | `language` | `en` or `fi` | The request's `language`, echoed. |
+| `empty` | `true`, or absent | Present only when no speech was heard (since 0.3.15, #759): the model's text was empty or white space, or it only said that there was no speech ("No speech detected.", "[silence]", "(inaudible)" and the like, matched as a whole answer only). `text` is then `""`. The request counts against the budget (section 13.3). |
 
 <!-- example: stt.response -->
 ```json
 {
   "text": "How much did I spend on groceries in September?",
   "language": "en"
+}
+```
+
+When no speech was heard:
+
+<!-- example: stt.response_empty -->
+```json
+{
+  "text": "",
+  "language": "en",
+  "empty": true
 }
 ```
 
@@ -5514,7 +5526,7 @@ The core checks in this order:
 | 404 | `customer_not_found` | The customer is not a persona (section 1). |
 | 413 | `invalid_request` | Too large: a declared `Content-Length` or a body over 1,000,000 bytes. Too long: a WAV clip over 15.5 seconds, or a compressed clip whose prompt took more than 644 tokens; that request counts against the budget, and its text is dropped. |
 | 429 | `rate_limited` | With `Retry-After` in seconds: over 10 requests a minute from one address, or over 40 an hour from one viewer (until the oldest leaves the window); the daily budget is used up (until the oldest request leaves the 24 hours, at least 60); two requests to the model are already running (5). |
-| 503 | `model_unavailable` | No `GEMINI_API_KEY`, `STT_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the request to the model failed (a timeout, a network or server error, the provider's own rate limit, any other error), or the model heard no speech (its text is empty). The `message` is the code's one shared sentence, which was written for the bill reading (section 11.4), and `retryable` is false. |
+| 503 | `model_unavailable` | No `GEMINI_API_KEY`, `STT_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the request to the model failed (a timeout, a network or server error, the provider's own rate limit, any other error). No speech heard is not an error since 0.3.15: it is a 200 with `empty: true`. The `message` is the code's one shared sentence, which was written for the bill reading (section 11.4), and `retryable` is false. |
 | 500 | `internal` | Anything else (section 4). |
 
 ### 13.3 Daily budget and the model
@@ -5530,21 +5542,22 @@ The core checks in this order:
 ### 13.4 The app
 
 - **Mock build** (`VITE_API_MODE` is not `live`): there is no mic button, and the app never calls this endpoint.
-- **Live build:** the mic shows next to the paperclip when a persona is chosen and the browser has `MediaRecorder` and `navigator.mediaDevices.getUserMedia`. A page that is not served securely has no `navigator.mediaDevices`.
-  - Nothing is recorded without a tap. A tap asks for the microphone and starts recording. A second tap, or 15 seconds (`MAX_RECORD_MS` in `app/src/lib/stt.ts`), stops it.
+- **Live build:** the mic shows as an icon at the right edge of the composer's input when a persona is chosen and the browser has `MediaRecorder` and `navigator.mediaDevices.getUserMedia`. A page that is not served securely has no `navigator.mediaDevices`.
+  - Nothing is recorded without a tap. A tap asks for the microphone and starts recording. While it records, a recording bar takes the composer's row (#751): cancel, a waveform of the microphone's level (Web Audio; only the level is read), a timer and stop. Stop, or 15 seconds (`MAX_RECORD_MS` in `app/src/lib/stt.ts`), sends the clip, with three dots while the request runs. Cancel sends nothing.
+  - A recording that is empty or shorter than 0.5 seconds (`MIN_RECORD_MS`) is not sent (#759).
   - The recording type is the first one the browser supports of `audio/webm;codecs=opus`, `audio/webm`, `audio/mp4` and `audio/ogg;codecs=opus`, else the browser's own, at 32 kbit/s.
   - The app posts the clip with its type and gives up after 20 seconds (`STT_TIMEOUT_MS`).
-- **On 200:** the text is added to the composer after anything already typed, cut to 500 characters. A screen reader hears "Your question is in the box. Check it and tap send." Nothing is sent until the user taps send.
+- **On 200 with text:** the text is added to the composer after anything already typed, cut to 500 characters. A screen reader hears "Your question is in the box. Check it and tap send." Nothing is sent until the user taps send.
 - **Otherwise:** a short line shows above the composer for 6 seconds, and the composer stays usable. The app does not retry and does not read `Retry-After`. The texts are in `app/src/lib/micStrings.ts`, in English and Finnish:
 
 | What happened | The line the app shows (English) |
 |---|---|
 | The microphone was refused (`NotAllowedError`, `SecurityError` or `PermissionDeniedError`), also when the frame is not allowed the microphone | "Microphone access is off. You can type your question instead." |
 | Any other failure of the microphone or the recorder | "No microphone found. You can type your question instead." |
-| An empty recording (nothing is sent), a 400, or a 200 whose text is empty | "I didn't catch that. Try again or type your question." |
+| A recording that is empty or under 0.5 seconds (nothing is sent), a 400, or a 200 with `empty: true` or an empty text; nothing goes into the composer | "I didn't catch that. Try again." |
 | A 413 | "That was too long. Speak for 15 seconds at most." |
 | A 429 | "Too many tries just now. Type your question or try again later." |
-| A 404, a 503 (also when no speech was heard), a 500, any other error status, a network failure, the 20 seconds, or a body that is not JSON | "Voice input isn't available right now. Please type your question." |
+| A 404, a 503, a 500, any other error status, a network failure, the 20 seconds, or a body that is not JSON | "Voice input isn't available right now. Please type your question." |
 
 - Leaving the chat, or switching the persona, stops the microphone and aborts a request in flight; a late answer is dropped. A request the app gave up on still runs to the end in the core and counts against the budget.
 - **Microphone permission:** the proxy sets no `Permissions-Policy` header, so the microphone follows the browser default (`self`). The demo frame's iframe needs `allow="microphone"` and carries it (`app/src/demo/main.ts`). A host WebView must grant the page microphone access (`docs/integration.md` section 4).
@@ -5576,3 +5589,4 @@ The core checks in this order:
 | 0.3.12 | Wording only, no new field (#699). Section 6: the overview's `ai_disclosure` no longer says "show it on the first chat screen". The app keeps an "AI" tag visible on every chat screen and can show the text one tap away from it, as it does since #691; this matches `done.ai_disclosure` (section 7), which the app can show once. No example changed. |
 | 0.3.13 | Documents what the service already does (#730, #733); nothing new is built.<br>- New section 12, `POST /api/tts` (built in #732): the body names one of the customer's answers by `answer_id`, never a text. The core reads the answer's `text_rendered` from its audit record and returns it read aloud as a WAV file (`audio/wav`). New example `tts.request`.<br>- A disk cache keyed by the SHA-256 of model, voice, language and text, and an own daily budget, `TTS_DAILY_BUDGET` requests in any rolling 24 hours (default 100). A cache hit needs neither the model nor the budget.<br>- Errors, no new code: 404 `not_found` for an answer that is unknown, another customer's or without text; 429 `rate_limited` with `Retry-After` (20 a minute per address, the used-up budget, too many at once); 503 `model_unavailable` when the voice cannot be made. Section 4's rows for these codes say so.<br>- What is sent where, and the app's side: only a live build calls it, gives up after 8 seconds and then reads the answer with the device voice; a mock build uses the device voice only (section 12.4).<br>- Section 1: a successful `/api/tts` response is the second exception to JSON bodies.<br><br>The changelog is now section 13. |
 | 0.3.14 | Documents what the service already does (#735, #752); nothing new is built.<br>- New section 13, `POST /api/stt` (built in #747): the body is an audio clip (WebM, OGG, MP4/M4A, AAC, MP3 or WAV) of at most 1,000,000 bytes, which the app records for at most 15 seconds, with `customer_id` and `language` as query parameters. The core has the Gemini API turn it into text and returns `{text, language}`. New example `stt.response`.<br>- No audio is stored: the app and the core keep the clip in memory for the one request only, and the core's ledger and log hold neither the audio nor the text.<br>- An own daily budget, `STT_DAILY_BUDGET` requests in any rolling 24 hours (default 100), and two windows: 10 requests a minute per address and 40 an hour per viewer.<br>- Errors, no new code: 400 `invalid_request`; 404 `customer_not_found`; 413 `invalid_request` for a clip that is too large or too long; 429 `rate_limited` with `Retry-After`; 503 `model_unavailable`, also when no speech was heard. Section 4 gains a 413 row, and its rows for 429 and 503 mention `/api/stt`.<br>- The app's side: only a live build calls it, the text lands in the composer and is sent only when the user taps send, the line the app shows for each outcome, and the demo frame's iframe needs `allow="microphone"` (section 13.4).<br>- Section 1: the body of a `/api/stt` request is audio, and its `language` is a query parameter.<br><br>The changelog is now section 14. |
+| 0.3.15 | Section 13, spoken questions (#759, #751).<br>- No speech heard is a 200, not a 503 (#759): `{"text": "", "language": …, "empty": true}`, when the model's text is empty or white space or only says that there was no speech. `text` can now be empty, and only then. New field `empty`, new example `stt.response_empty`. A real failure (no key, switched off, an API error, a timeout) is still 503 `model_unavailable`. Section 4's 503 row and section 13.1 step 9 say so.<br>- The app (13.4): a recording that is empty or under 0.5 seconds is not sent; that, a 400 and a 200 with `empty: true` show "I didn't catch that. Try again." / "En saanut selvää. Yritä uudelleen.", and nothing goes into the composer.<br>- The app (13.4, #751): the mic is an icon inside the input, and while it records a recording bar (cancel, waveform, timer, stop) takes the composer's row. No change for the core. |
