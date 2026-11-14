@@ -32,6 +32,8 @@ For one customer, set the range to `[id, next id)`. Metrics 1 to 5 depend only o
 
 **Window.** Averages use the **last 6 complete calendar months**: a month counts if its last day is on or before today. For today = 2026-09-30 that is 2026-04-01 … 2026-09-30; for today = 2026-09-14 it is 2026-03-01 … 2026-08-31. A "month average" is the window total divided by `n_months`, the number of window months the customer has history in (1 to 6; it is 6 for every sample customer). Daily rates divide by the window's days (183 for Apr–Sep).
 
+**Periods a question names (#379).** "The past N months" and "over the last N years" mean the last N (or N × 12) complete calendar months, by the same rule; "last month" stays the previous calendar month. For today = 2026-09-30, "the past month" is September 2026 and "last month" is August 2026; for today = 2026-09-14 both are August 2026. "Over the last 5 years" is clamped to the data's first day (1 Oct 2024 – 30 Sep 2026), and the answer names that period. "The year before last" and "two years ago" are calendar year 2024, "a year ago" is 2025, and three or more years ago falls before the data.
+
 **Units.** Spend is positive euros (`out_eur = -amount_eur`), rounded to 2 decimals at the end only. Percentages have 1 decimal. Ties in "last" rows break on `tx_at DESC, id DESC`. Every output has `period_start` and `period_end` (the `period` of the number object).
 
 **Flows.** Category decides what a transaction is; `tx_type` (the bank's "economic purpose") maps 1:1 to category in this data and is used for bills:
@@ -491,7 +493,7 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 - the warning sign `amount_above_usual` still applies against the category's typical month, and then names that basis ("much more than all your Utilities payments in a usual month");
 - the basket (regular essentials) and the effect on safe to spend are as for a match.
 
-**Comparison and warning signs.** For a matched bill, `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
+**Comparison and warning signs.** For your regular bill (a matched bill that fits it, #400), `bill.vs_typical_eur@1 = A - typical_month` and `bill.vs_typical_pct@1 = (A - typical_month) / typical_month × 100`. The warning signs (`signals`, decision 10 of #242) are never a verdict:
 
 | Code | Rule |
 |---|---|
@@ -501,6 +503,17 @@ Otherwise the bill is from the same payee category, for example a quarterly wate
 | `short_term` | `0 ≤ D - as_of < 7` days (`config.BILL_SHORT_TERM_DAYS`); a past due date is a warning instead. |
 
 **Evidence.** The bill's amount (`bill_barcode@1` or `user_input@1`) is not the customer's data and has no ref. In the composites that use it (the comparison, the counted amount), it is a part stored inline with only its method, value and date, never the payee, IBAN or reference. The balance limit with the bill is a `metric` spec whose settings hold the counted amount, so its evidence re-runs 03 with it and reconciles.
+
+**The forecast on the due date (#421).** The balance forecast of section 3.3, on the bill's due date `D`, before and after the bill (`bill_explain._forecast`):
+- **The window.** The forecast covers today up to the day before payday. A due date before `as_of`, or on or after payday, is `outside_forecast`, with no numbers. The due date is taken as printed, with no shift to a banking day, as the forecast's days, the bills due and the effect on safe to spend use calendar dates.
+- **Before.** The forecast's own Number for `D` (`balance_forecast.balance_eur@1`, built by `forecast.Projection.balance_on`, the same code as the forecast card, so the same ref). For `D` = today it is the balance now.
+- **How the forecast and the bill overlap.** The forecast already subtracts the hero's bills on their expected days. When the bill belongs to one of those series (any match), the balance before already holds what the forecast has subtracted for that series by `D`: `already_counted`, the series' part of `balance_forecast.bills_to_date_eur@1` up to `D`. So the bill takes only `counted = max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`), and nothing is subtracted twice. This is not safe to spend's `reserved`, which runs up to payday: a monthly bill expected after `D` is not in the balance on `D` yet, so a bill due before its usual day takes its whole amount. Unmatched: `counted = A`.
+- **After:** `before - counted` (`bill.forecast_after_eur@1`).
+- **The status:** `not_covered` below 0; `tight` below `config.BILL_FORECAST_MARGIN_EUR` (€100); else `covered`. For `not_covered`, `shortfall = counted - before` (`bill.forecast_shortfall_eur@1`), the sentence names it and the date, and a chip asks the forecast question. No sentence suggests borrowing (#419).
+- **The draft.** The status never removes the payment draft.
+- **A known failure** (no transactions, no balance, the bills due of the two paths differ): the block is `null`, as `safe_to_spend`.
+- **Example (CUST00860, sample 2, €312.70 to a utilities payee, due 13 Oct):** the forecast for 13 Oct is €12,491.82. Utilities is spread over the month, so €79.61 of it (186.40 × 13 / 30.4375) is already in it. The bill takes €233.09, and €12,258.73 is left: `covered`.
+- **Example (CUST00849, lowest €641.43 on 14 Oct):** a bill of €600 due then leaves €41.43 (`tight`). One of €700 is €58.57 short (`not_covered`).
 
 ## 4. What-if savings — "How could I save more?"
 
@@ -517,11 +530,13 @@ saving_year    = saving_month * 12
 
 Selection (`app.whatif`): `category:<name>`, `mcc:<code>[,<code>…]`, `basket:<key>` or `merchant:<id>`; default `category:Restaurants`. Cut `app.whatif_pct`, default 20. Examples: dining out −20% = `category:Restaurants`; taxis −50% = `mcc:4121` with 50; all everyday spending −10% = `basket:everyday_spending` with 10.
 
+**Everyday words and names (#346, #377).** The rules plan everyday words without the model (`core/agent/rules.py` `WHAT_IF_MCC_WORDS`): taxi 4121, public transport 4111, fuel 5541/5542, parking 7523, takeaway and fast food 5814, bars 5813, cinemas 7832. An MCC selection whose codes are exactly one of these is named in words on the card and in the label ("Spend 10% less on taxis" / "Käytä 10 % vähemmän: taksit", `config.WHAT_IF_MCC_NAMES`); any other code list keeps "purchases with MCC …". In the dataset, fuel, parking, public transport and groceries are regular essentials for all four personas, so their what-if is `not_offered`. When the rules ask which spending to cut, they suggest only restaurants, entertainment, taxis and takeaway, which give an estimate for each persona (a database test).
+
 **Output** (`04_what_if.sql`, one row per customer with spending in the selection): `selection`, `cut_pct`, `status` (`estimate`, `estimate_with_caveat`, `not_offered`), `baseline_month_eur`, `saving_month_eur`, `saving_week_eur`, `saving_year_eur`, `n_tx`, `one_off_excluded_eur`, `n_one_off`, `regular_excluded_eur`, `n_months`, `period_start`, `period_end`. Method text for the card: "Average of your last 6 full months (one-off purchases left out), cut by p%".
 
 **Evidence.** Rows of the selection in the window with `is_one_off = false` and a basket other than `regular_essentials`.
 
-**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
+**Edge cases.** No spending in the selection: no row; the coach says there is nothing to cut. Only regular essentials or one-offs in it: `not_offered`. Fewer than 3 cuttable purchases in the window (`app.whatif_min_tx`, default 3 = `TOO_FEW_TRANSACTIONS`, #379): `not_offered`, the baseline and every saving 0; the chat answers with the purchases' total and count (`too_few_transactions`), and `POST /api/whatif` carries the same sentence as its caveat. One-offs are reported in `one_off_excluded_eur` so the coach can mention them. Checked: `category:Groceries` gives `not_offered` for CUST00001 and CUST00002; `basket:unexpected_necessities` −20% gives `estimate_with_caveat`, 81.83 a month for CUST00001.
 
 **Worked numbers** (dining out −20%):
 
