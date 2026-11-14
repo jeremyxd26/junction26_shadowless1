@@ -54,6 +54,26 @@ def test_the_words_select_their_category_on_the_what_if_path(lang, question, cat
                                                       "cut_pct": pct})]
 
 
+@pytest.mark.parametrize("question,args", [
+    ("Paljonko ruokamenoni olivat viime kuussa?", ("get_spending", {"filter": {"categories": ["Groceries"]},
+                                                                   "period": {"preset": "last_month"}})),
+    ("Paljonko ruokamenoihin meni viime kuussa?", ("get_spending", {"filter": {"categories": ["Groceries"]},
+                                                                   "period": {"preset": "last_month"}})),
+    ("Miten ruokamenoni vertautuvat kaltaisiini?", ("get_peer_benchmark", {"metric": "Groceries"})),
+    ("Mitä jos vähentäisin ruokamenoja 10 %?", ("run_what_if", {"selection": {"kind": "category",
+                                                                               "value": "Groceries"}, "cut_pct": 10})),
+])
+def test_ruokamenot_is_groceries_on_every_path(question, args):
+    # #683: dev 503a271 gave the first two the unfiltered total and the peer comparison the total
+    assert calls(question, "fi") == [args]
+
+
+def test_shopping_stays_unmapped_by_decision():
+    # #683, the coordinator's decision: an ambiguous word is mapped to no category
+    assert [name for name, _ in calls("How much did I spend on shopping last month?", "en")] == \
+        ["ask_clarifying_question"]
+
+
 @pytest.mark.parametrize("lang,question,group", [
     ("en", "How much did I spend on public transport last month?", "public_transport"),
     ("fi", "Paljonko käytin joukkoliikenteeseen viime kuussa?", "public_transport"),
