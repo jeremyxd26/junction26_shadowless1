@@ -5,6 +5,7 @@ import type { Card, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
 import contract from '../api/mock/contract-examples.json'
 import { AnswerCard } from '../components/AnswerCard.tsx'
 import { BillsCards } from '../components/BillsCard.tsx'
+import { BillFlow } from '../components/bill/BillFlow.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
@@ -39,6 +40,10 @@ export default function CardGallery() {
       <section id="card.review-in-answer" aria-label="card.review in an answer" className="flex flex-col gap-2">
         <p className="font-mono text-xs text-muted">card.review → in an answer</p>
         <AnswerCard card={examples['card.review'] as Card} />
+      </section>
+      <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
+        <p className="font-mono text-xs text-muted">bill flow (section 11, mock)</p>
+        <BillFlow />
       </section>
     </div>
   )
