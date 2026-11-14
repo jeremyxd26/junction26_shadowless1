@@ -278,10 +278,30 @@ PRIVACY = ("Your own numbers are calculated from your transactions; comparisons 
            "ja sen palvelin tallentaa kysymykset ja vastaukset.")
 # A message in a language Sentti does not speak (#352): one line, in English.
 LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
+# Small talk (#790): a warm line in the message's language that turns to money, with one chip. The jokes are a
+# fixed list of general money jokes, never about the customer's own data and never judging (#640); a later joke in
+# the same conversation is the next one in the list.
+HOW_ARE_YOU_REPLY = ("I'm good, thanks for asking! Want to see what you can safely spend this week?",
+                     "Hyvin menee, kiitos kysymästä! Katsotaanko, paljonko voit turvallisesti käyttää tällä viikolla?")
+JOKES = (
+    ("The coin went to therapy because it was feeling a little sentimental.",
+     "Kolikko meni terapiaan, koska se tunsi olonsa vähän sentimentaaliseksi."),
+    ("A piggy bank is the most patient pet there is: it waits for years and never complains.",
+     "Säästöpossu on maailman kärsivällisin lemmikki: se odottaa vuosia eikä valita kertaakaan."),
+    ("The best way to double your money: fold the note in half and put it back in your wallet.",
+     "Paras tapa tuplata rahansa: taita seteli kahtia ja laita se takaisin lompakkoon."),
+)
+JOKE_OFFER = ("Now, want to see where your money went?", "Katsotaanko nyt, mihin rahasi menivät?")
+SMALL_TALK_CHIP = {"how_are_you": BRIEF_QUESTIONS[2], "joke": BRIEF_QUESTIONS[0]}
 
 
-def meta_text(intent: str, language: str, introduced: bool = False) -> str:
-    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation."""
+def meta_text(intent: str, language: str, introduced: bool = False, turn: int = 0) -> str:
+    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation;
+    `turn`: the number of earlier turns in the conversation, which picks the joke."""
+    if intent == "how_are_you":
+        return pick(HOW_ARE_YOU_REPLY, language)
+    if intent == "joke":
+        return f"{pick(JOKES[turn % len(JOKES)], language)} {pick(JOKE_OFFER, language)}"
     if intent == "thanks":
         return pick(THANKS, language)
     if intent == "privacy":
@@ -294,6 +314,11 @@ def meta_text(intent: str, language: str, introduced: bool = False) -> str:
 def brief_questions(language: str) -> list[str]:
     """All four brief questions, the chips of an introduction and of the generic decline (#287)."""
     return [pick(q, language) for q in BRIEF_QUESTIONS]
+
+
+def meta_follow_ups(intent: str, language: str) -> list[str]:
+    """The chips of a meta answer: small talk turns to money with one question (#790), the rest offer all four."""
+    return [pick(SMALL_TALK_CHIP[intent], language)] if intent in SMALL_TALK_CHIP else brief_questions(language)
 
 
 def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
