@@ -199,7 +199,11 @@ A cached number's evidence ref points into `coach_evidence` in the database.
 - it finished no image reading within 240 s;
 - its image readings were fast (6.5–24.5 s) about ten minutes later (the real check on #616).
 
-So warm it by hand at least 15 minutes before it must answer, with `docker exec shadowless1-core timeout 200 python -m core.bills.warmup --reader nemotron-only`. Each timeout line is one request. A line with `first reading 0 request(s); second reading 0 request(s) (cache)` is a sample already in the Nemotron cache: the service then serves it with no request. `NEMOTRON_TIMEOUT_S` (default 30 s, at most 30) is the deadline of the whole reading. No part of the answer is read after it; a network wait already under way ends by the same timeout.
+So warm it by hand at least 15 minutes before it must answer, with `docker exec shadowless1-core timeout 280 python -m core.bills.warmup --reader nemotron-only`. A cold sample takes the timeout or a little more (at most about twice), so four can take about 240 s. Each timeout line is one request. A line with `first reading 0 request(s); second reading 0 request(s) (cache)` is a sample already in the Nemotron cache: the service then serves it with no request.
+
+`NEMOTRON_TIMEOUT_S` (default 30 s, at most 30) does two things:
+- it bounds each network wait until the answer's headers arrive;
+- it is one deadline for reading the answer's body.
 
 **After a database reset or a data reload:**
 1. Stop the service.
