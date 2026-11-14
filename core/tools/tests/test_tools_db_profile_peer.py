@@ -357,7 +357,7 @@ def test_a_labelled_customer_is_classified_alike_in_profile_peer_and_baskets(con
 
     plain = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00860")).data.features}
     monkeypatch.setattr(labels, "basket_labels",
-                        lambda conn, cid, as_of, now=None: {SPIKE_860: "everyday_spending"} if cid == "CUST00860" else {})
+                        lambda conn, cid, as_of, now=None, viewer=None: {SPIKE_860: "everyday_spending"} if cid == "CUST00860" else {})
     profile = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00860")).data.features}
     basket = get_basket_breakdown(ctx_for(conn, "CUST00860"), {"period": {"preset": "last_6_months"}}).data
     everyday = next(b for b in basket.baskets if b.key == "everyday_spending")
