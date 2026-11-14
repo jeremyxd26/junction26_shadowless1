@@ -307,6 +307,8 @@ def explain_bill(ctx: ToolContext, bill: BillInput) -> dict[str, Any]:
         actions.append({"type": "add_to_payments", "label": _t("action", lang),
                         "draft": {"payee": bill.payee, "iban": bill.iban, "reference": bill.reference,
                                   "amount": _dump(amount_n), "due_date": due.isoformat()}})
+    if signals:   # #420: with warning signs, the way to a human at the bank
+        actions.append(config.contact_bank_action(lang))
 
     evidence.write(ctx.conn, nb.specs)
     return {

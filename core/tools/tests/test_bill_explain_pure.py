@@ -344,10 +344,22 @@ def test_a_bill_covered_by_what_is_already_counted(fake):
 def test_a_failed_reference_is_a_sign_and_removes_the_draft(fake):
     out = explain(fields_bill(reference="12345"))
     assert out["checks"] == {"iban": "pass", "reference": "fail", "due_date": "pass"}
-    assert out["actions"] == [] and out["warnings"] == []
+    # no payment draft; a warning sign brings the way to the bank (#420)
+    assert out["actions"] == [{"type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank"}]
+    assert out["warnings"] == []
     assert out["signals"][0] == {"code": "reference_check_failed", "numbers": [], "text":
                                  "This reference number does not pass its check. Compare it with the paper bill "
                                  "before paying."}
+
+
+def test_warning_signs_bring_the_way_to_the_bank_after_the_draft(fake):
+    """#420: an unknown payee is a warning sign; the draft stays and `contact_bank` follows it (schema-checked
+    by explain()). A bill without signs has no such action (the housing test above)."""
+    out = explain(fields_bill(), lang="fi")
+    assert "new_payee" in [s["code"] for s in out["signals"]]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments", "open_host_screen"]
+    assert out["actions"][1] == {"type": "open_host_screen", "label": "Ota yhteyttä S-Pankkiin",
+                                 "target": "contact_bank"}
 
 
 def test_a_past_due_date_is_a_warning_and_keeps_the_draft(fake):
