@@ -33,7 +33,7 @@ from core.agent.audit import AuditLog
 from core.app.api import deps
 from core.app.api.errors import envelope
 from core.agent.conversation import ConversationStore
-from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
+from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, LabelSteps, Pipeline, error_envelope
 from core.agent.rules import RuleModel
 from core.agent.toolset import default_registry
 
@@ -171,8 +171,15 @@ def build_agent(app) -> Agent:
     data = PoolData(app)
     audit = AuditLog()
     pipeline = Pipeline(default_registry(), RuleModel(), data, as_of=app.state.settings.demo_today,
-                        store=ConversationStore(), audit=audit)
+                        store=ConversationStore(), audit=audit, labels=label_steps())
     return Agent(pipeline=pipeline, data=data, audit=audit)
+
+
+def label_steps() -> LabelSteps:
+    """The overview's label functions (#68, #196): the same state for an answer as for the overview."""
+    from core.tools import review_card, reviews
+
+    return LabelSteps(establish=reviews.ensure_pending_for, card=review_card.build, enabled=reviews.enabled)
 
 
 def get_agent(app) -> Agent:
