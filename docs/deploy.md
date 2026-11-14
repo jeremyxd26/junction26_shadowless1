@@ -122,6 +122,28 @@ public check: https://sentti.jeremyxd.dev/healthz
 GET https://sentti.jeremyxd.dev/healthz -> 200
 ```
 
+### Check the demo path after a deploy
+
+After `bash deploy/dev.sh` (and before the demo), run:
+
+```
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev --no-ask   # no model calls
+python scripts/demo_check.py --base-url https://sentti.jeremyxd.dev            # plus the four brief questions
+```
+
+The script checks, against the reference values at its top (`docs/design/personas.md`):
+- health;
+- the personas;
+- Sanna's overview and its evidence refs;
+- the persona allowlist;
+- the what-if;
+- the spike review ("Needed", then undo);
+- optionally `/api/ask`.
+
+It prints one line per stage: PASS, FAIL (expected and received), or NOT DEPLOYED for a route the service does not have yet. It exits 1 on any FAIL; with `--require-all`, also on NOT DEPLOYED.
+
+It uses the standard library only and needs no secrets, and it never retries. The only writes are the label answer and its undo, and it always leaves the review pending. Without `--no-ask` it sends up to four questions to the model (`--ask-limit N` caps them), so do not run it in a loop.
+
 ## The app
 
 `app/` is a static Vite build. Every deploy of a commit that contains `app/package.json` builds it on the instance; there is no artefact upload from a working directory:
