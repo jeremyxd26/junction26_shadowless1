@@ -109,7 +109,12 @@ Every amount in a message is a Number object of the API contract (`contracts/api
   - In a live build, a tap sends the answer's id, never its text, to the core (`POST /api/tts`, `contracts/api.md` section 12). The core has the model provider (Gemini) synthesize the answer's text, unless that audio is already in its cache, and keeps the audio in that cache. The app stores nothing.
   - The device's `speechSynthesis` is the fallback (an error, or no audio within 8 seconds) and the only voice of a mock build. It uses only voices that run on the device (`localService: true`); a cloud voice, such as Chrome's "Google …" or Edge's "… Online (Natural)" voices, is never picked, so that text is not sent anywhere.
   - Without a local voice for the answer's language, the button shows only in a live build, for an answer with an id; otherwise it is hidden. Nothing plays without a tap; a second tap, another answer, a new question or leaving the chat stops it.
-- **Speak a question (#735, `app/src/lib/stt.ts`, `ComposerMicButton.tsx`):** a mic in the composer, in a live build with a microphone API only. Nothing is recorded without a tap: a tap asks for the microphone and records at most 15 seconds (a second tap stops sooner), then the clip is sent to the core (`POST /api/stt`), which has the model provider (Gemini) turn it into text and sends the text back. The text lands in the composer and is sent only when the user taps send. Neither the app nor the core stores the audio or the text. In the demo frame the iframe carries `allow="microphone"`; a host WebView must grant the page microphone access (on iOS, WKWebView also needs the app's microphone usage description).
+- **Speak a question (#735, `app/src/lib/stt.ts`, `ComposerMicButton.tsx`):** a mic in the composer, in a live build with a microphone API only. What is sent, and when:
+  - Nothing is recorded or sent without a tap. On a tap of the mic, the app records at most 15 seconds of audio; a second tap stops sooner.
+  - The clip goes to the core (`POST /api/stt`, `contracts/api.md` section 13), and from the core to the model provider (Gemini) for transcription. The core sends the text back to the app.
+  - No audio is stored: the app and the core keep the clip in memory for that one request only. Neither stores the audio or the text, and the core logs neither.
+  - The text lands in the composer. Nothing is sent to the coach until the user taps send.
+  - Microphone access: the demo frame's iframe needs `allow="microphone"` and carries it (`app/src/demo/main.ts`). A host WebView must grant the page microphone access (on iOS, WKWebView also needs the app's microphone usage description).
 
 ## 5. Security
 

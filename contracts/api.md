@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.13 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.14 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #752 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.13. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.14. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -28,7 +28,8 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 10. [`POST /api/baskets/label`](#10-post-apibasketslabel)
 11. [`POST /api/bill/explain`](#11-post-apibillexplain)
 12. [`POST /api/tts`](#12-post-apitts) (an answer read aloud, audio)
-13. [Changelog](#13-changelog)
+13. [`POST /api/stt`](#13-post-apistt) (a spoken question as text, audio in)
+14. [Changelog](#14-changelog)
 
 ---
 
@@ -36,10 +37,10 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 
 | Topic | Rule |
 |---|---|
-| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7) and a successful `/api/tts` response, which is a WAV file (section 12). |
+| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7), a successful `/api/tts` response, which is a WAV file (section 12), and the body of a `/api/stt` request, which is an audio clip (section 13). |
 | Customer | Demo mode has no login: the app picks a persona from `/api/personas` and sends its `customer_id`. In production the customer comes from the bank session and the field is ignored. The core never lets the AI model choose the customer. **Only the persona customers are served:** any other `customer_id`, also a real customer of the dataset, gets 404 `customer_not_found`, exactly like an id that does not exist (section 4). |
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
-| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language. A POST body that cannot be read or does not validate (400 `invalid_request`) has no language: it is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` always in English. A `/api/ask` message over 500 characters with `auto` is answered in English too, because its language is not detected. |
+| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`); `/api/stt`, whose body is audio, takes it as a query parameter (section 13.1). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language. A POST body that cannot be read or does not validate (400 `invalid_request`) has no language: it is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` always in English. A `/api/ask` message over 500 characters with `auto` is answered in English too, because its language is not detected. |
 | Dates | `YYYY-MM-DD`. Periods are inclusive at both ends. |
 | Timestamps | ISO 8601 with offset, for example `2026-11-14T10:32:05+02:00`. They are wall-clock times of events such as `labelled_at`, not dataset dates. |
 | Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[]` entry carries a positive `amount` and an `operation` (`add` or `subtract`). Raw transaction rows in evidence keep the bank sign: negative means money out. |
@@ -1398,16 +1399,17 @@ Every error response has the same envelope, and the `error` event inside the `/a
 | 404 | `customer_not_found` | Unknown `customer_id`, or any customer that is not a persona (section 1): both get the same answer. |
 | 404 | `not_found` | Unknown route: the path names no endpoint of this contract. On `POST /api/tts`, also an answer that is unknown, belongs to another customer or has no text: all three get the same body (section 12). |
 | 405 | `invalid_request` | A known path with a method it does not take. The `Allow` header lists the methods it takes. |
+| 413 | `invalid_request` | On `POST /api/stt`, an audio clip that is too large or too long (section 13). |
 | 404 | `evidence_not_found` | Unknown or expired `ref`. |
 | 403 | `evidence_forbidden` | The evidence belongs to a different customer. |
 | 422 | `invalid_scenario` | The what-if scenario cannot be computed or is refused: a selection with no spending in the window, or a selection the core refuses (section 8.1). Every reason gets the same body. |
 | 422 | `invalid_bill` | The bill explanation cannot use the request: both or neither of `barcode` and `fields`, `payee` beside `fields`, or a barcode that cannot be used. The body carries `reason`, and `message` is the sentence for that reason (section 11.1). |
 | 404 | `tx_ref_not_found` | Unknown `tx_ref`, the ref of an expired review, or one that belongs to another customer. All three get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
 | 422 | `basket_not_allowed` | The basket is not one of the review's two options (section 10). |
-| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. On `POST /api/tts` also a used-up daily voice budget, or too many voice requests at once (section 12). |
+| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. On `POST /api/tts` also a used-up daily voice budget, or too many voice requests at once (section 12). On `POST /api/stt` the same for spoken questions, which also have a window per viewer (section 13). |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
-| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). |
+| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). On `POST /api/stt`, a spoken question cannot be turned into text, also when no speech was heard; the app asks the user to type the question (section 13). |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -5426,7 +5428,130 @@ The core checks in this order:
 
 ---
 
-## 13. Changelog
+## 13. `POST /api/stt`
+
+(#735, built in #747.) Turns a short spoken question into text with Gemini audio understanding. The app calls it only in a live build, when the user taps the mic in the composer (section 13.4). The text goes back to the app only: it lands in the composer, and nothing is sent to `/api/ask` until the user taps send. From then on it is a question like a typed one (section 7).
+
+**The body is the audio, not JSON.** The request body is the clip as the browser's `MediaRecorder` gives it, with its type in `Content-Type`. `customer_id` and `language` are query parameters.
+
+**What is sent where.** The app sends the clip (at most 15 seconds, recorded only after a tap), the persona's `customer_id` and the language, nothing else. The core sends the clip and a fixed transcription prompt to the Gemini API for transcription. The prompt names the language and nothing about the customer: no customer id. The text goes back in the response and nowhere else.
+
+**No audio is stored.** This holds for the app and the core:
+- The app keeps the clip in memory for the one request: no file, no `blob:` URL, no browser storage.
+- The core keeps the audio in memory for the one request: no cache, no file, no audit record. The same holds for the text.
+- The core's ledger, `var/stt-requests.jsonl`, has one line per request to the model: time, kind, model, result, latency and token counts. It never holds the audio or the text. The core's log lines hold the result code, the clip's size and the latency, and the access log line the path with its query; none holds the audio or the text.
+- `core/tests/test_stt_api.py` checks that a request writes nothing but the ledger line, and that neither the ledger nor the log holds the text or the audio, also not as base64.
+
+The model provider receives the clip for transcription; the statements above do not cover it.
+
+### 13.1 Request
+
+`POST /api/stt?customer_id=CUST00860&language=en`, with the clip as the body.
+
+| Part | Meaning |
+|---|---|
+| `customer_id` (query) | Persona: `CUST` and five digits. Required. |
+| `language` (query) | `en` or `fi`. Optional, default `en`. The prompt names it as the most likely spoken language, error messages use it, and the response echoes it. It is not detected from the audio. The model writes the words in the language they were spoken in and does not translate them. Other query parameters are ignored, `lang` among them. |
+| `Content-Type` (header) | The clip's type, one of the table below. Parameters such as `;codecs=opus` are dropped, and case does not matter. |
+| Body | The clip's bytes. It must not be empty and may be at most 1,000,000 bytes. |
+
+| `Content-Type` | Sent to the model as | Length checked |
+|---|---|---|
+| `audio/webm`, `video/webm` (some Chrome versions name an audio-only recording so) | `audio/webm` | by the model's token count |
+| `audio/ogg` | `audio/ogg` | by the model's token count |
+| `audio/mp4` (Safari), `audio/x-m4a`, `audio/m4a` | `audio/m4a` | by the model's token count |
+| `audio/aac` | `audio/aac` | by the model's token count |
+| `audio/mpeg` | `audio/mpeg` | by the model's token count |
+| `audio/mp3` | `audio/mp3` | by the model's token count |
+| `audio/wav`, `audio/x-wav`, `audio/wave` | `audio/wav` | by its header |
+
+**Length.** The app stops recording at 15 seconds. The core checks two things:
+- A WAV clip by its header: at most 15.5 seconds, which leaves a little room for the recorder's last chunk. A WAV body that cannot be read as WAV is 400.
+- A compressed clip names no reliable length while it is recorded, so the core checks it from the model's answer. The API counts audio at 32 tokens a second. A request whose prompt took more than 644 tokens (17 seconds of audio plus 100 for the prompt; a 15-second clip is about 515) is 413. That request was sent, so it counts against the daily budget; its text is dropped. The core does not parse a compressed clip itself, so a broken one goes to the model as it is.
+
+**Size.** At most 1,000,000 bytes; 15 seconds at the app's 32 kbit/s is about 60 KB. A declared `Content-Length` over that is 413 before the body is read. A body without one is read with a running cap and is 413 as soon as it goes over. The proxy lets `/api/stt` bodies through up to 1 MiB, while every other API route has 64 KiB. A body over 1 MiB can be stopped by the proxy, and its 413 has an empty body (`docs/deploy.md`, Request size).
+
+The app sends `Accept: application/json`; the core answers the same without it.
+
+The core checks in this order:
+1. `customer_id` and `language` (400 `invalid_request`).
+2. The persona allowlist, with no database (404 `customer_not_found`, section 1).
+3. The `Content-Type` (400 `invalid_request`).
+4. A declared `Content-Length` over 1,000,000 (413 `invalid_request`).
+5. The address window, 10 requests a minute per client address, and then the viewer window, 40 requests an hour per viewer (429 `rate_limited`).
+   - The viewer is the `sentti_viewer` cookie (section 6). This endpoint reads it and never sets it. Requests without a well-formed cookie share one key.
+   - Each window counts every request it lets through, also one that is refused or fails later. A request that the viewer window refuses still counts in the address window.
+6. The body, read with the running cap (413 `invalid_request`).
+7. The clip: empty (400), a WAV that cannot be read (400), a WAV over 15.5 seconds (413).
+8. Whether the model may be used:
+   - `GEMINI_API_KEY` is set, `STT_DAILY_BUDGET` is above 0, and the switch file `var/model-off` does not exist (503 `model_unavailable` otherwise);
+   - fewer than two requests to the model are running (429, `Retry-After: 5`);
+   - the daily budget is not used up (429, section 13.3).
+9. The request to the model, and then its answer: a prompt over 644 tokens (413), a failed request (503), or no text (503).
+
+### 13.2 Response
+
+**200:** JSON. The proxy adds `Cache-Control: no-store` (`docs/deploy.md`, Response headers).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | The words heard, as one line, never empty. White space is collapsed and surrounding double quotes are removed. At most 500 characters, the composer's limit, cut at a word break near the end when there is one. The prompt asks the model for the spoken words only, with numbers as digits, and not to answer the question. |
+| `language` | `en` or `fi` | The request's `language`, echoed. |
+
+<!-- example: stt.response -->
+```json
+{
+  "text": "How much did I spend on groceries in September?",
+  "language": "en"
+}
+```
+
+**Errors** use the envelope of section 4, in the request's `language`, or in English when it is not `en` or `fi`. The app shows its own line for each status and never the envelope's `message` (section 13.4).
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | A `customer_id` that is missing or not `CUST` and five digits, a `language` other than `en` or `fi`, a `Content-Type` not in section 13.1, an empty body, or a WAV body that cannot be read as WAV. |
+| 404 | `customer_not_found` | The customer is not a persona (section 1). |
+| 413 | `invalid_request` | Too large: a declared `Content-Length` or a body over 1,000,000 bytes. Too long: a WAV clip over 15.5 seconds, or a compressed clip whose prompt took more than 644 tokens; that request counts against the budget, and its text is dropped. |
+| 429 | `rate_limited` | With `Retry-After` in seconds: over 10 requests a minute from one address, or over 40 an hour from one viewer (until the oldest leaves the window); the daily budget is used up (until the oldest request leaves the 24 hours, at least 60); two requests to the model are already running (5). |
+| 503 | `model_unavailable` | No `GEMINI_API_KEY`, `STT_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the request to the model failed (a timeout, a network or server error, the provider's own rate limit, any other error), or the model heard no speech (its text is empty). The `message` is the code's one shared sentence, which was written for the bill reading (section 11.4), and `retryable` is false. |
+| 500 | `internal` | Anything else (section 4). |
+
+### 13.3 Daily budget and the model
+
+**Daily budget.** `STT_DAILY_BUDGET` requests to the model in any rolling 24 hours, default 100; `0` turns them off (503).
+- Spoken questions have their own ledger, `var/stt-requests.jsonl`, apart from the chat's budget and from the voice of section 12.
+- Every request sent to the model counts: also one that failed, one refused as too long by its tokens, and one with no speech.
+- A request refused before anything is sent does not count: a 400, a 404, a 413 by size or by the WAV header, a 429, or a 503 without a request.
+- At most two requests to the model run at once.
+
+**The model.** `STT_MODEL`, default `gemini-3.8-flash`, takes the audio inline next to the prompt, with thinking `low` and temperature 0. The key is the chat's `GEMINI_API_KEY`. The core waits up to `STT_TIMEOUT_S` seconds for one request (default 15, at most 60). `docs/deploy.md` lists these settings.
+
+### 13.4 The app
+
+- **Mock build** (`VITE_API_MODE` is not `live`): there is no mic button, and the app never calls this endpoint.
+- **Live build:** the mic shows next to the paperclip when a persona is chosen and the browser has `MediaRecorder` and `navigator.mediaDevices.getUserMedia`. A page that is not served securely has no `navigator.mediaDevices`.
+  - Nothing is recorded without a tap. A tap asks for the microphone and starts recording. A second tap, or 15 seconds (`MAX_RECORD_MS` in `app/src/lib/stt.ts`), stops it.
+  - The recording type is the first one the browser supports of `audio/webm;codecs=opus`, `audio/webm`, `audio/mp4` and `audio/ogg;codecs=opus`, else the browser's own, at 32 kbit/s.
+  - The app posts the clip with its type and gives up after 20 seconds (`STT_TIMEOUT_MS`).
+- **On 200:** the text is added to the composer after anything already typed, cut to 500 characters. A screen reader hears "Your question is in the box. Check it and tap send." Nothing is sent until the user taps send.
+- **Otherwise:** a short line shows above the composer for 6 seconds, and the composer stays usable. The app does not retry and does not read `Retry-After`. The texts are in `app/src/lib/micStrings.ts`, in English and Finnish:
+
+| What happened | The line the app shows (English) |
+|---|---|
+| The microphone was refused (`NotAllowedError`, `SecurityError` or `PermissionDeniedError`), also when the frame is not allowed the microphone | "Microphone access is off. You can type your question instead." |
+| Any other failure of the microphone or the recorder | "No microphone found. You can type your question instead." |
+| An empty recording (nothing is sent), a 400, or a 200 whose text is empty | "I didn't catch that. Try again or type your question." |
+| A 413 | "That was too long. Speak for 15 seconds at most." |
+| A 429 | "Too many tries just now. Type your question or try again later." |
+| A 404, a 503 (also when no speech was heard), a 500, any other error status, a network failure, the 20 seconds, or a body that is not JSON | "Voice input isn't available right now. Please type your question." |
+
+- Leaving the chat, or switching the persona, stops the microphone and aborts a request in flight; a late answer is dropped. A request the app gave up on still runs to the end in the core and counts against the budget.
+- **Microphone permission:** the proxy sets no `Permissions-Policy` header, so the microphone follows the browser default (`self`). The demo frame's iframe needs `allow="microphone"` and carries it (`app/src/demo/main.ts`). A host WebView must grant the page microphone access (`docs/integration.md` section 4).
+
+---
+
+## 14. Changelog
 
 | Version | Change |
 |---|---|
@@ -5450,3 +5575,4 @@ The core checks in this order:
 | 0.3.11 | Texts for the screen, no new field (#554).<br>- `GET /api/personas?lang=fi`: every `tagline` is Finnish, like the other texts (section 1).<br>- `GET /api/evidence/{ref}`: `method.summary` says in one plain sentence what the number is made of, in the request language; it never names a file. Examples `evidence.response_metric` and `evidence.response_peer` changed.<br>- The review card's `why` says what an answer changes: "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend." Examples `card.review` and `overview.response_pending` changed. |
 | 0.3.12 | Wording only, no new field (#699). Section 6: the overview's `ai_disclosure` no longer says "show it on the first chat screen". The app keeps an "AI" tag visible on every chat screen and can show the text one tap away from it, as it does since #691; this matches `done.ai_disclosure` (section 7), which the app can show once. No example changed. |
 | 0.3.13 | Documents what the service already does (#730, #733); nothing new is built.<br>- New section 12, `POST /api/tts` (built in #732): the body names one of the customer's answers by `answer_id`, never a text. The core reads the answer's `text_rendered` from its audit record and returns it read aloud as a WAV file (`audio/wav`). New example `tts.request`.<br>- A disk cache keyed by the SHA-256 of model, voice, language and text, and an own daily budget, `TTS_DAILY_BUDGET` requests in any rolling 24 hours (default 100). A cache hit needs neither the model nor the budget.<br>- Errors, no new code: 404 `not_found` for an answer that is unknown, another customer's or without text; 429 `rate_limited` with `Retry-After` (20 a minute per address, the used-up budget, too many at once); 503 `model_unavailable` when the voice cannot be made. Section 4's rows for these codes say so.<br>- What is sent where, and the app's side: only a live build calls it, gives up after 8 seconds and then reads the answer with the device voice; a mock build uses the device voice only (section 12.4).<br>- Section 1: a successful `/api/tts` response is the second exception to JSON bodies.<br><br>The changelog is now section 13. |
+| 0.3.14 | Documents what the service already does (#735, #752); nothing new is built.<br>- New section 13, `POST /api/stt` (built in #747): the body is an audio clip (WebM, OGG, MP4/M4A, AAC, MP3 or WAV) of at most 1,000,000 bytes, which the app records for at most 15 seconds, with `customer_id` and `language` as query parameters. The core has the Gemini API turn it into text and returns `{text, language}`. New example `stt.response`.<br>- No audio is stored: the app and the core keep the clip in memory for the one request only, and the core's ledger and log hold neither the audio nor the text.<br>- An own daily budget, `STT_DAILY_BUDGET` requests in any rolling 24 hours (default 100), and two windows: 10 requests a minute per address and 40 an hour per viewer.<br>- Errors, no new code: 400 `invalid_request`; 404 `customer_not_found`; 413 `invalid_request` for a clip that is too large or too long; 429 `rate_limited` with `Retry-After`; 503 `model_unavailable`, also when no speech was heard. Section 4 gains a 413 row, and its rows for 429 and 503 mention `/api/stt`.<br>- The app's side: only a live build calls it, the text lands in the composer and is sent only when the user taps send, the line the app shows for each outcome, and the demo frame's iframe needs `allow="microphone"` (section 13.4).<br>- Section 1: the body of a `/api/stt` request is audio, and its `language` is a query parameter.<br><br>The changelog is now section 14. |
