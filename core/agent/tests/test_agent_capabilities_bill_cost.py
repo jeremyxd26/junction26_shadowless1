@@ -102,6 +102,17 @@ def test_a_market_question_is_not_the_customers_bill(question):
                    for name, args in calls), question
 
 
+# A one-word compound is not the category's word (re-check of #544): an electric car, a tenant, the housing allowance,
+# a rental studio, an electric bike. Each keeps the plan the other rules give it, never the bill-cost plans.
+@pytest.mark.parametrize("question", [
+    "Paljonko sähköauto maksaa kuukaudessa?", "Paljonko vuokralaiselle maksaa kuukaudessa?",
+    "Paljonko asumistuki maksaa kuukaudessa?", "Paljonko vuokrayksiö maksaa kuukaudessa?",
+    "Paljonko sähköpyörä maksaa vuodessa?",
+])
+def test_a_compound_word_is_not_the_bill(question):
+    test_a_market_question_is_not_the_customers_bill(question)
+
+
 def test_the_comparison_question_keeps_the_peer_benchmark():
     question = "what does my rent cost a month compared to others"
     assert template.bill_cost(guard.fold(question)) is None
