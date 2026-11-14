@@ -18,46 +18,24 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-from core.agent import template
+from core.agent import people, template
 from core.agent.guard import flags, fold, fold_pattern
 from core.agent.model import ComposeInput, ComposeResult, FunctionCall, PlanInput, PlanResult
 from core.tools import config
 
-# Another person named in the question, whose data the coach never shows (#216, #350): a spouse or partner,
-# a relative, a friend or a colleague, but only as the one who spends, earns or owns ("my wife spends",
-# "husband's salary", "vaimoni tienaa", "mieheni palkka"). The one the user spends on, gives to, buys for or
-# goes out with is part of the user's own spending ("a gift for my wife", "what did I buy my wife",
-# "vaimolleni", "tyttöystäväni kanssa"), and so is "my husband and I". A partner company is no person.
-_OBJECT_OF = ("on", "for", "to", "with", "from", "buy", "bought", "buying", "give", "gave", "giving", "get", "got",
-              "send", "sent", "pay", "paid", "lend", "lent", "treat", "treated", "take", "took", "visit", "visited",
-              "help", "helped", "support", "supported")
-_NOT_AN_OBJECT = ("".join(rf"(?<!\b{w} {p})" for w in _OBJECT_OF for p in ("my ", "our ", "the ", ""))
-                  + r"(?<!\bme and my )(?<!\bi and my )")
-_NOT_WITH_ME = r"(?!\s+and\s+(?:i|me)\b)"
-_SPOUSE = r"wife|wives|husbands?|spouses?|(?:girl|boy)friends?"
-_RELATIVE = (r"sisters?|brothers?|mother|mom|mum|father|dad|parents?|sons?|daughters?|kids?|children|child|"
-             r"friends?|colleagues?")
-# A relative or friend is another person only as an owner or a subject: "my sister's", "my dad earns",
-# "my friend Octavia spent" (one word, a name, may stand between).
-_RELATIVE_ROLE = (r"(?:\s+\w+)?(?:['’]s?(?!\w)|\s+(?:spends?|spent|spending|earns?|earned|makes?|made|buys?|bought|"
-                  r"pays?|paid|saves?|saved|owes?|has|have|had|gets?|got)\b)")
-_PARTNER_THING = (r"stores?|shops?|banks?|compan\w*|business\w*|brands?|merchants?|chains?|programs?|offers?|"
-                  r"network|cards?|benefits?")
-# Finnish: only the forms "my X" (nominative and genitive "vaimoni", adessive "vaimollani"); the allative
-# "vaimolleni" (for my wife) and "miehille" (for men) are no person, nor is "X kanssa" (with X).
-_FI_PERSON = (r"vaimo|puoliso|kumppani|tyttöystävä|poikaystävä|miehe|sisko|sisare|velje|äiti|isä|poika|tyttäre|"
-              r"lapse|laste")
-RELATION = (rf"{_NOT_AN_OBJECT}\b(?:{_SPOUSE})\b{_NOT_WITH_ME}|"
-            rf"\b(?:my|our) {_NOT_AN_OBJECT}(?:{_RELATIVE}){_RELATIVE_ROLE}|"
-            rf"\b(?:my|our) {_NOT_AN_OBJECT}partners?\b(?!\s+(?:{_PARTNER_THING})\b){_NOT_WITH_ME}|"
-            rf"\b(?:{_FI_PERSON})(?:ni|llani|lläni)\b(?!\s+kanssa\b)")
+# Another person's money (#216, #350, #405, decided in the review of #458): core/agent/people.py decides,
+# right after the decline rules, whether a question asks about someone else (declined), cannot tell
+# (unclaimed) or is the user's own. Its relation words keep a comparison with a specific person out of
+# the peer rule.
+RELATION = (r"\b(?:" + "|".join(sorted(map(re.escape, people.PERSON_EN | people.PERSON_FI), key=len, reverse=True))
+            + r")\b")
 
 # (kind, pattern) in order: the first match declines the question. No data tool runs (R6, R10).
 DECLINE_RULES = [
     ("unsafe", r"ignore (all |the )?(previous|prior|above) instructions|system override|admin mode|developer mode|"
                r"\btransfer\b|\bsiirrä\b|raw (transaction|row|record)s?|merchant ids?|raakatiedot"),
     ("other_person_data", r"\bCUST\d+|\bcustomer\b|neighbou?r|naapuri|"
-                          r"someone else|other (people|customers)|muiden|toisen|" + RELATION),
+                          r"someone else|other (people|customers)|muiden|toisen"),
     ("credit_decision", r"mortgage|credit ?score|creditworth|approve (my |a )?loan|loan (be )?approved|"
                         r"asuntolaina|luottokelpo|myöntääkö|lainapäätös"),
     ("investment_advice", r"\b(should|which|what|best)\b.*\b(stocks?|shares?|funds?|etfs?|crypto|bitcoin)\b|"
@@ -315,32 +293,6 @@ SMALL_FILLERS = frozenset({
 OTHERS_DATA = (r"other people'?s|others'|\b(their|muiden) (transactions?|rows?|records?|tapahtum\w*|ostok\w*)|"
                r"what do (other people|others) (spend|buy)|mitä muut (kuluttavat|ostavat|käyttävät)")
 SPECIFIC_PERSON = r"\bCUST\d+|neighbou?r|naapuri|someone else|\bcustomer\b|toisen|" + RELATION
-
-# A named person who spends, earns or owns (#405): "what did Jane spend in June?", "Augustin's spending",
-# "Paljonko Marja käytti toukokuussa?". Matched on the question with its case kept (accents off), since a
-# name is a capitalised word; "I", "We" and "You" are the user and the coach. A month word can be a name
-# ("What did June spend in May?"): the verb after it decides. Merchant names do not spend, earn or own a
-# salary, so "How much did Netflix cost?" is no person.
-_NAME = (r"(?<![-\w])(?!(?:I|We|You|Sentti|It|This|That|These|Those|There|He|She|They|What|Who|How|Which|Where|"
-         r"When|Why)\b)[A-Z][a-z]+")
-# In Finnish a capitalised first word is no name ("Se maksoi viisi euroa"): the name follows another word.
-_FI_NAME = r"(?<=\w )" + _NAME
-NAMED_PERSON = (
-    rf"(?i:\b(?:did|does|do|has|have|had|will|would|could|can|is|was)\s+){_NAME}"
-    r"(?i:\s+(?:spend|spent|spends|spending|pay|paid|pays|buy|bought|buys|earn|earned|earns|owe|owes|save|saved"
-    r"|saves))\b|"
-    rf"{_NAME}['’]s\s+(?i:spending|spend|purchases?|transactions?|money|salary|income|bills?|budget|accounts?|"
-    r"balance|expenses?|savings|payments?|cards?|groceries|food|rent|shopping|clothes)\b|"
-    rf"(?i:\bwhat (?:kind|type|sort) of (?:spender|saver|consumer) (?:is|was)\s+){_NAME}|"
-    rf"^{_NAME}\s+(?i:spent|spends|bought|paid|earned|earns)\b|"
-    rf"{_FI_NAME}\s+(?i:kaytti|kayttaa|kulutti|kuluttaa|maksoi|maksaa|osti|ostaa|tienaa|tienasi|ansaitsi|ansaitsee|"
-    r"saastaa|saasti)\b|"
-    rf"{_FI_NAME}n\s+(?i:palk\w*|tulo\w*|tili\w*|saldo\w*)")
-
-
-def named_person(question: str) -> bool:
-    """A named person who spends, earns or owns is the subject of the question (#405)."""
-    return bool(re.search(NAMED_PERSON, fold_pattern(question)))
 
 
 # "Will my money last until payday?" (#257). It needs the money or balance phrasing, so a bills
@@ -874,8 +826,11 @@ def claim(request: PlanInput) -> Claim:
             continue
         if re.search(rx, q, re.I):
             return Claim("decline", (FunctionCall("decline", {"kind": kind}),))
-    if named_person(question):   # #405: a named person's money, never answered with the user's
+    verdict = people.classify(question, peer_question)   # #350, #405: someone else's money
+    if verdict == people.DECLINE:
         return Claim("decline", (FunctionCall("decline", {"kind": "other_person_data"}),))
+    if verdict == people.UNCLAIMED:   # cannot tell whose money: never the user's own numbers
+        return Claim(None, reason="other_person")
     if flags(question) or re.search(SET_ASIDE, q):
         return Claim(None, reason="flagged")
     if request.history and not _complete(question, q, as_of):
