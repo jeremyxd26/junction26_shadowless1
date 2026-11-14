@@ -47,3 +47,24 @@ describe('mock ask: "How could I save more?" (#495)', () => {
     expect(cards(pickStream('Where did my money go?', null)).some((card) => card.type === 'safe_to_save')).toBe(false)
   })
 })
+
+describe('mock ask: Finnish chips with lang=fi (#374)', () => {
+  const doneOf = (parts: string[]) => events(parts).find(([name]) => name === 'done')?.[1] as AskDone
+  const finnish = examples['ask.json.response_fi'] as { follow_ups: string[]; text_rendered: string }
+
+  it("answers a Finnish request without its own example with the contract's Finnish answer and its Finnish follow-ups", () => {
+    const done = doneOf(pickStream('Where did my money go?', null, true, 'fi'))
+    expect(done.follow_ups).toEqual(finnish.follow_ups)
+    expect(done.text_rendered).toBe(finnish.text_rendered)
+  })
+
+  it('keeps English requests on the English stream', () => {
+    const done = doneOf(pickStream('Where did my money go?', null, true, 'en'))
+    expect(done.follow_ups.join(' ')).not.toMatch(/[äöÄÖ]/)
+    expect(done.follow_ups).not.toEqual(finnish.follow_ups)
+  })
+
+  it("keeps the questions that have their own example on it, whatever the language", () => {
+    expect(cards(pickStream('Miten voisin säästää enemmän?', null, true, 'fi'))).toEqual([saveCard])
+  })
+})

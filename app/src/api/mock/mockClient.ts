@@ -370,6 +370,20 @@ function withDisplay(number: Num, value: number, lang: Language): Num {
   return { ...number, value, display: money(value, number.unit, lang) }
 }
 
+/**
+ * The review question's amount in the request's language, as the core sends it (#463). The
+ * contract's example has the English display ("€1,080.42"), while its Finnish question reads
+ * "1 080,42 € …"; with the English display the chip cannot find its amount in the Finnish text and
+ * the amount shows twice. The example's other numbers stay English, as elsewhere in the mock.
+ */
+function reviewsInLanguage(overview: OverviewResponse, lang: Language): OverviewResponse {
+  if (lang === 'en') return overview
+  return {
+    ...overview,
+    reviews: overview.reviews.map((review) => ({ ...review, amount: withDisplay(review.amount, review.amount.value, lang) })),
+  }
+}
+
 /** The contract's `whatif.error` (0.2.2), in the request's language like the core. */
 const WHATIF_ERROR = {
   en: 'This scenario cannot be calculated.',
@@ -420,11 +434,11 @@ export function createMockClient(): ApiClient {
         response.personas = [SANNA, ...response.personas]
         return response
       }),
-    overview: (customerId: string) =>
+    overview: (customerId: string, lang: Language) =>
       later(() => {
         const overview = currentOverview(customerId)
         if (!overview) throw new ApiError(404, examples['error.response'].error)
-        return clone(overview)
+        return clone(reviewsInLanguage(overview, lang))
       }),
     evidence: (ref: string, customerId: string, _lang, cursor?: string) =>
       later(() => {
