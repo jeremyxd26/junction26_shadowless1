@@ -48,6 +48,15 @@ FORMS = [
     ("12", Unit.DAYS, None, "12 days", "12 pv"),
     ("1", Unit.MONTHS, None, "1 month", "1 kk"),
     ("3", Unit.MONTHS, None, "3 months", "3 kk"),
+    # #161: days and months round half up to a whole number (not truncated) and group thousands
+    ("2.4", Unit.DAYS, None, "2 days", "2 pv"),
+    ("2.5", Unit.DAYS, None, "3 days", "3 pv"),
+    ("2.6", Unit.DAYS, None, "3 days", "3 pv"),
+    ("1.4", Unit.DAYS, None, "1 day", "1 pv"),        # rounds to 1: singular
+    ("0.6", Unit.MONTHS, None, "1 month", "1 kk"),
+    ("5.5", Unit.MONTHS, None, "6 months", "6 kk"),
+    ("1234", Unit.DAYS, None, "1,234 days", "1 234 pv"),
+    ("1234.5", Unit.MONTHS, None, "1,235 months", "1 235 kk"),
     # a percentage the user typed, whole: no decimal; any other percentage keeps its decimal
     ("20", Unit.PERCENT, USER_INPUT, "20%", "20 %"),
     ("20.5", Unit.PERCENT, USER_INPUT, "20.5%", "20,5 %"),
