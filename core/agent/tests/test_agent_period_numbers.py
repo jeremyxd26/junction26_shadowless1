@@ -69,6 +69,31 @@ def test_a_period_gets_the_period_it_names(question, period):
     assert first_call(question) == ("get_spending", {"filter": RESTAURANTS, "period": period})
 
 
+@pytest.mark.parametrize("question, period", [
+    # review of #665: a digit after an amount or comparison word is an amount, never a count of months or days
+    ("Käytinkö yli 50 viimeisen kuukauden aikana ravintoloihin?", custom("2026-09-01")),
+    ("Käytinkö yli 20 viimeisen kuukauden aikana ravintoloihin?", custom("2026-09-01")),
+    ("Käytinkö yli 6 viimeisen kuukauden aikana ravintoloihin?", custom("2026-09-01")),
+    ("Käytinkö yli 100 viime kuun aikana ravintoloihin?", {"preset": "last_month"}),
+    ("Käytinkö yli 12 viime kuun aikana ravintoloihin?", {"preset": "last_month"}),
+    ("Käytinkö yli 50 € viimeisen kuukauden aikana ravintoloihin?", custom("2026-09-01")),
+    ("Käytinkö yli 50 euroa viimeisen kuukauden aikana ravintoloihin?", custom("2026-09-01")),
+    ("Käytinkö yli 100 € viime kuun aikana ravintoloihin?", {"preset": "last_month"}),
+    ("Käytinkö yli 100 euroa viime kuun aikana ravintoloihin?", {"preset": "last_month"}),
+    # "12:n kuukauden" and "kuukautena" are twelve months, as on dev
+    ("Paljonko käytin ravintoloihin viimeisen 12:n kuukauden aikana?", {"preset": "last_12_months"}),
+    ("Paljonko käytin ravintoloihin viimeisen 12 kuukautena?", {"preset": "last_12_months"}),
+])
+def test_an_amount_before_the_number_is_no_count(question, period):
+    assert first_call(question) == ("get_spending", {"filter": RESTAURANTS, "period": period})
+
+
+def test_an_amount_before_the_number_is_no_count_for_a_group_or_days():
+    assert first_call("Käytinkö alle 30 viime kuun aikana kahviloihin?")[1]["period"] == {"preset": "last_month"}
+    name, args = first_call("Käytinkö yli 50 viimeisen päivän aikana ravintoloihin?")
+    assert name == "ask_clarifying_question" and args["question"] == "Mitä ajanjaksoa tarkoitat?"
+
+
 @pytest.mark.parametrize("question", ["Paljonko käytin ravintoloihin viimeisen 121 kk aikana?",
                                       "Paljonko käytin ravintoloihin viimeisen 121 kuukauden aikana?"])
 def test_a_count_out_of_range_asks_and_is_never_another_period(question):
