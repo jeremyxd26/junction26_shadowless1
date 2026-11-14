@@ -136,7 +136,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     notes: list[str] = []
 
     # min group size passed explicitly (the documented default), so a session setting can never leak in
-    settings = {"peer_min_n": config.PEER_MIN_N}
+    # the customer's labels (#68) as app.tx_labels, so 06 classifies a reviewed purchase like the baskets do
+    settings = {"peer_min_n": config.PEER_MIN_N, **labels.metric_settings_for(ctx)}
     rows = [r for r in metric_sql.run(ctx.conn, config.PEER_FILE, ctx.customer_id, ctx.as_of, settings)
             if r.get("customer_id") == ctx.customer_id and r.get("metric") == metric]
     if not rows:
@@ -148,7 +149,7 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     what = metric_label(metric, lang)
 
     history = ctx.history()
-    nb = NumberBuilder(ctx, classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of)))
+    nb = NumberBuilder(ctx, classify(history, ctx.as_of, labels.for_context(ctx)))
     reg = ctx.numbers.register
 
     # ---- you: the customer's own rows ----

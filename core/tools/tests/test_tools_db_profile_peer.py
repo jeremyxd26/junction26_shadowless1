@@ -345,3 +345,30 @@ def test_one_call_of_each_tool_is_fast_enough(conn):
     # Idle: about 0.4 s and 0.7 s. Under load the shared database is 10-20x slower, so the bound is the
     # statement timeout; the printed times are what the PR reports.
     assert t1 - t0 < 60 and t2 - t1 < 60
+
+
+# ---- labels (#68): profile and peer classify a reviewed purchase like the basket card -------------------
+
+SPIKE_860 = 606016   # CUST00860's Home & Tech purchase of 1,080.42 on 2026-09-28 (personas.md)
+
+
+def test_a_labelled_customer_is_classified_alike_in_profile_peer_and_baskets(conn, monkeypatch):
+    from core.tools import labels
+
+    plain = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00860")).data.features}
+    monkeypatch.setattr(labels, "basket_labels",
+                        lambda conn, cid, as_of, now=None: {SPIKE_860: "everyday_spending"} if cid == "CUST00860" else {})
+    profile = {f.key: f.value for f in get_spender_profile(ctx_for(conn, "CUST00860")).data.features}
+    basket = get_basket_breakdown(ctx_for(conn, "CUST00860"), {"period": {"preset": "last_6_months"}}).data
+    everyday = next(b for b in basket.baskets if b.key == "everyday_spending")
+
+    assert profile["spend"].evidence_ref == basket.total.evidence_ref and profile["spend"].value == basket.total.value
+    assert profile["everyday_share_pct"].value == everyday.share.value      # 05 got the label as app.tx_labels
+    assert profile["everyday_share_pct"].value > plain["everyday_share_pct"].value   # the label moved the spike
+
+    peer = get_peer_benchmark(ctx_for(conn, "CUST00860"), {"metric": "everyday_spending"})
+    assert peer.data.you.value == everyday.amount.value                     # the basket card's monthly amount
+    you = evidence.resolve(conn, peer.data.you.evidence_ref, "CUST00860", limit=1)
+    assert you.kind == "transactions" and you.reconciles                     # the rows path: Python equals 06
+    median = evidence.resolve(conn, peer.data.peer_median.evidence_ref, "CUST00860")
+    assert median.kind == "peer_aggregate" and median.reconciles             # re-run with the stored labels

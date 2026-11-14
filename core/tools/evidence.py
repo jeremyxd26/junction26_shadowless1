@@ -338,6 +338,12 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         if source["file"] != config.PEER_FILE:  # the file is fixed in code, never taken from a stored spec
             raise ValueError("peer evidence must come from 06_peer_benchmark.sql")
         settings = {"peer_min_n": config.PEER_MIN_N}   # pinned from config, never from the stored spec
+        if "tx_labels" in source["settings"]:          # the labels the number was computed with (#68)
+            settings["tx_labels"] = source["settings"]["tx_labels"]
+        try:
+            metric_sql.check_settings(settings)        # the same check as the metric branch (#122)
+        except ValueError:
+            raise EvidenceForbidden(ref) from None
         rows = [r for r in metric_sql.run(conn, config.PEER_FILE, customer_id, as_of, settings)
                 if r.get("customer_id") == customer_id and r.get("metric") == source["metric"]]
         row = rows[0] if len(rows) == 1 else None

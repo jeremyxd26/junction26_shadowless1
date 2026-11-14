@@ -118,7 +118,10 @@ def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | N
     lang = ctx.language
     notes: list[str] = []
 
-    row = metric_sql.run_one(ctx.conn, config.PROFILE_FILE, ctx.customer_id, ctx.as_of)
+    # The customer's labels (#68) go in as app.tx_labels, so 05 classifies a reviewed purchase like the
+    # Python rows below and like every other tool of the request (labels.for_context, read once).
+    settings = labels.metric_settings_for(ctx)
+    row = metric_sql.run_one(ctx.conn, config.PROFILE_FILE, ctx.customer_id, ctx.as_of, settings)
     if row is None:
         raise ValueError("no transactions up to as_of for this customer")
     start, end = row["period_start"], row["period_end"]
@@ -126,7 +129,7 @@ def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | N
     n_months = int(row["n_months"])
 
     history = ctx.history()
-    rows = classify(history, ctx.as_of, labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
+    rows = classify(history, ctx.as_of, labels.for_context(ctx))
     nb = NumberBuilder(ctx, rows)
 
     numbers: dict[str, Number] = {}
@@ -149,7 +152,7 @@ def get_spender_profile(ctx: ToolContext, args: GetSpenderProfileArgs | dict | N
                 continue
             nb.specs.pop(n.evidence_ref, None)
             log.warning("monthly spending of the rows and of 05_spender_profile.sql differ for one customer")
-        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.PROFILE_FILE, column, {}, value,
+        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.PROFILE_FILE, column, settings, value,
                                     evidence.period_param(period))
         numbers[key] = nb.number(value, unit, period, method, spec, label)   # display from the formatter
 
