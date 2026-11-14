@@ -6,6 +6,20 @@ const en = {
   sentti: 'Sentti',
   can: 'I can explain where your money went, what you can safely spend this week and where you could save, using your own transactions. I can’t give investment advice or decide on loans.',
   starters: ['Where did my money go?', 'What can I safely spend this week?', 'How could I save more?'],
+  /**
+   * The opening's chip row (Renat's decision): these two first, then "Show Sentti a bill", then more, all
+   * questions the core answers well (core/eval/cases.yaml, the demo path). No "What can I safely spend
+   * this week?": the hero answers it.
+   */
+  openingFirst: ['Where did my money go?', 'How could I save more?'],
+  openingMore: [
+    'What kind of spender am I?',
+    'How do I compare with people like me?',
+    'What if I spent 20% less on restaurants?',
+    'What are my regular monthly bills?',
+    'Will my money last until payday?',
+    'Where do my small purchases go?',
+  ],
   placeholder: 'Ask about your money',
   inputLabel: 'Your question',
   send: 'Send',
@@ -49,6 +63,15 @@ const fi: ChatStrings = {
   sentti: 'Sentti',
   can: 'Voin kertoa tilitapahtumiesi perusteella, mihin rahasi menivät, paljonko voit turvallisesti käyttää tällä viikolla ja mistä voisit säästää. En anna sijoitusneuvoja enkä tee lainapäätöksiä.',
   starters: ['Mihin rahani menivät?', 'Paljonko voin turvallisesti käyttää tällä viikolla?', 'Miten voisin säästää enemmän?'],
+  openingFirst: ['Mihin rahani menivät?', 'Miten voisin säästää enemmän?'],
+  openingMore: [
+    'Millainen kuluttaja olen?',
+    'Miten kulutukseni vertautuu kaltaisiini?',
+    'Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?',
+    'Mitkä ovat säännölliset kuukausilaskuni?',
+    'Riittävätkö rahat palkkapäivään?',
+    'Mihin pienet ostokset menevät?',
+  ],
   placeholder: 'Kysy raha-asioistasi',
   inputLabel: 'Kysymyksesi',
   send: 'Lähetä',
