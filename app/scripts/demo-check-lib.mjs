@@ -144,3 +144,23 @@ export function downOnly(values) {
 export function line(n, status, text) {
   return `${n} ${status.padEnd(4)}  ${text}`
 }
+
+/**
+ * The opening's chips since #784: one horizontally scrollable row. It holds the question chips (the
+ * app's own questions, "Where did my money go?" first) and the client-turn chips ("Show Sentti a
+ * bill"), and the whole row carries `data-opening-part`.
+ */
+export const CHIP_ROW = '[data-turn="opening"] [data-opening-part="client-chips"]'
+
+/** The row's question chips: the chips whose text is a question, in row order. */
+export function rowQuestions(texts) {
+  return texts.map((text) => String(text ?? '').trim()).filter((text) => /\?$/.test(text))
+}
+
+/** Step 2's findings on the row's question chips (an empty list is a pass). */
+export function rowProblems(questions, firstQuestion) {
+  const problems = []
+  if (questions.length < 2) problems.push(`${questions.length} question chips in the row, not 2 or more`)
+  if (!questions.includes(firstQuestion)) problems.push(`no "${firstQuestion}" chip in the row`)
+  return problems
+}
