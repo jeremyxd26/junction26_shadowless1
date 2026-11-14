@@ -229,7 +229,8 @@ class PipelineSource:
         fixture = {
             "question": question, "language": language, "as_of": self.as_of.isoformat(),
             "planner": "model" if type(self.model).__name__ == "GeminiModel" else "rules_first",
-            "model": self.model.model_id, "tools": self._rec["tools"], "exchanges": self._rec["exchanges"],
+            "model": self.model.model_id, "compose_model": getattr(self.model.client, "compose_model", None),
+            "tools": self._rec["tools"], "exchanges": self._rec["exchanges"],
             "expect": {"outcome": done.get("outcome"), "refusal_kind": (done.get("refusal") or {}).get("kind"),
                        "tool_calls": calls, "text": done.get("text"), "text_rendered": done.get("text_rendered")},
         }

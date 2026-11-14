@@ -212,7 +212,8 @@ def test_label_errors(client):
     assert_error(client.post("/api/baskets/label", json=body(tx_ref, customer_id="CUST99999")), 404,
                  "customer_not_found")
     again = label(client, tx_ref, "everyday_spending", language="fi")
-    assert again["message"]["numbers"]["n1"]["value"] == 1080.42
+    # #382: the purchase amount is one of the effect text's numbers (its id follows the effect items)
+    assert 1080.42 in {n["value"] for n in again["message"]["numbers"].values() if n["method"] == "spending.total@1"}
 
 
 def test_switched_off_serves_no_review_and_labels_nothing(client, monkeypatch):
