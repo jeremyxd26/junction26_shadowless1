@@ -394,6 +394,9 @@ METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
 
 PROFILE_FILE = "05_spender_profile.sql"
 PEER_FILE = "06_peer_benchmark.sql"
+# The peer comparison invites a change only when the customer spends more than the median by more than
+# this many percent (#418); at or below it, the answer says that is already their saving.
+PEER_ACTION_MARGIN_PCT = 1.0
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})

@@ -215,8 +215,10 @@ def _card(data: PeerBenchmarkData, estimate: dict[str, str], language: str) -> C
         prompt = _t("action_prompt_total", language)
     else:
         prompt = _t("action_prompt", language, what=data.metric_label.lower() if language == "en" else data.metric_label)
-    actions = [] if data.metric in NO_CUT_ACTION else [Action(type="ask", label=_t("action_label", language),
-                                                              prompt=prompt)]
+    # A cut is offered only above the median (#418): at or below it there is nothing to invite.
+    above = data.vs_median is not None and float(data.vs_median.value) > config.PEER_ACTION_MARGIN_PCT
+    actions = [] if data.metric in NO_CUT_ACTION or not above else [
+        Action(type="ask", label=_t("action_label", language), prompt=prompt)]
     dump = lambda n: n.model_dump() if n is not None else None  # noqa: E731
     return Card(
         card_id="card_" + hashlib.sha256(f"{TOOL}|{data.metric}|{ref}".encode()).hexdigest()[:12],
