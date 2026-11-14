@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import unicodedata
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractContextManager, contextmanager
@@ -32,9 +33,10 @@ from core.agent import guard
 from core.agent.audit import AuditLog
 from core.app.api import deps
 from core.app.api.errors import envelope
+from core.app.api.viewer import known_viewer
 from core.agent.conversation import ConversationStore
-from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, Pipeline, error_envelope
-from core.agent.rules import RuleModel
+from core.agent.gemini import make_agent_model
+from core.agent.orchestrator import AskRequest, DataAccess, DataUnavailable, LabelSteps, Pipeline, error_envelope
 from core.agent.toolset import default_registry
 
 router = APIRouter()
@@ -186,13 +188,22 @@ class Agent:
 
 
 def build_agent(app) -> Agent:
-    """The service's agent: the built-in tools, the keyword model (until the Gemini adapter) and the
-    app's pool. Tests put their own Agent on app.state.agent instead."""
+    """The service's agent: the built-in tools, the model (the rule planner first and Gemini for the
+    rest; the rule model alone when no Gemini key is set) and the app's pool. Tests put their own
+    Agent on app.state.agent instead."""
     data = PoolData(app)
     audit = AuditLog()
-    pipeline = Pipeline(default_registry(), RuleModel(), data, as_of=app.state.settings.demo_today,
-                        store=ConversationStore(), audit=audit)
+    model = make_agent_model(app.state.settings)  # rules first, then Gemini; the rule model without a key
+    pipeline = Pipeline(default_registry(), model, data, as_of=app.state.settings.demo_today,
+                        store=ConversationStore(), audit=audit, labels=label_steps())
     return Agent(pipeline=pipeline, data=data, audit=audit)
+
+
+def label_steps() -> LabelSteps:
+    """The overview's label functions (#68, #196): the same state for an answer as for the overview."""
+    from core.tools import review_card, reviews
+
+    return LabelSteps(establish=reviews.ensure_pending_for, card=review_card.build, enabled=reviews.enabled)
 
 
 def get_agent(app) -> Agent:
@@ -261,6 +272,16 @@ def _collect(pipeline: Pipeline, req: AskRequest) -> tuple[int, dict[str, Any]]:
     return 200, body
 
 
+# Characters that render as nothing although they are letters or symbols (braille blank, Hangul fillers).
+BLANK_LOOKALIKES = {"\u2800", "\u3164", "\u115f", "\u1160", "\uffa0"}
+
+
+def _visible(message: str) -> str:
+    """The message without blank look-alikes and combining marks: empty means nothing to answer (#105)."""
+    return "".join(ch for ch in message
+                   if ch not in BLANK_LOOKALIKES and not unicodedata.category(ch).startswith("M")).strip()
+
+
 @router.post("/api/ask")
 async def ask(request: Request):
     agent = get_agent(request.app)
@@ -275,8 +296,10 @@ async def ask(request: Request):
         return envelope("invalid_request", body.language if body.language in ("en", "fi") else "en")
     lang = body.language if body.language in ("en", "fi") else guard.detect_language(guard.clean(body.message)) or "en"
     request.state.language = lang
-    message = body.message.strip()
-    if not message:
+    # Empty after the input guard (only spaces, zero-width or bidi marks, blank look-alikes or combining
+    # marks): 400 before any model call (issue #105).
+    message = guard.clean(body.message)
+    if not _visible(message):
         return envelope("invalid_request", lang)
     deps.require_served(request, body.customer_id)  # the persona allowlist (#101): the same 404 as unknown
     decision, retry_after = agent.limits.check(client_address(request), body.customer_id)
@@ -289,8 +312,11 @@ async def ask(request: Request):
     if not exists:
         return envelope("customer_not_found", lang)
 
+    # The viewer's answers decide the labels (#253), as on the overview. known_viewer never sets a cookie:
+    # this route returns its own Response, and the overview has issued the cookie already.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
-                     conversation_id=body.conversation_id, model_allowed=decision == "model")
+                     conversation_id=body.conversation_id, model_allowed=decision == "model",
+                     viewer=known_viewer(request))
     if "text/event-stream" in request.headers.get("accept", ""):
         return StreamingResponse(_stream(agent.pipeline, req), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

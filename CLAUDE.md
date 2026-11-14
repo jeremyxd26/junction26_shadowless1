@@ -3,7 +3,7 @@
 Two people build this project during a hackathon. Each person runs one **coordinator** Claude Code session and several **worker** sessions on their own machine. Sessions on different machines cannot message each other. The only shared state is this repository and its GitHub Issues and PRs.
 
 ## Roles
-- **Coordinator** works in the main checkout on `main`. It plans the work, files issues, dispatches tasks to its workers by message, and reviews their PRs. After a reviewer verdict PASS it merges the PR into `dev`; once the change has passed on the dev environment it merges the same branch into `main`. It writes no feature code itself.
+- **Coordinator** works in the main checkout on `main`. It plans the work, files issues, dispatches tasks to its workers by message, and reviews their PRs. After a reviewer verdict PASS it merges the PR into `dev`; about every two hours, when the demo check is green on the dev environment, it merges `dev` into `main` with one PR. It writes no feature code itself.
 - **Worker** works in its own git worktree. It does one claimed issue at a time on its own branch and reports back to its coordinator. Workers never merge.
 - **Humans** own product decisions, the interface contract between areas, and anything irreversible.
 
@@ -35,10 +35,14 @@ Two long-lived branches:
 
 Flow for every change:
 1. Branch from fresh `origin/main`, never from `dev`. Name it `<owner-prefix>/<issue>-<short-slug>`, for example `r/12-ingest-api`.
-2. Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`. Once the branch has been merged into `dev`, do not rebase or force-push it again: push fixes as new commits, so the later PR into `main` carries the same commits.
-3. Open the PR into **`dev`**. Merge it with a **merge commit** (`gh pr merge <N> --merge`), not squash, and keep the branch.
+2. Before pushing, run `git fetch origin && git rebase origin/main`, then rerun the checks. You may force-push your own branch only with `--force-with-lease`. Once the branch has been merged into `dev`, do not rebase or force-push it again: push fixes as new commits, so `dev` and later `main` carry the same commits.
+3. Open the PR into **`dev`**. Merge it with a **merge commit** (`gh pr merge <N> --merge`), not squash, and keep the branch until its work is on `main`.
 4. The dev environment is redeployed from `dev`, then the tests and the demo path are run there.
-5. If everything passes, open a second PR from the **same branch** into **`main`** and merge it with a merge commit. Delete the branch only after that.
+5. About every two hours, when the demo check is green on the dev environment, the coordinator opens **one PR from `dev` into `main`**, at the commit that was deployed and checked, and merges it with a merge commit. Branches whose work is in that commit are deleted after it.
+
+Review depth follows risk:
+- Documentation, tests, texts and eval cases get one review pass and need no check on the dev environment.
+- Core logic, security, the contract and deploy changes get the full review and the check on the dev environment.
 
 If a change breaks `dev`, fix it with a new branch from `main` and the same flow. Do not patch `dev` directly.
 

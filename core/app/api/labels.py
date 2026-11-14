@@ -39,6 +39,7 @@ from fastapi.responses import JSONResponse
 
 from core.app.ratelimit import SlidingWindowLimiter
 from core.tools import label_answer, reviews
+from core.tools.cache import TOOL_CACHE
 
 from .deps import customer_connection
 from .errors import envelope
@@ -110,7 +111,12 @@ def post_label(request: Request, response: Response, body: LabelRequest) -> Labe
         finally:
             if reserved is not None and not admitted:
                 new_sessions.release({"address": address}, reserved)   # no session was admitted
-    if result["changed"]:  # the audit record of every label write (design 7.8): who, which ref, what, when
+    if result["changed"]:
+        # Memory hygiene for the tool cache (#86): the new label set is in every key, so the customer's
+        # old entries can never be served again; dropping them only frees memory. The write itself never
+        # goes through the cache.
+        TOOL_CACHE.invalidate_customer(body.customer_id)
+        # The audit record of every label write (design 7.8): who, which ref, what, when.
         label = result["label"] or {}
         log.info("audit label: customer=%s tx_ref=%s basket=%s review_state=%s labelled_at=%s",
                  body.customer_id, body.tx_ref, label.get("basket"), result["review_state"],
