@@ -84,6 +84,8 @@ FORMULAS = {
     "bonus_level": ("base",),                  # the percent of the highest table row at or below the base
     "percent_of": ("percent", "base"),         # base * percent / 100, cents
     "rate_of": ("base",),                      # base * params["percent"] / 100, cents
+    # Balance forecast (#257): balance - bills due by the day - daily pace * params["days"], cents.
+    "balance_forecast": ("balance", "bills", "pace"),
 }
 
 
@@ -126,6 +128,9 @@ def compute_formula(formula: str, values: dict[str, Decimal], params: dict[str, 
     if formula == "rate_of":
         p = params or {}
         return money(_scaled(values["base"], p) * Decimal(str(p["percent"])) / 100)
+    if formula == "balance_forecast":
+        days = Decimal(str((params or {})["days"]))
+        return money(values["balance"] - values["bills"] - values["pace"] * days)
     raise ValueError(f"unknown formula {formula!r}")
 
 

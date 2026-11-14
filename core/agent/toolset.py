@@ -50,6 +50,11 @@ KNOWN_TOOLS = [
               "their components and, when a month leaves nothing, the main reason. An estimate. Returns "
               "numbers with ids; cite them as {{id}}.",
               ("Working out what you could save", "Lasken, paljonko voit säästää")),
+    KnownTool("core.tools.forecast", "get_balance_forecast", "GetBalanceForecastArgs",
+              "The balance from today to the day before payday if the user spends as usual: the lowest projected "
+              "balance and its date, whether it goes below zero, the bills before payday and the usual spending a "
+              "day. An estimate. Returns numbers with ids; cite them as {{id}}.",
+              ("Projecting your balance until payday", "Ennustan saldosi palkkapäivään asti")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
               "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
               "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",

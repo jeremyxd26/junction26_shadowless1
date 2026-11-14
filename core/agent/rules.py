@@ -188,6 +188,18 @@ def plan_what_if(question: str) -> tuple[str, dict | None]:
     return "run", {"selection": {"kind": "category", "value": categories.pop()}, "cut_pct": cut}
 
 
+# "Will my money last until payday?" (#257). It needs the money or balance phrasing, so a bills
+# question that only mentions payday still goes to the bills; Finnish with or without ä and ö.
+PAYDAY = r"(?:pay ?day|next salary|palkkap[äa]iv\w*|palkka\w*)"
+FORECAST = (r"\b(?:money|cash|balance|savings|it)\b.{0,20}\blast\b.{0,25}" + PAYDAY + "|"
+            r"\benough (?:money|cash)\b.{0,25}" + PAYDAY + "|"
+            r"\bbalance\b.{0,30}\b(?:before|until|till|by|on)\b.{0,10}" + PAYDAY + "|"
+            r"what will my balance be|balance forecast|forecast (?:of )?my balance|how low will my balance|"
+            r"lowest (?:point|balance)|run out of money|make it (?:to|until|till) " + PAYDAY + "|"
+            r"riitt(?:[äa]v[äa]tk[öo]|[äa][äa]k[öo])\b.{0,40}" + PAYDAY + "|"
+            r"\bsaldo\w*\b.{0,40}" + PAYDAY + "|"
+            r"loppu(?:vatko|uko)\b.{0,20}\brah|\brah\w*\b.{0,20}loppu(?:vatko|uko)")
+
 # The partner's questions and their tools (team-lead mapping). The first match wins; a question about
 # a specific period or category falls through to get_spending.
 BRIEF = [
@@ -199,6 +211,7 @@ BRIEF = [
      lambda q, as_of: [("get_safe_to_spend", {})]),
     ("spender_type", r"what kind of spender|what type of spender|millainen kuluttaja",
      lambda q, as_of: [("get_spender_profile", {}), ("get_peer_benchmark", {"metric": "spend_total"})]),
+    ("balance_forecast", FORECAST, lambda q, as_of: [("get_balance_forecast", {})]),
     ("recurring_bills", r"\bbills?\b|payday|pay ?day|palkkapäivä|laskut|laskuni",
      lambda q, as_of: [("get_recurring_bills", {})]),
     ("what_if", WHAT_IF, None),  # plan_what_if, in RuleModel._calls
