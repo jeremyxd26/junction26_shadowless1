@@ -233,14 +233,15 @@ _ABBREVIATION = re.compile(r"\b(approx|e\.g|i\.e|incl|esim|mm|n|ns|yms|jne|vs|et
 # A negation in the same clause turns a borrowing word into a statement: "I can't recommend taking a loan",
 # "I would not use a credit card", "Älä ota lainaa" (review of #437). Also used by the cut-suggestion check.
 NEGATION = re.compile(
-    r"\b(?:not|never|cannot|no\s+need|avoid\w*|instead\s+of|rather\s+than|ei|älä|älkää|en|et|eivät|emme|ette"
+    r"\b(?:not|never|cannot|no\s+need|no\s+reason\s+to|avoid\w*|instead\s+of|rather\s+than|ei|älä|älkää|en|et|eivät"
+    r"|emme|ette"
     r"|ilman)\b|n['’]t\b|\bnothing\s+to\b", re.I)
 # A negation that still suggests: "Why not take out a loan?", "Don't hesitate to use your credit card", "It's
 # not a bad idea to…" (review of #437).
 SUGGESTING_NEGATION = re.compile(
     r"\bwhy\s+not\b|\bdon['’]?t\s+(?:hesitate|forget|be\s+afraid)\b|\bnever\s+hesitate\b"
     r"|\bnot\s+(?:a\s+)?(?:bad|terrible|crazy)\s+(?:idea|option|choice|move)\b|\bnothing\s+wrong\s+with\b"
-    r"|\bno\s+reason\s+not\s+to\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
+    r"|\bno\s+reason\s+not\s+to\b|\bno\s+reason\s+to\s+(?:hesitate|wait|delay)\b|\bmiksi\s+et\b|\bmiksei\b|\bälä\s+(?:epäröi|unohda|pelkää)\b"
     r"|\bei\s+(?:ole\s+)?(?:huono|hullu)\s+(?:idea|ajatus|vaihtoehto)\b"
     r"|\bcan['’]?t\s+go\s+wrong\b|\bcannot\s+go\s+wrong\b|\bwhy\s+(?:you\s+)?wouldn['’]?t\b|\bdon['’]?t\s+see\s+why\b",
     re.I)
@@ -254,7 +255,9 @@ QUOTING_FRAME = re.compile(
 # The borrowing words as the subject of a negated predicate: "Taking a loan is not something I suggest".
 _NEGATED_PREDICATE = re.compile(
     r"[^.!?;:,]*?\b(?:(?:is|are|was|would\s+be)\s+(?:not|never)|isn['’]t|aren['’]t|wasn['’]t|ei\s+ole)\b", re.I)
-_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# A sentence that quotes the question back ("You asked whether to take a loan.") takes its decline from the
+# next sentence ("I can't recommend that.") (review of #437).
+_QUOTED_BACK = re.compile(r"\s*(?:you\s+asked|kysyit)\b", re.I)
 
 
 def negated(clause: str) -> bool:
@@ -310,6 +313,10 @@ def _a_statement(text: str, m: re.Match) -> bool:
         return True
     if QUOTING_FRAME.search(text, sentence_start, m.start()) and negated(sentence):
         return True
+    if _QUOTED_BACK.match(sentence):
+        following = _SENTENCE_END.search(text, sentence_end)
+        if negated(text[sentence_end:following.end() if following else len(text)]):
+            return True
     return bool(_NEGATED_PREDICATE.match(text, m.end(), sentence_end)) and not SUGGESTING_NEGATION.search(sentence)
 
 
