@@ -121,16 +121,13 @@ def database_identity() -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def label_set(basket_labels: dict[int, str]) -> list[list[Any]]:
-    """Sorted [tx_id, basket] pairs: labels.label_set when it exists (#68), else the same form here."""
-    own = getattr(labels, "label_set", None)
-    if own is not None:
-        return own(basket_labels)
-    return sorted([int(tx_id), basket] for tx_id, basket in basket_labels.items())
+def label_set(labels_by_tx: dict[int, str]) -> list[list[Any]]:
+    """Sorted [tx_id, basket] pairs, the canonical form the evidence specs store (labels.label_set)."""
+    return labels.label_set(labels_by_tx)
 
 
-def labels_key_of(basket_labels: dict[int, str]) -> str:
-    text = json.dumps(label_set(basket_labels), separators=(",", ":"), ensure_ascii=False)
+def labels_key_of(labels_by_tx: dict[int, str]) -> str:
+    text = json.dumps(label_set(labels_by_tx), separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
@@ -284,22 +281,12 @@ class ToolCache:
 
     @staticmethod
     def labels_key(ctx: ToolContext) -> str:
-        """The hash of the customer's label set for this request.
-
-        With #68's `labels.for_context` it is the very set the tools use: read once per context (the
-        overview fills it from its one reviews read) and viewer-aware; the viewer itself is never part
-        of a key or a log. Before #68 it reads `labels.basket_labels`, which returns no labels.
-        """
-        for_context = getattr(labels, "for_context", None)
-        if for_context is not None:
-            return labels_key_of(for_context(ctx))
-        return labels_key_of(labels.basket_labels(ctx.conn, ctx.customer_id, ctx.as_of))
-
-    @staticmethod
-    def tools_share_the_labels() -> bool:
-        """True when the tools read their labels from the context (labels.for_context, #68), so a result
-        always belongs to the labels of its key; otherwise a miss re-reads the labels before storing."""
-        return getattr(labels, "for_context", None) is not None
+        """The hash of the customer's label set for this request: `labels.for_context(ctx)`, the very
+        set the tools use (read once per context; the overview fills it from its one reviews read).
+        There is no other path: with per-viewer answers (#144) the set is the viewer's, so two viewers
+        with different answers get different keys and viewers in the same state share entries. The
+        viewer itself is never part of a key or a log."""
+        return labels_key_of(labels.for_context(ctx))
 
     def ensure_labels_key(self, ctx: ToolContext, connection: Connector | None = None) -> str:
         """ctx.labels_key, read once per request (with ctx.conn, or a connection from `connection`)."""
@@ -338,8 +325,8 @@ class ToolCache:
             entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
             return Prepared(entry, False, "off", time.perf_counter() - t0)
 
-        # The labels first: the private context below is a copy of ctx, so the tool sees the very label
-        # set the key was made from (with labels.for_context, #68).
+        # The labels first: the private context below is a copy of ctx (its _labels included), so the
+        # tool sees the very label set the key was made from.
         self.ensure_labels_key(ctx, connection)
         private = replace(ctx, numbers=NumberRegistry())
         key = self.key(ctx, tool, canonical)
@@ -348,22 +335,18 @@ class ToolCache:
             entry, source = found
             return Prepared(entry, True, source, time.perf_counter() - t0, key)
 
+        # The tool reads its labels through labels.for_context(private): the set copied from ctx, from
+        # which the key was made. A label write during the call cannot slip a result of other labels
+        # under this key; the next request reads the new labels and gets a new key.
         with _connected(private, connection):
             result = fn(private, parsed)
-            # Without labels.for_context the tool read the labels itself. If they changed after the key
-            # was made (a label write, or a pending review expiring), the result belongs to other labels:
-            # return it, never store it under this key.
-            unchanged = self.tools_share_the_labels() or self.labels_key(private) == ctx.labels_key
         if ctx._history is None and private._history is not None:
             ctx._history = private._history   # the transactions read by this call serve the next one
         entry = Entry(ctx.customer_id, tool, result, tuple(private.numbers.all().items()))
-        if unchanged:
-            self.put(key, entry)
-        else:
-            log.info("tool cache: labels changed during %s; result not stored", tool)
+        self.put(key, entry)
         with self._lock:
             self.stats.misses += 1
-        return Prepared(entry, False, "tool", time.perf_counter() - t0, key if unchanged else None)
+        return Prepared(entry, False, "tool", time.perf_counter() - t0, key)
 
     def prepare_many(self, calls: list[tuple[str, type[BaseModel], Callable, Any]], ctx: ToolContext,
                      extra_connection: Connector | None = None) -> list[Prepared | Exception]:
@@ -402,6 +385,10 @@ class ToolCache:
                 conn = stack.enter_context(extra_connection())
             except Exception as exc:  # noqa: BLE001 - no second connection now: stay on the first one
                 log.info("tool cache: no second connection (%s); calls run one after another", type(exc).__name__)
+                run(misses, None)
+                return out  # type: ignore[return-value]
+            if conn is ctx.conn:   # the same connection twice (a one-connection pool): never use it from two threads
+                stack.close()
                 run(misses, None)
                 return out  # type: ignore[return-value]
             with ThreadPoolExecutor(max_workers=2) as pool:
