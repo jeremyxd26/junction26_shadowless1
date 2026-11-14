@@ -47,10 +47,11 @@ function factsOf(card: ReviewCardData, date: string): string {
  * The question as the API sends it, in the request language. The core fills it in (contract
  * 0.2.2: "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?"); its amount,
  * found as the API's own `display` string, becomes the amount chip, and `{{n1}}` / `{{date}}`
- * tokens, if a question carries them, become chips too. A question without the amount gets the
- * amount and the purchase's facts above it.
+ * tokens, if a question carries them, become chips too. A question that does not carry the
+ * amount gets the amount chip at its start: the amount is shown once, with no separate line.
+ * `compact` (after the answer, as context): 16px text and the smaller inline chip.
  */
-function QuestionText({ card }: { card: ReviewCardData }) {
+function QuestionText({ card, compact = false }: { card: ReviewCardData; compact?: boolean }) {
   const { lang, t } = useSettings()
   const date = formatDate(card.date, lang)
   const purchase = purchaseOf(card, t.reviewSeePurchase)
@@ -61,35 +62,30 @@ function QuestionText({ card }: { card: ReviewCardData }) {
       type="button"
       onClick={() => purchase.ref && openEvidence(purchase.ref)}
       aria-label={`${date}. ${purchase.label}`}
-      className="relative inline-flex min-h-10 items-center rounded-pill border border-on-deep-muted/60 px-3 leading-7 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+      className="relative inline-flex min-h-9 items-center rounded-pill border border-on-deep-muted/60 px-2.5 leading-6 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
     >
       {date}
     </button>
   ) : (
     date
   )
-  const amountChip = <NumberChip number={card.amount} size="lead" />
+  const amountChip = <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
   const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
-
-  if (tokens.has('n1') || amountAt >= 0) {
-    const sentence = tokens.has('n1')
-      ? fill(question, { n1: amountChip, date: dateChip })
-      : [
+  const sentence = tokens.has('n1')
+    ? fill(question, { n1: amountChip, date: dateChip })
+    : amountAt >= 0
+      ? [
           question.slice(0, amountAt),
           <span key="amount">{amountChip}</span>,
           ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
         ]
-    // On the 48px line each 40px chip keeps a touch area of about 46px (measured), with no overlap.
-    return <p className="mt-2 text-xl font-bold leading-12 text-on-deep">{sentence}</p>
-  }
-  return (
-    <>
-      <div className="mt-3">
-        <NumberChip number={card.amount} size="lg" />
-      </div>
-      <p className="mt-1 text-sm text-on-deep-muted">{factsOf(card, date)}</p>
-      <p className="mt-3 text-lg font-semibold text-on-deep">{fill(question, { date: dateChip })}</p>
-    </>
+      : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
+  // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
+  // touch area at 44px.
+  return compact ? (
+    <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
+  ) : (
+    <p className="mt-2 text-xl font-bold leading-[26px] text-on-deep">{sentence}</p>
   )
 }
 
@@ -132,10 +128,11 @@ function WhySheet({ card, onClose }: { card: ReviewCardData; onClose: () => void
 function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNode }) {
   const { t } = useSettings()
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-3">
       <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-mint text-lg font-bold text-ink">
         ?
       </span>
+      {/* No min-w-0: the title keeps its longest word, so on a narrow screen the buttons wrap below. */}
       <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
         {t.reviewAsks}
       </h2>
@@ -208,7 +205,8 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
 
       <QuestionText card={card} />
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      {/* Two columns while each is at least 9rem wide, else one; labels wrap inside the buttons. */}
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-2">
         {card.options.map((option) => {
           const look = BASKETS[option.basket]
           const chosen = busy === option.basket
@@ -218,14 +216,16 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
               type="button"
               onClick={() => onAnswer(option.basket)}
               disabled={busy !== null || waiting}
-              className={`flex min-h-14 items-center gap-2 rounded-lg border-l-4 bg-surface py-2 pl-2 pr-3 text-left text-base font-bold leading-5 text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
+              className={`flex min-h-12 min-w-0 items-center gap-1.5 rounded-lg border-l-4 bg-surface py-1.5 pl-1.5 pr-2 text-left text-base font-bold leading-5 text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
-              <span aria-hidden="true" className={`inline-flex size-9 shrink-0 items-center justify-center rounded-md text-lg ${look.tint}`}>
+              {/* A 28px tile leaves "Välttämätön" its whole width at 375 px; breaking anywhere is
+                  only the last resort on very narrow screens. */}
+              <span aria-hidden="true" className={`inline-flex size-7 shrink-0 items-center justify-center rounded-md text-base ${look.tint}`}>
                 {look.icon}
               </span>
-              {option.label[lang]}
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{option.label[lang]}</span>
             </button>
           )
         })}
@@ -277,15 +277,15 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       className={`${SURFACE} card-enter`}
     >
       <AsksHeader titleId={titleId} />
-      <QuestionText card={card} />
-      <p className="mt-3 flex items-center gap-2 text-base font-bold text-on-deep">
+      <QuestionText card={card} compact />
+      <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
         <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
           <Check className="size-4" />
         </span>
         <span aria-hidden="true">{look?.icon}</span>
         {option?.label[lang]}
       </p>
-      {option && <p className="mt-1 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
+      {option && <p className="mt-1 line-clamp-2 text-sm text-on-deep-muted">{option.effect[lang]}</p>}
     </section>
   )
 })

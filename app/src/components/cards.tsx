@@ -174,9 +174,10 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
 
 /**
  * The opening's one big card (the #310 decision, one thought per screen): safe to spend as the
- * API's `display`, "safe to spend this week" and a chevron. The card is one button that opens how
- * the number is made (its evidence: the hero components). The Estimate badge stays its own button.
- * After a review answer the amount counts to the new value, with "↓ was …" beside it.
+ * API's `display`, a caption chosen by `hero.status`, and a chevron. The whole card opens how the
+ * number is made (its evidence: the hero components): the button's `::after` covers the card,
+ * and the Estimate badge sits above it, in the flow of the caption row. After a review answer the
+ * amount counts to the new value, with "↓ was …" beside it, on the same line, so nothing jumps.
  */
 export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
   const { t } = useSettings()
@@ -186,44 +187,51 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
   const was = motion?.was.safe_to_spend
   const estimate = useEstimateToggle()
   const ref = primary.evidence_ref ?? card.evidence_ref
+  const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
   const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
   return (
-    <section data-opening-part="hero" className="relative rounded-xl bg-hero text-on-hero [&_:focus-visible]:outline-mint">
-      <button
-        type="button"
-        disabled={!ref}
-        onClick={() => ref && openEvidence(ref)}
-        aria-label={[`${t.heroCaption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
-        className="block w-full rounded-xl p-4 text-left"
-      >
-        {/* Only the amount row leaves room for the Estimate badge; the caption takes the full width. */}
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 pr-28">
+    <section data-opening-part="hero" className="relative rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <button
+          type="button"
+          disabled={!ref}
+          onClick={() => ref && openEvidence(ref)}
+          aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
+          className="min-w-0 text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-mint"
+        >
+          {/* 40px at 375 px, down to 28px on a narrow screen or at 200 % zoom. */}
           <span
             key={count?.seq ?? 'static'}
-            className={`text-[40px] font-bold leading-[44px] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
+            className={`block text-[clamp(28px,11vw,40px)] font-bold leading-[1.1] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
           >
             {text}
           </span>
-          {hint && (
-            // After a review answer: never red, never grey on the green block (DESIGN.md, #35).
-            <span className="motion-fade inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted">
-              {was ? <Arrow down={was.value > primary.value} /> : <Check />}
-              {hint}
-            </span>
-          )}
+        </button>
+        {/* The hint's slot is always there, invisible until an answer, so the card never changes
+            height when "was …" comes or goes, even where it wraps under the amount. After a review
+            answer: never red, never grey on the green block (DESIGN.md, #35). */}
+        <span
+          aria-hidden={hint ? undefined : true}
+          className={`inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted ${hint ? 'motion-fade' : 'invisible'}`}
+        >
+          {was ? <Arrow down={was.value > primary.value} /> : <Check />}
+          {hint ?? t.was(primary.display)}
         </span>
-        <span className="mt-1 inline-flex items-center gap-1 text-base font-semibold text-on-hero-muted">
-          {t.heroCaption}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span aria-hidden="true" className="inline-flex min-w-32 flex-1 items-center gap-1 text-sm font-semibold text-on-hero-muted">
+          {caption}
           <Chevron />
         </span>
-      </button>
-      {card.estimate && (
-        <div className="absolute right-3 top-2">
-          <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
-        </div>
-      )}
+        {card.estimate && (
+          // Above the card's button; the badge keeps its 44px target without making the row taller.
+          <div className="relative z-10 -my-2.5 shrink-0">
+            <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
+          </div>
+        )}
+      </div>
       {card.estimate && estimate.open && (
-        <div className="px-4 pb-4">
+        <div className="relative z-10">
           <EstimateNote estimate={card.estimate} id={estimate.id} onHero />
         </div>
       )}
