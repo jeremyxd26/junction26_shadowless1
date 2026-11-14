@@ -46,4 +46,5 @@ def test_the_case_asks_the_inviting_question_in_both_languages():
     case = cases["sanna-save-more-host-screen"]
     assert "monthly saving in S-mobiili" in case["question"]["en"]
     assert "kuukausisäästämi" in case["question"]["fi"] and "S-mobiili" in case["question"]["fi"]
-    assert case["expected_tools"][0] == "get_safe_to_save" and case["expect"] == "answered"
+    # the save-more answer whose card carries the button: safe to save, or the savings plan of #369 on dev
+    assert case["expected_tools"][0] in ("get_safe_to_save", "get_savings_plan") and case["expect"] == "answered"
