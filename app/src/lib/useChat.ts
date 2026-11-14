@@ -6,7 +6,7 @@ import { ask } from '../api/ask.ts'
 import { readAskStream } from '../api/askStream.ts'
 import { ApiError } from '../api/errors.ts'
 import type { Language } from '../api/types.ts'
-import { EMPTY_ANSWER, applyAskEvent, type Answer, type AnswerError } from './answer.ts'
+import { EMPTY_ANSWER, applyAskEvent, stopped, type Answer, type AnswerError, type StopReason } from './answer.ts'
 import { findClientTurn, pushClientTurn, type ClientTurnRequest, type Turn } from './thread.ts'
 
 export type { Turn } from './thread.ts'
@@ -68,8 +68,8 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     )
   }, [])
 
-  /** Stops the running stream; what was shown stays, marked as stopped. */
-  const stopRunning = useCallback(() => {
+  /** Stops the running stream; what was shown stays, marked as stopped and why (#715). */
+  const stopRunning = useCallback((reason: StopReason) => {
     const current = running.current
     if (!current) return
     running.current = null
@@ -77,16 +77,17 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     setSession((state) => ({
       ...state,
       turns: state.turns.map((turn) =>
-        turn.kind === 'ask' && turn.id === current.turnId && turn.answer.status === 'streaming'
-          ? { ...turn, answer: { ...turn.answer, status: 'stopped' } }
-          : turn,
+        turn.kind === 'ask' && turn.id === current.turnId ? { ...turn, answer: stopped(turn.answer, reason) } : turn,
       ),
     }))
   }, [])
+  /** The Stop button. */
+  const stop = useCallback(() => stopRunning('you'), [stopRunning])
 
   const run = useCallback(
     async (owner: string, turnId: number, question: string) => {
-      stopRunning()
+      // One answer streams at a time: a new question stops the running one, which says so.
+      stopRunning('next_question')
       const controller = new AbortController()
       running.current = { turnId, controller }
       if (conversation.current.owner !== owner) conversation.current = { owner, id: null }
@@ -154,5 +155,5 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     [customerId],
   )
 
-  return { turns, busy, send, retry, stop: stopRunning, pushClientTurn: pushClient }
+  return { turns, busy, send, retry, stop, pushClientTurn: pushClient }
 }

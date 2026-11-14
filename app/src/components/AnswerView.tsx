@@ -281,7 +281,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       )}
       {answer.status === 'stopped' && (
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-muted">{s.stopped}</p>
+          <p className="text-sm text-muted">{answer.stoppedBy === 'next_question' ? s.stoppedForNext : s.stopped}</p>
           <button type="button" className={ACTION_CHIP} onClick={onRetry}>
             {s.askAgain}
           </button>
