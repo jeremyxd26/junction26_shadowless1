@@ -1,0 +1,126 @@
+{
+  "about": "Synthetic sample bills of the demo gallery (#249), made by scripts/make_sample_bills.py. `truth` is the answer key for tests and for checking a reading (#250); the service never returns it as a reading result. `signals` are the warning signs of contracts/api.md section 11.2 each bill should raise for the customer on the date below.",
+  "customer_id": "CUST00860",
+  "as_of": "2026-09-30",
+  "samples": [
+    {
+      "sample_id": "sample_1",
+      "title": {
+        "en": "Rent bill",
+        "fi": "Vuokralasku"
+      },
+      "language": "fi",
+      "files": {
+        "png": "sample_1.png",
+        "pdf": "sample_1.pdf"
+      },
+      "story": "A regular bill at its usual amount.",
+      "signals": [],
+      "checks": {
+        "iban": "pass",
+        "reference": "pass",
+        "barcode": "pass"
+      },
+      "truth": {
+        "payee": "Esimerkki Asunnot Oy",
+        "iban": "FI0912345600001001",
+        "reference": "104521100",
+        "amount": "836.65",
+        "due_date": "2026-10-08",
+        "invoice_date": "2026-09-24",
+        "barcode": "409123456000010010008366500000000000000104521100261008"
+      }
+    },
+    {
+      "sample_id": "sample_2",
+      "title": {
+        "en": "Electricity bill",
+        "fi": "Sähkölasku"
+      },
+      "language": "fi",
+      "files": {
+        "png": "sample_2.png",
+        "pdf": "sample_2.pdf"
+      },
+      "story": "The same kind of bill, a regular home bill, clearly higher than usual.",
+      "signals": [
+        "amount_above_usual"
+      ],
+      "checks": {
+        "iban": "pass",
+        "reference": "pass",
+        "barcode": "pass"
+      },
+      "truth": {
+        "payee": "Esimerkki Energia Oy",
+        "iban": "FI7912345600001002",
+        "reference": "330041709263",
+        "amount": "312.70",
+        "due_date": "2026-10-13",
+        "invoice_date": "2026-09-29",
+        "barcode": "479123456000010020003127000000000000330041709263261013"
+      }
+    },
+    {
+      "sample_id": "sample_3",
+      "title": {
+        "en": "Repair company bill",
+        "fi": "Remonttiyrityksen lasku"
+      },
+      "language": "fi",
+      "files": {
+        "png": "sample_3.png",
+        "pdf": "sample_3.pdf"
+      },
+      "story": "A payee that is not among the regular bills, with a short payment term.",
+      "signals": [
+        "new_payee",
+        "short_term"
+      ],
+      "checks": {
+        "iban": "pass",
+        "reference": "pass",
+        "barcode": "pass"
+      },
+      "truth": {
+        "payee": "Esimerkki Remontti Oy",
+        "iban": "FI5212345600001003",
+        "reference": "RF324720260929",
+        "amount": "486.00",
+        "due_date": "2026-10-02",
+        "invoice_date": "2026-09-29",
+        "barcode": "552123456000010030004860032000000000004720260929261002"
+      }
+    },
+    {
+      "sample_id": "sample_4",
+      "title": {
+        "en": "Water bill (in English)",
+        "fi": "Vesilasku (englanniksi)"
+      },
+      "language": "en",
+      "files": {
+        "png": "sample_4.png",
+        "pdf": "sample_4.pdf"
+      },
+      "story": "A reference number with a wrong check digit and no barcode.",
+      "signals": [
+        "reference_check_failed"
+      ],
+      "checks": {
+        "iban": "pass",
+        "reference": "fail",
+        "barcode": "absent"
+      },
+      "truth": {
+        "payee": "Esimerkki Vesi Oy",
+        "iban": "FI2512345600001004",
+        "reference": "55190324",
+        "amount": "42.75",
+        "due_date": "2026-10-20",
+        "invoice_date": "2026-09-22",
+        "barcode": null
+      }
+    }
+  ]
+}

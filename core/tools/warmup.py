@@ -15,9 +15,9 @@ evidence rows are gone from coach_evidence (a reset database) is treated as a mi
 one query per persona checks the refs.
 
 Viewers (#144): the warm-up runs without a viewer, so it warms the shared label state. That is the
-state every new viewer starts with (a viewer without answers sees the shared state), so a new viewer's
-first overview is a hit once the pending spike review exists (the warm-up creating it first is #240);
-a viewer who answered gets entries of their own label set.
+state every new viewer starts with (a viewer without answers sees the shared state). The warm-up first
+finds or creates the pending spike review, as the overview does (#240), so a new viewer's first overview
+is a hit; a viewer who answered gets entries of their own label set.
 
 Limits: only the customers of core/config/personas.yaml, never more; one database connection with the
 tools' 60 s statement timeout; the tools write their evidence specs, as on any request.
@@ -42,7 +42,7 @@ from typing import Any
 
 import yaml
 
-from core.tools import config
+from core.tools import config, reviews
 from core.tools.cache import ToolCache, setting
 from core.tools.context import ToolContext
 
@@ -162,10 +162,20 @@ def warm(cache: ToolCache, conn: Any, customers: list[str], languages: Iterable[
         # One transactions read and one label read per customer: the label set and the key made from it
         # travel together into every language, so no language reads the labels again.
         history, labels_by_tx, labels_key = None, None, None
+        first = True
         hits = []                          # cached results of this persona, checked against coach_evidence
         for lang in languages:
             ctx = ToolContext(customer_id=customer_id, as_of=as_of, conn=conn, language=lang)
             ctx._history, ctx._labels, ctx.labels_key = history, labels_by_tx, labels_key
+            if first:
+                # As the overview does before its tools: find or create the pending spike review (#68), so
+                # the label set (and the key made from it) is the one the first overview will have. A
+                # failure only means the labels are taken as they are.
+                try:
+                    reviews.ensure_pending_for(ctx)
+                except Exception as exc:  # noqa: BLE001
+                    out(f"{customer_id}  pending review check failed ({type(exc).__name__}); labels as they are")
+                first = False
             cache.ensure_labels_key(ctx)
             for call, fn, args_model in tools:
                 if fn is None:

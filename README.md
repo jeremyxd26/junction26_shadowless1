@@ -26,6 +26,7 @@ Settings:
 - `DATABASE_URL`
 - `DEMO_TODAY` (default `2026-09-30`)
 - `DEMO_CUSTOMERS`: `personas` (default) serves only the demo personas of `core/config/personas.yaml`; `all` serves every customer of the data, for local eval runs only.
+- `TOOL_CACHE` (`off`, `memory` or `disk`, default `disk`), `TOOL_CACHE_MAX_ENTRIES`, `TOOL_CACHE_DIR` and `TOOL_CACHE_WAIT_S`: the tool-result cache (`core/tools/cache.py`). Concurrent requests for the same result wait up to `TOOL_CACHE_WAIT_S` seconds (default 5) for the first one's computation, then compute themselves.
 - `GEMINI_API_KEY`: optional. Without it the coach answers from the rule planner and the templates.
 - `GEMINI_MODEL`: leave it out of `.env` (see below).
 - `CORS_ORIGINS`: comma-separated app origins. The default allows the local dev servers on ports 3000 and 5173.
@@ -61,6 +62,7 @@ The model id is pinned in code (`DEFAULT_MODEL` in `core/agent/gemini.py`, `gemi
 Model settings:
 - `MODEL_DAILY_BUDGET`: requests to the Gemini API in any rolling 24 hours. The default is 300. Requests are counted in `var/gemini-requests.jsonl`, so a restart keeps the count, and cache hits do not count. A slot is reserved before a request is sent, so simultaneous questions cannot overshoot the budget, and at most 4 requests are in flight at once. The service log (`uvicorn.error`) shows each request with the running total. Past the budget, answers use the template. `0` turns the model off.
 - `var/model-off`: while this file exists, no request is sent. It takes effect at once, without a restart or a redeploy.
+- With the model off (budget 0 or used up, the switch file, a pause, or no key) the model is not used at all, not even its saved responses in `var/gemini-cache/` or replay mode. The rules plan, the template of the question writes, and the answer has the outcome `answered` with the warning `llm_unavailable`. A malformed `MODEL_DAILY_BUDGET` (for example `abc` or `-1`) starts the service with the model off and logs only the error's class name.
 - `GEMINI_FALLBACK_MODEL`: the model tried once when the main one stays overloaded (503 after two retries). The default is the other of flash and pro (pro is called on the `v1beta` API, the only one that serves it). `none` turns it off. A fallback the API refuses turns itself off.
 - `GEMINI_CACHE`: `on` (default), `off` or `replay`. Responses are cached in `var/gemini-cache/`, keyed by the whole request, so a repeated question costs no request. `replay` never reaches the network.
 - `GEMINI_PLANNER=model`: Gemini plans every question, not only the ones the rules do not recognise. Use it for eval runs of the planner.

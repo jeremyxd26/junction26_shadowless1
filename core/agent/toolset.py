@@ -50,6 +50,11 @@ KNOWN_TOOLS = [
               "their components and, when a month leaves nothing, the main reason. An estimate. Returns "
               "numbers with ids; cite them as {{id}}.",
               ("Working out what you could save", "Lasken, paljonko voit säästää")),
+    KnownTool("core.tools.bonus", "get_bonus_estimate", "GetBonusEstimateArgs",
+              "The S-Bonus and payment benefit a month and a year for a share of the user's grocery spending "
+              "(the share only if the user gave one, else the default), with fixed assumptions. An estimate; "
+              "never says where the user shops. Returns numbers with ids; cite them as {{id}}.",
+              ("Estimating your S-Bonus", "Arvioin S-Bonuksesi")),
     KnownTool("core.tools.what_if", "run_what_if", "RunWhatIfArgs",
               "Savings from cutting a selection (category, basket, MCC group or merchant alias) by a percentage, "
               "from the last 6 complete months. An estimate. Returns numbers with ids; cite them as {{id}}.",

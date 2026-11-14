@@ -33,7 +33,8 @@ FI_STRONG = re.compile(
     r"viikko\w*|viikolla|minun|minulla|minulle|minut|kannattaako|myontaako|keta|pitaisi|saast\w*|"
     r"raha\w*|talla|tassa|viime|tanaan|huomenna|kerro\w*|haukku|takia|ole|tyly|enta|lasku\w*|"
     r"palkka\w*|ruoka\w*|ravintol\w*|turvallisesti|vahenta\w*|"
-    r"kumpi\w*|kumpaa|\w+mpi|\w+mpaa|halvin\w*|kallein\w*")   # comparisons: "kumpi on halvempi?"
+    r"kumpi\w*|kumpaa|\w+mpi|\w+mpaa|halvin\w*|kallein\w*|"   # comparisons: "kumpi on halvempi?"
+    r"kuka|olet|oletko|osaat|kiitos|kiitti|apua|hei|moi|moikka|terve|huomenta")   # questions to Sentti (#287)
 FI_WEAK = re.compile(r"ja|ei|en|se|etta|kun|jos|mutta|tai|nyt|vai|kanssa|siita|mina|sina")
 EN_WORDS = re.compile(
     r"the|a|an|i|me|my|you|your|is|are|was|were|did|do|does|can|could|would|should|how|what|where|"

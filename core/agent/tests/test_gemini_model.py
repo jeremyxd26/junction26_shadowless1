@@ -223,3 +223,63 @@ def test_an_answer_starts_once_even_when_the_pipeline_retries_its_first_plan():
     assert m.client._answer.requests == 2                 # one count for the whole answer
     m.plan(plan_input())                                  # a new answer
     assert m.client._answer.requests == 1
+
+
+# ---- #244: the model state on the service log at start ----------------------------------------------
+
+def test_the_model_state_line_says_on_or_off_and_why_without_key_material(tmp_path):
+    from core.agent.gemini import model_state
+
+    ledger, switch = tmp_path / "requests.jsonl", tmp_path / "model-off"
+    key = "test-key-not-real-0123456789"
+    def state(**kw):
+        return model_state(settings(gemini_api_key=key, **kw), ledger_path=ledger, off_switch=switch)
+
+    off = model_state(settings(), ledger_path=ledger, off_switch=switch)
+    assert off.startswith("language model: off (no GEMINI_API_KEY)")
+    assert "off (MODEL_DAILY_BUDGET=0)" in state(daily_budget=0)
+    line = state(daily_budget=200)
+    assert line.startswith("language model: on;") and "daily budget 200" in line and "0 sent" in line
+    switch.touch()
+    assert "off (switch file model-off present)" in state(daily_budget=200)
+    switch.unlink()
+    for _ in range(2):
+        gemini.Ledger(ledger, 2).add("plan", gemini.DEFAULT_MODEL, "ok", 1, gemini.CallUsage())
+    assert "off (daily budget used up)" in state(daily_budget=2)
+    for text in (line, state(daily_budget=0), state(daily_budget=2)):
+        assert key not in text and "key=" not in text
+
+
+def test_the_service_logs_the_model_state_at_start(caplog):
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from core.app.main import create_app
+    from core.app.settings import Settings
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with TestClient(create_app(Settings(_env_file=None))):
+            pass
+    assert any(r.getMessage().startswith("language model: off (no GEMINI_API_KEY)") for r in caplog.records)
+
+
+@pytest.mark.parametrize("value", ["abc", "-1"])
+def test_a_malformed_daily_budget_starts_the_service_with_the_model_off(monkeypatch, caplog, value):
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from core.agent.gemini import make_agent_model
+    from core.agent.rules import RuleModel
+    from core.app.main import create_app
+    from core.app.settings import Settings
+
+    monkeypatch.setenv("MODEL_DAILY_BUDGET", value)
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with TestClient(create_app(Settings(_env_file=None, gemini_api_key="test-key-not-real"))) as client:
+            assert client.get("/healthz").status_code == 200
+    lines = [r.getMessage() for r in caplog.records if r.name == "uvicorn.error"]
+    assert any(line.startswith("language model: off (model settings invalid: ValidationError)") for line in lines)
+    assert all("test-key-not-real" not in line and value not in line.split(":")[0] for line in lines)
+    assert isinstance(make_agent_model(Settings(_env_file=None, gemini_api_key="test-key-not-real")), RuleModel)
