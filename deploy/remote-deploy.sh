@@ -118,9 +118,10 @@ fi
 # file (for example core/data/*.csv) must be added to these patterns as well as to /.dockerignore.
 # The list is built in the main shell, so a git failure stops the deploy instead of passing an empty
 # list; a list without core/app/main.py is refused too. core/answer_text.py is the one module outside
-# the packages that they import (core.agent, shared with the eval).
-if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/answer_text.py' \
-                  'core/metrics/*.sql' 'core/config/*.yaml'); then
+# the packages that they import (core.agent, shared with the eval). The model prompts are read at run
+# time: a missing one would otherwise deploy green and leave the service on the rule model only.
+if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/agent/prompts/*.md' \
+                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml'); then
   echo "refusing to deploy: cannot list the run-time files of the checkout" >&2
   drop_image
   exit 1
@@ -350,5 +351,13 @@ fi
 # Keep the images of the current and the previous deploy (for a quick rollback); remove older ones.
 docker images shadowless1-core --format '{{.Tag}}' | grep -vxE "current|$sha|$prev" \
   | xargs -r -I{} docker rmi -f "shadowless1-core:{}" >/dev/null 2>&1 || true
+
+# Warm the tool cache for the four demo personas (#86), inside the running service container, so it
+# writes the sqlite file the service reads (/srv/var/cache on the persistent var/). It never fails the
+# deploy: bounded by a timeout, its exit code ignored, its output masked like every other line here.
+echo "warming the tool cache for the demo personas"
+if ! timeout 300 docker exec shadowless1-core timeout 280 python -m core.tools.warmup 2>&1 | mask; then
+  echo "warm-up did not finish; the service computes those results on the first request instead" >&2
+fi
 
 echo "deployed $sha; local /healthz: $(curl -fsS --max-time 2 http://127.0.0.1:8000/healthz)"

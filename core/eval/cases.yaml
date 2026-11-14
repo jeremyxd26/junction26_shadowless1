@@ -28,12 +28,13 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets, lead]
   numbers:
-  - {name: regular_essentials_month, value: 1889.04, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 521.15, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 600.41, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
   - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
   - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1889.04, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 521.15, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 600.41, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: total_spending_month, value: 3010.59, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
 
 - id: sanna-q2-spender-type
   persona: CUST00860
@@ -76,6 +77,22 @@ cases:
   labels:
   - {name: what_if_status, value: estimate, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: status}}
 
+- id: sanna-q4-save-more
+  persona: CUST00860
+  question: {en: 'How could I save more?', fi: 'Miten voisin säästää enemmän?'}
+  intent: save_more
+  expect: answered
+  expected_tools: [get_basket_breakdown, get_recurring_bills]
+  tags: [brief, q4_save_more, lead]
+  numbers:
+  - {name: regular_essentials_share, value: 62.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_share, value: 17.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 19.9, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: bills_due_before_payday, value: 928.5, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: total_spending_month, value: 3010.59, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
+  forbid:
+  - {name: invented_dining_cut_saving, value: 45.91, unit: eur_per_month, tolerance: 0.005, source: {metric: what_if, settings: {whatif: 'category:Restaurants', whatif_pct: 20}, column: saving_month_eur}}
+
 - id: marja-q1-where-money-went
   persona: CUST00493
   question: {en: 'Where did my money go?'}
@@ -84,10 +101,13 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets]
   numbers:
-  - {name: regular_essentials_month, value: 1645.05, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 144.6, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 334.44, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
   - {name: regular_essentials_share, value: 77.4, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_share, value: 6.8, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 15.7, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1645.05, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 144.6, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 334.44, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: total_spending_month, value: 2124.09, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
 
 - id: marja-q2-spender-type
   persona: CUST00493
@@ -134,10 +154,13 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets]
   numbers:
-  - {name: regular_essentials_month, value: 1431.19, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 277.45, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 736.87, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_share, value: 58.5, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_share, value: 11.3, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
   - {name: everyday_spending_share, value: 30.1, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1431.19, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 277.45, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 736.87, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: total_spending_month, value: 2445.52, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
 
 - id: eetu-q2-spender-type
   persona: CUST00349
@@ -184,9 +207,13 @@ cases:
   expected_tools: [get_basket_breakdown]
   tags: [brief, q1_baskets, young_adult]
   numbers:
-  - {name: regular_essentials_month, value: 1229.97, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
-  - {name: unexpected_necessities_month, value: 124.49, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
-  - {name: everyday_spending_month, value: 526.6, unit: eur_per_month, tolerance: 0.005, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_share, value: 65.4, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_share, value: 6.6, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_share, value: 28.0, unit: percent, tolerance: 0.01, source: {metric: baskets, column: share_pct, where: {basket: everyday_spending}}}
+  - {name: regular_essentials_month, value: 1229.97, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: regular_essentials}}}
+  - {name: unexpected_necessities_month, value: 124.49, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: unexpected_necessities}}}
+  - {name: everyday_spending_month, value: 526.6, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: baskets, column: month_avg_eur, where: {basket: everyday_spending}}}
+  - {name: total_spending_month, value: 1881.06, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: spender_profile, column: spend_month_eur}}
 
 - id: aleksi-q2-spender-type
   persona: CUST00849
@@ -319,14 +346,16 @@ cases:
 
 - id: marja-upcoming-bills
   persona: CUST00493
-  question: {en: 'Which bills are coming up next?'}
+  question: {en: 'Which bills are coming up next?', fi: 'Mitkä laskut ovat tulossa seuraavaksi?'}
   intent: recurring_bills
   expect: answered
   expected_tools: [get_recurring_bills]
   tags: [recurring]
   numbers:
-  - {name: housing_typical_month, value: 1209.05, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
-  - {name: utilities_typical_month, value: 165.85, unit: eur_per_month, tolerance: 0.005, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
+  - {name: bills_due_before_payday, value: 1290.78, unit: eur, tolerance: 0.005, source: {metric: safe_to_spend, column: bills_due_eur}}
+  - {name: housing_due, value: 1209.05, unit: eur, tolerance: 0.005, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
+  - {name: housing_typical_month, value: 1209.05, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: housing_payment}, column: typical_month_eur}}
+  - {name: utilities_typical_month, value: 165.85, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: recurring, where: {series_key: utilities_payment}, column: typical_month_eur}}
   dates:
   - {name: housing_next_due, value: '2026-10-03', unit: date, source: {metric: recurring, where: {series_key: housing_payment}, column: next_expected_date}}
 

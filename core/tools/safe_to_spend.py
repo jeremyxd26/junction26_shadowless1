@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -86,20 +87,47 @@ class NoTransactions(ValueError):
     callers that caught ValueError before keep working)."""
 
 
+def settings_for(ctx: ToolContext) -> dict[str, str]:
+    """The settings of 03_safe_to_spend.sql for this context, in one place for every tool that reads it.
+    The cushion is passed explicitly (the documented default), so a session setting can never leak in
+    and every evidence spec records it. The customer's labels (#68) go in as app.tx_labels, so the metric
+    SQL classifies a reviewed purchase like the tools do, and every evidence spec records them; without
+    labels metric_settings_for adds nothing, so specs and refs stay as they were. The hero and the
+    safe-to-save card read the same row through metric_row, so they can never disagree."""
+    return {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR, **labels.metric_settings_for(ctx)}
+
+
+def row_key(ctx: ToolContext, settings: dict[str, str]) -> tuple:
+    """The key of 03's row in ctx.shared: the file, the customer, as_of and the settings (labels included)."""
+    return (config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, tuple(sorted(settings.items())))
+
+
+def metric_row(ctx: ToolContext) -> tuple[dict[str, str], dict[str, Any]]:
+    """The settings and the one row of 03_safe_to_spend.sql for this customer, read once per context:
+    the safe-to-spend and the safe-to-save tools of one request share it (#165). NoTransactions when
+    03 returns no row."""
+    settings = settings_for(ctx)
+    key = row_key(ctx, settings)
+    if key not in ctx.shared:
+        # The answer pipeline runs tools in parallel lanes on copies of one context that share `shared`:
+        # one lock per key, stored in `shared` itself (dict.setdefault is atomic), so a second lane waits
+        # for the first lane's row instead of running the file again (#217).
+        with ctx.shared.setdefault(("lock", key), threading.Lock()):
+            if key not in ctx.shared:
+                ctx.shared[key] = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id,
+                                                     ctx.as_of, settings)
+    row = ctx.shared[key]
+    if row is None:
+        raise NoTransactions("no transactions up to as_of for this customer")
+    return settings, row
+
+
 def get_safe_to_spend(ctx: ToolContext, args: GetSafeToSpendArgs | dict | None = None) -> ToolResult:
     GetSafeToSpendArgs.model_validate(args or {}) if not isinstance(args, GetSafeToSpendArgs) else args
     lang = ctx.language
     notes: list[str] = []
 
-    # The cushion is passed explicitly (the documented default), so a session setting can never leak in
-    # and every evidence spec records it.
-    # The customer's labels (#68) go in as app.tx_labels, so the metric SQL classifies a reviewed purchase
-    # like the tools do, and the evidence spec records them.
-    settings = {"cushion_eur": config.SAFE_TO_SPEND_CUSHION_EUR,
-                **labels.metric_settings_for(ctx)}
-    row = metric_sql.run_one(ctx.conn, config.SAFE_TO_SPEND_FILE, ctx.customer_id, ctx.as_of, settings)
-    if row is None:
-        raise NoTransactions("no transactions up to as_of for this customer")
+    settings, row = metric_row(ctx)
 
     # Bills due before payday: only through the shared function (one value, one ref with the bills card).
     history = ctx.history()

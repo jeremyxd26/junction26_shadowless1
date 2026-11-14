@@ -89,6 +89,7 @@ bonus:
 
 payment_benefit:                               # maksutapaetu
   percent: 0.5                                 # 0.5 %, not a fraction. G4, G7, G8
+  source: [G4, G7, G8]                         # the ids of `percent`, read by core/tools/bonus.py
   cards: [S-Etukortti Visa, S-Etukortti Debit] # G4; debit and credit side both count (G7)
   where: S Group outlets and online stores in Finland   # G4, G7
   base: purchase_total                         # G8 "pääsääntöisesti koko oston loppusummasta"

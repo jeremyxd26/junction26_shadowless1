@@ -157,7 +157,8 @@ def _monthly_totals(rows: list[CTx]) -> list[Decimal]:
 
 SUM_METHODS = {config.METHODS["total"], config.METHODS["basket_total"]}
 COUNT_METHODS = {config.METHODS["n_tx"], config.METHODS["row_count"]}
-MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"]}
+MONTH_AVG_METHODS = {config.METHODS["basket_month_avg"], config.METHODS["spend_month"],
+                     config.METHODS["peer_you"]}
 MEDIAN_MONTH_METHODS = {config.METHODS["typical_month"]}
 SCALED_MEDIAN_METHODS = {config.METHODS["bill_due"]}
 SUM_OF_SCALED_MEDIANS_METHODS = {config.METHODS["bills_due"]}
@@ -168,7 +169,8 @@ def value_of(rows: list[CTx], sel: Selection, method: str, params: dict[str, Any
 
     - spending.total, baskets.total_eur: sum of the selected amounts.
     - spending.n_tx, evidence.row_count: number of rows.
-    - baskets.month_avg_eur, spender_profile.spend_month_eur: sum / params["n_months"] (metrics.md 1, 5).
+    - baskets.month_avg_eur, spender_profile.spend_month_eur, peer_benchmark.you_month_eur:
+      sum / params["n_months"] (metrics.md sections 1, 5 and 6).
     - recurring.typical_month_eur: median of the monthly totals of the series (metrics.md section 2).
     - safe_to_spend.bill_due_eur: that unrounded median * factor_num / factor_den, rounded once, as
       in the `bills` step of 03_safe_to_spend.sql (occurrences before payday, or N / 30.4375).
