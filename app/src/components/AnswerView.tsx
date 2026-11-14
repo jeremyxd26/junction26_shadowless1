@@ -2,6 +2,7 @@
 // (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson → at most
 // one next step (#684). While the stream runs: the stages and a card skeleton. The answer carries
 // no AI line and no source label; the AI disclosure is behind the header's ⓘ (#685).
+import { useState, type ReactNode } from 'react'
 import type { Action } from '../api/types.ts'
 import { STAGES, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
@@ -9,6 +10,7 @@ import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { captionOf } from '../lib/answerFigures.ts'
 import { nextStep } from '../lib/nextStep.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
+import { firstWords, remainingMs, useWordReveal, wordEnds } from '../lib/reveal.ts'
 import { useSettings } from '../lib/settings.ts'
 import { isClientTurn } from '../lib/thread.ts'
 import type { Turn } from '../lib/useChat.ts'
@@ -162,9 +164,28 @@ interface Props {
   onRetry: () => void
 }
 
+/**
+ * A card of a live answer fades in (#686); one that arrives together with the text waits until the text has
+ * typed in. The wait is fixed when the card mounts, and a tap on the answer ends it.
+ */
+function CardFade({ waitMs, skipped, children }: { waitMs: number; skipped: boolean; children: ReactNode }) {
+  const [wait] = useState(waitMs)
+  return (
+    <div className="card-enter" style={{ animationDelay: `${skipped ? 0 : wait}ms`, animationFillMode: 'both' }}>
+      {children}
+    </div>
+  )
+}
+
 export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
+  // The typing reveal (#686): only an answer that was still streaming when its turn mounted types in;
+  // an answer from history is shown at once. The text held back for `done` reveals once it is shown.
+  const asked = isClientTurn(turn) ? null : turn.answer
+  const [live] = useState(() => asked?.status === 'streaming')
+  const held = asked !== null && asked.status === 'streaming' && asked.cards.length === 0
+  const reveal = useWordReveal(asked && !held ? asked.text : '', live)
   if (isClientTurn(turn)) return <ClientTurnView turn={turn} label={<SenttiLabel s={s} ai={false} />} />
   const { answer } = turn
   const { done } = answer
@@ -204,7 +225,10 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
     // answer without cards may still turn out to be a refusal or a clarification, which look
     // different, so the stages and the skeleton stay until then.
     const holdText = streaming && answer.cards.length === 0
-    const { takeaway, rest } = holdText ? { takeaway: '', rest: '' } : splitTakeaway(answer.text)
+    const { takeaway, rest } = holdText
+      ? { takeaway: '', rest: '' }
+      : splitTakeaway(firstWords(answer.text, reveal.words))
+    const total = wordEnds(answer.text).length
     body = (
       <>
         {takeaway && (
@@ -213,14 +237,23 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           </p>
         )}
         {/* One main number per answer: only the first card draws one large (#684). */}
-        {answer.cards.map((card, index) => (
-          <AnswerCard
-            key={card.card_id}
-            card={card}
-            later={index > 0}
-            previousCaption={index > 0 ? captionOf(answer.cards[index - 1]) : null}
-          />
-        ))}
+        {answer.cards.map((card, index) => {
+          const view = (
+            <AnswerCard
+              key={card.card_id}
+              card={card}
+              later={index > 0}
+              previousCaption={index > 0 ? captionOf(answer.cards[index - 1]) : null}
+            />
+          )
+          return live ? (
+            <CardFade key={card.card_id} waitMs={remainingMs(reveal.words, total)} skipped={reveal.skipped}>
+              {view}
+            </CardFade>
+          ) : (
+            view
+          )
+        })}
         {holdText && <CardSkeleton />}
         {rest && (
           <p className={ANSWER_TEXT}>
@@ -232,7 +265,12 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
   }
 
   return (
-    <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
+    <article
+      data-turn={turn.id}
+      aria-busy={streaming}
+      className="flex scroll-mt-16 flex-col gap-3"
+      onClick={reveal.revealing ? reveal.skip : undefined}
+    >
       <p className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
         {turn.question}
       </p>
