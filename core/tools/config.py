@@ -405,6 +405,23 @@ METRIC_EVIDENCE_FILES = frozenset({SAFE_TO_SPEND_FILE, WHAT_IF_FILE})
 
 PROFILE_FILE = "05_spender_profile.sql"
 PEER_FILE = "06_peer_benchmark.sql"
+# The peer comparison invites a change only when the customer spends more than the median by more than
+# this many percent (#418); within the margin either way it is "about the same", below it the answer says
+# that is already their saving. Compared on the value as the text shows it (one decimal).
+PEER_ACTION_MARGIN_PCT = 1.0
+# Spending that is not cut (regular essentials, housing, utilities, groceries): no offer to cut it.
+PEER_NO_CUT_ACTION = frozenset({"regular_essentials", "Housing", "Utilities", "Groceries"})
+
+
+def peer_gap_shown(value) -> float:
+    """The peer gap in percent as the text shows it (one decimal), so "0.0%" is never said as a gap."""
+    return round(float(value), 1)
+
+
+def peer_offers_cut(metric: str, value) -> bool:
+    """The peer answer offers a cut (the text and the card's action together, #418): above the median by more
+    than the margin, for spending that can be cut."""
+    return value is not None and metric not in PEER_NO_CUT_ACTION and peer_gap_shown(value) > PEER_ACTION_MARGIN_PCT
 PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md section 10, decision 7)
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
@@ -614,7 +631,8 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
         "Samankaltaisia asiakkaita on liian vähän vertailuun, joten vertailua ei näytetä.",
     ),
     "action_label": ("How could I spend less here?", "Miten voisin kuluttaa tähän vähemmän?"),
-    "action_prompt": ("How could I spend less on {what}?", "Miten voisin kuluttaa vähemmän: {what}?"),
+    # The category's offer is the what-if itself; the what-if rule then asks by how much (#418).
+    "action_prompt": ("What if I cut {what}?", "Entä jos vähentäisin luokassa {what}?"),
     "action_prompt_total": ("How could I save more?", "Miten voisin säästää enemmän?"),
 }
 
@@ -930,6 +948,17 @@ LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
                      "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
                      "ja tämä ostos näkyy siinä jo."),
 }
+# ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------
+# The label of the `open_host_screen` action with target `contact_bank`: the bank's own contact screen,
+# carried by every refusal and by a bill explanation with warning signs. It names the destination only.
+HOST_CONTACT_BANK: tuple[str, str] = ("Contact S-Pankki", "Ota yhteyttä S-Pankkiin")
+
+
+def contact_bank_action(language: str) -> dict[str, str]:
+    """The action as the API sends it: type, label and target, nothing else (contracts/api.md section 3)."""
+    return {"type": "open_host_screen", "label": label(HOST_CONTACT_BANK, language), "target": "contact_bank"}
+
+
 # ---- S-Bonus what-if estimate (#158, docs/domain/s-group-benefits.md sections 4 and 6) -------------
 # The rules and their numbers live in core/config/s_group_benefits.yaml only; these are the fixed texts.
 # Nothing here names a store or says where the customer shops.

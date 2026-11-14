@@ -601,3 +601,12 @@ def test_what_if_save_more_and_bills_win_over_the_future(question, lang, tools):
 def test_a_future_with_another_period_or_an_unknown_object_with_a_category_is_not_claimed(question):
     assert not plan(question).recognised
     assert not plan("paljonko käytin kuntosaliin ja ravintoloihin viime kuussa?", "fi").recognised
+
+
+@pytest.mark.parametrize("question,lang", [("do people like me save more than me?", "en"),
+                                           ("Is my income higher than people my age?", "en"),
+                                           ("Säästänkö enemmän kuin muut?", "fi"),
+                                           ("Do I earn more than others?", "en")])
+def test_savings_and_income_are_never_compared_with_other_people(question, lang):
+    # #418: no peer number for savings or income; the user's own figures at most.
+    assert "get_peer_benchmark" not in [c.name for c in plan(question, lang).calls]

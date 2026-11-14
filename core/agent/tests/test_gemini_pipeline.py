@@ -454,3 +454,67 @@ def test_without_a_key_the_template_writes_with_no_model_draft_attempt():
     attempts = audit.records[-1]["composer_attempts"]
     assert [a["raw"] for a in attempts] == ["template"] and "llm_unavailable" in done["warnings"]
     assert done["outcome"] == "answered" and "€1,146.05" in done["text_rendered"]
+
+def test_an_empty_plan_answered_by_the_rules_clarify_carries_the_warning_with_the_note():
+    """#383 (from the review of #368): the note "I could not work that out" and llm_unavailable come together."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Tell me something useful about my groceries")
+    assert done["outcome"] == "clarify" and done["clarify"]["question"].startswith("I could not")
+    assert "llm_unavailable" in done["warnings"]
+
+
+
+def test_a_rules_refusal_after_an_empty_plan_carries_no_warning():
+    """Review of #422: the empty-plan warning is for the clarifying question only."""
+    transport = ByKind(call_response("finish", {}), text_response(DRAFT_OK))
+    p, _ = pipeline(transport)
+    done = ask(p, "Should I put my savings into tech stocks?")
+    assert done["outcome"] == "refused" and "llm_unavailable" not in done["warnings"]
+
+
+def test_a_refused_planner_model_answers_on_its_fallback_without_a_warning():
+    def transport(model, contents, config, timeout_s):
+        if model == "gemini-3.8-flash" and "tools" in config:
+            raise api_error(404)
+        return PLAN_OK if "tools" in config else text_response(DRAFT_OK)
+
+    p, audit = pipeline(transport)
+    done = ask(p)
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+
+
+def test_a_composer_without_a_model_leaves_the_planner_asked():
+    """Review of #446: all composer ids refused, the planner healthy: an unrecognised question is still planned
+    by the model; the template writes, with the warning; the audit names the composer's reason."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    c = p.model.client
+    c.compose_model, c.compose_fallback_model = "gemini-3.5-flash-lite", None
+    c._refused["gemini-3.5-flash-lite"] = c.clock() + 600
+    done = ask(p, "Tell me something useful about my groceries")
+    assert len(transport.plan.requests) >= 1 and transport.compose.requests == []
+    assert done["outcome"] == "answered" and "llm_unavailable" in done["warnings"]
+    record = audit.records[-1]
+    assert record["composer_unavailable"] == "model_refused" and record["planner_unavailable"] is None
+
+
+def test_a_paused_planner_leaves_the_composer_writing_a_recognised_question():
+    """Review of #446: the planner paused after its streak, the composer healthy: the rules plan a recognised
+    question and the model writes it, with no warning and no note."""
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._role_paused_until["plan"] = p.model.client.clock() + 30
+    done = ask(p)
+    assert transport.plan.requests == [] and len(transport.compose.requests) == 1
+    assert done["outcome"] == "answered" and done["warnings"] == [] and "€1,146.05" in done["text_rendered"]
+    assert audit.records[-1]["planner_unavailable"] == "role_paused"
+
+
+def test_both_roles_unavailable_is_as_before():
+    transport = ByKind(PLAN_OK, text_response(DRAFT_OK))
+    p, audit = pipeline(transport)
+    p.model.client._pause(300, "rate_limited")
+    done = ask(p, "Tell me something useful about my groceries")
+    assert transport.requests == [] and "llm_unavailable" in done["warnings"]
+    assert not done["clarify"]["question"].startswith("I could not")

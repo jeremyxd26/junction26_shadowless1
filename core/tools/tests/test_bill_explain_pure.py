@@ -344,10 +344,39 @@ def test_a_bill_covered_by_what_is_already_counted(fake):
 def test_a_failed_reference_is_a_sign_and_removes_the_draft(fake):
     out = explain(fields_bill(reference="12345"))
     assert out["checks"] == {"iban": "pass", "reference": "fail", "due_date": "pass"}
-    assert out["actions"] == [] and out["warnings"] == []
+    # no payment draft; a warning sign brings the way to the bank (#420)
+    assert out["actions"] == [{"type": "open_host_screen", "label": "Contact S-Pankki", "target": "contact_bank"}]
+    assert out["warnings"] == []
     assert out["signals"][0] == {"code": "reference_check_failed", "numbers": [], "text":
                                  "This reference number does not pass its check. Compare it with the paper bill "
                                  "before paying."}
+
+
+def test_an_unknown_payee_alone_does_not_bring_the_way_to_the_bank(fake):
+    """#420, decided in the review of #435: an unknown payee alone is a sign but brings no contact_bank."""
+    out = explain(fields_bill(), lang="fi")
+    assert [s["code"] for s in out["signals"]] == ["new_payee"]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments"]
+
+
+def test_an_unknown_payee_with_another_sign_brings_it_after_the_draft(fake):
+    """An unknown payee due within the week: the draft stays and contact_bank follows it (schema-checked by
+    explain()); pick actions by type, never by index."""
+    fake.row = {"free_until_payday_eur": Decimal("12422.56"), "balance_limit_7d_eur": Decimal("5797.19")}
+    out = explain(fields_bill(due=date(2026, 10, 2)), lang="fi")   # before payday: counted in safe to spend
+    assert [s["code"] for s in out["signals"]] == ["new_payee", "short_term"]
+    assert [a["type"] for a in out["actions"]] == ["add_to_payments", "open_host_screen"]
+    assert out["actions"][1] == {"type": "open_host_screen", "label": "Ota yhteyttä S-Pankkiin",
+                                 "target": "contact_bank"}
+
+
+@pytest.mark.parametrize("codes,wanted", [
+    (["iban_check_failed"], True), (["reference_check_failed"], True), (["new_payee", "short_term"], True),
+    (["new_payee", "amount_above_usual"], True), (["new_payee"], False), (["short_term"], False),
+    (["amount_above_usual"], False), (["amount_above_usual", "short_term"], False), ([], False),
+])
+def test_which_signs_bring_the_way_to_the_bank(codes, wanted):
+    assert be.contact_bank_wanted(codes) is wanted
 
 
 def test_a_past_due_date_is_a_warning_and_keeps_the_draft(fake):

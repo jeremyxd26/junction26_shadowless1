@@ -211,6 +211,8 @@ class _Answer:
     clarify: dict[str, Any] | None = None
     text: str | None = None
     text_rendered: str | None = None
+    introduced: bool = False   # the answer is Sentti's introduction, which itself says Sentti is an AI (#420)
+    offer_contact: bool = False   # the rules' "I can't answer that one yet" answer (PlanResult.offer_contact)
     error: str | None = None
     first_card_ms: int | None = None
     label_state: dict[str, Any] | None = None  # counts only, never transaction ids (#196)
@@ -219,6 +221,10 @@ class _Answer:
     # "no_model" (no key), "off", "budget", "pause" (decided before planning by
     # Pipeline._model_unavailable), or "error" (it was asked and failed).
     model_unavailable: str | None = None
+    # Per role (#383): the account-level reason above, or the role's own ("role_paused", "model_refused").
+    # The planner's decides whether the model plans; the composer's whether it writes.
+    planner_unavailable: str | None = None
+    composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)  # tools may run in parallel
     usage: dict[str, Any] = field(default_factory=lambda: {"prompt_tokens": 0, "thought_tokens": 0,
@@ -277,6 +283,7 @@ class Pipeline:
     def _run(self, req: AskRequest, emit: Emit, a: _Answer) -> str:
         conv, reset = self.store.resolve(req.conversation_id, req.customer_id)
         a.conversation = conv
+        emit = self._with_answer_fields(emit, a)
         message = guard.clean(req.message)
         a.question = message
         detected = guard.detect_language(message)
@@ -316,6 +323,8 @@ class Pipeline:
         planner_fallback = False
         model_failed = False   # the model was asked to plan and failed, or planned no data call (#341)
         a.model_unavailable = self._model_unavailable(req)
+        a.planner_unavailable = a.model_unavailable or self._role_unavailable("plan")
+        a.composer_unavailable = a.model_unavailable or self._role_unavailable("compose")
 
         for rnd in range(1, MAX_ROUNDS + 1):
             t_plan = self.clock()
@@ -358,9 +367,11 @@ class Pipeline:
                                           "status": "ok" if kind == "control" else "not_run"})
                 # The rules answered in the model's place: after a planner error, or for a question
                 # they do not recognise while the model may not be used (#244).
-                in_place = source == "fallback" or (a.model_unavailable is not None
+                in_place = source == "fallback" or (a.planner_unavailable is not None
                                                     and not getattr(plan, "recognised", True))
-                if in_place:
+                if in_place or (model_failed and "decline" not in controls):   # a rules refusal carries none
+                    # An empty plan the rules replaced carries the warning like a failed one: the note and the
+                    # warning always come together (#383, from the review of #368).
                     self._warn_llm_unavailable(a)
                 if "decline" in controls:
                     return self._refuse(controls["decline"].kind.value, lang, emit, a)
@@ -374,6 +385,7 @@ class Pipeline:
                 # The clarifying question says plainly that the question was not worked out, but only when
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341, r-coord's decision).
+                a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
@@ -418,9 +430,10 @@ class Pipeline:
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         draft, used_template = self._compose(compose_in, numbers, allowed,
-                                             skip_model=planner_fallback or a.model_unavailable is not None, a=a)
+                                             skip_model=planner_fallback or a.composer_unavailable is not None, a=a)
         # With no key ("no_model") the template writes directly: running the rule model's own template
-        # through the model-draft checks would only fill composer_attempts (review of #401).
+        # through the model-draft checks would only fill composer_attempts (review of #401). The composer's
+        # own state decides, not the planner's (#383).
         if any(e["error"] == "tool_failed" for e in errors):
             a.warnings.append("tool_failed")
         # A plan was made and the tools ran, and the text passed the validator: "answered", whoever wrote
@@ -428,7 +441,7 @@ class Pipeline:
         # template in the model's place carries the warning (#244).
         a.outcome = "fallback" if a.template_failed else "answered"
         if used_template:
-            a.model_unavailable = a.model_unavailable or "error"
+            a.model_unavailable = a.model_unavailable or a.composer_unavailable or "error"
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
@@ -530,14 +543,27 @@ class Pipeline:
             log.warning("model state unreadable (%s); the rules and the template answer", type(exc).__name__)
             return "error"
 
+    def _role_unavailable(self, kind: str) -> str | None:
+        """A role's own reason ("role_paused", "model_refused") or None; a model without roles has none."""
+        probe = getattr(self.model, "unavailable_reason", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe(kind)
+        except TypeError:          # a scripted model whose unavailable_reason takes no role
+            return None
+        except Exception as exc:  # noqa: BLE001 - the class name is logged, never the message
+            log.warning("model role state unreadable (%s)", type(exc).__name__)
+            return None
+
     @staticmethod
     def _warn_llm_unavailable(a: _Answer) -> None:
         if "llm_unavailable" not in a.warnings:
             a.warnings.append("llm_unavailable")
 
     def _plan(self, request: PlanInput, a: _Answer) -> tuple[PlanResult, str]:
-        if a.model_unavailable is not None and a.model_unavailable != "no_model":
-            # The model may not be used: the rules plan, with no model request (#244).
+        if a.planner_unavailable is not None and a.planner_unavailable != "no_model":
+            # The planner may not be used: the rules plan, with no model request (#244, #383).
             return self.fallback.plan(request), "rules"
         for _ in range(2):  # the call and one retry
             t = self.clock()
@@ -720,9 +746,32 @@ class Pipeline:
             draft = AnswerDraft(language=lang, text=template.pick(template.NOTHING, lang), cited=[], lesson_key=None)
         return draft, True
 
+    @staticmethod
+    def _with_answer_fields(emit: Emit, a: _Answer) -> Emit:
+        """Every `done` event gets `actions` and `ai_disclosure` (#420, contract 0.3.3):
+        - a refusal, the rules' "I can't answer that one yet" answer (a.offer_contact) and the "nothing
+          found" fallback (outcome `fallback`) carry the way to a human, `open_host_screen` with target
+          `contact_bank`; the general clarifying question does not;
+        - the first answer of a conversation carries the AI disclosure, unless it is the introduction,
+          which says it itself; a later answer never repeats it."""
+        def send(event: str, payload: dict[str, Any]) -> None:
+            if event == "done":
+                lang = a.language.get("resolved") or "en"
+                disclose = a.conversation is not None and not a.conversation.disclosed and not a.introduced
+                if a.conversation is not None:
+                    a.conversation.disclosed = True
+                payload = {**payload,
+                           "actions": [tool_config.contact_bank_action(lang)]
+                           if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
+                           else payload.get("actions", []),
+                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
+            emit(event, payload)
+        return send
+
     def _introduce(self, intent: str, lang: str, emit: Emit, a: _Answer) -> str:
         """Sentti's introduction (or a thank-you) and the four brief questions as chips (done.follow_ups,
         which the app renders as question chips): outcome "answered", nothing cited, no warning."""
+        a.introduced = template.meta_text(intent, lang) == template.pick(template.INTRO, lang)
         text = self._deliver(template.meta_text(intent, lang), {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
@@ -935,6 +984,8 @@ class Pipeline:
             "usage": a.usage,                 # tokens and cost summed over the model calls of this answer
             "label_state": a.label_state,     # counts of the labels in force (#196), never transaction ids
             "model_unavailable": a.model_unavailable,   # why the language model was not used (#244), or null
+            "planner_unavailable": a.planner_unavailable,     # per role (#383)
+            "composer_unavailable": a.composer_unavailable,
             "latency_ms": {"first_card": a.first_card_ms, "done": self._ms(a.started)},
         }
         try:

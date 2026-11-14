@@ -146,9 +146,10 @@ class Comparison(BaseModel):
 
 # The host screens a card may open (#267, contract 0.3.1): a closed list. The app sends the host message
 # `sentti.openHostScreen` with `{target}` and nothing else; Sentti names the destination only, never a
-# fund, a product or returns.
-HostScreenTarget = Literal["monthly_saving", "bonus_to_fund"]
-HOST_SCREEN_TARGETS: tuple[str, ...] = ("monthly_saving", "bonus_to_fund")
+# fund, a product or returns. `contact_bank` (#420, contract 0.3.3) is the way to a human: the bank's own
+# contact screen, carried by every refusal and by a bill explanation with warning signs.
+HostScreenTarget = Literal["monthly_saving", "bonus_to_fund", "contact_bank"]
+HOST_SCREEN_TARGETS: tuple[str, ...] = ("monthly_saving", "bonus_to_fund", "contact_bank")
 
 
 class Action(BaseModel):
