@@ -1,10 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OpeningContext, type Opening } from '../lib/openingContext.ts'
 import type { ClientTurn } from '../lib/thread.ts'
 import { TurnView } from './AnswerView.tsx'
 import { clientTurns, openingChips, type ClientTurnProps } from './clientTurns.tsx'
 import { OpeningChips } from './OpeningChips.tsx'
+import { ClientTurnBoundary } from './ClientTurnBoundary.tsx'
+import { SettingsContext } from '../lib/settings.ts'
+import { strings } from '../lib/i18n.ts'
 
 function Probe({ turnId }: ClientTurnProps) {
   return (
@@ -37,12 +40,12 @@ describe('a client turn in the thread (#319)', () => {
     expect(html).not.toContain('>AI<')
   })
 
-  it('has its own status region and no speaker, stages or retry, also when it is not the latest turn', () => {
+  it('has its own status region, is not busy at first, and has no speaker, stages or retry, latest or not', () => {
     clientTurns.probe = { chip: () => 'Show Sentti a probe', visible: () => true, Component: Probe }
     for (const latest of [true, false]) {
       const html = render(turn, latest)
       expect(html.match(/role="status"/g)).toHaveLength(1)
-      expect(html).not.toContain('aria-busy')
+      expect(html).toContain('aria-busy="false"')
       expect(html.match(/<button/g)).toBeNull()
     }
   })
@@ -64,23 +67,63 @@ describe('the opening\'s client-turn chips (#319)', () => {
       </OpeningContext.Provider>,
     )
 
+  const registered = [...openingChips]
   afterEach(() => {
     delete clientTurns.probe
-    openingChips.length = 0
+    openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('shows the registered "Lesson of the day" chip (#703)', () => {
-    expect(openingChips).toEqual(['lesson'])
-    expect(chips()).toContain('>Lesson of the day</button>')
+  it('shows "Show Sentti a bill" (#332) and "Lesson of the day" (#703), apart from the question chips', () => {
+    expect(openingChips).toEqual(['bill', 'lesson'])
+    const html = chips()
+    expect(html).toContain('data-opening-part="client-chips"')
+    expect(html).toContain('>Show Sentti a bill</button>')
+    expect(html).toContain('>Lesson of the day</button>')
+    expect(html.indexOf('Show Sentti a bill')).toBeLessThan(html.indexOf('Lesson of the day'))
   })
 
-  it('shows a visible chip, apart from the question chips, and hides one that is not visible', () => {
-    openingChips.push('probe')
+  it('says "Näytä Sentille lasku" in Finnish, the wording of the issue', () => {
+    const html = renderToStaticMarkup(
+      <SettingsContext.Provider value={{ lang: 'fi', customerId: null, t: strings('fi') }}>
+        <OpeningContext.Provider value={opening}>
+          <OpeningChips />
+        </OpeningContext.Provider>
+      </SettingsContext.Provider>,
+    )
+    expect(html).toContain('>Näytä Sentille lasku</button>')
+  })
+
+  it('shows a visible chip and hides one that is not visible', () => {
+    openingChips.splice(0, openingChips.length, 'probe')
     clientTurns.probe = { chip: (lang) => (lang === 'fi' ? 'Näytä koe' : 'Show a probe'), visible: () => true, Component: Probe }
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')
     expect(html).toContain('>Show a probe</button>')
     clientTurns.probe = { ...clientTurns.probe, visible: () => false }
     expect(chips()).toBe('')
+  })
+})
+
+describe('a client turn whose code fails to load (#332)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows a short message and a link to the same content as a screen, keeping the query but not ?q=', () => {
+    vi.stubGlobal('window', { location: { search: '?persona=CUST00860&lang=fi&host=demo&q=Hi' } })
+    const boundary = new ClientTurnBoundary({ lang: 'fi', screen: { path: '/bill', label: 'Näytä Sentille lasku' }, children: null })
+    boundary.state = ClientTurnBoundary.getDerivedStateFromError()
+    const html = renderToStaticMarkup(<>{boundary.render()}</>)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('Tämä osa keskustelusta ei latautunut.')
+    expect(html).toContain('href="/bill?persona=CUST00860&amp;lang=fi&amp;host=demo"')
+    expect(html).toContain('>Näytä Sentille lasku</a>')
+  })
+
+  it('renders its children while nothing failed', () => {
+    const html = renderToStaticMarkup(
+      <ClientTurnBoundary lang="en">
+        <p>step</p>
+      </ClientTurnBoundary>,
+    )
+    expect(html).toBe('<p>step</p>')
   })
 })

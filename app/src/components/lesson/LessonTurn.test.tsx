@@ -5,6 +5,9 @@ import contract from '../../api/mock/contract-examples.json'
 import { strings } from '../../lib/i18n.ts'
 import { OpeningContext, type Opening } from '../../lib/openingContext.ts'
 import { SettingsContext } from '../../lib/settings.ts'
+import { EMPTY_ANSWER } from '../../lib/answer.ts'
+import { lastAskId, type Turn } from '../../lib/thread.ts'
+import { TurnView } from '../AnswerView.tsx'
 import { clientTurns, openingChips, type ClientTurnProps } from '../clientTurns.tsx'
 import { inSentence, lessonOne, lessonsFor, lessonThree, lessonTwo, opensOnReveal, periodSpan, revealOf } from './lessons.ts'
 import { lessonStrings } from './lessonStrings.ts'
@@ -186,10 +189,30 @@ describe('the lesson turn (#703)', () => {
     }
   })
 
-  // The answer streaming above a lesson keeps its announcement only when `latest` is the last ask
-  // turn, not the last turn: that is #694's Chat.tsx (`lastAskId`). On dev without #694, pushing a
-  // client turn makes the streaming answer not latest and its status region goes.
-  it.todo('pushing the lesson while an answer streams neither cuts nor repeats the answer\'s announcement — depends on #694 (latest = last ask turn)')
+  // The answer streaming above a lesson keeps its announcement because `latest` is the last ask
+  // turn, not the last turn (#694: `lastAskId`, which Chat.tsx uses).
+  it("pushing the lesson while an answer streams neither cuts nor repeats the answer's announcement", () => {
+    const turns: Turn[] = [
+      { kind: 'ask', id: 1, question: 'Where did my money go?', answer: EMPTY_ANSWER },
+      { kind: 'client', id: 2, key: 'lesson', question: lessonStrings('en').chip, render: 'lesson' },
+    ]
+    expect(EMPTY_ANSWER.status).toBe('streaming')
+    expect(lastAskId(turns)).toBe(1)
+    const opening = { overview: sanna } as unknown as Opening
+    const html = renderToStaticMarkup(
+      <SettingsContext.Provider value={{ lang: 'en', customerId: 'CUST00860', t: strings('en') }}>
+        <OpeningContext.Provider value={opening}>
+          {turns.map((turn) => (
+            <TurnView key={turn.id} turn={turn} latest={turn.id === lastAskId(turns)} suggestions={[]} onAsk={() => {}} onRetry={() => {}} />
+          ))}
+        </OpeningContext.Provider>
+      </SettingsContext.Provider>,
+    )
+    const announced = '<p role="status" class="sr-only">Reading your question</p>'
+    expect(html.split(announced)).toHaveLength(2)
+    // The lesson turn has its own status region, after the answer's.
+    expect(html.indexOf('data-client-turn="lesson"')).toBeGreaterThan(html.indexOf(announced))
+  })
 })
 
 describe('lesson 2: where the money goes (#704)', () => {
