@@ -18,9 +18,9 @@ const sizes: Record<Size, string> = {
   md: 'min-h-11 px-3.5 text-base',
   // Headline of a white card (safe to save): the 30/34 amount token, fits "€12,345.67 a month" at 375 px.
   // The amount of a large chip never breaks, so with very large text its size is capped by the
-  // screen width (13vw / 17vw); at normal text size, 320 px and up, the cap is never reached (#493).
-  lg: 'min-h-14 px-4 text-[length:min(var(--text-review-amount),13vw)] leading-(--text-review-amount--line-height) tracking-tight',
-  hero: 'min-h-16 px-5 text-[length:min(var(--text-hero),17vw)] leading-(--text-hero--line-height) tracking-tight',
+  // screen width (11vw / 15.5vw); at normal text size, 320 px and up, the cap is never reached (#493).
+  lg: 'min-h-14 px-4 text-[length:min(var(--text-review-amount),11vw)] leading-(--text-review-amount--line-height) tracking-tight',
+  hero: 'min-h-16 px-5 text-[length:min(var(--text-hero),15.5vw)] leading-(--text-hero--line-height) tracking-tight',
 }
 
 const tones: Record<Tone, string> = {

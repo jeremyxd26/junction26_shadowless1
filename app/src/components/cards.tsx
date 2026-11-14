@@ -297,8 +297,10 @@ export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: Nu
                 >
                   {look.icon}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className={`font-semibold leading-5 ${look.color}`}>{item.label}</p>
+                {/* At least 6rem for the label; when that does not fit beside the amount, the amount moves
+                    under it instead of covering it (#493). */}
+                <div className="min-w-[min(6rem,100%)] flex-1 basis-0">
+                  <p className={`min-w-0 break-words hyphens-auto font-semibold leading-5 ${look.color}`}>{item.label}</p>
                   {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
                 </div>
                 <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">

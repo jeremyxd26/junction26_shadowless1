@@ -25,7 +25,7 @@ function CardHeader({ card }: { card: Card }) {
       {card.estimate ? (
         <EstimateBadge estimate={card.estimate} />
       ) : (
-        <span className="max-w-[45%] shrink-0 pt-0.5 text-right text-xs [overflow-wrap:anywhere] text-muted">{chatStrings(lang).fact}</span>
+        <span className="max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>
       )}
     </div>
   )
