@@ -322,6 +322,10 @@ export interface AskDone {
   /** Tokens replaced by `display`: for screen readers and copying. */
   text_rendered: string
   cited: string[]
+  /** Since 0.3.3: the answer's actions (a refusal carries `contact_bank`); absent in older streams. */
+  actions?: Action[]
+  /** Since 0.3.3: the AI disclosure on the first answer of a conversation, else null. */
+  ai_disclosure?: string | null
   follow_ups: string[]
   lesson: { key: string; title: string; text: string } | null
   refusal: { kind: string; label: string } | null
