@@ -64,7 +64,7 @@ CATEGORY_WORDS = [
     (r"entertainment|viihtee\w*|viihde", "Entertainment"),
     (r"investments?|invested|\binvest\b|sijoit\w*", "Invest Deposit"),
     (r"housing|\brent\b|asumi\w*|vuokra\w*", "Housing"),
-    (r"utilit\w*|electricity|sähkö\w*", "Utilities"),
+    (r"utilit\w*|electricity|sähkö\w*|\bvesi\b|\bvesilasku\w*|\bwater bills?\b", "Utilities"),   # #540: vesi
     (r"\btravel\w*|matkailu\w*|matkoihin|matkustami\w*", "Travel"),   # the noun only, never "matkustaa" (#483)
     (r"lifestyle|clothes|vaatte\w*|ostokset ja vapaa-aika|ostoksiin ja vapaa-aikaan|vapaa-aja\w*", "Lifestyle"),
     (r"home (and|&) tech|electronics|kodin ja tekniikan|koti ja tekniikka", "Home & Tech"),
@@ -938,7 +938,9 @@ META = [
     ("greeting", rf"{_GREET}( (are you there|{_HOW_ARE_YOU}))?|are you there|{_HOW_ARE_YOU}"),
 ]
 # "What is Sentti?": the name is the question here, not an address (checked before the address is removed).
-META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti")]
+META_NAMED = [("identity", r"(what is|whats|what's|mika on|mika) sentti"),
+              # #540: "What can Sentti do?", "Mitä Sentti osaa (tehdä)?": the introduction
+              ("capabilities", r"(what can|what does) sentti (do|help( me)? with)|mita (kaikkea )?sentti osaa( tehda)?")]
 
 
 def small_purchases_whole(q: str) -> bool:
@@ -1808,6 +1810,15 @@ def claim(request: PlanInput) -> Claim:
         return Claim(None, reason="mixed")   # the model plans the future and the other period (the mixed route)
     if request.history and not _complete(question, q, as_of):
         return _follow_up(request, q, as_of, tools)
+    cost = template.bill_cost(q)   # #540: what a regular bill costs a month (its typical month) or a year
+    if cost is not None:
+        category, per = cost
+        if per == "month" and "get_recurring_bills" in tools:
+            return Claim("bills", (FunctionCall("get_recurring_bills", {}), FunctionCall("finish")))
+        if per == "year" and "get_spending" in tools:
+            return Claim("spending", (FunctionCall("get_spending", {"filter": {"categories": [category]},
+                                                                    "period": {"preset": "last_12_months"}}),
+                                      FunctionCall("finish")))
     bare = re.sub(r"^(the|and|or|enta|ja) ", "", " ".join(re.sub(r"[^\w\s]", " ", q).split()))
     if "get_safe_to_spend" in tools and re.fullmatch(BARE_WHY_LOW, bare):
         # "why so little?", "why is it lower?", "miksi niin vähän?" (#552, review of #574): only the whole message,
