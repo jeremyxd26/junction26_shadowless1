@@ -28,7 +28,8 @@ def persona_by_id(customer_id: str) -> dict[str, Any] | None:
 
 
 def build(language: str, as_of) -> PersonasResponse:
-    """Only the contract's fields: the YAML's team notes (lead, age, why, ...) never leave the service."""
+    """Only the contract's fields: the YAML's team notes (lead, why, demo_role, ...) never leave the service. The age
+    is the dataset's (customers.age, checked by a persona test) and leaves since #872, so the picker can say who is who."""
     personas = sorted(load_personas()["personas"], key=lambda p: not p.get("lead", False))  # lead first
     out = []
     for p in personas:
@@ -38,6 +39,7 @@ def build(language: str, as_of) -> PersonasResponse:
         out.append({
             "customer_id": p["customer_id"],
             "display_name": p["display_name"],
+            "age": p["age"],
             "age_band": p["age_band"],
             "postal_area": {"code": p["postal_area"]["code"], "label": p["postal_area"]["label"]},
             "profile": {"key": p["profile"]["key"], "label": profile_label},

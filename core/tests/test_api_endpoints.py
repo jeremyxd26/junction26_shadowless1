@@ -44,8 +44,11 @@ def test_personas_from_the_yaml_lead_first(clean_env):
     body = PersonasResponse.model_validate(response.json())
     assert [p.customer_id for p in body.personas] == ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
     assert (body.as_of, body.language, body.personas[0].display_name) == (date(2026, 9, 30), "en", "Sanna")
-    keys = {"customer_id", "display_name", "age_band", "postal_area", "profile", "tagline", "default_language"}
-    assert all(set(p) == keys for p in response.json()["personas"])  # no team notes (why, lead, age, ...)
+    keys = {"customer_id", "display_name", "age", "age_band", "postal_area", "profile", "tagline", "default_language"}
+    assert all(set(p) == keys for p in response.json()["personas"])  # no team notes (why, lead, demo_role, ...)
+    # #872: the age, so the picker can say who is who; it falls in the persona's band
+    assert [(p.display_name, p.age, p.age_band) for p in body.personas] == [
+        ("Sanna", 35, "35-44"), ("Marja", 52, "45-54"), ("Eetu", 32, "25-34"), ("Aleksi", 25, "25-34")]
 
 
 def test_personas_in_finnish(clean_env):

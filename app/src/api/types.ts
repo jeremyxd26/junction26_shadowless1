@@ -198,6 +198,8 @@ export interface Insight {
 export interface Persona {
   customer_id: string
   display_name: string
+  /** The customer's age in years from the dataset (contract 0.3.17, #872). */
+  age: number
   age_band: string
   postal_area: { code: string; label: string }
   profile: { key: string; label: string }

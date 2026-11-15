@@ -294,6 +294,7 @@ class ProfileRef(Model):
 class Persona(Model):
     customer_id: str
     display_name: str
+    age: int   # customers.age, mirrored in personas.yaml (#872)
     age_band: Literal["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
     postal_area: PostalArea
     profile: ProfileRef
