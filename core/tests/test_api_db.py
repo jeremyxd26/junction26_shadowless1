@@ -57,7 +57,7 @@ def numbers_in(obj, path="$"):
 def test_lead_overview_matches_the_reference_answers(lead_overview):
     """docs/design/personas.md section 4 (Q1 baskets, profile spend per month) and the housing series."""
     o = lead_overview
-    assert (o["customer_id"], o["as_of"], o["greeting"]) == (LEAD, "2026-09-30", "Hi Sanna, I'm Sentti")
+    assert (o["customer_id"], o["as_of"], o["greeting"]) == (LEAD, "2026-09-30", "Hi Sanna")
     assert o["reviews"] == []
     # Q3: safe to spend in the next 7 days, 2026-10-01 .. 2026-10-07, budget limit binding (after the goal)
     hero = o["hero"]
@@ -206,7 +206,7 @@ def test_a_metric_kind_ref_opens_as_evidence(client):
 
 def test_finnish_overview_has_the_same_numbers(client, lead_overview):
     fi = client.get(f"/api/overview/{LEAD}", params={"lang": "fi"}).json()
-    assert fi["greeting"] == "Hei Sanna, olen Sentti" and fi["language"] == "fi"
+    assert fi["greeting"] == "Hei Sanna" and fi["language"] == "fi"
     refs = lambda o: [(p, n["evidence_ref"], n["value"]) for p, n in numbers_in(o)]  # noqa: E731
     assert refs(fi) == refs(lead_overview)
     assert fi["cards"][0]["items"][0]["amount"]["display"] == "1 889,04 € / kk"
