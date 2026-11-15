@@ -475,13 +475,18 @@ def test_an_unknown_or_double_selection_asks_back_with_spending_every_persona_ha
 
 def test_the_selection_question_back_fits_the_clarify_limits():
     from core.agent.registry import ClarifyArgs
-    from core.agent.rules import WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS
+    from core.agent.rules import WHAT_IF_MORE_OPTIONS, WHAT_IF_WHICH, WHAT_IF_WHICH_OPTIONS
 
     for i in (0, 1):
         ClarifyArgs(question=WHAT_IF_WHICH[i], options=list(WHAT_IF_WHICH_OPTIONS[i]))
+        ClarifyArgs(question=WHAT_IF_WHICH[i], options=list(WHAT_IF_MORE_OPTIONS[i]))   # #888: the next chips
+        # the question built from the longest three chips still fits the clarify limits
+        from core.agent.rules import what_if_which_question
+        longest = sorted((*WHAT_IF_WHICH_OPTIONS[i], *WHAT_IF_MORE_OPTIONS[i]), key=len)[-3:]
+        ClarifyArgs(question=what_if_which_question(longest, "fi" if i else "en"), options=longest)
     # every option is itself a what-if the rules recognise (it asks how much: no amount is suggested)
     for i, lang in ((0, "en"), (1, "fi")):
-        for option in WHAT_IF_WHICH_OPTIONS[i]:
+        for option in (*WHAT_IF_WHICH_OPTIONS[i], *WHAT_IF_MORE_OPTIONS[i]):
             result = plan(option, language=lang)
             assert result.recognised and clarify_text(result)["question"].startswith(("By how much", "Kuinka paljon"))
 

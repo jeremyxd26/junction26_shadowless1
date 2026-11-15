@@ -19,7 +19,7 @@ from core.tools.what_if import run_what_if
 
 AS_OF = date(2026, 9, 30)
 PERSONAS = ("CUST00387", "CUST00493", "CUST00849", "CUST00860")
-NO_TAXI = {"CUST00387"}   # the new Eetu (#882) took no taxi in the data
+NO_TAXI = {"CUST00387"}   # the new Eetu (#882) took no taxi in the data: no taxi chip for him (#888)
 TOOLS = [{"name": "run_what_if", "description": "", "parameters_json_schema": {}}]
 
 
@@ -36,7 +36,7 @@ def test_every_example_asked_back_is_a_real_what_if_for_each_persona(conn, custo
             with_cut = option.rstrip("?") + (" by 10%?" if language == "en" else " 10 %?")
             args = planned(with_cut, language)
             if customer_id in NO_TAXI and ("tax" in option.lower() or "taks" in option.lower()):
-                continue   # no taxi ride in his data: the tool says so (too few transactions), checked elsewhere
+                continue   # no taxi ride in his data: the chips leave it out (test_agent_whatif_chips_db.py)
             result = run_what_if(ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn, language=language), args)
             data = result.data
             assert data.status in ("estimate", "estimate_with_caveat"), (customer_id, option, data.status)
