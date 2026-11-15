@@ -331,6 +331,28 @@ def _finnish_score(word: str) -> int:
 
 def detect_language(text: str) -> str | None:
     """'fi', 'en', or None when unsure. Typed with or without ä and ö (issue #140)."""
+    fi, en = language_scores(text)
+    if fi >= 2 and fi > en:
+        return "fi"
+    if en >= 1:
+        return "en"
+    return None
+
+
+def confident_language(text: str) -> str | None:
+    """The question's language only when it is clear enough to override the app setting: Finnish as the detector
+    reads it; English with at least two English words and no Finnish one ("Click to Pay" and "Korttini on
+    varastettu" stay with the app's language)."""
+    fi, en = language_scores(text)
+    if fi >= 2 and fi > en:
+        return "fi"
+    if en >= 2 and fi == 0:
+        return "en"
+    return None
+
+
+def language_scores(text: str) -> tuple[int, int]:
+    """(Finnish score, English word count) of a text, as the detector counts them."""
     fi = en = 0
     end = 0
     for m in re.finditer(r"[^\W\d_]+", text):
@@ -341,11 +363,7 @@ def detect_language(text: str) -> str | None:
         if starts_sentence or not word[0].isupper():  # a capitalised word inside a sentence is a name
             fi += _finnish_score(word)
         en += 1 if EN_WORDS.fullmatch(_without_dots(word)) else 0
-    if fi >= 2 and fi > en:
-        return "fi"
-    if en >= 1:
-        return "en"
-    return None
+    return fi, en
 
 
 def fold(text: str) -> str:
