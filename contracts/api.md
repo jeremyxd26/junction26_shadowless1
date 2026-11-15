@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.16 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.17 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.16. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.17. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -1427,7 +1427,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 
 ## 5. `GET /api/personas`
 
-Lists the demo customers the app can switch between. These are curated customers from the synthetic dataset, and the only customers the service answers for (section 1). Display names are invented and labelled as demo personas. `age_band` uses the age bands from section 1, and `profile.key` uses the profile keys of the `profile` card (section 3).
+Lists the demo customers the app can switch between. These are curated customers from the synthetic dataset, and the only customers the service answers for (section 1). Display names are invented and labelled as demo personas. `age` is the customer's age in years from the dataset (`customers.age`), and `age_band` is its band from section 1, so the picker can say who is who (#872). `profile.key` uses the profile keys of the `profile` card (section 3). The picker shows the name, the age and band, the profile label and the tagline; it never shows the postal code or the `customer_id`.
 
 **Request:** `GET /api/personas?lang=en`
 
@@ -1440,6 +1440,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00042",
       "display_name": "Aino",
+      "age": 29,
       "age_band": "25-34",
       "postal_area": { "code": "00530", "label": "Helsinki 00530" },
       "profile": { "key": "everyday_heavy", "label": "Everyday spender" },
@@ -1449,6 +1450,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00017",
       "display_name": "Mikko",
+      "age": 48,
       "age_band": "45-54",
       "postal_area": { "code": "02100", "label": "Espoo 02100" },
       "profile": { "key": "steady", "label": "Steady" },
@@ -1458,6 +1460,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00088",
       "display_name": "Leena",
+      "age": 22,
       "age_band": "18-24",
       "postal_area": { "code": "00100", "label": "Helsinki 00100" },
       "profile": { "key": "stretched", "label": "Stretched" },
@@ -5597,3 +5600,4 @@ When no speech was heard:
 | 0.3.14 | Documents what the service already does (#735, #752); nothing new is built.<br>- New section 13, `POST /api/stt` (built in #747): the body is an audio clip (WebM, OGG, MP4/M4A, AAC, MP3 or WAV) of at most 1,000,000 bytes, which the app records for at most 15 seconds, with `customer_id` and `language` as query parameters. The core has the Gemini API turn it into text and returns `{text, language}`. New example `stt.response`.<br>- No audio is stored: the app and the core keep the clip in memory for the one request only, and the core's ledger and log hold neither the audio nor the text.<br>- An own daily budget, `STT_DAILY_BUDGET` requests in any rolling 24 hours (default 100), and two windows: 10 requests a minute per address and 40 an hour per viewer.<br>- Errors, no new code: 400 `invalid_request`; 404 `customer_not_found`; 413 `invalid_request` for a clip that is too large or too long; 429 `rate_limited` with `Retry-After`; 503 `model_unavailable`, also when no speech was heard. Section 4 gains a 413 row, and its rows for 429 and 503 mention `/api/stt`.<br>- The app's side: only a live build calls it, the text lands in the composer and is sent only when the user taps send, the line the app shows for each outcome, and the demo frame's iframe needs `allow="microphone"` (section 13.4).<br>- Section 1: the body of a `/api/stt` request is audio, and its `language` is a query parameter.<br><br>The changelog is now section 14. |
 | 0.3.15 | Section 13, spoken questions (#759, #751).<br>- No speech heard is a 200, not a 503 (#759): `{"text": "", "language": …, "empty": true}`, when the model's text is empty or white space or only says that there was no speech. `text` can now be empty, and only then. New field `empty`, new example `stt.response_empty`. A real failure (no key, switched off, an API error, a timeout) is still 503 `model_unavailable`. Section 4's 503 row and section 13.1 step 9 say so.<br>- The app (13.4): a recording that is empty or under 0.5 seconds is not sent; that, a 400 and a 200 with `empty: true` show "I didn't catch that. Try again." / "En saanut selvää. Yritä uudelleen.", and nothing goes into the composer.<br>- The app (13.4, #751): the mic is an icon inside the input, and while it records a recording bar (cancel, waveform, timer, stop) takes the composer's row. No change for the core. |
 | 0.3.16 | Wording only (#823), no new field and no change for the core. Voice mode (#811) sends the spoken words as a question and reads the answer aloud without a tap, once the user has opened it on purpose; the text said that nothing is sent until the user taps send and that nothing plays without a tap.<br>- Section 12: the intro and 12.4 name voice mode as the one case in which an answer is read aloud without a tap.<br>- Section 13: the intro, "What is sent where" and 13.4 name the exception. 13.4 gains a voice-mode bullet: how it opens and closes, when a round ends (about 1.2 seconds of silence, 15 seconds or a tap), that nothing is recorded while Sentti speaks, that two rounds with no words close it, that no audio is stored, and what goes to the model provider.<br>- No example changed. |
+| 0.3.17 | One new field (#872). Section 5: `GET /api/personas` gives each persona's `age`, the customer's age in years from the dataset (`customers.age`), next to `age_band`, so the persona picker can say who is who. The picker shows the name, the age and band, the profile label and the tagline, never the postal code or the `customer_id`. Example `personas.response` changed. |

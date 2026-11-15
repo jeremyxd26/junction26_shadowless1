@@ -1,6 +1,7 @@
 import type { Language, Persona } from '../api/types.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BottomSheet } from './BottomSheet.tsx'
+import { bandText } from '../lib/personaBand.ts'
 
 interface Props {
   personas: Persona[]
@@ -32,6 +33,10 @@ export function PersonaSheet({ personas, onPick, onLanguage, onClose }: Props) {
                   <span className="font-semibold text-ink">{persona.display_name}</span>
                   <span className="text-sm text-muted">{persona.profile.label}</span>
                 </span>
+                {/* Who this is (Renat, #872): the age and its band from the dataset; never the postal code or the id. */}
+                {typeof persona.age === 'number' && (
+                  <span className="text-sm text-muted">{t.personaAge(persona.age, bandText(persona.age_band))}</span>
+                )}
                 <span className="text-sm text-ink-2">{persona.tagline}</span>
               </button>
             </li>

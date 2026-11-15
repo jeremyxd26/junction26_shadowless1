@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.16",
+  "contract_version": "0.3.17",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -1253,6 +1253,7 @@
         {
           "customer_id": "CUST00042",
           "display_name": "Aino",
+          "age": 29,
           "age_band": "25-34",
           "postal_area": {
             "code": "00530",
@@ -1268,6 +1269,7 @@
         {
           "customer_id": "CUST00017",
           "display_name": "Mikko",
+          "age": 48,
           "age_band": "45-54",
           "postal_area": {
             "code": "02100",
@@ -1283,6 +1285,7 @@
         {
           "customer_id": "CUST00088",
           "display_name": "Leena",
+          "age": 22,
           "age_band": "18-24",
           "postal_area": {
             "code": "00100",
