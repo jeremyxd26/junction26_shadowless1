@@ -128,7 +128,7 @@ describe('the cat in the voice mode (#893)', () => {
     stub(true, true)
     const { VoiceMode, MASCOT_STATE, WAVE_BARS } = await import('./VoiceMode.tsx')
     const settings = await import('../lib/settings.ts')
-    const snapshot = { phase, missed: false, heard: '' }
+    const snapshot = { phase, missed: false, heard: '', micOn: phase !== 'starting', bargeIn: false }
     const session = {
       subscribe: () => () => {},
       getSnapshot: () => snapshot,
