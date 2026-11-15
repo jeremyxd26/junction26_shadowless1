@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CHIP_ROW, TEXT, downOnly, findBrowser, line, parseAmount, parseArgs, rowProblems, rowQuestions } from './demo-check-lib.mjs'
+import { CHIP_ROW, SETTLE_MAX_MS, SETTLE_QUIET_MS, TEXT, downOnly, findBrowser, line, mainText, parseAmount, parseArgs, rowProblems, rowQuestions, settleStep } from './demo-check-lib.mjs'
 
 describe('TEXT', () => {
   it('finds the hand-over action by the labels the app and the core use, in EN and FI', () => {
@@ -106,5 +106,46 @@ describe('the opening chip row (#784, #788)', () => {
     expect(rowProblems(['Mihin rahani menivät?', 'Miten voisin säästää enemmän?'], TEXT.fi.firstQuestion)).toEqual([])
     expect(rowProblems([], TEXT.en.firstQuestion)).toEqual(['0 question chips in the row, not 2 or more', 'no "Where did my money go?" chip in the row'])
     expect(rowProblems(['How could I save more?', 'Can I afford a dinner out?'], TEXT.en.firstQuestion)).toEqual(['no "Where did my money go?" chip in the row'])
+  })
+})
+
+describe('an answer settles before step 4 measures it (#928)', () => {
+  /** Runs settleStep over samples taken every 100 ms; returns the time it settled, or null. */
+  function settleTime(samples) {
+    let state = null
+    for (const [i, look] of samples.entries()) {
+      state = settleStep(state, look, i * 100)
+      if (state.settled) return i * 100
+    }
+    return null
+  }
+
+  it('waits while the text types in and the cards wait behind the skeleton, then settles once quiet', () => {
+    const typing = ['From', 'From 1 Apr', 'From 1 Apr – 30 Sep', 'From 1 Apr – 30 Sep 2026, your total'].map((text) => ({ text, skeleton: true }))
+    const cardsIn = { text: 'From 1 Apr – 30 Sep 2026, your total … €3,010.59 a month', skeleton: false }
+    // 4 typing samples (0–300 ms), then the cards (400 ms) and quiet: settled 500 ms after the last change.
+    expect(settleTime([...typing, ...Array(8).fill(cardsIn)])).toBe(400 + SETTLE_QUIET_MS)
+  })
+
+  it('never settles while a skeleton shows, however long the text holds still', () => {
+    const held = { text: 'Where did my money go?', skeleton: true }
+    expect(settleTime(Array(20).fill(held))).toBeNull()
+  })
+
+  it('an answer without cards settles too: no skeleton and a quiet text is enough', () => {
+    const refusal = { text: 'I can only look at your own money', skeleton: false }
+    expect(settleTime(Array(8).fill(refusal))).toBe(SETTLE_QUIET_MS)
+  })
+
+  it('is bounded: the check waits at most 8 s for it', () => {
+    expect(SETTLE_MAX_MS).toBe(8_000)
+    expect(SETTLE_QUIET_MS).toBeLessThan(SETTLE_MAX_MS)
+  })
+
+  it('reports the first paragraph as the main sentence, not the longest one', () => {
+    const takeaway = 'From 1 Apr – 30 Sep 2026, your total spending was €3,010.59 a month.'
+    const note = 'Fixed costs like rent change slowly. Flexible costs like eating out are where quick change is possible, so look there first.'
+    expect(mainText(['', `  ${takeaway} `, note])).toBe(takeaway)
+    expect(mainText([])).toBe('')
   })
 })
