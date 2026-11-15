@@ -1144,6 +1144,18 @@ INTENTS = [
 # where the money goes (the baskets).
 SAVE_MORE_PLAN = [("get_savings_plan", {})]
 SAVE_MORE_CALLS = [("get_safe_to_save", {}), ("get_basket_breakdown", {"period": {"preset": "last_6_months"}})]
+# #822: steps or a plan to save, with nothing named (template.step_plan_request): the savings plan and the small
+# purchases, which the template writes as numbered steps. A named selection, a cut, a past question, a refusal or a
+# stated limit (#804) keeps its own route.
+STEP_PLAN_CALLS = [("get_savings_plan", {}), ("get_small_purchases", {})]
+
+
+def _step_plan(q: str) -> bool:
+    """The folded clause asks for steps or a plan to save and names no spending of its own (no category, group,
+    everyday word, basket, code, merchant, share or half)."""
+    return template.step_plan_request(q) and not (
+        _filter_of(q) or any(re.search(rx, q) for rx, _ in WHAT_IF_MCC_WORDS + WHAT_IF_BASKET_WORDS)
+        or re.search(SELECTION_CODE, q) or re.search(PERCENT, q) or re.search(HALF, q) or re.search(FOOD_COMPOUND, q))
 # The what-if questions back never suggest an amount (review of PR #126): the user says how much.
 WHAT_IF_AMOUNT = ("By how much would you like to cut it? Tell me as a percentage.",
                   "Kuinka paljon haluaisit vähentää? Kerro se prosentteina.")
@@ -1772,6 +1784,9 @@ def _plan_intent(intent: str, question: str, q: str, as_of: date, tools: set[str
     kind, what_if = plan_what_if(question)
     if kind == "health":
         return Claim(intent, (FunctionCall("decline", {"kind": "out_of_scope"}),))
+    if kind in ("save_more", "unmapped") and "get_savings_plan" in tools and _step_plan(q):
+        # "What should I do step by step to save money?" (#822): the numbered steps, the template's answer
+        return _claimed("step_plan", STEP_PLAN_CALLS, tools, lang)
     if kind == "unmapped":
         return Claim(None, reason="what_if_which")
     if kind == "which":   # all one's spending, no selection: the what-if rule asks which (#403)
@@ -2448,7 +2463,8 @@ class RuleModel:
         # "why is my safe to spend lower?" (#552) and a question about the user's own transfers to savings (#658) are
         # the template's answer in both rounds: no composer model
         found = claim(request)
-        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer", "borrow_budget")   # #806 too
+        template_answer = found.rule in ("safe_to_spend_why", "savings_transfer", "borrow_budget",   # #806 too
+                                         "step_plan")   # #822: the numbered steps
         # the Bonus received is not in the data: the estimate follows a designed lead that says so (#639)
         bonus_received = found.rule == "bonus" and bool(re.search(BONUS_RECEIVED, fold(request.question)))
         return PlanResult(calls=list(calls), recognised=recognised, offer_contact=isinstance(calls, OfferContact),

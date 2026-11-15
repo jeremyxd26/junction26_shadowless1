@@ -1095,6 +1095,91 @@ def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
     return pick(WHAT_IF_OFFER, language).format(category=category)
 
 
+# #822: an explicit request for steps or a plan to save ("What should I do step by step to save money?", "mitä mun
+# pitää tehdä askeleilla säästää rahaa?") gets three numbered steps from the tools the save-more route already runs:
+# the savings goal set aside first (get_savings_plan), the plan's largest what-if cut (its lever with the largest
+# saving a month), and the small purchases a month (get_small_purchases). A step cue alone ("phone plan",
+# "maksusuunnitelma") is no request to save; an investment, loan or borrowing word never gets the steps.
+STEP_PLAN_CUE = fold_pattern(
+    r"\bstep[\s-]+by[\s-]+step\b|\bsteps?\b|\b(?:a|an|my|the|some)\s+(?:\w+\s+)?plan\b|\bplan\s+(?:to|for)\b|"
+    r"\bwhat\s+(?:should|do|must|can|could)\s+i\s+do\b|\bwhat\s+do\s+i\s+(?:need|have)\s+to\s+do\b|"
+    r"\baskel\w*|\bvaihe\s+vaiheelta\b|\bvaiheittain\b|suunnitelm\w*|"
+    r"\bmitä\s+(?:mun|minun|mä|minä)\s+(?:pitää|pitäis|pitäisi|täytyy|kannattaa|kannattais|kannattaisi|tulee|tulisi)"
+    r"\s+tehdä\b")
+STEP_PLAN_SAVE = fold_pattern(r"\bsav(?:e|es|ing|ings)\b(?!\s+(?:more\s+)?time\b)|säästä\w*|säästö\w*")
+STEP_PLAN_NOT = fold_pattern(r"\binvest\w*|\bfunds?\b|\bstocks?\b|\bshares?\b|\bloans?\b|\bborrow\w*|\bcredit\b|"
+                             r"\bmortgage\b|sijoit\w*|rahasto\w*|osake\w*|\blaina\w*|luoto\w*|luotto\w*|\d")
+# One sentence and one number per step, numbered in words (a digit outside a token fails the validator). The list
+# keeps its own template budget: three sentences, one per step, within the ordinary answer's 55 words and three
+# numbers (answer_text.length_problems), not the two-sentence budget of the other templates. Each amount's display
+# already says "a month". No product, no screen, no borrowing (#417, #419).
+STEP_PLAN = {
+    "goal": ("set aside your savings goal: {n}.", "laita säästötavoitteesi sivuun: {n}."),
+    "first": ("eat out {cut} less, which could save about {n}.",
+              "syö ulkona {cut} vähemmän, jolloin säästäisit noin {n}."),
+    "other": ("spend {cut} less on {other}, which could save about {n}.",
+              "käytä luokassa {other} {cut} vähemmän, jolloin säästäisit noin {n}."),
+    "first_no_words": ("eat out less than usual, which could save about {n}.",
+                       "syö ulkona tavallista vähemmän, jolloin säästäisit noin {n}."),
+    "other_no_words": ("spend less than usual on {other}, which could save about {n}.",
+                       "käytä luokassa {other} tavallista vähemmän, jolloin säästäisit noin {n}."),
+    "small": ("check your small purchases: they add up to about {n}.",
+              "tarkista pienet ostoksesi: niitä kertyy noin {n}."),
+}
+STEP_PLAN_ORDINALS = (("First,", "Second,", "Third,"), ("Ensiksi", "Toiseksi", "Kolmanneksi"))
+STEP_PLAN_TOOLS = frozenset({"get_savings_plan", "get_small_purchases"})
+
+
+def step_plan_request(question: str) -> bool:
+    """The message asks for steps or a plan to save (#822): a step or plan cue and a save word, and no investment,
+    loan, borrowing word or digit."""
+    q = fold(question)
+    return bool(re.search(STEP_PLAN_CUE, q) and re.search(STEP_PLAN_SAVE, q)) and not re.search(STEP_PLAN_NOT, q)
+
+
+def step_plan_answer(views: list[dict[str, Any]], language: str) -> tuple[str, list[str]] | None:
+    """The numbered steps (#822) and the ids they cite, one number each; a step whose tool gave no figure is left
+    out, never invented. None when fewer than two steps have a figure: the per-tool template answers then."""
+    def num(node: Any) -> dict[str, Any] | None:
+        ok = isinstance(node, dict) and isinstance(node.get("id"), str) and isinstance(node.get("value"), (int, float))
+        return node if ok and node["value"] > 0 else None
+
+    s = lambda key: pick(STEP_PLAN[key], language)  # noqa: E731
+    tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    steps: list[tuple[str, str]] = []
+    plan = next((v for v in views if v.get("tool") == "get_savings_plan"), None)
+    small = next((v for v in views if v.get("tool") == "get_small_purchases"), None)
+    if plan is not None:
+        goal = num(plan.get("savings_goal"))
+        if goal:
+            steps.append((s("goal").format(n=tok(goal)), goal["id"]))
+        levers = [lv for lv in (plan.get("levers") or []) if isinstance(lv, dict) and num(lv.get("saving"))] \
+            if plan.get("kind") == "plan" else []
+        if levers:
+            lever = max(levers, key=lambda lv: lv["saving"]["value"])   # the first of two equal savings
+            saving, words = lever["saving"], lever.get("cut_words")
+            words = words if isinstance(words, str) and words and not re.search(r"\d", words) else None
+            other = lever.get("category") or ""
+            other = other.lower() if language == "en" else other
+            if lever.get("key") == tools_config.SAVINGS_PLAN_FIRST[0]:
+                text = s("first").format(cut=words, n=tok(saving)) if words else s("first_no_words").format(n=tok(saving))
+            elif other and not re.search(r"\d", other):
+                text = (s("other").format(cut=words, other=other, n=tok(saving)) if words
+                        else s("other_no_words").format(other=other, n=tok(saving)))
+            else:
+                text = ""
+            if text:
+                steps.append((text, saving["id"]))
+    if small is not None and (small.get("takeaway") or {}).get("kind") != "none":
+        month = num(small.get("per_month"))
+        if month:
+            steps.append((s("small").format(n=tok(month)), month["id"]))
+    if len(steps) < 2:
+        return None
+    ordinals = pick(STEP_PLAN_ORDINALS, language)
+    return " ".join(f"{ordinals[i]} {text}" for i, (text, _) in enumerate(steps)), [i for _, i in steps]
+
+
 def _date(iso: str, language: str) -> str:
     y, m, d = iso.split("-")
     return iso if language == "en" else f"{int(d)}.{int(m)}.{y}"
@@ -1122,6 +1207,10 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
     borrowed = borrow_budget_answer(views, amount, language) if amount is not None and not errors else None
     if borrowed is not None:   # #806: the budget side of a borrowing question, never whether to borrow
         return {"language": language, "text": borrowed[0], "cited": borrowed[1], "lesson_key": None}
+    if views and not errors and {v.get("tool") for v in views} <= STEP_PLAN_TOOLS and step_plan_request(question):
+        steps = step_plan_answer(views, language)
+        if steps is not None:   # #822: the numbered steps; with fewer than two, the per-tool answer below
+            return {"language": language, "text": steps[0], "cited": steps[1], "lesson_key": None}
     sentences: list[str] = []
     cited: list[str] = []
     q = fold(question)
