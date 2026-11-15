@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.20 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872, #873, #884, #944 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.21 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872, #873, #884, #944, #959 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.20. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.21. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -4039,8 +4039,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+    "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4223,8 +4223,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
         }
       }
     ],
-    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+    "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4268,9 +4268,15 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+    "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
     "numbers": {
+      "n2": {
+        "id": "n2", "value": 138.79, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€138.79"
+      },
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
@@ -4376,9 +4382,15 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
         }
       }
     ],
-    "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+    "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
     "numbers": {
+      "n2": {
+        "id": "n2", "value": 138.79, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€138.79"
+      },
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
@@ -4409,8 +4421,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
   "review_state": "pending",
   "changed": true,
   "message": {
-    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+    "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",
@@ -4593,8 +4605,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
         }
       }
     ],
-    "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+    "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",
@@ -5615,4 +5627,5 @@ When no speech was heard:
 | 0.3.17 | One new field (#872). Section 5: `GET /api/personas` gives each persona's `age`, the customer's age in years from the dataset (`customers.age`), next to `age_band`, so the persona picker can say who is who. The picker shows the name, the age and band, the profile label and the tagline, never the postal code or the `customer_id`. Example `personas.response` changed. |
 | 0.3.19 | One new optional response field (#884). Section 7: the `done` event of `/api/ask` (SSE and JSON) may carry `sources`, `[{publisher, title, url, lang}]`, at most three, for an answer drawn from official financial-literacy sources (`core/finlit`). The source line that 0.3.18 answers appended to the text ("Source: <publisher>, <url>") is gone, so the text carries no link. Absent on every other answer. |
 | 0.3.20 | One new response field (#944). Section 9: `months` on `GET /api/evidence/{ref}` for a `transactions` list, every month of the whole list with its count and total, newest first (`[]` for the other kinds), so the evidence sheet can group the rows by month with subtotals. Examples `evidence.response` (one month) and the other evidence examples (`[]`) changed. |
+| 0.3.21 | Wording only (#959), no new field. Section 10: the answer's `message` and `effect` text is one short confirmation that cites only what is left to spend this week after the answer ("Got it — counted as a must-have. You now have {{n2}} left to spend this week."; "…your own choice. Your left to spend stays …" when nothing moved; "Undone — I'll ask about it again. You have … left to spend this week."). The purchase's amount and the reasons are no longer in the text; `effect.items` are unchanged. The label examples changed. |
 | 0.3.18 | One new optional request field (#873). Section 7.1: `POST /api/ask` takes `channel`, `text` (default) or `voice`; any other value is a 400 `invalid_request`. Talk questions (why something matters, an explanation, tips, no numbers) get two to four sentences in words with at most one number already shown, no card and one chip; on `voice`, open follow-ups after any data answer do too. No response field and no example changed. |

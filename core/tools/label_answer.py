@@ -95,11 +95,28 @@ def _e(key: str, language: str) -> str:
 
 def effect_text(before: dict[str, tuple[str, Number]], after: dict[str, tuple[str, Number]], basket: str | None,
                 state: str, amount: str, token: Any, language: str) -> str:
-    """The effect of an answer from the real difference (#382): two sentences at most, three numbers.
+    """The reply to an answer (Renat, via r-talk): one short confirmation that cites only what is left to spend this
+    week after it ("Got it — counted as a must-have. You now have {after} left to spend this week."), "stays" for
+    "My choice" when it did not move, and the mirror line for Undo. The hero keeps "was …"; the purchase's amount
+    (`amount`) and the reasons of #382 are no longer said here (`effect_reason` keeps them for other callers).
+    `token(key, side)` gives the {{nK}} token of a number."""
+    def value(side: dict, key: str) -> float | None:
+        return side[key][1].value if key in side else None
 
-    `token(key, side)` gives the {{nK}} token of a number, `amount` the purchase's token. Safe to spend
-    moved: from what to what, and where the purchase went. It did not: where the purchase went, then
-    either what safe to save did, or why safe to spend stays (which limit binds, by the formula)."""
+    moved = value(before, "safe_to_spend") != value(after, "safe_to_spend")
+    if basket == "unexpected_necessities":
+        key = "needed"
+    elif basket == "everyday_spending":
+        key = "choice_moved" if moved else "choice"
+    else:
+        key = "undo_pending" if state == reviews.PENDING else "undo_closed"
+    return _e(key, language).format(after=token("safe_to_spend", "after"))
+
+
+def effect_reason(before: dict[str, tuple[str, Number]], after: dict[str, tuple[str, Number]], basket: str | None,
+                  state: str, amount: str, token: Any, language: str) -> str:
+    """The longer effect of #382 (two sentences at most, three numbers): from what to what, where the purchase went
+    and why; kept for reference and tests of the reasons, not sent as the reply any more."""
     def value(side: dict, key: str) -> float | None:
         return side[key][1].value if key in side else None
 
