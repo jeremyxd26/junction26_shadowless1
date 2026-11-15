@@ -1,0 +1,2392 @@
+[
+ {
+  "question": "How could I save more?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "Cutting back on restaurants and lifestyle could save you {{n5}}, that is {{n6}}. That comes on top of your savings goal of {{n7}}.",
+  "text_rendered": "Cutting back on restaurants and lifestyle could save you €63.17 a month, that is €758.04 a year. That comes on top of your savings goal of €360.00 a month.",
+  "numbers": {
+   "n5": {
+    "value": 63.17,
+    "unit": "eur_per_month",
+    "method": "savings_plan.total_month_eur@1",
+    "evidence_ref": "ev_cd4f3f45dcfd"
+   },
+   "n6": {
+    "value": 758.04,
+    "unit": "eur_per_year",
+    "method": "savings_plan.total_year_eur@1",
+    "evidence_ref": "ev_a5de80138259"
+   },
+   "n7": {
+    "value": 360.0,
+    "unit": "eur_per_month",
+    "method": "safe_to_spend.savings_goal_eur@1",
+    "evidence_ref": "ev_031305294eae"
+   }
+  },
+  "tool_outputs": {
+   "get_savings_plan#1": {
+    "tool": "get_savings_plan",
+    "kind": "plan",
+    "levers": [
+     {
+      "key": "Restaurants",
+      "category": "Restaurants",
+      "cut": {
+       "id": "n2",
+       "value": 20.0,
+       "unit": "percent",
+       "label": "Cut in Restaurants"
+      },
+      "cut_words": "a fifth",
+      "saving": {
+       "id": "n1",
+       "value": 45.91,
+       "unit": "eur_per_month",
+       "label": "You would save"
+      }
+     },
+     {
+      "key": "Lifestyle",
+      "category": "Lifestyle",
+      "cut": {
+       "id": "n4",
+       "value": 10.0,
+       "unit": "percent",
+       "label": "Cut in Lifestyle"
+      },
+      "cut_words": "a tenth",
+      "saving": {
+       "id": "n3",
+       "value": 17.26,
+       "unit": "eur_per_month",
+       "label": "You would save"
+      }
+     }
+    ],
+    "total_month": {
+     "id": "n5",
+     "value": 63.17,
+     "unit": "eur_per_month",
+     "label": "These changes together, a month"
+    },
+    "total_year": {
+     "id": "n6",
+     "value": 758.04,
+     "unit": "eur_per_year",
+     "label": "These changes together, a year"
+    },
+    "savings_goal": {
+     "id": "n7",
+     "value": 360.0,
+     "unit": "eur_per_month",
+     "label": "Set aside first each month"
+    },
+    "follow_up": "How much S-Bonus could I get?",
+    "already_saving": null,
+    "already_share": null,
+    "saving_seen": false
+   }
+  }
+ },
+ {
+  "question": "Mihin rahani menivät?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "During 1 Apr – 30 Sep 2026, your monthly average spending was {{n21}}, of which Regular essentials was {{n6}}, which is {{n1}} of it.",
+  "text_rendered": "During 1 Apr – 30 Sep 2026, your monthly average spending was €3,010.59 a month, of which Regular essentials was €1,889.04 a month, which is 62.7% of it.",
+  "numbers": {
+   "n21": {
+    "value": 3010.59,
+    "unit": "eur_per_month",
+    "method": "spender_profile.spend_month_eur@1",
+    "evidence_ref": "ev_3445621e6f78"
+   },
+   "n6": {
+    "value": 1889.04,
+    "unit": "eur_per_month",
+    "method": "baskets.month_avg_eur@1",
+    "evidence_ref": "ev_8fb4ea7a28ba"
+   },
+   "n1": {
+    "value": 62.7,
+    "unit": "percent",
+    "method": "baskets.share_pct@1",
+    "evidence_ref": "ev_5e38527966ca"
+   }
+  },
+  "tool_outputs": {
+   "get_basket_breakdown#1": {
+    "tool": "get_basket_breakdown",
+    "period": "1 Apr – 30 Sep 2026",
+    "monthly_average": true,
+    "total": {
+     "id": "n21",
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "label": "Total spending"
+    },
+    "baskets": [
+     {
+      "key": "regular_essentials",
+      "label": "Regular essentials",
+      "amount": {
+       "id": "n6",
+       "value": 1889.04,
+       "unit": "eur_per_month",
+       "label": "Regular essentials"
+      },
+      "share": {
+       "id": "n1",
+       "value": 62.7,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Housing",
+        "label": "Housing",
+        "amount": {
+         "id": "n2",
+         "value": 851.57,
+         "unit": "eur_per_month",
+         "label": "Housing"
+        }
+       },
+       {
+        "key": "Groceries",
+        "label": "Groceries",
+        "amount": {
+         "id": "n3",
+         "value": 628.86,
+         "unit": "eur_per_month",
+         "label": "Groceries"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Transportation",
+        "amount": {
+         "id": "n4",
+         "value": 233.25,
+         "unit": "eur_per_month",
+         "label": "Transportation"
+        }
+       },
+       {
+        "key": "Utilities",
+        "label": "Utilities",
+        "amount": {
+         "id": "n5",
+         "value": 175.36,
+         "unit": "eur_per_month",
+         "label": "Utilities"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unexpected_necessities",
+      "label": "Unexpected necessities",
+      "amount": {
+       "id": "n10",
+       "value": 341.08,
+       "unit": "eur_per_month",
+       "label": "Unexpected necessities"
+      },
+      "share": {
+       "id": "n7",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Home & Tech",
+        "amount": {
+         "id": "n8",
+         "value": 251.13,
+         "unit": "eur_per_month",
+         "label": "Home & Tech"
+        }
+       },
+       {
+        "key": "Health",
+        "label": "Health",
+        "amount": {
+         "id": "n9",
+         "value": 89.95,
+         "unit": "eur_per_month",
+         "label": "Health"
+        }
+       }
+      ]
+     },
+     {
+      "key": "everyday_spending",
+      "label": "Everyday spending",
+      "amount": {
+       "id": "n17",
+       "value": 600.41,
+       "unit": "eur_per_month",
+       "label": "Everyday spending"
+      },
+      "share": {
+       "id": "n11",
+       "value": 19.9,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Restaurants",
+        "label": "Restaurants",
+        "amount": {
+         "id": "n12",
+         "value": 229.56,
+         "unit": "eur_per_month",
+         "label": "Restaurants"
+        }
+       },
+       {
+        "key": "Lifestyle",
+        "label": "Lifestyle",
+        "amount": {
+         "id": "n13",
+         "value": 172.58,
+         "unit": "eur_per_month",
+         "label": "Lifestyle"
+        }
+       },
+       {
+        "key": "Entertainment",
+        "label": "Entertainment",
+        "amount": {
+         "id": "n14",
+         "value": 100.05,
+         "unit": "eur_per_month",
+         "label": "Entertainment"
+        }
+       },
+       {
+        "key": "Travel",
+        "label": "Travel",
+        "amount": {
+         "id": "n15",
+         "value": 63.19,
+         "unit": "eur_per_month",
+         "label": "Travel"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Transportation",
+        "amount": {
+         "id": "n16",
+         "value": 35.02,
+         "unit": "eur_per_month",
+         "label": "Transportation"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unclassified",
+      "label": "Waiting for your answer",
+      "amount": {
+       "id": "n20",
+       "value": 180.07,
+       "unit": "eur_per_month",
+       "label": "Waiting for your answer"
+      },
+      "share": {
+       "id": "n18",
+       "value": 6.0,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Home & Tech",
+        "amount": {
+         "id": "n19",
+         "value": 180.07,
+         "unit": "eur_per_month",
+         "label": "Home & Tech"
+        }
+       }
+      ]
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "Miten otan yhteyttä S-Pankkiin?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "I don't know that one; the bank can tell you.",
+  "text_rendered": "I don't know that one; the bank can tell you.",
+  "numbers": {},
+  "tool_outputs": {}
+ },
+ {
+  "question": "Should I borrow €500 for a holiday if my balance is positive?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "I can't advise on borrowing. That amount is more than the {{n6}} left for the coming week, and spending it would leave less of the {{n9}} free until payday.",
+  "text_rendered": "I can't advise on borrowing. That amount is more than the €138.79 left for the coming week, and spending it would leave less of the €12,656.12 free until payday.",
+  "numbers": {
+   "n6": {
+    "value": 138.79,
+    "unit": "eur",
+    "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+    "evidence_ref": "ev_61150a8cc692"
+   },
+   "n9": {
+    "value": 12656.12,
+    "unit": "eur",
+    "method": "safe_to_spend.free_until_payday_eur@1",
+    "evidence_ref": "ev_d22d6fd467e0"
+   }
+  },
+  "tool_outputs": {
+   "get_safe_to_spend#1": {
+    "tool": "get_safe_to_spend",
+    "period": "Next 7 days",
+    "safe_to_spend": {
+     "id": "n6",
+     "value": 138.79,
+     "unit": "eur",
+     "label": "Safe to spend"
+    },
+    "status": "ok",
+    "binding_limit": "budget",
+    "free_until_payday": {
+     "id": "n9",
+     "value": 12656.12,
+     "unit": "eur",
+     "label": "Free until payday"
+    },
+    "balance_limit": {
+     "id": "n10",
+     "value": 5906.19,
+     "unit": "eur",
+     "label": "Your balance allows"
+    },
+    "budget_limit": {
+     "id": "n11",
+     "value": 138.79,
+     "unit": "eur",
+     "label": "Your monthly budget allows"
+    },
+    "savings_goal": {
+     "id": "n7",
+     "value": 360.0,
+     "unit": "eur_per_month",
+     "label": "Set aside first each month"
+    },
+    "usual_week": {
+     "id": "n8",
+     "value": 137.8,
+     "unit": "eur_per_week",
+     "label": "Usual everyday pace"
+    },
+    "components": [
+     {
+      "key": "balance",
+      "label": "Money on your account",
+      "operation": "add",
+      "amount": {
+       "id": "n1",
+       "value": 14276.35,
+       "unit": "eur",
+       "label": "Balance"
+      }
+     },
+     {
+      "key": "bills_due",
+      "label": "Bills due before payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n2",
+       "value": 928.5,
+       "unit": "eur",
+       "label": "Bills before payday"
+      }
+     },
+     {
+      "key": "essentials_reserve",
+      "label": "Usual essentials until payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n3",
+       "value": 423.99,
+       "unit": "eur",
+       "label": "Essentials reserve"
+      }
+     },
+     {
+      "key": "irregular_reserve",
+      "label": "Reserve for unexpected necessities",
+      "operation": "subtract",
+      "amount": {
+       "id": "n4",
+       "value": 167.74,
+       "unit": "eur",
+       "label": "Irregular reserve"
+      }
+     },
+     {
+      "key": "cushion",
+      "label": "Cushion",
+      "operation": "subtract",
+      "amount": {
+       "id": "n5",
+       "value": 100.0,
+       "unit": "eur",
+       "label": "Cushion"
+      }
+     }
+    ],
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "Should I buy stocks?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "refused",
+  "text": "I can't give investment advice, such as which shares or funds to buy. I can show how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki adviser can help.",
+  "text_rendered": "I can't give investment advice, such as which shares or funds to buy. I can show how much you could set aside each month, so you know what you have to work with. For investing, an S-Pankki adviser can help.",
+  "numbers": {},
+  "tool_outputs": {}
+ },
+ {
+  "question": "What can I safely spend this week?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "For the next seven days, you can safely spend about {{n6}}, after setting aside {{n7}} first.",
+  "text_rendered": "For the next seven days, you can safely spend about €138.79, after setting aside €360.00 a month first.",
+  "numbers": {
+   "n6": {
+    "value": 138.79,
+    "unit": "eur",
+    "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+    "evidence_ref": "ev_61150a8cc692"
+   },
+   "n7": {
+    "value": 360.0,
+    "unit": "eur_per_month",
+    "method": "safe_to_spend.savings_goal_eur@1",
+    "evidence_ref": "ev_031305294eae"
+   }
+  },
+  "tool_outputs": {
+   "get_safe_to_spend#1": {
+    "tool": "get_safe_to_spend",
+    "period": "Next 7 days",
+    "safe_to_spend": {
+     "id": "n6",
+     "value": 138.79,
+     "unit": "eur",
+     "label": "Safe to spend"
+    },
+    "status": "ok",
+    "binding_limit": "budget",
+    "free_until_payday": {
+     "id": "n9",
+     "value": 12656.12,
+     "unit": "eur",
+     "label": "Free until payday"
+    },
+    "balance_limit": {
+     "id": "n10",
+     "value": 5906.19,
+     "unit": "eur",
+     "label": "Your balance allows"
+    },
+    "budget_limit": {
+     "id": "n11",
+     "value": 138.79,
+     "unit": "eur",
+     "label": "Your monthly budget allows"
+    },
+    "savings_goal": {
+     "id": "n7",
+     "value": 360.0,
+     "unit": "eur_per_month",
+     "label": "Set aside first each month"
+    },
+    "usual_week": {
+     "id": "n8",
+     "value": 137.8,
+     "unit": "eur_per_week",
+     "label": "Usual everyday pace"
+    },
+    "components": [
+     {
+      "key": "balance",
+      "label": "Money on your account",
+      "operation": "add",
+      "amount": {
+       "id": "n1",
+       "value": 14276.35,
+       "unit": "eur",
+       "label": "Balance"
+      }
+     },
+     {
+      "key": "bills_due",
+      "label": "Bills due before payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n2",
+       "value": 928.5,
+       "unit": "eur",
+       "label": "Bills before payday"
+      }
+     },
+     {
+      "key": "essentials_reserve",
+      "label": "Usual essentials until payday",
+      "operation": "subtract",
+      "amount": {
+       "id": "n3",
+       "value": 423.99,
+       "unit": "eur",
+       "label": "Essentials reserve"
+      }
+     },
+     {
+      "key": "irregular_reserve",
+      "label": "Reserve for unexpected necessities",
+      "operation": "subtract",
+      "amount": {
+       "id": "n4",
+       "value": 167.74,
+       "unit": "eur",
+       "label": "Irregular reserve"
+      }
+     },
+     {
+      "key": "cushion",
+      "label": "Cushion",
+      "operation": "subtract",
+      "amount": {
+       "id": "n5",
+       "value": 100.0,
+       "unit": "eur",
+       "label": "Cushion"
+      }
+     }
+    ],
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "What is in my everyday spending?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "In 1 Apr – 30 Sep 2026 your Everyday spending was {{n1}}. Restaurants took {{n4}}, which is {{n3}} of it.",
+  "text_rendered": "In 1 Apr – 30 Sep 2026 your Everyday spending was €3,602.44. Restaurants took €1,377.38, which is 38.2% of it.",
+  "numbers": {
+   "n1": {
+    "value": 3602.44,
+    "unit": "eur",
+    "method": "spending.total@1",
+    "evidence_ref": "ev_15c02c651810"
+   },
+   "n4": {
+    "value": 1377.38,
+    "unit": "eur",
+    "method": "spending.total@1",
+    "evidence_ref": "ev_f262eb7ab2c4"
+   },
+   "n3": {
+    "value": 38.2,
+    "unit": "percent",
+    "method": "spending.share_pct@1",
+    "evidence_ref": "ev_27d55d6b64b4"
+   }
+  },
+  "tool_outputs": {
+   "get_spending#1": {
+    "tool": "get_spending",
+    "period": "1 Apr – 30 Sep 2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 3602.44,
+     "unit": "eur",
+     "label": "Everyday spending"
+    },
+    "filter_parts": 1,
+    "filter_labels": [
+     "Everyday spending"
+    ],
+    "filter_dims": [
+     {
+      "kind": "baskets",
+      "labels": [
+       "Everyday spending"
+      ]
+     }
+    ],
+    "tx_count": {
+     "id": "n2",
+     "value": 91,
+     "unit": "count",
+     "label": "Transactions"
+    },
+    "comparison": null,
+    "groups": [
+     {
+      "key": "Restaurants",
+      "label": "Restaurants",
+      "amount": {
+       "id": "n4",
+       "value": 1377.38,
+       "unit": "eur",
+       "label": "Restaurants"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 60,
+      "share": {
+       "id": "n3",
+       "value": 38.2,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Lifestyle",
+      "label": "Lifestyle",
+      "amount": {
+       "id": "n6",
+       "value": 1035.5,
+       "unit": "eur",
+       "label": "Lifestyle"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 8,
+      "share": {
+       "id": "n5",
+       "value": 28.7,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Entertainment",
+      "label": "Entertainment",
+      "amount": {
+       "id": "n8",
+       "value": 600.31,
+       "unit": "eur",
+       "label": "Entertainment"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 15,
+      "share": {
+       "id": "n7",
+       "value": 16.7,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Travel",
+      "label": "Travel",
+      "amount": {
+       "id": "n10",
+       "value": 379.16,
+       "unit": "eur",
+       "label": "Travel"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 4,
+      "share": {
+       "id": "n9",
+       "value": 10.5,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Transportation",
+      "label": "Transportation",
+      "amount": {
+       "id": "n12",
+       "value": 210.09,
+       "unit": "eur",
+       "label": "Transportation"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 4,
+      "share": {
+       "id": "n11",
+       "value": 5.8,
+       "unit": "percent",
+       "label": "Share of total"
+      },
+      "change": null,
+      "flags": []
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "What kind of spender am I?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "During 1 Apr – 30 Sep 2026, your spending profile is Big ticket, with a large one-off purchase standing out. You spend {{n19}} more than the median of people like you, and a what-if can show what a cut would save.",
+  "text_rendered": "During 1 Apr – 30 Sep 2026, your spending profile is Big ticket, with a large one-off purchase standing out. You spend 1.2% more more than the median of people like you, and a what-if can show what a cut would save.",
+  "numbers": {
+   "n19": {
+    "value": 1.2,
+    "unit": "percent",
+    "method": "peer_benchmark.vs_median_pct@1",
+    "evidence_ref": "ev_0dcd9633ebf2"
+   }
+  },
+  "tool_outputs": {
+   "get_spender_profile#1": {
+    "tool": "get_spender_profile",
+    "period": "1 Apr – 30 Sep 2026",
+    "profile": {
+     "key": "big_ticket",
+     "label": "Big ticket",
+     "description": "A large one-off purchase stands out in your spending, well above what you usually pay in its category."
+    },
+    "traits": [
+     {
+      "key": "frequent_small_purchases",
+      "label": "Many small purchases",
+      "note": "You make many small everyday purchases each month."
+     }
+    ],
+    "features": [
+     {
+      "key": "one_off_share",
+      "decides_label": true,
+      "value": {
+       "id": "n1",
+       "value": 6.0,
+       "unit": "percent",
+       "label": "One-off purchases, share of spending"
+      }
+     },
+     {
+      "key": "keep_rate",
+      "decides_label": false,
+      "value": {
+       "id": "n2",
+       "value": 15.4,
+       "unit": "percent",
+       "label": "Kept from income"
+      }
+     },
+     {
+      "key": "net_income",
+      "decides_label": false,
+      "value": {
+       "id": "n3",
+       "value": 3558.38,
+       "unit": "eur_per_month",
+       "label": "Income a month"
+      }
+     },
+     {
+      "key": "spend",
+      "decides_label": false,
+      "value": {
+       "id": "n4",
+       "value": 3010.59,
+       "unit": "eur_per_month",
+       "label": "Spending a month"
+      }
+     },
+     {
+      "key": "saving",
+      "decides_label": false,
+      "value": {
+       "id": "n5",
+       "value": 0.0,
+       "unit": "eur_per_month",
+       "label": "Investments a month"
+      }
+     },
+     {
+      "key": "regular_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n6",
+       "value": 62.7,
+       "unit": "percent",
+       "label": "Regular essentials, share of spending"
+      }
+     },
+     {
+      "key": "unexpected_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n7",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Unexpected necessities, share of spending"
+      }
+     },
+     {
+      "key": "everyday_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n8",
+       "value": 19.9,
+       "unit": "percent",
+       "label": "Everyday spending, share of spending"
+      }
+     },
+     {
+      "key": "everyday_weekend_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n9",
+       "value": 28.2,
+       "unit": "percent",
+       "label": "Everyday spending at weekends"
+      }
+     },
+     {
+      "key": "everyday_avg_ticket_eur",
+      "decides_label": false,
+      "value": {
+       "id": "n10",
+       "value": 39.59,
+       "unit": "eur",
+       "label": "Average everyday purchase"
+      }
+     },
+     {
+      "key": "everyday_tx_month",
+      "decides_label": false,
+      "value": {
+       "id": "n11",
+       "value": 15.2,
+       "unit": "count",
+       "label": "Everyday purchases a month"
+      }
+     },
+     {
+      "key": "months_out_over_in",
+      "decides_label": false,
+      "value": {
+       "id": "n12",
+       "value": 3.0,
+       "unit": "months",
+       "label": "Months when more went out than came in"
+      }
+     },
+     {
+      "key": "n_tx_below_zero",
+      "decides_label": false,
+      "value": {
+       "id": "n13",
+       "value": 0,
+       "unit": "count",
+       "label": "Payments that took the balance below zero"
+      }
+     }
+    ],
+    "top_everyday_category": {
+     "key": "Restaurants",
+     "label": "Restaurants"
+    },
+    "notes": []
+   },
+   "get_peer_benchmark#2": {
+    "tool": "get_peer_benchmark",
+    "metric": "spend_total",
+    "metric_label": "Total spending",
+    "period": "1 Apr – 30 Sep 2026",
+    "shown": true,
+    "reason": null,
+    "you": {
+     "id": "n14",
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "label": "You"
+    },
+    "peer_median": {
+     "id": "n15",
+     "value": 2975.65,
+     "unit": "eur_per_month",
+     "label": "Typical for your group"
+    },
+    "peer_p25": {
+     "id": "n16",
+     "value": 2313.0,
+     "unit": "eur_per_month",
+     "label": "Lower quarter"
+    },
+    "peer_p75": {
+     "id": "n17",
+     "value": 3713.9,
+     "unit": "eur_per_month",
+     "label": "Upper quarter"
+    },
+    "percentile": {
+     "id": "n18",
+     "value": 51,
+     "unit": "percentile",
+     "label": "Your position"
+    },
+    "vs_median": {
+     "id": "n19",
+     "value": 1.2,
+     "unit": "percent",
+     "label": "Compared with typical"
+    },
+    "peer_group": {
+     "level": "age_band+area3",
+     "size": {
+      "id": "n20",
+      "value": 118,
+      "unit": "count",
+      "label": "Other people in the group"
+     },
+     "comparable": true
+    },
+    "estimate": "Compared with at least 20 other customers of your age band and postal area. Only group statistics are shown.",
+    "notes": [],
+    "offers_cut": true
+   }
+  }
+ },
+ {
+  "question": "Where did my money go in September?",
+  "language": {
+   "requested": "en",
+   "resolved": "en",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "In September 2026 your total spending was {{n17}}. Your largest share was Regular essentials at {{n5}}, which is {{n1}} of it.",
+  "text_rendered": "In September 2026 your total spending was €2,932.54 a month. Your largest share was Regular essentials at €1,337.14 a month, which is 45.6% of it.",
+  "numbers": {
+   "n17": {
+    "value": 2932.54,
+    "unit": "eur_per_month",
+    "method": "spender_profile.spend_month_eur@1",
+    "evidence_ref": "ev_3685a6333878"
+   },
+   "n5": {
+    "value": 1337.14,
+    "unit": "eur_per_month",
+    "method": "baskets.month_avg_eur@1",
+    "evidence_ref": "ev_111fec182de0"
+   },
+   "n1": {
+    "value": 45.6,
+    "unit": "percent",
+    "method": "baskets.share_pct@1",
+    "evidence_ref": "ev_5169f499d104"
+   }
+  },
+  "tool_outputs": {
+   "get_basket_breakdown#1": {
+    "tool": "get_basket_breakdown",
+    "period": "September 2026",
+    "monthly_average": true,
+    "total": {
+     "id": "n17",
+     "value": 2932.54,
+     "unit": "eur_per_month",
+     "label": "Total spending"
+    },
+    "baskets": [
+     {
+      "key": "regular_essentials",
+      "label": "Regular essentials",
+      "amount": {
+       "id": "n5",
+       "value": 1337.14,
+       "unit": "eur_per_month",
+       "label": "Regular essentials"
+      },
+      "share": {
+       "id": "n1",
+       "value": 45.6,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Housing",
+        "label": "Housing",
+        "amount": {
+         "id": "n2",
+         "value": 843.69,
+         "unit": "eur_per_month",
+         "label": "Housing"
+        }
+       },
+       {
+        "key": "Groceries",
+        "label": "Groceries",
+        "amount": {
+         "id": "n3",
+         "value": 332.16,
+         "unit": "eur_per_month",
+         "label": "Groceries"
+        }
+       },
+       {
+        "key": "Utilities",
+        "label": "Utilities",
+        "amount": {
+         "id": "n4",
+         "value": 161.29,
+         "unit": "eur_per_month",
+         "label": "Utilities"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unexpected_necessities",
+      "label": "Unexpected necessities",
+      "amount": {
+       "id": "n8",
+       "value": 158.73,
+       "unit": "eur_per_month",
+       "label": "Unexpected necessities"
+      },
+      "share": {
+       "id": "n6",
+       "value": 5.4,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Health",
+        "label": "Health",
+        "amount": {
+         "id": "n7",
+         "value": 158.73,
+         "unit": "eur_per_month",
+         "label": "Health"
+        }
+       }
+      ]
+     },
+     {
+      "key": "everyday_spending",
+      "label": "Everyday spending",
+      "amount": {
+       "id": "n13",
+       "value": 356.25,
+       "unit": "eur_per_month",
+       "label": "Everyday spending"
+      },
+      "share": {
+       "id": "n9",
+       "value": 12.1,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Restaurants",
+        "label": "Restaurants",
+        "amount": {
+         "id": "n10",
+         "value": 224.21,
+         "unit": "eur_per_month",
+         "label": "Restaurants"
+        }
+       },
+       {
+        "key": "Lifestyle",
+        "label": "Lifestyle",
+        "amount": {
+         "id": "n11",
+         "value": 73.59,
+         "unit": "eur_per_month",
+         "label": "Lifestyle"
+        }
+       },
+       {
+        "key": "Travel",
+        "label": "Travel",
+        "amount": {
+         "id": "n12",
+         "value": 58.45,
+         "unit": "eur_per_month",
+         "label": "Travel"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unclassified",
+      "label": "Waiting for your answer",
+      "amount": {
+       "id": "n16",
+       "value": 1080.42,
+       "unit": "eur_per_month",
+       "label": "Waiting for your answer"
+      },
+      "share": {
+       "id": "n14",
+       "value": 36.8,
+       "unit": "percent",
+       "label": "Share of spending"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Home & Tech",
+        "amount": {
+         "id": "n15",
+         "value": 1080.42,
+         "unit": "eur_per_month",
+         "label": "Home & Tech"
+        }
+       }
+      ]
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "Mihin rahani menivät?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Ajanjaksolla 1.4.–30.9.2026 käytit keskimäärin {{n21}}. Suurin kuluerä olivat säännölliset välttämättömät {{n6}}, mikä on {{n1}} kulutuksestasi.",
+  "text_rendered": "Ajanjaksolla 1.4.–30.9.2026 käytit keskimäärin 3 010,59 € / kk. Suurin kuluerä olivat säännölliset välttämättömät 1 889,04 € / kk, mikä on 62,7 % kulutuksestasi.",
+  "numbers": {
+   "n21": {
+    "value": 3010.59,
+    "unit": "eur_per_month",
+    "method": "spender_profile.spend_month_eur@1",
+    "evidence_ref": "ev_3445621e6f78"
+   },
+   "n6": {
+    "value": 1889.04,
+    "unit": "eur_per_month",
+    "method": "baskets.month_avg_eur@1",
+    "evidence_ref": "ev_8fb4ea7a28ba"
+   },
+   "n1": {
+    "value": 62.7,
+    "unit": "percent",
+    "method": "baskets.share_pct@1",
+    "evidence_ref": "ev_5e38527966ca"
+   }
+  },
+  "tool_outputs": {
+   "get_basket_breakdown#1": {
+    "tool": "get_basket_breakdown",
+    "period": "1.4.–30.9.2026",
+    "monthly_average": true,
+    "total": {
+     "id": "n21",
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "label": "Kulutus yhteensä"
+    },
+    "baskets": [
+     {
+      "key": "regular_essentials",
+      "label": "Säännölliset välttämättömät",
+      "amount": {
+       "id": "n6",
+       "value": 1889.04,
+       "unit": "eur_per_month",
+       "label": "Säännölliset välttämättömät"
+      },
+      "share": {
+       "id": "n1",
+       "value": 62.7,
+       "unit": "percent",
+       "label": "Osuus kulutuksesta"
+      },
+      "categories": [
+       {
+        "key": "Housing",
+        "label": "Asuminen",
+        "amount": {
+         "id": "n2",
+         "value": 851.57,
+         "unit": "eur_per_month",
+         "label": "Asuminen"
+        }
+       },
+       {
+        "key": "Groceries",
+        "label": "Ruokaostokset",
+        "amount": {
+         "id": "n3",
+         "value": 628.86,
+         "unit": "eur_per_month",
+         "label": "Ruokaostokset"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Liikkuminen",
+        "amount": {
+         "id": "n4",
+         "value": 233.25,
+         "unit": "eur_per_month",
+         "label": "Liikkuminen"
+        }
+       },
+       {
+        "key": "Utilities",
+        "label": "Kodin laskut",
+        "amount": {
+         "id": "n5",
+         "value": 175.36,
+         "unit": "eur_per_month",
+         "label": "Kodin laskut"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unexpected_necessities",
+      "label": "Odottamattomat välttämättömät",
+      "amount": {
+       "id": "n10",
+       "value": 341.08,
+       "unit": "eur_per_month",
+       "label": "Odottamattomat välttämättömät"
+      },
+      "share": {
+       "id": "n7",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Osuus kulutuksesta"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Koti ja tekniikka",
+        "amount": {
+         "id": "n8",
+         "value": 251.13,
+         "unit": "eur_per_month",
+         "label": "Koti ja tekniikka"
+        }
+       },
+       {
+        "key": "Health",
+        "label": "Terveys",
+        "amount": {
+         "id": "n9",
+         "value": 89.95,
+         "unit": "eur_per_month",
+         "label": "Terveys"
+        }
+       }
+      ]
+     },
+     {
+      "key": "everyday_spending",
+      "label": "Arjen kulutus",
+      "amount": {
+       "id": "n17",
+       "value": 600.41,
+       "unit": "eur_per_month",
+       "label": "Arjen kulutus"
+      },
+      "share": {
+       "id": "n11",
+       "value": 19.9,
+       "unit": "percent",
+       "label": "Osuus kulutuksesta"
+      },
+      "categories": [
+       {
+        "key": "Restaurants",
+        "label": "Ravintolat",
+        "amount": {
+         "id": "n12",
+         "value": 229.56,
+         "unit": "eur_per_month",
+         "label": "Ravintolat"
+        }
+       },
+       {
+        "key": "Lifestyle",
+        "label": "Ostokset ja vapaa-aika",
+        "amount": {
+         "id": "n13",
+         "value": 172.58,
+         "unit": "eur_per_month",
+         "label": "Ostokset ja vapaa-aika"
+        }
+       },
+       {
+        "key": "Entertainment",
+        "label": "Viihde",
+        "amount": {
+         "id": "n14",
+         "value": 100.05,
+         "unit": "eur_per_month",
+         "label": "Viihde"
+        }
+       },
+       {
+        "key": "Travel",
+        "label": "Matkailu",
+        "amount": {
+         "id": "n15",
+         "value": 63.19,
+         "unit": "eur_per_month",
+         "label": "Matkailu"
+        }
+       },
+       {
+        "key": "Transportation",
+        "label": "Liikkuminen",
+        "amount": {
+         "id": "n16",
+         "value": 35.02,
+         "unit": "eur_per_month",
+         "label": "Liikkuminen"
+        }
+       }
+      ]
+     },
+     {
+      "key": "unclassified",
+      "label": "Odottaa vastaustasi",
+      "amount": {
+       "id": "n20",
+       "value": 180.07,
+       "unit": "eur_per_month",
+       "label": "Odottaa vastaustasi"
+      },
+      "share": {
+       "id": "n18",
+       "value": 6.0,
+       "unit": "percent",
+       "label": "Osuus kulutuksesta"
+      },
+      "categories": [
+       {
+        "key": "Home & Tech",
+        "label": "Koti ja tekniikka",
+        "amount": {
+         "id": "n19",
+         "value": 180.07,
+         "unit": "eur_per_month",
+         "label": "Koti ja tekniikka"
+        }
+       }
+      ]
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "Miten otan yhteyttä S-Pankkiin?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "S-Pankin asiakaspalvelusivulla on chat, jossa S-Pankin virtuaaliavustaja Aulis vastaa heti, sekä linkit ajanvaraukseen ja verkkotapaamiseen. Sulkupalvelut palvelevat ympäri vuorokauden: pankkitunnusten sulkupalvelu 09 6964 6820 ja korttien sulkupalvelu 020 333 (pvm/mpm). Postiosoite on S-Pankki Oyj, PL 77, 00088 S-RYHMÄ. S-Pankin julkisilta ohjesivuilta: https://www.s-pankki.fi/fi/asiakaspalvelu/",
+  "text_rendered": "S-Pankin asiakaspalvelusivulla on chat, jossa S-Pankin virtuaaliavustaja Aulis vastaa heti, sekä linkit ajanvaraukseen ja verkkotapaamiseen. Sulkupalvelut palvelevat ympäri vuorokauden: pankkitunnusten sulkupalvelu 09 6964 6820 ja korttien sulkupalvelu 020 333 (pvm/mpm). Postiosoite on S-Pankki Oyj, PL 77, 00088 S-RYHMÄ. S-Pankin julkisilta ohjesivuilta: https://www.s-pankki.fi/fi/asiakaspalvelu/",
+  "numbers": {},
+  "tool_outputs": {}
+ },
+ {
+  "question": "Mitkä ovat säännölliset kuukausilaskuni?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Seuraava palkkapäivä on 15.10.2026. Ennen sitä erääntyvät laskut ovat yhteensä {{n5}}.",
+  "text_rendered": "Seuraava palkkapäivä on 15.10.2026. Ennen sitä erääntyvät laskut ovat yhteensä 928,50 €.",
+  "numbers": {
+   "n5": {
+    "value": 928.5,
+    "unit": "eur",
+    "method": "safe_to_spend.bills_due_eur@1",
+    "evidence_ref": "ev_f4f52cdce555"
+   }
+  },
+  "tool_outputs": {
+   "get_recurring_bills#1": {
+    "tool": "get_recurring_bills",
+    "window": "1.4.–30.9.2026",
+    "due_period": "Palkkapäivään 15.10. asti",
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "upcoming_total": {
+     "id": "n5",
+     "value": 928.5,
+     "unit": "eur",
+     "label": "Laskut ennen palkkapäivää"
+    },
+    "bills": [
+     {
+      "label": "Asuminen",
+      "status": "done_this_month",
+      "typical_day": 3,
+      "typical_month": {
+       "id": "n1",
+       "value": 836.65,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "due_until_payday": {
+       "id": "n2",
+       "value": 836.65,
+       "unit": "eur",
+       "label": "Erääntyy ennen palkkapäivää"
+      },
+      "next_expected": "2026-10-03"
+     },
+     {
+      "label": "Kodin laskut",
+      "status": "spread",
+      "typical_day": null,
+      "typical_month": {
+       "id": "n3",
+       "value": 186.4,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "due_until_payday": {
+       "id": "n4",
+       "value": 91.86,
+       "unit": "eur",
+       "label": "Erääntyy ennen palkkapäivää, suhteutettuna"
+      },
+      "next_expected": null
+     }
+    ],
+    "income": [
+     {
+      "key": "salary",
+      "label": "Palkka",
+      "status": "done_this_month",
+      "typical_day": 15,
+      "typical_month": {
+       "id": "n6",
+       "value": 3187.25,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "next_expected": "2026-10-15"
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "Mitä jos käyttäisin 20 % vähemmän ravintoloihin?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Jos vähentäisit ravintolakuluja {{n7}}, säästäisit {{n2}} verrattuna summaan {{n1}}. Tämä on arvio, joka perustuu menneisiin kuukausiin.",
+  "text_rendered": "Jos vähentäisit ravintolakuluja 20 %, säästäisit 45,91 € / kk verrattuna summaan 229,56 € / kk. Tämä on arvio, joka perustuu menneisiin kuukausiin.",
+  "numbers": {
+   "n7": {
+    "value": 20,
+    "unit": "percent",
+    "method": "user_input@1",
+    "evidence_ref": null
+   },
+   "n2": {
+    "value": 45.91,
+    "unit": "eur_per_month",
+    "method": "what_if.saving_month_eur@1",
+    "evidence_ref": "ev_197966e76185"
+   },
+   "n1": {
+    "value": 229.56,
+    "unit": "eur_per_month",
+    "method": "what_if.baseline_month_eur@1",
+    "evidence_ref": "ev_f8b01c572b1d"
+   }
+  },
+  "tool_outputs": {
+   "run_what_if#1": {
+    "tool": "run_what_if",
+    "scenario": "Käytä 20 % vähemmän: ravintolat",
+    "selection": {
+     "kind": "category",
+     "value": "Restaurants"
+    },
+    "cut_pct": {
+     "id": "n7",
+     "value": 20,
+     "unit": "percent",
+     "label": "Valitsemasi leikkaus"
+    },
+    "status": "estimate",
+    "baseline_per_month": {
+     "id": "n1",
+     "value": 229.56,
+     "unit": "eur_per_month",
+     "label": "Ravintolat tavallisena kuukautena"
+    },
+    "saving_per_month": {
+     "id": "n2",
+     "value": 45.91,
+     "unit": "eur_per_month",
+     "label": "Säästäisit"
+    },
+    "saving_per_week": {
+     "id": "n3",
+     "value": 10.56,
+     "unit": "eur_per_week",
+     "label": "Viikossa"
+    },
+    "saving_per_year": {
+     "id": "n4",
+     "value": 550.95,
+     "unit": "eur_per_year",
+     "label": "Vuodessa"
+    },
+    "one_off_excluded": {
+     "id": "n5",
+     "value": 0.0,
+     "unit": "eur",
+     "label": "Pois jätetyt kertaostokset"
+    },
+    "regular_excluded": {
+     "id": "n6",
+     "value": 0.0,
+     "unit": "eur",
+     "label": "Pois jätetyt säännölliset välttämättömät"
+    },
+    "assumptions": [
+     "6 viimeisen täyden kuukautesi keskiarvo (kertaostokset pois jätettyinä), 20 % pienempänä.",
+     "Muu kulutuksesi pysyy ennallaan."
+    ],
+    "caveats": [
+     "Tämä on arvio, ei lupaus. Hinnat ja tottumukset muuttuvat."
+    ]
+   }
+  }
+ },
+ {
+  "question": "Moi, voitko auttaa mua säästää rahaa?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Ravintoloiden ja ostosten ja vapaa-ajan vähentäminen säästäisi {{n5}} eli {{n6}}. Se tulee säästötavoitteesi {{n7}} lisäksi.",
+  "text_rendered": "Ravintoloiden ja ostosten ja vapaa-ajan vähentäminen säästäisi 63,17 € / kk eli 758,04 € / v. Se tulee säästötavoitteesi 360,00 € / kk lisäksi.",
+  "numbers": {
+   "n5": {
+    "value": 63.17,
+    "unit": "eur_per_month",
+    "method": "savings_plan.total_month_eur@1",
+    "evidence_ref": "ev_6f93c755c9db"
+   },
+   "n6": {
+    "value": 758.04,
+    "unit": "eur_per_year",
+    "method": "savings_plan.total_year_eur@1",
+    "evidence_ref": "ev_9bcd2cff32e0"
+   },
+   "n7": {
+    "value": 360.0,
+    "unit": "eur_per_month",
+    "method": "safe_to_spend.savings_goal_eur@1",
+    "evidence_ref": "ev_fc5a9599e859"
+   }
+  },
+  "tool_outputs": {
+   "get_savings_plan#1": {
+    "tool": "get_savings_plan",
+    "kind": "plan",
+    "levers": [
+     {
+      "key": "Restaurants",
+      "category": "Ravintolat",
+      "cut": {
+       "id": "n2",
+       "value": 20.0,
+       "unit": "percent",
+       "label": "Vähennys: Ravintolat"
+      },
+      "cut_words": "viidenneksen",
+      "saving": {
+       "id": "n1",
+       "value": 45.91,
+       "unit": "eur_per_month",
+       "label": "Säästäisit"
+      }
+     },
+     {
+      "key": "Lifestyle",
+      "category": "Ostokset ja vapaa-aika",
+      "cut": {
+       "id": "n4",
+       "value": 10.0,
+       "unit": "percent",
+       "label": "Vähennys: Ostokset ja vapaa-aika"
+      },
+      "cut_words": "kymmenyksen",
+      "saving": {
+       "id": "n3",
+       "value": 17.26,
+       "unit": "eur_per_month",
+       "label": "Säästäisit"
+      }
+     }
+    ],
+    "total_month": {
+     "id": "n5",
+     "value": 63.17,
+     "unit": "eur_per_month",
+     "label": "Nämä muutokset yhteensä kuukaudessa"
+    },
+    "total_year": {
+     "id": "n6",
+     "value": 758.04,
+     "unit": "eur_per_year",
+     "label": "Nämä muutokset yhteensä vuodessa"
+    },
+    "savings_goal": {
+     "id": "n7",
+     "value": 360.0,
+     "unit": "eur_per_month",
+     "label": "Ensin sivuun kuukaudessa"
+    },
+    "follow_up": "Paljonko S-Bonusta voisin saada?",
+    "already_saving": null,
+    "already_share": null,
+    "saving_seen": false
+   }
+  }
+ },
+ {
+  "question": "Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Tämä leikkaus säästäisi sinulle {{n2}} eli {{n4}}. Nyt käytät {{n1}} luokassa Ravintolat.",
+  "text_rendered": "Tämä leikkaus säästäisi sinulle 45,91 € / kk eli 550,95 € / v. Nyt käytät 229,56 € / kk luokassa Ravintolat.",
+  "numbers": {
+   "n2": {
+    "value": 45.91,
+    "unit": "eur_per_month",
+    "method": "what_if.saving_month_eur@1",
+    "evidence_ref": "ev_197966e76185"
+   },
+   "n4": {
+    "value": 550.95,
+    "unit": "eur_per_year",
+    "method": "what_if.saving_year_eur@1",
+    "evidence_ref": "ev_17b23d5ff56e"
+   },
+   "n1": {
+    "value": 229.56,
+    "unit": "eur_per_month",
+    "method": "what_if.baseline_month_eur@1",
+    "evidence_ref": "ev_f8b01c572b1d"
+   }
+  },
+  "tool_outputs": {
+   "run_what_if#1": {
+    "tool": "run_what_if",
+    "scenario": "Käytä 20 % vähemmän: ravintolat",
+    "selection": {
+     "kind": "category",
+     "value": "Restaurants"
+    },
+    "cut_pct": {
+     "id": "n7",
+     "value": 20,
+     "unit": "percent",
+     "label": "Valitsemasi leikkaus"
+    },
+    "status": "estimate",
+    "baseline_per_month": {
+     "id": "n1",
+     "value": 229.56,
+     "unit": "eur_per_month",
+     "label": "Ravintolat tavallisena kuukautena"
+    },
+    "saving_per_month": {
+     "id": "n2",
+     "value": 45.91,
+     "unit": "eur_per_month",
+     "label": "Säästäisit"
+    },
+    "saving_per_week": {
+     "id": "n3",
+     "value": 10.56,
+     "unit": "eur_per_week",
+     "label": "Viikossa"
+    },
+    "saving_per_year": {
+     "id": "n4",
+     "value": 550.95,
+     "unit": "eur_per_year",
+     "label": "Vuodessa"
+    },
+    "one_off_excluded": {
+     "id": "n5",
+     "value": 0.0,
+     "unit": "eur",
+     "label": "Pois jätetyt kertaostokset"
+    },
+    "regular_excluded": {
+     "id": "n6",
+     "value": 0.0,
+     "unit": "eur",
+     "label": "Pois jätetyt säännölliset välttämättömät"
+    },
+    "assumptions": [
+     "6 viimeisen täyden kuukautesi keskiarvo (kertaostokset pois jätettyinä), 20 % pienempänä.",
+     "Muu kulutuksesi pysyy ennallaan."
+    ],
+    "caveats": [
+     "Tämä on arvio, ei lupaus. Hinnat ja tottumukset muuttuvat."
+    ]
+   }
+  }
+ },
+ {
+  "question": "Riittävätkö rahat palkkapäivään?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Rahasi riittävät hyvin palkkapäivään asti, ja saldo tänään on {{n2}}. Laskut ennen palkkapäivää ovat {{n5}}, ja alin kohta ennen palkkapäivää on {{n1}}.",
+  "text_rendered": "Rahasi riittävät hyvin palkkapäivään asti, ja saldo tänään on 14 276,35 €. Laskut ennen palkkapäivää ovat 928,50 €, ja alin kohta ennen palkkapäivää on 12 418,91 €.",
+  "numbers": {
+   "n2": {
+    "value": 14276.35,
+    "unit": "eur",
+    "method": "safe_to_spend.balance_eur@1",
+    "evidence_ref": "ev_8c67f34b3ff0"
+   },
+   "n5": {
+    "value": 928.5,
+    "unit": "eur",
+    "method": "safe_to_spend.bills_due_eur@1",
+    "evidence_ref": "ev_f4f52cdce555"
+   },
+   "n1": {
+    "value": 12418.91,
+    "unit": "eur",
+    "method": "balance_forecast.balance_eur@1",
+    "evidence_ref": "ev_6c830b56f233"
+   }
+  },
+  "tool_outputs": {
+   "get_balance_forecast#1": {
+    "tool": "get_balance_forecast",
+    "kind": "estimate",
+    "period": "Palkkapäivään 15.10. asti",
+    "status": "comfortable",
+    "lowest_balance": {
+     "id": "n1",
+     "value": 12418.91,
+     "unit": "eur",
+     "label": "Alin kohta, palkkapäivää edeltävä päivä, 14.10.2026"
+    },
+    "first_below_zero": null,
+    "day_before_payday": null,
+    "balance_now": {
+     "id": "n2",
+     "value": 14276.35,
+     "unit": "eur",
+     "label": "Saldo tänään"
+    },
+    "bills_until_payday": {
+     "id": "n5",
+     "value": 928.5,
+     "unit": "eur",
+     "label": "Laskut ennen palkkapäivää"
+    },
+    "daily_pace": {
+     "id": "n4",
+     "value": 66.79,
+     "unit": "eur_per_day",
+     "label": "Tavallinen kulutus"
+    },
+    "today": "2026-09-30",
+    "next_payday": "2026-10-15",
+    "lowest_date": "2026-10-14",
+    "first_below_zero_date": null,
+    "salary_status": "received_this_month",
+    "notes": [
+     "Saldosi pysyy selvästi suurempana kuin ennen palkkapäivää erääntyvät laskut.",
+     "Tämä on arvio: se olettaa, että kulutat tavalliseen tapaan ja laskut tulevat tavallisina päivinään, eikä siinä ole mukana ennen palkkapäivää tulevia rahoja."
+    ]
+   }
+  }
+ },
+ {
+  "question": "What is in my everyday spending?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "Aikavälillä 1.4.–30.9.2026 arjen kulutus oli yhteensä {{n1}}. Ravintolat veivät siitä {{n4}}, mikä on {{n3}} kokonaissummasta.",
+  "text_rendered": "Aikavälillä 1.4.–30.9.2026 arjen kulutus oli yhteensä 3 602,44 €. Ravintolat veivät siitä 1 377,38 €, mikä on 38,2 % kokonaissummasta.",
+  "numbers": {
+   "n1": {
+    "value": 3602.44,
+    "unit": "eur",
+    "method": "spending.total@1",
+    "evidence_ref": "ev_15c02c651810"
+   },
+   "n4": {
+    "value": 1377.38,
+    "unit": "eur",
+    "method": "spending.total@1",
+    "evidence_ref": "ev_f262eb7ab2c4"
+   },
+   "n3": {
+    "value": 38.2,
+    "unit": "percent",
+    "method": "spending.share_pct@1",
+    "evidence_ref": "ev_27d55d6b64b4"
+   }
+  },
+  "tool_outputs": {
+   "get_spending#1": {
+    "tool": "get_spending",
+    "period": "1.4.–30.9.2026",
+    "direction": "out",
+    "total": {
+     "id": "n1",
+     "value": 3602.44,
+     "unit": "eur",
+     "label": "Arjen kulutus"
+    },
+    "filter_parts": 1,
+    "filter_labels": [
+     "Arjen kulutus"
+    ],
+    "filter_dims": [
+     {
+      "kind": "baskets",
+      "labels": [
+       "Arjen kulutus"
+      ]
+     }
+    ],
+    "tx_count": {
+     "id": "n2",
+     "value": 91,
+     "unit": "count",
+     "label": "Tapahtumat"
+    },
+    "comparison": null,
+    "groups": [
+     {
+      "key": "Restaurants",
+      "label": "Ravintolat",
+      "amount": {
+       "id": "n4",
+       "value": 1377.38,
+       "unit": "eur",
+       "label": "Ravintolat"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 60,
+      "share": {
+       "id": "n3",
+       "value": 38.2,
+       "unit": "percent",
+       "label": "Osuus kokonaisuudesta"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Lifestyle",
+      "label": "Ostokset ja vapaa-aika",
+      "amount": {
+       "id": "n6",
+       "value": 1035.5,
+       "unit": "eur",
+       "label": "Ostokset ja vapaa-aika"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 8,
+      "share": {
+       "id": "n5",
+       "value": 28.7,
+       "unit": "percent",
+       "label": "Osuus kokonaisuudesta"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Entertainment",
+      "label": "Viihde",
+      "amount": {
+       "id": "n8",
+       "value": 600.31,
+       "unit": "eur",
+       "label": "Viihde"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 15,
+      "share": {
+       "id": "n7",
+       "value": 16.7,
+       "unit": "percent",
+       "label": "Osuus kokonaisuudesta"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Travel",
+      "label": "Matkailu",
+      "amount": {
+       "id": "n10",
+       "value": 379.16,
+       "unit": "eur",
+       "label": "Matkailu"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 4,
+      "share": {
+       "id": "n9",
+       "value": 10.5,
+       "unit": "percent",
+       "label": "Osuus kokonaisuudesta"
+      },
+      "change": null,
+      "flags": []
+     },
+     {
+      "key": "Transportation",
+      "label": "Liikkuminen",
+      "amount": {
+       "id": "n12",
+       "value": 210.09,
+       "unit": "eur",
+       "label": "Liikkuminen"
+      },
+      "amount_is": "total_for_period",
+      "transactions": 4,
+      "share": {
+       "id": "n11",
+       "value": 5.8,
+       "unit": "percent",
+       "label": "Osuus kokonaisuudesta"
+      },
+      "change": null,
+      "flags": []
+     }
+    ],
+    "notes": []
+   }
+  }
+ },
+ {
+  "question": "What kind of spender am I?",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "en"
+  },
+  "outcome": "answered",
+  "text": "Jakson 1.4.–30.9.2026 aikana kulutuksessasi erottuu iso kertaostos, selvästi suurempi kuin tavalliset ostoksesi samassa luokassa. Kulutat {{n19}} kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi.",
+  "text_rendered": "Jakson 1.4.–30.9.2026 aikana kulutuksessasi erottuu iso kertaostos, selvästi suurempi kuin tavalliset ostoksesi samassa luokassa. Kulutat 1,2 % enemmän kuin kaltaistesi mediaani, ja laskelma näyttää, mitä vähentäminen säästäisi.",
+  "numbers": {
+   "n19": {
+    "value": 1.2,
+    "unit": "percent",
+    "method": "peer_benchmark.vs_median_pct@1",
+    "evidence_ref": "ev_0dcd9633ebf2"
+   }
+  },
+  "tool_outputs": {
+   "get_spender_profile#1": {
+    "tool": "get_spender_profile",
+    "period": "1.4.–30.9.2026",
+    "profile": {
+     "key": "big_ticket",
+     "label": "Isot hankinnat",
+     "description": "Kulutuksessasi erottuu iso kertaostos, selvästi suurempi kuin tavalliset ostoksesi samassa luokassa."
+    },
+    "traits": [
+     {
+      "key": "frequent_small_purchases",
+      "label": "Paljon pieniä ostoksia",
+      "note": "Teet joka kuukausi paljon pieniä arjen ostoksia."
+     }
+    ],
+    "features": [
+     {
+      "key": "one_off_share",
+      "decides_label": true,
+      "value": {
+       "id": "n1",
+       "value": 6.0,
+       "unit": "percent",
+       "label": "Kertaostokset, osuus kulutuksesta"
+      }
+     },
+     {
+      "key": "keep_rate",
+      "decides_label": false,
+      "value": {
+       "id": "n2",
+       "value": 15.4,
+       "unit": "percent",
+       "label": "Tuloista jäi"
+      }
+     },
+     {
+      "key": "net_income",
+      "decides_label": false,
+      "value": {
+       "id": "n3",
+       "value": 3558.38,
+       "unit": "eur_per_month",
+       "label": "Tulot kuukaudessa"
+      }
+     },
+     {
+      "key": "spend",
+      "decides_label": false,
+      "value": {
+       "id": "n4",
+       "value": 3010.59,
+       "unit": "eur_per_month",
+       "label": "Kulutus kuukaudessa"
+      }
+     },
+     {
+      "key": "saving",
+      "decides_label": false,
+      "value": {
+       "id": "n5",
+       "value": 0.0,
+       "unit": "eur_per_month",
+       "label": "Sijoitukset kuukaudessa"
+      }
+     },
+     {
+      "key": "regular_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n6",
+       "value": 62.7,
+       "unit": "percent",
+       "label": "Säännölliset välttämättömät, osuus kulutuksesta"
+      }
+     },
+     {
+      "key": "unexpected_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n7",
+       "value": 11.3,
+       "unit": "percent",
+       "label": "Odottamattomat välttämättömät, osuus kulutuksesta"
+      }
+     },
+     {
+      "key": "everyday_share_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n8",
+       "value": 19.9,
+       "unit": "percent",
+       "label": "Arjen kulutus, osuus kulutuksesta"
+      }
+     },
+     {
+      "key": "everyday_weekend_pct",
+      "decides_label": false,
+      "value": {
+       "id": "n9",
+       "value": 28.2,
+       "unit": "percent",
+       "label": "Arjen kulutus viikonloppuisin"
+      }
+     },
+     {
+      "key": "everyday_avg_ticket_eur",
+      "decides_label": false,
+      "value": {
+       "id": "n10",
+       "value": 39.59,
+       "unit": "eur",
+       "label": "Keskimääräinen arjen ostos"
+      }
+     },
+     {
+      "key": "everyday_tx_month",
+      "decides_label": false,
+      "value": {
+       "id": "n11",
+       "value": 15.2,
+       "unit": "count",
+       "label": "Arjen ostoksia kuukaudessa"
+      }
+     },
+     {
+      "key": "months_out_over_in",
+      "decides_label": false,
+      "value": {
+       "id": "n12",
+       "value": 3.0,
+       "unit": "months",
+       "label": "Kuukaudet, joina menot ylittivät tulot"
+      }
+     },
+     {
+      "key": "n_tx_below_zero",
+      "decides_label": false,
+      "value": {
+       "id": "n13",
+       "value": 0,
+       "unit": "count",
+       "label": "Maksut, jotka veivät saldon miinukselle"
+      }
+     }
+    ],
+    "top_everyday_category": {
+     "key": "Restaurants",
+     "label": "Ravintolat"
+    },
+    "notes": []
+   },
+   "get_peer_benchmark#2": {
+    "tool": "get_peer_benchmark",
+    "metric": "spend_total",
+    "metric_label": "Kulutus yhteensä",
+    "period": "1.4.–30.9.2026",
+    "shown": true,
+    "reason": null,
+    "you": {
+     "id": "n14",
+     "value": 3010.59,
+     "unit": "eur_per_month",
+     "label": "Sinä"
+    },
+    "peer_median": {
+     "id": "n15",
+     "value": 2975.65,
+     "unit": "eur_per_month",
+     "label": "Tyypillinen ryhmässäsi"
+    },
+    "peer_p25": {
+     "id": "n16",
+     "value": 2313.0,
+     "unit": "eur_per_month",
+     "label": "Alaneljännes"
+    },
+    "peer_p75": {
+     "id": "n17",
+     "value": 3713.9,
+     "unit": "eur_per_month",
+     "label": "Yläneljännes"
+    },
+    "percentile": {
+     "id": "n18",
+     "value": 51,
+     "unit": "percentile",
+     "label": "Sijaintisi"
+    },
+    "vs_median": {
+     "id": "n19",
+     "value": 1.2,
+     "unit": "percent",
+     "label": "Verrattuna tyypilliseen"
+    },
+    "peer_group": {
+     "level": "age_band+area3",
+     "size": {
+      "id": "n20",
+      "value": 118,
+      "unit": "count",
+      "label": "Muita ryhmässä"
+     },
+     "comparable": true
+    },
+    "estimate": "Verrattu vähintään 20 muuhun saman ikäryhmän ja postinumeroalueen asiakkaaseen. Vain ryhmän tunnusluvut näytetään.",
+    "notes": [],
+    "offers_cut": true
+   }
+  }
+ },
+ {
+  "question": "palkka",
+  "language": {
+   "requested": "fi",
+   "resolved": "fi",
+   "detector": "fi"
+  },
+  "outcome": "answered",
+  "text": "Seuraava palkkasi on arviolta {{n6}}, ja se maksetaan 15. lokakuuta 2026.",
+  "text_rendered": "Seuraava palkkasi on arviolta 3 187,25 € / kk, ja se maksetaan 15. lokakuuta 2026.",
+  "numbers": {
+   "n6": {
+    "value": 3187.25,
+    "unit": "eur_per_month",
+    "method": "recurring.typical_month_eur@1",
+    "evidence_ref": "ev_374668d7013c"
+   }
+  },
+  "tool_outputs": {
+   "get_recurring_bills#1": {
+    "tool": "get_recurring_bills",
+    "window": "1.4.–30.9.2026",
+    "due_period": "Palkkapäivään 15.10. asti",
+    "next_payday": "2026-10-15",
+    "salary_status": "received_this_month",
+    "upcoming_total": {
+     "id": "n5",
+     "value": 928.5,
+     "unit": "eur",
+     "label": "Laskut ennen palkkapäivää"
+    },
+    "bills": [
+     {
+      "label": "Asuminen",
+      "status": "done_this_month",
+      "typical_day": 3,
+      "typical_month": {
+       "id": "n1",
+       "value": 836.65,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "due_until_payday": {
+       "id": "n2",
+       "value": 836.65,
+       "unit": "eur",
+       "label": "Erääntyy ennen palkkapäivää"
+      },
+      "next_expected": "2026-10-03"
+     },
+     {
+      "label": "Kodin laskut",
+      "status": "spread",
+      "typical_day": null,
+      "typical_month": {
+       "id": "n3",
+       "value": 186.4,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "due_until_payday": {
+       "id": "n4",
+       "value": 91.86,
+       "unit": "eur",
+       "label": "Erääntyy ennen palkkapäivää, suhteutettuna"
+      },
+      "next_expected": null
+     }
+    ],
+    "income": [
+     {
+      "key": "salary",
+      "label": "Palkka",
+      "status": "done_this_month",
+      "typical_day": 15,
+      "typical_month": {
+       "id": "n6",
+       "value": 3187.25,
+       "unit": "eur_per_month",
+       "label": "Tavallinen summa"
+      },
+      "next_expected": "2026-10-15"
+     }
+    ],
+    "notes": []
+   }
+  }
+ }
+]

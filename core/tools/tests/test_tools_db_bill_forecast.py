@@ -20,7 +20,7 @@ from core.tools.context import ToolContext
 from core.tools.forecast import get_balance_forecast
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ("CUST00349", "CUST00493", "CUST00849", "CUST00860")
+PERSONAS = ("CUST00387", "CUST00493", "CUST00849", "CUST00860")
 REMONTTI = ("Esimerkki Remontti Oy", "FI71 1234 5600 0098 76", "12344")      # no regular bill of anyone
 ENERGIA = ("Esimerkki Energia Oy", "FI21 1234 5600 0007 85", "1232")         # a utilities payee (sample 2)
 

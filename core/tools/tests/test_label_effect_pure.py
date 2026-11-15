@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from core.tools.formatting import display
-from core.tools.label_answer import effect_text
+from core.tools.label_answer import effect_reason, effect_text
 from core.tools.models import Number, Period, Unit
 
 WEEK = Period(start=date(2026, 10, 1), end=date(2026, 10, 7), label="Next 7 days")
@@ -30,12 +30,49 @@ def token(key: str, side_: str) -> str:
 
 
 def text(before, after, basket, state="answered", language="en") -> str:
+    """The longer effect of #382 (the reasons), kept as effect_reason."""
+    return effect_reason(before, after, basket, state, "{{amount}}", token, language)
+
+
+def reply(before, after, basket, state="answered", language="en") -> str:
+    """The reply as sent (Renat, via r-talk): one confirmation citing only what is left to spend after it."""
     return effect_text(before, after, basket, state, "{{amount}}", token, language)
+
+
+def test_needed_is_one_confirmation_with_only_the_new_left_to_spend():
+    assert reply(side(138.79), side(97.46, reserve=256.3), "unexpected_necessities") == (
+        "Got it \u2014 counted as a must-have. You now have {{safe_to_spend.after}} left to spend this week.")
+    assert reply(side(138.79), side(97.46), "unexpected_necessities", language="fi") == (
+        "Selvä \u2014 merkitsin sen välttämättömäksi. Käyttövarasi tällä viikolla on nyt {{safe_to_spend.after}}.")
+
+
+def test_my_choice_says_stays_when_nothing_moved_and_now_when_it_did():
+    assert reply(side(138.79), side(138.79), "everyday_spending") == (
+        "Got it \u2014 counted as your own choice. What you have left to spend stays {{safe_to_spend.after}}.")
+    assert reply(side(97.46), side(138.79), "everyday_spending").endswith(
+        "You now have {{safe_to_spend.after}} left to spend this week.")
+    assert reply(side(138.79), side(138.79), "everyday_spending", language="fi") == (
+        "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi pysyy {{safe_to_spend.after}}.")
+
+
+def test_undo_gets_the_mirror_line():
+    assert reply(side(97.46), side(138.79), None, "pending") == (
+        "Undone \u2014 I'll ask about it again. You have {{safe_to_spend.after}} left to spend this week.")
+    assert reply(side(97.46), side(138.79), None, "closed", language="fi").startswith("Peruttu \u2014 se on taas")
+
+
+def test_the_reply_cites_one_number_only():
+    import re
+    for basket, state in [("unexpected_necessities", "answered"), ("everyday_spending", "answered"), (None, "pending"),
+                          (None, "closed")]:
+        for lang in ("en", "fi"):
+            t = reply(side(138.79), side(97.46), basket, state, lang)
+            assert re.findall(r"\{\{[^}]+\}\}", t) == ["{{safe_to_spend.after}}"], t
 
 
 def test_safe_to_spend_moved_says_from_what_to_what_and_why():
     t = text(side(221.58), side(180.26, reserve=256.3), "unexpected_necessities")
-    assert t == ("Your safe to spend this week goes from {{safe_to_spend.before}} to {{safe_to_spend.after}}: "
+    assert t == ("Left to spend this week goes from {{safe_to_spend.before}} to {{safe_to_spend.after}}: "
                  "{{amount}} now counts as an unexpected necessity, so the reserve grows.")
 
 
@@ -47,8 +84,8 @@ def test_the_reserve_is_named_only_when_it_grew():
 def test_zero_difference_says_why_by_the_binding_limit():
     budget_bound = text(side(221.58, balance=5000.0, budget=221.58), side(221.58, balance=5000.0, budget=221.58),
                         "everyday_spending")
-    assert budget_bound == ("{{amount}} now counts as everyday spending. This does not change this week's safe to "
-                            "spend: your monthly budget, not this purchase, sets the limit.")
+    assert budget_bound == ("{{amount}} now counts as everyday spending. This does not change what is left to spend "
+                            "this week: your monthly budget, not this purchase, sets the limit.")
     balance_bound = text(side(40.0, balance=40.0, budget=300.0), side(40.0, balance=40.0, budget=300.0),
                          "everyday_spending", language="fi")
     assert balance_bound.endswith("saldosi asettaa rajan, ja tämä ostos näkyy siinä jo.")
@@ -56,7 +93,7 @@ def test_zero_difference_says_why_by_the_binding_limit():
 
 def test_safe_to_save_moving_alone_is_said_without_adding_the_two():
     t = text(side(221.58, save=364.31), side(221.58, save=184.61), "unexpected_necessities")
-    assert t.endswith("This week's safe to spend stays the same, but what you can typically put aside goes from "
+    assert t.endswith("Left to spend this week stays the same, but what you can typically put aside goes from "
                       "{{safe_to_save.before}} to {{safe_to_save.after}}.")
 
 

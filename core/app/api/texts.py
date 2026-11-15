@@ -6,6 +6,7 @@ one place in config when they are needed.
 
 from __future__ import annotations
 
+from core.tools import config as tool_config
 from core.tools.models import Unit
 
 Pair = tuple[str, str]
@@ -41,13 +42,14 @@ AI_DISCLOSURE: Pair = (
     "Explanations are written by AI. The numbers are calculated from your transactions.",
     "Selitykset kirjoittaa tekoäly. Luvut lasketaan tilitapahtumistasi.",
 )
+# The opening's greeting is just the name (Renat, 15.11 ~06:40): "Hi Marja" / "Hei Marja".
 GREETING: Pair = ("Hi {name}", "Hei {name}")
 GREETING_NO_NAME: Pair = ("Hi", "Hei")
-SUGGESTED_QUESTIONS: list[Pair] = [  # the partner's four questions
-    ("Where did my money go?", "Mihin rahani menivät?"),
-    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
+SUGGESTED_QUESTIONS: list[Pair] = [  # the partner's four questions; the app shows the first three (#662)
     ("What can I safely spend this week?", "Paljonko voin turvallisesti käyttää tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
+    ("Where did my money go?", "Mihin rahani menivät?"),
+    ("What kind of spender am I?", "Millainen kuluttaja olen?"),
 ]
 
 PRIVACY_TRANSACTIONS: Pair = (
@@ -319,7 +321,7 @@ for _col, _unit, _en, _fi in [
     ("everyday_share_pct", Unit.PERCENT, "Share of everyday spending", "Arjen kulutuksen osuus"),
     ("one_off_share_pct", Unit.PERCENT, "Share of one-off purchases", "Kertaostosten osuus"),
     ("everyday_weekend_pct", Unit.PERCENT, "Everyday spending at weekends", "Arjen kulutus viikonloppuisin"),
-    ("everyday_avg_ticket_eur", Unit.EUR, "Average everyday purchase", "Arjen ostoksen keskihinta"),
+    ("everyday_avg_ticket_eur", Unit.EUR, "Average everyday purchase", "Keskimääräinen arjen ostos"),
     ("everyday_tx_month", Unit.COUNT, "Everyday purchases per month", "Arjen ostoksia kuukaudessa"),
     ("months_out_over_in", Unit.MONTHS, "Months with more out than in", "Kuukaudet, joina menoja oli tuloja enemmän"),
     ("n_tx_below_zero", Unit.COUNT, "Payments that took the balance below zero", "Maksut, jotka veivät saldon miinukselle"),
@@ -353,8 +355,30 @@ METHODS["national_context.monthly_eur@1"] = MethodInfo(
      "jaettuna 12:lla; liikenteestä on jätetty pois ajoneuvojen osto. Julkinen tilasto, ei laskettu "
      "tapahtumistasi."),
     "README.md#national-context")
+# The customer's age band in the whole synthetic dataset beside the peer comparison (#883, 09_age_band_peer.sql):
+# a median over the band's customers and the band's size, context and not a target. No digits in the summaries.
+METHODS["peer.age_band_median@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Median of people your age", "Ikäryhmäsi mediaani"),
+    ("Each customer's monthly average over the last complete months with history, then the middle value across "
+     "everyone of your age band in this synthetic dataset. Ordinary spending leaves out investment deposits and "
+     "salary sweeps. Context, not a target.",
+     "Jokaisen asiakkaan kuukausikeskiarvo viimeisiltä täysiltä kuukausilta, joilta on tietoja, ja siitä keskimmäinen "
+     "arvo kaikista ikäryhmäsi ihmisistä tässä synteettisessä aineistossa. Tavallisesta kulutuksesta on jätetty pois "
+     "sijoitustalletukset ja palkan siirrot. Taustatietoa, ei tavoite."),
+    METRICS_DOC + "#6-peer-benchmark")
+METHODS["peer.age_band_cohort_size@1"] = MethodInfo(
+    Unit.COUNT, ("People your age in the dataset", "Ikäryhmäsi ihmiset aineistossa"),
+    ("Everyone of your age band in this synthetic dataset; a band with too few people is not shown.",
+     "Kaikki ikäryhmäsi ihmiset tässä synteettisessä aineistossa; liian pientä ryhmää ei näytetä."),
+    METRICS_DOC + "#6-peer-benchmark")
+# their label in the opened evidence view: the band and the measure (no answer text: digits fine)
+AGE_BAND_LABEL = ("People aged {band} in the synthetic dataset: {what}, median",
+                  "{band}-vuotiaat synteettisessä aineistossa: {what}, mediaani")
+AGE_BAND_COHORT_LABEL = ("People aged {band} in the synthetic dataset", "{band}-vuotiaat synteettisessä aineistossa")
+AGE_BAND_COHORT_PART = ("People in the band", "Ihmisiä ikäryhmässä")
+AGE_BAND_BASKET_PART = ("{what}, median", "{what}, mediaani")
 # its label in the opened evidence view: the table's age band and the survey's category (no answer text: digits fine)
-NATIONAL_LABEL = ("Households with a reference person aged {band}: {what}, per consumption unit",
+NATIONAL_LABEL =("Households with a reference person aged {band}: {what}, per consumption unit",
                   "Kotitaloudet, joiden viitehenkilö on {band}-vuotias: {what}, kulutusyksikköä kohti")
 
 # S-Bonus what-if estimate (#158): composites of the grocery month average and the rules file.
@@ -424,13 +448,15 @@ for _id, _unit, _name, _summary in [
     METHODS[_id] = MethodInfo(_unit, _name, _summary, BILL_DOC)
 # Small purchases (#256): the output columns of 08_small_purchases.sql, metrics.md section 12.
 SMALL_DOC = METRICS_DOC + "#12-small-purchases-256"
+# The limit in the method line, from the tool's own default (r-talk: "of at most the small amount" said nothing)
+_SMALL_MAX = int(float(tool_config.SMALL_PURCHASE_MAX_EUR))
 for _id, _unit, _name, _summary in [
     ("count", Unit.COUNT, ("Small purchases", "Pieniä ostoksia"),
-     ("Purchases in restaurants, entertainment and lifestyle of at most the small amount, in the period.",
-      "Ravintola-, viihde- ja elämäntapaostokset, enintään pienen summan suuruiset, jakson aikana.")),
+     (f"Purchases in restaurants, entertainment and lifestyle of at most \u20ac{_SMALL_MAX} each, in the period.",
+      f"Ravintola-, viihde- ja elämäntapaostokset, kukin enintään {_SMALL_MAX} \u20ac, jakson aikana.")),
     ("total_eur", Unit.EUR, ("Small purchases in total", "Pienet ostokset yhteensä"),
      ("The sum of those small purchases.", "Näiden pienten ostosten summa.")),
-    ("avg_eur", Unit.EUR, ("Average small purchase", "Pienen ostoksen keskihinta"),
+    ("avg_eur", Unit.EUR, ("Average small purchase", "Keskimääräinen pieni ostos"),
      ("The total divided by the number of small purchases.", "Summa jaettuna pienten ostosten määrällä.")),
     ("month_avg_eur", Unit.EUR_PER_MONTH, ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
      ("The total divided by the number of whole months in the period.",

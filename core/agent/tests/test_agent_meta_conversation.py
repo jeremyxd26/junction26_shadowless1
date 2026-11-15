@@ -42,14 +42,16 @@ def test_the_introduction_is_given_once_and_later_meta_questions_get_one_short_s
     hi, who, what = conversation(make_pipeline(ScriptedModel()), ["hi", "who are you?", "what can you do"])
     assert hi["text"] == template.INTRO[0]
     assert who["text"] == template.AGAIN["identity"][0] and not who["text"].startswith("Hi")
-    assert what["text"] == template.AGAIN["capabilities"][0]
-    for done in (hi, who, what):
+    # "What can you do?" always gets the list of what Sentti does and three chips (Renat, 15.11 night).
+    assert what["text"] == template.CAPABILITIES[0]
+    assert what["follow_ups"] == template.meta_follow_ups("capabilities", "en") and len(what["follow_ups"]) == 3
+    for done in (hi, who):
         assert done["follow_ups"] == template.brief_questions("en") and done["outcome"] == "answered"
 
 
 def test_finnish_too(make_pipeline):
     first, second = conversation(make_pipeline(ScriptedModel()), ["kuka olet?", "mitä osaat?"], language="fi")
-    assert first["text"] == template.INTRO[1] and second["text"] == template.AGAIN["capabilities"][1]
+    assert first["text"] == template.INTRO[1] and second["text"] == template.CAPABILITIES[1]
 
 
 def test_help_after_an_answer_offers_the_questions_without_reintroducing(make_pipeline):
@@ -95,7 +97,7 @@ def test_russian_gets_the_language_line(make_pipeline):
 @pytest.mark.parametrize("message,intent", [
     ("can you help me?", "help"), ("what can you help me with?", "capabilities"),
     ("what else can you do?", "capabilities"), ("hello? are you there?", "greeting"),
-    ("are you an AI or a human advisor?", "identity"), ("hey there, how are you?", "greeting"),
+    ("are you an AI or a human advisor?", "identity"), ("hey there, how are you?", "how_are_you"),
     ("who made you?", "identity"), ("is my data safe with you?", "privacy"),
     ("thanks, that helps a lot", "thanks"), ("ty", "thanks"), ("mitä sä osaat tehdä?", "capabilities"),
     ("thank you very much", "thanks"), ("ok thanks", "thanks"), ("what is Sentti", "identity"),

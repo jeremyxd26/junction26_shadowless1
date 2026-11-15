@@ -92,6 +92,9 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # the customer's age band in the whole synthetic dataset (#883, 09_age_band_peer.sql): a band median, its size
+    "age_band_median": "peer.age_band_median@1",
+    "age_band_cohort": "peer.age_band_cohort_size@1",
     # Statistics Finland's household budget survey beside the peer comparison (#569): a cited table value
     "national_month": "national_context.monthly_eur@1",
     # get_balance_forecast (#257, metrics.md section 3.3)
@@ -313,14 +316,14 @@ BILL_TEXT: dict[str, tuple[str, str]] = {
                     "payday goes from {free_before} to {free_after}.",
                     "Eräpäivä on ennen palkkapäivääsi {payday}, joten lasku lisätään laskuihin ennen "
                     "palkkapäivää: palkkapäivään asti vapaana on {free_after} (ennen laskua {free_before})."),
-    "sts_moves": ("Your weekly safe to spend goes from {before} to {after}.",
-                  "Viikon turvallisesti käytettävissä oleva summasi on {after} (ennen laskua {before})."),
-    "sts_budget": ("Your weekly safe to spend stays {before}: your monthly budget limits it, not your balance.",
-                   "Viikon turvallisesti käytettävissä oleva summasi pysyy ennallaan, {before}: sitä rajaa "
+    "sts_moves": ("Left to spend this week goes from {before} to {after}.",
+                  "Tämän viikon käyttövarasi on {after} (ennen laskua {before})."),
+    "sts_budget": ("Left to spend this week stays {before}: your monthly budget limits it, not your balance.",
+                   "Tämän viikon käyttövarasi pysyy ennallaan, {before}: sitä rajaa "
                    "kuukausibudjettisi, ei saldosi."),
-    "sts_negative": ("This bill takes more than is free until payday, so your weekly safe to spend is {after}.",
-                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten viikon turvallisesti "
-                     "käytettävissä oleva summasi on {after}."),
+    "sts_negative": ("This bill takes more than is free until payday, so what is left to spend this week is {after}.",
+                     "Tämä lasku vie enemmän kuin palkkapäivään asti on vapaana, joten tämän viikon "
+                     "käyttövarasi on {after}."),
     # warnings: a small note that never repeats a signal (contracts/api.md 11.2); today only a past due date
     "warn_past": ("The due date has passed. The payee may charge late-payment interest, so pay it soon.",
                   "Eräpäivä on mennyt. Maksunsaaja voi periä viivästyskorkoa, joten maksa lasku pian."),
@@ -507,6 +510,19 @@ PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md 
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
 
+# The customer's age band in the whole synthetic dataset beside the peer comparison of total spending (#883):
+# 09_age_band_peer.sql over the marts, the band's median monthly baskets and ordinary spending. Context, never a
+# target. A band of fewer than AGE_BAND_MIN_N customers is not shown (app.band_min_n, pinned here).
+AGE_BAND_FILE = "09_age_band_peer.sql"
+AGE_BAND_MIN_N = "30"
+AGE_BANDS: tuple[tuple[str, int, int | None], ...] = (   # (band, first age, last age or None), as in the file
+    ("18-24", 18, 24), ("25-34", 25, 34), ("35-44", 35, 44), ("45-54", 45, 54), ("55-64", 55, 64), ("65+", 65, None),
+)
+AGE_BAND_MEASURES = ("regular_essentials", "unexpected_necessities", "everyday_spending", "ordinary_spending")
+# the peer metric whose answer carries the band's line, and the band's measure it shows: only total spending
+AGE_BAND_MEASURE_OF = {"spend_total": "ordinary_spending"}
+METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({AGE_BAND_FILE})
+
 PROFILE_KEYS = ("not_enough_income_data", "stretched", "big_ticket", "everyday_heavy", "saver", "steady")
 PROFILE_TRAITS = ("salary_moved_elsewhere", "went_below_zero", "regular_investor", "weekend_spender",
                   "frequent_small_purchases")
@@ -565,9 +581,11 @@ PROFILE_DESCRIPTIONS: dict[str, tuple[str, str]] = {
         "Over your last six full months you spent more than came in.",
         "Kuuden viimeisen täyden kuukauden aikana kulutit enemmän kuin sait tuloja.",
     ),
+    # No size of share (#687): at the threshold one-offs are a twentieth of spending, often one purchase,
+    # beside many small ones. The text says what the one-off rule measures: far above the usual purchase.
     "big_ticket": (
-        "Large one-off purchases make up a notable part of your spending.",
-        "Isot kertaostokset ovat merkittävä osa kulutustasi.",
+        "A large one-off purchase stands out in your spending, well above what you usually pay in its category.",
+        "Kulutuksessasi erottuu iso kertaostos, selvästi suurempi kuin tavalliset ostoksesi samassa luokassa.",
     ),
     "everyday_heavy": (
         "A large share of your money goes to everyday spending, such as eating out and entertainment.",
@@ -714,6 +732,11 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
     # table's age group is named in the evidence and the data file, not here
     "national_label": ("Households of your age group, per consumption unit",
                        "Ikäryhmäsi kotitaloudet, kulutusyksikköä kohti"),
+    # #883: the labels of the age band Numbers; no digits either (the band is named in the evidence view)
+    "age_band_median": ("{what}: median of people your age in the synthetic dataset",
+                        "{what}: ikäryhmäsi mediaani synteettisessä aineistossa"),
+    "age_band_cohort": ("People your age in the synthetic dataset", "Ikäryhmäsi ihmiset synteettisessä aineistossa"),
+    "ordinary_spending": ("Ordinary spending", "Tavallinen kulutus"),
     "note": (
         "Only group statistics are shown, never another customer's transactions.",
         "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
@@ -1172,9 +1195,21 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
 # and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
 # when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
 LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
-    "moved": ("Your safe to spend this week goes from {before} to {after}: {amount} {why}.",
-              "Tämän viikon turvallisesti käytettävissä oleva summa on nyt {after}, kun se oli {before}: "
-              "{amount} {why}."),
+    # Renat (via r-talk): the reply to "Needed" / "My choice" / Undo is one short confirmation citing only what is
+    # left to spend after the answer; the hero keeps "was …" for the before.
+    "needed": ("Got it \u2014 counted as a must-have. You now have {after} left to spend this week.",
+               "Selvä \u2014 merkitsin sen välttämättömäksi. Käyttövarasi tällä viikolla on nyt {after}."),
+    "choice": ("Got it \u2014 counted as your own choice. What you have left to spend stays {after}.",
+               "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi pysyy {after}."),
+    "choice_moved": ("Got it \u2014 counted as your own choice. You now have {after} left to spend this week.",
+                     "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi tällä viikolla on nyt {after}."),
+    "undo_pending": ("Undone \u2014 I'll ask about it again. You have {after} left to spend this week.",
+                     "Peruttu \u2014 kysyn siitä uudelleen. Käyttövarasi tällä viikolla on {after}."),
+    "undo_closed": ("Undone \u2014 it is back where the rules put it. You have {after} left to spend this week.",
+                    "Peruttu \u2014 se on taas siellä, minne säännöt sen laittavat. Käyttövarasi tällä viikolla on "
+                    "{after}."),
+    "moved": ("Left to spend this week goes from {before} to {after}: {amount} {why}.",
+              "Tämän viikon käyttövara on nyt {after}, kun se oli {before}: {amount} {why}."),
     "basket": ("{amount} {why}.", "{amount} {why}."),
     "why_unexpected_reserve": ("now counts as an unexpected necessity, so the reserve grows",
                                "lasketaan nyt odottamattomaksi välttämättömäksi menoksi, joten varaus kasvaa"),
@@ -1183,17 +1218,17 @@ LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
     "why_everyday": ("now counts as everyday spending", "lasketaan nyt arjen kulutukseksi"),
     "why_pending": ("is waiting for your answer again", "odottaa taas vastaustasi"),
     "why_closed": ("is back in the group the rules give it", "on taas siinä ryhmässä, johon säännöt sen sijoittavat"),
-    "save_moved": ("This week's safe to spend stays the same, but what you can typically put aside goes from "
+    "save_moved": ("Left to spend this week stays the same, but what you can typically put aside goes from "
                    "{before} to {after}.",
-                   "Tämän viikon turvallisesti käytettävissä oleva summa pysyy samana, mutta tavallisesti "
+                   "Tämän viikon käyttövara pysyy samana, mutta tavallisesti "
                    "säästöön jäävä summa on nyt {after}, kun se oli {before}."),
-    "same_budget": ("This does not change this week's safe to spend: your monthly budget, not this purchase, sets "
-                    "the limit.",
-                    "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: kuukausibudjettisi, ei "
+    "same_budget": ("This does not change what is left to spend this week: your monthly budget, not this purchase, "
+                    "sets the limit.",
+                    "Tämä ei muuta tämän viikon käyttövaraa: kuukausibudjettisi, ei "
                     "tämä ostos, asettaa rajan."),
-    "same_balance": ("This does not change this week's safe to spend: your balance sets the limit, and this "
+    "same_balance": ("This does not change what is left to spend this week: your balance sets the limit, and this "
                      "purchase is already in it.",
-                     "Tämä ei muuta tämän viikon turvallisesti käytettävissä olevaa summaa: saldosi asettaa rajan, "
+                     "Tämä ei muuta tämän viikon käyttövaraa: saldosi asettaa rajan, "
                      "ja tämä ostos näkyy siinä jo."),
 }
 # ---- the way to a human (#420, contract 0.3.3) ------------------------------------------------------
@@ -1273,7 +1308,7 @@ SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Small purchases", "Pienet ostokset"),
     "count": ("Small purchases", "Pieniä ostoksia"),
     "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
-    "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "average": ("Average small purchase", "Keskimääräinen pieni ostos"),
     "month_average": ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
     "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
     "flexible": ("Everyday spending", "Arjen kulutus"),

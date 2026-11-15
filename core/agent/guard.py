@@ -261,7 +261,12 @@ EN_WORDS = re.compile(
 
 
 # Characters that end a line or a page become spaces: "ignore<VT>your<FF>instructions" is three words (#537).
-_SPACES = frozenset(chr(c) for c in (0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029))
+# no-break spaces (U+00A0, U+2007, U+202F) are spaces too: a chip or a question text the app shows holds them
+# inside a date (#662), and the rules match words with plain spaces
+_SPACES = frozenset(chr(c) for c in (0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029, 0x00A0, 0x2007, 0x202F))
+# the line breaks of a raw message: the characters above without the tab and the no-break spaces, so a no-break
+# space inside a line never starts a new line for the role-header check (review of #676)
+_LINE_BREAKS = frozenset(chr(c) for c in (0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029))
 
 
 def _invisible(o: int) -> bool:
@@ -291,7 +296,7 @@ def _spaced(message: str) -> str:
 def _raw_injection(raw: str) -> bool:
     """What only the message as typed shows: a role header at the start of a later line ("Note:" + a new line +
     "system: ..."), and a set-aside whose words a format character separates. Flagged only (#537)."""
-    lines = re.split("[" + "".join(sorted(_SPACES - {chr(0x09)})) + "]", raw)
+    lines = re.split("[" + "".join(sorted(_LINE_BREAKS)) + "]", raw)
     if any(re.match(ROLE_LINE, line, re.I) for line in lines[1:]):
         return True
     spaced = _spaced(raw)
@@ -326,6 +331,28 @@ def _finnish_score(word: str) -> int:
 
 def detect_language(text: str) -> str | None:
     """'fi', 'en', or None when unsure. Typed with or without ä and ö (issue #140)."""
+    fi, en = language_scores(text)
+    if fi >= 2 and fi > en:
+        return "fi"
+    if en >= 1:
+        return "en"
+    return None
+
+
+def confident_language(text: str) -> str | None:
+    """The question's language only when it is clear enough to override the app setting: Finnish as the detector
+    reads it; English with at least two English words and no Finnish one ("Click to Pay" and "Korttini on
+    varastettu" stay with the app's language)."""
+    fi, en = language_scores(text)
+    if fi >= 2 and fi > en:
+        return "fi"
+    if en >= 2 and fi == 0:
+        return "en"
+    return None
+
+
+def language_scores(text: str) -> tuple[int, int]:
+    """(Finnish score, English word count) of a text, as the detector counts them."""
     fi = en = 0
     end = 0
     for m in re.finditer(r"[^\W\d_]+", text):
@@ -336,11 +363,7 @@ def detect_language(text: str) -> str | None:
         if starts_sentence or not word[0].isupper():  # a capitalised word inside a sentence is a name
             fi += _finnish_score(word)
         en += 1 if EN_WORDS.fullmatch(_without_dots(word)) else 0
-    if fi >= 2 and fi > en:
-        return "fi"
-    if en >= 1:
-        return "en"
-    return None
+    return fi, en
 
 
 def fold(text: str) -> str:

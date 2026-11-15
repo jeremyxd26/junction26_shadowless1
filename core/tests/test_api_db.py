@@ -401,7 +401,7 @@ def test_an_estimate_number_is_a_complete_object_read_from_the_estimate(client):
     assert ids <= set(body.get("cited") or []), (ids, body.get("cited"))     # the map holds only cited Numbers
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00387"])
 def test_a_category_with_one_or_two_purchases_is_not_offered_with_the_reason(client, customer_id):
     """Review of #379 part B, B1: never a 500. The existing status not_offered, every saving and the baseline
     0, and the chat's sentence as the caveat; every number opens, and the card opens the purchases."""
@@ -430,3 +430,22 @@ def test_a_too_few_what_if_observes_the_purchases_never_nothing(client):
     observed = w["estimate"]["observed"]
     assert len(observed) == 1 and observed[0]["value"] > 0, observed
     assert observed[0]["display"] in w["caveats"][0] and observed[0]["evidence_ref"] == w["evidence_ref"]
+
+
+def test_the_personas_ages_are_the_datasets(client):
+    """#872: GET /api/personas sends each persona's age from personas.yaml; it is customers.age, in the persona's band.
+    Reads the four persona rows of customers only."""
+    from core.app.api.personas import load_personas
+
+    personas = {p["customer_id"]: p for p in load_personas()["personas"]}
+    conn = tools_db.connect()
+    try:
+        rows = conn.execute("SELECT customer_id, age FROM customers WHERE customer_id = ANY(%s)",
+                            (list(personas),)).fetchall()
+    finally:
+        conn.close()
+    ages = {row[0]: row[1] for row in rows}
+    assert ages == {cid: p["age"] for cid, p in personas.items()}
+    for p in personas.values():
+        low, _, high = p["age_band"].rstrip("+").partition("-")   # "35-44", or "75+"
+        assert int(low) <= p["age"] <= int(high or 200), p

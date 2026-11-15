@@ -102,7 +102,7 @@ def test_the_finnish_error_is_the_same_for_both(client_with):
 def test_the_allowlist_is_the_personas_file():
     personas = {p["customer_id"] for p in load_personas()["personas"]}
     assert deps.served_customers(Settings(_env_file=None)) == personas == {
-        "CUST00860", "CUST00493", "CUST00349", "CUST00849"}
+        "CUST00860", "CUST00493", "CUST00387", "CUST00849"}
     assert deps.served_customers(Settings(_env_file=None, demo_customers="all")) is None
 
 

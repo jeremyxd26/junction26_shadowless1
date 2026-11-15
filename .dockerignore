@@ -10,8 +10,11 @@
 !core/agent/
 !core/bills/
 !core/answer_text.py
+# the finlit retriever (#884): its modules only; the corpus is read from the database
+!core/finlit/*.py
 !core/metrics/*.sql
 !core/config/*.yaml
+!core/knowledge/*.yaml
 # of the sample bills (#249) only the images and samples.json are served: no PDFs, no README
 core/bills/samples/*.pdf
 core/bills/samples/README.md

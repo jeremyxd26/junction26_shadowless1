@@ -281,7 +281,7 @@ safe_to_spend_7d = min(A, B);  binding_limit = whichever is smaller
 **The savings goal (#391, product decision).** Safe to spend is computed after a monthly savings goal, so the money Sentti says can be spent and the money it says can be set aside are different euros and add up.
 - **The default goal** is safe to save monthly (section 3.1), rounded down to a multiple of 10 €.
   - It is computed as with no labels at all (#459): every transaction in the basket the rules give it, and only the purchase the first spike review asks about left out of the run rates (the primed terms above). That purchase is the top candidate by the rules (`core/tools/reviews.py` `candidates`, the most recent day first, then the largest), whatever the labels say.
-  - So it is one figure per customer for the month, in every review state. It does not move when a review appears, is answered or expires unanswered, or when a later review asks about another purchase: with no review it equals the pending state's goal (Sanna 360, not 180), and a customer whose first review expired while a second is pending keeps the first goal (Eetu 600, not 540).
+  - So it is one figure per customer for the month, in every review state. It does not move when a review appears, is answered or expires unanswered, or when a later review asks about another purchase: with no review it equals the pending state's goal (Sanna 360, not 180), and a customer whose first review expired while a second is pending keeps the first goal (the first Eetu, CUST00349 before #882: 600, not 540).
   - The goal needs each row's basket by the rules, which the shared classification block does not give, so `03_safe_to_spend.sql` carries a copy of its rule CASE (`cls_rules`), kept byte-identical by `core/tools/tests/test_tools_safe_to_spend_goal_pure.py`.
 - **"Needed"** grows the irregular reserve, so safe to spend falls (Sanna 138.79 → 97.46) while the goal stays 360. **"My choice"** changes nothing.
 - **Safe to save keeps its own formula** (section 3.1). After "Needed" it can be below the goal (Sanna 184.61 against 360), and the safe-to-save card then says so.
@@ -471,7 +471,7 @@ The bills behind `bills_due_eur`, one row per bill that falls due after today an
 |---|---|---|---|---|---|---|
 | CUST00860 | 14,276.35 | 928.50 | 66.79 | 12,418.91 | comfortable | 12,567.56 |
 | CUST00493 | 10,745.42 | 1,290.78 | 14.71 | 9,254.15 | comfortable | 9,140.80 |
-| CUST00349 | 24,310.32 | 754.25 | 46.70 | 22,906.97 | comfortable | 23,031.39 |
+| CUST00387 | 2,215.92 | 555.65 | 21.47 | 1,361.77 | comfortable | see the hero |
 | CUST00849 | 1,902.64 | 662.59 | 42.99 | 641.43 | above_zero | 819.62 |
 
 For CUST00849: 1,902.64 − (613.93 rent on 6 Oct + 98.74 × 14 / 30.4375 utilities = 659.35) − 42.99 × 14 = 641.43.
@@ -816,7 +816,7 @@ The card's second action asks the what-if question for the largest category with
 |---|---|---|---|---|
 | CUST00860 | 4 | 28.73 | 9.58 | few (all at restaurants) |
 | CUST00493 | 31 | 156.04 | 52.01 | summary: restaurants 60.4 %, entertainment 39.6 %; the persona that shows the feature best |
-| CUST00349 | 13 | 94.25 | 31.42 | summary: restaurants 69.2 %, entertainment 30.8 % |
+| CUST00387 | 5 | 30.63 | 10.21 | summary |
 | CUST00849 | 1 | 8.64 | 2.88 | few (at a restaurant) |
 
 ## 13. Savings plan (#369)
@@ -860,7 +860,7 @@ The card's second action asks the what-if question for the largest category with
 |---|---|---|---|---|---|
 | CUST00860 | 45.91 | Lifestyle 17.26 | 63.17 | 758.04 | 360.00 |
 | CUST00493 | 20.53 | Lifestyle 9.85 | 30.38 | 364.56 | 420.00 |
-| CUST00349 | 58.95 | Lifestyle 18.04 | 76.99 | 923.88 | 600.00 |
+| CUST00387 | 42.19 | Entertainment 11.99 | 54.18 | 650.16 | 150.00 |
 | CUST00849 | 55.50 | Entertainment 11.62 | 67.12 | 805.44 | 190.00 |
 
 **Checked by hand (CUST00860):** 229.56 × 20% = 45.912 → 45.91; 172.58 × 10% = 17.258 → 17.26; 45.91 + 17.26 = 63.17; 63.17 × 12 = 758.04.

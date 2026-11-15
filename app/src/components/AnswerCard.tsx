@@ -1,22 +1,24 @@
-// The cards of a chat answer (`card` events, contract sections 3 and 7.2), one renderer per
-// `type` in the shared answer-card frame (DESIGN.md "Answer card"). Card `actions` are not
-// drawn here: the chat shows them as action chips under the explanation.
+// The cards of a chat answer (`card` events, contract sections 3 and 7.2). The question is in the
+// bubble and the sentence above the card, so a card reads as part of one answer (#684): no title
+// (it restates the question), the period once as a caption, one main number, at most three
+// "label — value" rows, and numbers as text, not pills. `lib/answerFigures.ts` picks the fields
+// by card type; the baskets breakdown and the bills too (#696). The review keeps its own card. Card `actions`
+// are not drawn here: the answer shows at most one next step under the text.
 import { Component, type ReactNode } from 'react'
-import type { BreakdownCard, Card, Comparison, MetricCard, Num, ReviewCard, SafeToSaveCard as SafeToSaveData } from '../api/types.ts'
+import type { BreakdownCard, Card, Comparison, Num, ReviewCard } from '../api/types.ts'
+import { answerFigures, asLaterCard, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
+import { isBasketsCard } from '../lib/changes.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
-import { BillsCards } from './BillsCard.tsx'
-import { BasketsCard, CARD_TITLE, CardShell } from './cards.tsx'
-import { EstimateBadge } from './EstimateBadge.tsx'
+import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
+import { BasketDonut } from './BasketDonut.tsx'
+import { CARD_TITLE, CardShell } from './cards.tsx'
+import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
-import { PeerCard, type PeerData } from './PeerCard.tsx'
-import { ProfileCard, type ProfileData } from './ProfileCard.tsx'
 import { ReviewPointer } from './ReviewPointer.tsx'
-import { SafeToSaveCard } from './SafeToSaveCard.tsx'
 
-/** Title, subtitle and the fact or estimate marker, top right. */
+/** Title, subtitle and the estimate marker, top right; a fact card has no marker (#685). */
 function CardHeader({ card }: { card: Card }) {
-  const { lang } = useSettings()
   return (
     // With large text the marker moves under the title instead of covering it (#541).
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -24,12 +26,10 @@ function CardHeader({ card }: { card: Card }) {
         <h3 className={CARD_TITLE}>{card.title}</h3>
         {card.subtitle && <p className="mt-0.5 text-sm text-muted">{card.subtitle}</p>}
       </div>
-      {card.estimate ? (
+      {card.estimate && (
         <span className="ml-auto shrink-0">
           <EstimateBadge estimate={card.estimate} />
         </span>
-      ) : (
-        <span className="ml-auto max-w-[45%] shrink-0 pt-0.5 text-right text-xs break-words hyphens-auto text-muted">{chatStrings(lang).fact}</span>
       )}
     </div>
   )
@@ -39,96 +39,84 @@ function CardHeader({ card }: { card: Card }) {
 const TONE: Record<Comparison['tone'], string> = {
   better: 'text-brand',
   worse: 'text-warning',
-  neutral: 'text-muted',
+  neutral: 'text-ink',
 }
 
 /** "▲ €91.70 more": an arrow and a word, never colour alone (DESIGN.md section 4). */
-function Change({ change, pct, tone = 'neutral' }: { change: Num; pct?: Num | null; tone?: Comparison['tone'] }) {
+function Change({ change, tone = 'neutral' }: { change: Num; tone?: Comparison['tone'] }) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
   const arrow = change.value > 0 ? '▲' : change.value < 0 ? '▼' : '•'
   const word = change.value > 0 ? s.more : change.value < 0 ? s.less : s.same
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 ${TONE[tone] ?? TONE.neutral}`}>
+    <span className={`inline-flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 ${TONE[tone] ?? TONE.neutral}`}>
       <span aria-hidden="true">{arrow}</span>
-      <NumberChip number={change} size="inline" tone="neutral" />
-      {pct && <NumberChip number={pct} size="inline" tone="neutral" />}
+      <NumberChip number={change} size="inline" tone="plain" wrap />
       <span className="font-semibold">{word}</span>
     </span>
   )
 }
 
-function ComparisonLine({ comparison }: { comparison: Comparison }) {
+function Row({ row }: { row: FigureRow }) {
   return (
-    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-8">
-      <Change change={comparison.change} pct={comparison.change_pct} tone={comparison.tone} />
-      <span className="text-muted">{comparison.label}</span>
-    </p>
+    // With large text the value moves under the label instead of covering it (#541).
+    <li data-figure-row="" className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line py-1.5">
+      <span className="min-w-[min(6rem,100%)] flex-1 basis-0 text-sm text-muted">{row.label}</span>
+      <span className="ml-auto max-w-full shrink-0 text-right text-base text-ink">
+        {row.tone ? <Change change={row.number} tone={row.tone} /> : <NumberChip number={row.number} size="inline" tone="plain" wrap />}
+      </span>
+    </li>
   )
 }
 
-function MetricAnswer({ card }: { card: MetricCard }) {
+/** One card of an answer: caption and estimate marker, the result's name, the main number, the rows. */
+function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) {
+  const estimate = useEstimateToggle()
+  const { caption, title, tags, main, rows, note, caveats } = figures
+  const donut = isBasketsCard(card)
+  // With the donut the baskets are in its legend; the rows keep only what is not a basket (the comparison).
+  const shownRows = donut ? rows.filter((row) => !(card as BreakdownCard).items.some((item) => item.key === row.key)) : rows
   return (
     <CardShell>
-      <CardHeader card={card} />
-      <div className="mt-3">
-        <NumberChip number={card.primary} size="lg" />
-      </div>
-      {card.secondary?.length > 0 && (
-        <ul className="mt-3 flex flex-col">
-          {card.secondary.map((number, index) => (
-            <li key={number.id ?? index} className="flex min-h-11 items-center justify-between gap-3 border-t border-line">
-              <span className="text-sm text-muted">{number.label}</span>
-              <NumberChip number={number} size="inline" />
-            </li>
+      {(caption || card.estimate) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
+          {caption && <p data-answer-caption="" className="min-w-0 flex-1 text-xs text-muted">{caption}</p>}
+          {card.estimate && (
+            <span className="-my-2 ml-auto shrink-0">
+              <EstimateBadge estimate={card.estimate} control={estimate.control} />
+            </span>
+          )}
+        </div>
+      )}
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
+      {title && <p className="mt-2 text-lg leading-7 text-ink">{title}</p>}
+      {tags.length > 0 && <p className="mt-0.5 text-sm text-muted">{tags.join(' · ')}</p>}
+      {/* The baskets breakdown as a donut with its legend, in place of the main number and the rows (Renat, #953). */}
+      {donut && <BasketDonut card={card as BreakdownCard} />}
+      {!donut && main && (
+        <div data-answer-main="" className="mt-2 flex flex-col items-start">
+          <span className="text-base text-ink-2">{main.label}</span>
+          <span className="max-w-full text-ink">
+            <NumberChip number={main} size="lg" tone="plain" />
+          </span>
+        </div>
+      )}
+      {shownRows.length > 0 && (
+        <ul className="mt-2 flex flex-col">
+          {shownRows.map((row) => (
+            <Row key={row.key} row={row} />
           ))}
         </ul>
       )}
-      {card.comparison && <ComparisonLine comparison={card.comparison} />}
-    </CardShell>
-  )
-}
-
-/** A category breakdown: total, comparison and one row per item with its change. */
-function BreakdownAnswer({ card }: { card: BreakdownCard }) {
-  const { lang } = useSettings()
-  const s = chatStrings(lang)
-  return (
-    <CardShell>
-      <CardHeader card={card} />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm text-muted">{card.total.label}</span>
-        <NumberChip number={card.total} />
-      </div>
-      {card.comparison && <ComparisonLine comparison={card.comparison} />}
-      <ul className="mt-2 flex flex-col">
-        {card.items.map((item) => (
-          <li key={item.key} className="border-t border-line py-2.5">
-            {/* With large text the amount moves under the label instead of covering it (#541). */}
-            <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <div className="flex min-w-[min(6rem,100%)] flex-1 basis-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-bold text-brand">{item.label}</span>
-                {item.flags.map((flag) =>
-                  s.flags[flag] ? (
-                    <span key={flag} className="rounded-sm bg-sunken px-1.5 py-0.5 text-xs font-semibold text-muted">
-                      {s.flags[flag]}
-                    </span>
-                  ) : null,
-                )}
-              </div>
-              <span className="ml-auto max-w-full shrink-0">
-                <NumberChip number={item.amount} />
-              </span>
-            </div>
-            {(item.change || item.share) && (
-              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm leading-8">
-                {item.change && <Change change={item.change} />}
-                {item.share && <NumberChip number={item.share} size="inline" tone="neutral" />}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
+      {note && <p className="mt-1 text-sm text-muted">{note}</p>}
+      {/* A what-if's caveats, as the what-if sheet shows them (#696). */}
+      {caveats.length > 0 && (
+        <div data-answer-caveats="" className="mt-2 rounded-md bg-warning-tint p-3 text-base text-ink">
+          {caveats.map((caveat, index) => (
+            <p key={index}>{caveat}</p>
+          ))}
+        </div>
+      )}
     </CardShell>
   )
 }
@@ -142,27 +130,22 @@ function GenericAnswer({ card }: { card: Card }) {
   )
 }
 
-function isBasketsBreakdown(card: BreakdownCard): boolean {
-  return card.items.some((item) => item.key === 'regular_essentials')
+/** Where the card stands in its answer: a later card has no large number of its own. */
+interface Place {
+  later?: boolean
+  /** The caption of the card before it, so the same period is not shown twice. */
+  previousCaption?: string | null
 }
 
-function CardBody({ card }: { card: Card }) {
+function CardBody({ card, later = false, previousCaption = null }: { card: Card } & Place) {
+  const { t } = useSettings()
+  const own = answerFigures(card)
+  const placed = own && later ? asLaterCard(own, previousCaption) : own
+  // The bills' amounts are rounded one by one, so they can miss the total by a cent each (contract
+  // 0.2.1); the answer card says so, like the bills card (#696).
+  const figures = placed && card.type === 'bills' ? { ...placed, note: t.billsRounding } : placed
+  if (figures) return <AnswerFrame card={card} figures={figures} />
   switch (card.type) {
-    case 'metric':
-      return <MetricAnswer card={card as MetricCard} />
-    case 'breakdown': {
-      const breakdown = card as BreakdownCard
-      return isBasketsBreakdown(breakdown) ? <BasketsCard card={breakdown} /> : <BreakdownAnswer card={breakdown} />
-    }
-    case 'safe_to_save':
-      // Card actions show as chips under the answer (AnswerView), so the card itself draws none.
-      return <SafeToSaveCard card={{ ...(card as SafeToSaveData), actions: [] }} />
-    case 'profile':
-      return <ProfileCard card={card as ProfileData} header={<CardHeader card={card} />} />
-    case 'peer':
-      return <PeerCard card={card as PeerData} header={<CardHeader card={card} />} />
-    case 'bills':
-      return <BillsCards cards={[{ ...card, actions: [] }]} />
     // A review is asked once, in the opening; the answer points there (#318).
     case 'review':
       return <ReviewPointer card={card as ReviewCard} />
@@ -197,10 +180,10 @@ class CardBoundary extends Component<{ card: Card; children: ReactNode }, { fail
   }
 }
 
-export function AnswerCard({ card }: { card: Card }) {
+export function AnswerCard({ card, later, previousCaption }: { card: Card } & Place) {
   return (
     <CardBoundary card={card}>
-      <CardBody card={card} />
+      <CardBody card={card} later={later} previousCaption={previousCaption} />
     </CardBoundary>
   )
 }

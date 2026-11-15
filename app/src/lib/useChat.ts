@@ -1,24 +1,44 @@
 // The chat's turns and the one running /api/ask stream. It lives in App, so the conversation
-// survives a trip to the overview and back; switching persona starts an empty chat.
-import { useCallback, useRef, useState } from 'react'
+// survives a trip to the overview and back; switching persona starts an empty chat. Client turns
+// (#319) sit in the same list but never call the API: `busy`, `stop` and `retry` skip them.
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ask } from '../api/ask.ts'
 import { readAskStream } from '../api/askStream.ts'
 import { ApiError } from '../api/errors.ts'
-import type { Language } from '../api/types.ts'
-import { EMPTY_ANSWER, applyAskEvent, type Answer, type AnswerError } from './answer.ts'
+import type { AskRequest, Language } from '../api/types.ts'
+import { EMPTY_ANSWER, applyAskEvent, stopped, type Answer, type AnswerError, type StopReason } from './answer.ts'
+import { findClientTurn, pushClientTurn, type ClientTurnRequest, type Turn } from './thread.ts'
 
-export interface Turn {
+export type { Turn } from './thread.ts'
+
+/** Where a chip's client turn is: a new one, or the one the same key already pushed. */
+export interface PushedClientTurn {
   id: number
-  question: string
-  answer: Answer
+  existed: boolean
 }
 
 export interface ChatSession {
   turns: Turn[]
   busy: boolean
-  send(question: string): void
+  /** `channel: 'voice'` from voice mode (#875): the core answers in words for listening. */
+  send(question: string, options?: { channel?: 'voice' }): void
   retry(turnId: number, question: string): void
   stop(): void
+  /** Adds a client turn, or finds the one with the same `id`; null without a persona. */
+  pushClientTurn(request: ClientTurnRequest): PushedClientTurn | null
+  /** "New chat": stops a running answer, empties the thread (client turns and their progress too) and starts a new conversation. */
+  clear(): void
+}
+
+/** The POST /api/ask body. Only voice mode names its channel; a typed question sends no field, as before (#875). */
+export function askRequest(owner: string, conversationId: string | null, message: string, language: Language, channel?: 'voice'): AskRequest {
+  return {
+    customer_id: owner,
+    conversation_id: conversationId,
+    message,
+    language,
+    ...(channel === 'voice' ? { channel } : {}),
+  }
 }
 
 /** The contract caps a question at 500 characters (section 7.1). */
@@ -42,7 +62,12 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
 
   // A different persona means a different customer: its chat starts empty (derived, no effect).
   const turns = session.owner === customerId ? session.turns : []
-  const busy = turns.some((turn) => turn.answer.status === 'streaming')
+  const busy = turns.some((turn) => turn.kind === 'ask' && turn.answer.status === 'streaming')
+  // The turns as last shown, so `pushClientTurn` keeps one identity while answers stream in.
+  const shownTurns = useRef(turns)
+  useEffect(() => {
+    shownTurns.current = turns
+  })
 
   const update = useCallback((owner: string | null, turnId: number, change: (answer: Answer) => Answer) => {
     setSession((current) =>
@@ -50,13 +75,15 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
         ? current
         : {
             ...current,
-            turns: current.turns.map((turn) => (turn.id === turnId ? { ...turn, answer: change(turn.answer) } : turn)),
+            turns: current.turns.map((turn) =>
+              turn.kind === 'ask' && turn.id === turnId ? { ...turn, answer: change(turn.answer) } : turn,
+            ),
           },
     )
   }, [])
 
-  /** Stops the running stream; what was shown stays, marked as stopped. */
-  const stopRunning = useCallback(() => {
+  /** Stops the running stream; what was shown stays, marked as stopped and why (#715). */
+  const stopRunning = useCallback((reason: StopReason) => {
     const current = running.current
     if (!current) return
     running.current = null
@@ -64,22 +91,23 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     setSession((state) => ({
       ...state,
       turns: state.turns.map((turn) =>
-        turn.id === current.turnId && turn.answer.status === 'streaming'
-          ? { ...turn, answer: { ...turn.answer, status: 'stopped' } }
-          : turn,
+        turn.kind === 'ask' && turn.id === current.turnId ? { ...turn, answer: stopped(turn.answer, reason) } : turn,
       ),
     }))
   }, [])
+  /** The Stop button. */
+  const stop = useCallback(() => stopRunning('you'), [stopRunning])
 
   const run = useCallback(
-    async (owner: string, turnId: number, question: string) => {
-      stopRunning()
+    async (owner: string, turnId: number, question: string, channel?: 'voice') => {
+      // One answer streams at a time: a new question stops the running one, which says so.
+      stopRunning('next_question')
       const controller = new AbortController()
       running.current = { turnId, controller }
       if (conversation.current.owner !== owner) conversation.current = { owner, id: null }
       try {
         const stream = await ask(
-          { customer_id: owner, conversation_id: conversation.current.id, message: question, language: lang },
+          askRequest(owner, conversation.current.id, question, lang, channel),
           controller.signal,
         )
         for await (const event of readAskStream(stream)) {
@@ -100,28 +128,54 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
   )
 
   const send = useCallback(
-    (raw: string) => {
+    (raw: string, options?: { channel?: 'voice' }) => {
       const question = raw.trim().slice(0, MAX_QUESTION)
       if (!question || !customerId) return
       const id = nextId.current
       nextId.current += 1
       setSession((current) => ({
         owner: customerId,
-        turns: [...(current.owner === customerId ? current.turns : []), { id, question, answer: EMPTY_ANSWER }],
+        turns: [...(current.owner === customerId ? current.turns : []), { kind: 'ask', id, question, answer: EMPTY_ANSWER }],
       }))
-      void run(customerId, id, question)
+      void run(customerId, id, question, options?.channel)
     },
     [customerId, run],
   )
 
   const retry = useCallback(
     (turnId: number, question: string) => {
-      if (!customerId) return
+      if (!customerId || !shownTurns.current.some((turn) => turn.kind === 'ask' && turn.id === turnId)) return
       update(customerId, turnId, () => EMPTY_ANSWER)
       void run(customerId, turnId, question)
     },
     [customerId, run, update],
   )
 
-  return { turns, busy, send, retry, stop: stopRunning }
+  // A client turn leaves the running answer and the conversation alone: nothing is sent.
+  const pushClient = useCallback(
+    (request: ClientTurnRequest): PushedClientTurn | null => {
+      if (!customerId) return null
+      const existing = findClientTurn(shownTurns.current, request.id)
+      if (existing) return { id: existing.id, existed: true }
+      const id = nextId.current
+      nextId.current += 1
+      const turn = { kind: 'client', id, key: request.id, question: request.question, render: request.render } as const
+      setSession((current) => ({
+        owner: customerId,
+        turns: pushClientTurn(current.owner === customerId ? current.turns : [], turn),
+      }))
+      return { id, existed: false }
+    },
+    [customerId],
+  )
+
+  const clear = useCallback(() => {
+    const current = running.current
+    running.current = null
+    current?.controller.abort()
+    conversation.current = { owner: customerId, id: null }
+    setSession({ owner: customerId, turns: [] })
+  }, [customerId])
+
+  return { turns, busy, send, retry, stop, pushClientTurn: pushClient, clear }
 }

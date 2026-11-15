@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api/client.ts'
 import type { Language } from './api/types.ts'
 import { EvidenceSheet } from './components/EvidenceSheet.tsx'
@@ -12,13 +12,19 @@ import { LoadingBlock } from './components/States.tsx'
 import { parseLanguage, strings } from './lib/i18n.ts'
 import { chatStrings } from './lib/chatStrings.ts'
 import { SettingsContext, type Settings } from './lib/settings.ts'
+import { stopSpeaking } from './lib/speech.ts'
 import { useChat } from './lib/useChat.ts'
 import { useLoad } from './lib/useLoad.ts'
 import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
+import { Learn } from './screens/Learn.tsx'
+import { topicsFor, unfinished } from './components/learn/topics.ts'
+import { useLearnProgress } from './lib/learnProgress.ts'
 
 /** `/cards`: the contract's card examples, mock mode only; a live build drops the page. */
 const CardGallery = import.meta.env.VITE_API_MODE === 'live' ? null : lazy(() => import('./screens/CardGallery.tsx'))
+/** `/bill` (#332): the bill flow as a screen, in live and mock builds. */
+const BillScreen = lazy(() => import('./screens/BillScreen.tsx'))
 
 export default function App() {
   const { path, params } = useUrl()
@@ -53,19 +59,57 @@ export default function App() {
   const chat = useChat(customerId, lang)
   const ready = overview.status === 'ready' ? overview.data : null
   const overviewFailed = overview.status === 'error' || personas.status === 'error'
+  // The persona's age band (#877): Learn lessons show a Statistics Finland line for people that age (#885).
+  const ageBand = personas.status === 'ready' ? (personas.data.personas.find((p) => p.customer_id === customerId)?.age_band ?? null) : null
+  // The first screen's two tabs: the thread stays mounted (hidden) while Learn shows, so the opening's
+  // review state, the streaming answer and the scroll position live on.
+  const tab = path !== '/cards' && path !== '/bill' && params.get('tab') === 'learn' ? 'learn' : 'chat'
+  const chatScroll = useRef(0)
+  const learnProgress = useLearnProgress(customerId)
+  const learnDot = unfinished(topicsFor(ready, lang), learnProgress.done)
+  const switchTab = useCallback(
+    (next: 'chat' | 'learn') => {
+      if (next === tab) return
+      if (tab === 'chat') chatScroll.current = window.scrollY
+      setParams({ tab: next === 'learn' ? 'learn' : null })
+    },
+    [tab],
+  )
+  useEffect(() => {
+    window.scrollTo({ top: tab === 'chat' ? chatScroll.current : 0 })
+  }, [tab])
 
   return (
     <SettingsContext.Provider value={settings}>
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-page">
-        <Header onLongPress={() => setPersonaSheet(true)} disclosure={ready?.ai_disclosure || t.disclosure} overviewReady={ready !== null} />
+        <Header
+          onLongPress={() => setPersonaSheet(true)}
+          disclosure={ready?.ai_disclosure || t.disclosure}
+          overviewReady={ready !== null}
+          onNewChat={() => {
+            stopSpeaking()
+            chat.clear()
+            window.scrollTo({ top: 0 })
+          }}
+          threadEmpty={chat.turns.length === 0}
+          tab={tab}
+          learnDot={learnDot}
+          onTab={path === '/cards' || path === '/bill' ? undefined : switchTab}
+        />
         {/* The composer is pinned to the bottom, so the thread always keeps room for it. */}
         <main className="flex-1 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+88px)]">
           {path === '/cards' && CardGallery ? (
             <Suspense fallback={<LoadingBlock lines={6} />}>
               <CardGallery />
             </Suspense>
+          ) : path === '/bill' ? (
+            <Suspense fallback={<LoadingBlock lines={6} />}>
+              <BillScreen />
+            </Suspense>
           ) : (
-            <OpeningProvider overview={overview}>
+            <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
+              {tab === 'learn' && <Learn ageBand={ageBand} />}
+              <div hidden={tab !== 'chat'}>
               <Chat
                 chat={chat}
                 question={params.get('q')}
@@ -81,6 +125,7 @@ export default function App() {
                 }
                 starters={overviewFailed ? chatStrings(lang).starters : undefined}
               />
+              </div>
             </OpeningProvider>
           )}
           {api.mode === 'mock' && (

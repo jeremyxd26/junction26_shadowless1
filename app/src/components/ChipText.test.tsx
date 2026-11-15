@@ -27,8 +27,8 @@ describe('number chip wrapping (#493)', () => {
     expect(render('-€48.80')).toBe('<span class="[text-wrap:balance]"><span class="whitespace-nowrap">-€48.80</span></span>')
   })
 
-  it('never wraps a chip in running text; a standalone chip wraps only past its max width', () => {
-    expect(chipWrapping(true)).toBe('whitespace-nowrap')
+  it('wraps a chip in running text only past the line, and a standalone chip only past its max width (#726)', () => {
+    expect(chipWrapping(true)).toBe('max-w-full text-left')
     expect(chipWrapping(false)).toBe('shrink-0 max-w-full text-center')
   })
 

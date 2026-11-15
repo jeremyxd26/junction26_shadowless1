@@ -412,7 +412,7 @@ class GeminiClient:
                  plan_max_tokens: int = 4096, compose_max_tokens: int = 4096,
                  extract_model: str | None = None, extract_thinking: str = "low", extract_max_tokens: int = 4096,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
-                 refusal_s: float = REFUSAL_S) -> None:
+                 refusal_s: float = REFUSAL_S, judge_model: str = "gemini-3.5-flash-lite") -> None:
         if cache not in ("on", "off", "replay"):
             raise ValueError("cache must be on, off or replay")
         if cache != "off" and cache_dir is None:
@@ -442,6 +442,7 @@ class GeminiClient:
         self.extract_model = extract_model or model
         self.extract_thinking = extract_thinking
         self.extract_max_tokens = extract_max_tokens
+        self.judge_model = judge_model   # agent mode's safety judge (#937)
         self._extract_paused_until = 0.0
         self._extract_pause_code = "error"
         self._extract_failures = 0
@@ -510,6 +511,35 @@ class GeminiClient:
             **_thinking(self.plan_thinking),
         }
         return self._call("plan", contents, config, self.plan_timeout_s)
+
+    def agent(self, system: str, contents: list[dict[str, Any]], declarations: list[dict[str, Any]],
+              tools_on: bool = True) -> Reply:
+        """Agent mode (#937): plan()'s request with the model free to answer in words (mode AUTO), or, for the last
+        round, words only (mode NONE, the declarations kept so the earlier rounds' calls stay valid). Its own call
+        kind: its failures never pause the planner or the composer. The planner's model, timeout and thinking."""
+        config = {
+            "system_instruction": system,
+            "tools": [{"function_declarations": declarations}],
+            "tool_config": {"function_calling_config": {"mode": "AUTO" if tools_on else "NONE"}},
+            "automatic_function_calling": {"disable": True},
+            "max_output_tokens": self.plan_max_tokens,
+            **_thinking(self.plan_thinking),
+        }
+        return self._call("agent", contents, config, self.plan_timeout_s)
+
+    def judge(self, system: str, user_text: str, schema: dict[str, Any], *, max_tokens: int = 512,
+              timeout_s: float = 4.0) -> Reply:
+        """Agent mode's safety judge (#937): compose()'s request shape with a small schema and a low token cap, on
+        the judge model (flash-lite), with no fallback model. It counts against the daily ledger like any call."""
+        contents = [{"role": "user", "parts": [{"text": user_text}]}]
+        config = {
+            "system_instruction": system,
+            "response_mime_type": "application/json",
+            "response_json_schema": schema,
+            "max_output_tokens": max_tokens,
+            **_thinking(effective_thinking(self.judge_model, "minimal")),
+        }
+        return self._call("judge", contents, config, timeout_s, allow_fallback=False)
 
     def extract(self, system: str, text: str, image: bytes, mime_type: str, schema: dict[str, Any],
                 accept: Callable[[Reply], bool] | None = None, cache_only: bool = False) -> Reply:
@@ -673,6 +703,8 @@ class GeminiClient:
         refused (404) gives way to the fallback (#383). A bill reading has its own model and no fallback (#250)."""
         if kind == "extract":
             return self.extract_model, None
+        if kind == "judge":
+            return self.judge_model, None   # agent mode's safety judge (#937): one model, no fallback
         primary, fallback = (self.compose_model, self.compose_fallback_model) if kind == "compose" \
             else (self.model, self.fallback_model)
         if self._is_refused(fallback):

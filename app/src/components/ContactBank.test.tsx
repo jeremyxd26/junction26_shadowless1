@@ -29,7 +29,7 @@ async function answerOf(conversation_id: string | null): Promise<Answer> {
 }
 
 const render = (answer: Answer) =>
-  renderToStaticMarkup(<TurnView turn={{ id: 1, question: request.message, answer }} latest suggestions={[]} onAsk={() => {}} onRetry={() => {}} />)
+  renderToStaticMarkup(<TurnView turn={{ kind: 'ask', id: 1, question: request.message, answer }} latest suggestions={[]} onAsk={() => {}} onRetry={() => {}} />)
 
 describe('contract 0.3.3 in the thread (#439, security review #457 row 2)', () => {
   beforeEach(() => {
@@ -65,9 +65,12 @@ describe('contract 0.3.3 in the thread (#439, security review #457 row 2)', () =
     expect(postMessage.mock.calls[0][0]).toStrictEqual({ type: 'sentti.openHostScreen', v: 1, payload: { target: 'contact_bank' } })
   }, 15000)
 
-  it('the first answer shows the AI disclosure once, in the API words; a later answer does not', async () => {
-    const first = render(await answerOf(null))
-    expect(first.split(DISCLOSURE)).toHaveLength(2)
+  it('the first answer carries the AI disclosure, but the answer shows no AI line (behind the header ⓘ since #685)', async () => {
+    const firstAnswer = await answerOf(null)
+    expect(firstAnswer.done?.ai_disclosure).toBe(DISCLOSURE)
+    const first = render(firstAnswer)
+    expect(first).not.toContain(DISCLOSURE)
+    expect(first).toContain('>Contact S-Pankki</button>')
     const later = render(await answerOf('conv_7m3p9r2t'))
     expect(later).not.toContain(DISCLOSURE)
     // The later refusal still offers the way to the bank.

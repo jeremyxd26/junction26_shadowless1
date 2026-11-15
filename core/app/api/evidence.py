@@ -10,7 +10,7 @@ The Number shown at the top is rebuilt from it:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -53,6 +53,16 @@ def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = 
         return texts.pick(texts.NATIONAL_LABEL, language).format(
             band=str(params.get("age_group", "")).replace("-", "\u2013"),
             what=config.label(config.NATIONAL_WHAT[params["category"]], language))
+    if spec["method"] in (config.METHODS["age_band_median"], config.METHODS["age_band_cohort"]) and params.get("band"):
+        # #883: the band ("35–44") and, for a median, the measure
+        band = str(params["band"]).replace("-", "–")
+        if spec["method"] == config.METHODS["age_band_cohort"]:
+            return texts.pick(texts.AGE_BAND_COHORT_LABEL, language).format(band=band)
+        measure = params.get("measure")
+        what = config.label(config.PEER_TEXT["ordinary_spending"], language) if measure == "ordinary_spending" \
+            else config.label(config.BASKET_LABELS[measure], language) if measure in config.BASKET_LABELS \
+            else texts.pick(info.name, language)
+        return texts.pick(texts.AGE_BAND_LABEL, language).format(band=band, what=what.lower())
     if spec["kind"] != "transactions":
         return texts.pick(info.name, language)
     sel = spec["selection"]
@@ -120,7 +130,7 @@ METRIC_SECTIONS = {  # core/metrics/<file> -> section of metrics.md that defines
     "01_recurring.sql": "#2-recurring-bills", "02_baskets.sql": "#1-three-baskets",
     "03_safe_to_spend.sql": "#3-safe-to-spend", "04_what_if.sql": "#4-what-if-savings",
     "05_spender_profile.sql": "#5-spender-profile", "06_peer_benchmark.sql": "#6-peer-benchmark",
-    "07_store_price_index.sql": "#7-grocery-store-price-index",
+    "07_store_price_index.sql": "#7-grocery-store-price-index", "09_age_band_peer.sql": "#6-peer-benchmark",
 }
 
 
@@ -147,6 +157,15 @@ def _peer_parts(parts: list[dict[str, Any]], period: dict[str, Any], language: s
 def _rows(rows: list[dict[str, Any]], language: str) -> list[dict[str, Any]]:
     """Each row's amount also as a localised display, formatted like a Number's (sign kept)."""
     return [{**r, "display": display(Decimal(r["amount"]), Unit.EUR, language)} for r in rows]
+
+
+def _month(m: dict[str, Any], language: str) -> dict[str, Any]:
+    """One month of the list with its label and the total formatted like the rows (contract 0.3.18)."""
+    year, month = (int(p) for p in m["month"].split("-"))
+    first = date(year, month, 1)
+    last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+    return {"month": m["month"], "label": periods.period_label(first, last, language), "count": m["count"],
+            "total": m["total"], "display": display(Decimal(m["total"]), Unit.EUR, language)}
 
 
 def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> EvidenceResponse:
@@ -176,6 +195,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         body["rows"] = _rows(res.rows, language)
         body["reconciles"] = res.reconciles
         body["next_cursor"] = res.next_cursor
+        body["months"] = [_month(m, language) for m in res.months]
         # row_count is a Number with its own ref (contract section 9): a count over the same selection,
         # under the same label set as the number it counts (#68, R2), so it reconciles too.
         rc_value = Decimal(res.row_count or 0)
@@ -212,7 +232,42 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         body["reconciles"] = res.reconciles
         body["rows"] = _rows(res.rows, language)
         body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
+        if res.method == config.METHODS["age_band_median"]:
+            # #883: the band's size beside its median (group statistics only, never a row of another customer)
+            body["parts"] = _age_band_parts(spec, number["period"], language)
+            body["privacy_note"] = texts.pick(texts.PRIVACY_PEER, language)
     return EvidenceResponse.model_validate(body)
+
+
+def _age_band_parts(spec: dict[str, Any], period: dict[str, Any], language: str) -> list[dict[str, Any]]:
+    """The band's size as a part with no ref, from the spec's params (as the peer group's size, #69); for the median
+    of ordinary spending also the band's three basket medians, each with its own evidence ref (#883)."""
+    params = spec.get("params") or {}
+    size = params.get("cohort_size")
+    if size is None or not str(size).isdigit():
+        return []
+    method = config.METHODS["age_band_cohort"]
+    value = Decimal(str(size))
+    parts = [{"role": "cohort_size", "number": {
+        "value": json_value(value, Unit.COUNT), "unit": Unit.COUNT.value, "period": period, "method": method,
+        "evidence_ref": None, "label": texts.pick(texts.AGE_BAND_COHORT_PART, language),
+        "display": display(value, Unit.COUNT, language, method)}}]
+    median = config.METHODS["age_band_median"]
+    for item in params.get("basket_medians") or []:
+        measure, ref = item.get("measure"), item.get("ref")
+        if measure not in config.BASKET_LABELS or not isinstance(ref, str) or not ref.startswith("ev_"):
+            continue
+        try:
+            amount = Decimal(str(item.get("value")))
+        except ArithmeticError:
+            continue
+        label = texts.pick(texts.AGE_BAND_BASKET_PART, language).format(
+            what=config.label(config.BASKET_LABELS[measure], language))
+        parts.append({"role": measure, "number": {
+            "value": json_value(amount, Unit.EUR_PER_MONTH), "unit": Unit.EUR_PER_MONTH.value, "period": period,
+            "method": median, "evidence_ref": ref, "label": label,
+            "display": display(amount, Unit.EUR_PER_MONTH, language, median)}})
+    return parts
 
 
 @router.get("/api/evidence/{ref}", response_model=EvidenceResponse)

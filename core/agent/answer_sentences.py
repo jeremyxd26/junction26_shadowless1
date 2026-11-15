@@ -517,12 +517,35 @@ def _national(view: dict[str, Any], language: str, ok: Ok) -> list[tuple[list[st
              _ids(amount)) for what in whats]
 
 
+# #883: the customer's age band in the whole synthetic dataset, beside a comparison of total spending: the personal
+# figure first, then the band's median with the band's size; context, not a target. No age digits (the digit rule,
+# R1): "people your age", and the band is named on the median's evidence view. Three numbers, two sentences.
+AGE_BAND = (("You spend {you}.",
+             "In this synthetic dataset of {n} people your age, the median is {median}: context, not a target."),
+            ("Kulutat {you}.",
+             "Tässä synteettisessä aineistossa ikäryhmäsi {n} ihmisen mediaani on {median}: taustatietoa, ei tavoite."))
+
+
+def _age_band(view: dict[str, Any], language: str) -> Sentences | None:
+    band = view.get("age_band") if isinstance(view.get("age_band"), dict) else None
+    if not band or view.get("shown") is False or view.get("metric") != "spend_total":
+        return None
+    you, n, median = _tok(view.get("you")), _tok(band.get("cohort_size")), _tok(band.get("median"))
+    if not (you and n and median):
+        return None
+    first, second = pick(AGE_BAND, language)
+    return [first.format(you=you), second.format(n=n, median=median)], _ids(you, n, median)
+
+
 def peer(view: dict[str, Any], language: str, ok: Ok) -> Sentences | None:
+    band = _age_band(view, language)
+    if band is not None:
+        return band
     found = _peer(view, language, ok)
     if found is None:
         return None
     for extra, ids in _national(view, language, ok):
-        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids)):
+        if not answer_text.length_problems(" ".join(found[0] + extra), len(found[1] + ids), kind="template"):
             return found[0] + extra, found[1] + ids
     return found              # the comparison and its offer come first; the context line only when it fits
 

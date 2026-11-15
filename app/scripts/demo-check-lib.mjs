@@ -144,3 +144,46 @@ export function downOnly(values) {
 export function line(n, status, text) {
   return `${n} ${status.padEnd(4)}  ${text}`
 }
+
+/**
+ * The opening's chips since #784: one horizontally scrollable row. It holds the question chips (the
+ * app's own questions, "Where did my money go?" first) and the client-turn chips ("Show Sentti a
+ * bill"), and the whole row carries `data-opening-part`.
+ */
+export const CHIP_ROW = '[data-turn="opening"] [data-opening-part="client-chips"]'
+
+/** The row's question chips: the chips whose text is a question, in row order. */
+export function rowQuestions(texts) {
+  return texts.map((text) => String(text ?? '').trim()).filter((text) => /\?$/.test(text))
+}
+
+/** Step 2's findings on the row's question chips (an empty list is a pass). */
+export function rowProblems(questions, firstQuestion) {
+  const problems = []
+  if (questions.length < 2) problems.push(`${questions.length} question chips in the row, not 2 or more`)
+  if (!questions.includes(firstQuestion)) problems.push(`no "${firstQuestion}" chip in the row`)
+  return problems
+}
+
+/**
+ * An answer has settled (#928) when no card skeleton shows and its text has not changed for this long. After a
+ * live stream ends, the text still types in and the cards wait behind a skeleton until it has (#741).
+ */
+export const SETTLE_QUIET_MS = 500
+/** The longest the check waits for an answer to settle after its stream ends (#928). */
+export const SETTLE_MAX_MS = 8_000
+
+/**
+ * One step of the settle wait: `look` is one sample of the answer ({ text, skeleton }), `now` its time in ms.
+ * The answer is settled once no skeleton shows and the sample has stayed the same for `quietMs`.
+ */
+export function settleStep(state, look, now, quietMs = SETTLE_QUIET_MS) {
+  const changed = !state || state.text !== look.text || state.skeleton !== look.skeleton
+  const since = changed ? now : state.since
+  return { text: look.text, skeleton: look.skeleton, since, settled: !look.skeleton && now - since >= quietMs }
+}
+
+/** The answer's main sentence: its first paragraph (the takeaway), not a note further down or a card. */
+export function mainText(paragraphs) {
+  return paragraphs.map((text) => String(text ?? '').trim()).find(Boolean) ?? ''
+}

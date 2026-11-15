@@ -309,6 +309,7 @@ class Resolution:
     next_cursor: str | None = None
     spec: dict[str, Any] | None = None  # the stored spec, for callers that rebuild the Number
     merchant_label: str | None = None   # the selection's merchant by its alias, for the title (#501)
+    months: list[dict[str, Any]] = field(default_factory=list)  # per month of the list: month, count, total
 
 
 def _row(c, alias_map: aliases.AliasMap, language: str) -> dict[str, Any]:
@@ -390,7 +391,10 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
             metric_sql.check_settings(source["settings"])
         except ValueError:
             raise EvidenceForbidden(ref) from None
-        row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
+        settings = source["settings"]
+        if source["file"] == config.AGE_BAND_FILE:   # #883: the smallest band shown is pinned, never the spec's
+            settings = {"band_min_n": config.AGE_BAND_MIN_N}
+        row = metric_sql.run_one(conn, source["file"], customer_id, as_of, settings)
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
         return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value, spec=spec)
@@ -436,6 +440,11 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         reconciles = None
     rows.sort(key=lambda c: (c.tx.tx_date, c.tx.tx_at, c.tx.id), reverse=True)
     page = rows[offset:offset + limit]
+    # every month of the whole list (not just this page), newest first: the sheet shows the months' subtotals
+    by_month: dict[str, list[Decimal]] = {}
+    for c in rows:
+        by_month.setdefault(c.tx.tx_date.strftime("%Y-%m"), []).append(c.tx.amount_eur)
+    months = [{"month": m, "count": len(v), "total": f"{sum(v, Decimal(0)):.2f}"} for m, v in by_month.items()]
     alias_map = aliases.build(history, as_of)
     next_cursor = f"cur_{offset + limit}" if offset + limit < len(rows) else None
     merchant_label = None
@@ -452,4 +461,5 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
         next_cursor=next_cursor,
         spec=spec,
         merchant_label=merchant_label,
+        months=months,
     )

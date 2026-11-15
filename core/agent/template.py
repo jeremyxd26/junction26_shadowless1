@@ -18,7 +18,7 @@ from typing import Any
 
 from core import answer_text
 from core.tools import config as tools_config
-from core.agent import answer_sentences
+from core.agent import answer_sentences, savings_transfer
 from core.agent.guard import fold, fold_pattern
 
 REFUSAL: dict[str, dict[str, Any]] = {
@@ -59,7 +59,7 @@ REFUSAL: dict[str, dict[str, Any]] = {
 BRIEF_QUESTIONS = (
     ("Where did my money go?", "Mihin rahani menivät?"),
     ("What kind of spender am I?", "Millainen kuluttaja olen?"),
-    ("What can I safely spend this week?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?"),
+    ("What's left to spend this week?", "Paljonko minulla on käyttövaraa tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
 )
 
@@ -93,16 +93,17 @@ TOOL_FAILED = ("Some of the data could not be computed right now.",
                "Osaa tiedoista ei voitu laskea juuri nyt.")
 NOTHING = ("I could not find data for that question.", "En löytänyt tietoja tähän kysymykseen.")
 # Missing data (#379): what is missing, then what Sentti can answer instead, as chips the rules recognise.
-# The future names the last day of the data (a returned date); the past names no date, the chip does.
+# The future names the last day of the data (a returned date); the past names the data's first and last month (#805).
 MISSING = {
     "period_in_future": ("My data ends on {end}, so I can't see future months. I can show what you typically have "
                          "left each month, or whether your money lasts until payday.",
                          "Tietoni ulottuvat {end} asti, joten en näe tulevia kuukausia. Voin näyttää, paljonko "
                          "sinulle tavallisesti jää kuukaudessa tai riittävätkö rahasi palkkapäivään."),
-    "period_before_data": ("My data does not reach back that far, so I can't see that period. I can show any month "
-                           "since my data starts, or the past year.",
-                           "Tietoni eivät ulotu niin kauas taaksepäin, joten en näe sitä jaksoa. Voin näyttää minkä "
-                           "tahansa kuukauden aineiston alusta lähtien tai viimeisen vuoden."),
+    # the range from the data's first month to its last (#805)
+    "period_before_data": ("My data covers {first} to {last}, so I can't see that period. I can show any month in "
+                           "that range, or the past year.",
+                           "Tietoni ulottuvat {first} {last}, joten en näe sitä jaksoa. Voin näyttää minkä "
+                           "tahansa kuukauden siltä ajalta tai viimeisen vuoden."),
 }
 MISSING_CHIPS = {
     "period_in_future": (("How could I save more?", "Will my money last until payday?"),
@@ -133,8 +134,8 @@ FI_MONTH_STEMS = ("tammi", "helmi", "maalis", "huhti", "touko", "kesä", "heinä
                   "joulu")
 CLARIFY_GENERAL = {
     "question": ("What would you like to know about your money?", "Mitä haluaisit tietää raha-asioistasi?"),
-    "options": (("Where did my money go?", "What can I safely spend this week?", "How could I save more?"),
-                ("Mihin rahani menivät?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?",
+    "options": (("Where did my money go?", "What's left to spend this week?", "How could I save more?"),
+                ("Mihin rahani menivät?", "Paljonko minulla on käyttövaraa tällä viikolla?",
                  "Miten voisin säästää enemmän?")),
 }
 # "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
@@ -248,9 +249,98 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "your money goes, what's safe to spend this week and how you could save more. Every number comes from your "
          "transactions — tap it to see them. Sometimes I'll ask you a question too.",
          "Hei, olen Sentti — tekoälyvalmentaja S-mobiilissa. Katson omia tilitapahtumiasi ja kerron, mihin rahasi "
-         "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
+         "menevät, paljonko sinulla on käyttövaraa tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
-THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+THANKS = ("You're welcome! Tell me if you want to continue.", "Ole hyvä! Kerro, jos haluat jatkaa.")
+# "Do you understand what we're talking about?": the previous answer's topic by its first tool, named in a sentence.
+CONTEXT_TOPICS = {
+    "get_basket_breakdown": ("where your money went", "siitä, mihin rahasi menivät"),
+    "get_spending": ("your spending", "kulutuksestasi"),
+    "get_safe_to_spend": ("what is left to spend this week", "käyttövarastasi"),
+    "get_safe_to_save": ("saving", "säästämisestä"),
+    "get_savings_plan": ("saving", "säästämisestä"),
+    "get_recurring_bills": ("your bills", "laskuistasi"),
+    "get_spender_profile": ("your spender profile", "kuluttajaprofiilistasi"),
+    "get_peer_benchmark": ("how you compare with people like you", "vertailusta kaltaisiisi"),
+    "run_what_if": ("a what-if", "entä jos -laskelmasta"),
+    "get_balance_forecast": ("whether your money lasts until payday", "rahojen riittämisestä palkkapäivään"),
+    "get_small_purchases": ("your small purchases", "pienistä ostoksistasi"),
+}
+CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more simply?",
+                 "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
+
+
+# "Explain it more simply" after an S-Bank help answer: the entry's first sentence (r-coord's live check of #921).
+KB_SIMPLER = ("In short: {first}", "Lyhyesti: {first}")
+# Codex run: confusion (test 3) and light emotional lines (test 18).
+CONFUSED = ("What was unclear? Shall I explain the last answer more simply?",
+            "Mikä jäi epäselväksi? Selitänkö edellisen vastauksen yksinkertaisemmin?")
+CONFUSED_CHIP = ("Explain it more simply", "Selitä yksinkertaisemmin")
+FEELINGS = ("Sorry to hear that \u2014 days like that happen. Want to look at something light, like what's left to "
+            "spend this week?",
+            "Ikävä kuulla \u2014 tällaisia päiviä tulee. Haluatko, että katsotaan jotain kevyttä, vaikka paljonko "
+            "sinulla on käyttövaraa?")
+FEELINGS_CHIP = ("What's left to spend this week?", "Paljonko minulla on käyttövaraa tällä viikolla?")
+# Renat's FI transcript: garbled input, feedback on the length or the understanding, "answer my previous question".
+DIDNT_CATCH = ("Sorry, I didn't catch that \u2014 could you say it again?",
+               "En ihan saanut kiinni \u2014 voitko sanoa uudelleen?")
+BRIEF_ACK = ("Sorry! I'll keep it shorter.", "Anteeksi! Vastaan jatkossa lyhyemmin.")
+MISUNDERSTOOD = ("Sorry about that. What did you mean?", "Anteeksi. Mitä tarkoitit?")
+PREVIOUS_UNCLEAR = ("I couldn't make out your previous message. Could you ask it again?",
+                    "En saanut edellisestä viestistäsi selvää. Voitko kysyä sen uudelleen?")
+
+
+def previous_turn(turns: list[dict], skip) -> dict | None:
+    """The latest turn whose question was not itself a meta message or feedback (`skip`), or None."""
+    for turn in reversed(turns):
+        question = " ".join(str(turn.get("question") or "").split())
+        if question and not skip(question):
+            return turn
+    return None
+
+
+# "What did I ask? Remind me": the previous question and its topic, then whether to go on (Renat, via r-coord).
+RECALL_QUESTION = ("You asked: \u201c{question}\u201d.", "Kysyit: \u201d{question}\u201d.")
+RECALL_ABOUT = ("You asked about {topic}.", "Kysyit {topic}.")
+RECALL_ANY_TOPIC = ("your money", "raha-asioistasi")
+RECALL_TOPIC = ("We talked about {topic}.", "Puhuimme {topic}.")
+RECALL_GO_ON = ("Want to continue?", "Jatketaanko?")
+RECALL_NOTHING = ("We haven't talked about anything yet. What would you like to know?",
+                  "Emme ole vielä puhuneet mistään. Mitä haluaisit tietää?")
+
+
+def recall_text(turns: list[dict], language: str, is_meta) -> tuple[str, str | None]:
+    """The reply to "what did I ask?" and the chip that asks the question again: the latest question that was not
+    itself a meta message ("thanks", "what did I ask?"), quoted when it is short and has no digits (an answer text
+    names no number that is not a Number), and the topic of its answer by its first data tool; nothing talked about
+    yet: the question back. No tool and no model."""
+    for turn in reversed(turns):
+        question = " ".join(str(turn.get("question") or "").split())
+        if not question or is_meta(question):
+            continue
+        topic = next((CONTEXT_TOPICS[c["name"]] for c in turn.get("calls") or [] if c.get("name") in CONTEXT_TOPICS),
+                     None)
+        quotable = len(question) <= 90 and not re.search(r"\d", question)
+        parts = []
+        if quotable:
+            parts.append(pick(RECALL_QUESTION, language).format(question=question))
+            if topic:
+                parts.append(pick(RECALL_TOPIC, language).format(topic=pick(topic, language)))
+        else:   # a long question, or one with digits: its topic, or the money in general
+            parts.append(pick(RECALL_ABOUT, language).format(topic=pick(topic or RECALL_ANY_TOPIC, language)))
+        parts.append(pick(RECALL_GO_ON, language))
+        return " ".join(parts), question
+    return pick(RECALL_NOTHING, language), None
+
+
+def context_topic(turns: list[dict]) -> tuple[str, str] | None:
+    """The latest answer's topic (en, fi) and its question, from the first data tool it called, or None."""
+    for turn in reversed(turns):
+        for call in turn.get("calls") or []:
+            topic = CONTEXT_TOPICS.get(call.get("name") or "")
+            if topic:
+                return topic, turn.get("question") or ""
+    return None
 # #352: the full introduction once per conversation; a later greeting, identity, capabilities or help
 # message gets one short sentence (no "Hi") and the chips.
 AGAIN = {
@@ -259,7 +349,7 @@ AGAIN = {
     "identity": ("I'm Sentti, an AI money coach that works with your own transactions.",
                  "Olen Sentti, tekoälyvalmentaja, joka käyttää omia tilitapahtumiasi."),
     "capabilities": ("I can show where your money goes, what's safe to spend this week and how you could save more.",
-                     "Voin näyttää, mihin rahasi menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten "
+                     "Voin näyttää, mihin rahasi menevät, paljonko sinulla on käyttövaraa tällä viikolla ja miten "
                      "voisit säästää enemmän."),
     "help": ("Here are some things you can ask me.", "Tässä muutama asia, jota voit kysyä minulta."),
 }
@@ -278,10 +368,48 @@ PRIVACY = ("Your own numbers are calculated from your transactions; comparisons 
            "ja sen palvelin tallentaa kysymykset ja vastaukset.")
 # A message in a language Sentti does not speak (#352): one line, in English.
 LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi.")
+# Small talk (#790): a warm line in the message's language that turns to money, with one chip. The jokes are a
+# fixed list of general money jokes, never about the customer's own data and never judging (#640); a later joke in
+# the same conversation is the next one in the list.
+HOW_ARE_YOU_REPLY = ("I'm good, thanks for asking! Want to see what you can safely spend this week?",
+                     "Hyvin menee, kiitos kysymästä! Katsotaanko, paljonko sinulla on käyttövaraa tällä viikolla?")
+JOKES = (
+    ("The coin went to therapy because it was feeling a little sentimental.",
+     "Kolikko meni terapiaan, koska se tunsi olonsa vähän sentimentaaliseksi."),
+    ("A piggy bank is the most patient pet there is: it waits for years and never complains.",
+     "Säästöpossu on maailman kärsivällisin lemmikki: se odottaa vuosia eikä valita kertaakaan."),
+    ("The best way to double your money: fold the note in half and put it back in your wallet.",
+     "Paras tapa tuplata rahansa: taita seteli kahtia ja laita se takaisin lompakkoon."),
+)
+JOKE_OFFER = ("Now, want to see where your money went?", "Katsotaanko nyt, mihin rahasi menivät?")
+SMALL_TALK_CHIP = {"how_are_you": BRIEF_QUESTIONS[2], "joke": BRIEF_QUESTIONS[0]}
 
 
-def meta_text(intent: str, language: str, introduced: bool = False) -> str:
-    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation."""
+# "What can you do?" / "Mitä sä osaat?": one line of introduction and a short list of what Sentti does, every time.
+CAPABILITIES = (
+    "I'm Sentti, an AI coach that reads your own transactions. I can show where your money went and its three "
+    "baskets, what's left to spend this week, your bills until payday, a what-if, read a bill with you, teach short "
+    "lessons in the Learn tab and answer S-Bank help questions.",
+    "Olen Sentti, tekoälyvalmentaja, joka lukee omia tilitapahtumiasi. Näytän, mihin rahasi menivät ja niiden kolme "
+    "koria, käyttövarasi tällä viikolla ja laskusi palkkapäivään asti, teen entä jos -laskelmia, luen laskun kanssasi, "
+    "opetan lyhyitä oppitunteja Opi-välilehdellä ja vastaan S-Pankin ohjekysymyksiin.",
+)
+CAPABILITY_CHIPS = (
+    ("Where did my money go?", "Mihin rahani menivät?"),
+    ("Will my money last until payday?", "Riittävätkö rahat palkkapäivään?"),
+    ("What if I spent 20% less on restaurants?", "Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?"),
+)
+
+
+def meta_text(intent: str, language: str, introduced: bool = False, turn: int = 0) -> str:
+    """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation;
+    `turn`: the number of earlier turns in the conversation, which picks the joke."""
+    if intent == "capabilities":
+        return pick(CAPABILITIES, language)
+    if intent == "how_are_you":
+        return pick(HOW_ARE_YOU_REPLY, language)
+    if intent == "joke":
+        return f"{pick(JOKES[turn % len(JOKES)], language)} {pick(JOKE_OFFER, language)}"
     if intent == "thanks":
         return pick(THANKS, language)
     if intent == "privacy":
@@ -296,14 +424,43 @@ def brief_questions(language: str) -> list[str]:
     return [pick(q, language) for q in BRIEF_QUESTIONS]
 
 
+def meta_follow_ups(intent: str, language: str) -> list[str]:
+    """The chips of a meta answer: small talk turns to money with one question (#790), the rest offer all four."""
+    if intent == "capabilities":
+        return [pick(q, language) for q in CAPABILITY_CHIPS]
+    return [pick(SMALL_TALK_CHIP[intent], language)] if intent in SMALL_TALK_CHIP else brief_questions(language)
+
+
+# Renat: other periods come up in the conversation, not only the overview's six months. After a data answer one chip
+# asks about another period, in words the rules answer at once: last month after the six months or this month, this
+# month compared with last month after last month.
+PERIOD_CHIPS = {
+    "last_month": ("What did I spend last month?", "Paljonko käytin viime kuussa?"),
+    "compare": ("How did this month compare with last month?", "Miten tämä kuu vertautuu viime kuuhun?"),
+}
+_ASKED_LAST_MONTH = re.compile(r"\b(last month|previous month|august|viime kuu\w*|edellis\w* kuu\w*|elokuu\w*)\b")
+_ASKED_COMPARE = re.compile(r"\b(compare\w*|compared|vs|versus|vertaa\w*|vertautu\w*|verrattuna)\b")
+
+
+def period_chip(question: str, language: str) -> str | None:
+    """The other-period chip for an answer to `question` (see PERIOD_CHIPS), or None after a comparison."""
+    q = fold(question or "")
+    if _ASKED_COMPARE.search(q):
+        return None
+    return pick(PERIOD_CHIPS["compare" if _ASKED_LAST_MONTH.search(q) else "last_month"], language)
+
+
 def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
     """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
     question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the
-    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411)."""
+    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411). After a data
+    answer, one chip asks about another period (PERIOD_CHIPS)."""
     asked = question.strip().lower()
     offered = [v["follow_up"] for v in views or [] if isinstance(v, dict) and isinstance(v.get("follow_up"), str)
                and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
-    out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
+    data = any(isinstance(v, dict) and v.get("tool") for v in views or [])
+    period = [chip] if data and not refused and (chip := period_chip(question, language)) else []
+    out = [q for q in dict.fromkeys(offered + period + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
 
 
@@ -336,6 +493,11 @@ def _quotable(word: str) -> bool:
     return len(word) <= 40 and bool(re.fullmatch(r"[^\W\d_][\w'-]*(?: [^\W\d_][\w'-]*){0,3}", word)) and len(word) > 1
 
 
+# #639: a question about the S-Bonus received gets the estimate after this line; the Bonus received is no data here
+BONUS_RECEIVED_LEAD = ("I can't see the S-Bonus you have received so far in this account's data, so here is an estimate "
+                       "instead.",
+                       "En näe tämän tilin tiedoista, paljonko S-Bonusta olet saanut tähän mennessä, joten tässä on "
+                       "arvio.")
 UNKNOWN_NO_WORD = ("I can't see that on its own in your transactions: they are grouped into categories.",
                    "En löydä sitä tapahtumistasi erikseen: kulutus on ryhmitelty luokkiin.")
 
@@ -408,7 +570,15 @@ def missing_data_answer(views: list[dict[str, Any]], errors: list[dict[str, Any]
     chips = [c.format(month_en=f"{calendar.month_name[first.month]} {first.year}",
                       month_fi=f"{FI_MONTH_STEMS[first.month - 1]}kuussa {first.year}")
              for c in pick(MISSING_CHIPS[reason], language)]
-    return pick(MISSING[reason], language).format(end=end), chips
+    # the error's own first and last day (returned dates), else the dataset's range (#805)
+    last = min(_iso_day((by_reason.get("period_before_data") or {}).get("last")) or last, last)
+    if language == "fi":   # "lokakuusta 2024 syyskuuhun 2026" (#805)
+        span = {"first": f"{FI_MONTH_STEMS[first.month - 1]}kuusta {first.year}",
+                "last": f"{FI_MONTH_STEMS[last.month - 1]}kuuhun {last.year}"}
+    else:
+        span = {"first": f"{calendar.month_name[first.month]} {first.year}",
+                "last": f"{calendar.month_name[last.month]} {last.year}"}
+    return pick(MISSING[reason], language).format(end=end, **span), chips
 
 
 def lesson(key: str | None, language: str) -> dict[str, str] | None:
@@ -713,6 +883,105 @@ def safe_to_spend_sentence(view: dict[str, Any], language: str) -> tuple[str, li
     return pick(SAFE_SENTENCE[kind], language).format(**tokens), ids
 
 
+# "Should I borrow €500 for a holiday?" (#806, Renat's decision): never whether to take the loan or that borrowing
+# would help (#419), only what spending that amount would do to what is left to spend, with the way to the bank for
+# the credit side (contact_bank). Claimed only for an advice question with a borrowing verb, an amount with a euro mark
+# and a purpose, in one sentence; the rules' refusals run first, so "Can I borrow €500?" stays the credit decision.
+BORROW_BUDGET_ASK = {
+    "en": fold_pattern(r"\b(should|shall) (i|we) (borrow|take (out )?(a |an )?(\S+ )?loan|get (a |an )?(\S+ )?loan)\b|"
+                       r"\b(is it|would it be) (ok|okay|wise|smart|sensible|a good idea) (for (me|us) )?to "
+                       r"(borrow|take (out )?(a |an )?(\S+ )?loan)\b"),
+    "fi": fold_pattern(r"\b(pitäisikö|kannattaako|kannattaisiko) (minun |meidän )?(lainata|ottaa (\S+ )?lainaa)\b")}
+BORROW_BUDGET_AMOUNT = r"€\s?(\d[\d\s.,]*\d|\d)|(\d[\d\s.,]*\d|\d)\s?(€|euros?(?!\w)|euroa(?!\w)|eur(?!\w))"
+# A purpose in the verb's own language: "for"/"to" in English; in Finnish an illative word ("lomaan", "uuteen
+# puhelimeen"), never a pronoun's, "varten", or an infinitive of buying or paying. An allative ("kaverille", "sinulle")
+# is lending to someone, never a purpose.
+BORROW_BUDGET_PURPOSE = {
+    "en": r"\b(for|to)\b",
+    "fi": fold_pattern(r"\b(?!(minuun|sinuun|häneen|meihin|teihin|heihin)\b)\w+(aan|ään|een|iin|oon|öön|uun|yyn|seen"
+                       r"|hin)\b|\bvarten\b|\b(ostaa|ostaakseni|ostamiseen|maksaa|maksaakseni)\b")}
+# A second question in the same sentence ("… for a holiday and how much did I spend last month?") keeps today's path.
+BORROW_BUDGET_SECOND = fold_pattern(
+    r"\b(and|or|but|also)\s+(how|what|when|where|why|which|who|can|could|do|does|did|is|are|was|will|would|should|"
+    r"show|tell)\b|\b(ja|tai|mutta|entä)\s+(paljonko|mitä|miten|kuinka|mikä|mihin|milloin|onko|voinko|näytä|kerro)\b")
+BORROW_BUDGET_NOT = fold_pattern(
+    r"\b\w+(lle|lta|ltä)(ni|si|mme|nne|nsa|nsä)\b|"
+    # an investment, a debt, a bill or a bank decision keeps today's path (a refusal or the model's)
+    r"\binvest\w*|\bstocks?\b|\bshares\b|\bfunds?\b|\betfs?\b|\bcrypto\w*|\bbitcoin\w*|\bgold\b|\bsijoit\w*|\bosak\w*|"
+    r"\brahasto\w*|\bkrypto\w*|\bdebts?\b|\b(pay|repay)\w* (it |them |this |that )?(off|back|down)\b|"
+    r"\bcredit cards?\b|\bmortgage\w*|\brent\b|\bbills?\b|\boverdraft\w*|\bvelk\w*|\bluottokort\w*|\bvuokra\w*|"
+    r"\blasku\w*|\basuntolain\w*|\bapprov\w*|\bqualif\w*|\bbank\b|\blender\b|\bpankki\w*|\bmyön\w*")
+# Two sentences, within the template length rule. The user's amount is never repeated: a number in the text must be a
+# tool's token, so the second sentence says "that amount" and compares it with the two figures.
+BORROW_BUDGET_LEAD = ("I can't advise on borrowing.", "En voi neuvoa lainaamisessa.")
+BORROW_BUDGET_EFFECT = {
+    (True, True): ("That amount is more than the {safe} left for the coming week and the {free} free until payday.",
+                   "Summa on enemmän kuin tulevalle viikolle jäljellä oleva {safe} ja palkkapäivään asti vapaana oleva "
+                   "{free}."),
+    (True, False): ("That amount is more than the {safe} left for the coming week, and spending it would leave less of "
+                    "the {free} free until payday.",
+                    "Summa on enemmän kuin tulevalle viikolle jäljellä oleva {safe}, ja sen käyttäminen pienentäisi "
+                    "palkkapäivään asti vapaana olevaa summaa {free}."),
+    (False, True): ("Spending that amount would leave less of the {safe} left for the coming week, and it is more than "
+                    "the {free} free until payday.",
+                    "Summan käyttäminen pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe}, ja summa on "
+                    "enemmän kuin palkkapäivään asti vapaana oleva {free}."),
+    (False, False): ("Spending that amount would leave less of the {safe} left for the coming week and of the {free} "
+                     "free until payday.",
+                     "Summan käyttäminen pienentäisi tulevalle viikolle jäljellä olevaa summaa {safe} ja palkkapäivään "
+                     "asti vapaana olevaa summaa {free}."),
+}
+
+
+def _euro_value(raw: str) -> Decimal | None:
+    digits = re.sub(r"\s", "", raw)
+    if "," in digits and "." in digits:
+        digits = digits.replace(".", "").replace(",", ".") if digits.rfind(",") > digits.rfind(".") \
+            else digits.replace(",", "")
+    elif re.fullmatch(r"\d{1,3}([.,]\d{3})+", digits):
+        digits = re.sub(r"[.,]", "", digits)
+    else:
+        digits = digits.replace(",", ".")
+    try:
+        return Decimal(digits)
+    except ArithmeticError:
+        return None
+
+
+def borrow_budget_amount(question: str) -> Decimal | None:
+    """The amount of an advice question about borrowing it for a purchase or spending (#806), or None: one sentence,
+    an advice verb, an amount with a euro mark after it, and a purpose after the verb in the verb's own language."""
+    q = fold(question).strip()
+    if len([s for s in re.split(r"[?!;]|\.(?!\d)", q) if s.strip()]) != 1 or re.search(BORROW_BUDGET_NOT, q) or \
+            re.search(BORROW_BUDGET_SECOND, q):
+        return None
+    found = [(lang, m) for lang, rx in BORROW_BUDGET_ASK.items() for m in [re.search(rx, q)] if m]
+    if len(found) != 1:
+        return None
+    lang, ask = found[0]
+    amount = re.search(BORROW_BUDGET_AMOUNT, q[ask.start():])
+    if not amount or not re.search(BORROW_BUDGET_PURPOSE[lang], q[ask.end():]):
+        return None
+    value = _euro_value(amount.group(1) or amount.group(2))
+    return value if value is not None and value > 0 else None
+
+
+def borrow_budget_answer(views: list[dict[str, Any]], amount: Decimal,
+                         language: str) -> tuple[str, list[str]] | None:
+    """The answer to a borrowing question (#806): the lead, then what spending the amount would do to safe to spend in
+    the coming week and to what is free until payday. None when the safe-to-spend view or a number is missing."""
+    view = next((v for v in views if isinstance(v, dict) and v.get("tool") == "get_safe_to_spend"), None)
+    if view is None:
+        return None
+    safe, free = view.get("safe_to_spend"), view.get("free_until_payday")
+    if not (_id(safe) and _id(free)):
+        return None
+    effect = pick(BORROW_BUDGET_EFFECT[(float(amount) > _value(safe), float(amount) > _value(free))], language)
+    text = f"{pick(BORROW_BUDGET_LEAD, language)} " + effect.format(safe=f"{{{{{safe['id']}}}}}",
+                                                                    free=f"{{{{{free['id']}}}}}")
+    return text, [safe["id"], free["id"]]
+
+
 # Small purchases as one takeaway sentence (#256), in the voice of the brief and within the length rule (review
 # of #390): the takeaway number first, at most three numbers (the total, the count, the monthly average), the
 # period in words. The limit stays on the card. Words always stand between a count and a date, so a count
@@ -957,6 +1226,91 @@ def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
     return pick(WHAT_IF_OFFER, language).format(category=category)
 
 
+# #822: an explicit request for steps or a plan to save ("What should I do step by step to save money?", "mitä mun
+# pitää tehdä askeleilla säästää rahaa?") gets three numbered steps from the tools the save-more route already runs:
+# the savings goal set aside first (get_savings_plan), the plan's largest what-if cut (its lever with the largest
+# saving a month), and the small purchases a month (get_small_purchases). A step cue alone ("phone plan",
+# "maksusuunnitelma") is no request to save; an investment, loan or borrowing word never gets the steps.
+STEP_PLAN_CUE = fold_pattern(
+    r"\bstep[\s-]+by[\s-]+step\b|\bsteps?\b|\b(?:a|an|my|the|some)\s+(?:\w+\s+)?plan\b|\bplan\s+(?:to|for)\b|"
+    r"\bwhat\s+(?:should|do|must)\s+i\s+do\b|\bwhat\s+do\s+i\s+(?:need|have)\s+to\s+do\b|"
+    r"\baskel\w*|\bvaihe\s+vaiheelta\b|\bvaiheittain\b|suunnitelm\w*|"
+    r"\bmitä\s+(?:mun|minun|mä|minä)\s+(?:pitää|pitäis|pitäisi|täytyy|kannattaa|kannattais|kannattaisi|tulee|tulisi)"
+    r"\s+tehdä\b")
+STEP_PLAN_SAVE = fold_pattern(r"\bsav(?:e|es|ing|ings)\b(?!\s+(?:more\s+)?time\b)|säästä\w*|säästö\w*")
+STEP_PLAN_NOT = fold_pattern(r"\binvest\w*|\bfunds?\b|\bstocks?\b|\bshares?\b|\bloans?\b|\bborrow\w*|\bcredit\b|"
+                             r"\bmortgage\b|sijoit\w*|rahasto\w*|osake\w*|\blaina\w*|luoto\w*|luotto\w*|\d")
+# One sentence and one number per step, numbered in words (a digit outside a token fails the validator). The list
+# keeps its own template budget: three sentences, one per step, within the ordinary answer's 55 words and three
+# numbers (answer_text.length_problems), not the two-sentence budget of the other templates. Each amount's display
+# already says "a month". No product, no screen, no borrowing (#417, #419).
+STEP_PLAN = {
+    "goal": ("set aside your savings goal: {n}.", "laita säästötavoitteesi sivuun: {n}."),
+    "first": ("eat out {cut} less, which could save about {n}.",
+              "syö ulkona {cut} vähemmän, jolloin säästäisit noin {n}."),
+    "other": ("spend {cut} less on {other}, which could save about {n}.",
+              "käytä luokassa {other} {cut} vähemmän, jolloin säästäisit noin {n}."),
+    "first_no_words": ("eat out less than usual, which could save about {n}.",
+                       "syö ulkona tavallista vähemmän, jolloin säästäisit noin {n}."),
+    "other_no_words": ("spend less than usual on {other}, which could save about {n}.",
+                       "käytä luokassa {other} tavallista vähemmän, jolloin säästäisit noin {n}."),
+    "small": ("check your small purchases: they add up to about {n}.",
+              "tarkista pienet ostoksesi: niitä kertyy noin {n}."),
+}
+STEP_PLAN_ORDINALS = (("First,", "Second,", "Third,"), ("Ensiksi", "Toiseksi", "Kolmanneksi"))
+STEP_PLAN_TOOLS = frozenset({"get_savings_plan", "get_small_purchases"})
+
+
+def step_plan_request(question: str) -> bool:
+    """The message asks for steps or a plan to save (#822): a step or plan cue and a save word, and no investment,
+    loan, borrowing word or digit."""
+    q = fold(question)
+    return bool(re.search(STEP_PLAN_CUE, q) and re.search(STEP_PLAN_SAVE, q)) and not re.search(STEP_PLAN_NOT, q)
+
+
+def step_plan_answer(views: list[dict[str, Any]], language: str) -> tuple[str, list[str]] | None:
+    """The numbered steps (#822) and the ids they cite, one number each; a step whose tool gave no figure is left
+    out, never invented. None when fewer than two steps have a figure: the per-tool template answers then."""
+    def num(node: Any) -> dict[str, Any] | None:
+        ok = isinstance(node, dict) and isinstance(node.get("id"), str) and isinstance(node.get("value"), (int, float))
+        return node if ok and node["value"] > 0 else None
+
+    s = lambda key: pick(STEP_PLAN[key], language)  # noqa: E731
+    tok = lambda n: f"{{{{{n['id']}}}}}"  # noqa: E731
+    steps: list[tuple[str, str]] = []
+    plan = next((v for v in views if v.get("tool") == "get_savings_plan"), None)
+    small = next((v for v in views if v.get("tool") == "get_small_purchases"), None)
+    if plan is not None:
+        goal = num(plan.get("savings_goal"))
+        if goal:
+            steps.append((s("goal").format(n=tok(goal)), goal["id"]))
+        levers = [lv for lv in (plan.get("levers") or []) if isinstance(lv, dict) and num(lv.get("saving"))] \
+            if plan.get("kind") == "plan" else []
+        if levers:
+            lever = max(levers, key=lambda lv: lv["saving"]["value"])   # the first of two equal savings
+            saving, words = lever["saving"], lever.get("cut_words")
+            words = words if isinstance(words, str) and words and not re.search(r"\d", words) else None
+            other = lever.get("category") or ""
+            other = other.lower() if language == "en" else other
+            if lever.get("key") == tools_config.SAVINGS_PLAN_FIRST[0]:
+                text = s("first").format(cut=words, n=tok(saving)) if words else s("first_no_words").format(n=tok(saving))
+            elif other and not re.search(r"\d", other):
+                text = (s("other").format(cut=words, other=other, n=tok(saving)) if words
+                        else s("other_no_words").format(other=other, n=tok(saving)))
+            else:
+                text = ""
+            if text:
+                steps.append((text, saving["id"]))
+    if small is not None and (small.get("takeaway") or {}).get("kind") != "none":
+        month = num(small.get("per_month"))
+        if month:
+            steps.append((s("small").format(n=tok(month)), month["id"]))
+    if len(steps) < 2:
+        return None
+    ordinals = pick(STEP_PLAN_ORDINALS, language)
+    return " ".join(f"{ordinals[i]} {text}" for i, (text, _) in enumerate(steps)), [i for _, i in steps]
+
+
 def _date(iso: str, language: str) -> str:
     y, m, d = iso.split("-")
     return iso if language == "en" else f"{int(d)}.{int(m)}.{y}"
@@ -980,6 +1334,14 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
             return not re.search(r"\d", answer_text.find_dates(text, blank_all=True)[1])
         return not answer_text.leftover_digits(text, dates=allowed.dates, periods=allowed.periods)
 
+    amount = borrow_budget_amount(question)
+    borrowed = borrow_budget_answer(views, amount, language) if amount is not None and not errors else None
+    if borrowed is not None:   # #806: the budget side of a borrowing question, never whether to borrow
+        return {"language": language, "text": borrowed[0], "cited": borrowed[1], "lesson_key": None}
+    if views and not errors and {v.get("tool") for v in views} <= STEP_PLAN_TOOLS and step_plan_request(question):
+        steps = step_plan_answer(views, language)
+        if steps is not None:   # #822: the numbered steps; with fewer than two, the per-tool answer below
+            return {"language": language, "text": steps[0], "cited": steps[1], "lesson_key": None}
     sentences: list[str] = []
     cited: list[str] = []
     q = fold(question)
@@ -1006,6 +1368,8 @@ def template_draft(views: list[dict[str, Any]], errors: list[dict[str, Any]], la
         custom = ((why_lower_sentence(view, language) if why_lower(q) else None)
                   or safe_to_spend_sentence(view, language)
                   or small_purchases_sentence(view, language)
+                  # "How much did I transfer to savings last month?" (#658): what already goes to savings, not the plan
+                  or savings_transfer.sentence(view, language, q, PLAN_SENTENCE)
                   or savings_plan_sentence(view, language))
         if custom and not set(custom[1]) & set(cited) and len(cited) + len(custom[1]) <= MAX_TEMPLATE_NUMBERS:
             sentences.append(custom[0])

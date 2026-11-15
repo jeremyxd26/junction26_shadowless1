@@ -15,5 +15,5 @@ def test_refuses_without_explicit_customer_ids(argv, monkeypatch, capsys):
 
 
 def test_accepts_the_four_personas_in_one_call():
-    args = reset_reviews.parse(["CUST00860", "CUST00493", "CUST00349", "CUST00849"])
+    args = reset_reviews.parse(["CUST00860", "CUST00493", "CUST00387", "CUST00849"])
     assert args is not None and len(args.customer_ids) == 4

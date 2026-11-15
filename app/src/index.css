@@ -54,6 +54,15 @@
   --shadow-float: var(--shadow-float);
 }
 
+/* No visible scrollbars anywhere (Renat): the module sits inside a bank app, and a system scrollbar breaks that look.
+   Scrolling stays as it was: wheel, touch, keyboard; sheets keep overscroll-behavior: contain. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -92,7 +101,18 @@ select {
   animation: sheet-fade var(--duration-base) var(--ease-entry);
 }
 .sheet-panel {
-  animation: sheet-rise var(--duration-base) var(--ease-entry);
+  /* A slight spring: up a few pixels past the rest, then settle. */
+  animation: sheet-spring calc(var(--duration-base) * 1.5) var(--ease-entry);
+}
+@keyframes sheet-spring {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }
 @keyframes sheet-fade {
   from {
@@ -157,9 +177,239 @@ select {
     border-bottom-width: 0;
   }
 }
+/* Three dots that bounce one after another while Sentti is thinking (the scroll-to-latest button). */
+.dot-bounce {
+  animation: dot-bounce 1s var(--ease-standard) infinite;
+}
+@keyframes dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+/* "Topic done": the check pops in once (static under reduced motion). */
+.check-pop {
+  animation: check-pop 420ms var(--ease-entry) both;
+}
+@keyframes check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+}
+/* Buttons, chips and answers press in a little on tap (zero specificity: a component's own transform wins). */
+:where(button) {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+:where(button:not(:disabled)):active {
+  transform: scale(0.97);
+}
+/* A skeleton line: a soft light sweeps across instead of a pulse. */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-sunken) 25%,
+    color-mix(in srgb, var(--color-sunken) 45%, var(--color-surface)) 50%,
+    var(--color-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+/* A quiz or check answer pops softly when it is chosen (and the right one when it is shown). */
+.answer-pop {
+  animation: answer-pop var(--duration-base) var(--ease-entry);
+}
+@keyframes answer-pop {
+  50% {
+    transform: scale(1.03);
+  }
+}
 /* The waiting bar is hatched, never a basket colour. */
 .bar-hatched {
   background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
+}
+
+/* The opening's chip rows drift slowly sideways (Renat's light redesign): the track holds the chips twice and
+   moves by half its width, so the loop is seamless. It waits 1.5 s, so the first chip is fully on screen at load,
+   and stops while a finger or the pointer is on it, or a chip has focus. Never under reduced motion. */
+@keyframes chip-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.chip-drift {
+  animation: chip-drift var(--drift-duration, 45s) linear 1.5s infinite;
+}
+.chip-drift-reverse {
+  animation-direction: reverse;
+}
+.chip-drift:hover,
+.chip-drift:focus-within,
+.chip-drift[data-paused] {
+  animation-play-state: paused;
+}
+
+/* Sentti's mascot (#798, components/voice/SenttiMascot.tsx). Outside the media query only the still
+   neutral pose shows: under reduced motion nothing below exists, and the state is text instead. */
+.sentti-mascot .mascot-ring,
+.sentti-mascot .mascot-cheer,
+.sentti-mascot .mascot-dots {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sentti-mascot .mascot-ear-l,
+  .sentti-mascot .mascot-ear-r,
+  .sentti-mascot .mascot-pupils {
+    transform-box: view-box;
+    transition: transform var(--duration-base) var(--ease-spring);
+  }
+  .sentti-mascot .mascot-ear-l {
+    transform-origin: 58px 46px;
+  }
+  .sentti-mascot .mascot-ear-r {
+    transform-origin: 102px 46px;
+  }
+  /* Idle: a slow blink. */
+  .sentti-mascot [data-state='idle'] .mascot-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: mascot-blink 5s var(--ease-standard) infinite;
+  }
+  /* Listening: ears up, and a soft ring pulses (it stays inside the 160 box at its widest). */
+  .sentti-mascot [data-state='listening'] .mascot-ear-l {
+    transform: translateY(-4px) rotate(6deg);
+  }
+  .sentti-mascot [data-state='listening'] .mascot-ear-r {
+    transform: translateY(-4px) rotate(-6deg);
+  }
+  .sentti-mascot [data-state='listening'] .mascot-ring {
+    display: inline;
+    transform-box: view-box;
+    transform-origin: 80px 80px;
+    animation: mascot-pulse 1.6s var(--ease-standard) infinite;
+  }
+  /* Thinking: eyes up, and three dots bounce one after another. */
+  .sentti-mascot [data-state='thinking'] .mascot-pupils {
+    transform: translate(1.5px, -2.5px);
+  }
+  .sentti-mascot [data-state='thinking'] .mascot-dots {
+    display: inline;
+  }
+  .sentti-mascot [data-state='thinking'] .mascot-dots circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dot-bounce 1s var(--ease-standard) infinite;
+  }
+  .sentti-mascot [data-state='thinking'] .mascot-dots circle:nth-child(2) {
+    animation-delay: 150ms;
+  }
+  .sentti-mascot [data-state='thinking'] .mascot-dots circle:nth-child(3) {
+    animation-delay: 300ms;
+  }
+  /* Celebrate: arms up with the coin thrown, once, for 1.2 s; then the resting pose comes back. */
+  .sentti-mascot [data-state='celebrate'] .mascot-cat {
+    transform-box: view-box;
+    transform-origin: 80px 150px;
+    animation: mascot-pop 600ms var(--ease-spring) both;
+  }
+  .sentti-mascot [data-state='celebrate'] .mascot-cheer {
+    display: inline;
+    animation: mascot-cheer 1.2s linear both;
+  }
+  .sentti-mascot [data-state='celebrate'] .mascot-rest {
+    animation: mascot-rest 1.2s linear both;
+  }
+}
+@keyframes mascot-blink {
+  0%,
+  95%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes mascot-pulse {
+  from {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  70% {
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+@keyframes mascot-pop {
+  from {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes mascot-cheer {
+  0%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mascot-rest {
+  0%,
+  92% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* The baskets donut's segments sweep in once (500 ms, ease-out, 80 ms apart, #953); none under reduced motion. */
+@keyframes donut-sweep {
+  from {
+    stroke-dasharray: 0 999;
+  }
+}
+.donut-sweep {
+  animation: donut-sweep 500ms ease-out;
+}
+
+/* The opening hero's amount while a review answer is on its way (#965): it breathes softly between 60 % and 85 %.
+   Under reduced motion the component uses a still opacity-60 instead, and this never runs. */
+@keyframes hero-pending {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.85; }
+}
+.hero-pending { opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-pending { animation: hero-pending 1s ease-in-out infinite; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -172,5 +422,13 @@ select {
   /* Numbers still cross-fade in 150 ms (DESIGN.md, motion). */
   .motion-fade {
     animation-duration: var(--duration-fast) !important;
+  }
+  .dot-bounce,
+  .shimmer,
+  .chip-drift {
+    animation: none !important;
+  }
+  :where(button:not(:disabled)):active {
+    transform: none;
   }
 }

@@ -11,7 +11,7 @@ import re
 from datetime import date
 
 import pytest
-from agent_fakes import AS_OF, FakeArgs, fake_spending, registry, run
+from agent_fakes import AS_OF, FakeArgs, audit_records, fake_spending, registry, run
 
 from core.agent import template
 from core.agent.model import FunctionCall, PlanInput, ScriptedModel
@@ -43,12 +43,18 @@ def test_a_period_outside_the_data_says_which_side(start, end, reason):
 def test_each_reason_text_is_short_has_no_number_and_its_chips_are_questions_the_rules_answer(reason, lang):
     text, chips = template.missing_data_answer([], [{"tool": "get_spending", "error": "period_out_of_range",
                                                      "reason": reason}], lang, AS_OF)
+    span = {"first": "lokakuusta 2024", "last": "syyskuuhun 2026"} if lang == "fi" else \
+        {"first": "October 2024", "last": "September 2026"}
     assert text == template.pick(template.MISSING[reason], lang).format(
-        end="30.9.2026" if lang == "fi" else "30 September 2026")
+        end="30.9.2026" if lang == "fi" else "30 September 2026", **span)
     sentences = [x for x in re.split(r"[.?](?=\s+[A-ZÄÖÅ]|\s*$)", text) if x.strip()]
     assert len(text.split()) <= 35 and len(sentences) <= 2
-    # The only date in the text is the last day of the data (a returned date); no other digit.
-    assert check_text(text, Allowed(frozenset({AS_OF}), frozenset())) == []
+    # The only dates in the text are the last day of the data, or the data's first and last month (#805), as the
+    # tool's error returns them; no other digit.
+    months = frozenset({(date(2024, 10, 1), date(2024, 10, 31)), (date(2026, 9, 1), date(2026, 9, 30))})
+    assert check_text(text, Allowed(frozenset({AS_OF}), months)) == []
+    if reason == "period_before_data":
+        assert span["first"] in text and span["last"] in text
     tools = [{"name": t, "description": "", "parameters_json_schema": {}} for t in ALL]
     for chip in chips:
         assert RuleModel().plan(PlanInput(question=chip, language=lang, as_of=AS_OF.isoformat(), tools=tools)).recognised, chip
@@ -208,6 +214,38 @@ def test_a_what_if_on_too_few_purchases_shows_them_and_derives_no_monthly_figure
     done = dict(events)["done"]
     assert done["outcome"] == "answered" and done["text_rendered"] == text and model.compose_inputs == []
     assert len(done["cited"]) == (1 if n == 1 else 2)
+
+
+@pytest.mark.parametrize("n", [1, 2])
+@pytest.mark.parametrize("cache", ["off", "memory"])
+def test_the_audit_lists_each_number_a_too_few_answer_cites_as_a_tool_output(make_pipeline, n, cache, tool_cache_off,
+                                                                             monkeypatch):
+    # #609: the eval's R1 check finds a cited number only among the audit's tool outputs
+    monkeypatch.setenv("SPIKE_REVIEWS", "off")
+    monkeypatch.setattr(tool_cache_off, "mode", cache)
+    model = ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]])
+    pipe = make_pipeline(model, registry(too_few_tool(n)))
+    done = dict(run(pipe, "What if I cut travel by 20%?", language="en"))["done"]
+    record = audit_records(pipe)[-1]
+    assert record["tool_outputs"] == {"fake_what_if#1": {
+        "error": "too_few_transactions",
+        "total": {"id": "n1", "value": 203.95, "unit": "eur", "label": "Travel"},
+        "count": {"id": "n2", "value": n, "unit": "count", "label": "Purchases"}}}
+    returned = {v["id"]: v for v in record["tool_outputs"]["fake_what_if#1"].values() if isinstance(v, dict)}
+    for i in done["cited"]:
+        cited = record["numbers"][i]
+        assert (returned[i]["value"], returned[i]["unit"]) == (cited["value"], cited["unit"])
+
+
+def test_a_missing_data_reason_without_numbers_is_listed_with_its_reason_only(make_pipeline):
+    def tool(ctx, args: FakeArgs):
+        raise MissingData("too_few_transactions", what="public transport", period="1 Apr – 30 Sep 2026",
+                          span="Between 1 Apr and 30 Sep 2026", n=0)
+    spec = ToolSpec("fake_what_if", "A what-if on nothing bought.", FakeArgs, tool, ("Looking", "Katson"))
+    pipe = make_pipeline(ScriptedModel(plans=[[FunctionCall("fake_what_if", {}), FunctionCall("finish")]]),
+                         registry(spec))
+    run(pipe, "what if I cut public transport by 20%", language="en")
+    assert audit_records(pipe)[-1]["tool_outputs"] == {"fake_what_if#1": {"error": "too_few_transactions"}}
 
 
 def basket_tool():

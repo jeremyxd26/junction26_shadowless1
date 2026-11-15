@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.9",
+  "contract_version": "0.3.21",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -466,8 +466,8 @@
             "fi": "Välttämätön"
           },
           "effect": {
-            "en": "It counts as an unexpected necessity. Sentti keeps a bigger reserve for surprises like this, so your safe to spend goes down.",
-            "fi": "Se lasketaan välttämättömäksi yllätysmenoksi. Sentti varaa jatkossa enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee."
+            "en": "It will count as an unexpected necessity. Sentti then recalculates your numbers with it.",
+            "fi": "Se lasketaan odottamattomaksi välttämättömäksi menoksi. Sentti laskee sen jälkeen lukusi uudelleen."
           }
         },
         {
@@ -477,12 +477,12 @@
             "fi": "Oma valinta"
           },
           "effect": {
-            "en": "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this month is higher than usual.",
-            "fi": "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta arkikulutuksesi on tässä kuussa tavallista suurempi."
+            "en": "It will count as everyday spending. Sentti then recalculates your numbers with it.",
+            "fi": "Se lasketaan arjen kulutukseksi. Sentti laskee sen jälkeen lukusi uudelleen."
           }
         }
       ],
-      "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+      "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
       "actions": [
         {
           "type": "open_evidence",
@@ -1253,6 +1253,7 @@
         {
           "customer_id": "CUST00042",
           "display_name": "Aino",
+          "age": 29,
           "age_band": "25-34",
           "postal_area": {
             "code": "00530",
@@ -1268,6 +1269,7 @@
         {
           "customer_id": "CUST00017",
           "display_name": "Mikko",
+          "age": 48,
           "age_band": "45-54",
           "postal_area": {
             "code": "02100",
@@ -1283,6 +1285,7 @@
         {
           "customer_id": "CUST00088",
           "display_name": "Leena",
+          "age": 22,
           "age_band": "18-24",
           "postal_area": {
             "code": "00100",
@@ -2131,10 +2134,10 @@
         }
       ],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "overview.response_no_hero": {
@@ -2465,10 +2468,10 @@
       "reviews": [],
       "insights": [],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "overview.response_pending": {
@@ -3171,8 +3174,8 @@
                 "fi": "Välttämätön"
               },
               "effect": {
-                "en": "It counts as an unexpected necessity. Sentti keeps a bigger reserve for surprises like this, so your safe to spend goes down.",
-                "fi": "Se lasketaan välttämättömäksi yllätysmenoksi. Sentti varaa jatkossa enemmän rahaa tällaisiin yllätyksiin, joten turvallisesti käytettävissä oleva summa pienenee."
+                "en": "It will count as an unexpected necessity. Sentti then recalculates your numbers with it.",
+                "fi": "Se lasketaan odottamattomaksi välttämättömäksi menoksi. Sentti laskee sen jälkeen lukusi uudelleen."
               }
             },
             {
@@ -3182,12 +3185,12 @@
                 "fi": "Oma valinta"
               },
               "effect": {
-                "en": "It counts as everyday spending. Your safe to spend stays the same; your everyday spending this month is higher than usual.",
-                "fi": "Se lasketaan arkikulutukseksi. Turvallisesti käytettävissä oleva summa pysyy ennallaan, mutta arkikulutuksesi on tässä kuussa tavallista suurempi."
+                "en": "It will count as everyday spending. Sentti then recalculates your numbers with it.",
+                "fi": "Se lasketaan arjen kulutukseksi. Sentti laskee sen jälkeen lukusi uudelleen."
               }
             }
           ],
-          "why": "Only you know what this purchase was. Your answer changes only how your own spending is grouped.",
+          "why": "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend.",
           "actions": [
             {
               "type": "open_evidence",
@@ -3199,10 +3202,10 @@
       ],
       "insights": [],
       "suggested_questions": [
-        "Where did my money go?",
-        "What kind of spender am I?",
         "What can I safely spend this week?",
-        "How could I save more?"
+        "How could I save more?",
+        "Where did my money go?",
+        "What kind of spender am I?"
       ]
     },
     "ask.sse.meta": {
@@ -4011,7 +4014,16 @@
       "reconciles": true,
       "parts": [],
       "next_cursor": "cur_2",
-      "privacy_note": "Only you can see these transactions. They are never sent to the AI model."
+      "privacy_note": "Only you can see these transactions. They are never sent to the AI model.",
+      "months": [
+        {
+          "month": "2026-09",
+          "label": "September 2026",
+          "count": 14,
+          "total": "-312.80",
+          "display": "-€312.80"
+        }
+      ]
     },
     "evidence.response_composite": {
       "evidence_ref": "ev_m3o5q7s9u1w3",
@@ -4076,7 +4088,8 @@
         }
       ],
       "next_cursor": null,
-      "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+      "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+      "months": []
     },
     "evidence.error": {
       "error": {
@@ -4104,8 +4117,8 @@
       "review_state": "answered",
       "changed": true,
       "message": {
-        "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-        "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+        "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+        "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -4464,8 +4477,8 @@
             }
           }
         ],
-        "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-        "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+        "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+        "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -4534,9 +4547,23 @@
       "review_state": "answered",
       "changed": true,
       "message": {
-        "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-        "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+        "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
         "numbers": {
+          "n2": {
+            "id": "n2",
+            "value": 138.79,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend",
+            "display": "€138.79"
+          },
           "n9": {
             "id": "n9",
             "value": 1080.42,
@@ -4746,9 +4773,23 @@
             }
           }
         ],
-        "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-        "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+        "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
         "numbers": {
+          "n2": {
+            "id": "n2",
+            "value": 138.79,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend",
+            "display": "€138.79"
+          },
           "n9": {
             "id": "n9",
             "value": 1080.42,
@@ -4784,8 +4825,8 @@
       "review_state": "pending",
       "changed": true,
       "message": {
-        "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-        "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+        "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+        "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -5144,8 +5185,8 @@
             }
           }
         ],
-        "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-        "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+        "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+        "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -5749,7 +5790,7 @@
           "label": "Safe to spend after this bill",
           "display": "€55.82"
         },
-        "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Your weekly safe to spend goes from €123.15 to €55.82."
+        "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Left to spend this week goes from €123.15 to €55.82."
       },
       "forecast": {
         "status": "not_covered",

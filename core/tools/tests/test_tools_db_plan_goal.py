@@ -21,7 +21,7 @@ from core.tools.safe_to_spend import get_safe_to_spend
 from core.tools.savings_plan import get_savings_plan
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ("CUST00349", "CUST00493", "CUST00849", "CUST00860")
+PERSONAS = ("CUST00387", "CUST00493", "CUST00849", "CUST00860")
 STATES = {"pending": "unclassified", "needed": "unexpected_necessities"}
 GOAL_METHOD = "safe_to_spend.savings_goal_eur@1"
 

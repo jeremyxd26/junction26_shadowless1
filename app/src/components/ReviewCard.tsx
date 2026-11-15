@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BasketKey, ReviewCard as ReviewCardData } from '../api/types.ts'
 import { BASKETS } from '../lib/baskets.ts'
 import { formatDate } from '../lib/i18n.ts'
+import { splitKeepTogether } from '../lib/keepTogether.ts'
 import { openEvidence } from '../lib/url.ts'
 import { useCountdown } from '../lib/useCountdown.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -13,6 +14,10 @@ import { RetryButton } from './RetryButton.tsx'
 
 /** The deep-green "Sentti asks" surface: never the hero green, so a question never looks like an answer. */
 const SURFACE = 'rounded-xl bg-deep p-4 text-on-deep outline-none [&_:focus-visible]:outline-mint'
+/** Inside a chat answer (#696): the answer card's white frame, not the opening's deep green. */
+const ANSWER_SURFACE = 'rounded-lg border border-line bg-surface p-4 text-ink outline-none'
+/** The opening's light look (Renat's redesign): Sentti's first chat bubble, on the left. */
+const BUBBLE = 'mr-auto w-full max-w-[26rem] rounded-xl rounded-tl-sm border border-line bg-surface p-3 text-ink outline-none'
 
 /** Tokens the question may carry: `{{n1}}` is the card's amount, `{{date}}` its date. */
 const TOKEN = /\{\{(n1|date)\}\}/g
@@ -23,12 +28,28 @@ function fill(text: string, parts: Record<string, ReactNode>): ReactNode[] {
   let last = 0
   for (const match of text.matchAll(TOKEN)) {
     const index = match.index ?? 0
-    if (index > last) out.push(text.slice(last, index))
+    if (index > last) out.push(...together(text.slice(last, index), `t${last}`))
     out.push(<span key={`${match[1]}-${index}`}>{parts[match[1]]}</span>)
     last = index + match[0].length
   }
-  if (last < text.length) out.push(text.slice(last))
+  if (last < text.length) out.push(...together(text.slice(last), `t${last}`))
   return out
+}
+
+/**
+ * Text with each run the API joined with no-break spaces (a date) as one box (#725): it moves to
+ * the next line whole, and wraps at its own spaces only when it is wider than the line (200 % text).
+ */
+function together(text: string, key: string): ReactNode[] {
+  return splitKeepTogether(text).map((part, index) =>
+    typeof part === 'string' ? (
+      part
+    ) : (
+      <span key={`${key}-${index}`} className="inline-block">
+        {part.together}
+      </span>
+    ),
+  )
 }
 
 /** The purchase's evidence and its link label ("See the purchase"). */
@@ -51,7 +72,18 @@ function factsOf(card: ReviewCardData, date: string): string {
  * amount gets the amount chip at its start: the amount is shown once, with no separate line.
  * `compact` (after the answer, as context): 16px text and the smaller inline chip.
  */
-function QuestionText({ card, compact = false }: { card: ReviewCardData; compact?: boolean }) {
+function QuestionText({
+  card,
+  compact = false,
+  inAnswer = false,
+  bubble = false,
+}: {
+  card: ReviewCardData
+  compact?: boolean
+  inAnswer?: boolean
+  /** The opening's bubble: "Quick question:" before the API's question, at body size. */
+  bubble?: boolean
+}) {
   const { lang, t } = useSettings()
   const date = formatDate(card.date, lang)
   const purchase = purchaseOf(card, t.reviewSeePurchase)
@@ -62,30 +94,52 @@ function QuestionText({ card, compact = false }: { card: ReviewCardData; compact
       type="button"
       onClick={() => purchase.ref && openEvidence(purchase.ref)}
       aria-label={`${date}. ${purchase.label}`}
-      className="relative inline-flex min-h-9 items-center rounded-pill border border-on-deep-muted/60 px-2.5 leading-6 align-baseline hover:border-on-deep after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+      className={`relative inline-flex min-h-9 items-center rounded-pill border px-2.5 leading-6 align-baseline after:absolute after:-inset-y-1 after:inset-x-0 after:content-[''] ${
+        inAnswer ? 'border-line hover:border-ink' : 'border-on-deep-muted/60 hover:border-on-deep'
+      }`}
     >
       {date}
     </button>
   ) : (
     date
   )
-  const amountChip = <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  // In an answer the question carries the amount once, as a number in the text (tappable when it
+  // has an evidence ref), not a pill and not repeated as a large number (#696 ruling).
+  const amountChip = inAnswer ? (
+    <NumberChip number={card.amount} size="inline" tone="plain" />
+  ) : (
+    <NumberChip number={card.amount} size={compact ? 'inline' : 'lead'} />
+  )
   const amountAt = tokens.has('n1') ? -1 : question.indexOf(card.amount.display)
   const sentence = tokens.has('n1')
     ? fill(question, { n1: amountChip, date: dateChip })
     : amountAt >= 0
       ? [
-          question.slice(0, amountAt),
+          ...together(question.slice(0, amountAt), 'lead'),
           <span key="amount">{amountChip}</span>,
           ...fill(question.slice(amountAt + card.amount.display.length), { date: dateChip }),
         ]
       : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
-  // A normal line height (about 1.3); the chip's line grows to fit it, and its ::after keeps the
-  // touch area at 44px.
+  // A normal line height (about 1.3), relative to the text so that it grows with it (#725: 26px
+  // overlapped at 200 %); the chip's line grows to fit it, and its ::after keeps the touch area at 44px.
+  if (bubble) {
+    return (
+      <p className={compact ? 'text-base leading-6 text-ink-2' : 'text-base leading-7 text-ink'}>
+        <span className="font-semibold">{t.reviewQuick}</span> {sentence}
+      </p>
+    )
+  }
+  if (inAnswer) {
+    return compact ? (
+      <p className="mt-2 text-base leading-6 text-ink-2">{sentence}</p>
+    ) : (
+      <p className="mt-2 text-lg leading-8 text-ink">{sentence}</p>
+    )
+  }
   return compact ? (
-    <p className="mt-2 text-base font-semibold leading-[22px] text-on-deep-muted">{sentence}</p>
+    <p className="mt-2 text-base font-semibold leading-[1.375] text-on-deep-muted">{sentence}</p>
   ) : (
-    <p className="mt-2 text-xl font-bold leading-[26px] text-on-deep">{sentence}</p>
+    <p className="mt-1.5 text-lg font-semibold leading-[1.3] text-on-deep">{sentence}</p>
   )
 }
 
@@ -125,7 +179,7 @@ function WhySheet({ card, onClose }: { card: ReviewCardData; onClose: () => void
 }
 
 /** "? Sentti asks", then the card's own controls on the right. */
-function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNode }) {
+function AsksHeader({ titleId, children, inAnswer = false }: { titleId: string; children?: ReactNode; inAnswer?: boolean }) {
   const { t } = useSettings()
   return (
     <div className="flex flex-wrap items-center gap-x-3">
@@ -133,7 +187,7 @@ function AsksHeader({ titleId, children }: { titleId: string; children?: ReactNo
         ?
       </span>
       {/* No min-w-0: the title keeps its longest word, so on a narrow screen the buttons wrap below. */}
-      <h2 id={titleId} className="flex-1 text-base font-semibold text-on-deep">
+      <h2 id={titleId} className={`flex-1 text-base ${inAnswer ? 'text-muted' : 'font-semibold text-on-deep'}`}>
         {t.reviewAsks}
       </h2>
       {children}
@@ -157,6 +211,10 @@ interface AskingProps {
   onNotSure: () => void
   onRetry: () => void
   leaving: boolean
+  /** Inside a chat answer: the answer card's look (#696); the behaviour is the same. */
+  inAnswer?: boolean
+  /** The opening's chat bubble (Renat's light redesign); the behaviour is the same. */
+  bubble?: boolean
 }
 
 /**
@@ -164,7 +222,7 @@ interface AskingProps {
  * (#310 decision): the question with its amount chip and two answer buttons; `why` behind ⓘ.
  */
 export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function ReviewAsking(
-  { card, busy, error, onAnswer, onNotSure, onRetry, leaving },
+  { card, busy, error, onAnswer, onNotSure, onRetry, leaving, inAnswer = false, bubble = false },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -172,6 +230,78 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
   const [whyOpen, setWhyOpen] = useState(false)
   // While the server asked to wait (Retry-After), a second tap on an answer would be a retry too.
   const waiting = useCountdown(error?.until ?? null) > 0
+
+  const errorLine = error && (
+    // Only the message is the alert; the countdown sits outside it, so a screen reader does not
+    // announce every second of it.
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
+      <span role="alert" className="flex-1">
+        {error.message}
+      </span>
+      {error.retryable && (
+        <RetryButton onRetry={onRetry} until={error.until} className="min-h-11 font-semibold text-danger underline underline-offset-4" />
+      )}
+    </div>
+  )
+
+  if (bubble) {
+    // Sentti's first bubble: the question, the API's answers as outlined pills, then "Not sure" and the why.
+    // "Sentti asks" stays as the section's hidden heading for screen readers.
+    return (
+      <section
+        ref={ref}
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        aria-busy={busy !== null}
+        data-review-card={card.tx_ref}
+        data-opening-part="review"
+        className={`${BUBBLE} ${leaving ? 'card-leave' : 'card-enter'}`}
+      >
+        <h2 id={titleId} className="sr-only">
+          {t.reviewAsks}
+        </h2>
+        <QuestionText card={card} inAnswer bubble />
+        <div className="mt-3 flex flex-wrap gap-2">
+          {card.options.map((option) => (
+            <button
+              key={option.basket}
+              type="button"
+              onClick={() => onAnswer(option.basket)}
+              disabled={busy !== null || waiting}
+              className={`inline-flex min-h-11 min-w-0 items-center rounded-pill border-[1.5px] border-brand px-4 text-base font-semibold text-brand transition-transform duration-150 hover:bg-mint-tint active:scale-[.97] disabled:cursor-wait ${
+                busy === option.basket ? 'bg-mint-tint outline-3 outline-offset-2 outline-mint' : 'bg-surface'
+              }`}
+            >
+              <span lang={lang} className="min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-1 -mb-1 flex items-center gap-1">
+          {/* Client only: closes the bubble; the purchase keeps waiting for an answer. */}
+          <button
+            type="button"
+            onClick={onNotSure}
+            disabled={busy !== null}
+            className="min-h-11 px-1 text-sm text-muted underline underline-offset-4 hover:text-ink"
+          >
+            {t.reviewNotSure}
+          </button>
+          <button
+            type="button"
+            onClick={() => setWhyOpen(true)}
+            aria-label={t.reviewWhy}
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-pill text-muted hover:text-ink"
+          >
+            <InfoGlyph />
+          </button>
+        </div>
+        {errorLine}
+        {whyOpen && <WhySheet card={card} onClose={() => setWhyOpen(false)} />}
+      </section>
+    )
+  }
 
   return (
     <section
@@ -181,15 +311,17 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
       aria-busy={busy !== null}
       data-review-card={card.tx_ref}
       data-opening-part="review"
-      className={`${SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
+      className={`${inAnswer ? ANSWER_SURFACE : SURFACE} ${leaving ? 'card-leave' : 'card-enter'}`}
     >
-      <AsksHeader titleId={titleId}>
+      <AsksHeader titleId={titleId} inAnswer={inAnswer}>
         {/* Client only: closes the card; the purchase keeps waiting for an answer. */}
         <button
           type="button"
           onClick={onNotSure}
           disabled={busy !== null}
-          className="min-h-11 px-1 text-sm font-semibold text-on-deep-muted underline underline-offset-4 hover:text-on-deep"
+          className={`min-h-11 px-1 text-sm font-semibold underline underline-offset-4 ${
+            inAnswer ? 'text-muted hover:text-ink' : 'text-on-deep-muted hover:text-on-deep'
+          }`}
         >
           {t.reviewNotSure}
         </button>
@@ -197,13 +329,15 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
           type="button"
           onClick={() => setWhyOpen(true)}
           aria-label={t.reviewWhy}
-          className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-pill text-on-deep-muted hover:text-on-deep"
+          className={`-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-pill ${
+            inAnswer ? 'text-muted hover:text-ink' : 'text-on-deep-muted hover:text-on-deep'
+          }`}
         >
           <InfoGlyph />
         </button>
       </AsksHeader>
 
-      <QuestionText card={card} />
+      <QuestionText card={card} inAnswer={inAnswer} />
 
       {/* Two columns while each is at least 9rem wide, else one; labels wrap inside the buttons. */}
       <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-2">
@@ -217,6 +351,8 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
               onClick={() => onAnswer(option.basket)}
               disabled={busy !== null || waiting}
               className={`flex min-h-12 min-w-0 items-center gap-1.5 rounded-lg border-l-4 bg-surface py-1.5 pl-1.5 pr-2 text-left text-base font-bold leading-5 text-ink transition-transform duration-150 active:scale-[.97] disabled:cursor-wait ${look.line} ${
+                inAnswer ? 'border-y border-r border-y-line border-r-line' : ''
+              } ${
                 chosen ? 'outline-3 outline-offset-2 outline-mint' : ''
               }`}
             >
@@ -234,22 +370,7 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
         })}
       </div>
 
-      {error && (
-        // Only the message is the alert; the countdown sits outside it, so a screen reader does not
-        // announce every second of it.
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
-          <span role="alert" className="flex-1">
-            {error.message}
-          </span>
-          {error.retryable && (
-            <RetryButton
-              onRetry={onRetry}
-              until={error.until}
-              className="min-h-11 font-semibold text-danger underline underline-offset-4"
-            />
-          )}
-        </div>
-      )}
+      {errorLine}
 
       {whyOpen && <WhySheet card={card} onClose={() => setWhyOpen(false)} />}
     </section>
@@ -261,6 +382,12 @@ interface AnsweredProps {
   basket: BasketKey
   /** While the answer can be undone (#315): a 44 px Undo in the card, next to the toast's. */
   onUndo?: () => void
+  /** Inside a chat answer: the answer card's look (#696). */
+  inAnswer?: boolean
+  /** The opening's chat bubble (Renat's light redesign). */
+  bubble?: boolean
+  /** Undo is shown but off while an answer or an undo is on its way (#965), so the row never jumps. */
+  undoDisabled?: boolean
 }
 
 /**
@@ -268,13 +395,48 @@ interface AnsweredProps {
  * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
-  { card, basket, onUndo },
+  { card, basket, onUndo, inAnswer = false, bubble = false, undoDisabled = false },
   ref,
 ) {
   const { lang, t } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
+  if (bubble) {
+    return (
+      <section
+        ref={ref}
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        data-review-card={card.tx_ref}
+        data-opening-part="review"
+        className={`${BUBBLE} card-enter`}
+      >
+        <h2 id={titleId} className="sr-only">
+          {t.reviewAsks}
+        </h2>
+        <QuestionText card={card} compact inAnswer bubble />
+        <div className="mt-1 -mb-1 flex flex-wrap items-center justify-between gap-x-2">
+          <p className="flex items-center gap-2 text-base font-bold text-ink">
+            <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
+              <Check className="size-4" />
+            </span>
+            {option?.label[lang]}
+          </p>
+          {onUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={undoDisabled}
+              className="min-h-11 min-w-11 px-1 text-sm font-semibold text-brand underline underline-offset-4 hover:text-ink disabled:cursor-default disabled:opacity-60 disabled:hover:text-brand"
+            >
+              {t.undo}
+            </button>
+          )}
+        </div>
+      </section>
+    )
+  }
   return (
     <section
       ref={ref}
@@ -282,9 +444,9 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
       aria-labelledby={titleId}
       data-review-card={card.tx_ref}
       data-opening-part="review"
-      className={`${SURFACE} card-enter`}
+      className={`${inAnswer ? ANSWER_SURFACE : SURFACE} card-enter`}
     >
-      <AsksHeader titleId={titleId}>
+      <AsksHeader titleId={titleId} inAnswer={inAnswer}>
         {onUndo && (
           <button
             type="button"
@@ -295,8 +457,8 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
           </button>
         )}
       </AsksHeader>
-      <QuestionText card={card} compact />
-      <p className="mt-2 flex items-center gap-2 text-base font-bold text-on-deep">
+      <QuestionText card={card} compact inAnswer={inAnswer} />
+      <p className={`mt-2 flex items-center gap-2 text-base font-bold ${inAnswer ? 'text-ink' : 'text-on-deep'}`}>
         <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
           <Check className="size-4" />
         </span>

@@ -6,7 +6,7 @@
 // It writes nothing but this output. Never run it in a loop against the dev host: each run asks the
 // coach two questions.
 import { chromium } from 'playwright-core'
-import { TEXT, USAGE, downOnly, findBrowser, line, parseAmount, parseArgs } from './demo-check-lib.mjs'
+import { CHIP_ROW, SETTLE_MAX_MS, TEXT, USAGE, downOnly, findBrowser, line, mainText, parseAmount, parseArgs, rowProblems, rowQuestions, settleStep } from './demo-check-lib.mjs'
 
 // The greeting and the amounts are API texts: Finnish from a live core with lang=fi, English in a
 // mock build (its examples are English only), so either form is accepted.
@@ -16,6 +16,8 @@ const ANSWER_MS = 60_000 // a live answer from the model can take a while
 const MODULE_MS = 30_000
 const NEEDED_MS = 8_000 // the label answer, then the count, on a slow host
 const STEPS = 6
+// A drifting row holds its chips twice; the second copy is aria-hidden and not counted.
+const CHIP_BUTTONS = 'button:not([aria-hidden="true"] *)'
 
 const args = parseArgs(process.argv.slice(2))
 if (args.error) {
@@ -82,13 +84,23 @@ async function openModule(hasFrame) {
 /** Asks by tapping the chip with this text, or by typing it into the composer. Returns the answer's `article`. */
 async function ask(mod, question) {
   const before = await mod.locator('article[data-turn]').count()
-  const chip = mod.getByRole('button', { name: question, exact: true })
+  // A chip outside the folded opening: after the first answer the opening's chips are inert (out of reach).
+  const chip = mod.getByRole('button', { name: question, exact: true }).and(mod.locator('button:not([inert] *)'))
   let how = 'chip'
-  if (await chip.count()) await chip.last().click()
+  if (await chip.count()) {
+    // The opening's chip rows drift: a touch on the row stops it (as a finger does), so the chip holds still
+    // for the click. The row is brought to the middle first: in the demo frame it may sit under the composer.
+    const row = chip.last().locator('xpath=ancestor::*[@data-chip-row][1]')
+    if (await row.count()) {
+      await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+      await row.dispatchEvent('pointerdown')
+    }
+    await chip.last().click()
+  }
   else {
     how = 'composer'
-    await mod.locator('form input').fill(question)
-    await mod.locator('form input').press('Enter')
+    await mod.locator('#chat-input').fill(question)
+    await mod.locator('#chat-input').press('Enter')
   }
   const article = mod.locator('article[data-turn]').nth(before)
   await article.waitFor({ timeout: MODULE_MS })
@@ -99,7 +111,18 @@ async function ask(mod, question) {
     streamed = true
     await mod.waitForTimeout(100)
   }
-  return { article, how, streamed, seconds: ((Date.now() - started) / 1000).toFixed(1) }
+  const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  // The stream has ended, but a live answer still types in and keeps its cards behind a skeleton until it
+  // has (#741). Wait, at most SETTLE_MAX_MS, until no skeleton shows and the text has stopped changing (#928).
+  const settling = Date.now()
+  let state = null
+  while (Date.now() - settling < SETTLE_MAX_MS) {
+    const look = await article.evaluate((a) => ({ text: a.innerText, skeleton: a.querySelector('.shimmer') !== null }))
+    state = settleStep(state, look, Date.now())
+    if (state.settled) break
+    await mod.waitForTimeout(100)
+  }
+  return { article, how, streamed, seconds, settled: Boolean(state?.settled), settleSeconds: ((Date.now() - settling) / 1000).toFixed(1) }
 }
 
 let hasFrame = false
@@ -136,29 +159,31 @@ try {
     const hero = (await mod.locator('[data-opening-part="hero"] button span').first().textContent().catch(() => '')) ?? ''
     const review = mod.locator('[data-opening-part="review"]')
     const asks = (await review.count()) > 0 && (await review.first().innerText()).includes(T.asks)
-    const chips = await opening.locator('button').evaluateAll((buttons) => buttons.filter((b) => !b.closest('[data-opening-part]')).map((b) => b.innerText.trim()))
-    // The fit at 375 × 768, on the module itself.
+    // The opening's chips are one scrollable row since #784; its question chips are checked here.
+    const chips = rowQuestions(await mod.locator(CHIP_ROW).locator(CHIP_BUTTONS).allInnerTexts())
+    // The fit at 375 × 768, on the module itself: the row's first chip is above the composer and on screen.
     const fitPage = await context.newPage()
     await fitPage.setViewportSize({ width: 375, height: 768 })
     await fitPage.goto(`${base}/?persona=${persona}&lang=${lang}`)
     await fitPage.locator('[data-opening-part="hero"]').waitFor({ timeout: MODULE_MS }).catch(() => null)
     await fitPage.waitForTimeout(500)
-    const fit = await fitPage.evaluate(() => {
-      const opening = document.querySelector('[data-turn="opening"]')
-      const chips = [...(opening?.querySelectorAll('button') ?? [])].filter((b) => !b.closest('[data-opening-part]'))
-      const last = chips.at(-1)
+    const fit = await fitPage.evaluate((row) => {
+      const first = document.querySelector(row)?.querySelector('button')
       const composer = document.querySelector('form')
-      return last && composer ? { chip: Math.round(last.getBoundingClientRect().bottom), composer: Math.round(composer.getBoundingClientRect().top) } : null
-    })
+      if (!first || !composer) return null
+      const box = first.getBoundingClientRect()
+      return { chip: Math.round(box.bottom), composer: Math.round(composer.getBoundingClientRect().top), onScreen: box.left >= 0 && box.right <= innerWidth }
+    }, CHIP_ROW)
     await fitPage.close()
     const problems = []
     if (!GREETING.test(greeting)) problems.push(`greeting "${short(greeting, 30)}"`)
     if (amount(hero) === null) problems.push(`hero "${short(hero, 20)}" is not an amount`)
     if (!asks) problems.push(`no "${T.asks}" (answered already? Start over resets the viewer)`)
-    if (chips.length !== 3) problems.push(`${chips.length} chips, not 3`)
-    if (!fit) problems.push('no chips or no composer at 375×768')
-    else if (fit.chip > fit.composer) problems.push(`last chip ends at ${fit.chip} px, under the composer at ${fit.composer} px (375×768)`)
-    const measured = `"${short(greeting, 20)}", hero ${hero}, "${T.asks}" ${asks ? 'shown' : 'missing'}, ${chips.length} chips; last chip ${fit?.chip ?? '?'} px above the composer at ${fit?.composer ?? '?'} px (375×768)`
+    problems.push(...rowProblems(chips, T.firstQuestion))
+    if (!fit) problems.push('no chip row or no composer at 375×768')
+    else if (fit.chip > fit.composer) problems.push(`the chip row ends at ${fit.chip} px, under the composer at ${fit.composer} px (375×768)`)
+    else if (!fit.onScreen) problems.push('the row\'s first chip is off screen (375×768)')
+    const measured = `"${short(greeting, 20)}", hero ${hero}, "${T.asks}" ${asks ? 'shown' : 'missing'}, ${chips.length} question chips in the row, first "${short(chips[0] ?? '?', 30)}"; the row ends ${fit?.chip ?? '?'} px, the composer starts at ${fit?.composer ?? '?'} px (375×768)`
     report(2, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : `first screen: ${measured}`)
   }
 
@@ -177,7 +202,8 @@ try {
         return [
           document.querySelector('[data-opening-part="hero"] button span')?.textContent ?? '',
           Math.round(window.scrollY),
-          [...document.querySelectorAll('button')].some((b) => undo.test((b.textContent ?? '').trim())),
+          // An Undo that is still off (#965: the bubble folds at the tap) does not mean the answer is in.
+          [...document.querySelectorAll('button')].some((b) => !b.disabled && undo.test((b.textContent ?? '').trim())),
         ]
       }, T.undo.source)
     // The count starts only after POST /api/baskets/label answers (a live host may be slow); a mock
@@ -220,21 +246,24 @@ try {
 
   // 4. The chip "Where did my money go?": an answer streams in and ends with text and a card.
   {
-    const chipNames = await mod.locator('[data-turn="opening"] button').evaluateAll((buttons) => buttons.filter((b) => !b.closest('[data-opening-part]')).map((b) => b.innerText.trim()))
+    // The question chips of the opening's row (#784).
+    const chipNames = rowQuestions(await mod.locator(CHIP_ROW).locator(CHIP_BUTTONS).allInnerTexts())
     const question = chipNames.includes(T.firstQuestion) ? T.firstQuestion : chipNames[0]
     if (!hasOpening || !question) {
       report(4, 'SKIP', 'the question chips of the opening turn are not in this build (#313)')
     } else {
       const answer = await ask(mod, question)
-      const texts = await answer.article.locator('p').evaluateAll((ps) => ps.filter((p) => !p.className.includes('ml-auto') && !p.className.includes('sr-only')).map((p) => p.innerText.trim()).filter(Boolean))
+      // The answer's own paragraphs (not the question bubble, a card or a note inside another block); its first
+      // is the main sentence (#928).
+      const texts = await answer.article.locator(':scope > p').evaluateAll((ps) => ps.filter((p) => !p.className.includes('ml-auto') && !p.className.includes('sr-only')).map((p) => p.innerText))
       const cards = await answer.article.locator('section').count()
-      const text = texts.sort((a, b) => b.length - a.length)[0] ?? ''
+      const text = mainText(texts)
       const problems = []
       if (!answer.streamed) problems.push('it did not stream')
       if (!text) problems.push('no text')
-      if (!cards) problems.push('no card')
+      if (!cards) problems.push(answer.settled ? 'no card' : `no card (the answer had not settled after ${answer.settleSeconds} s)`)
       const which = question === T.firstQuestion ? `"${question}"` : `the first chip "${short(question, 40)}" (no "${T.firstQuestion}" chip)`
-      const measured = `${which}: streamed in ${answer.seconds} s, text "${short(text, 50)}", ${cards} card${cards === 1 ? '' : 's'}`
+      const measured = `${which}: streamed in ${answer.seconds} s, settled ${answer.settleSeconds} s later, text "${short(text, 50)}", ${cards} card${cards === 1 ? '' : 's'}`
       report(4, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : measured)
     }
   }

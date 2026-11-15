@@ -1,14 +1,15 @@
 # Core API contract
 
-**Version:** 0.3.11 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #554 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.21 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872, #873, #884, #944, #959 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.11. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.21. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
 All values in the examples are **illustrative**: they show shapes and consistent arithmetic, not results computed from the dataset. The exceptions are computed from the dataset (`metrics.md` sections 1.1 and 3.1):
 - `overview.response_pending`, `card.review`, `card.safe_to_save` and the label examples in section 10, for CUST00860 (persona Sanna);
 - `card.safe_to_save_aleksi`, for CUST00849 (persona Aleksi);
+- `evidence.response_national` (section 9), for CUST00860 (persona Sanna), as the service returns it;
 - `card.safe_to_save_zero`, for CUST00002, and `card.safe_to_save_everyday`, for CUST00019 (customers of the metrics sample).
 
 Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids, enums and windows here follow it (section 2.1, `method`).
@@ -26,7 +27,9 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 9. [`GET /api/evidence/{ref}`](#9-get-apievidenceref)
 10. [`POST /api/baskets/label`](#10-post-apibasketslabel)
 11. [`POST /api/bill/explain`](#11-post-apibillexplain)
-12. [Changelog](#12-changelog)
+12. [`POST /api/tts`](#12-post-apitts) (an answer read aloud, audio)
+13. [`POST /api/stt`](#13-post-apistt) (a spoken question as text, audio in)
+14. [Changelog](#14-changelog)
 
 ---
 
@@ -34,10 +37,10 @@ Metric definitions are owned by `docs/design/metrics.md` (issue #6). Method ids,
 
 | Topic | Rule |
 |---|---|
-| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7). |
+| Base path | `/api`. Request and response bodies are JSON in UTF-8, except the `/api/ask` stream (section 7), a successful `/api/tts` response, which is a WAV file (section 12), and the body of a `/api/stt` request, which is an audio clip (section 13). |
 | Customer | Demo mode has no login: the app picks a persona from `/api/personas` and sends its `customer_id`. In production the customer comes from the bank session and the field is ignored. The core never lets the AI model choose the customer. **Only the persona customers are served:** any other `customer_id`, also a real customer of the dataset, gets 404 `customer_not_found`, exactly like an id that does not exist (section 4). |
 | "Today" | Fixed by the server setting `DEMO_TODAY` (default `2026-09-30`). Every response carries it as `as_of`. Nothing after `as_of` is treated as history. Later dates are predictions such as an expected bill. |
-| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language. A POST body that cannot be read or does not validate (400 `invalid_request`) has no language: it is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` always in English. A `/api/ask` message over 500 characters with `auto` is answered in English too, because its language is not detected. |
+| Language | `en` or `fi`. GET endpoints take `?lang=en` or `?lang=fi` (default `en`). POST bodies take `language` (default `en`); `/api/stt`, whose body is audio, takes it as a query parameter (section 13.1). `/api/ask` also accepts `auto`, its default: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Every response says which `language` was used. All labels, `display` strings and texts arrive already localised. The app does not translate. Error messages follow the same language: `?lang` for a GET, the body's `language` for a POST, and for `/api/ask` with `auto` the detected language. A POST body that cannot be read or does not validate (400 `invalid_request`) has no language: it is answered in the language of the `lang` query parameter, else in English, and on `/api/ask` always in English. A `/api/ask` message over 500 characters with `auto` is answered in English too, because its language is not detected. |
 | Dates | `YYYY-MM-DD`. Periods are inclusive at both ends. |
 | Timestamps | ISO 8601 with offset, for example `2026-11-14T10:32:05+02:00`. They are wall-clock times of events such as `labelled_at`, not dataset dates. |
 | Money sign | Spending, bills and income are **positive** amounts. A `change` is signed: positive means more than the baseline. A `components[]` entry carries a positive `amount` and an `operation` (`add` or `subtract`). Raw transaction rows in evidence keep the bank sign: negative means money out. |
@@ -66,7 +69,7 @@ Every number the coach shows is one of these objects. A number can always be tra
 | `value` | number | The value. Money is in euros, rounded to cents. Each value is rounded on its own, so parts shown next to a total, such as safe-to-spend components, can differ from it by 0.01. For `percent`, `12.5` means 12.5 %. |
 | `unit` | enum | `eur`, `eur_per_day`, `eur_per_week`, `eur_per_month`, `eur_per_year`, `percent`, `percentile`, `count`, `days`, `months` |
 | `period` | [Period](#22-period) | The time span the number describes. |
-| `method` | string | The definition that produced the number, `<metric>.<output column>@<version>`. `<metric>` is a metric of `docs/design/metrics.md` named after its SQL file in `core/metrics/` (`recurring`, `baskets`, `safe_to_spend`, `what_if`, `spender_profile`, `peer_benchmark`, `store_price_index`), and the output column is the one listed there, for example `safe_to_spend.safe_to_spend_7d_eur@1`. The balance forecast until payday (`metrics.md` section 3.3, #257) uses `balance_forecast.daily_pace_eur@1` (usual spending a day, `eur_per_day`), `balance_forecast.bills_to_date_eur@1` (the bills due by that day, `eur`) and `balance_forecast.balance_eur@1` (the projected balance on that day, `eur`, a composite). Plain sums and counts that `metrics.md` does not define use `spending.*` and `evidence.*`, which are defined in the design document (section 6.2). Values the user typed in use `user_input@1`. Values read from a bill's virtual barcode use `bill_barcode@1`, and the numbers the bill explanation computes use `bill.*` (section 11). |
+| `method` | string | The definition that produced the number, `<metric>.<output column>@<version>`. `<metric>` is a metric of `docs/design/metrics.md` named after its SQL file in `core/metrics/` (`recurring`, `baskets`, `safe_to_spend`, `what_if`, `spender_profile`, `peer_benchmark`, `store_price_index`), and the output column is the one listed there, for example `safe_to_spend.safe_to_spend_7d_eur@1`. The balance forecast until payday (`metrics.md` section 3.3, #257) uses `balance_forecast.daily_pace_eur@1` (usual spending a day, `eur_per_day`), `balance_forecast.bills_to_date_eur@1` (the bills due by that day, `eur`) and `balance_forecast.balance_eur@1` (the projected balance on that day, `eur`, a composite). Plain sums and counts that `metrics.md` does not define use `spending.*` and `evidence.*`, which are defined in the design document (section 6.2). Values the user typed in use `user_input@1`. Values read from a bill's virtual barcode use `bill_barcode@1`, and the numbers the bill explanation computes use `bill.*` (section 11). A value cited from a public statistic, not computed from the customer's data, uses `national_context.monthly_eur@1` (since 0.3.10, #569): what households whose reference person is in the customer's age group spend a month per consumption unit, from Statistics Finland's household budget survey (table 14q4, survey year 2022), with unit `eur_per_month` and the survey year as its `period`. Only `/api/ask` carries it: the national line beside the peer comparison of Groceries or Transportation cites it, so it is in the `numbers` event (section 7). No card or estimate carries it, and its `label` there names no age ("Households of your age group, per consumption unit"). |
 | `evidence_ref` | string or null | Pass it to `GET /api/evidence/{ref}` to see how the number was built. One ref backs exactly one number (one `method` and `value`), and the same number shown in several places carries the same ref. It is `null` in three cases only: values the user typed in (`method` = `user_input@1`), values read from a bill's virtual barcode (`bill_barcode@1`, section 11), and the parts of a `peer_aggregate` evidence view (section 9), which are group statistics with no further drill-down by design. |
 | `label` | string | Short localised name, for example "Restaurants". |
 | `display` | string | Localised formatted value, for example `€312.80` or `312,80 €`. A plus sign is never added. Negative values show a minus. A display with a direction word (`more`, `less`) shows the magnitude without a minus. Every display is written by one formatter on the server from the number's `value`, `unit` and `method`, so the app never formats a number itself:<br>- money and rates: `€1,180.21 a month` / `1 180,21 € / kk`;<br>- percentages with one decimal, `18.9%` / `18,9 %`, except a whole percentage the user typed (`user_input@1`): `20%` / `20 %`;<br>- percentiles as ordinals: `72nd percentile` / `72. persentiili`;<br>- the gap to the peer median (`peer_benchmark.vs_median_pct@1`) with a direction word: `32.3% more`, `31.0% less` / `32,3 % enemmän`, `31,0 % vähemmän`; exactly zero is `0.0%`;<br>- counts: whole counts grouped like money, `4,120` / `4 120`; a fractional count with one decimal, `15.2` / `15,2`; everyday purchases a month (`spender_profile.everyday_tx_month@1`) as `14.2 a month` / `14,2 / kk`;<br>- `days` and `months` with their unit: `1 day`, `12 days` / `1 pv`, `12 pv`;<br>- a value that rounds to zero never shows a minus: `€0.00`, not `-€0.00`. |
@@ -1394,18 +1397,19 @@ Every error response has the same envelope, and the `error` event inside the `/a
 |---|---|---|
 | 400 | `invalid_request` | Malformed body or a bad parameter. A what-if selection the core refuses is a 422 `invalid_scenario` instead (section 8.1). |
 | 404 | `customer_not_found` | Unknown `customer_id`, or any customer that is not a persona (section 1): both get the same answer. |
-| 404 | `not_found` | Unknown route: the path names no endpoint of this contract. |
+| 404 | `not_found` | Unknown route: the path names no endpoint of this contract. On `POST /api/tts`, also an answer that is unknown, belongs to another customer or has no text: all three get the same body (section 12). |
 | 405 | `invalid_request` | A known path with a method it does not take. The `Allow` header lists the methods it takes. |
+| 413 | `invalid_request` | On `POST /api/stt`, an audio clip that is too large or too long (section 13). |
 | 404 | `evidence_not_found` | Unknown or expired `ref`. |
 | 403 | `evidence_forbidden` | The evidence belongs to a different customer. |
 | 422 | `invalid_scenario` | The what-if scenario cannot be computed or is refused: a selection with no spending in the window, or a selection the core refuses (section 8.1). Every reason gets the same body. |
 | 422 | `invalid_bill` | The bill explanation cannot use the request: both or neither of `barcode` and `fields`, `payee` beside `fields`, or a barcode that cannot be used. The body carries `reason`, and `message` is the sentence for that reason (section 11.1). |
 | 404 | `tx_ref_not_found` | Unknown `tx_ref`, the ref of an expired review, or one that belongs to another customer. All three get the same answer, so a caller cannot tell whether another customer's ref exists (section 10, R4). |
 | 422 | `basket_not_allowed` | The basket is not one of the review's two options (section 10). |
-| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. |
+| 429 | `rate_limited` | Too many requests. Retry after the `Retry-After` header. On `POST /api/tts` also a used-up daily voice budget, or too many voice requests at once (section 12). On `POST /api/stt` the same for spoken questions, which also have a window per viewer (section 13). |
 | 503 | `data_unavailable` | The database cannot be reached or is too slow. |
 | 503 | `llm_unavailable` | Only when there is no fallback answer at all. Normally `/api/ask` answers with a template instead (section 7.5). |
-| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. |
+| 503 | `model_unavailable` | A bill reading not in the cache cannot use the model; the app offers typing the fields (section 11.4). A cached reading is served even while the model may not be used. On `POST /api/tts`, the voice of a text not in the cache cannot be made; the app reads the answer with the device voice instead, and cached audio is served even then (section 12). On `POST /api/stt`, a spoken question cannot be turned into text; the app asks the user to type the question. No speech heard is not an error: it is a 200 with `empty: true` (section 13). |
 | 500 | `internal` | Anything else. |
 
 <!-- example: error.response -->
@@ -1423,7 +1427,7 @@ Every error response has the same envelope, and the `error` event inside the `/a
 
 ## 5. `GET /api/personas`
 
-Lists the demo customers the app can switch between. These are curated customers from the synthetic dataset, and the only customers the service answers for (section 1). Display names are invented and labelled as demo personas. `age_band` uses the age bands from section 1, and `profile.key` uses the profile keys of the `profile` card (section 3).
+Lists the demo customers the app can switch between. These are curated customers from the synthetic dataset, and the only customers the service answers for (section 1). Display names are invented and labelled as demo personas. `age` is the customer's age in years from the dataset (`customers.age`), and `age_band` is its band from section 1, so the picker can say who is who (#872). `profile.key` uses the profile keys of the `profile` card (section 3). The picker shows the name, the age and band, the profile label and the tagline; it never shows the postal code or the `customer_id`.
 
 **Request:** `GET /api/personas?lang=en`
 
@@ -1436,6 +1440,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00042",
       "display_name": "Aino",
+      "age": 29,
       "age_band": "25-34",
       "postal_area": { "code": "00530", "label": "Helsinki 00530" },
       "profile": { "key": "everyday_heavy", "label": "Everyday spender" },
@@ -1445,6 +1450,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00017",
       "display_name": "Mikko",
+      "age": 48,
       "age_band": "45-54",
       "postal_area": { "code": "02100", "label": "Espoo 02100" },
       "profile": { "key": "steady", "label": "Steady" },
@@ -1454,6 +1460,7 @@ Lists the demo customers the app can switch between. These are curated customers
     {
       "customer_id": "CUST00088",
       "display_name": "Leena",
+      "age": 22,
       "age_band": "18-24",
       "postal_area": { "code": "00100", "label": "Helsinki 00100" },
       "profile": { "key": "stretched", "label": "Stretched" },
@@ -1480,7 +1487,7 @@ The home screen. It is fully deterministic: no AI model is called, and its numbe
 
 **Response fields:**
 - `customer_id`, `as_of`, `language`, `greeting`.
-- `ai_disclosure`: show it on the first chat screen.
+- `ai_disclosure`: the text that says Sentti is an AI. The app keeps an "AI" tag visible on every chat screen and can show this text one tap away from it (since 0.3.12, #699).
 - `hero`: a `metric` card, safe to spend in the next 7 days (`metrics.md` section 3; how its components work is in section 3 of this contract). Its `status` field carries the metrics status (`ok`, `below_usual` or `nothing_free`). The subtitle carries the period's dates in the project's period format, for example "1–7 Oct 2026" (Finnish "1.–7.10.2026"), not the status. **`hero` is `null`** when safe to spend cannot be computed for a known reason (the bills before payday do not match the metric, or the customer has no transactions up to `as_of`). The rest of the overview is unaffected, and the app hides the card.
 - `safe_to_save`: a card of type `safe_to_save` (section 3, `metrics.md` section 3.1). The headline is `monthly`, what a typical month leaves. The second line is `stock` with its one-sentence `stock_explanation`, money in the account beyond what is needed until payday; the app shows it with no call to action. It is **not** added to safe to spend: both come out of the same money, and the app never shows them as a sum.
 - `cards`: Card[] (spending baskets, bills before payday, and more later).
@@ -2079,10 +2086,10 @@ An Insight is `{insight_id, kind, title, text, text_rendered, numbers, estimate,
     }
   ],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```
@@ -2419,10 +2426,10 @@ The same overview when safe to spend cannot be computed for a known reason: `her
   "reviews": [],
   "insights": [],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```
@@ -2935,10 +2942,10 @@ This is the demo's starting point. Answering "needed" moves safe to spend down t
   ],
   "insights": [],
   "suggested_questions": [
-    "Where did my money go?",
-    "What kind of spender am I?",
     "What can I safely spend this week?",
-    "How could I save more?"
+    "How could I save more?",
+    "Where did my money go?",
+    "What kind of spender am I?"
   ]
 }
 ```
@@ -2963,6 +2970,7 @@ The partner's four questions are the main intents, and the app should offer them
 | `conversation_id` | string or null | `null` starts a new conversation. Send the id from `meta` to ask a follow-up. The server keeps the history (last 6 turns, 30 minutes). The app does not resend it. A conversation belongs to one customer. An id that is unknown, expired or belongs to another customer starts a new conversation: `meta` carries the new id, `done.warnings` contains `conversation_reset`, and earlier tool results are never reused. |
 | `message` | string | The question, at most 500 characters. |
 | `language` | `en`, `fi` or `auto` | Optional, default `auto`: the language is detected from the message, typed with or without ä and ö, and is English when unsure. Errors use the same language, except for a body that cannot be read or does not validate and for a message over 500 characters with `auto`: those are answered in English (section 1). |
+| `channel` | `text` or `voice` | Optional, default `text` (#873). Send `voice` from voice mode. Any other value, `null` included, is a 400 `invalid_request`. On both channels a talk question ("why does it matter?", "explain", "I don't understand", "any tips?", "no numbers", and the Finnish forms) gets an answer in words: two to four sentences, at most one number already shown in the conversation, no card and one follow-up chip. With `voice`, an open follow-up after any answer with data ("why?", "what else?", "kerro lisää") is answered in words as well; with `text` only after an answer in words. A question for a figure keeps its card on both channels. |
 
 The `Accept` header chooses the response format:
 
@@ -3011,7 +3019,7 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 | `card` | 0 to 3 times, as soon as a tool finishes | `card` (section 3). The server, never the model, may add one `review` card when the answer's tools touched the spike's basket or category. If a review is pending, it adds that one and never a second; otherwise it may create the next within the weekly limit of section 6. The card counts towards the 3 cards. |
 | `numbers` | Before the first `delta` that uses them | `numbers`: a map from id to Number object |
 | `delta` | 1 or more times | `text`: the next piece of the answer, with number tokens. A token is never split across two deltas. Append the pieces in order. In version 0.1 the core validates the whole answer first and then sends it sentence by sentence. Finer streaming may come later without a contract change. |
-| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with tokens), `text_rendered`, `cited` (number ids used), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below), `actions` (Action[], since 0.3.3: see below), `ai_disclosure` (string or null, since 0.3.3: see below) |
+| `done` | Last, once, on success | `answer_id`, `outcome`, `text` (full, with tokens), `text_rendered`, `cited` (number ids used), `follow_ups` (string[]), `lesson` (`{key, title, text}` or null), `refusal` (`{kind, label}` or null), `clarify` (`{question, options}` or null), `warnings` (string[] of codes, see below), `actions` (Action[], since 0.3.3: see below), `ai_disclosure` (string or null, since 0.3.3: see below), `sources` (optional, since 0.3.19: see below) |
 | `error` | Last, once, on failure | `error`: `{code, message, retryable}`, the same envelope as an HTTP error (section 4) |
 
 `outcome` is one of:
@@ -3023,6 +3031,8 @@ The browser `EventSource` API only supports GET, so read the stream with `fetch(
 `actions` (since 0.3.3, #420) holds the answer's actions (section 3). A refusal, the rules' "I can't answer that one yet" answer (`outcome` `clarify`) and the "nothing found" fallback (`outcome` `fallback`) carry exactly one, the way to a human: `open_host_screen` with target `contact_bank`, label "Contact S-Pankki" / "Ota yhteyttä S-Pankkiin". Every other answer has `[]`, including the general clarifying question.
 
 `ai_disclosure` (since 0.3.3, #420) is the overview's `ai_disclosure` text on the first answer of a conversation, so the app can show once that Sentti is an AI. It is `null` when that first answer is Sentti's introduction (the introduction says it), and on every later answer of the conversation. A new conversation (including after `conversation_reset`) discloses again.
+
+`sources` (optional, since 0.3.19, #884) lists the official sources an answer drew on: `[{"publisher", "title", "url", "lang"}]`, at most three, in retrieval order, one per `url`, every `url` `https://`. `publisher` is a short name ("Marttaliitto", "InfoFinland.fi"), `title` is the source's own page or card title (can be long), and `lang` is the answer's language. The app shows them as a Sources row under the answer. The field is present only when sources were used: a financial-literacy answer whose sources are close enough to the question, or a talk answer written with them. Every other answer has no `sources` key. The answer's `text` and `text_rendered` never contain a link or a source line. An app that ignores the field shows the answer without its sources, and nothing else changes.
 
 `refusal.kind` is one of `investment_advice`, `credit_decision` (for example "Will the bank approve my mortgage?"), `out_of_scope`, `other_person_data` or `unsafe`.
 
@@ -3692,6 +3702,8 @@ A store switch is not a what-if scenario. It is shown in the `stores` card with 
 
 Shows how a number was built: the method and either the transactions behind it or the numbers it was computed from. Evidence is for the app and the user only. It is never sent to the AI model.
 
+`months` (0.3.20, #944): for a `transactions` list, every month of the whole list (all pages, not just the rows sent), newest first: `month` ("2026-09"), `label` ("September 2026"), `count`, `total` (a decimal string with the bank sign, like a row's `amount`) and `display`. Every other kind sends `[]`. Rows come newest first, so the app groups the rows it has under their month and shows the month's subtotal from `months`.
+
 **Request:** `GET /api/evidence/ev_r7t9v1x3z5b7?customer_id=CUST00042&lang=en&limit=50&cursor=<next_cursor>`
 
 - `customer_id` must be the customer the evidence belongs to; otherwise the response is 403 `evidence_forbidden`. A `customer_id` that is not served (section 1) gets 404 `customer_not_found` before the ref is looked up.
@@ -3702,7 +3714,7 @@ Shows how a number was built: the method and either the transactions behind it o
 | `kind` | Filled fields | Used for |
 |---|---|---|
 | `transactions` | `rows`, `row_count`, `reconciles`, `next_cursor` | Sums and counts over the customer's own transactions. |
-| `composite` | `parts`: `{role, number: Number}`[] | Numbers computed from other numbers: changes, safe to spend, savings. Each part has its own `evidence_ref`, except a value from a bill (`bill_barcode@1` or `user_input@1`, section 11), which has none. |
+| `composite` | `parts`: `{role, number: Number}`[] | Numbers computed from other numbers: changes, safe to spend, savings. Each part has its own `evidence_ref`, except a value from a bill (`bill_barcode@1` or `user_input@1`, section 11), which has none. A value cited from a public statistic (`national_context.monthly_eur@1`, since 0.3.10) is a `composite` with no parts: `parts` and `rows` are empty, `reconciles` is `null`, and nothing further opens. Its `title` and the evidence `number`'s `label` name the statistic's age band and category, and `method.summary` cites the table (example `evidence.response_national`). |
 | `metric` | `reconciles`; `rows` | Numbers read from a metric definition of `metrics.md` (safe to spend, safe to save, what-if, spender profile). The core re-runs the definition for the customer, and `reconciles: true` confirms that the re-run gives the same value. `rows` is always a list, empty today. `query` and `row_count` are `null`. |
 | `peer_aggregate` | `parts`: `{role, number: Number}`[] for `peer_median`, `peer_p25`, `peer_p75` and `peer_n` (group size); `reconciles` | Peer benchmarks (#69). Shows group statistics only, never other customers' rows. The parts have `evidence_ref: null` (nothing further to open), and the group's level (section 3, `peer`) is named in the group size's label. `reconciles: true` confirms that a re-run of `06_peer_benchmark.sql` for the customer gives the same statistic. |
 | `store_index` | `parts` | Store price levels. |
@@ -3772,7 +3784,10 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
   "reconciles": true,
   "parts": [],
   "next_cursor": "cur_2",
-  "privacy_note": "Only you can see these transactions. They are never sent to the AI model."
+  "privacy_note": "Only you can see these transactions. They are never sent to the AI model.",
+  "months": [
+    { "month": "2026-09", "label": "September 2026", "count": 14, "total": "-312.80", "display": "-€312.80" }
+  ]
 }
 ```
 
@@ -3803,7 +3818,8 @@ A `metric` number (Sanna's budget limit for the next 7 days, from `core/metrics/
   "reconciles": true,
   "parts": [],
   "next_cursor": null,
-  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
 }
 ```
 
@@ -3855,7 +3871,8 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
       "label": "Similar people compared (same age group and postal area)", "display": "23" } }
   ],
   "next_cursor": null,
-  "privacy_note": "Only group statistics are shown here, never another customer's transactions."
+  "privacy_note": "Only group statistics are shown here, never another customer's transactions.",
+  "months": []
 }
 ```
 
@@ -3903,7 +3920,41 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
     }
   ],
   "next_cursor": null,
-  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
+}
+```
+
+A value cited from a public statistic (since 0.3.10, #569): the national line's number beside Sanna's grocery comparison, as the service returns it. It opens as a `composite` with no parts; the `title` names the age band of the table, which the answer's label does not:
+
+<!-- example: evidence.response_national -->
+```json
+{
+  "evidence_ref": "ev_1bf98fbdc1a9",
+  "kind": "composite",
+  "language": "en",
+  "title": "Households with a reference person aged 35–44: food and non-alcoholic drinks, per consumption unit, 1 Jan – 31 Dec 2022",
+  "number": {
+    "value": 332.33, "unit": "eur_per_month",
+    "period": { "start": "2022-01-01", "end": "2022-12-31", "label": "1 Jan – 31 Dec 2022" },
+    "method": "national_context.monthly_eur@1", "evidence_ref": "ev_1bf98fbdc1a9",
+    "label": "Households with a reference person aged 35–44: food and non-alcoholic drinks, per consumption unit",
+    "display": "€332.33 a month"
+  },
+  "method": {
+    "id": "national_context.monthly_eur@1",
+    "name": "Households' spending per consumption unit",
+    "summary": "Statistics Finland, households' consumption, table 14q4, survey year 2022: the yearly consumption expenditure per consumption unit (an adult-equivalent of the household) of households whose reference person is in this age group, divided by 12; for transport, buying a vehicle is left out. A public statistic, not computed from your transactions.",
+    "doc": "README.md#national-context"
+  },
+  "query": null,
+  "rows": [],
+  "row_count": null,
+  "reconciles": null,
+  "parts": [],
+  "next_cursor": null,
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
 }
 ```
 
@@ -3988,8 +4039,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+    "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4172,8 +4223,8 @@ Sanna answers "needed" for the Home & Tech purchase of `card.review`. This is th
         }
       }
     ],
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-    "text_rendered": "Your safe to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+    "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+    "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 138.79, "unit": "eur",
@@ -4217,9 +4268,15 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
     "numbers": {
+      "n2": {
+        "id": "n2", "value": 138.79, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€138.79"
+      },
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
@@ -4325,9 +4382,15 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
         }
       }
     ],
-    "text": "{{n9}} now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
-    "text_rendered": "€1,080.42 now counts as everyday spending. This does not change this week's safe to spend: your monthly budget, not this purchase, sets the limit.",
+    "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
     "numbers": {
+      "n2": {
+        "id": "n2", "value": 138.79, "unit": "eur",
+        "period": { "start": "2026-10-01", "end": "2026-10-07", "label": "Next 7 days" },
+        "method": "safe_to_spend.safe_to_spend_7d_eur@1", "evidence_ref": "ev_sa4s6t8s0p2d",
+        "label": "Safe to spend", "display": "€138.79"
+      },
       "n9": {
         "id": "n9", "value": 1080.42, "unit": "eur",
         "period": { "start": "2026-09-28", "end": "2026-09-28", "label": "28 Sep 2026" },
@@ -4358,8 +4421,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
   "review_state": "pending",
   "changed": true,
   "message": {
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+    "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",
@@ -4542,8 +4605,8 @@ The "needed" answer undone while the review is still open: the purchase is `uncl
         }
       }
     ],
-    "text": "Your safe to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-    "text_rendered": "Your safe to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+    "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+    "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
     "numbers": {
       "n1": {
         "id": "n1", "value": 97.46, "unit": "eur",
@@ -4687,7 +4750,7 @@ A barcode whose reference fails its check:
 | `match` | Whether the payee is one of the customer's recurring bills (section 3, `bills`):<br>- `status`: `matched`, `not_matched`, or `no_payee` (a barcode sent without `payee`).<br>- `bill_id` and `label`: the matched bill's id and label, as in the bills card, else `null`.<br>- `text`: one sentence: the regular bill ("This is your regular Housing bill."), a bill from the same payee category when the matched bill does not fit it ("This bill is from the same payee category as your regular Utilities payments.", #400), or why there is no match.<br>The match is exact after normalisation (case, spaces and punctuation are ignored). It compares the payee with the labels of the customer's recurring bills in both languages and with a fixed table of known payee names for each kind of recurring bill. A real bank knows the counterparty of earlier payments; the synthetic data has none, so this table stands in for it in the demo, with fictional companies only (the table below). There is no fuzzy matching. No match is a normal outcome. |
 | `comparison` | A [Comparison](#23-comparison), only when the bill is the customer's regular bill, else `null`. A matched bill is the regular bill when it fits it: the series is paid once a month (not `spread`) and the amount is at least half of its typical month (#400). A matched bill that does not fit (another billing rhythm, or less than half a typical month, like a quarterly water bill among utilities) has `comparison` `null`, and `match.text` names the payee category instead (example `bill.response_category`). The fields:<br>- `baseline`: the matched bill's `typical_month`, the same Number and `evidence_ref` as in the bills card.<br>- `change`: the bill's amount minus the typical amount, in euros, signed (`bill.vs_typical_eur@1`).<br>- `change_pct`: the same in percent of the typical amount (`bill.vs_typical_pct@1`).<br>- `tone`: `worse` when the bill is higher, `better` when lower, `neutral` when equal. |
 | `basket` | `{key, label, text}`. A matched bill: the matched bill's basket, `regular_essentials`. Any other bill: `unexpected_necessities`, as a suggestion, and the text says that it is not one of the customer's regular bills. Nothing is labelled or stored. |
-| `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Your weekly safe to spend stays €138.79: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
+| `safe_to_spend` | What paying the bill on time does to the hero's numbers (section 6), or `null` when safe to spend cannot be computed for a known reason (as the overview's `hero`). **The bill is applied to the balance side exactly as a bill due before payday is** (the `bills_due` component of the hero), and the hero's own computation runs again with that input. Nothing is subtracted from safe to spend directly. Fields:<br>- `effect`: one of three values, below.<br>- `next_payday`: a date.<br>- `reserved`: for `excess_only`, the matched bill's `due_until_payday`, the same Number as in the bills card; else `null`.<br>- `counted`: what the bill adds to the bills due before payday (`bill.counted_eur@1`), or `null` for `after_payday`.<br>- `free_until_payday_before`: the hero's "Free until payday" (its first `secondary` Number), with the same `evidence_ref`.<br>- `free_until_payday_after`: `free_until_payday_before - counted` (`bill.free_until_payday_after_eur@1`). It moves exactly by `counted`.<br>- `before`: the hero's `primary`, with the same `evidence_ref`.<br>- `after`: safe to spend recomputed by the hero's own function with `free_until_payday_after` (`bill.safe_to_spend_after_eur@1`). It is the smaller of the balance limit, recomputed, and the monthly budget limit, unchanged, and never below 0.<br>- `text`: one or two sentences.<br><br>The three values of `effect`, for the bill's amount `A` and due date `D`:<br>- `after_payday`: `D` is after `next_payday`. Nothing changes before payday; `reserved`, `counted`, `free_until_payday_after` and `after` are `null`, and `text` says so.<br>- `excess_only`: `D` is on or before `next_payday`, the bill is `matched`, and the matched bill is already among the bills due before payday. Only the excess over what is already counted is added: `counted = max(A - reserved, 0)`.<br>- `full`: `D` is on or before `next_payday`, any other case. `counted = A`.<br><br>When the monthly budget limit is the smaller one, `after` equals `before`, and `text` says why, for example "Left to spend this week stays €138.79: your monthly budget limits it, not your balance." `free_until_payday_after` can be negative: it is shown as it is, and `text` then says that the bill takes more than is free. `after` is never negative: like the hero's, the balance limit counts a negative free until payday as 0, so `after` is then 0. |
 | `forecast` | The forecast balance on the bill's due date, before and after the bill (since 0.3.4, #421), or `null` when the balance forecast cannot be computed for a known reason: no transactions, no balance, the bills due of the two paths differ (as `safe_to_spend`), or a failed consistency check of the forecast. The rest of the explanation is unchanged. Fields:<br>- `status`: `covered`; `tight`, when the balance after the bill is below a margin (a server constant, €100); `not_covered`, when it is below zero; or `outside_forecast`, when the due date is before `as_of` or on or after the next payday (the forecast covers today up to the day before payday).<br>- `before`: the balance forecast's own Number for the due date (`balance_forecast.balance_eur@1`), with the same `evidence_ref` as that day of the forecast. For a bill due today it is the balance now (`safe_to_spend.balance_eur@1`).<br>- `already_counted`: what the forecast already subtracts for the matched bill's series by the due date (`balance_forecast.bills_to_date_eur@1` for that series), or `null` when nothing is. This is the part of the forecast's bills up to the due date, not `safe_to_spend.reserved` (up to payday): a monthly bill expected after the due date is not in the balance on the due date yet.<br>- `counted`: what the bill takes from the forecast: the bill's `amount` Number, or, with `already_counted`, only the excess `max(A - already_counted, 0)` (`bill.forecast_counted_eur@1`). So a bill already among the forecast's bills is never subtracted twice.<br>- `after`: `before - counted` (`bill.forecast_after_eur@1`).<br>- `shortfall`: for `not_covered`, `counted - before` (`bill.forecast_shortfall_eur@1`), else `null`.<br>- `text`: one sentence. For `not_covered` it names the shortfall and the date. No text suggests borrowing.<br>- `chip`: for `not_covered`, an `ask` action with the forecast question ("Will my money last until payday?"), else `null`.<br>For `outside_forecast` the Numbers are `null`. The status never removes the payment draft. The due date is taken as printed, with no shift to a banking day, as in `safe_to_spend.effect`. |
 | `glossary` | `{term, label, text}`[] for four terms, always all four, in the request language: `reference_number` (viitenumero), `due_date` (eräpäivä), `virtual_barcode` (virtuaaliviivakoodi) and `late_payment_interest` (viivästyskorko). One sentence each; the texts are fixed. The term tokens of #34 are not used here. |
 | `actions` | At most two. `add_to_payments` with a payment `draft` `{payee, iban, reference, amount, due_date}`. It is present when `checks.iban` and `checks.reference` are both `pass`. A due date in the past, or any warning sign other than a failed check, does not remove it: paying late is still better than not paying. Then, since 0.3.3 (#420), `open_host_screen` with target `contact_bank` (section 3), the way to a human at the bank, when `signals` holds `iban_check_failed` or `reference_check_failed`, or `new_payee` together with another sign; `new_payee`, `short_term` or `amount_above_usual` alone do not bring it. Pick an action by its `type`, never by its index: with a failed check, `contact_bank` is the only action. With neither, `actions` is empty. The draft's `iban` and `reference` are normalised (no spaces), `amount` is the bill's `amount` Number, and `payee` is `null` for a barcode without one (section 11.3). |
@@ -5146,7 +5209,7 @@ A bill the forecast does not cover, typed by CUST00849, the persona whose foreca
       "method": "bill.safe_to_spend_after_eur@1", "evidence_ref": "ev_a50e19ad3a3b",
       "label": "Safe to spend after this bill", "display": "€55.82"
     },
-    "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Your weekly safe to spend goes from €123.15 to €55.82."
+    "text": "Due before your payday on 15 Oct 2026, it is added to the bills before payday: free until payday goes from €819.62 to €119.62. Left to spend this week goes from €123.15 to €55.82."
   },
   "forecast": {
     "status": "not_covered",
@@ -5324,7 +5387,217 @@ A reading of a sample with a barcode:
 
 ---
 
-## 12. Changelog
+## 12. `POST /api/tts`
+
+(#730, built in #732.) Reads one of Sentti's answers aloud with a Gemini TTS voice and returns the audio as a WAV file. The app calls it only in a live build, when the user taps the speaker button of an answer, or for each answer in voice mode, which the user opens on purpose (#811, section 13.4); the device's own voice is the fallback (section 12.4).
+
+**The request names an answer, never a text.** The body carries the customer and the `answer_id` of one of this customer's `/api/ask` answers (section 7). The core reads the text from that answer's audit record: `text_rendered`, the text with the numbers filled in, as the user saw it. So the endpoint can only read out the service's own answers.
+
+**What is sent where.** The app sends the two ids and a language, nothing else. On a cache miss the core sends the answer's `text_rendered` to the Gemini API, and nothing else about the customer: no customer id, no answer id. On a cache hit nothing is sent. The core keeps the audio in its cache (section 12.3) and one line per request to the model in its own ledger (time, model, result, latency; no text). Its log lines carry the answer id and the outcome, never the text or the key.
+
+### 12.1 Request
+
+| Field | Type | Meaning |
+|---|---|---|
+| `customer_id` | string | Persona: `CUST` and five digits. |
+| `answer_id` | string | The `answer_id` of one of this customer's answers (`meta` and `done` in section 7.2): `ans_` and eight lowercase letters or digits. |
+| `language` | `en` or `fi` | Optional, default `en`. The language of an error message only: it does not change the voice. A body that cannot be read or does not validate is answered in the language of the `lang` query parameter, else in English (section 1). |
+
+An unknown field is 400 `invalid_request`, a `text` among them: there is no way to send a text to be read. So is a `customer_id` or an `answer_id` of another shape. The app sends `Accept: audio/wav`; the core answers the same without it.
+
+<!-- example: tts.request -->
+```json
+{
+  "customer_id": "CUST00042",
+  "answer_id": "ans_7f3k9q2m",
+  "language": "en"
+}
+```
+
+The core checks in this order:
+1. The body (400 `invalid_request`).
+2. The persona allowlist, with no database (404 `customer_not_found`, section 1).
+3. The address window: 20 requests a minute per client address (429 `rate_limited`). Every request that gets this far counts, cache hits and `not_found` answers too.
+4. The answer: its audit record must exist, belong to the body's customer and have a `text_rendered` that is not empty (404 `not_found` otherwise).
+5. The cache (section 12.3): a hit is the 200 response at once.
+6. A request to the model, within the daily budget (section 12.3).
+
+### 12.2 Response
+
+**200:** the body is the audio, not JSON: `Content-Type: audio/wav`, with `Cache-Control: private, max-age=3600`.
+- The model answers headerless 16-bit PCM (`audio/L16`) or a WAV file. The core wraps PCM as a mono 16-bit WAV at the sample rate its type names (24 kHz when it names none), and passes a WAV on unchanged.
+- The audio speaks the words of `text_rendered`. Only the text goes to the model, with no language setting; the voice is the server's (`TTS_MODEL` and `TTS_VOICE`, default `gemini-3.8-flash-tts` with the prebuilt voice `Sulafat`, `docs/deploy.md`).
+
+**Errors** use the envelope of section 4, in the body's `language`:
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | The body cannot be read or does not validate: an unknown field (also `text`), a `customer_id` or `answer_id` of another shape, a `language` other than `en` or `fi`. |
+| 404 | `customer_not_found` | The customer is not a persona (section 1). |
+| 404 | `not_found` | The answer is unknown, belongs to another customer, or has no text. All three get the same body, so a caller cannot tell whether another customer's answer exists. The audit record holds no viewer key (#144): the binding is the customer plus an answer id nobody can guess. |
+| 429 | `rate_limited` | With `Retry-After` in seconds: over 20 requests a minute from one address (until the oldest leaves the minute); the daily voice budget is used up (until the oldest request leaves the 24 hours, at least 60); two requests to the model are already running (5). The last two happen only for a text not in the cache. |
+| 503 | `model_unavailable` | A text not in the cache whose voice cannot be made: no `GEMINI_API_KEY`, `TTS_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the text is over 2,000 characters, or the request to the model failed (a timeout, a network or server error, the provider's own rate limit, no audio in its answer). |
+| 500 | `internal` | Anything else (section 4). |
+
+### 12.3 Cache and daily budget
+
+**Cache.** One WAV file per text on the service's disk (`var/tts-cache`, `docs/deploy.md`), named by the SHA-256 of the model, the voice, the answer's language and its `text_rendered`. The key holds no customer id or answer id, so a later answer with the same text in the same language is the same file. A hit sends no request to the model and costs no budget. It is served also while the budget is used up, while `TTS_DAILY_BUDGET` is `0`, while `var/model-off` exists and without `GEMINI_API_KEY`. The files have no expiry: they stay until someone deletes them. Another model or voice gives new files.
+
+**Daily budget.** `TTS_DAILY_BUDGET` requests to the model in any rolling 24 hours, default 100; `0` turns new requests off (a cache miss is then 503). Failed requests count too. The voice has its own ledger, `var/tts-requests.jsonl`, apart from the chat's budget. At most two requests to the model run at once. The core waits up to `TTS_TIMEOUT_S` seconds for one (default 25, at most 60).
+
+### 12.4 The app and the device voice
+
+- **Mock build** (`VITE_API_MODE` is not `live`): the app never calls this endpoint. The device voice reads `text_rendered`, and the text stays on the device: only voices that run on the device are picked (`localService: true`).
+- **Live build:** on a tap, or in voice mode (below), the app posts this request with the answer's `done.answer_id` and the persona's `customer_id`, and plays the WAV through the Web Audio API. It gives up after 8 seconds (`TTS_TIMEOUT_MS` in `app/src/lib/speech.ts`).
+- **Fallback:** any error status, a network failure, audio it cannot decode, those 8 seconds, a browser without the Web Audio API, or an answer without an id: the app reads the same `text_rendered` with a device voice for the answer's language. Without one, nothing plays. The app does not retry and does not read `Retry-After`.
+- A request the app gave up on still runs to the end in the core and fills the cache, so the next tap on the same answer is a hit. This is why `TTS_TIMEOUT_S` is longer than the app's 8 seconds.
+- **Voice mode** (#811, section 13.4): once the user has opened it, each answer to a question asked in it is read aloud without a tap, with this request and the same fallback. When the core has said the voice budget is low and the device has a voice for the language, the device voice reads instead.
+- Outside voice mode, nothing plays without a tap. Stopping, or tapping another answer, aborts the request, and a late response never plays.
+
+---
+
+## 13. `POST /api/stt`
+
+(#735, built in #747.) Turns a short spoken question into text with Gemini audio understanding. The app calls it only in a live build, when the user taps the mic in the composer or while voice mode is open (section 13.4). The text goes back to the app only. From the composer's mic it lands in the composer, and nothing is sent to `/api/ask` until the user taps send. In voice mode (#811), which the user opens on purpose, the text is sent to `/api/ask` as a question at once, without that tap, and its answer is read aloud (section 12.4). From then on it is a question like a typed one (section 7).
+
+**The body is the audio, not JSON.** The request body is the clip as the browser's `MediaRecorder` gives it, with its type in `Content-Type`. `customer_id` and `language` are query parameters.
+
+**What is sent where.** The app sends the clip (at most 15 seconds, recorded only after a tap on the mic or while voice mode is open), the persona's `customer_id` and the language, nothing else. The core sends the clip and a fixed transcription prompt to the Gemini API for transcription. The prompt names the language and nothing about the customer: no customer id. The text goes back in the response and nowhere else.
+
+**No audio is stored.** This holds for the app and the core:
+- The app keeps the clip in memory for the one request: no file, no `blob:` URL, no browser storage.
+- The core keeps the audio in memory for the one request: no cache, no file, no audit record. The same holds for the text.
+- The core's ledger, `var/stt-requests.jsonl`, has one line per request to the model: time, kind, model, result, latency and token counts. It never holds the audio or the text. The core's log lines hold the result code, the clip's size and the latency, and the access log line the path with its query; none holds the audio or the text.
+- `core/tests/test_stt_api.py` checks that a request writes nothing but the ledger line, and that neither the ledger nor the log holds the text or the audio, also not as base64.
+
+The model provider receives the clip for transcription; the statements above do not cover it.
+
+### 13.1 Request
+
+`POST /api/stt?customer_id=CUST00860&language=en`, with the clip as the body.
+
+| Part | Meaning |
+|---|---|
+| `customer_id` (query) | Persona: `CUST` and five digits. Required. |
+| `language` (query) | `en` or `fi`. Optional, default `en`. The prompt names it as the most likely spoken language, error messages use it, and the response echoes it. It is not detected from the audio. The model writes the words in the language they were spoken in and does not translate them. Other query parameters are ignored, `lang` among them. |
+| `Content-Type` (header) | The clip's type, one of the table below. Parameters such as `;codecs=opus` are dropped, and case does not matter. |
+| Body | The clip's bytes. It must not be empty and may be at most 1,000,000 bytes. |
+
+| `Content-Type` | Sent to the model as | Length checked |
+|---|---|---|
+| `audio/webm`, `video/webm` (some Chrome versions name an audio-only recording so) | `audio/webm` | by the model's token count |
+| `audio/ogg` | `audio/ogg` | by the model's token count |
+| `audio/mp4` (Safari), `audio/x-m4a`, `audio/m4a` | `audio/m4a` | by the model's token count |
+| `audio/aac` | `audio/aac` | by the model's token count |
+| `audio/mpeg` | `audio/mpeg` | by the model's token count |
+| `audio/mp3` | `audio/mp3` | by the model's token count |
+| `audio/wav`, `audio/x-wav`, `audio/wave` | `audio/wav` | by its header |
+
+**Length.** The app stops recording at 15 seconds. The core checks two things:
+- A WAV clip by its header: at most 15.5 seconds, which leaves a little room for the recorder's last chunk. A WAV body that cannot be read as WAV is 400.
+- A compressed clip names no reliable length while it is recorded, so the core checks it from the model's answer. The API counts audio at 32 tokens a second. A request whose prompt took more than 644 tokens (17 seconds of audio plus 100 for the prompt; a 15-second clip is about 515) is 413. That request was sent, so it counts against the daily budget; its text is dropped. The core does not parse a compressed clip itself, so a broken one goes to the model as it is.
+
+**Size.** At most 1,000,000 bytes; 15 seconds at the app's 32 kbit/s is about 60 KB. A declared `Content-Length` over that is 413 before the body is read. A body without one is read with a running cap and is 413 as soon as it goes over. The proxy lets `/api/stt` bodies through up to 1 MiB, while every other API route has 64 KiB. A body over 1 MiB can be stopped by the proxy, and its 413 has an empty body (`docs/deploy.md`, Request size).
+
+The app sends `Accept: application/json`; the core answers the same without it.
+
+The core checks in this order:
+1. `customer_id` and `language` (400 `invalid_request`).
+2. The persona allowlist, with no database (404 `customer_not_found`, section 1).
+3. The `Content-Type` (400 `invalid_request`).
+4. A declared `Content-Length` over 1,000,000 (413 `invalid_request`).
+5. The address window, 10 requests a minute per client address, and then the viewer window, 40 requests an hour per viewer (429 `rate_limited`).
+   - The viewer is the `sentti_viewer` cookie (section 6). This endpoint reads it and never sets it. Requests without a well-formed cookie share one key.
+   - Each window counts every request it lets through, also one that is refused or fails later. A request that the viewer window refuses still counts in the address window.
+6. The body, read with the running cap (413 `invalid_request`).
+7. The clip: empty (400), a WAV that cannot be read (400), a WAV over 15.5 seconds (413).
+8. Whether the model may be used:
+   - `GEMINI_API_KEY` is set, `STT_DAILY_BUDGET` is above 0, and the switch file `var/model-off` does not exist (503 `model_unavailable` otherwise);
+   - fewer than two requests to the model are running (429, `Retry-After: 5`);
+   - the daily budget is not used up (429, section 13.3).
+9. The request to the model, and then its answer: a prompt over 644 tokens (413), a failed request (503), or no speech heard (200 with `empty: true`, section 13.2).
+
+### 13.2 Response
+
+**200:** JSON. The proxy adds `Cache-Control: no-store` (`docs/deploy.md`, Response headers).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | The words heard, as one line. Empty only when no speech was heard (`empty`). White space is collapsed and surrounding double quotes are removed. At most 500 characters, the composer's limit, cut at a word break near the end when there is one. The prompt asks the model for the spoken words only, with numbers as digits, and not to answer the question. |
+| `language` | `en` or `fi` | The request's `language`, echoed. |
+| `empty` | `true`, or absent | Present only when no speech was heard (since 0.3.15, #759): the model's text was empty or white space, or it only said that there was no speech ("No speech detected.", "[silence]", "(inaudible)" and the like, matched as a whole answer only). `text` is then `""`. The request counts against the budget (section 13.3). |
+
+<!-- example: stt.response -->
+```json
+{
+  "text": "How much did I spend on groceries in September?",
+  "language": "en"
+}
+```
+
+When no speech was heard:
+
+<!-- example: stt.response_empty -->
+```json
+{
+  "text": "",
+  "language": "en",
+  "empty": true
+}
+```
+
+**Errors** use the envelope of section 4, in the request's `language`, or in English when it is not `en` or `fi`. The app shows its own line for each status and never the envelope's `message` (section 13.4).
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | A `customer_id` that is missing or not `CUST` and five digits, a `language` other than `en` or `fi`, a `Content-Type` not in section 13.1, an empty body, or a WAV body that cannot be read as WAV. |
+| 404 | `customer_not_found` | The customer is not a persona (section 1). |
+| 413 | `invalid_request` | Too large: a declared `Content-Length` or a body over 1,000,000 bytes. Too long: a WAV clip over 15.5 seconds, or a compressed clip whose prompt took more than 644 tokens; that request counts against the budget, and its text is dropped. |
+| 429 | `rate_limited` | With `Retry-After` in seconds: over 10 requests a minute from one address, or over 40 an hour from one viewer (until the oldest leaves the window); the daily budget is used up (until the oldest request leaves the 24 hours, at least 60); two requests to the model are already running (5). |
+| 503 | `model_unavailable` | No `GEMINI_API_KEY`, `STT_DAILY_BUDGET` is `0`, the switch file `var/model-off` exists, the request to the model failed (a timeout, a network or server error, the provider's own rate limit, any other error). No speech heard is not an error since 0.3.15: it is a 200 with `empty: true`. The `message` is the code's one shared sentence, which was written for the bill reading (section 11.4), and `retryable` is false. |
+| 500 | `internal` | Anything else (section 4). |
+
+### 13.3 Daily budget and the model
+
+**Daily budget.** `STT_DAILY_BUDGET` requests to the model in any rolling 24 hours, default 100; `0` turns them off (503).
+- Spoken questions have their own ledger, `var/stt-requests.jsonl`, apart from the chat's budget and from the voice of section 12.
+- Every request sent to the model counts: also one that failed, one refused as too long by its tokens, and one with no speech.
+- A request refused before anything is sent does not count: a 400, a 404, a 413 by size or by the WAV header, a 429, or a 503 without a request.
+- At most two requests to the model run at once.
+
+**The model.** `STT_MODEL`, default `gemini-3.8-flash`, takes the audio inline next to the prompt, with thinking `low` and temperature 0. The key is the chat's `GEMINI_API_KEY`. The core waits up to `STT_TIMEOUT_S` seconds for one request (default 15, at most 60). `docs/deploy.md` lists these settings.
+
+### 13.4 The app
+
+- **Mock build** (`VITE_API_MODE` is not `live`): there is no mic button, and the app never calls this endpoint.
+- **Live build:** the mic shows as an icon at the right edge of the composer's input when a persona is chosen and the browser has `MediaRecorder` and `navigator.mediaDevices.getUserMedia`. A page that is not served securely has no `navigator.mediaDevices`.
+  - Nothing is recorded without a tap on the mic, or on the button that opens voice mode (below). A tap on the mic asks for the microphone and starts recording. While it records, a recording bar takes the composer's row (#751): cancel, a waveform of the microphone's level (Web Audio; only the level is read), a timer and stop. Stop, or 15 seconds (`MAX_RECORD_MS` in `app/src/lib/stt.ts`), sends the clip, with three dots while the request runs. Cancel sends nothing.
+  - A recording that is empty or shorter than 0.5 seconds (`MIN_RECORD_MS`) is not sent (#759).
+  - The recording type is the first one the browser supports of `audio/webm;codecs=opus`, `audio/webm`, `audio/mp4` and `audio/ogg;codecs=opus`, else the browser's own, at 32 kbit/s.
+  - The app posts the clip with its type and gives up after 20 seconds (`STT_TIMEOUT_MS`).
+- **On 200 with text:** the text is added to the composer after anything already typed, cut to 500 characters. A screen reader hears "Your question is in the box. Check it and tap send." Nothing is sent until the user taps send, except in voice mode (below), which sends the text as a question at once.
+- **Otherwise:** a short line shows above the composer for 6 seconds, and the composer stays usable. The app does not retry and does not read `Retry-After`. The texts are in `app/src/lib/micStrings.ts`, in English and Finnish:
+
+| What happened | The line the app shows (English) |
+|---|---|
+| The microphone was refused (`NotAllowedError`, `SecurityError` or `PermissionDeniedError`), also when the frame is not allowed the microphone | "Microphone access is off. You can type your question instead." |
+| Any other failure of the microphone or the recorder | "No microphone found. You can type your question instead." |
+| A recording that is empty or under 0.5 seconds (nothing is sent), a 400, or a 200 with `empty: true` or an empty text; nothing goes into the composer | "I didn't catch that. Try again." |
+| A 413 | "That was too long. Speak for 15 seconds at most." |
+| A 429 | "Too many tries just now. Type your question or try again later." |
+| A 404, a 503, a 500, any other error status, a network failure, the 20 seconds, or a body that is not JSON | "Voice input isn't available right now. Please type your question." |
+
+- Leaving the chat, or switching the persona, stops the microphone and aborts a request in flight; a late answer is dropped. A request the app gave up on still runs to the end in the core and counts against the budget.
+- **Voice mode** (#811, `app/src/lib/voiceMode.ts` and `voiceSession.ts`): in a live build with a persona and the same microphone API, the send button becomes "Start voice mode" while the input is empty and no answer is running. A tap on it opens a full-screen overlay and asks for the microphone. From then on nothing waits for a tap on send:
+  - The app listens in rounds and sends each round's clip to this endpoint as the mic does. A round ends about 1.2 seconds after the voice stops (by the microphone's level, Web Audio), at 15 seconds, or on a tap on the wave ("Done talking, send now"). A round under 0.5 seconds is not sent, nor one that runs to 15 seconds with no speech on the level. A round ended by the tap is sent, and without Web Audio each round runs to 15 seconds or the tap and is sent.
+  - The words are sent to `/api/ask` as a question at once and show in the thread as a typed one does. The answer is read aloud without a tap (section 12.4), then the app listens again. Nothing is recorded while Sentti thinks or speaks, though the microphone stays open until voice mode closes. A tap on the wave while Sentti speaks stops the voice and listens again.
+  - It closes on ✕ or Esc, when the page is hidden and when the user leaves the chat. It also closes, with a short line that says why, after two rounds in a row with no words, when the microphone is refused or fails, on a failure of this endpoint other than no speech, and when an answer fails or is not done within 90 seconds. Closing stops the microphone, the recording, a request to this endpoint and the voice; a question already sent is still answered in the thread, but not read aloud.
+  - No audio is stored, as above. The model provider receives each clip for transcription, the question as it receives a typed one (section 7), and, for the voice, a spoken script of the answer that the core builds from the answer's record (`core/agent/spoken.py`), unless that audio is in the core's cache or the device voice reads. The storage statements of this section cover the `/api/stt` request only: once sent, the words are a question like a typed one.
+- **Microphone permission:** the proxy sets no `Permissions-Policy` header, so the microphone follows the browser default (`self`). The demo frame's iframe needs `allow="microphone"` and carries it (`app/src/demo/main.ts`). A host WebView must grant the page microphone access (`docs/integration.md` section 4).
+
+---
+
+## 14. Changelog
 
 | Version | Change |
 |---|---|
@@ -5344,4 +5617,15 @@ A reading of a sample with a barcode:
 | 0.3.7 | Reading a sample bill is implemented (#250).<br><br>Changed:<br>- Section 11.4 is no longer marked "not implemented yet".<br>- Only an IBAN or a reference can be `checked`, by its own check digits. A language model transcribes the barcode, which has no check digit over the amount or the due date, so `amount`, `due_date`, `payee` and `barcode` are always `unchecked`. The example `bill.read_response` shows this.<br>- A field is also dropped when it is implausible: a due date more than two years from today, an amount of 0 or above 100 000.00, an amount such as "12.345".<br>- A cached reading is served even while the model may not be used; only a reading not in the cache answers 503 `model_unavailable` (sections 4 and 11.4). A reading with no usable field is 503 too.<br>- Section 11.4 also says that an IBAN or a reference failing its check digits is kept as `unchecked` with a note, that a barcode value disagreeing with the printed one keeps the barcode's value as `unchecked` with a note, and that readings have their own rate window (429) (#511). |
 | 0.3.8 | The review card's option texts promise no effect (#416).<br><br>Changed:<br>- A review option's `effect` says only which basket the purchase goes to and that the numbers are recalculated. It no longer says that safe to spend goes down or stays the same, which was not true for every customer; the real effect comes with the answer (section 10, `effect`). The examples `card.review` and `overview.response_pending` show the new texts. The card's shape is unchanged. |
 | 0.3.9 | A clarification, no new field (#433). Section 11.2: a matched bill has a `comparison` only when it fits the customer's regular bill (paid once a month, at least half of its typical month; #400). A matched bill that does not fit has `comparison` `null`, and `match.text` names the payee category ("This bill is from the same payee category as your regular Utilities payments."). New example `bill.response_category`: the gallery's water sample for Sanna, with its `forecast` (0.3.4) as the service returns it. `signals`: for a category match, `amount_above_usual` is measured against the category's whole month and says so. `comparison.change_pct` is never `null` (a comparison needs a typical amount above 0). |
+| 0.3.10 | Documents what the service already returns, no new field (#569, #524). Section 2.1: the method `national_context.monthly_eur@1`, a value cited from Statistics Finland's household budget survey (table 14q4, survey year 2022), not computed from the customer's data. The national line beside the peer comparison of Groceries or Transportation in `/api/ask` cites it, so it is in the `numbers` event; no card or estimate carries it. Section 9: such a value opens as a `composite` with no parts (`parts` and `rows` empty, `reconciles` `null`), and its `title` and evidence `label` name the table's age band, which the answer's label does not. New example `evidence.response_national` for Sanna, as the service returns it. |
 | 0.3.11 | Texts for the screen, no new field (#554).<br>- `GET /api/personas?lang=fi`: every `tagline` is Finnish, like the other texts (section 1).<br>- `GET /api/evidence/{ref}`: `method.summary` says in one plain sentence what the number is made of, in the request language; it never names a file. Examples `evidence.response_metric` and `evidence.response_peer` changed.<br>- The review card's `why` says what an answer changes: "Only you know what this purchase was. Your answer decides which basket it goes into, which can change your safe to spend." Examples `card.review` and `overview.response_pending` changed. |
+| 0.3.12 | Wording only, no new field (#699). Section 6: the overview's `ai_disclosure` no longer says "show it on the first chat screen". The app keeps an "AI" tag visible on every chat screen and can show the text one tap away from it, as it does since #691; this matches `done.ai_disclosure` (section 7), which the app can show once. No example changed. |
+| 0.3.13 | Documents what the service already does (#730, #733); nothing new is built.<br>- New section 12, `POST /api/tts` (built in #732): the body names one of the customer's answers by `answer_id`, never a text. The core reads the answer's `text_rendered` from its audit record and returns it read aloud as a WAV file (`audio/wav`). New example `tts.request`.<br>- A disk cache keyed by the SHA-256 of model, voice, language and text, and an own daily budget, `TTS_DAILY_BUDGET` requests in any rolling 24 hours (default 100). A cache hit needs neither the model nor the budget.<br>- Errors, no new code: 404 `not_found` for an answer that is unknown, another customer's or without text; 429 `rate_limited` with `Retry-After` (20 a minute per address, the used-up budget, too many at once); 503 `model_unavailable` when the voice cannot be made. Section 4's rows for these codes say so.<br>- What is sent where, and the app's side: only a live build calls it, gives up after 8 seconds and then reads the answer with the device voice; a mock build uses the device voice only (section 12.4).<br>- Section 1: a successful `/api/tts` response is the second exception to JSON bodies.<br><br>The changelog is now section 13. |
+| 0.3.14 | Documents what the service already does (#735, #752); nothing new is built.<br>- New section 13, `POST /api/stt` (built in #747): the body is an audio clip (WebM, OGG, MP4/M4A, AAC, MP3 or WAV) of at most 1,000,000 bytes, which the app records for at most 15 seconds, with `customer_id` and `language` as query parameters. The core has the Gemini API turn it into text and returns `{text, language}`. New example `stt.response`.<br>- No audio is stored: the app and the core keep the clip in memory for the one request only, and the core's ledger and log hold neither the audio nor the text.<br>- An own daily budget, `STT_DAILY_BUDGET` requests in any rolling 24 hours (default 100), and two windows: 10 requests a minute per address and 40 an hour per viewer.<br>- Errors, no new code: 400 `invalid_request`; 404 `customer_not_found`; 413 `invalid_request` for a clip that is too large or too long; 429 `rate_limited` with `Retry-After`; 503 `model_unavailable`, also when no speech was heard. Section 4 gains a 413 row, and its rows for 429 and 503 mention `/api/stt`.<br>- The app's side: only a live build calls it, the text lands in the composer and is sent only when the user taps send, the line the app shows for each outcome, and the demo frame's iframe needs `allow="microphone"` (section 13.4).<br>- Section 1: the body of a `/api/stt` request is audio, and its `language` is a query parameter.<br><br>The changelog is now section 14. |
+| 0.3.15 | Section 13, spoken questions (#759, #751).<br>- No speech heard is a 200, not a 503 (#759): `{"text": "", "language": …, "empty": true}`, when the model's text is empty or white space or only says that there was no speech. `text` can now be empty, and only then. New field `empty`, new example `stt.response_empty`. A real failure (no key, switched off, an API error, a timeout) is still 503 `model_unavailable`. Section 4's 503 row and section 13.1 step 9 say so.<br>- The app (13.4): a recording that is empty or under 0.5 seconds is not sent; that, a 400 and a 200 with `empty: true` show "I didn't catch that. Try again." / "En saanut selvää. Yritä uudelleen.", and nothing goes into the composer.<br>- The app (13.4, #751): the mic is an icon inside the input, and while it records a recording bar (cancel, waveform, timer, stop) takes the composer's row. No change for the core. |
+| 0.3.16 | Wording only (#823), no new field and no change for the core. Voice mode (#811) sends the spoken words as a question and reads the answer aloud without a tap, once the user has opened it on purpose; the text said that nothing is sent until the user taps send and that nothing plays without a tap.<br>- Section 12: the intro and 12.4 name voice mode as the one case in which an answer is read aloud without a tap.<br>- Section 13: the intro, "What is sent where" and 13.4 name the exception. 13.4 gains a voice-mode bullet: how it opens and closes, when a round ends (about 1.2 seconds of silence, 15 seconds or a tap), that nothing is recorded while Sentti speaks, that two rounds with no words close it, that no audio is stored, and what goes to the model provider.<br>- No example changed. |
+| 0.3.17 | One new field (#872). Section 5: `GET /api/personas` gives each persona's `age`, the customer's age in years from the dataset (`customers.age`), next to `age_band`, so the persona picker can say who is who. The picker shows the name, the age and band, the profile label and the tagline, never the postal code or the `customer_id`. Example `personas.response` changed. |
+| 0.3.19 | One new optional response field (#884). Section 7: the `done` event of `/api/ask` (SSE and JSON) may carry `sources`, `[{publisher, title, url, lang}]`, at most three, for an answer drawn from official financial-literacy sources (`core/finlit`). The source line that 0.3.18 answers appended to the text ("Source: <publisher>, <url>") is gone, so the text carries no link. Absent on every other answer. |
+| 0.3.20 | One new response field (#944). Section 9: `months` on `GET /api/evidence/{ref}` for a `transactions` list, every month of the whole list with its count and total, newest first (`[]` for the other kinds), so the evidence sheet can group the rows by month with subtotals. Examples `evidence.response` (one month) and the other evidence examples (`[]`) changed. |
+| 0.3.21 | Wording only (#959), no new field. Section 10: the answer's `message` and `effect` text is one short confirmation that cites only what is left to spend this week after the answer ("Got it — counted as a must-have. You now have {{n2}} left to spend this week."; "…your own choice. What you have left to spend stays …" when nothing moved; "Undone — I'll ask about it again. You have … left to spend this week."). The purchase's amount and the reasons are no longer in the text; `effect.items` are unchanged. The label examples changed. |
+| 0.3.18 | One new optional request field (#873). Section 7.1: `POST /api/ask` takes `channel`, `text` (default) or `voice`; any other value is a 400 `invalid_request`. Talk questions (why something matters, an explanation, tips, no numbers) get two to four sentences in words with at most one number already shown, no card and one chip; on `voice`, open follow-ups after any data answer do too. No response field and no example changed. |

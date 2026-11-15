@@ -6,10 +6,32 @@ const en = {
   sentti: 'Sentti',
   can: 'I can explain where your money went, what you can safely spend this week and where you could save, using your own transactions. I can’t give investment advice or decide on loans.',
   starters: ['Where did my money go?', 'What can I safely spend this week?', 'How could I save more?'],
+  /**
+   * The opening's chip row (Renat's decision): these two first, then "Show Sentti a bill", then more, all
+   * questions the core answers well (core/eval/cases.yaml, the demo path). No "What can I safely spend
+   * this week?": the hero answers it.
+   */
+  openingFirst: ['Where did my money go?', 'How could I save more?'],
+  openingMore: [
+    'What kind of spender am I?',
+    'How do I compare with people like me?',
+    'What if I spent 20% less on restaurants?',
+    'What are my regular monthly bills?',
+    'Will my money last until payday?',
+    'Where do my small purchases go?',
+  ],
+  moreQuestions: 'More questions',
+  /** The opening's three-basket bar (#945): its accessible summary starts with this. */
+  basketBarLabel: 'Where your money went',
+  /** Under a knowledge answer (#922): its sources as chips. */
+  sources: 'Sources',
+  sourceLabel: (publisher: string, title: string) => (title ? `Source: ${publisher} — ${title}` : `Source: ${publisher}`),
   placeholder: 'Ask about your money',
   inputLabel: 'Your question',
   send: 'Send',
   stop: 'Stop the answer',
+  /** The round button above the composer while the customer is scrolled up. */
+  toLatest: 'Go to the latest message',
   stages: {
     understanding: 'Reading your question',
     tool: 'Checking your transactions',
@@ -19,10 +41,15 @@ const en = {
   stageNow: 'in progress',
   stagesLabel: 'Progress',
   orType: 'Or type your answer',
+  /** The bill reading's fact marker only; chat answers carry no source label (#685). */
   fact: 'From your transactions',
-  templateNote: 'Written from a standard template this time, without the AI model. The numbers are the same.',
   stopped: 'You stopped this answer.',
+  stoppedForNext: 'Stopped for your next question.',
   askAgain: 'Ask again',
+  /** A paste over the 500-character limit was cut to fit (#716). */
+  cut: 'Cut to the 500-character limit.',
+  /** Shown when 50 characters or fewer are left. */
+  charactersLeft: (left: number) => (left === 1 ? '1 character left' : `${left} characters left`),
   more: 'more',
   less: 'less',
   same: 'no change',
@@ -41,10 +68,24 @@ const fi: ChatStrings = {
   sentti: 'Sentti',
   can: 'Voin kertoa tilitapahtumiesi perusteella, mihin rahasi menivät, paljonko voit turvallisesti käyttää tällä viikolla ja mistä voisit säästää. En anna sijoitusneuvoja enkä tee lainapäätöksiä.',
   starters: ['Mihin rahani menivät?', 'Paljonko voin turvallisesti käyttää tällä viikolla?', 'Miten voisin säästää enemmän?'],
+  openingFirst: ['Mihin rahani menivät?', 'Miten voisin säästää enemmän?'],
+  openingMore: [
+    'Millainen kuluttaja olen?',
+    'Miten kulutukseni vertautuu kaltaisiini?',
+    'Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?',
+    'Mitkä ovat säännölliset kuukausilaskuni?',
+    'Riittävätkö rahat palkkapäivään?',
+    'Mihin pienet ostokset menevät?',
+  ],
+  moreQuestions: 'Lisää kysymyksiä',
+  basketBarLabel: 'Mihin rahasi menivät',
+  sources: 'Lähteet',
+  sourceLabel: (publisher: string, title: string) => (title ? `Lähde: ${publisher} — ${title}` : `Lähde: ${publisher}`),
   placeholder: 'Kysy raha-asioistasi',
   inputLabel: 'Kysymyksesi',
   send: 'Lähetä',
   stop: 'Pysäytä vastaus',
+  toLatest: 'Siirry uusimpaan viestiin',
   stages: {
     understanding: 'Luen kysymystäsi',
     tool: 'Tarkistan tilitapahtumasi',
@@ -55,9 +96,11 @@ const fi: ChatStrings = {
   stagesLabel: 'Eteneminen',
   orType: 'Tai kirjoita vastauksesi',
   fact: 'Tilitapahtumistasi',
-  templateNote: 'Kirjoitettu tällä kertaa vakiopohjalla ilman tekoälymallia. Luvut ovat samat.',
   stopped: 'Pysäytit tämän vastauksen.',
+  stoppedForNext: 'Keskeytetty seuraavan kysymyksesi vuoksi.',
   askAgain: 'Kysy uudelleen',
+  cut: 'Lyhennetty 500 merkkiin.',
+  charactersLeft: (left: number) => (left === 1 ? '1 merkki jäljellä' : `${left} merkkiä jäljellä`),
   more: 'enemmän',
   less: 'vähemmän',
   same: 'ei muutosta',

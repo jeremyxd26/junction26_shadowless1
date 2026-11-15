@@ -294,6 +294,7 @@ class ProfileRef(Model):
 class Persona(Model):
     customer_id: str
     display_name: str
+    age: int   # customers.age, mirrored in personas.yaml (#872)
     age_band: Literal["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
     postal_area: PostalArea
     profile: ProfileRef
@@ -375,6 +376,15 @@ class Part(Model):
     number: Number
 
 
+class EvidenceMonth(Model):
+    """One month of a transaction list (contract 0.3.18): its transactions' count and their total, all pages."""
+    month: str      # "2026-09"
+    label: str      # "September 2026", in the request language
+    count: int
+    total: str      # decimal string with the bank sign, like a row's amount
+    display: str    # the total formatted like a Number's display
+
+
 class EvidenceResponse(Model):
     evidence_ref: str
     # "metric" (#55): a number re-run from a metric SQL file. Not in contract 0.1.2; its text lands with #34.
@@ -390,6 +400,7 @@ class EvidenceResponse(Model):
     parts: list[Part]
     next_cursor: str | None
     privacy_note: str
+    months: list[EvidenceMonth] = []   # transactions only: the list by month, newest first (0.3.18)
 
 
 # ---- POST /api/whatif (section 8) ----------------------------------------------------------------

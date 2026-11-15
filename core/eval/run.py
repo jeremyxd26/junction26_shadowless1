@@ -24,8 +24,9 @@ is checked for (rules of docs/design/research-bank-assistants.md):
   forbid       a value a confused coach would give does not appear
   forbid_text  a phrase the case rules out does not appear (a pattern, case-insensitive)
   deny lists   no sensitive inference (R9), no buy/sell instruction (R7), no promise (R13)
-  length       an answered outcome is at most two sentences, about 35 words and three numbers (the
-               answer-length rule, #288; core/answer_text.py length_problems, shared with the pipeline)
+  length       an answered outcome is at most three sentences, 55 words and three numbers; four sentences and
+               75 words for a why or how question (the answer-length rule, #288, #572; core/answer_text.py
+               length_problems, shared with the pipeline)
   bank screen  no sentence names both an amount and the bank's screen or product (#417)
 It prints one line per question, a summary per tag, and exits 1 on any failure. A source that does
 not report its tool calls or keys fails those checks as "unverified"; it never passes them.
@@ -193,7 +194,8 @@ def check(case: dict, ans: Answer, lang: str, question: str = "", deriver: Deriv
             fails.append(f"forbidden value {f['name']} = {f['value']} appears")
     if case["expect"] == "answered" and ans.outcome == "answered" and not getattr(ans, "length_exempt", False):
         displays = [str(x.get("display") or "") for x in declared]
-        for problem in answer_text.length_problems(ans.text, len(declared), displays=displays):
+        for problem in answer_text.length_problems(ans.text, len(declared), displays=displays,
+                                                   kind=answer_text.answer_kind(question)):
             fails.append(f"length: {problem}")
     for f in case.get("forbid_text") or []:
         m = re.search(f["pattern"], ans.text, re.I)

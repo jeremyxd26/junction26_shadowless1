@@ -43,9 +43,23 @@ export interface Comparison {
   label: string
 }
 
+/** One assumption of an estimate (contract 0.3.6): the app shows `text` and `value`, never the code. */
+export interface EstimateAssumption {
+  /** From the contract's closed list; the app does not branch on it, so an unknown code is fine. */
+  code: string
+  /** One plain sentence, no digits. */
+  text: string
+  /** A complete Number, or null. `user_input@1` (the what-if's own cut) has no evidence ref. */
+  value: Num | null
+}
+
 export interface Estimate {
   label: string
   text: string
+  /** Since 0.3.6: the Numbers the estimate is built from, complete objects with evidence refs. */
+  observed?: Num[]
+  /** Since 0.3.6: what the estimate assumes. */
+  assumptions?: EstimateAssumption[]
 }
 
 export type Action =
@@ -184,6 +198,8 @@ export interface Insight {
 export interface Persona {
   customer_id: string
   display_name: string
+  /** The customer's age in years from the dataset (contract 0.3.17, #872). */
+  age: number
   age_band: string
   postal_area: { code: string; label: string }
   profile: { key: string; label: string }
@@ -240,6 +256,18 @@ export interface EvidenceResponse {
   parts: { role: string; number: Num }[]
   next_cursor: string | null
   privacy_note: string
+  /** A transaction list's selection; its period is the list's (contract section 9). */
+  query?: { period: { start: string; end: string; label: string } } | null
+  /** Every month of a transaction list, all pages, newest first (contract 0.3.20, #944). */
+  months?: EvidenceMonth[]
+}
+
+export interface EvidenceMonth {
+  month: string
+  label: string
+  count: number
+  total: string
+  display: string
 }
 
 export interface ErrorEnvelope {
@@ -297,6 +325,8 @@ export interface AskRequest {
   /** At most 500 characters. */
   message: string
   language: Language | 'auto'
+  /** Voice mode sends `voice` (#875, the core's talk mode #873: words, no cards); left out it means `text`. */
+  channel?: 'text' | 'voice'
 }
 
 export type AskStage = 'understanding' | 'tool' | 'writing'
@@ -338,6 +368,16 @@ export interface AskDone {
   clarify: { question: string; options: string[] } | null
   /** Known codes are `AskWarning`; unknown codes may arrive and are ignored. */
   warnings: (AskWarning | (string & {}))[]
+  /** Where a knowledge answer comes from (#922): 0–3 sources, https only; absent in older streams. */
+  sources?: AnswerSource[]
+}
+
+/** One source of an answer (#922), shown as a chip under it. */
+export interface AnswerSource {
+  publisher: string
+  title: string
+  url: string
+  lang: Language
 }
 
 /** One validated event of the /api/ask stream (contract section 7.2). */

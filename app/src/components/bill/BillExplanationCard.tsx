@@ -37,8 +37,17 @@ interface Props {
 export function BillExplanationCard({ response, children, onAsk }: Props) {
   const [term, setTerm] = useState<BillGlossaryEntry | null>(null)
   const closeTerm = useCallback(() => setTerm(null), [])
+  const s = billStrings(useSettings().lang)
+  // A failed check digit stays the first thing on the explanation, with what to do about it.
+  const failed = response.checks.reference === 'fail' ? 'reference' : response.checks.iban === 'fail' ? 'iban' : null
   return (
     <div className="flex flex-col gap-3">
+      {failed && (
+        <div role="alert" className="flex flex-col gap-1 rounded-lg border-2 border-danger bg-danger-tint p-3">
+          <p className="text-base font-semibold text-ink">{s.checkFail[failed]}</p>
+          <p className="text-sm text-ink-2">{s.checkBeforePaying[failed]}</p>
+        </div>
+      )}
       <ComparisonCard response={response} />
       {response.safe_to_spend && <SafeToSpendCard safe={response.safe_to_spend} />}
       {/* Contract 0.3.4: missing or null from an older API, then nothing and no gap. */}
@@ -150,6 +159,7 @@ function TermsCard({ response, onTerm }: { response: BillExplainResponse; onTerm
   const { lang } = useSettings()
   const s = billStrings(lang)
   const { bill, glossary } = response
+  const failed = response.checks.reference === 'fail' ? 'reference' : response.checks.iban === 'fail' ? 'iban' : null
   const entry = (key: string) => glossary.find((item) => item.term === key) ?? null
   const rows: { key: string; label: string; term: BillGlossaryEntry | null; value: string }[] = [
     { key: 'payee', label: s.fieldLabels.payee, term: null, value: bill.payee ?? s.noPayee },
@@ -159,7 +169,8 @@ function TermsCard({ response, onTerm }: { response: BillExplainResponse; onTerm
       key: 'barcode',
       label: s.fieldLabels.barcode,
       term: entry('virtual_barcode'),
-      value: bill.source === 'barcode' ? s.fromBarcode : s.typedDetails,
+      // Never "you confirmed the details" while a check failed: say what to check instead.
+      value: failed ? s.checkBeforePaying[failed] : bill.source === 'barcode' ? s.fromBarcode : s.typedDetails,
     },
     { key: 'late', label: s.latePayment, term: entry('late_payment_interest'), value: s.latePaymentHint },
   ]

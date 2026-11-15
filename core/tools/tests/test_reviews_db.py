@@ -19,6 +19,7 @@ import pytest
 from core.tools import evidence, label_answer, labels, review_card, reviews
 from core.tools.context import ToolContext
 from core.tools.db import load_transactions
+from core.tools.formatting import DATE_SPACE
 
 LEAD = "CUST00860"
 SPIKE = 606016
@@ -70,7 +71,9 @@ def test_pending_needed_wanted_undo(tx):
     assert card["tx_ref"] == pending.tx_ref and card["amount"]["value"] == 1080.42
     assert card["current_basket"] == {"key": "unclassified", "label": "Waiting for your answer"}
     assert card["merchant"]["alias"].startswith("store_") and str(SPIKE) not in str(card)
-    assert card["question"]["en"] == "€1,080.42 at Home & Tech on 28 September 2026 — needed, or your choice?"
+    # the date is joined with no-break spaces (#662)
+    assert card["question"]["en"] == (f"€1,080.42 at Home & Tech on 28{DATE_SPACE}September{DATE_SPACE}2026 — needed, "
+                                      "or your choice?")
     assert [o["label"]["en"] for o in card["options"]] == ["Needed", "My choice"]
     pending_refs = [n.evidence_ref for _, n in before.values()] + [card["amount"]["evidence_ref"]]
 
@@ -93,13 +96,10 @@ def test_pending_needed_wanted_undo(tx):
     moved = {c["key"]: (c["before"]["value"], c["after"]["value"]) for c in wanted["changes"]}
     assert moved == {"unexpected_necessities": (521.15, 341.08), "everyday_spending": (600.41, 780.48),
                      "irregular_reserve": (256.3, 167.74), "safe_to_spend": (97.46, 138.79)}
-    # #382: the confirmation is the real effect, built from the numbers that moved.
-    amount = next((i, n) for i, n in wanted["message"]["numbers"].items() if n["method"] == "spending.total@1")
-    assert (amount[1]["value"], "{{" + amount[0] + "}}" in wanted["message"]["text"]) == (1080.42, True)
+    # The confirmation cites only what is left to spend after the answer (Renat, via r-talk); it moved here.
     sts = next(c for c in wanted["changes"] if c["key"] == "safe_to_spend")
-    assert wanted["message"]["text_rendered"] == (f"Your safe to spend this week goes from {sts['before']['display']} "
-                                                  f"to {sts['after']['display']}: {amount[1]['display']} now counts "
-                                                  f"as everyday spending.")
+    assert wanted["message"]["text_rendered"] == (f"Got it \u2014 counted as your own choice. You now have "
+                                                  f"{sts['after']['display']} left to spend this week.")
     assert wanted["effect"]["text"] == wanted["message"]["text"]
 
     # Undo within 7 days: pending again, with exactly the pending numbers.

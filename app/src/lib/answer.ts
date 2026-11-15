@@ -4,6 +4,13 @@ import type { Action, AskDone, AskEvent, AskMeta, Card, Num } from '../api/types
 
 export type AnswerStatus = 'streaming' | 'done' | 'error' | 'stopped'
 
+/**
+ * Why an answer stopped (#715): the Stop button (`you`), or a new question while it streamed
+ * (`next_question`), since one answer streams at a time. The answer says which, so it never claims
+ * the user pressed Stop when they only asked something else.
+ */
+export type StopReason = 'you' | 'next_question'
+
 /** The three waiting stages, in order. A `status` event names its stage. */
 export const STAGES = ['understanding', 'tool', 'writing'] as const
 export type StageKey = (typeof STAGES)[number]
@@ -27,6 +34,8 @@ export interface Answer {
   text: string
   done: AskDone | null
   error: AnswerError | null
+  /** Set with `status: 'stopped'`. */
+  stoppedBy?: StopReason
 }
 
 export const EMPTY_ANSWER: Answer = {
@@ -102,15 +111,6 @@ export function splitTakeaway(text: string): { takeaway: string; rest: string } 
 }
 
 /**
- * The answer's text came from the question's template because the AI model was not used
- * (`warnings` has `llm_unavailable`, contract section 7.2), whatever the outcome. The numbers are
- * the same either way; the app shows a quiet note.
- */
-export function writtenByTemplate(done: AskDone | null): boolean {
-  return done?.warnings?.includes('llm_unavailable') ?? false
-}
-
-/**
  * The actions of `done` (contract 0.3.3): every refusal, the "not yet" answer and the fallback
  * carry `contact_bank`. Entries without a string `type` and `label` are dropped; the chip renders
  * only the types and targets it knows.
@@ -138,4 +138,9 @@ export function actionsOf(cards: Card[]): Card['actions'] {
     }
   }
   return actions
+}
+
+/** A streaming answer, stopped for `reason`; what it showed so far stays. Any other answer is left as it is. */
+export function stopped(answer: Answer, reason: StopReason): Answer {
+  return answer.status === 'streaming' ? { ...answer, status: 'stopped', stoppedBy: reason } : answer
 }

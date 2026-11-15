@@ -37,7 +37,7 @@ export function ReviewPointer({ card }: { card: ReviewCard }) {
   return <ThreadReviewCard card={card} owner={owner} state={state} dispatch={dispatch} />
 }
 
-/** "You put this in 🔧 Unexpected necessities.": the opening's answer, with the API's label (#452). */
+/** "You put this in <wrench> Unexpected necessities.": the opening's answer, with the API's label (#452). */
 function AnsweredLine({ answered }: { answered: AnsweredReview }) {
   const { lang } = useSettings()
   const s = reviewStrings(lang)
@@ -56,14 +56,16 @@ function Pointer({ card }: { card: ReviewCard }) {
   const opening = useOpening()
   const look = BASKETS.unclassified
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2">
+    // Wraps: with large text "Show" moves under the text once the text's longest word no longer fits
+    // beside it, instead of covering the text (#688).
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2">
       <span
         aria-hidden="true"
         className={`inline-flex size-8 shrink-0 items-center justify-center rounded-md text-sm font-bold ${look.tint} ${look.color}`}
       >
         {look.icon}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="flex-1 basis-0 break-words">
         <p className="text-sm font-semibold text-ink">{s.asked}</p>
         {card.subtitle && <p className="text-xs text-muted">{card.subtitle}</p>}
       </div>
@@ -135,7 +137,8 @@ function ThreadReviewCard({
     }
   }
 
-  if (state.kind === 'answered') return <ReviewAnswered card={card} basket={state.basket} />
+  // The answer card's look in the thread (#696); the opening keeps its own.
+  if (state.kind === 'answered') return <ReviewAnswered card={card} basket={state.basket} inAnswer />
   if (state.kind === 'not_sure') return null
   return (
     <ReviewAsking
@@ -143,6 +146,7 @@ function ThreadReviewCard({
       busy={state.busy}
       error={state.error}
       leaving={false}
+      inAnswer
       onAnswer={(basket) => void send(basket)}
       onNotSure={() => dispatch({ type: 'not_sure' })}
       onRetry={() => {

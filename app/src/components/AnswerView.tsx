@@ -1,15 +1,23 @@
 // One turn of the chat: the question, then Sentti's answer in the Sentti answer shape
-// (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson →
-// action chips → follow-up chips. While the stream runs: the stages and a card skeleton.
+// (DESIGN.md "Answer order" and "States"): takeaway → card(s) → explanation → lesson → at most
+// one next step (#684). While the stream runs: the stages and a card skeleton. The answer carries
+// no AI line and no source label; the AI disclosure is behind the header's ⓘ (#685).
+import { useState, type ReactNode } from 'react'
 import type { Action } from '../api/types.ts'
-import { STAGES, actionsOf, doneActions, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
+import { STAGES, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
+import { captionOf } from '../lib/answerFigures.ts'
+import { nextStep } from '../lib/nextStep.ts'
 import { openEvidence, openWhatIf } from '../lib/url.ts'
+import { firstWords, holdsCards, remainingMs, useWordReveal, wordEnds } from '../lib/reveal.ts'
 import { useSettings } from '../lib/settings.ts'
+import { isClientTurn } from '../lib/thread.ts'
 import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
+import { ClientTurnView } from './ClientTurnView.tsx'
 import { TokenText } from './cards.tsx'
+import { AnswerSources } from './AnswerSources.tsx'
 import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
 
@@ -20,9 +28,15 @@ export const ACTION_CHIP =
 export const QUESTION_CHIP =
   'inline-flex min-h-11 items-center rounded-pill border border-mint-line bg-mint-tint px-4 py-2 text-left text-base font-semibold text-ink hover:bg-mint'
 
-/** Answer text with number chips: 16 px, with room for the 32 px inline chips. */
+/** Answer text with its numbers as text (#684): 16 px; the line keeps room for the 44 px number targets. */
 const ANSWER_TEXT = 'text-base leading-8 text-ink-2'
-const TAKEAWAY = 'text-xl font-bold leading-9 text-ink'
+/** The first sentence: a little larger, in the normal weight, not large bold (#684). */
+const TAKEAWAY = 'text-lg leading-8 text-ink'
+/** The clarify question keeps its emphasis: it is the whole answer. */
+const CLARIFY = 'text-xl font-bold leading-9 text-ink'
+/** The one next step: a link-like button, not a pill (#684). */
+const NEXT_STEP =
+  'inline-flex min-h-11 items-center text-left text-base font-semibold text-brand underline decoration-brand/40 decoration-1 underline-offset-4 hover:decoration-brand'
 
 export function InfoIcon() {
   return (
@@ -33,11 +47,12 @@ export function InfoIcon() {
   )
 }
 
-export function SenttiLabel({ s }: { s: Strings }) {
+/** "Sentti" with the AI tag; a client turn (#319), which the AI model does not write, shows it without. */
+export function SenttiLabel({ s, ai = true }: { s: Strings; ai?: boolean }) {
   return (
     <p className="flex items-center gap-1.5 text-sm font-bold text-brand">
       {s.sentti}
-      <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>
+      {ai && <span className="rounded-sm border border-brand px-1 text-xs font-bold">AI</span>}
     </p>
   )
 }
@@ -53,7 +68,8 @@ function StageIcon({ state }: { state: 'done' | 'now' | 'todo' }) {
     )
   }
   if (state === 'now') {
-    return <span aria-hidden="true" className="size-6 shrink-0 animate-spin rounded-pill border-[3px] border-sunken border-t-brand" />
+    // Spins only when motion is welcome; under reduced motion the ring with its brand arc stands still (#881).
+    return <span aria-hidden="true" className="size-6 shrink-0 motion-safe:animate-spin rounded-pill border-[3px] border-sunken border-t-brand" />
   }
   return <span aria-hidden="true" className="size-6 shrink-0 rounded-pill border-2 border-line-strong/50" />
 }
@@ -80,27 +96,27 @@ function Stages({ answer, s }: { answer: Answer; s: Strings }) {
 function CardSkeleton() {
   return (
     <div aria-hidden="true" className="rounded-lg border border-line bg-surface p-4">
-      <div className="h-5 w-3/5 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-2 h-3.5 w-2/5 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-5 h-11 w-1/2 animate-pulse rounded-md bg-sunken" />
-      <div className="mt-5 h-3 w-full animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-3 h-3 w-11/12 animate-pulse rounded-pill bg-sunken" />
-      <div className="mt-3 h-3 w-4/5 animate-pulse rounded-pill bg-sunken" />
+      <div className="h-5 w-3/5 shimmer rounded-pill" />
+      <div className="mt-2 h-3.5 w-2/5 shimmer rounded-pill" />
+      <div className="mt-5 h-11 w-1/2 shimmer rounded-md" />
+      <div className="mt-5 h-3 w-full shimmer rounded-pill" />
+      <div className="mt-3 h-3 w-11/12 shimmer rounded-pill" />
+      <div className="mt-3 h-3 w-4/5 shimmer rounded-pill" />
     </div>
   )
 }
 
-function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: string) => void }) {
+function ActionChip({ action, onAsk, className = ACTION_CHIP }: { action: Action; onAsk: (question: string) => void; className?: string }) {
   if (action.type === 'open_evidence') {
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openEvidence(action.evidence_ref)}>
+      <button type="button" className={className} onClick={() => openEvidence(action.evidence_ref)}>
         {action.label}
       </button>
     )
   }
   if (action.type === 'ask') {
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => onAsk(action.prompt)}>
+      <button type="button" className={className} onClick={() => onAsk(action.prompt)}>
         {action.label}
       </button>
     )
@@ -108,7 +124,7 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
   if (action.type === 'open_whatif') {
     // The what-if sheet (#154) takes the action's scenario unchanged.
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openWhatIf(action.scenario)}>
+      <button type="button" className={className} onClick={() => openWhatIf(action.scenario)}>
         {action.label}
       </button>
     )
@@ -118,7 +134,7 @@ function ActionChip({ action, onAsk }: { action: Action; onAsk: (question: strin
     const target = hostScreenTarget(action.target)
     if (!target) return null
     return (
-      <button type="button" className={ACTION_CHIP} onClick={() => openHostScreen(target)}>
+      <button type="button" className={className} onClick={() => openHostScreen(target)}>
         {action.label}
       </button>
     )
@@ -145,20 +161,44 @@ interface Props {
   turn: Turn
   /** Only the latest turn offers follow-ups, clarify options and announces itself. */
   latest: boolean
+  /** The first answer of the thread shows the "Sentti" label; later ones keep it for screen readers only. */
+  firstAnswer?: boolean
   suggestions: string[]
   onAsk: (question: string) => void
   onRetry: () => void
 }
 
-export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
+/**
+ * A card of a live answer fades in (#686); one that arrives together with the text waits until the text has
+ * typed in. The wait is fixed when the card mounts, and a tap on the answer ends it.
+ */
+function CardFade({ waitMs, skipped, children }: { waitMs: number; skipped: boolean; children: ReactNode }) {
+  const [wait] = useState(waitMs)
+  return (
+    <div className="card-enter" style={{ animationDelay: `${skipped ? 0 : wait}ms`, animationFillMode: 'both' }}>
+      {children}
+    </div>
+  )
+}
+
+export function TurnView({ turn, latest, suggestions, onAsk, onRetry, firstAnswer = true }: Props) {
   const { lang } = useSettings()
   const s = chatStrings(lang)
+  // The typing reveal (#686): only an answer that was still streaming when its turn mounted types in;
+  // an answer from history is shown at once. The text held back for `done` reveals once it is shown.
+  const asked = isClientTurn(turn) ? null : turn.answer
+  const [live] = useState(() => asked?.status === 'streaming')
+  const held = asked !== null && asked.status === 'streaming' && asked.cards.length === 0
+  const reveal = useWordReveal(asked && !held ? asked.text : '', live)
+  if (isClientTurn(turn)) return <ClientTurnView turn={turn} label={<SenttiLabel s={s} ai={false} />} />
   const { answer } = turn
   const { done } = answer
   const streaming = answer.status === 'streaming'
   const outcome = done?.outcome
   const hasContent = answer.cards.length > 0 || answer.text.length > 0
-  const followUps = latest && done ? done.follow_ups : []
+  // At most one next step, from what the response carries; a follow-up only on the latest answer
+  // (nextStep falls back to the way to a human on an older one).
+  const step = nextStep(done, answer.cards, latest)
 
   let body
   if (done && outcome === 'refused') {
@@ -167,14 +207,14 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       <div className="border-l-4 border-line-strong pl-4">
         {done.refusal && <p className="text-xs font-semibold text-muted">{done.refusal.label}</p>}
         <p className={`mt-1 ${ANSWER_TEXT}`}>
-          <TokenText text={answer.text} numbers={answer.numbers} />
+          <TokenText text={answer.text} numbers={answer.numbers} plain />
         </p>
       </div>
     )
   } else if (done && outcome === 'clarify' && done.clarify) {
     body = (
       <>
-        <p className={TAKEAWAY}>{done.clarify.question}</p>
+        <p className={CLARIFY}>{done.clarify.question}</p>
         {latest && (
           <>
             <QuestionChips questions={done.clarify.options} onAsk={onAsk} />
@@ -189,53 +229,81 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
     // answer without cards may still turn out to be a refusal or a clarification, which look
     // different, so the stages and the skeleton stay until then.
     const holdText = streaming && answer.cards.length === 0
-    const { takeaway, rest } = holdText ? { takeaway: '', rest: '' } : splitTakeaway(answer.text)
+    const { takeaway, rest } = holdText
+      ? { takeaway: '', rest: '' }
+      : splitTakeaway(firstWords(answer.text, reveal.words))
+    const total = wordEnds(answer.text).length
+    // A live answer keeps its cards behind the skeleton until the text has typed in; then they fade in.
+    const holdCards = live && holdsCards(reveal.words, { streaming, revealing: reveal.revealing })
     body = (
       <>
         {takeaway && (
           <p className={TAKEAWAY}>
-            <TokenText text={takeaway} numbers={answer.numbers} />
+            <TokenText text={takeaway} numbers={answer.numbers} plain />
           </p>
         )}
-        {answer.cards.map((card) => (
-          <AnswerCard key={card.card_id} card={card} />
-        ))}
-        {holdText && <CardSkeleton />}
+        {/* One main number per answer: only the first card draws one large (#684). */}
+        {!holdCards && answer.cards.map((card, index) => {
+          const view = (
+            <AnswerCard
+              key={card.card_id}
+              card={card}
+              later={index > 0}
+              previousCaption={index > 0 ? captionOf(answer.cards[index - 1]) : null}
+            />
+          )
+          return live ? (
+            <CardFade key={card.card_id} waitMs={remainingMs(reveal.words, total)} skipped={reveal.skipped}>
+              {view}
+            </CardFade>
+          ) : (
+            view
+          )
+        })}
+        {(holdText || holdCards) && <CardSkeleton />}
         {rest && (
           <p className={ANSWER_TEXT}>
-            <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} />
+            <TokenText text={withoutPartialToken(rest)} numbers={answer.numbers} plain />
           </p>
         )}
       </>
     )
   }
 
-  // The answer's own actions (`done.actions`, 0.3.3: the way to a human), then the cards' actions.
-  const actions = [...doneActions(done), ...(done && outcome !== 'refused' && outcome !== 'clarify' ? actionsOf(answer.cards) : [])]
-
   return (
-    <article data-turn={turn.id} aria-busy={streaming} className="flex scroll-mt-16 flex-col gap-3">
-      <p className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
+    <article
+      data-turn={turn.id}
+      aria-busy={streaming}
+      className="flex scroll-mt-16 flex-col gap-3"
+      onClick={reveal.revealing ? reveal.skip : undefined}
+    >
+      <p className="card-enter ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-deep px-4 py-3 text-base break-words whitespace-pre-wrap text-on-deep">
         {turn.question}
       </p>
 
       {(hasContent || streaming || done) && (
-        <div className="flex min-h-11 items-center justify-between gap-2">
-          <SenttiLabel s={s} />
-          {done && <SpeakButton id={String(turn.id)} text={done.text_rendered} language={answer.meta?.language ?? lang} />}
+        <div className="card-enter flex min-h-11 items-center justify-between gap-2">
+          {firstAnswer ? <SenttiLabel s={s} /> : <span className="sr-only">{s.sentti}</span>}
+          {done && (
+            <SpeakButton
+              id={String(turn.id)}
+              text={done.text_rendered}
+              language={answer.meta?.language ?? lang}
+              answerId={done.answer_id}
+              prefetch={latest}
+            />
+          )}
         </div>
       )}
-      {/* The first answer of a conversation says once, in the API's words, that Sentti is an AI. */}
-      {done?.ai_disclosure && <p className="text-xs text-muted">{done.ai_disclosure}</p>}
+      {/* No AI line here: `done.ai_disclosure` is the overview's text, behind the header's ⓘ (#685). */}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
-      {/* Written from the template without the AI model (warning `llm_unavailable`, #282):
-          a quiet note under the answer, whatever the outcome. */}
-      {writtenByTemplate(done) && (
-        <p className="flex gap-2 text-sm text-muted">
-          <InfoIcon />
-          {s.templateNote}
-        </p>
+      {/* No note when the template wrote the text (warning `llm_unavailable`): Renat dropped it (#941); the warning
+          stays in the API and the audit. */}
+
+      {/* Sources of a knowledge answer (#922): after the text has typed in, like the cards. */}
+      {done?.sources && outcome !== 'refused' && outcome !== 'clarify' && !(live && reveal.revealing) && (
+        <AnswerSources sources={done.sources} />
       )}
 
       {done?.lesson && (
@@ -244,14 +312,17 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
           <p className="mt-1 text-sm text-muted">{done.lesson.text}</p>
         </aside>
       )}
-      {actions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action, index) => (
-            <ActionChip key={`${action.type}-${index}`} action={action} onAsk={onAsk} />
-          ))}
+      {step && (
+        <div data-next-step="" className="flex">
+          {step.kind === 'action' ? (
+            <ActionChip action={step.action} onAsk={onAsk} className={NEXT_STEP} />
+          ) : (
+            <button type="button" className={NEXT_STEP} onClick={() => onAsk(step.question)}>
+              {step.question}
+            </button>
+          )}
         </div>
       )}
-      <QuestionChips questions={followUps} onAsk={onAsk} />
 
       {answer.status === 'error' && answer.error && (
         <>
@@ -261,7 +332,7 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry }: Props) {
       )}
       {answer.status === 'stopped' && (
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-muted">{s.stopped}</p>
+          <p className="text-sm text-muted">{answer.stoppedBy === 'next_question' ? s.stoppedForNext : s.stopped}</p>
           <button type="button" className={ACTION_CHIP} onClick={onRetry}>
             {s.askAgain}
           </button>

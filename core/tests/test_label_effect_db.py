@@ -114,11 +114,12 @@ def test_every_answer_and_undo_states_the_real_effect(client, customer):
                     assert undone[key]["before"]["value"] == answered[key]["after"]["value"]
                     assert undone[key]["after"]["value"] == answered[key]["before"]["value"]
             sts = answered.get("safe_to_spend")
-            if sts and sts["before"]["value"] != sts["after"]["value"]:
-                assert sts["before"]["display"] in effect["text_rendered"] and sts["after"]["display"] in \
-                    effect["text_rendered"]
-            elif sts:
-                assert re.search(r"does not change|stays the same|ei muuta|pysyy samana", effect["text_rendered"])
+            # Renat (via r-talk): one confirmation citing only what is left to spend after the answer
+            if sts:
+                assert sts["after"]["display"] in effect["text_rendered"], effect["text_rendered"]
+                assert len(effect["numbers"]) == 1
+            if sts and sts["before"]["value"] == sts["after"]["value"] and basket == "everyday_spending":
+                assert re.search(r"\bstays\b|\bpysyy\b", effect["text_rendered"]), effect["text_rendered"]
 
 
 def test_the_lead_persona_text_names_what_really_moved(client):
@@ -128,20 +129,11 @@ def test_the_lead_persona_text_names_what_really_moved(client):
     pending = client.get("/api/overview/CUST00860").json()
     tx_ref = pending["reviews"][0]["tx_ref"]
     items, effect = step(client, "CUST00860", "en", tx_ref, "unexpected_necessities", "lead Needed")
-    sts, save = items["safe_to_spend"], items["safe_to_save"]
-    amount = next(n for n in effect["numbers"].values() if n["method"] == "spending.total@1")["display"]
-    reserve = "so the reserve grows" if items["irregular_reserve"]["after"]["value"] > \
-        items["irregular_reserve"]["before"]["value"] else ""
-    if sts["before"]["value"] != sts["after"]["value"]:
-        assert effect["text_rendered"].startswith(f"Your safe to spend this week goes from {sts['before']['display']} "
-                                                  f"to {sts['after']['display']}: {amount} now counts as an unexpected "
-                                                  f"necessity")
-    elif save["before"]["value"] != save["after"]["value"]:
-        assert effect["text_rendered"].endswith(f"what you can typically put aside goes from {save['before']['display']} "
-                                                f"to {save['after']['display']}.")
-    else:
-        assert "does not change this week's safe to spend" in effect["text_rendered"]
-    assert reserve in effect["text_rendered"] or sts["before"]["value"] == sts["after"]["value"]
+    sts = items["safe_to_spend"]
+    # Renat (via r-talk): one confirmation citing only what is left to spend after the answer
+    assert effect["text_rendered"] == (f"Got it \u2014 counted as a must-have. You now have {sts['after']['display']} "
+                                       f"left to spend this week.")
+    assert len(effect["numbers"]) == 1
     as_viewer(client, viewer.new_value())                                   # another viewer did not move
     assert client.get("/api/overview/CUST00860").json()["hero"]["primary"] == pending["hero"]["primary"]
 

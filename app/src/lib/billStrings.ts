@@ -3,6 +3,10 @@
 import type { Language } from '../api/types.ts'
 
 const en = {
+  /** The `/bill` screen's title (#332). */
+  screenTitle: 'Show Sentti a bill',
+  /** The opening's chip that runs the bill flow in the thread (#332); the wording of the issue. */
+  chip: 'Show Sentti a bill',
   galleryTitle: 'Pick a sample bill',
   galleryHint: 'Sentti reads the bill, then you check what it found.',
   sampleLanguage: { en: 'Bill in English', fi: 'Bill in Finnish' } as Record<Language, string>,
@@ -11,8 +15,18 @@ const en = {
   confirmTitle: 'I read your bill. Is this right?',
   cardTitle: 'Bill details',
   cardSubtitle: 'Read from the bill · check before you continue',
-  checkedMeans: 'Checked means the code verified it from the barcode or a check digit. Fields you haven’t confirmed are never used.',
+  checkedMeans: 'Checked means the code verified an IBAN or a reference number by its check digits. Fields you haven’t confirmed are never used.',
   looksRight: 'Looks right, explain it',
+  /** A failed check digit (an IBAN or a reference read from the bill): the warning stays until it is fixed. */
+  explainAnyway: 'Explain anyway',
+  checkFail: {
+    reference: 'The reference number does not pass its check digit.',
+    iban: 'The account number (IBAN) does not pass its check digit.',
+  } as Record<'reference' | 'iban', string>,
+  checkBeforePaying: {
+    reference: 'Check the reference number before paying.',
+    iban: 'Check the account number before paying.',
+  } as Record<'reference' | 'iban', string>,
   editDetails: 'Edit details',
   typeTitle: 'Type the bill’s details',
   checked: 'Checked',
@@ -41,10 +55,10 @@ const en = {
   vsUsualTitle: 'This bill vs usual',
   thisBillTitle: 'This bill',
   vsUsualWord: { worse: 'more than usual', better: 'less than usual', neutral: 'the same as usual' } as Record<string, string>,
-  safeTitle: 'Safe to spend after this bill',
+  safeTitle: 'Left to spend after this bill',
   estimate: {
     label: 'Estimate',
-    text: 'Safe to spend is an estimate: it uses your balance, the bills due before payday and your usual spending.',
+    text: 'Left to spend is an estimate: it uses your balance, the bills due before payday and your usual spending.',
   },
   before: 'Before this bill',
   after: 'After this bill',
@@ -64,6 +78,8 @@ const en = {
 type BillStrings = typeof en
 
 const fi: BillStrings = {
+  screenTitle: 'Näytä Senttille lasku',
+  chip: 'Näytä Sentille lasku',
   galleryTitle: 'Valitse esimerkkilasku',
   galleryHint: 'Sentti lukee laskun, ja sinä tarkistat, mitä se löysi.',
   sampleLanguage: { en: 'Englanninkielinen lasku', fi: 'Suomenkielinen lasku' },
@@ -72,8 +88,17 @@ const fi: BillStrings = {
   confirmTitle: 'Luin laskusi. Onko tämä oikein?',
   cardTitle: 'Laskun tiedot',
   cardSubtitle: 'Luettu laskusta · tarkista ennen kuin jatkat',
-  checkedMeans: 'Tarkistettu tarkoittaa, että koodi on varmistanut tiedon viivakoodista tai tarkisteesta. Tietoja, joita et ole vahvistanut, ei koskaan käytetä.',
+  checkedMeans: 'Tarkistettu tarkoittaa, että koodi on varmistanut tilinumeron tai viitenumeron tarkisteen avulla. Tietoja, joita et ole vahvistanut, ei koskaan käytetä.',
   looksRight: 'Näyttää oikealta, selitä',
+  explainAnyway: 'Selitä silti',
+  checkFail: {
+    reference: 'Viitenumero ei läpäise tarkistetta.',
+    iban: 'Tilinumero (IBAN) ei läpäise tarkistetta.',
+  },
+  checkBeforePaying: {
+    reference: 'Tarkista viitenumero ennen maksamista.',
+    iban: 'Tarkista tilinumero ennen maksamista.',
+  },
   editDetails: 'Muokkaa tietoja',
   typeTitle: 'Kirjoita laskun tiedot',
   checked: 'Tarkistettu',

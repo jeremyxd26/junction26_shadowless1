@@ -25,7 +25,7 @@ from core.tools.safe_to_save import get_safe_to_save
 from core.tools.safe_to_spend import get_safe_to_spend, metric_row
 
 AS_OF = date(2026, 9, 30)
-GOALS = {"CUST00860": 360, "CUST00493": 420, "CUST00349": 600, "CUST00849": 190}
+GOALS = {"CUST00860": 360, "CUST00493": 420, "CUST00387": 150, "CUST00849": 190}
 STATES = {"none": None, "pending": "unclassified", "needed": "unexpected_necessities", "my_choice": "everyday_spending"}
 WEEKS_A_MONTH = Decimal("30.4375") / 7
 ROUNDING = Decimal("0.05")
@@ -106,7 +106,8 @@ def multi_label_states(c1: int, c2: int) -> dict[str, dict[int, str]]:
 def test_the_goal_with_any_labels_equals_the_goal_without_labels(conn, customer_id):
     """#459: 03 computes the goal as with no labels (every row in its rules' basket, only the first review's
     purchase left out), so the first review expiring, or a second review a week later, does not move it.
-    CUST00349 has two candidates; for a persona with fewer, the state list is shorter."""
+    The first Eetu (CUST00349, no persona since #882) had two candidates; for a persona with fewer, the state list is
+    shorter."""
     probe = ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn)
     found = [f.tx.id for f in reviews.candidates(classify(probe.history(), AS_OF), AS_OF, set())]
     states = {"none": {}}
@@ -120,5 +121,5 @@ def test_the_goal_with_any_labels_equals_the_goal_without_labels(conn, customer_
         hero = get_safe_to_spend(ctx, {}).data
         assert d(hero.savings_goal) == GOALS[customer_id], (customer_id, state)
         assert evidence.resolve(conn, hero.savings_goal.evidence_ref, customer_id, limit=1).reconciles is True, state
-    if customer_id == "CUST00349":
+    if len(found) > 1:
         assert len(states) == 10                                      # the case of the issue is exercised

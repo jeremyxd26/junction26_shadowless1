@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
-import type { Action, BreakdownCard, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
-import { BASKETS } from '../lib/baskets.ts'
-import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
+import type { Action, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
+import { useCountedText, usePrefersReducedMotion, type Count } from '../lib/motion.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -173,16 +172,19 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
 }
 
 /**
- * The opening's one big card (the #310 decision, one thought per screen): safe to spend as the
- * API's `display`, a caption chosen by `hero.status`, and a chevron. The whole card opens how the
- * number is made (its evidence: the hero components): the button's `::after` covers the card,
- * and the Estimate badge sits above it, in the flow of the caption row. After a review answer the
- * amount counts to the new value, with "↓ was …" beside it, on the same line, so nothing jumps.
+ * The opening's key line (Renat's light redesign): no card, safe to spend as the API's `display` in large light
+ * text, centred, with the caption chosen by `hero.status` and a chevron under it, and a small Estimate badge.
+ * The amount's button opens how the number is made (its evidence: the hero components); its `::after` covers the
+ * block, and the Estimate badge sits above it. After a review answer the amount counts to the new value, with
+ * "↓ was …" in a line of its own whose room is always kept, so nothing jumps during the count (the video scene).
  */
-export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
+export function HeroSummary({ card, motion, pending = false }: { card: MetricCard; motion?: NumberMotion; pending?: boolean }) {
   const { t } = useSettings()
+  // While a review answer is on its way (#965): a soft breathing, or a still 60 % under reduced motion.
+  const reduced = usePrefersReducedMotion()
   const primary = card.primary
-  const text = useCountedText(primary, motion?.counts.safe_to_spend, tokenMs('--duration-money', 900))
+  // A short, calm count after a review answer (Renat, #958: 400 ms); instant under reduced motion.
+  const text = useCountedText(primary, motion?.counts.safe_to_spend, 400)
   const count = motion?.counts.safe_to_spend
   const was = motion?.was.safe_to_spend
   const estimate = useEstimateToggle()
@@ -190,49 +192,49 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
   const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
   const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
   return (
-    <section data-opening-part="hero" className="relative rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <button
-          type="button"
-          disabled={!ref}
-          onClick={() => ref && openEvidence(ref)}
-          aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
-          className="min-w-0 text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-mint"
-        >
-          {/* 40px at 375 px, down to 28px on a narrow screen or at 200 % zoom. */}
-          <span
-            key={count?.seq ?? 'static'}
-            className={`block text-[clamp(28px,11vw,40px)] font-bold leading-[1.1] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
-          >
-            {text}
-          </span>
-        </button>
-        {/* The hint's slot is always there, invisible until an answer, so the card never changes
-            height when "was …" comes or goes, even where it wraps under the amount. After a review
-            answer: never red, never grey on the green block (DESIGN.md, #35). */}
+    <section data-opening-part="hero" aria-busy={pending || undefined} className="relative flex flex-col items-center pt-1 text-center">
+      <button
+        type="button"
+        disabled={!ref}
+        onClick={() => ref && openEvidence(ref)}
+        aria-label={[`${caption}: ${primary.display}`, hint, t.heroAfter, t.heroHowMade].filter(Boolean).join('. ')}
+        className="min-w-0 outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-brand"
+      >
+        {/* 56px at 375 px, down to 40px on a narrow screen or at 200 % zoom. */}
         <span
-          aria-hidden={hint ? undefined : true}
-          className={`inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted ${hint ? 'motion-fade' : 'invisible'}`}
+          key={count?.seq ?? 'static'}
+          className={`block text-[clamp(40px,15vw,56px)] font-light leading-[1.05] tracking-tight text-ink tabular-nums ${count ? 'motion-fade' : ''} ${
+            pending ? (reduced ? 'opacity-60' : 'hero-pending') : ''
+          }`}
         >
-          {was ? <Arrow down={was.value > primary.value} /> : <Check />}
-          {hint ?? t.was(primary.display)}
+          {text}
         </span>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span aria-hidden="true" className="inline-flex min-w-32 flex-1 items-center gap-1 text-sm font-semibold text-on-hero-muted">
+      </button>
+      {/* The caption and the Estimate badge share one row (#945: room for the basket bar); the badge sits above the
+          block's button and keeps its 44px target. */}
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2">
+        <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-base font-semibold text-brand">
           {caption}
           <Chevron />
         </span>
         {card.estimate && (
-          // Above the card's button; the badge keeps its 44px target without making the row taller.
-          <div className="relative z-10 -my-2.5 shrink-0">
-            <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
+          <div className="relative z-10 -my-2">
+            <EstimateBadge estimate={card.estimate} control={estimate.control} />
           </div>
         )}
       </div>
+      {/* The hint's line is always there, invisible until an answer, so the block never changes height when
+          "was …" comes or goes. After a review answer: never red (DESIGN.md, #35). */}
+      <span
+        aria-hidden={hint ? undefined : true}
+        className={`mt-1 inline-flex items-center gap-1 text-sm font-semibold text-muted ${hint ? 'motion-fade' : 'invisible'}`}
+      >
+        {was ? <Arrow down={was.value > primary.value} /> : <Check />}
+        {hint ?? t.was(primary.display)}
+      </span>
       {card.estimate && estimate.open && (
-        <div className="relative z-10">
-          <EstimateNote estimate={card.estimate} id={estimate.id} onHero />
+        <div className="relative z-10 mt-2 w-full text-left">
+          <EstimateNote estimate={card.estimate} id={estimate.id} />
         </div>
       )}
     </section>
@@ -245,101 +247,27 @@ export function HeroPending() {
   return (
     <section className={HERO_BLOCK}>
       <h2 className="text-sm font-semibold text-on-hero-muted">{t.heroPendingTitle}</h2>
-      <div aria-hidden="true" className="mt-3 h-12 w-44 animate-pulse rounded-pill bg-on-hero/15" />
+      {/* Pulses only when motion is welcome; under reduced motion the placeholder stands still (#881). */}
+      <div aria-hidden="true" className="mt-3 h-12 w-44 motion-safe:animate-pulse rounded-pill bg-on-hero/15" />
       <p className="mt-3 text-base text-on-hero">{t.heroPending}</p>
     </section>
   )
 }
 
-/**
- * The three baskets, always icon + label + colour; a pending purchase shows as a fourth, neutral
- * row. Rows follow DESIGN.md "Basket row": tile, label, the amount on the right, a 6 px bar under it.
- */
-export function BasketsCard({ card, motion }: { card: BreakdownCard; motion?: NumberMotion }) {
-  const { t } = useSettings()
-  // The waiting row is shown only while something waits (or while it fades out after an answer).
-  const items = card.items.filter(
-    (item) => item.key in BASKETS && !(item.key === 'unclassified' && item.amount.value <= 0 && !motion?.waiting),
-  )
-  const estimate = useEstimateToggle()
-  return (
-    <CardShell>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 id="baskets-title" tabIndex={-1} className={`${CARD_TITLE} outline-none`}>
-            {card.title}
-          </h2>
-          {card.subtitle && <p className="text-sm text-muted">{card.subtitle}</p>}
-        </div>
-        {card.estimate && <EstimateBadge estimate={card.estimate} control={estimate.control} />}
-      </div>
-      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
-
-      <ul className="mt-3 flex flex-col">
-        {items.map((item) => {
-          const look = BASKETS[item.key]
-          const was = motion?.was[item.key]
-          const highlighted = motion?.highlight === item.key
-          const leaving = item.key === 'unclassified' && motion?.waiting === 'leave'
-          return (
-            <li
-              key={item.key}
-              data-basket-row={item.key}
-              className={`@container -mx-2 rounded-md border-b border-line px-2 py-2.5 transition-colors duration-500 last:border-b-0 ${
-                highlighted ? look.tint.split(' ')[0] : ''
-              } ${leaving ? 'row-leave' : item.key === 'unclassified' ? 'row-enter' : ''}`}
-            >
-              {/* With large text the amount moves under the label instead of running past the card (#493). */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className={`inline-flex size-10 shrink-0 items-center justify-center rounded-md text-lg font-bold ${look.tint} ${look.color}`}
-                >
-                  {look.icon}
-                </span>
-                {/* The label column never shrinks below its longest word, so when that word does not fit
-                    beside the amount, the amount moves under the label instead of covering it, and only
-                    then (#493). Hyphens only in a very narrow row (large text), never at normal size. */}
-                <div className="flex-1 basis-0">
-                  <p className={`break-words font-semibold leading-5 @max-[15rem]:hyphens-auto ${look.color}`}>{item.label}</p>
-                  {was && <p className="motion-fade text-xs text-muted">{t.was(was.display)}</p>}
-                </div>
-                <span data-amount-key={item.key} className="ml-auto max-w-full shrink-0">
-                  <NumberChip number={item.amount} size="inline" wrap count={motion?.counts[item.key]} />
-                </span>
-              </div>
-              {/* Visual only: the width is the API's share; it glides when the overview is refetched. */}
-              <div aria-hidden="true" className="ml-[52px] mt-2 h-1.5 overflow-hidden rounded-pill bg-sunken">
-                <div
-                  className={`h-full rounded-pill transition-[width] duration-500 ${look.bar}`}
-                  style={{ width: `${Math.max(0, Math.min(100, item.share?.value ?? 0))}%` }}
-                />
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
-        <span className="min-w-[min(5rem,100%)] flex-1 basis-0">{card.total.label}</span>
-        <span className="ml-auto max-w-full shrink-0">
-          <NumberChip number={card.total} size="inline" wrap />
-        </span>
-      </div>
-    </CardShell>
-  )
-}
-
 const TOKEN = /\{\{(n[0-9]+)\}\}/g
 
-/** Text with number tokens (contract 2.4): each token becomes a chip with the number's `display`. */
-export function TokenText({ text, numbers }: { text: string; numbers: Record<string, Num> }) {
+/**
+ * Text with number tokens (contract 2.4): each token becomes a chip with the number's `display`;
+ * a chat answer passes `plain` for numbers as text, without the pill (#684).
+ */
+export function TokenText({ text, numbers, plain = false }: { text: string; numbers: Record<string, Num>; plain?: boolean }) {
   const parts: ReactNode[] = []
   let last = 0
   for (const match of text.matchAll(TOKEN)) {
     const index = match.index ?? 0
     if (index > last) parts.push(text.slice(last, index))
     const number = numbers[match[1]]
-    parts.push(number ? <NumberChip key={`${match[1]}-${index}`} number={number} size="inline" /> : match[0])
+    parts.push(number ? <NumberChip key={`${match[1]}-${index}`} number={number} size="inline" tone={plain ? 'plain' : 'mint'} /> : match[0])
     last = index + match[0].length
   }
   if (last < text.length) parts.push(text.slice(last))

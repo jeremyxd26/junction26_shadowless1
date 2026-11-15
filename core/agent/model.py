@@ -78,6 +78,9 @@ class PlanResult:
     # True only when the rule planner's answer is the template's own words, never the composer model's: "why is
     # my safe to spend lower?" names the limit that binds from the data (#552). No model adapter sets it.
     template_answer: bool = False
+    # True only when the rule planner answers a question about the S-Bonus RECEIVED with the estimate: the template
+    # then says first that the Bonus received is not in this account's data (#639). No model adapter sets it.
+    bonus_received: bool = False
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,12 @@ class ComposeInput:
     errors: list[dict[str, Any]] = field(default_factory=list)  # {"tool": name, "error": code}
     previous_turn: dict[str, Any] | None = None       # question and answer, numbers masked as [number]
     validation_errors: list[str] = field(default_factory=list)  # set on the retry
+    # #884: fragments from official sources (finlit_kb.Fragment.data: source, title, open text with digits masked),
+    # and whether the answer is a literacy answer in plain words with no data. Only a request that carries them gets
+    # their blocks, so every other composer request keeps its cache key.
+    sources: list[dict[str, Any]] | None = None
+    literacy: bool = False
+    investing: bool = False   # a general question about starting to save or invest (R7 narrowed, #884)
 
 
 @dataclass(frozen=True)
