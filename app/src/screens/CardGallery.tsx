@@ -10,6 +10,7 @@ import { BillsCards } from '../components/BillsCard.tsx'
 import { BillFlow } from '../components/bill/BillFlow.tsx'
 import { OverviewSheetContent } from '../components/OverviewSheetContent.tsx'
 import { SafeToSaveCard } from '../components/SafeToSaveCard.tsx'
+import { MascotGallery } from '../components/voice/MascotGallery.tsx'
 
 const examples = contract.examples as unknown as Record<string, unknown>
 
@@ -157,6 +158,11 @@ export default function CardGallery() {
       <section id="bill-flow" aria-label="bill flow" className="flex flex-col gap-2">
         <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">bill flow (section 11, mock)</p>
         <BillFlow />
+      </section>
+      {/* Sentti's mascot for the voice mode (#798, #811): five states, EN and FI, 160 and 96 px. */}
+      <section id="sentti-mascot" aria-label="Sentti mascot states" className="flex flex-col gap-2">
+        <p className="font-mono text-xs [overflow-wrap:anywhere] text-muted">SenttiMascot → idle, listening, thinking, speaking, celebrate</p>
+        <MascotGallery />
       </section>
     </div>
   )
