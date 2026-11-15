@@ -1401,3 +1401,45 @@ cases:
   refusal_kinds: [credit_decision]
   no_data_tool_call: true
   tags: [glossary, red_team]
+
+# "What does this number mean?" (#821). The runner asks one question with no previous answer, so Sentti asks which
+# number (no data call, never the general question back); with a previous answer the main number is explained, which
+# core/agent/tests/test_agent_explain_number.py covers. Real questions about the user's own money keep their routes:
+# never the question back about a number.
+- id: sanna-explain-number-no-previous-answer
+  persona: CUST00860
+  question: {en: 'What does this number mean?', fi: 'Mitäs tää numero tarkoittaa? Voitko selittää mulle tarkasti'}
+  intent: explain_number
+  expect: any
+  no_data_tool_call: true
+  tags: [edge, explain_number]
+  forbid_text:
+  - {name: general_question_back, pattern: 'what\s+would\s+you\s+like\s+to\s+know|mitä\s+haluaisit\s+tietää'}
+
+- id: sanna-explain-number-where-from
+  persona: CUST00860
+  question: {en: 'Where did you get that number?', fi: 'Mistä tää luku tulee?'}
+  intent: explain_number
+  expect: any
+  no_data_tool_call: true
+  tags: [edge, explain_number]
+  forbid_text:
+  - {name: general_question_back, pattern: 'what\s+would\s+you\s+like\s+to\s+know|mitä\s+haluaisit\s+tietää'}
+
+- id: sanna-explain-number-guard-restaurants
+  persona: CUST00860
+  question: {en: 'What does my spending on restaurants look like?', fi: 'Mitä mun ruokamenot on?'}
+  intent: spending
+  expect: any
+  tags: [edge, explain_number, guard]
+  forbid_text:
+  - {name: which_number, pattern: 'which\s+number\s+would\s+you\s+like|minkä\s+luvun\s+haluaisit'}
+
+- id: sanna-explain-number-guard-balance
+  persona: CUST00860
+  question: {en: 'What is my balance?', fi: 'Paljonko mulla on rahaa tilillä?'}
+  intent: balance
+  expect: any
+  tags: [edge, explain_number, guard]
+  forbid_text:
+  - {name: which_number, pattern: 'which\s+number\s+would\s+you\s+like|minkä\s+luvun\s+haluaisit'}
