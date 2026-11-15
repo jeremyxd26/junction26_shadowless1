@@ -1170,6 +1170,11 @@ WHAT_IF_WHICH = ("Which spending would you like to cut, and by how much? For exa
 WHAT_IF_WHICH_OPTIONS = (("What if I cut restaurants?", "What if I took fewer taxis?", "What if I cut takeaway?"),
                          ("Entä jos vähentäisin ravintoloita?", "Entä jos käyttäisin taksia vähemmän?",
                           "Entä jos vähentäisin noutoruokaa?"))
+# #888: the next chips, in order, for a customer whose data has too few purchases for one of the three above (the
+# orchestrator offers a chip only when the what-if tool gives that customer an estimate: no dead end).
+WHAT_IF_MORE_OPTIONS = (("What if I cut entertainment?", "What if I cut lifestyle shopping?", "What if I cut travel?"),
+                        ("Entä jos vähentäisin viihdettä?", "Entä jos vähentäisin lifestyle-ostoksia?",
+                         "Entä jos vähentäisin matkustamista?"))
 # A budget for a past period (#547): Sentti keeps no budget that the customer sets, so the rules ask back with what
 # they can show, and no answer says that a budget was or was not set. A budget for this week is the safe-to-spend
 # question, as before; "what is my monthly budget" stays as it was (the safe-to-spend card's own "Your monthly
