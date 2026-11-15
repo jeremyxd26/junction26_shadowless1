@@ -433,7 +433,7 @@ def test_the_switch_file_turns_the_model_text_off_per_answer(tmp_path, monkeypat
     pipeline = make(tmp_path, model)
     switch.touch()
     d = done(ask(pipeline, "Any tips?"))
-    assert model.requests == [] and d["text_rendered"] == talk_mode.TIP[0].format(lever="restaurants")
+    assert model.requests == [] and d["text_rendered"] == talk_mode.three_tips({"label": "Restaurants"}, talk_mode.practices(0, "en"), "en")
     assert "llm_unavailable" in d["warnings"]
     assert audit_records(pipeline)[-1]["planner_turns"][-1]["talk_template"] == "switch"
     switch.unlink()   # read per answer: no restart
