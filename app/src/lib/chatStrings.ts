@@ -21,6 +21,8 @@ const en = {
     'Where do my small purchases go?',
   ],
   moreQuestions: 'More questions',
+  /** The opening's three-basket bar (#945): its accessible summary starts with this. */
+  basketBarLabel: 'Where your money went',
   /** Under a knowledge answer (#922): its sources as chips. */
   sources: 'Sources',
   sourceLabel: (publisher: string, title: string) => (title ? `Source: ${publisher} — ${title}` : `Source: ${publisher}`),
@@ -76,6 +78,7 @@ const fi: ChatStrings = {
     'Mihin pienet ostokset menevät?',
   ],
   moreQuestions: 'Lisää kysymyksiä',
+  basketBarLabel: 'Mihin rahasi menivät',
   sources: 'Lähteet',
   sourceLabel: (publisher: string, title: string) => (title ? `Lähde: ${publisher} — ${title}` : `Lähde: ${publisher}`),
   placeholder: 'Kysy raha-asioistasi',

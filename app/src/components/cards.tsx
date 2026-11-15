@@ -205,10 +205,19 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
           {text}
         </span>
       </button>
-      <span aria-hidden="true" className="mt-1 inline-flex items-center gap-0.5 text-base font-semibold text-brand">
-        {caption}
-        <Chevron />
-      </span>
+      {/* The caption and the Estimate badge share one row (#945: room for the basket bar); the badge sits above the
+          block's button and keeps its 44px target. */}
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2">
+        <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-base font-semibold text-brand">
+          {caption}
+          <Chevron />
+        </span>
+        {card.estimate && (
+          <div className="relative z-10 -my-2">
+            <EstimateBadge estimate={card.estimate} control={estimate.control} />
+          </div>
+        )}
+      </div>
       {/* The hint's line is always there, invisible until an answer, so the block never changes height when
           "was …" comes or goes. After a review answer: never red (DESIGN.md, #35). */}
       <span
@@ -218,12 +227,6 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
         {was ? <Arrow down={was.value > primary.value} /> : <Check />}
         {hint ?? t.was(primary.display)}
       </span>
-      {card.estimate && (
-        // Above the block's button; the badge keeps its 44px target.
-        <div className="relative z-10 -mt-1.5">
-          <EstimateBadge estimate={card.estimate} control={estimate.control} />
-        </div>
-      )}
       {card.estimate && estimate.open && (
         <div className="relative z-10 mt-2 w-full text-left">
           <EstimateNote estimate={card.estimate} id={estimate.id} />
