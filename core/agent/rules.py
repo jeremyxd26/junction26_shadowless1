@@ -1488,6 +1488,30 @@ def garbled_input(question: str) -> bool:
     return any(len(w) >= 6 and not known(w) for w in words)
 
 
+# A short thanks in other words (r-talk: "No kiitos paljon neuvoista." got the fallback): at most 8 words with a thanks
+# word, no question mark, no question word and no money word once the thanks phrase is taken out ("kiitos paljon"
+# is a thanks, not "paljonko"). "kiitos, mutta paljonko mulla on rahaa?" stays a question.
+_THANKS_WORD = re.compile(r"\b(kiitos|kiitti|kiitoksia|kiitoksii|thanks|thank you|thank u|thx|ty|appreciate it|"
+                          r"appreciated|cheers)\b")
+_THANKS_PHRASE = re.compile(r"\b((ihan |tosi |todella |oikein )?(kiitos|kiitti|kiitoksia) (paljon|kovasti|tosi paljon)|"
+                            r"(paljon|kovasti|suuret) (kiitoksia|kiitos)|thanks (a lot|so much|a bunch|very much)|"
+                            r"thank you (so much|very much|a lot))\b")
+_QUESTION_WORDS = re.compile(r"\b(paljonko|kuinka|miten|mita|mika|miksi|milloin|missa|mihin|onko|voinko|voisinko|"
+                             r"how|what|why|when|where|which|who)\b")
+
+
+def thanks_only(question: str) -> bool:
+    """Whether a short message only thanks (see above), with any lead ("no", "okei", "great") or tail
+    ("neuvoista", "for the help")."""
+    if "?" in question:
+        return False
+    q = " ".join(re.sub(r"[^\w\s']", " ", fold(question)).split())
+    if not q or len(q.split()) > 8 or not _THANKS_WORD.search(q):
+        return False
+    rest = _THANKS_PHRASE.sub(" ", q)
+    return not _QUESTION_WORDS.search(rest) and not re.search(_MONEY_WORDS, rest)
+
+
 def meta_intent(question: str) -> str | None:
     """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
     q = fold(question)
@@ -1501,6 +1525,8 @@ def meta_intent(question: str) -> str | None:
     for intent, rx in META:
         if re.fullmatch(fold_pattern(rx), core):
             return intent
+    if thanks_only(question):   # "No kiitos paljon neuvoista.", "ok thanks for the help"
+        return "thanks"
     return None
 
 
