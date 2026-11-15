@@ -5,15 +5,25 @@
 import { useEffect, useRef } from 'react'
 import type { Language } from '../../api/types.ts'
 import { usePrefersReducedMotion } from '../../lib/motion.ts'
-import { mouthRy, smoothLevel } from './mascotLevel.ts'
+import { levelSource, runMouth } from './mascotLevel.ts'
 import { mascotStateLabel, type MascotState } from './mascotStrings.ts'
 
 interface Props {
   state: MascotState
   /** The voice's loudness now, 0 to 1 (see `levelFromAnalyser`); opens the mouth while speaking. */
   level?: number
+  /**
+   * Reads the loudness, 0 to 1, each frame while speaking, instead of `level` (#893): for a parent that
+   * does not re-render per frame, such as the voice mode with `() => session.level()`.
+   */
+  getLevel?: () => number
   /** Width and height in px (160 by default). */
   size?: number
+  /**
+   * Under reduced motion, the state as text below the cat (true by default). Off where the parent's own
+   * caption already says it, as in the voice mode.
+   */
+  stateText?: boolean
   lang: Language
 }
 
@@ -53,39 +63,29 @@ function Paw({ cx, cy, angle }: { cx: number; cy: number; angle: number }) {
  * (`mascotStateLabel`). The drawing is hidden from screen readers, and so is that text: the voice
  * mode's own status caption is what they read.
  */
-export function SenttiMascot({ state, level = 0, size = 160, lang }: Props) {
+export function SenttiMascot({ state, level = 0, getLevel, size = 160, stateText = true, lang }: Props) {
   const reduced = usePrefersReducedMotion()
   const mouth = useRef<SVGEllipseElement>(null)
-  // The loop reads the newest level from a ref, so a new level never restarts it or re-renders.
+  // The loop reads the newest level and getter from refs, so neither restarts it or re-renders.
   const latest = useRef(level)
+  const getter = useRef(getLevel)
   useEffect(() => {
     latest.current = level
-  }, [level])
+    getter.current = getLevel
+  }, [level, getLevel])
 
   const talking = state === 'speaking' && !reduced
   useEffect(() => {
     const el = mouth.current
     if (!talking || !el) return
-    let smoothed = 0
-    let shown = '0'
-    let frame = 0
-    const step = () => {
-      smoothed = smoothLevel(smoothed, latest.current)
-      const ry = String(mouthRy(smoothed))
-      if (ry !== shown) {
-        el.setAttribute('ry', ry)
-        shown = ry
-      }
-      frame = requestAnimationFrame(step)
-    }
-    frame = requestAnimationFrame(step)
-    return () => {
-      cancelAnimationFrame(frame)
-      el.setAttribute('ry', '0')
-    }
+    return runMouth(
+      () => levelSource(getter.current, latest.current),
+      (ry) => el.setAttribute('ry', ry),
+      { request: (step) => requestAnimationFrame(step), cancel: (frame) => cancelAnimationFrame(frame) },
+    )
   }, [talking])
 
-  const label = mascotStateLabel(state, lang)
+  const label = stateText ? mascotStateLabel(state, lang) : ''
   return (
     <div className="sentti-mascot inline-flex flex-col items-center gap-1">
       <svg

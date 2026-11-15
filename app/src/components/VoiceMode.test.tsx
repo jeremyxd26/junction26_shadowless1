@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strings } from '../lib/i18n.ts'
 import type { ChatSession } from '../lib/useChat.ts'
+import type { VoicePhase, VoiceSession } from '../lib/voiceSession.ts'
 
 const chat: ChatSession = {
   turns: [],
@@ -98,6 +99,14 @@ describe('the voice-mode overlay (#811)', () => {
     expect(markup.match(/origin-center rounded-full bg-brand/g)).toHaveLength(bars)
   })
 
+  it('the cat (#893) rests while the microphone opens: drawn over the wave button, hidden from screen readers', async () => {
+    const { markup } = await renderOverlay('en')
+    expect(markup).toContain('data-state="idle"')
+    // Over the button, not inside it: a button holds no block content, and taps go through to it.
+    expect(markup.indexOf('<svg viewBox="0 0 160 160"')).toBeGreaterThan(markup.indexOf('</button>'))
+    expect(markup).toMatch(/<div aria-hidden="true" data-voice-mascot="" class="pointer-events-none absolute /)
+  })
+
   it('under reduced motion the moving bars hide and a still ring shows; Finnish strings', async () => {
     const { markup } = await renderOverlay('fi')
     expect(markup).toContain('motion-reduce:hidden')
@@ -106,5 +115,68 @@ describe('the voice-mode overlay (#811)', () => {
     expect(markup).toContain('>Puhetila</h2>')
     expect(markup).toContain('Kuuntelen…')
     expect(markup).toContain('aria-label="Lopeta puhetila"')
+  })
+})
+
+describe('the cat in the voice mode (#893)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  /** The overlay over a stand-in session that stays in one phase. */
+  async function renderPhase(phase: VoicePhase, lang: 'en' | 'fi' = 'en') {
+    stub(true, true)
+    const { VoiceMode, MASCOT_STATE, WAVE_BARS } = await import('./VoiceMode.tsx')
+    const settings = await import('../lib/settings.ts')
+    const snapshot = { phase, missed: false, heard: '' }
+    const session = {
+      subscribe: () => () => {},
+      getSnapshot: () => snapshot,
+      attach() {},
+      detach() {},
+      setTurns() {},
+      setVoice() {},
+      wave: () => null,
+      level: () => 0.5,
+      tap() {},
+      exit() {},
+    } as unknown as VoiceSession
+    const markup = renderToStaticMarkup(
+      createElement(settings.SettingsContext, { value: { lang, customerId: 'CUST00860', t: strings(lang) } }, createElement(VoiceMode, { session, turns: [] })),
+    )
+    return { markup, state: MASCOT_STATE[phase], bars: WAVE_BARS }
+  }
+
+  it('maps each phase to the cat: starting rests, then listening, thinking and speaking', async () => {
+    const expected: Record<VoicePhase, string> = { starting: 'idle', listening: 'listening', thinking: 'thinking', speaking: 'speaking' }
+    for (const phase of ['starting', 'listening', 'thinking', 'speaking'] as const) {
+      const { markup, state } = await renderPhase(phase)
+      expect(state).toBe(expected[phase])
+      expect(markup.match(/data-state="[a-z]+"/g)).toEqual([`data-state="${expected[phase]}"`])
+    }
+  })
+
+  it('the caption stays the one live status: the cat says nothing, and the button keeps its names and wave', async () => {
+    const captions: Record<VoicePhase, string> = { starting: 'Listening…', listening: 'Listening…', thinking: 'Thinking…', speaking: 'Speaking…' }
+    const names: Record<VoicePhase, string> = { starting: 'Listening…', listening: 'Done talking, send now', thinking: 'Thinking…', speaking: 'Interrupt Sentti' }
+    for (const phase of ['starting', 'listening', 'thinking', 'speaking'] as const) {
+      const { markup, bars } = await renderPhase(phase)
+      expect(markup.match(/role="status"/g)).toHaveLength(1)
+      // The caption once; the cat's own reduced-motion text is off here.
+      expect(markup.split(captions[phase]).length - 1).toBe(phase === 'starting' || phase === 'thinking' ? 2 : 1)
+      expect(markup).not.toMatch(/<p aria-hidden="true"/)
+      expect(markup).toContain(`aria-label="${names[phase]}"`)
+      expect(markup).toContain(`aria-disabled="${phase === 'listening' || phase === 'speaking' ? 'false' : 'true'}"`)
+      expect(markup.match(/origin-center rounded-full bg-brand/g)).toHaveLength(bars)
+      expect(markup).toContain('aria-hidden="true" focusable="false"')
+    }
+  })
+
+  it('Finnish: the same cat states, the Finnish caption', async () => {
+    const { markup } = await renderPhase('speaking', 'fi')
+    expect(markup).toContain('data-state="speaking"')
+    expect(markup).toContain('Puhun…')
+    expect(markup).toContain('aria-label="Keskeytä Sentti"')
   })
 })
