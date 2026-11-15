@@ -81,7 +81,8 @@ function setSpeaking(id: string | null) {
   for (const listener of speakingListeners) listener()
 }
 
-function subscribeSpeaking(onChange: () => void) {
+/** Calls `onChange` whenever the answer that speaks changes (voice mode listens again when it ends). */
+export function subscribeSpeaking(onChange: () => void) {
   speakingListeners.add(onChange)
   return () => speakingListeners.delete(onChange)
 }
@@ -225,6 +226,52 @@ function audio(): AudioContext | null {
   return audioContext
 }
 
+// Voice mode (#811): the Gemini voice plays through an analyser, so the wave can follow it.
+let output: AnalyserNode | null = null
+
+function outputNode(ctx: AudioContext): AudioNode {
+  if (output?.context === ctx) return output
+  try {
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 128
+    analyser.connect(ctx.destination)
+    output = analyser
+    return analyser
+  } catch {
+    return ctx.destination
+  }
+}
+
+/** Voice mode: the frequencies of the Gemini voice playing now, into `frame`; false when none plays. */
+export function readOutput(frame: Uint8Array<ArrayBuffer>): boolean {
+  if (!output || !source) return false
+  output.getByteFrequencyData(frame)
+  return true
+}
+
+/** Whether the core said the voice budget is low (`X-Tts-Budget: low` or a 429): voice mode then uses the device voice. */
+export function voiceBudgetLow(): boolean {
+  return budgetLow
+}
+
+/**
+ * Voice mode reads answers aloud without a tap on each one. Called in the tap that opens it: the audio
+ * context is made and resumed inside the gesture, and an empty utterance unlocks the device voice, as iOS
+ * Safari requires for any later playback.
+ */
+export function unlockVoice() {
+  if (TTS_LIVE) audio()?.resume().catch(() => {})
+  const s = synth()
+  if (!s || s.speaking) return
+  try {
+    const silent = new SpeechSynthesisUtterance('')
+    silent.volume = 0
+    s.speak(silent)
+  } catch {
+    // no device voice: the Gemini voice still plays
+  }
+}
+
 /** The answer the core reads aloud: our own answer by its id (`done.answer_id`) for this customer. */
 export interface RemoteAnswer {
   customerId: string
@@ -262,7 +309,7 @@ export function speakAnswer(id: string, text: string, voice: SpeechSynthesisVoic
       setPreparing(null)
       const node = ctx.createBufferSource()
       node.buffer = buffer
-      node.connect(ctx.destination)
+      node.connect(outputNode(ctx))
       node.onended = () => {
         if (source !== node) return
         source = null
