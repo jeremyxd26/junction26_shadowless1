@@ -121,7 +121,7 @@ def test_after_an_answer_the_main_number_is_explained_with_the_evidence_card(mak
     assert done["outcome"] == "answered" and done["refusal"] is None and done["clarify"] is None
     # the period label ("the next 7 days", as the real tool's) has a digit the validator refuses: the card names the
     # period; the summary is the evidence sheet's in words ("the coming week")
-    assert done["text_rendered"] == "That's safe to spend. The smaller of what your balance allows and what your " \
+    assert done["text_rendered"] == "This is what's left to spend this week. The smaller of what your balance allows and what your " \
                                     "monthly budget allows for the coming week, after your savings goal."
     card = card_of(events)
     MetricCard.model_validate(card)   # the contract's metric card (section 3), as the API checks it
@@ -149,7 +149,7 @@ def test_the_count_comes_from_the_evidence_selection_in_finnish(make_pipeline, m
     done = done_of(events)
     assert done["outcome"] == "answered"
     # #833: the label in the answer's language (the method table's Finnish name), never "safe to spend".
-    assert done["text_rendered"] == "Luku on turvallisesti käytettävissä. " + explain_number.SUMMARIES[
+    assert done["text_rendered"] == "Tämä luku on käyttövarasi tällä viikolla. " + explain_number.SUMMARIES[
         "safe_to_spend.safe_to_spend_7d_eur@1"][1] + " Se perustuu 12 tapahtumaan.", done["text_rendered"]
     assert len(done["cited"]) == 1 and len(written) == 1
     card = card_of(events)
@@ -202,7 +202,7 @@ def test_the_explanation_keeps_the_previous_data_for_a_follow_up(make_pipeline):
     assert turns[-1]["explain"] == turns[-2]["explain"]
     # An English follow-up: the answer speaks the question's language (#831), so "Selitä tarkemmin" would get Finnish.
     again = done_of(run(pipeline, "Explain this number", language="en", conversation_id=conversation_id))
-    assert again["outcome"] == "answered" and again["text_rendered"].startswith("That's safe to spend")
+    assert again["outcome"] == "answered" and again["text_rendered"].startswith("This is what's left to spend this week.")
 
 
 def test_a_finnish_follow_up_after_an_english_answer_names_the_number_in_finnish(make_pipeline):
@@ -213,5 +213,5 @@ def test_a_finnish_follow_up_after_an_english_answer_names_the_number_in_finnish
     conversation_id = dict(first)["meta"]["conversation_id"]
     again = done_of(run(pipeline, "Mitä tää numero tarkoittaa?", language="en", conversation_id=conversation_id))
     assert again["outcome"] == "answered"
-    assert again["text_rendered"].startswith("Luku on turvallisesti käytettävissä.")
+    assert again["text_rendered"].startswith("Tämä luku on käyttövarasi tällä viikolla.")
     assert "safe to spend" not in again["text_rendered"].lower()

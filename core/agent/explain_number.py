@@ -63,8 +63,13 @@ _SENTENCE = re.compile(rf"{_LEAD}({_ASK})( (and |ja |or |vai )?({_ASK}))*{_TAIL}
 _FILLER_WORDS = frozenset({"ok", "okay", "okei", "so", "hmm", "hm", "um", "hey", "sorry", "wait", "hei", "joo",
                            "please", "pls", "thanks", "kiitos", "pliis", "anteeksi"})
 
-LEAD = ("That's {label} for {period}.", "Luku on {label}, {period}.")
-LEAD_ONLY_LABEL = ("That's {label}.", "Luku on {label}.")   # a period label the validator refuses ("the next 7 days")
+LEAD = ("This is {label} for {period}.", "Tämä luku on {label}, {period}.")
+LEAD_ONLY_LABEL = ("This is {label}.", "Tämä luku on {label}.")   # a period label the validator refuses ("the next 7 days")
+# The number's own name in a sentence, where the method table's name reads oddly (local display strings only: no tool
+# output and no model cache change). Safe to spend is "left to spend" / "käyttövara" on screen; the name carries its period.
+NAMES = {
+    "safe_to_spend.safe_to_spend_7d_eur@1": ("what's left to spend this week", "käyttövarasi tällä viikolla"),
+}
 COUNT = (("It rests on {count} transaction.", "It rests on {count} transactions."),
          ("Se perustuu {count} tapahtumaan.", "Se perustuu {count} tapahtumaan."))
 WHICH = ("Which number would you like explained?", "Minkä luvun haluaisit selitettävän?")
@@ -120,6 +125,9 @@ def label_for(number, lang: str) -> tuple[str, bool]:
     still in the earlier answer's language, is left to the card."""
     from core.app.api import texts as api_texts   # the method table, as the evidence sheet names the number
 
+    own = NAMES.get(number.method)
+    if own is not None:
+        return (own[1] if lang == "fi" else own[0]), True
     name = api_texts.method_info(number.method).name
     mine, other = (name[1], name[0]) if lang == "fi" else (name[0], name[1])
     if number.label == other and other != mine:
