@@ -277,7 +277,7 @@ def test_a_known_hero_failure_gives_a_null_hero_and_the_rest_intact(failure, cap
     caplog.set_level(logging.DEBUG)
     body = overview.build(_ctx(), hero_tool=failing)
     assert body.hero is None
-    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna, I'm Sentti"
+    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna"
     OverviewResponse.model_validate(body.model_dump(mode="json"))
     assert f"hero unavailable ({type(failure).__name__})" in caplog.text
     assert str(failure) not in caplog.text and "CUST00860" not in caplog.text and "278" not in caplog.text
@@ -307,7 +307,7 @@ def test_no_row_of_03_gives_a_null_hero_and_a_null_card():
     """Both tools read the same row: when 03 returns none, both sections are null and the rest stays."""
     body = overview.build(_ctx(NO_ROW))   # the real get_safe_to_spend and get_safe_to_save
     assert body.hero is None and body.safe_to_save is None
-    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna, I'm Sentti"
+    assert [c.type for c in body.cards] == ["breakdown", "bills"] and body.greeting == "Hi Sanna"
     OverviewResponse.model_validate(body.model_dump(mode="json"))
 
 
@@ -322,7 +322,7 @@ def test_the_hero_comes_from_get_safe_to_spend():
     assert overview.HERO_TOOL is get_safe_to_spend
     body = overview.build(_ctx(), hero_tool=_stub_hero)  # the stub stands in for the metric SQL
     assert [c.type for c in body.cards] == ["breakdown", "bills"]
-    assert body.greeting == "Hi Sanna, I'm Sentti" and len(body.suggested_questions) == 4 and body.insights == []
+    assert body.greeting == "Hi Sanna" and len(body.suggested_questions) == 4 and body.insights == []
     assert body.reviews == []  # contract 0.2.0: an empty list, not an absent field, until #68
 
 
