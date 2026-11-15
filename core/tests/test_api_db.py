@@ -401,7 +401,7 @@ def test_an_estimate_number_is_a_complete_object_read_from_the_estimate(client):
     assert ids <= set(body.get("cited") or []), (ids, body.get("cited"))     # the map holds only cited Numbers
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00387"])
 def test_a_category_with_one_or_two_purchases_is_not_offered_with_the_reason(client, customer_id):
     """Review of #379 part B, B1: never a 500. The existing status not_offered, every saving and the baseline
     0, and the chat's sentence as the caveat; every number opens, and the card opens the purchases."""

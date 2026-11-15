@@ -22,7 +22,7 @@ from core.tools.formatting import money
 AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 # The sample customers' cases check the worked numbers of metrics.md: on a private database only (#502, #508).
 # The SQL and evidence checks also run for the personas, on the shared database.
 SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]

@@ -63,6 +63,8 @@ const en = {
   lessonOf: (n: number, total: number) => `Lesson ${n} of ${total}`,
   checkLabel: 'Check',
   takeawayLabel: 'Takeaway',
+  /** Under the takeaway: official sources (#885). */
+  learnMore: 'Learn more',
   backToTopic: 'Back to topic',
   quizRetry: (score: number, total: number) => `Quiz ${score} of ${total} — try again`,
   quizNext: 'Take the quiz',
@@ -150,6 +152,7 @@ const fi: LearnStrings = {
   lessonOf: (n, total) => `Oppitunti ${n}/${total}`,
   checkLabel: 'Tarkistus',
   takeawayLabel: 'Muista',
+  learnMore: 'Lue lisää',
   backToTopic: 'Takaisin aiheeseen',
   quizRetry: (score, total) => `Testi ${score}/${total} — yritä uudelleen`,
   quizNext: 'Tee testi',

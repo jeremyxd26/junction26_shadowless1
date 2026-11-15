@@ -29,7 +29,7 @@ from core.tools.selection import select, value_of
 AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 # the sample customers' cases check the worked numbers of metrics.md: on a private database only (#502, #508)
 SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]
 EVERYONE = SAMPLE_CASES + PERSONAS
@@ -42,7 +42,7 @@ PROFILE_WORKED = {
     "CUST00006": ("saver", ["salary_moved_elsewhere"], "24.8", "337.13", "253.54"),
     "CUST00860": ("big_ticket", ["frequent_small_purchases"], "15.4", "3558.38", "3010.59"),
     "CUST00493": ("steady", ["frequent_small_purchases"], "17.6", "2577.84", "2124.09"),
-    "CUST00349": ("everyday_heavy", ["regular_investor", "frequent_small_purchases"], "22.6", "3161.55", "2445.52"),
+    "CUST00387": ("everyday_heavy", ["went_below_zero"], "14.0", "1487.07", "1278.55"),
     "CUST00849": ("steady", ["went_below_zero", "frequent_small_purchases"], "9.4", "2075.65", "1881.06"),
 }
 # metrics.md section 6 (full population) and the persona cases of core/eval/cases.yaml:
@@ -54,7 +54,7 @@ PEER_WORKED = {
     ("CUST00002", "everyday_spending"): ("430.29", "850.10", 26, "45-54 005", 93),
     ("CUST00860", "spend_total"): ("3010.59", "2975.65", 51, "35-44 005", 118),
     ("CUST00493", "spend_total"): ("2124.09", "3567.81", 8, "45-54 001", 121),
-    ("CUST00349", "spend_total"): ("2445.52", "1894.55", 67, "25-34 021", 24),
+    ("CUST00387", "spend_total"): ("1278.55", "1709.93", 3, "18-24 009", 29),
     ("CUST00849", "spend_total"): ("1881.06", "2202.21", 31, "25-34 022", 39),
 }
 PEER_CASES = [pytest.param(*case, marks=pytest.mark.sample_customer) if case[0] in SAMPLE else case
@@ -209,7 +209,7 @@ def test_profile_evidence_card_and_model_view(conn, customer_id):
 PERSONA_LABELS = {
     "CUST00860": ("big_ticket", "6.0", ["frequent_small_purchases"]),
     "CUST00493": ("steady", "0.0", ["frequent_small_purchases"]),
-    "CUST00349": ("everyday_heavy", "4.3", ["regular_investor", "frequent_small_purchases"]),
+    "CUST00387": ("everyday_heavy", "3.9", ["went_below_zero"]),
     "CUST00849": ("steady", "0.0", ["went_below_zero", "frequent_small_purchases"]),
 }
 
@@ -278,7 +278,7 @@ def test_own_value_of_every_metric_equals_06(conn, peer_rows, customer_id):
 @pytest.mark.parametrize("customer_id", PERSONAS)
 def test_persona_group_sizes_match_personas_yaml(conn, peer_rows, customer_id):
     # personas.yaml peer_group.comparable_others: the same count for every metric of the customer
-    expected = {"CUST00860": 118, "CUST00493": 121, "CUST00349": 24, "CUST00849": 39}[customer_id]
+    expected = {"CUST00860": 118, "CUST00493": 121, "CUST00387": 29, "CUST00849": 39}[customer_id]
     assert {r["peer_n"] for r in peer_rows[customer_id].values()} == {expected}
     assert {r["peer_level"] for r in peer_rows[customer_id].values()} == {"age_band+area3"}
 
@@ -301,8 +301,8 @@ def test_sweep_customer_is_not_compared(conn, peer_rows):
 def test_group_below_the_minimum_is_not_shown(conn, monkeypatch):
     # With an unreachable minimum no level qualifies: 06 takes the coarsest level and shows nothing.
     monkeypatch.setattr(config, "PEER_MIN_N", "100000")
-    result = get_peer_benchmark(ctx_for(conn, "CUST00349"), {"metric": "Restaurants"})
-    row = sql_rows(conn, config.PEER_FILE, "CUST00349", {"peer_min_n": "100000"})
+    result = get_peer_benchmark(ctx_for(conn, "CUST00387"), {"metric": "Restaurants"})
+    row = sql_rows(conn, config.PEER_FILE, "CUST00387", {"peer_min_n": "100000"})
     row = next(r for r in row if r["metric"] == "Restaurants")
     assert row["shown"] is False and row["peer_median_month_eur"] is None and row["peer_level"] == "age_band"
     data = result.data
@@ -451,7 +451,7 @@ def test_a_label_never_moves_the_peer_group_statistics(conn):
 OFFER_METRICS = ["Restaurants", "Lifestyle", "Travel", "Entertainment", "everyday_spending", "unexpected_necessities"]
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00860", "CUST00493", "CUST00349", "CUST00849"])
+@pytest.mark.parametrize("customer_id", ["CUST00860", "CUST00493", "CUST00387", "CUST00849"])
 def test_the_offer_decision_equals_the_what_if_metrics_own(conn, customer_id):
     from core.tools import peer
     from core.tools.what_if import WhatIfRefused, run_what_if
