@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { chatStrings } from '../lib/chatStrings.ts'
+import { usePrefersReducedMotion } from '../lib/motion.ts'
 import { useOpening } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import { askInThread } from '../lib/url.ts'
@@ -61,6 +62,67 @@ interface Item {
   act: () => void
 }
 
+/** A row: edge to edge (out of the page's 16px gutters), faded at both edges so no chip looks cut off. */
+const ROW = '-mx-4 flex gap-2 [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)]'
+
+function Chip({ item, hidden = false }: { item: Item; hidden?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={item.act}
+      tabIndex={hidden ? -1 : undefined}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-sm whitespace-nowrap text-ink hover:bg-sunken"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {item.icon}
+      </svg>
+      {item.text}
+    </button>
+  )
+}
+
+/** How long the drift stays stopped after a finger leaves the row. */
+const RESUME_MS = 2000
+
+/**
+ * A row that drifts slowly sideways (Renat's light redesign): the chips twice on one track that moves by half its
+ * width (`.chip-drift` in index.css), so the loop never shows a gap. The second copy is hidden from screen readers
+ * and the tab order but still answers a tap. The drift stops while the pointer is on the row, a chip has focus, or
+ * for a moment after a touch, so a moving chip is never hard to tap.
+ */
+function DriftRow({ row, label, reverse, seconds }: { row: Item[]; label?: string; reverse: boolean; seconds: number }) {
+  const [paused, setPaused] = useState(false)
+  const resume = useRef(0)
+  useEffect(() => () => window.clearTimeout(resume.current), [])
+  const hold = () => {
+    window.clearTimeout(resume.current)
+    setPaused(true)
+  }
+  const release = () => {
+    window.clearTimeout(resume.current)
+    resume.current = window.setTimeout(() => setPaused(false), RESUME_MS)
+  }
+  return (
+    <div data-chip-row="" onPointerDown={hold} onPointerUp={release} onPointerCancel={release} className={`${ROW} overflow-hidden pl-4`}>
+      <div
+        data-paused={paused ? '' : undefined}
+        className={`chip-drift flex w-max ${reverse ? 'chip-drift-reverse' : ''}`}
+        style={{ ['--drift-duration' as string]: `${seconds}s` }}
+      >
+        {[0, 1].map((copy) => (
+          <ul key={copy} aria-label={copy === 0 ? label : undefined} aria-hidden={copy === 1 ? true : undefined} className="flex shrink-0 gap-2 pr-2">
+            {row.map((item) => (
+              <li key={item.id} className="shrink-0">
+                <Chip item={item} hidden={copy === 1} />
+              </li>
+            ))}
+          </ul>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /**
  * The opening's ways in (Renat's light redesign): small pill chips with line icons in two rows that scroll
  * sideways, with soft fades at both edges so no chip looks cut off, then a centred "More questions" pill that
@@ -73,6 +135,7 @@ export function OpeningChips() {
   const { lang, t } = useSettings()
   const opening = useOpening()
   const [more, setMore] = useState(false)
+  const reduced = usePrefersReducedMotion()
   if (!opening) return null
   const s = chatStrings(lang)
   const client: Item[] = openingChips
@@ -114,29 +177,20 @@ export function OpeningChips() {
 
   return (
     <div data-opening-part="client-chips" className="flex flex-col gap-2 pt-1">
-      {rows.map((row, index) => (
-        // Edge to edge (out of the page's 16px gutters), scrolling sideways without a bar, faded at both edges.
-        <ul
-          key={index}
-          aria-label={index === 0 ? t.questionsLabel : undefined}
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)] [&::-webkit-scrollbar]:hidden"
-        >
-          {row.map((item) => (
-            <li key={item.id} className="shrink-0">
-              <button
-                type="button"
-                onClick={item.act}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-sm whitespace-nowrap text-ink hover:bg-sunken"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  {item.icon}
-                </svg>
-                {item.text}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ))}
+      {rows.map((row, index) =>
+        reduced ? (
+          // Reduced motion: still rows that scroll sideways by hand, without a bar.
+          <ul key={index} aria-label={index === 0 ? t.questionsLabel : undefined} className={`${ROW} overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>
+            {row.map((item) => (
+              <li key={item.id} className="shrink-0">
+                <Chip item={item} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <DriftRow key={index} row={row} label={index === 0 ? t.questionsLabel : undefined} reverse={index % 2 === 1} seconds={index % 2 === 1 ? 38 : 45} />
+        ),
+      )}
       <button
         type="button"
         onClick={() => setMore(true)}
