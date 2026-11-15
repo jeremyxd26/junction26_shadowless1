@@ -112,6 +112,12 @@ SUMMARIES = {
 ACTION = ("Show the calculation", "Näytä laskelma")
 
 
+def asks_simpler(message: str) -> bool:
+    """An explain message that asks to have the last answer said more simply ("Selitä yksinkertaisemmin", "Explain it
+    more simply"): after an answer in words it is talk mode's, not the number's (Codex run, test 11)."""
+    return matches(message) and bool(re.search(rf"\b({_SIMPLER_EN}|{_SIMPLER_FI})\b", fold(message)))
+
+
 def matches(message: str) -> bool:
     """The whole message asks what a number just given means, or how it was calculated (see the module text)."""
     if not isinstance(message, str) or re.search(r"\d", message) or len(message) > 200:
