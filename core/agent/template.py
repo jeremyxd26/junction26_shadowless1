@@ -450,6 +450,19 @@ def period_chip(question: str, language: str) -> str | None:
     return pick(PERIOD_CHIPS["compare" if _ASKED_LAST_MONTH.search(q) else "last_month"], language)
 
 
+# The same question again (Renat): the answer says so and the chips turn to a new angle.
+REPEAT_LEAD = ("Same numbers as a moment ago.", "Luvut ovat samat kuin äsken.")
+REPEAT_TIPS = ("Any more tips?", "Onko muita vinkkejä?")
+
+
+def repeat_follow_ups(question: str, language: str) -> list[str]:
+    """The chips after a repeated question: another period, more tips, then a brief question not just asked."""
+    asked = question.strip().lower()
+    chips = [c for c in (period_chip(question, language), pick(REPEAT_TIPS, language)) if c]
+    out = [q for q in dict.fromkeys(chips + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
+    return out[:3]
+
+
 def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
     """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
     question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the

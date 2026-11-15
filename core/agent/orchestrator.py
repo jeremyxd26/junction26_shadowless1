@@ -184,6 +184,15 @@ def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
     return out
 
 
+def _same_calls(pending: list[tuple[Any, Any]], turn: dict[str, Any]) -> bool:
+    """Whether this round's data calls are exactly the previous turn's (the same question asked again)."""
+    def key(name: Any, args: Any) -> tuple[str, str]:
+        return str(name), json.dumps(args or {}, sort_keys=True, default=str)
+    mine = sorted(key(call.name, call.args) for call, _ in pending)
+    theirs = sorted(key(c.get("name"), c.get("args")) for c in turn.get("calls") or [] if isinstance(c, dict))
+    return bool(mine) and mine == theirs
+
+
 def _words_answer(turn: dict[str, Any]) -> bool:
     """An answer in words (talk mode, the literacy answers, the bank's help), not a number answer."""
     return bool(turn.get("talk") or turn.get("words"))
@@ -350,6 +359,7 @@ class _Answer:
     tool_outputs: dict[str, Any] = field(default_factory=dict)
     composer_attempts: list[dict[str, Any]] = field(default_factory=list)
     cards: list[str] = field(default_factory=list)
+    repeat: bool = False   # the same data as the turn before (Renat): a short answer, no cards again, new chips
     calls: list[dict[str, Any]] = field(default_factory=list)
     numbers: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -652,6 +662,9 @@ class Pipeline:
                 data_calls += 1
                 pending.append((call, args))
                 slots.append(None)
+            reanswer = any(t.get("meta_intent") == "previous" for t in a.planner_turns)   # asked for on purpose
+            if rnd == 1 and pending and conv.turns and not reanswer and _same_calls(pending, conv.turns[-1]):
+                a.repeat = True   # asked again: "Same numbers as a moment ago." and the first sentence, below
             records = self._run_tools(ctx, pending, lang, emit, a)
             done_records = iter(records)
             turn["calls"] += [slot if slot is not None else next(done_records) for slot in slots]
@@ -739,17 +752,21 @@ class Pipeline:
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
         if conv.brief:   # "you talk too much": the first sentence, and an estimate's caveat, if that still passes
             draft = self._briefer(draft, lang, numbers, allowed)
+        if a.repeat:   # the same question again (Renat): it says so, keeps the first sentence, offers a new angle
+            draft = self._repeat_short(draft, lang, numbers, allowed)
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
         # #572: the answer's next step, the listed offer's question, comes first among the chips
-        follow_ups = offers.next_step(template.follow_ups(message, lang, views=views), views=views, language=lang,
-                                      question=message, outcome=a.outcome, review_pending=review_card)
+        follow_ups = template.repeat_follow_ups(message, lang) if a.repeat else offers.next_step(
+            template.follow_ups(message, lang, views=views), views=views, language=lang, question=message,
+            outcome=a.outcome, review_pending=review_card)
         emit("done", {"answer_id": a.answer_id, "outcome": a.outcome, "text": text, "text_rendered": a.text_rendered,
                       "cited": cited, "follow_ups": follow_ups,
-                      "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
+                      "lesson": None if a.repeat else template.lesson(draft.lesson_key, lang), "refusal": None,
+                      "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
                                    "answer": TOKEN.sub("[number]", text), "explain": _main_number(numbers, cited),
@@ -1003,7 +1020,7 @@ class Pipeline:
             stopped = failed()  # an earlier call found the database down: the answer ends with `error`
             with a.lock:
                 a.tool_outputs[f"{call.name}#{len(a.tool_outputs) + 1}"] = result.model_view
-                send = card is not None and not stopped and len(a.cards) < MAX_CARDS
+                send = card is not None and not stopped and len(a.cards) < MAX_CARDS and not a.repeat
                 if send:
                     a.cards.append(card.card_id)
             if send:  # once the tool and the calls before it have finished, before the composer starts
@@ -1162,6 +1179,18 @@ class Pipeline:
                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
         data = [c for c in plan.calls if c.name not in ("ask_clarifying_question", "finish")]
         return not getattr(plan, "recognised", False) and not data
+
+    @staticmethod
+    def _repeat_short(draft: Any, lang: str, numbers: dict[str, Any], allowed: Allowed) -> Any:
+        """"Same numbers as a moment ago." and the answer's first sentence, when that passes the validator; else the
+        answer as it was."""
+        sentences = [s for s in re.split(r"(?<=[.!?])\s+", draft.text.strip()) if s]
+        if not sentences:
+            return draft
+        text = f"{template.pick(template.REPEAT_LEAD, lang)} {sentences[0]}"
+        short, errors = validate({"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))),
+                                  "lesson_key": None}, language=lang, numbers=numbers, allowed=allowed)
+        return short if not errors and short is not None else draft
 
     @staticmethod
     def _briefer(draft: Any, lang: str, numbers: dict[str, Any], allowed: Allowed) -> Any:
