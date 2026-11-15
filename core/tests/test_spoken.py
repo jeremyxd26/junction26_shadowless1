@@ -109,3 +109,42 @@ def test_a_third_number_goes_with_its_clause_and_a_sentence_that_starts_with_it_
            "text": "You spent {{n1}} on food and {{n2}} on taxis, which is {{n3}} in all. {{n4}} went to rent. Fine."}
     assert spoken_script(rec) == ("You spent 10 euros on food and 20 euros on taxis. Fine. "
                                   "That's from your spending in recent months.")
+
+
+def _step_plan_record(language: str) -> dict:
+    """A step-plan answer (#822) as the template writes it: three steps, one number each (#827)."""
+    from core.agent.template import step_plan_answer
+
+    category = "Ravintolat" if language == "fi" else "Restaurants"
+    views = [
+        {"tool": "get_savings_plan", "kind": "plan",
+         "savings_goal": {"id": "n7", "value": 360.0, "unit": "eur_per_month", "label": "goal"},
+         "levers": [{"key": "Restaurants", "category": category, "cut_words": "viidenneksen" if language == "fi" else "a fifth",
+                     "saving": {"id": "n1", "value": 45.91, "unit": "eur_per_month", "label": "saving"}}]},
+        {"tool": "get_small_purchases", "takeaway": {"kind": "restaurants"},
+         "per_month": {"id": "n9", "value": 9.58, "unit": "eur_per_month", "label": "small"}},
+    ]
+    text, ids = step_plan_answer(views, language)
+    assert ids == ["n7", "n1", "n9"]
+    numbers = {"n7": {"value": 360.0, "unit": "eur_per_month"}, "n1": {"value": 45.91, "unit": "eur_per_month"},
+               "n9": {"value": 9.58, "unit": "eur_per_month"}}
+    return {"language": {"resolved": language}, "text": text, "text_rendered": "x", "numbers": numbers,
+            "tool_outputs": {f"{v['tool']}#1": v for v in views}}
+
+
+@pytest.mark.parametrize(("language", "script"), [
+    ("en", "First, set aside your savings goal: 360 euros a month. Second, eat out a fifth less, which could save "
+           "about 46 euros a month. Third, check your small purchases. That's from your spending in recent months."),
+    ("fi", "Ensiksi laita säästötavoitteesi sivuun: 360 euroa kuukaudessa. Toiseksi syö ulkona viidenneksen vähemmän, "
+           "jolloin säästäisit noin 46 euroa kuukaudessa. Kolmanneksi tarkista pienet ostoksesi. "
+           "Laskin tämän viime kuukausien kulutuksestasi."),
+])
+def test_step_plan_keeps_all_three_steps_and_reads_two_numbers(language, script):
+    assert spoken_script(_step_plan_record(language)) == script
+
+
+def test_a_sentence_is_never_left_with_one_word():
+    numbers = {k: {"value": v, "unit": "eur"} for k, v in (("n1", 10), ("n2", 20), ("n3", 30))}
+    rec = {"language": {"resolved": "en"}, "numbers": numbers, "text_rendered": "x",
+           "text": "You spent {{n1}} and {{n2}}. Also, {{n3}} more."}
+    assert spoken_script(rec) == "You spent 10 euros and 20 euros. That's from your spending in recent months."
