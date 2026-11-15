@@ -339,6 +339,23 @@ def detect_language(text: str) -> str | None:
     return None
 
 
+# The everyday words of a short meta message (confusion, a feeling, thanks, feedback, "remind me"): enough to tell its
+# language when the general detector is unsure (Codex re-run: "wait what" and "I'm tired today." got Finnish replies)
+_EN_META = re.compile(r"\b(wait|what|huh|eh|pardon|sorry|tired|stressed|exhausted|sad|down|anxious|worried|"
+                      r"overwhelmed|upset|low|bad|rough|long|hard|tough|day|today|thanks|thank|thx|appreciate|remind|"
+                      r"ask|asked|talk|talking|understand|question|previous|answer|help|feel|feeling|im)\b")
+
+
+def meta_language(text: str) -> str | None:
+    """'en' or 'fi' for a short meta message by its own words, or None when it gives no sign either way."""
+    fi, en = language_scores(text)
+    if fi == 0 and (en >= 1 or _EN_META.search(fold(text))):
+        return "en"
+    if fi >= 1 and en == 0:
+        return "fi"
+    return None
+
+
 def confident_language(text: str) -> str | None:
     """The question's language only when it is clear enough to override the app setting: Finnish as the detector
     reads it; English with at least two English words and no Finnish one ("Click to Pay" and "Korttini on
