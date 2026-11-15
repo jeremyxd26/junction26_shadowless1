@@ -135,6 +135,20 @@ def test_the_evidence_view_of_the_band_size_names_the_band():
     assert number["label"] == "People aged 35–44 in the synthetic dataset" and number["unit"] == "count"
 
 
+def test_a_total_comparison_without_its_band_is_served_but_never_stored():
+    from types import SimpleNamespace
+
+    from core.tools import cache
+
+    skip = cache.DO_NOT_STORE["get_peer_benchmark"]
+    result = lambda **kw: SimpleNamespace(data=SimpleNamespace(**{"peer_source": "marts", **kw}))  # noqa: E731
+    assert skip(result(metric="spend_total", shown=True, age_band=None))        # the band's query failed
+    assert not skip(result(metric="spend_total", shown=True, age_band=object()))
+    assert not skip(result(metric="spend_total", shown=False, age_band=None))   # nothing to add a band to
+    assert not skip(result(metric="Groceries", shown=True, age_band=None))      # no band for a category
+    assert skip(result(peer_source="range", metric="Groceries", shown=False))   # the marts rule, as before
+
+
 def test_the_age_band_file_may_be_re_run_as_evidence():
     assert config.AGE_BAND_FILE in config.METRIC_EVIDENCE_FILES
     assert evidence_api.METRIC_SECTIONS[config.AGE_BAND_FILE] == "#6-peer-benchmark"
