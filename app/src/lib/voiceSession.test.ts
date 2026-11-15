@@ -182,6 +182,24 @@ describe('VoiceSession (#811)', () => {
     expect(closed).toEqual([])
   })
 
+  it("never shows the previous question during a new turn: cleared when listening starts and while the new clip is turned into text", async () => {
+    let reply: (value: unknown) => void = () => {}
+    const { session } = await open()
+    await sayAQuestion()
+    expect(session.getSnapshot().heard).toBe('How much did I spend?')
+    session.setTurns([doneTurn(1)])
+    speech.state.speaking = null
+    speech.notify() // the voice ended: a new round
+    expect(session.getSnapshot()).toMatchObject({ phase: 'listening', heard: '' })
+    // The second clip: while /api/stt works, nothing of the first question shows; the new words come at once.
+    sttReply = () => new Promise((resolve) => (reply = resolve))
+    await sayAQuestion()
+    expect(session.getSnapshot()).toMatchObject({ phase: 'thinking', heard: '' })
+    reply({ status: 200, ok: true, json: () => Promise.resolve({ text: 'And last month?' }) })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(session.getSnapshot()).toMatchObject({ phase: 'thinking', heard: 'And last month?' })
+  })
+
   it('a tap while speaking interrupts and listens again; ✕ stops the voice and releases the microphone', async () => {
     const { session, closed } = await open()
     await sayAQuestion()

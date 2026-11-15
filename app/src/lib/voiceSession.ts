@@ -230,7 +230,8 @@ export class VoiceSession {
     }
     this.round = round
     round.ticker = window.setInterval(() => this.tick(round), TICK_MS)
-    this.set({ phase: 'listening' })
+    // A new round shows nothing of the turn before: the last question's words go at once.
+    this.set({ phase: 'listening', heard: '' })
   }
 
   private tick(round: Round) {
@@ -285,7 +286,7 @@ export class VoiceSession {
   }
 
   private transcribe(clip: Blob) {
-    this.set({ phase: 'thinking', missed: false })
+    this.set({ phase: 'thinking', missed: false, heard: '' })
     const controller = new AbortController()
     this.request = controller
     const timer = window.setTimeout(() => controller.abort(), STT_TIMEOUT_MS)
