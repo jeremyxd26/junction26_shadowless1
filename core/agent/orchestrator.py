@@ -2260,7 +2260,8 @@ class Pipeline:
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
-        if not investing and self._agent_usable(req, a)                 and self._answer_agent(req, ctx, review, message, lang, emit, a, "finlit"):
+        if not investing and self._agent_usable(req, a) and self._answer_agent(req, ctx, review, message, lang, emit,
+                                                                               a, "finlit"):
             return True   # agent mode (#937): the loop answers the literacy question; investing keeps its own (R7)
         fragments = self.finlit_fragments(ctx.customer_id, message, lang)
         if not fragments and term is not None:
