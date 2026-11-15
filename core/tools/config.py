@@ -1195,6 +1195,19 @@ REVIEW_TEXT: dict[str, tuple[str, str]] = {
 # and {after} the number that moved; "why" says where the purchase went, and only says the reserve grows
 # when it did. Safe to spend and safe to save are the same money seen two ways (#381): a text never adds them.
 LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
+    # Renat (via r-talk): the reply to "Needed" / "My choice" / Undo is one short confirmation citing only what is
+    # left to spend after the answer; the hero keeps "was …" for the before.
+    "needed": ("Got it \u2014 counted as a must-have. You now have {after} left to spend this week.",
+               "Selvä \u2014 merkitsin sen välttämättömäksi. Käyttövarasi tällä viikolla on nyt {after}."),
+    "choice": ("Got it \u2014 counted as your own choice. Your left to spend stays {after}.",
+               "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi pysyy {after}."),
+    "choice_moved": ("Got it \u2014 counted as your own choice. You now have {after} left to spend this week.",
+                     "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi tällä viikolla on nyt {after}."),
+    "undo_pending": ("Undone \u2014 I'll ask about it again. You have {after} left to spend this week.",
+                     "Peruttu \u2014 kysyn siitä uudelleen. Käyttövarasi tällä viikolla on {after}."),
+    "undo_closed": ("Undone \u2014 it is back where the rules put it. You have {after} left to spend this week.",
+                    "Peruttu \u2014 se on taas siellä, minne säännöt sen laittavat. Käyttövarasi tällä viikolla on "
+                    "{after}."),
     "moved": ("Left to spend this week goes from {before} to {after}: {amount} {why}.",
               "Tämän viikon käyttövara on nyt {after}, kun se oli {before}: {amount} {why}."),
     "basket": ("{amount} {why}.", "{amount} {why}."),

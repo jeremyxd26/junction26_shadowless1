@@ -33,6 +33,9 @@ CLAIM = re.compile(r"safe to spend|safe to save|put aside|reserve|budget|turvall
 # The basket in the words the answer's effect uses (config.LABEL_EFFECT_TEXT, "now counts as ...").
 BASKET_WORDS = {"unexpected_necessities": {"en": "unexpected necessity", "fi": "odottamattomaksi välttämättömäksi menoksi"},
                 "everyday_spending": {"en": "everyday spending", "fi": "arjen kulutukseksi"}}
+# The answer's reply names the choice in its own words (Renat, via r-talk: "counted as a must-have / your own choice").
+REPLY_WORDS = {"unexpected_necessities": {"en": "must-have", "fi": "välttämättömäksi"},
+               "everyday_spending": {"en": "your own choice", "fi": "omaksi valinnaksesi"}}
 TEXTS: list[tuple[str, str, str, str, str]] = []   # (customer, basket, language, option text, effect text), for the PR
 
 
@@ -88,7 +91,7 @@ def test_an_options_text_never_contradicts_the_effect_its_answer_returns(client,
                                                         "basket": basket, "language": language})
             assert r.status_code == 200, r.text
             effect = r.json()["effect"]["text_rendered"]
-            assert BASKET_WORDS[basket][language] in effect, (customer, basket, language, effect)
+            assert REPLY_WORDS[basket][language] in effect, (customer, basket, language, effect)
             TEXTS.append((customer, basket, language, text, effect))
 
 

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.20",
+  "contract_version": "0.3.21",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -4117,8 +4117,8 @@
       "review_state": "answered",
       "changed": true,
       "message": {
-        "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-        "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+        "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+        "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -4477,8 +4477,8 @@
             }
           }
         ],
-        "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} now counts as an unexpected necessity, so the reserve grows.",
-        "text_rendered": "Left to spend this week goes from €138.79 to €97.46: €1,080.42 now counts as an unexpected necessity, so the reserve grows.",
+        "text": "Got it — counted as a must-have. You now have {{n2}} left to spend this week.",
+        "text_rendered": "Got it — counted as a must-have. You now have €97.46 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -4547,9 +4547,23 @@
       "review_state": "answered",
       "changed": true,
       "message": {
-        "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
-        "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+        "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
         "numbers": {
+          "n2": {
+            "id": "n2",
+            "value": 138.79,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend",
+            "display": "€138.79"
+          },
           "n9": {
             "id": "n9",
             "value": 1080.42,
@@ -4759,9 +4773,23 @@
             }
           }
         ],
-        "text": "{{n9}} now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
-        "text_rendered": "€1,080.42 now counts as everyday spending. This does not change what is left to spend this week: your monthly budget, not this purchase, sets the limit.",
+        "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
         "numbers": {
+          "n2": {
+            "id": "n2",
+            "value": 138.79,
+            "unit": "eur",
+            "period": {
+              "start": "2026-10-01",
+              "end": "2026-10-07",
+              "label": "Next 7 days"
+            },
+            "method": "safe_to_spend.safe_to_spend_7d_eur@1",
+            "evidence_ref": "ev_sa4s6t8s0p2d",
+            "label": "Safe to spend",
+            "display": "€138.79"
+          },
           "n9": {
             "id": "n9",
             "value": 1080.42,
@@ -4797,8 +4825,8 @@
       "review_state": "pending",
       "changed": true,
       "message": {
-        "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-        "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+        "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+        "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
@@ -5157,8 +5185,8 @@
             }
           }
         ],
-        "text": "Left to spend this week goes from {{n1}} to {{n2}}: {{n9}} is waiting for your answer again.",
-        "text_rendered": "Left to spend this week goes from €97.46 to €138.79: €1,080.42 is waiting for your answer again.",
+        "text": "Undone — I'll ask about it again. You have {{n2}} left to spend this week.",
+        "text_rendered": "Undone — I'll ask about it again. You have €138.79 left to spend this week.",
         "numbers": {
           "n1": {
             "id": "n1",
