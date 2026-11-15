@@ -48,8 +48,9 @@ MAX_IN_FLIGHT = 2
 MAX_BYTES = 1_000_000      # about 1 MB: 15 s of browser audio is far smaller
 MAX_SECONDS = 15.5         # the app stops at 15 s; a little room for the recorder's last chunk
 AUDIO_TOKENS_PER_SECOND = 32
-# 17 s of audio plus the prompt (about 35 tokens measured): a 15 s clip is about 515 tokens in all
-MAX_PROMPT_TOKENS = AUDIO_TOKENS_PER_SECOND * 17 + 100
+# 17 s of audio plus the prompt (about 35 tokens measured before #858, about 140 since): a 15 s clip is about
+# 620 tokens in all
+MAX_PROMPT_TOKENS = AUDIO_TOKENS_PER_SECOND * 17 + 180
 MAX_TEXT = 500             # the composer's limit (MAX_QUESTION in the app)
 API_VERSION = "v1beta"
 
@@ -72,11 +73,16 @@ MIME_TYPES = {
 
 LANGUAGE_NAMES = {"en": "English", "fi": "Finnish"}
 
+# The spoken language is never forced (Renat, 15.11): the speaker may use Finnish or English whatever the app's
+# language is, so the app's language is only a weak hint, and the words come back in the language spoken.
 PROMPT = (
-    "Transcribe the speech in this audio clip. The speaker is asking a personal finance app a question, "
-    "most likely in {language}. Return only the words that were spoken, as plain text in the language they "
-    "were spoken in: no translation, no quotes, no labels, no timestamps, no commentary, and do not answer "
-    "the question. Write numbers and amounts as digits. If there is no speech, return an empty response."
+    "Transcribe the speech in this audio clip word for word. The speaker is asking a personal finance app a "
+    "question and may speak Finnish or English; either is possible. The app's screen happens to be in {language}, "
+    "which says little about the spoken language: decide from the audio alone. Write the words in the language "
+    "actually spoken, exactly as said: never translate, never switch to the other language, never guess English "
+    "words for Finnish speech. Return only the spoken words as plain text: no quotes, no labels, no timestamps, no "
+    "commentary, and do not answer the question. Write numbers and amounts as digits. If there is no speech, "
+    "return an empty response."
 )
 
 
