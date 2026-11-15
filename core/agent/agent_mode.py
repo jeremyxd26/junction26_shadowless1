@@ -137,6 +137,17 @@ def data_text_problems(text: str) -> list[str]:
     return problems
 
 
+def literacy_text_problems(text: str) -> list[str]:
+    """A literacy answer reads no data: the data answer's checks, and never a statement about the user's own money."""
+    problems = data_text_problems(text)
+    copies = talk_checks._general_copies(text) + [guard.fold(text)]
+    m = next((found for found in (talk_checks._GENERAL_OWN_STATE.search(c) for c in copies) if found), None)
+    if m:
+        problems.append(f"'{m.group(0)}': the user's own money: a general answer reads no data, so it never says how "
+                        "the user is doing, what they can afford or what their money is")
+    return problems
+
+
 def clarify_problems(texts: list[str]) -> list[str]:
     """The cheap layer for a model's clarifying question and options (the pipeline's text rules run after it)."""
     problems = []

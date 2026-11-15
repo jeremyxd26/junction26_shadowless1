@@ -1658,7 +1658,7 @@ class Pipeline:
         raw = {"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))), "lesson_key": None}
         if not views and literacy and not raw["cited"]:
             draft, errors = finlit_kb.draft_problems(raw, lang)
-            return draft, errors + agent_mode.data_text_problems(text)
+            return draft, errors + agent_mode.literacy_text_problems(text)
         draft, errors = validate(raw, language=lang, numbers=numbers, allowed=allowed)
         if errors or draft is None:
             return draft, errors or ["no draft"]

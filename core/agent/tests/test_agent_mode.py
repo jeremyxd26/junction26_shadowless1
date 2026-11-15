@@ -543,3 +543,16 @@ def test_a_failing_loop_after_a_loop_answer_leaves_the_old_talk_path_working(tmp
     d = done(events)
     assert d["outcome"] == "answered" and "error" not in dict(events)
     assert d["text"] != agent_mode.fallback_text("en")
+
+
+@pytest.mark.parametrize("text, lang", [
+    ("Compound interest means that what you earn is added to your savings, so the next round grows on a larger "
+     "amount. Over time the growth speeds up, which is why starting early helps.", "en"),
+    ("Korkoa korolle tarkoittaa, että tuotto lisätään säästöihin ja seuraava tuotto lasketaan suuremmasta summasta. "
+     "Ajan mittaan kasvu nopeutuu, joten aikainen aloittaminen auttaa.", "fi")])
+def test_a_natural_literacy_answer_passes(tmp_path, switch, text, lang):
+    switch[0].touch()
+    agent = AgentModel(script=lambda r: AgentResult(calls=[], text=text))
+    d = done(ask(make_finlit(tmp_path, agent), "What is compound interest?" if lang == "en"
+                 else "Mitä on korkoa korolle?"))
+    assert d["text"] == text
