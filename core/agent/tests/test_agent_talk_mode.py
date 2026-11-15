@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from core.agent import explain_number, talk_checks, talk_mode
 from core.agent.api import Agent, AskLimits
 from core.agent.audit import AuditLog
-from core.agent.model import ComposeResult
+from core.agent.model import ComposeResult, FunctionCall, PlanResult
 from core.agent.orchestrator import AskRequest, Pipeline
 from core.agent.registry import ToolSpec
 from core.agent.rules import RuleModel
@@ -91,13 +91,17 @@ class TalkModel:
         self.rules = RuleModel()
 
     def plan(self, request):
+        if "restaurants in August 2026" in request.question and request.round == 1:
+            return PlanResult(calls=[FunctionCall("fake_spending", {}), FunctionCall("finish")])
         return self.rules.plan(request)
 
     def compose(self, request):
         self.requests.append(request)
         talk = next((d["talk"] for d in request.data if d.get("tool") == "answer_in_words"), None)
-        if talk is None:
-            raise RuntimeError("not a talk request")   # the data answer's template writes
+        if talk is None:   # the data answer, with its two numbers
+            return ComposeResult(text=json.dumps({"language": request.language, "lesson_key": None,
+                                                  "text": "In August 2026 you spent {{n1}}. That was {{n2}} visits.",
+                                                  "cited": ["n1", "n2"]}))
         if self.drafts:
             text = self.drafts.pop(0)
         elif talk["tip"]:
