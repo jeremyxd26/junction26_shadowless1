@@ -37,8 +37,12 @@ log = logging.getLogger("uvicorn.error")
 
 EMBED_WAIT_S = 3.0
 MAX_FRAGMENTS = 3
-# A fragment farther than this cosine distance from the question is not used (None: no floor).
-MAX_DISTANCE: float | None = None
+# A fragment farther than this cosine distance from the question is not used (None: no floor). Calibrated on the
+# probes (15.11): the acceptance questions' sources lie at 0.27-0.37 (why save 0.33-0.37, tips 0.29-0.37, compound
+# interest 0.27-0.36), strong pairs at 0.24-0.34; the weak ones start at 0.398 ("Mikä on verokortti?" for 25-34 ->
+# InfoFinland's financial-problems page) and include buffer -> Finanssivalvonta's home reserve (0.44) and scam ->
+# financial problems (0.42). A weak source is worse than none: below the floor the answer names no source.
+MAX_DISTANCE: float | None = 0.39
 ALLOWED_TIERS = frozenset({"authority", "public_education", "international_org", "academic", "nonprofit"})
 APP_BANDS = ("0-12", "13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+")
 # The two glossary terms that are general ideas rather than Sentti's own figures: "What is a budget?" and "What is
@@ -286,7 +290,8 @@ FORBIDDEN = (
                 r"|\bsaastit\b"),
      "it states what the user did with their money; no data was read for this answer"),
     (re.compile(r"could not work|couldn't work|cannot work|can't work|could not calculate|en pystynyt|en voinut"
-                r"|ei voitu laskea"),
+                r"|ei voitu laskea|could not find|couldn't find|can't find|cannot find|no data|en loytanyt|en loyda"
+                r"|ei tietoja|tietoja ei"),
      "it says something could not be worked out; a literacy answer explains the idea in plain words"),
     (re.compile(r"\bsource:|\blahde:|https?:|www\.|\.fi\b|\.com\b"),
      "it names a source or a link; the server adds the source line"),
