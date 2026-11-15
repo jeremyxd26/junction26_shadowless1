@@ -459,5 +459,5 @@ def test_the_gemini_agent_turn_sends_the_context_as_quoted_data(tmp_path):
     result = model.agent_turn(request)
     assert result.text == "Words." and result.calls == []
     text = transport.requests[0]["contents"][0]["parts"][0]["text"]
-    assert "Answer language: fi" in text and "\u003c/user_message\u003e" in text and "Groceries" in text
+    assert "Answer language: fi" in text and r"\u003c/user_message\u003e" in text and "Groceries" in text
     assert transport.requests[0]["config"]["system_instruction"].startswith("You are Sentti")
