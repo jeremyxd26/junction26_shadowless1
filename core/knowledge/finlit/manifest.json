@@ -1,0 +1,132 @@
+{
+ "built_at": "2026-11-15",
+ "input": {
+  "file": "results.json",
+  "sha256": "4f206b57021271b7204e90f3677fdb3ee40b22aae7acfe946812c2ae8553c65c",
+  "courses_in": 156,
+  "datasets_in": 98
+ },
+ "counts": {
+  "sources": 231,
+  "facts": 489,
+  "chunks": 1497,
+  "chunks_by_kind": {
+   "fact": 978,
+   "source_card": 462,
+   "page_text": 57
+  },
+  "chunks_by_lang": {
+   "fi": 758,
+   "en": 739
+  },
+  "sources_by_licence_class": {
+   "not_stated": 102,
+   "all_rights_reserved": 57,
+   "open_attribution": 40,
+   "noncommercial_only": 14,
+   "terms_allow_reuse": 13,
+   "registration_required": 4,
+   "open_share_alike": 1
+  },
+  "sources_by_tier": {
+   "authority": 82,
+   "nonprofit": 57,
+   "bank": 41,
+   "public_education": 14,
+   "industry_association": 14,
+   "academic": 11,
+   "other": 9,
+   "international_org": 3
+  },
+  "sources_by_age_band": {
+   "18-24": 147,
+   "25-34": 116,
+   "35-44": 101,
+   "45-54": 101,
+   "55-64": 91,
+   "13-17": 90,
+   "65-74": 90,
+   "75+": 90,
+   "0-12": 33,
+   "all": 21
+  },
+  "facts_by_age_band": {
+   "all": 96,
+   "75+": 76,
+   "25-34": 63,
+   "45-54": 63,
+   "35-44": 59,
+   "55-64": 59,
+   "65-74": 59,
+   "18-24": 53,
+   "13-17": 15,
+   "0-12": 9
+  },
+  "facts_by_table": {
+   "StatFin/ktutk/14q4.px": 108,
+   "StatFin/vtutk/15j6.px": 96,
+   "StatFin/vtutk/151s.px": 80,
+   "StatFin/velk/158a.px": 48,
+   "StatFin/asvu/15fc.px": 27,
+   "StatFin/ktutk/14q9.px": 18,
+   "StatFin/eot/132d.px": 18,
+   "StatFin/tjt/12g9.px": 18,
+   "StatFin/tjt/12eb.px": 16,
+   "StatFin/eot/13iu.px": 14,
+   "StatFin/khi/122p.px": 12,
+   "StatFin/kbar/11vq.px": 10,
+   "StatFin/uloa/11q7.px": 9,
+   "StatFin/velj/11hu.px": 8,
+   "StatFin/sutivi/13ud.px": 7
+  }
+ },
+ "text_stored_for": [
+  "vero-kesatyot-b391f0",
+  "suomi-edunvalvonta-8a93fe",
+  "infofinland-financial-problems-9b4838",
+  "infofinland-cost-of-living-in-finland-9f20f4"
+ ],
+ "skipped": [
+  {
+   "source_id": "martha-forbundet-files-svdcdn-andra-stadiet-lararhandledning-ekonomisk-8ed7c3",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://martha-forbundet.files.svdcdn.com/production/general/Andra-stadiet-Lararhandledning-ekonomiska-kriser.pdf"
+  },
+  {
+   "source_id": "fsu-fyrk-165192",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://fsu.fi/fyrk/"
+  },
+  {
+   "source_id": "martha-den-nya-marthabudgeten-ar-har-1b75af",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.martha.fi/artikel/den-nya-marthabudgeten-ar-har"
+  },
+  {
+   "source_id": "martha-sakerhetsbufferten-din-basta-van-nar-liv-f0fa02",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.martha.fi/artikel/sakerhetsbufferten-din-basta-van-nar-livet-hander"
+  },
+  {
+   "source_id": "martha-konsumtionskalender-for-2026-planera-din-ff5a80",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.martha.fi/artikel/konsumtionskalender-for-2026-planera-din-ekonomi-och-minska-onodig-konsumtion"
+  },
+  {
+   "source_id": "martha-fem-smarta-satt-att-involvera-barnet-i-f-4a89eb",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.martha.fi/artikel/fem-smarta-satt-att-involvera-barnet-i-familjens-ekonomi"
+  },
+  {
+   "source_id": "martha-tonaringarnas-ekonomi-57303c",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.martha.fi/artikel/tonaringarnas-ekonomi"
+  },
+  {
+   "source_id": "borgastift-75bb546f-ekonomi-i-vardagen-tillganglig-fc9503",
+   "skipped": "course not in Finnish or English (sv)",
+   "url": "https://www.borgastift.fi/uploads/2024/10/75bb546f-ekonomi-i-vardagen-tillganglig-anvand-denna.pdf"
+  }
+ ],
+ "validation_errors": []
+}
