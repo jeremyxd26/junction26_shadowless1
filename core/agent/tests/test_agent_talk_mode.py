@@ -286,7 +286,7 @@ def test_tips_are_ranked_by_monthly_euros_and_the_immaterial_ones_are_left_out()
     assert [t["label"] for t in talk_mode.rank_tips(big, "en")] == ["Restaurants", "small purchases"]
 
 
-def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(tmp_path):
+def test_after_the_last_lever_any_more_tips_gives_the_next_practices(tmp_path):
     model = TalkModel()
     pipeline = make(tmp_path, model)
     conversation = None
@@ -296,9 +296,10 @@ def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(
         conversation = dict(events)["meta"]["conversation_id"]
         texts.append(done(events)["text_rendered"])
         chips.append(done(events)["follow_ups"])
-    assert chips[:2] == [["Any more tips?"], ["Any more tips?"]] and chips[2] == ["How could I save more?"]
+    assert chips == [["Any more tips?"]] * 4   # a practice is still left after the last lever (#907)
     talk = model.requests[-1].data[0]["talk"]
-    assert talk["no_more_tips"] is True and talk["tip"] is None
+    assert talk["tip"] is None and talk["practices"] == talk_mode.practices(2, "en")
+    assert talk["no_more_tips"] is False   # with practices there are more tips: never "no further tips"
     assert [t["lever"] for t in talk["tips_ranked"]] == ["restaurants", "small purchases", "taxis"]
 
 
@@ -619,3 +620,137 @@ def test_every_practice_and_three_tip_text_passes_the_checks(lang):
         for tip in ({"label": "Restaurants"}, None):
             text = talk_mode.three_tips(tip, extra, lang)
             assert talk_mode.draft_problems(text, {}, set(), lang) == [], text
+
+
+# ---- #907: "any more tips?" after the last material lever gives the next practices, then a warm closing -------------
+
+def fake_one_lever_plan(ctx, args: NoArgs) -> ToolResult:
+    levers = [("Restaurants", 60.0), ("Coffee", 8.0)]   # Coffee is under the bar: one material lever only
+    out = []
+    for i, (label, saving) in enumerate(levers):
+        n = _number(ctx, saving, Unit.EUR_PER_MONTH, "savings_plan.saving_month_eur@1", f"ev_plan1000000{i}", label)
+        out.append({"key": label, "category": label, "cut": None, "cut_words": "a fifth", "saving": _view(n)})
+    return ToolResult(tool="get_savings_plan", data={}, card=None, evidence=[],
+                      model_view={"tool": "get_savings_plan", "kind": "plan", "levers": out})
+
+
+def fake_small_small_purchases(ctx, args: NoArgs) -> ToolResult:
+    per_month = _number(ctx, 12.0, Unit.EUR_PER_MONTH, "small_purchases.month_eur@1", "ev_small10000001", "Per month")
+    share = _number(ctx, 1.0, Unit.PERCENT, "small_purchases.share_pct@1", "ev_small10000002", "Share")
+    return ToolResult(tool="get_small_purchases", data={}, card=None, evidence=[],
+                      model_view={"tool": "get_small_purchases", "per_month": _view(per_month),
+                                  "share_of_everyday": _view(share)})
+
+
+def one_lever_registry():
+    return registry(ToolSpec("get_savings_plan", "Savings plan.", NoArgs, fake_one_lever_plan, ("Looking", "Katson")),
+                    ToolSpec("get_small_purchases", "Small purchases.", NoArgs, fake_small_small_purchases,
+                             ("Looking", "Katson")))
+
+
+SANNA = {"en": ["Where did my money go?", "I don't need numbers, I just want suggestions based on my numbers",
+                "why does it matter? explain", "any more tips?", "any more tips?", "any more tips?",
+                "any more tips?"],
+         "fi": ["Mihin rahani menivät?", "En tarvitse numeroita, haluan vain ehdotuksia lukujeni perusteella",
+                "Miksi sillä on väliä? Selitä", "lisää vinkkejä?", "lisää vinkkejä?", "lisää vinkkejä?",
+                "lisää vinkkejä?"]}
+NO_FURTHER_WORDS = ("no further", "no more tips", "no other tips", "ei enää vinkkejä", "ei muita vinkkejä")
+
+
+class PracticeModel(TalkModel):
+    """TalkModel that plans "Where did my money go?" as the data tool and writes the practices it is given."""
+
+    def plan(self, request):
+        if request.question in (SANNA["en"][0], SANNA["fi"][0]) and request.round == 1:
+            return PlanResult(calls=[FunctionCall("fake_spending", {}), FunctionCall("finish")])
+        return super().plan(request)
+
+    def compose(self, request):
+        talk = next((d["talk"] for d in request.data if d.get("tool") == "answer_in_words"), None)
+        if talk is not None and talk["practices"] and not talk["tip"] and not self.drafts:
+            self.drafts.append(" ".join(talk["practices"]))
+        return super().compose(request)
+
+
+def _sanna(pipeline, lang):
+    conversation, out = None, []
+    for message in SANNA[lang]:
+        events = ask(pipeline, message, conversation, language=lang)
+        conversation = dict(events)["meta"]["conversation_id"]
+        out.append((events, done(events)))
+    return out
+
+
+def _talk_requests(model):
+    return [r.data[0]["talk"] for r in model.requests if r.data and r.data[0].get("tool") == "answer_in_words"]
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_sannas_sequence_gives_the_next_practices_then_a_warm_closing(tmp_path, lang):
+    model = PracticeModel()
+    pipeline = make(tmp_path, model, one_lever_registry())
+    answers = _sanna(pipeline, lang)
+    texts = [d["text_rendered"] for _, d in answers[1:]]
+    assert len(set(texts)) == len(texts), texts   # every talk answer is new
+    for events, d in answers[1:]:
+        assert d["outcome"] == "answered" and not [e for e, _ in events if e == "card"]
+        assert not digits(d["text_rendered"]) and len(d["follow_ups"]) == 1
+        assert not any(w in d["text_rendered"].lower() for w in NO_FURTHER_WORDS), d["text_rendered"]
+        assert talk_mode.draft_problems(d["text_rendered"], {}, set(), lang) == [], d["text_rendered"]
+    talks = _talk_requests(model)
+    first = [t for t in talks if t["tip"]]
+    assert first[0]["tip"]["lever"] == "restaurants" and first[0]["practices"] == talk_mode.practices(0, lang)
+    more = [t for t in talks if t["kind"] == "tips" and not t["tip"]]
+    # turns 4 and 5: the next practices, not given before; turns 6 and 7 ask no model (the closing)
+    assert [t["practices"] for t in more] == [talk_mode.practices(2, lang), talk_mode.practices(4, lang)]
+    assert all(t["no_more_tips"] is False for t in more)
+    assert talk_mode.practices(2, lang)[0] in texts[2] and talk_mode.practices(4, lang)[0] in texts[3]
+    closings = [talk_mode._pick(p, lang) for p in talk_mode.CLOSING]
+    assert texts[4] in closings and texts[5] in closings
+    chips = [d["follow_ups"][0] for _, d in answers[1:]]
+    more_chip, save_chip = talk_mode._pick(talk_mode.CHIP_MORE, lang), talk_mode._pick(talk_mode.CHIP_SAVE, lang)
+    assert chips[0] == more_chip and chips[2] == more_chip and chips[3:] == [save_chip] * 3
+    assert all("llm_unavailable" not in d["warnings"] for _, d in answers[5:])
+    turns = [t for r in audit_records(pipeline)[-2:] for t in r["planner_turns"] if "talk" in t]
+    assert [t.get("talk_template") for t in turns] == ["closing", "closing"]
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_sannas_sequence_on_the_template_with_the_switch_on(tmp_path, monkeypatch, lang):
+    monkeypatch.setattr(talk_mode, "MODEL_OFF_SWITCH", tmp_path / "talk-model-off")
+    (tmp_path / "talk-model-off").touch()
+    model = PracticeModel()
+    pipeline = make(tmp_path, model, one_lever_registry())
+    answers = _sanna(pipeline, lang)
+    assert _talk_requests(model) == []
+    texts = [d["text_rendered"] for _, d in answers[1:]]
+    assert len(set(texts)) == len(texts), texts
+    for events, d in answers[1:]:
+        assert not [e for e, _ in events if e == "card"] and not digits(d["text_rendered"])
+        assert not any(w in d["text_rendered"].lower() for w in NO_FURTHER_WORDS), d["text_rendered"]
+        assert talk_mode.draft_problems(d["text_rendered"], {}, set(), lang) == [], d["text_rendered"]
+    assert texts[0] == talk_mode.three_tips({"label": "Restaurants"}, talk_mode.practices(0, lang), lang)
+    assert texts[2] == talk_mode.three_tips(None, talk_mode.practices(2, lang), lang, more=True)
+    assert texts[3] == talk_mode.three_tips(None, talk_mode.practices(4, lang), lang, more=True)
+    assert texts[4] == talk_mode._pick(talk_mode.CLOSING[0], lang)
+    assert texts[5] == talk_mode._pick(talk_mode.CLOSING[1], lang)
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_every_closing_and_more_practices_text_passes_the_checks(lang):
+    for pair in talk_mode.CLOSING:
+        assert talk_mode.draft_problems(talk_mode._pick(pair, lang), {}, set(), lang) == [], pair
+    for start in range(0, len(talk_mode.PRACTICES), 2):
+        text = talk_mode.three_tips(None, talk_mode.practices(start, lang), lang, more=True)
+        assert talk_mode.draft_problems(text, {}, set(), lang) == [], text
+    first, second = (talk_mode._pick(p, lang) for p in talk_mode.CLOSING)
+    assert talk_mode.closing(lang, previous=first) == second and talk_mode.closing(lang, previous=second) == first
+
+
+@pytest.mark.parametrize("text, lang", [
+    ("There are no further specific saving tips for other flexible categories right now. Keep the habits going.", "en"),
+    ("I have no more tips for now. Keep the habits going.", "en"),
+    ("Muita vinkkejä ei ole. Ei enää uusia vinkkejä tältä erää.", "fi"),
+])
+def test_a_no_further_tips_draft_is_rejected(text, lang):
+    assert any("no more tips" in p for p in talk_mode.draft_problems(text, {}, set(), lang))
