@@ -1533,7 +1533,11 @@ class Pipeline:
                        for t in (conv.turns if conv is not None else [])]
             rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                                  tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-            if rules.recognised or any(c.name == "decline" for c in rules.calls):
+            why = finlit_kb.WHY_GENERAL.search(guard.fold(message)) is not None   # reasons, never a plan's figures
+            # borrowing never reaches here (finlit_kb's gate), so the rules' "I can't answer that one yet" with the
+            # contact offer does not stop a why question
+            if any(c.name == "decline" for c in rules.calls) or getattr(rules, "template_answer", False) \
+                    or (rules.recognised and not why):
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False

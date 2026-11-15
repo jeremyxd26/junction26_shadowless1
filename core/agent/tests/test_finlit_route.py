@@ -84,6 +84,8 @@ def audit(pipeline):
     ("how do I build a buffer", "en", GOOD_EN),
     ("mitä on korkoa korolle", "fi", GOOD_FI),
     ("What is an emergency fund?", "en", GOOD_EN),
+    ("Why should I save money?", "en", GOOD_EN),             # the rules would plan the savings plan: reasons instead
+    ("Miksi mun pitäisi säästää rahaa?", "fi", GOOD_FI),
 ])
 def test_a_literacy_question_is_answered_from_the_fragments_with_the_source_line(make, question, lang, draft):
     model = Composer((draft, lang))
@@ -318,7 +320,8 @@ def test_fragments_are_empty_when_the_embedding_times_out_or_the_database_fails(
 @pytest.mark.parametrize("question", [
     "mikä on budjetti", "how do I build a buffer", "mitä on korkoa korolle", "What is compound interest?",
     "What is a payment default?", "Mikä on maksuhäiriö?", "Miten tunnistan huijauksen?", "What is inflation?",
-    "Mikä on verokortti?", "Tips for saving money?", "What is an emergency fund?", "Mikä on hätävara?"])
+    "Mikä on verokortti?", "Tips for saving money?", "What is an emergency fund?", "Mikä on hätävara?",
+    "Why should I save money?", "Miksi mun pitäisi säästää rahaa?"])
 def test_literacy_questions(question):
     assert finlit_kb.question_kind(question) == "literacy"
 
@@ -326,6 +329,7 @@ def test_literacy_questions(question):
 @pytest.mark.parametrize("question", [
     "What is my budget?", "How much did I spend?", "Should I take a loan?", "Should I buy bitcoin?",
     "Which savings account should I open?", "Mikä on S-Pankin korko?", "Paljonko käytin ruokaan?", "Mikä on luottokortti?",
-    "What if I spent 20% less on restaurants?", "any more tips?", "why does it matter? explain", "hello"])
+    "What if I spent 20% less on restaurants?", "any more tips?", "why does it matter? explain", "hello",
+    "Miksi mun rahat menee ruokaan?", "Paljonko minun säästöni ovat?"])
 def test_not_literacy_questions(question):
     assert finlit_kb.question_kind(question) is None

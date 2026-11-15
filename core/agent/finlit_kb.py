@@ -68,7 +68,8 @@ _TOPIC = re.compile(
 _OWN = re.compile(
     r"\bmy\b|\bmine\b|\b(?:i|we) (?:spent|paid|bought|earned|saved|owe)\b|\bam i\b|\bdid i\b|\bhave i\b"
     r"|\bdo i have\b|\bhow much (?:do|did|have|can|could|will|should) (?:i|we) (?:spend|spent|have|save|pay|get)\b"
-    r"|\bminun\b|\bmun\b|\bminulla\b|\bmulla\b|\bolenko\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b"
+    r"|\b(?:minun|mun) (?:kulu|saast|tili|tulo|palk|lasku|raha|budjet|puskur|meno|velk|osto)\w*"
+    r"|\bminulla\b|\bmulla\b|\bolenko\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b"
     r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni|budjettini|puskurini|velkani)\b")
 # Asking to borrow, or naming a credit product: the planner's credit decline, never a literacy answer.
 _BORROW = re.compile(
@@ -239,6 +240,12 @@ class FinlitSource:
                 break
         return out
 
+
+# "Why should I save money?" asks for reasons, not for the customer's savings plan: the literacy route answers it
+# even when a data rule would claim the message (a rules decline still wins).
+WHY_GENERAL = re.compile(r"^(?:so |and |ok )?(?:why (?:should|would|do|does) (?:i|you|one|people|we) "
+                         r"|why (?:is|are) (?:it|saving|a budget|a buffer|budgeting) (?:important|good|smart|wise|useful)"
+                         r"|miksi (?:mun |minun |mina |ma |ihmisten |kannattaa|pitaisi|pitais|on tarkeaa))")
 
 # Tips or advice asked in a running conversation are the talk mode's, from the customer's own data (#873).
 TIPS = re.compile(r"\btips\b|\badvice\b|\bideas\b|\bsuggest\w*|vinkk\w*|neuvo\w*|ehdot\w*|mita (?:mun|minun) pitais")
