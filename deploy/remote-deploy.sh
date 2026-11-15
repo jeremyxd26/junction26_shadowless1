@@ -122,7 +122,8 @@ fi
 # time: a missing one would otherwise deploy green and leave the service on the rule model only.
 if ! expected=$(git ls-files -- 'core/app/*.py' 'core/tools/*.py' 'core/agent/*.py' 'core/agent/prompts/*.md' \
                   'core/bills/*.py' 'core/bills/samples/*.png' 'core/bills/samples/samples.json' \
-                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml' 'core/knowledge/*.yaml'); then
+                  'core/answer_text.py' 'core/metrics/*.sql' 'core/config/*.yaml' 'core/knowledge/*.yaml' \
+                  'core/finlit/*.py'); then
   echo "refusing to deploy: cannot list the run-time files of the checkout" >&2
   drop_image
   exit 1
@@ -153,14 +154,14 @@ import importlib, importlib.util, pkgutil
 import core.app.main as m
 m.create_app()
 n = 1
-for pkg in ("core.tools", "core.agent", "core.bills"):
+for pkg in ("core.tools", "core.agent", "core.bills", "core.finlit"):
     if importlib.util.find_spec(pkg) is None:
         continue  # no such package in this commit (the completeness check covers a left-out one)
     for info in pkgutil.walk_packages(importlib.import_module(pkg).__path__, pkg + "."):
         if ".tests" not in info.name:
             importlib.import_module(info.name)
             n += 1
-print(f"imports ok: core.app and {n - 1} modules of core.tools/core.agent/core.bills")
+print(f"imports ok: core.app and {n - 1} modules of core.tools/core.agent/core.bills/core.finlit")
 '
 if ! import_out=$(docker run --rm --network none --entrypoint python "shadowless1-core:$sha" -c "$import_check" 2>&1); then
   echo "refusing to deploy: the image cannot import the application; last lines (masked):" >&2
