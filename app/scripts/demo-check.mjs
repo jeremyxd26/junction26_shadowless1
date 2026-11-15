@@ -202,7 +202,8 @@ try {
         return [
           document.querySelector('[data-opening-part="hero"] button span')?.textContent ?? '',
           Math.round(window.scrollY),
-          [...document.querySelectorAll('button')].some((b) => undo.test((b.textContent ?? '').trim())),
+          // An Undo that is still off (#965: the bubble folds at the tap) does not mean the answer is in.
+          [...document.querySelectorAll('button')].some((b) => !b.disabled && undo.test((b.textContent ?? '').trim())),
         ]
       }, T.undo.source)
     // The count starts only after POST /api/baskets/label answers (a live host may be slow); a mock

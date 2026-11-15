@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Action, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
-import { useCountedText, type Count } from '../lib/motion.ts'
+import { useCountedText, usePrefersReducedMotion, type Count } from '../lib/motion.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -178,8 +178,10 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
  * block, and the Estimate badge sits above it. After a review answer the amount counts to the new value, with
  * "↓ was …" in a line of its own whose room is always kept, so nothing jumps during the count (the video scene).
  */
-export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
+export function HeroSummary({ card, motion, pending = false }: { card: MetricCard; motion?: NumberMotion; pending?: boolean }) {
   const { t } = useSettings()
+  // While a review answer is on its way (#965): a soft breathing, or a still 60 % under reduced motion.
+  const reduced = usePrefersReducedMotion()
   const primary = card.primary
   // A short, calm count after a review answer (Renat, #958: 400 ms); instant under reduced motion.
   const text = useCountedText(primary, motion?.counts.safe_to_spend, 400)
@@ -190,7 +192,7 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
   const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
   const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
   return (
-    <section data-opening-part="hero" className="relative flex flex-col items-center pt-1 text-center">
+    <section data-opening-part="hero" aria-busy={pending || undefined} className="relative flex flex-col items-center pt-1 text-center">
       <button
         type="button"
         disabled={!ref}
@@ -201,7 +203,9 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
         {/* 56px at 375 px, down to 40px on a narrow screen or at 200 % zoom. */}
         <span
           key={count?.seq ?? 'static'}
-          className={`block text-[clamp(40px,15vw,56px)] font-light leading-[1.05] tracking-tight text-ink tabular-nums ${count ? 'motion-fade' : ''}`}
+          className={`block text-[clamp(40px,15vw,56px)] font-light leading-[1.05] tracking-tight text-ink tabular-nums ${count ? 'motion-fade' : ''} ${
+            pending ? (reduced ? 'opacity-60' : 'hero-pending') : ''
+          }`}
         >
           {text}
         </span>

@@ -401,6 +401,17 @@ select {
   animation: donut-sweep 500ms ease-out;
 }
 
+/* The opening hero's amount while a review answer is on its way (#965): it breathes softly between 60 % and 85 %.
+   Under reduced motion the component uses a still opacity-60 instead, and this never runs. */
+@keyframes hero-pending {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.85; }
+}
+.hero-pending { opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-pending { animation: hero-pending 1s ease-in-out infinite; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

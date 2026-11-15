@@ -195,11 +195,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     focusCard.current = true
     if (answered) {
       // The basket's name from the API: the label response, else the overview's baskets card.
-      const label =
-        response.label?.label ??
-        overviewRef.current.cards.find(isBasketsCard)?.items.find((item) => item.key === basket)?.label ??
-        ''
-      setPhase({ kind: 'answered', basket, label })
+      setPhase({ kind: 'answered', basket, label: response.label?.label ?? basketLabel(basket) })
       setReply(basket)
       setReplyNote(response.effect ? { text: response.effect.text, numbers: response.effect.numbers } : null)
       later(HINT_MS, () =>
@@ -220,18 +216,34 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     later(reduced ? 0 : tokenMs('--duration-money', 900) + 100, () => refreshAfter(run))
   }
 
+  /** The basket's name from the overview's baskets card (the label response's own name wins when it comes). */
+  function basketLabel(basket: BasketKey): string {
+    return overviewRef.current.cards.find(isBasketsCard)?.items.find((item) => item.key === basket)?.label ?? ''
+  }
+
   async function send(basket: BasketKey | null) {
     if (!card || !customerId || busy) return
     lastRequest.current = basket
     setBusy(basket ?? 'undo')
     setError(null)
-    if (basket !== null) setReply(basket)
+    if (basket !== null) {
+      setReply(basket)
+      // Instant feedback (#965): the question folds to its answer at the tap, while the hero waits softly for the
+      // numbers; the API's answer then only confirms it. Focus follows the folded bubble (the tapped button is gone).
+      focusCard.current = true
+      setPhase({ kind: 'answered', basket, label: basketLabel(basket) })
+    }
     try {
       const response = await api.label({ customer_id: customerId, tx_ref: card.tx_ref, basket, language: lang })
       apply(response, basket)
     } catch (caught) {
-      // Nothing was saved, so the reply mounted at the tap goes (an undo keeps the answered reply).
-      if (basket !== null) setReply(null)
+      // Nothing was saved, so the reply mounted at the tap goes and the bubble unfolds back to the question (an undo
+      // keeps the answered reply).
+      if (basket !== null) {
+        setReply(null)
+        focusCard.current = true
+        setPhase({ kind: 'asking' })
+      }
       if (caught instanceof ApiError && caught.code === 'tx_ref_not_found') {
         // The review expired: remove the card quietly and show the overview as it is now.
         setPhase({ kind: 'gone' })
@@ -289,7 +301,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
       <p className="pt-1 text-center text-base text-ink-2">{view.greeting}</p>
-      {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
+      {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} pending={busy !== null} />}
       {/* The three baskets at a glance (Renat, #945): one slim bar under the key line, a tap asks where the money went. */}
       {baskets && <BasketBar card={baskets} />}
 
@@ -324,7 +336,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           ref={cardRef}
           card={card}
           basket={phase.basket}
-          onUndo={busy === null ? () => void send(null) : undefined}
+          onUndo={() => void send(null)}
+          undoDisabled={busy !== null}
           bubble
         />
       )}
