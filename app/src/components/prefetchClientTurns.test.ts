@@ -32,8 +32,11 @@ describe('the client turns load their code at idle, ahead of the first tap (#728
     }
   })
 
+  // The whole test is one cold dynamic import of the bill flow's module graph. Warm it takes about 40 ms,
+  // but on a loaded machine the first transform takes seconds and hit the default 5 s (#880), so it gets
+  // an explicit budget.
   it("loads the same BillFlow module the bill turn renders", async () => {
     const module = (await clientTurns.bill.prefetch!()) as { BillFlow: unknown }
     expect(typeof module.BillFlow).toBe('function')
-  })
+  }, 60_000)
 })
