@@ -1611,6 +1611,7 @@ class Pipeline:
         allowed = Allowed(dates=frozenset(), periods=frozenset())
         draft = None
         errors: list[str] = []
+        self._start_compose_answer(compose_in)   # no planner ran in this answer: start its deadline (#884)
         if unavailable is None and not forced and not switched_off:
             for _ in range(2):   # the call and one retry with the reasons
                 t = self.clock()
@@ -1769,6 +1770,18 @@ class Pipeline:
             log.warning("finlit: age not read (%s)", type(exc).__name__)
         return self.finlit.fragments(message, lang, band)
 
+    def _start_compose_answer(self, key: Any) -> None:
+        """Start the model client's per-answer request count and deadline for an answer that calls only the composer
+        (the literacy route, the talk mode). Only the planner's first call starts it otherwise, so the worker thread
+        would carry the previous answer's expired deadline and the composer call would fail with "deadline" before
+        sending any request (seen on the stand, #884)."""
+        start = getattr(getattr(self.model, "client", None), "start_answer", None)
+        if callable(start):
+            try:
+                start(key)
+            except Exception as exc:  # noqa: BLE001 - the answer goes on; the client keeps its own limits
+                log.warning("model answer state not started (%s)", type(exc).__name__)
+
     def _talk_fragments(self, ctx: ToolContext, message: str, prev: dict[str, Any] | None, lang: str) -> list[Any]:
         """Finlit fragments for a talk answer (#884): searched with the message when it names a money topic, else with
         the previous question and the message ("Where did my money go? why does it matter?"); none when neither names
@@ -1830,6 +1843,7 @@ class Pipeline:
         request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
                                previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
                                sources=sources, literacy=True)
+        self._start_compose_answer(request)
         body: str | None = None
         errors: list[str] = []
         for _ in range(2):  # the call and one retry with the reasons
@@ -1846,16 +1860,23 @@ class Pipeline:
             if not errors and draft is not None:
                 body = draft.text
                 break
+        fixed = False
         if body is None:
-            # the attempts stay in the audit record (their tokens were spent); the usual path answers
-            log.warning("finlit answer failed the checks (%d problems); the usual path answers", len(errors))
-            return False
+            # the attempts stay in the audit record (their tokens were spent). "Why should I save?" gets the fixed
+            # reasons of ours (no source named, no card); any other question goes the usual path
+            body = finlit_kb.why_fallback(message, lang)
+            log.warning("finlit answer failed the checks (%d problems); %s", len(errors),
+                        "the fixed reasons answer" if body else "the usual path answers")
+            if body is None:
+                return False
+            fixed, credited = True, []
         a.kind = "general"
-        a.planner_turns.append({"round": 1, "source": "rules", "finlit": [f.source_id for f in fragments],
-                                "calls": []})
+        a.planner_turns.append({"round": 1, "source": "rules",
+                                "finlit": "fixed_reasons" if fixed else [f.source_id for f in fragments], "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        text = self._deliver(f"{body} {finlit_kb.source_line(credited, lang)}", {}, emit)
+        line = f" {finlit_kb.source_line(credited, lang)}" if credited else ""
+        text = self._deliver(f"{body}{line}", {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,

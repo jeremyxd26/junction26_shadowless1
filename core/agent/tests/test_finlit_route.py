@@ -234,6 +234,53 @@ def test_a_talk_template_names_no_source(make):
     assert not any("finlit" in t for t in _turns(p))
 
 
+class _Client:
+    def __init__(self):
+        self.started = []
+
+    def start_answer(self, key):
+        self.started.append(key)
+
+
+def test_a_compose_only_answer_starts_the_model_answer_state(make):
+    """The stand's bug: no planner ran, so the composer met the previous answer's expired deadline (#884)."""
+    model = Composer((GOOD_FI, "fi"), (GOOD_EN, "en"))
+    model.client = _Client()
+    p = make(model)
+    run(p, "mitä on korkoa korolle", language="fi")
+    assert len(model.client.started) == 1 and model.client.started[0].literacy is True
+    cid = _conversation(p, "Where did my money go?")
+    before = len(model.client.started)
+    run(p, "Tips for saving money?", language="en", conversation_id=cid)   # the talk mode
+    assert len(model.client.started) == before + 1
+
+
+def test_why_save_gets_the_fixed_reasons_when_no_draft_passes(make):
+    model = Composer(("Sijoita säästösi rahastoon.", "fi"), ("Noin 300 euroa riittää.", "fi"))
+    p = make(model)
+    events = run(p, "Miksi mun pitäisi säästää rahaa?", language="fi")
+    done = done_of(events)
+    assert done["outcome"] == "answered" and done["text"] == finlit_kb.WHY_SAVE_TEXT[1]
+    assert not any(e == "card" for e, _ in events) and "Lähde" not in done["text"]
+    assert finlit_turns(audit(p))[0]["finlit"] == "fixed_reasons"
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_the_fixed_reasons_pass_the_literacy_checks(lang):
+    text = finlit_kb.WHY_SAVE_TEXT[1 if lang == "fi" else 0]
+    assert finlit_kb.draft_problems({"language": lang, "text": text, "cited": [], "lesson_key": None}, lang)[1] == []
+
+
+def test_a_buffer_fund_is_not_an_investment():
+    ok = {"language": "fi", "text": "Hätärahasto auttaa yllätyksissä. Puskurirahasto kasvaa pienistä summista.",
+          "cited": [], "lesson_key": None}
+    assert finlit_kb.draft_problems(ok, "fi")[1] == []
+    bad = {"language": "fi", "text": "Sijoita säästösi rahastoon.", "cited": [], "lesson_key": None}
+    assert any("investing" in e for e in finlit_kb.draft_problems(bad, "fi")[1])
+    assert finlit_kb.question_kind("Mikä on hätärahasto?") == "literacy"
+    assert finlit_kb.question_kind("Mihin rahastoon kannattaa sijoittaa?") is None
+
+
 def test_no_route_without_a_source(make_pipeline):
     model = Composer()
     p = make_pipeline(model, reg=registry())
