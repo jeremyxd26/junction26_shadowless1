@@ -22,7 +22,8 @@ function Section({ title, children, open = false }: { title: string; children: R
   return (
     <details open={open} className="group rounded-lg border border-line bg-surface">
       <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 text-base font-semibold text-ink [&::-webkit-details-marker]:hidden">
-        {title}
+        {/* The title may shrink below its longest word, so the chevron stays in the row with large text (#896). */}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
         <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>

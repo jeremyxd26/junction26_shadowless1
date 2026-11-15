@@ -153,7 +153,9 @@ const fi: Strings = {
   firstHint: 'Vinkki: kynä aloittaa uuden keskustelun, profiilikuvake avaa yleiskatsauksen ja paperiliitin näyttää Sentille laskun.',
   gotIt: 'Selvä',
   peerContext: 'Taustatietoa, ei tavoite.',
-  overviewSections: { money: 'Mihin raha menee', bills: 'Laskut palkkapäivään', save: 'Mitä voit säästää' },
+  // A soft hyphen at the compound's seam: with 200 % text on a narrow phone the title breaks as
+  // "palkka-" / "päivään" and leaves room for the chevron (#896). Screen readers and copy ignore it.
+  overviewSections: { money: 'Mihin raha menee', bills: 'Laskut palkka­päivään', save: 'Mitä voit säästää' },
   newChat: 'Uusi keskustelu',
   foldLeft: (display: string) => `Käyttövara ${display}`,
   foldQuestions: (n: number) => (n === 1 ? '1 kysymys Senttiltä' : `${n} kysymystä Senttiltä`),
