@@ -4268,8 +4268,8 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
   "review_state": "answered",
   "changed": true,
   "message": {
-    "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
-    "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
+    "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
     "numbers": {
       "n2": {
         "id": "n2", "value": 138.79, "unit": "eur",
@@ -4382,8 +4382,8 @@ If she answers "My choice" instead, everyday spending gains the purchase and saf
         }
       }
     ],
-    "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
-    "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
+    "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+    "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
     "numbers": {
       "n2": {
         "id": "n2", "value": 138.79, "unit": "eur",
@@ -5627,5 +5627,5 @@ When no speech was heard:
 | 0.3.17 | One new field (#872). Section 5: `GET /api/personas` gives each persona's `age`, the customer's age in years from the dataset (`customers.age`), next to `age_band`, so the persona picker can say who is who. The picker shows the name, the age and band, the profile label and the tagline, never the postal code or the `customer_id`. Example `personas.response` changed. |
 | 0.3.19 | One new optional response field (#884). Section 7: the `done` event of `/api/ask` (SSE and JSON) may carry `sources`, `[{publisher, title, url, lang}]`, at most three, for an answer drawn from official financial-literacy sources (`core/finlit`). The source line that 0.3.18 answers appended to the text ("Source: <publisher>, <url>") is gone, so the text carries no link. Absent on every other answer. |
 | 0.3.20 | One new response field (#944). Section 9: `months` on `GET /api/evidence/{ref}` for a `transactions` list, every month of the whole list with its count and total, newest first (`[]` for the other kinds), so the evidence sheet can group the rows by month with subtotals. Examples `evidence.response` (one month) and the other evidence examples (`[]`) changed. |
-| 0.3.21 | Wording only (#959), no new field. Section 10: the answer's `message` and `effect` text is one short confirmation that cites only what is left to spend this week after the answer ("Got it — counted as a must-have. You now have {{n2}} left to spend this week."; "…your own choice. Your left to spend stays …" when nothing moved; "Undone — I'll ask about it again. You have … left to spend this week."). The purchase's amount and the reasons are no longer in the text; `effect.items` are unchanged. The label examples changed. |
+| 0.3.21 | Wording only (#959), no new field. Section 10: the answer's `message` and `effect` text is one short confirmation that cites only what is left to spend this week after the answer ("Got it — counted as a must-have. You now have {{n2}} left to spend this week."; "…your own choice. What you have left to spend stays …" when nothing moved; "Undone — I'll ask about it again. You have … left to spend this week."). The purchase's amount and the reasons are no longer in the text; `effect.items` are unchanged. The label examples changed. |
 | 0.3.18 | One new optional request field (#873). Section 7.1: `POST /api/ask` takes `channel`, `text` (default) or `voice`; any other value is a 400 `invalid_request`. Talk questions (why something matters, an explanation, tips, no numbers) get two to four sentences in words with at most one number already shown, no card and one chip; on `voice`, open follow-ups after any data answer do too. No response field and no example changed. |
