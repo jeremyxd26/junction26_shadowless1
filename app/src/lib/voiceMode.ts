@@ -25,8 +25,21 @@ const MAX_STEP_MS = 100
 /** Levels on the scale of stt.ts levelOf (0 to 1): speech starts above SPEECH_LEVEL, silence is below QUIET_LEVEL. */
 export const SPEECH_LEVEL = 0.14
 export const QUIET_LEVEL = 0.07
-/** Two rounds in a row with no words close the mode, so an idle overlay never keeps spending model requests. */
-export const MAX_EMPTY_ROUNDS = 2
+/** Transcriptions with no words in a row before the mode closes (each one spent a model request). A round in which
+ * the meter heard no speech sends nothing and costs nothing, so it never counts here. */
+export const MAX_EMPTY_ROUNDS = 3
+/** With no speech heard for this long the mode closes, so it never keeps listening in the background. */
+export const SILENT_CLOSE_MS = 60_000
+/** The room's own level raises both thresholds: speech must be this many times the noise floor, silence below that
+ * many times it, so a round still ends 1.2 s after the words in a noisy room. */
+const SPEECH_OVER_FLOOR = 2.5
+const QUIET_OVER_FLOOR = 1.6
+
+/** Barge-in: while Sentti speaks, the user's voice must be this loud (higher than normal speech, so Sentti's own
+ * voice leaking into the microphone does not count), for this long, and not in the first moment of playback. */
+export const BARGE_LEVEL = 0.32
+export const BARGE_MS = 300
+export const BARGE_GRACE_MS = 600
 
 /** Whether this build and browser can offer voice mode: a live build with a microphone API and a persona. */
 export function voiceModeAvailable(customerId: string | null): boolean {
@@ -44,15 +57,18 @@ export interface Endpointer {
 }
 
 /**
- * Decides when a listening round ends: after ONSET_MS above SPEECH_LEVEL in all the round has speech; after
- * that, SILENCE_MS below QUIET_LEVEL ends it. At LISTEN_MS it ends anyway: `end` with speech, `nothing` without.
+ * Decides when a listening round ends: after ONSET_MS above the speech level in all the round has speech; after
+ * that, SILENCE_MS below the quiet level ends it. At LISTEN_MS it ends anyway: `end` with speech, `nothing` without.
+ * Both levels rise with the room's noise floor (measured before the speech), never below SPEECH_LEVEL and
+ * QUIET_LEVEL. `heard`: the round starts with speech already going (a barge-in, #895).
  */
-export function endpointer(start: number): Endpointer {
+export function endpointer(start: number, options: { heard?: boolean } = {}): Endpointer {
   let last: number | null = null
   let loudMs = 0
   let calmSince: number | null = null
   let quietSince: number | null = null
-  let heard = false
+  let heard = options.heard === true
+  let floor: number | null = null
   let finished: RoundState | null = null
   return {
     heard: () => heard,
@@ -60,16 +76,20 @@ export function endpointer(start: number): Endpointer {
       if (finished) return finished
       const step = last === null ? 0 : Math.min(MAX_STEP_MS, Math.max(0, now - last))
       last = now
+      const speech = Math.max(SPEECH_LEVEL, (floor ?? 0) * SPEECH_OVER_FLOOR)
+      const quiet = Math.max(QUIET_LEVEL, (floor ?? 0) * QUIET_OVER_FLOOR)
       if (!heard) {
-        if (level >= SPEECH_LEVEL) {
+        // The noise floor follows the room while nobody speaks (about the last second).
+        if (level < speech) floor = floor === null ? level : floor * 0.95 + level * 0.05
+        if (level >= speech) {
           loudMs += step
           calmSince = null
           if (loudMs >= ONSET_MS) heard = true
-        } else if (level < QUIET_LEVEL) {
+        } else if (level < quiet) {
           calmSince ??= now
           if (now - calmSince >= ONSET_RESET_MS) loudMs = 0
         }
-      } else if (level < QUIET_LEVEL) {
+      } else if (level < quiet) {
         quietSince ??= now
         if (now - quietSince >= SILENCE_MS) finished = 'end'
       } else {
@@ -77,6 +97,25 @@ export function endpointer(start: number): Endpointer {
       }
       if (!finished && now - start >= LISTEN_MS) finished = heard ? 'end' : 'nothing'
       return finished ?? (heard ? 'speech' : 'waiting')
+    },
+  }
+}
+
+/**
+ * Barge-in while Sentti speaks (#895): true once the microphone has been above BARGE_LEVEL for BARGE_MS in all,
+ * after the first BARGE_GRACE_MS of playback; quieter moments under half the level forget it.
+ */
+export function bargeDetector(start: number): { push(level: number, now: number): boolean } {
+  let last: number | null = null
+  let loudMs = 0
+  return {
+    push(level, now) {
+      const step = last === null ? 0 : Math.min(MAX_STEP_MS, Math.max(0, now - last))
+      last = now
+      if (now - start < BARGE_GRACE_MS) return false
+      if (level >= BARGE_LEVEL) loudMs += step
+      else if (level < BARGE_LEVEL / 2) loudMs = 0
+      return loudMs >= BARGE_MS
     },
   }
 }
