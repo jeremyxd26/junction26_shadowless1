@@ -341,7 +341,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       {/* One thought per screen (#310): the greeting in one line; the AI disclosure is behind the
           header's ⓘ. Baskets, bills, safe to save, insights and what-if are in answers and the
           overview sheet, not here. */}
-      <p className="text-xl font-semibold leading-7 text-ink">{view.greeting}</p>
+      <p className="pt-4 text-center text-base text-ink-2">{view.greeting}</p>
       {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
 
       {card && phase.kind === 'asking' && (
@@ -354,6 +354,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           onAnswer={(basket) => void send(basket)}
           onNotSure={notSure}
           onRetry={() => void send(lastRequest.current)}
+          bubble
         />
       )}
       {card && phase.kind === 'not_sure' && (
@@ -375,6 +376,7 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           card={card}
           basket={phase.basket}
           onUndo={busy === null ? () => void send(null) : undefined}
+          bubble
         />
       )}
 

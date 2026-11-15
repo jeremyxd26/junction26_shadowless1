@@ -29,6 +29,8 @@ const en = {
   method: 'Method',
   // Review card frame; the question and the answers come from the API (`question`, `options[].label`).
   reviewAsks: 'Sentti asks',
+  /** Before the API's question in the opening's bubble (Renat's light redesign). */
+  reviewQuick: 'Quick question:',
   reviewNotSure: 'Not sure',
   /** After "Not sure" (Renat's review): the toast, the line left behind and its way back. */
   reviewHidden: 'Question hidden for now.',
@@ -119,6 +121,7 @@ const fi: Strings = {
   reconciles: 'Nämä tapahtumat täsmäävät yllä olevaan lukuun.',
   method: 'Menetelmä',
   reviewAsks: 'Sentti kysyy',
+  reviewQuick: 'Pikakysymys:',
   reviewNotSure: 'En ole varma',
   reviewHidden: 'Kysymys piilotettu toistaiseksi.',
   reviewSkipped: 'Ohitit Sentin kysymyksen.',
