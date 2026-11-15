@@ -82,7 +82,8 @@ async function openModule(hasFrame) {
 /** Asks by tapping the chip with this text, or by typing it into the composer. Returns the answer's `article`. */
 async function ask(mod, question) {
   const before = await mod.locator('article[data-turn]').count()
-  const chip = mod.getByRole('button', { name: question, exact: true })
+  // A chip outside the folded opening: after the first answer the opening's chips are inert (out of reach).
+  const chip = mod.getByRole('button', { name: question, exact: true }).and(mod.locator('button:not([inert] *)'))
   let how = 'chip'
   if (await chip.count()) await chip.last().click()
   else {
