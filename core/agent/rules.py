@@ -1339,6 +1339,20 @@ _JOKE = (r"(((can|could|will|would) you )?(please )?(tell|give) (me|us) (a|anoth
 # The doubled Finnish greetings are also a goodbye: after an answer, "moi moi" is answered with the closing line, never
 # a new greeting (the orchestrator, #630)
 GOODBYE_GREETING = r"(moi moi|hei hei|heippa)"
+# "What did I ask?" / "Remind me" / "Mitä mä kysyin?" / "Muistuta mua" / "Mistä puhuttiin?" (the recall intent below)
+_RECALL_LEAD = r"((ok|okay|okei|joo|no|hmm|niin|so|wait|sorry|anteeksi|hei|siis) )*"
+_RECALL_TO_ME = r"( (mua|minua|mulle|minulle|meita))?"
+_RECALL_WHAT_FI = r"(mita (ma |mina )?kysyin|mista (me )?(puhuttiin|puhuimme|keskusteltiin|juteltiin))"
+_RECALL = (r"what did i (just )?ask( you)?( again| before| earlier| last| about)?|"
+           r"what was my (last |previous )?question( again)?|"
+           r"((can|could) you )?remind me( (what i asked|what we (were talking|talked) about|of my question|again))?|"
+           r"what (are|were) we talking about|what did we talk about|"
+           r"((mita|mitas) (se )?(siis )?)?(mita|mitas) (ma |mina )?(nyt )?kysyin( (sulta|sinulta|ennen|aiemmin|viimeksi))?|"
+           r"mika (oli|se oli) (mun |minun )?(viimeisin |edellinen )?kysymys|mika oli kysymykseni|"
+           rf"muistuta{_RECALL_TO_ME}( {_RECALL_WHAT_FI})?|"
+           rf"(voitko|voisitko|voiksa|voitsa|voiks) muistuttaa{_RECALL_TO_ME}( {_RECALL_WHAT_FI})?|"
+           r"mista (me )?(puhuttiin|puhuimme|keskusteltiin|juteltiin)( (aiemmin|viimeksi|aikaisemmin))?")
+
 META = [
     # #352: the missed phrasings of the conversational QA and of the review of PR #293 joined each intent
     ("identity", rf"({_GREET} )?(who are you|what are you|are you (a |an )?(bot|robot|ai|human|real person)|"
@@ -1363,9 +1377,12 @@ META = [
                # a few words after the thanks are still thanks: "kiitos, hyvä tietää", "thanks, good to know"
                r"( (good to know|nice to know|that's good to know|thats good to know|got it|understood|great|perfect|"
                r"selva|hyva tietaa|hyva juttu|ymmarran|ok|okei))?"),
+    # "What did I ask? Can you remind me?" (Renat): the previous question and its topic (the orchestrator), from the
+    # conversation, never a tool; "Okei, mitä se siis mitä mä kysyin? Voitko muistuttaa mulle?" in one message
+    ("recall", rf"{_RECALL_LEAD}({_RECALL})( ({_RECALL_LEAD})?({_RECALL}))*( (please|pls|kiitos|pliis))?"),
     # "Do you understand what we're talking about?": the previous answer's topic (the orchestrator), else a greeting
     ("context", r"(do you (understand|know|remember) what we('re| are| were) (talking|chatting) about( now)?|"
-                r"what (are|were) we talking about|do you remember what we talked about|"
+                r"do you remember what we talked about|"
                 r"ymmarratko( (sa|sina))? mista (me )?(keskustelemme|puhumme|puhutaan|puhuttiin|juteltiin)( nyt)?|"
                 r"muistatko mista (me )?(puhuttiin|puhuimme|keskustelimme))"),
     # #790: small talk gets a warm template line that turns to money; "how are you spending?" is no small talk
