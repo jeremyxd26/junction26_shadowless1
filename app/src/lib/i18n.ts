@@ -60,8 +60,10 @@ const en = {
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
   overview: 'Overview',
+  /** The header's profile icon opens this menu (Renat's light redesign): overview, How Sentti works, personas. */
+  menu: 'Menu',
   /** A short hint, once per visit, for the header icons and the paperclip (Renat's review). */
-  firstHint: 'Tip: the pencil starts a new chat, the grid opens the overview, and the paperclip shows Sentti a bill.',
+  firstHint: 'Tip: the pencil starts a new chat, the profile icon opens the overview, and the paperclip shows Sentti a bill.',
   gotIt: 'Got it',
   /** Under a comparison with people like you (Renat's review). */
   peerContext: 'Context, not a target.',
@@ -145,7 +147,8 @@ const fi: Strings = {
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
-  firstHint: 'Vinkki: kynä aloittaa uuden keskustelun, ruudukko avaa yleiskatsauksen ja paperiliitin näyttää Sentille laskun.',
+  menu: 'Valikko',
+  firstHint: 'Vinkki: kynä aloittaa uuden keskustelun, profiilikuvake avaa yleiskatsauksen ja paperiliitin näyttää Sentille laskun.',
   gotIt: 'Selvä',
   peerContext: 'Taustatietoa, ei tavoite.',
   overviewSections: { money: 'Mihin raha menee', bills: 'Laskut palkkapäivään', save: 'Mitä voit säästää' },

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { canGoBack, goBack, openOverview, useUrl } from '../lib/url.ts'
 import { showPersonaButton } from '../lib/hostBridge.ts'
@@ -51,6 +51,7 @@ export function Header({
 }) {
   const { t, lang } = useSettings()
   const [about, setAbout] = useState(false)
+  const [menu, setMenu] = useState(false)
   const [confirmNew, setConfirmNew] = useState(false)
   // Re-render on every navigation, so the back button follows the current screen.
   useUrl()
@@ -110,29 +111,43 @@ export function Header({
               <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-        ) : showPersonas ? (
-          // First screen in a plain browser: nowhere to go back to, so the cell opens the demo personas.
-          <button
-            type="button"
-            onClick={onLongPress}
-            aria-label={hostStrings(lang).personas}
-            className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="8" r="3.5" />
-              <path d="M5 19.5c1.2-3.4 3.9-5 7-5s5.8 1.6 7 5" strokeLinecap="round" />
-            </svg>
-          </button>
         ) : (
-          // Inside a host with nowhere to go back to (not reached today); the cell keeps the title centred.
-          <span aria-hidden="true" />
+          // First screen: the profile icon opens the menu (the overview, How Sentti works and, in a plain browser,
+          // the demo personas). It is there inside a host too, so nothing in it becomes unreachable.
+          <MenuButton onOpen={() => setMenu(true)} />
         )}
         {/* The title with its AI tag and an ⓘ opens the AI disclosure, the only place it is shown
             (answers carry no AI line, #685); the right cell is kept for the overview button (#322).
             The ⓘ sits inside the one button, so the grid keeps its three cells at 200 % text (#590). */}
-        <h1 className="flex justify-center @max-[19rem]:col-span-3 @max-[19rem]:row-start-2">
-          <AboutButton onOpen={() => setAbout(true)} />
-        </h1>
+        {onTab ? (
+          // Chat and Learn in the header's own row (Renat's light redesign), a white pill sliding to the selected one.
+          <div className="flex justify-center @max-[19rem]:col-span-3 @max-[19rem]:row-start-2 @max-[19rem]:pb-2">
+            <h1 className="sr-only">Sentti</h1>
+            <SegmentedTabs
+              className="w-full max-w-[13.5rem]"
+              label={learnStrings(lang).tabs}
+              value={tab}
+              onChange={onTab}
+              items={[
+                { key: 'chat', label: learnStrings(lang).tabChat },
+                {
+                  key: 'learn',
+                  label: learnStrings(lang).tabLearn,
+                  extra: learnDot ? (
+                    <>
+                      <span aria-hidden="true" className="ml-1.5 inline-block size-2 rounded-pill bg-brand align-middle" />
+                      <span className="sr-only">, {learnStrings(lang).unfinishedDot}</span>
+                    </>
+                  ) : undefined,
+                },
+              ]}
+            />
+          </div>
+        ) : (
+          <h1 className="flex justify-center @max-[19rem]:col-span-3 @max-[19rem]:row-start-2">
+            <AboutButton onOpen={() => setAbout(true)} />
+          </h1>
+        )}
         <div className="flex justify-end @max-[19rem]:col-start-3 @max-[19rem]:row-start-1">
         {onNewChat && (
           <button
@@ -147,47 +162,64 @@ export function Header({
             </svg>
           </button>
         )}
-        {/* The overview sheet from anywhere in the thread (#322). */}
-        <button
-          type="button"
-          onClick={openOverview}
-          disabled={!overviewReady}
-          aria-label={t.overview}
-          className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
-            <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
-            <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
-            <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
-          </svg>
-        </button>
+        {showBack && <MenuButton onOpen={() => setMenu(true)} />}
         </div>
       </div>
-      {onTab && (
-        // Chat and Learn as two tabs under the title, a white pill sliding to the selected one.
-        <SegmentedTabs
-          className="mx-4 mb-2"
-          label={learnStrings(lang).tabs}
-          value={tab}
-          onChange={onTab}
-          items={[
-            { key: 'chat', label: learnStrings(lang).tabChat },
-            {
-              key: 'learn',
-              label: learnStrings(lang).tabLearn,
-              extra: learnDot ? (
-                <>
-                  <span aria-hidden="true" className="ml-1.5 inline-block size-2 rounded-pill bg-brand align-middle" />
-                  <span className="sr-only">, {learnStrings(lang).unfinishedDot}</span>
-                </>
-              ) : undefined,
-            },
-          ]}
-        />
-      )}
       {/* In a portal: the header's backdrop blur would pin a fixed sheet to the header. */}
       {about && createPortal(<AboutSheet disclosure={disclosure} onClose={() => setAbout(false)} />, document.body)}
+      {menu &&
+        createPortal(
+          <BottomSheet title={t.menu} onClose={() => setMenu(false)}>
+            <ul className="flex flex-col gap-2">
+              {/* The overview sheet from anywhere in the thread (#322); it waits for the overview to load. */}
+              <MenuItem
+                label={t.overview}
+                disabled={!overviewReady}
+                onClick={() => {
+                  setMenu(false)
+                  openOverview()
+                }}
+                icon={
+                  <>
+                    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+                    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+                    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+                    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+                  </>
+                }
+              />
+              <MenuItem
+                label={t.aboutSentti}
+                onClick={() => {
+                  setMenu(false)
+                  setAbout(true)
+                }}
+                icon={
+                  <>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
+                  </>
+                }
+              />
+              {showPersonas && (
+                <MenuItem
+                  label={hostStrings(lang).personas}
+                  onClick={() => {
+                    setMenu(false)
+                    onLongPress()
+                  }}
+                  icon={
+                    <>
+                      <circle cx="12" cy="8" r="3.5" />
+                      <path d="M5 19.5c1.2-3.4 3.9-5 7-5s5.8 1.6 7 5" strokeLinecap="round" />
+                    </>
+                  }
+                />
+              )}
+            </ul>
+          </BottomSheet>,
+          document.body,
+        )}
       {confirmNew &&
         onNewChat &&
         createPortal(
@@ -216,6 +248,44 @@ export function Header({
           document.body,
         )}
     </header>
+  )
+}
+
+/** The header's profile icon: it opens the menu (Renat's light redesign). */
+function MenuButton({ onOpen }: { onOpen: () => void }) {
+  const { t } = useSettings()
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-label={t.menu}
+      className="inline-flex size-11 items-center justify-center rounded-pill text-brand hover:bg-sunken"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 19.5c1.2-3.4 3.9-5 7-5s5.8 1.6 7 5" strokeLinecap="round" />
+      </svg>
+    </button>
+  )
+}
+
+/** One row of the header's menu: an icon and a label, a 44 px target. */
+function MenuItem({ label, icon, onClick, disabled = false }: { label: string; icon: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className="flex min-h-11 w-full items-center gap-3 rounded-md border border-line bg-surface px-4 py-2 text-left text-base text-ink hover:bg-sunken disabled:opacity-40"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2">
+          {icon}
+        </svg>
+        {label}
+      </button>
+    </li>
   )
 }
 
