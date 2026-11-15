@@ -18,8 +18,6 @@ import { useLoad } from './lib/useLoad.ts'
 import { overviewFromParams, redirectChatToThread, setParams, useUrl, whatIfFromParams } from './lib/url.ts'
 import { Chat } from './screens/Chat.tsx'
 import { Learn } from './screens/Learn.tsx'
-import { FirstHint } from './components/FirstHint.tsx'
-import { dismissFirstHint } from './lib/firstHint.ts'
 import { topicsFor, unfinished } from './components/learn/topics.ts'
 import { useLearnProgress } from './lib/learnProgress.ts'
 
@@ -80,9 +78,6 @@ export default function App() {
   useEffect(() => {
     window.scrollTo({ top: tab === 'chat' ? chatScroll.current : 0 })
   }, [tab])
-  useEffect(() => {
-    if (chat.turns.length > 0) dismissFirstHint()
-  }, [chat.turns.length])
 
   return (
     <SettingsContext.Provider value={settings}>
@@ -113,7 +108,6 @@ export default function App() {
             </Suspense>
           ) : (
             <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
-              <FirstHint show={tab === 'chat' && chat.turns.length === 0} />
               {tab === 'learn' && <Learn ageBand={ageBand} />}
               <div hidden={tab !== 'chat'}>
               <Chat

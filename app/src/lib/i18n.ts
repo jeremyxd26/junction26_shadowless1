@@ -66,8 +66,6 @@ const en = {
   /** The header's profile icon opens this menu (Renat's light redesign): overview, How Sentti works, personas. */
   menu: 'Menu',
   /** A short hint, once per visit, for the header icons and the paperclip (Renat's review). */
-  firstHint: 'Tip: the pencil starts a new chat, the profile icon opens the overview, and the paperclip shows Sentti a bill.',
-  gotIt: 'Got it',
   /** Under a comparison with people like you (Renat's review). */
   peerContext: 'Context, not a target.',
   /** The overview sheet's collapsible sections under the main answer (Renat's review). */
@@ -154,8 +152,6 @@ const fi: Strings = {
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
   menu: 'Valikko',
-  firstHint: 'Vinkki: kynä aloittaa uuden keskustelun, profiilikuvake avaa yleiskatsauksen ja paperiliitin näyttää Sentille laskun.',
-  gotIt: 'Selvä',
   peerContext: 'Taustatietoa, ei tavoite.',
   // A soft hyphen at the compound's seam: with 200 % text on a narrow phone the title breaks as
   // "palkka-" / "päivään" and leaves room for the chevron (#896). Screen readers and copy ignore it.
