@@ -208,16 +208,18 @@ export function Learn({ ageBand = null }: { ageBand?: string | null } = {}) {
               const state = topicState(topic, progress.done, progress.scores)
               return (
                 <li key={topic.id} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
+                  {/* With large text the row stacks instead of running past the screen (#789): the text goes
+                      under the icon, and the state under the title, when their longest words don't fit side by side. */}
                   <button
                     type="button"
                     onClick={() => setView({ kind: 'topic', topic: topic.id })}
-                    className="flex min-h-11 w-full items-center gap-3 rounded-md text-left hover:bg-sunken"
+                    className="flex min-h-11 w-full flex-wrap items-center gap-3 rounded-md text-left hover:bg-sunken"
                   >
                     <TopicIcon topic={topic.id} />
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="text-base font-semibold text-ink">{s.topics[topic.id]}</span>
-                        <span className={`shrink-0 text-right text-sm font-semibold ${state.complete ? 'text-brand' : 'text-muted'}`}>
+                    <span className="flex flex-1 flex-col gap-1">
+                      <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                        <span className="flex-1 text-base font-semibold text-ink">{s.topics[topic.id]}</span>
+                        <span className={`text-sm font-semibold ${state.complete ? 'text-brand' : 'text-muted'}`}>
                           {stateLabel(state, quizLength(topic.id), s)}
                         </span>
                       </span>
@@ -317,9 +319,9 @@ function TopicScreen({
   return (
     <section aria-labelledby="topic-title" className="flex flex-col gap-4">
       <BackButton label={s.title} onBack={onBack} />
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <TopicIcon topic={topic.id} />
-        <div className="flex min-w-0 flex-col">
+        <div className="flex flex-1 flex-col">
           <h2 id="topic-title" className="text-xl font-bold text-ink">
             {s.topics[topic.id]}
           </h2>
@@ -468,7 +470,7 @@ function Glossary({ s }: { s: Strings }) {
               {/* A search opens the matching terms (a new key resets the row when the search starts or ends). */}
               <details key={needle ? 'search' : 'browse'} open={needle ? true : undefined} className="group px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 text-base font-semibold text-ink [&::-webkit-details-marker]:hidden">
-                  <span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
                     <Marked text={entry.term} needle={needle} />
                   </span>
                   <svg
