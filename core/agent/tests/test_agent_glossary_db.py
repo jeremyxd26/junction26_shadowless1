@@ -15,7 +15,7 @@ from core.agent import glossary
 from core.app.main import create_app
 from core.app.settings import Settings
 
-PERSONAS = ("CUST00860", "CUST00493", "CUST00349", "CUST00849")
+PERSONAS = ("CUST00860", "CUST00493", "CUST00387", "CUST00849")
 
 
 class StubPool:

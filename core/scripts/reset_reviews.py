@@ -9,7 +9,7 @@ window.
 
 Usage (from the repository root; DATABASE_URL from the environment or .env):
     python core/scripts/reset_reviews.py CUST00860
-    python core/scripts/reset_reviews.py CUST00860 CUST00493 CUST00349 CUST00849   # the four personas
+    python core/scripts/reset_reviews.py CUST00860 CUST00493 CUST00387 CUST00849   # the four personas
     python core/scripts/reset_reviews.py --dry-run CUST00860                        # show, delete nothing
 """
 

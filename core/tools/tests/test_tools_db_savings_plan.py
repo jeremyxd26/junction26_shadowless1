@@ -16,7 +16,7 @@ AS_OF = date(2026, 9, 30)
 PERSONAS = {   # docs/design/metrics.md section 13
     "CUST00860": ((45.91, "Lifestyle", 17.26), 63.17, 758.04),
     "CUST00493": ((20.53, "Lifestyle", 9.85), 30.38, 364.56),
-    "CUST00349": ((58.95, "Lifestyle", 18.04), 76.99, 923.88),
+    "CUST00387": ((42.19, "Entertainment", 11.99), 54.18, 650.16),
     "CUST00849": ((55.50, "Entertainment", 11.62), 67.12, 805.44),
 }
 

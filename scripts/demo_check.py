@@ -38,7 +38,7 @@ from typing import Any
 LEAD = "CUST00860"
 OTHER_PERSONA = "CUST00493"
 REFERENCE: dict[str, tuple[Any, str]] = {
-    "personas": (("CUST00860", "CUST00493", "CUST00349", "CUST00849"), "docs/design/personas.md:12"),
+    "personas": (("CUST00860", "CUST00493", "CUST00387", "CUST00849"), "docs/design/personas.md:12"),
     "regular_essentials": (1889.04, "docs/design/personas.md:136"),
     "unexpected_necessities": (521.15, "docs/design/personas.md:136 (spike answered Needed, or no review)"),
     "unexpected_necessities_pending": (341.08, "docs/design/personas.md:136 (without the 1,080.42 one-off)"),

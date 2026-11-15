@@ -26,7 +26,7 @@ from core.tools.savings_plan import get_savings_plan
 from core.tools.what_if import run_what_if
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 TOOLS = {
     "safe_to_spend": lambda ctx: get_safe_to_spend(ctx, {}),
     "safe_to_save": lambda ctx: get_safe_to_save(ctx, {}),

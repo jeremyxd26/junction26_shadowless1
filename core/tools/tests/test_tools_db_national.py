@@ -16,7 +16,8 @@ from core.tools.context import ToolContext
 from core.tools.peer import get_peer_benchmark
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = {"CUST00860": "35-44", "CUST00493": "45-54", "CUST00349": "25-34", "CUST00849": "25-34"}
+PERSONAS = {"CUST00860": "35-44", "CUST00493": "45-54", "CUST00387": "18-24", "CUST00849": "25-34"}
+TABLE_GROUP = {"18-24": "17-24"}   # 18-24 lies inside the table's own 17-24 (national_context.yaml); the rest are the same
 
 
 def run(conn, customer, metric, language="en"):
@@ -30,7 +31,8 @@ def test_a_kept_category_carries_the_table_value_of_the_age_group_with_its_cited
     result = run(conn, customer, metric)
     nat = result.data.national
     fig = national.figure(metric, PERSONAS[customer])
-    assert nat is not None and nat.age_group == PERSONAS[customer] and nat.survey_year == 2022
+    group = TABLE_GROUP.get(PERSONAS[customer], PERSONAS[customer])
+    assert nat is not None and nat.age_group == group and nat.survey_year == 2022
     assert Decimal(str(nat.amount.value)) == fig.monthly and nat.amount.method == "national_context.monthly_eur@1"
     assert nat.amount.period.start == date(2022, 1, 1) and nat.amount.period.end == date(2022, 12, 31)
     assert not re.search(r"\d", nat.amount.label)            # no age digits in a label (the digit rule)
@@ -38,13 +40,13 @@ def test_a_kept_category_carries_the_table_value_of_the_age_group_with_its_cited
     assert res.kind == "composite" and res.parts == [] and res.method == "national_context.monthly_eur@1"
     spec = evidence.load(conn, nat.amount.evidence_ref)[1]
     assert spec["formula"] == "rule_value" and spec["params"]["table"] == "StatFin/ktutk/14q4.px"
-    assert spec["params"]["age_group"] == PERSONAS[customer] and spec["params"]["survey_year"] == 2022
+    assert spec["params"]["age_group"] == group and spec["params"]["survey_year"] == 2022
     assert "selection" not in spec                            # cites the table, never transactions
     body = evidence_api.build(conn, res, customer, "en")       # the evidence view the app opens
     assert body.title.endswith("1 Jan – 31 Dec 2022") and body.parts == [] and body.rows == []
     assert "Statistics Finland" in body.method.summary and "14q4" in body.method.summary
     # the opened view names the table's age band, and for transport that buying a vehicle is left out (#585 review)
-    assert PERSONAS[customer].replace("-", "\u2013") in body.title
+    assert group.replace("-", "\u2013") in body.title
     assert ("without buying a vehicle" in body.title) is (metric == "Transportation")
     assert "buying a vehicle is left out" in body.method.summary
     view = result.model_view["national"]

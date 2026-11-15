@@ -25,7 +25,7 @@ from core.tools.what_if import run_what_if
 AS_OF = date(2026, 9, 30)
 METRICS = Path(__file__).resolve().parents[2] / "metrics"
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 # the sample customers' cases check the worked numbers of metrics.md: on a private database only (#502)
 SAMPLE_CASES = [pytest.param(c, marks=pytest.mark.sample_customer) for c in SAMPLE]
 EVERYONE = SAMPLE_CASES + PERSONAS
@@ -39,7 +39,7 @@ SAFE_WORKED = {
     "CUST00006": ("12.95", "budget", "ok"),
     "CUST00860": ("97.46", "budget", "below_usual"),
     "CUST00493": ("78.86", "budget", "ok"),
-    "CUST00349": ("147.23", "budget", "below_usual"),
+    "CUST00387": ("115.29", "budget", "ok"),
     "CUST00849": ("123.15", "budget", "ok"),
 }
 # metrics.md section 4 and personas.md Q4: dining out (category Restaurants) -20%
@@ -49,7 +49,7 @@ WHAT_IF_WORKED = {  # baseline / month, saving / month, / week, / year
     "CUST00006": ("15.56", "3.11", "0.72", "37.33"),
     "CUST00860": ("229.56", "45.91", "10.56", "550.95"),
     "CUST00493": ("102.66", "20.53", "4.72", "246.38"),
-    "CUST00349": ("294.73", "58.95", "13.56", "707.36"),
+    "CUST00387": ("210.93", "42.19", "9.70", "506.24"),
     "CUST00849": ("277.48", "55.50", "12.76", "665.96"),
 }
 RESTAURANTS_20 = {"selection": {"kind": "category", "value": "Restaurants"}, "cut_pct": 20}
@@ -378,7 +378,7 @@ def test_what_if_on_fewer_than_three_purchases_shows_them_and_derives_no_monthly
     assert_reconciles(conn, "CUST00849", [total.evidence_ref, count.evidence_ref])
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00349"])
+@pytest.mark.parametrize("customer_id", ["CUST00849", "CUST00387"])
 def test_the_endpoint_mode_answers_too_few_purchases_as_not_offered_with_the_reason(conn, customer_id):
     # review of #379 part B, B1: the SQL says not_offered with every saving 0; the caveat is the chat's sentence
     ctx = ctx_for(conn, customer_id)
