@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
 import type { BasketKey, LabelChange, LabelResponse, Num, OverviewResponse, ReviewCard } from '../api/types.ts'
-import { BasketStrip } from '../components/BasketStrip.tsx'
 import { HeroSummary, TokenText, type NumberMotion } from '../components/cards.tsx'
 import { SenttiLabel } from '../components/AnswerView.tsx'
 import { ReviewAnswered, ReviewAsking, type ReviewError } from '../components/ReviewCard.tsx'
@@ -13,7 +11,7 @@ import { BASKETS } from '../lib/baskets.ts'
 import { applyChanges, isBasketsCard } from '../lib/changes.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { onAsked } from '../lib/threadEvents.ts'
-import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
+import { prefersReducedMotion, tokenMs } from '../lib/motion.ts'
 import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BasketBar } from '../components/BasketBar.tsx'
@@ -35,12 +33,6 @@ interface Overlay {
   seq: number
   changes: LabelChange[]
   refreshedFrom: OverviewResponse | null
-}
-
-interface Flight {
-  seq: number
-  basket: BasketKey
-  display: string
 }
 
 interface ToastState {
@@ -102,16 +94,14 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
   const [error, setError] = useState<ReviewError | null>(null)
   const [overlay, setOverlay] = useState<Overlay | null>(null)
   const [motion, setMotion] = useState<Motion | null>(null)
-  const [flight, setFlight] = useState<Flight | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
-  // The toast of an answer waits for the amount to land; `shownToast` is the run it belongs to.
+  // `shownToast`: the run whose toast may show (an answer's, a "Not sure" or an error's).
   const [shownToast, setShowToast] = useState<number | null>(null)
-  // Sentti's short reply under the question (#317): mounted at the tap, before the API answers, so
-  // the mini basket row the amount flies into is on screen when the answer arrives.
+  // Sentti's short reply under the question (#317): mounted at the tap, before the API answers. Its text only:
+  // no basket strip and no flying amount (Renat, #958).
   const [reply, setReply] = useState<BasketKey | null>(null)
   // The answer's own confirmation (`effect`, contract 0.3.2), shown in the reply when the core sends it.
   const [replyNote, setReplyNote] = useState<{ text: string; numbers: Record<string, Num> } | null>(null)
-  const replyRef = useRef<HTMLDivElement>(null)
 
   const seq = useRef(0)
   const timers = useRef<number[]>([])
@@ -173,38 +163,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
     [later],
   )
 
-  /** The flight's milestones: counters of the basket rows start, the amount lands, the pill is gone. */
-  const onFlight = useCallback(
-    (run: number, event: 'start' | 'land' | 'done') => {
-      if (event === 'start') {
-        setMotion((current) =>
-          current && current.seq === run
-            ? {
-                ...current,
-                counts: Object.fromEntries(
-                  Object.entries(current.counts).map(([key, count]) => [key, { ...count, run: true }]),
-                ),
-              }
-            : current,
-        )
-      } else if (event === 'land') {
-        // The waiting row folds away, then the toast comes up (so it never covers the fold).
-        later(250, () =>
-          setMotion((current) => (current && current.seq === run ? { ...current, waiting: 'leave' } : current)),
-        )
-        later(250 + 450, () => {
-          setMotion((current) => (current && current.seq === run ? { ...current, waiting: null } : current))
-          setShowToast(run)
-          hideToastLater(run)
-          refreshAfter(run)
-        })
-      } else {
-        setFlight((current) => (current && current.seq === run ? null : current))
-      }
-    },
-    [later, refreshAfter, hideToastLater],
-  )
-
   function apply(response: LabelResponse, asked: BasketKey | null) {
     for (const id of timers.current) window.clearTimeout(id)
     timers.current = []
@@ -216,16 +174,9 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
 
     const answered = response.review_state === 'answered' && asked !== null
     const basket = (response.label?.basket ?? asked) as BasketKey
-    // Only Sentti's reply holds the flight's cells; a basket card in a later answer never does.
-    const hasWaitingRow = replyRef.current?.querySelector('[data-amount-key="unclassified"]') != null
-    const flies =
-      answered &&
-      !reduced &&
-      hasWaitingRow &&
-      changes.some((change) => change.key === 'unclassified') &&
-      changes.some((change) => change.key === basket)
-
-    setMotion(answerMotion(changes, answered, basket, flies, run))
+    // Three calm signals only (Renat, #958): the question folds to its answered line, the hero counts with its
+    // "was" line, and the basket bar eases to the new split. Nothing flies.
+    setMotion(answerMotion(changes, answered, basket, false, run))
 
     // When Sentti's reply shows the answer's own confirmation (`effect`, contract 0.3.2), there is
     // no visual toast over it: Undo stays on the answered card, and the live region reads the whole
@@ -264,14 +215,9 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       later(NOTE_MS, () => setToast((current) => (current && current.seq === run ? null : current)))
     }
 
-    if (flies) {
-      setShowToast(null)
-      setFlight({ seq: run, basket, display: card?.amount.display ?? '' })
-    } else {
-      setShowToast(run)
-      if (answered) hideToastLater(run)
-      later(reduced ? 0 : tokenMs('--duration-money', 900) + 100, () => refreshAfter(run))
-    }
+    setShowToast(run)
+    if (answered) hideToastLater(run)
+    later(reduced ? 0 : tokenMs('--duration-money', 900) + 100, () => refreshAfter(run))
   }
 
   async function send(basket: BasketKey | null) {
@@ -384,22 +330,18 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
       )}
 
       {reply && baskets && (
-        // Sentti's short reply: where the purchase went, and the mini row the amount flies into.
-        <div ref={replyRef} data-opening-part="reply" className="card-enter flex flex-col gap-2">
+        // Sentti's short reply: the answer's own words, nothing else (Renat, #958).
+        <div data-opening-part="reply" className="card-enter flex flex-col gap-2">
           <SenttiLabel s={chatStrings(lang)} />
           <div className="rounded-lg border border-line bg-surface p-3">
-            {/* With `effect`, its text under the row says it all; the client title is for older cores. */}
-            {!replyNote && (
-              <p className="mb-2 text-base font-bold text-ink">
-                {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
-              </p>
-            )}
-            <BasketStrip card={baskets} motion={motion ?? undefined} keys={['unclassified', reply]} title={null} flight />
-            {/* Under the strip: the text arrives with the answer, so above it would move the flight's
-                target while the amount flies. */}
-            {replyNote && (
-              <p className="mt-1 text-sm leading-7 text-ink-2">
+            {/* With `effect`, its text says it all; the client title is for older cores. */}
+            {replyNote ? (
+              <p className="text-base leading-7 text-ink">
                 <TokenText text={replyNote.text} numbers={replyNote.numbers} />
+              </p>
+            ) : (
+              <p className="text-base font-bold text-ink">
+                {t.movedTo} <span aria-hidden="true">{BASKETS[reply]?.icon}</span> {replyLabel}
               </p>
             )}
           </div>
@@ -422,118 +364,6 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           onClose={() => setToast(null)}
         />
       )}
-      {flight && <FlyingAmount flight={flight} scope={replyRef} onEvent={onFlight} />}
     </div>
-  )
-}
-
-const BASKET_COLOUR: Record<string, string> = {
-  regular_essentials: '--color-basket-essentials',
-  unexpected_necessities: '--color-basket-unexpected',
-  everyday_spending: '--color-basket-everyday',
-}
-
-/**
- * The purchase amount, as a pill, flies from the "Waiting for your answer" row to the basket
- * it was answered into (`--duration-flight`, `--ease-expressive`); its border turns to the
- * basket's colour. Decoration only: hidden from screen readers, never shown with reduced motion.
- */
-function FlyingAmount({
-  flight,
-  scope,
-  onEvent,
-}: {
-  flight: Flight
-  /** Sentti's reply: the flight's cells are looked up inside it only. */
-  scope: RefObject<HTMLElement | null>
-  onEvent: (run: number, event: 'start' | 'land' | 'done') => void
-}) {
-  const pill = useRef<HTMLSpanElement>(null)
-  const [landed, setLanded] = useState(false)
-  const { seq: run, basket } = flight
-
-  useLayoutEffect(() => {
-    const element = pill.current
-    const source = scope.current?.querySelector<HTMLElement>('[data-amount-key="unclassified"]')
-    const target = scope.current?.querySelector<HTMLElement>(`[data-amount-key="${basket}"]`)
-    let cancelled = false
-    const animations: Animation[] = []
-
-    if (!element || !source || !target) {
-      onEvent(run, 'start')
-      onEvent(run, 'land')
-      onEvent(run, 'done')
-      return
-    }
-
-    const fly = () => {
-      if (cancelled) return
-      const from = source.getBoundingClientRect()
-      const to = target.getBoundingClientRect()
-      const width = element.offsetWidth
-      const height = element.offsetHeight
-      const x0 = from.right - width
-      const y0 = from.top + (from.height - height) / 2
-      const dx = to.right - width - x0
-      const dy = to.top + (to.height - height) / 2 - y0
-      element.style.left = `${x0}px`
-      element.style.top = `${y0}px`
-      element.style.visibility = 'visible'
-      onEvent(run, 'start')
-      const flightAnimation = element.animate(
-        [
-          { transform: 'translate(0, 0) scale(1)', borderColor: token('--color-waiting') },
-          { transform: `translate(${dx / 2 - 40}px, ${dy / 2}px) scale(1.08)`, offset: 0.5 },
-          { transform: `translate(${dx}px, ${dy}px) scale(1)`, borderColor: token(BASKET_COLOUR[basket]) },
-        ],
-        { duration: tokenMs('--duration-flight', 600), easing: token('--ease-expressive') || 'ease-in-out', fill: 'forwards' },
-      )
-      animations.push(flightAnimation)
-      flightAnimation.finished
-        .then(() => {
-          if (cancelled) return
-          setLanded(true)
-          onEvent(run, 'land')
-          const fade = element.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, delay: 250, fill: 'forwards' })
-          animations.push(fade)
-          return fade.finished.then(() => {
-            if (!cancelled) onEvent(run, 'done')
-          })
-        })
-        .catch(() => undefined)
-    }
-
-    // The flight never moves the page: a question asked meanwhile must stay in view. When the rows
-    // are not on screen (above the header or where the toast comes up), the amount does not fly
-    // and the numbers simply change.
-    // The visible band, measured now: under the header and above the composer. The toast comes up
-    // only after the landing, so it does not cover the flight.
-    const header = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0
-    const floor = document.getElementById('chat-input')?.closest('form')?.getBoundingClientRect().top ?? window.innerHeight
-    const rows = [source, target].map((element) => element.closest('li')?.getBoundingClientRect())
-    if (rows.some((box) => !box || box.top < header || box.bottom > floor)) {
-      onEvent(run, 'start')
-      onEvent(run, 'land')
-      onEvent(run, 'done')
-      return
-    }
-    fly()
-    return () => {
-      cancelled = true
-      for (const animation of animations) animation.cancel()
-    }
-  }, [run, basket, scope, onEvent])
-
-  return createPortal(
-    <span
-      ref={pill}
-      aria-hidden="true"
-      style={{ visibility: 'hidden' }}
-      className="pointer-events-none fixed left-0 top-0 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill border-2 border-waiting bg-surface py-1 pl-2 pr-3 text-[0.9375rem] font-bold tabular-nums text-ink shadow-float"
-    >
-      <span className="text-base">{landed ? BASKETS[basket]?.icon : '?'}</span>
-      {flight.display}
-    </span>,
-    document.body,
   )
 }
