@@ -133,17 +133,29 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // The field grows with the text, line by line, up to five lines (Renat: like ChatGPT), and shrinks back after
   // sending; the height eases (no motion when reduced). Measured on the twin, so the change can transition.
   useLayoutEffect(() => {
+    const field = input.current
+    const twin = mirror.current
+    if (!field || !twin) return
     const measure = () => {
-      const field = input.current
-      const twin = mirror.current
-      if (!field || !twin) return
+      // A hidden field has no width: the mic's text arrives while its recording bar stands in the field's place, and
+      // measured then every letter took a line of its own, so the field stayed five lines tall for a short text
+      // (Renat's screenshot). Measured again once the field has its width back.
+      if (field.clientWidth === 0) return
       twin.style.width = `${field.clientWidth}px`
       twin.value = draft || ' '
       setFieldPx(Math.min(Math.max(twin.scrollHeight, ONE_LINE_PX), MAX_FIELD_PX))
     }
     measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
+    // The field's width changes when it shows again after the mic, or with the window: measure then too (its own
+    // height changes are left out, as the field's height is what is measured).
+    let width = field.clientWidth
+    const resized = new ResizeObserver(() => {
+      if (field.clientWidth === width) return
+      width = field.clientWidth
+      measure()
+    })
+    resized.observe(field)
+    return () => resized.disconnect()
   }, [draft])
   const multiLine = fieldPx > ONE_LINE_PX
 
