@@ -92,15 +92,15 @@ def test_browser_types_map_to_the_documented_ones(app, tmp_path, content_type, s
 
 def test_compressed_clip_over_about_17_seconds_by_its_tokens_is_413_and_counted(app, tmp_path):
     # 20 s of audio at the documented 32 tokens a second, plus the prompt: refused, its text never returned
-    transport = FakeTransport(prompt_tokens=32 * 20 + 35)
+    transport = FakeTransport(prompt_tokens=32 * 20 + 140)
     app.state.stt_service = service(tmp_path, transport)
     r = post(app)
     assert r.status_code == 413 and r.json()["error"]["code"] == "invalid_request"
     assert SPOKEN not in r.text
     entry = json.loads((tmp_path / "stt-requests.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert entry["result"] == "too_long"
-    # a real 15 s clip (about 515 tokens in all) passes
-    app.state.stt_service = service(tmp_path, FakeTransport(prompt_tokens=32 * 15 + 35))
+    # a real 15 s clip (about 620 tokens in all with the prompt since #858) passes
+    app.state.stt_service = service(tmp_path, FakeTransport(prompt_tokens=32 * 15 + 140))
     assert post(app).status_code == 200
 
 
@@ -110,6 +110,22 @@ def test_finnish_prompt_names_finnish(app, tmp_path):
     r = post(app, language="fi")
     assert r.json() == {"text": "Paljonko käytin ruokaan syyskuussa?", "language": "fi"}
     assert "Finnish" in transport.calls[0][3]
+
+
+def test_the_app_language_never_forces_the_spoken_one(app, tmp_path):
+    """Finnish speech with the app in English (and English with it in Finnish) is written as spoken (#858)."""
+    transport = FakeTransport("Mihin rahani menivät?")
+    app.state.stt_service = service(tmp_path, transport)
+    assert post(app, language="en").json()["text"] == "Mihin rahani menivät?"
+    app.state.stt_service = service(tmp_path, FakeTransport("Where did my money go?"))
+    english = app.state.stt_service.transport
+    assert post(app, language="fi").json()["text"] == "Where did my money go?"
+    for prompt in (transport.calls[0][3], english.calls[0][3]):
+        assert "Finnish or English" in prompt and "either is possible" in prompt
+        assert "never translate" in prompt and "decide from the audio alone" in prompt
+        assert "most likely" not in prompt
+    assert "screen happens to be in English" in transport.calls[0][3]
+    assert "screen happens to be in Finnish" in english.calls[0][3]
 
 
 def test_too_large_is_413_before_any_request(app, tmp_path):
