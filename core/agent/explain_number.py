@@ -2,8 +2,9 @@
 
 `matches` is True only when the whole message asks what a number Sentti just gave means, where it comes from or how it
 was calculated ("What does this number mean?", "Where did you get that?", "Mitäs tää numero tarkoittaa? Voitko selittää
-mulle tarkasti", "Mistä tää luku tulee?", "Selitä tarkemmin"): a confident full match of every sentence, with a bare
-pointer (this, that, it; tää, tämä, se) or a number word and nothing else that names a thing, a period or an amount.
+mulle tarkasti", "Mistä tää luku tulee?", "Selitä tarkemmin"), or asks to have it said more simply ("Selitä
+yksinkertaisemmin", "Can you put that more simply?"): a confident full match of every sentence, with a bare pointer
+(this, that, it; tää, tämä, se) or a number word and nothing else that names a thing, a period or an amount.
 A question about the user's own money ("What does my spending on restaurants look like?", "Mitä mun ruokamenot on?")
 never matches: it keeps its own route.
 
@@ -22,8 +23,11 @@ _PTR_EN = r"(this|that|it|these|those|the)"
 _THIS_EN = r"(this|that|these|those)"   # "what is the total?" is a question of its own
 _NUM_EN = r"(numbers?|figures?|amounts?|sums?|totals?|values?|results?)"
 _OBJ_EN = rf"( {_PTR_EN}( {_NUM_EN})?| {_NUM_EN})"
+# "more simply", "in simpler words": the plain explanation is the simpler way to say the answer's main number
+_SIMPLER_EN = r"(more simply|simply|simpler|more clearly|in (simpler|plainer|plain|easier|simple) (terms|words|language|english)|" \
+              r"like (im|i am) five)"
 _MORE_EN = r"( to me)?( (in (more |full )?detail|more precisely|precisely|exactly|properly|further|more|again|a bit more|" \
-           r"a little more))?"
+           rf"a little more|{_SIMPLER_EN}))?"
 _EN = [
     rf"what (does|do|did) {_PTR_EN}( {_NUM_EN})? (mean|stand for|show|tell me)",
     rf"what (is|s|are) {_THIS_EN} {_NUM_EN}( based on)?",
@@ -35,13 +39,16 @@ _EN = [
     rf"how (is|was|s|were|are) {_PTR_EN}( {_NUM_EN})? (calculated|computed|counted|worked out|made up)",
     rf"((can|could|would|will) you )?explain{_OBJ_EN}?{_MORE_EN}",
     rf"((can|could|would|will) you )?(break down|walk me through){_OBJ_EN}{_MORE_EN}",
+    rf"((can|could|would|will) you )?(say|put|tell me|rephrase|word){_OBJ_EN} {_SIMPLER_EN}( please)?",
+    r"(in (simpler|plainer|plain|easier) (terms|words|language|english)|simpler|more simply)",
 ]
 
 _PTR_FI = r"(taa|tama|taman|tan|toi|tuo|tuon|ton|se|sen|nama|naa|noi|nuo)"
 _NUM_FI = r"(luku|luvun|numero|numeron|summa|summan|lukema|lukeman|arvo|arvon|tulos|tuloksen)"
 _OBJ_FI = rf"( {_PTR_FI}( {_NUM_FI})?| {_NUM_FI})"
 _TO_ME_FI = r"( (mulle|minulle|meille))?"
-_MORE_FI = r"( (tarkemmin|tarkasti|tarkempaa|lisaa|enemman|uudestaan|vahan|viela|kunnolla))*"
+_SIMPLER_FI = r"(yksinkertaisemmin|selkeammin|helpommin|simppelimmin|selkokielella|ymmarrettavammin|lyhyemmin|lyhyesti)"
+_MORE_FI = rf"( (tarkemmin|tarkasti|tarkempaa|lisaa|enemman|uudestaan|vahan|viela|kunnolla|sanoin|{_SIMPLER_FI}))*"
 _FI = [
     rf"mita(s|ha|hn)?( {_PTR_FI})?( {_NUM_FI})? (tarkoittaa|tarkottaa|merkitsee|kertoo)",
     rf"mita(s|ha)? (talla|tolla|silla)( (luvulla|numerolla|summalla))? tarkoitetaan",
@@ -53,6 +60,9 @@ _FI = [
     rf"(voitko|voisitko|voiksa|voitsa|voisiksa|voiks|voisitsa|osaatko) selittaa{_TO_ME_FI}{_OBJ_FI}?{_TO_ME_FI}"
     rf"{_MORE_FI}",
     rf"selittaisitko{_TO_ME_FI}{_OBJ_FI}?{_TO_ME_FI}{_MORE_FI}",
+    rf"(sano|kerro|sanoisitko|kertoisitko|(voitko|voisitko|voiksa|voitsa) (sanoa|kertoa)){_OBJ_FI}?{_TO_ME_FI}"
+    rf"( (vahan|viela))* {_SIMPLER_FI}( sanoin)?",
+    rf"{_SIMPLER_FI}( sanoin)?",
 ]
 
 _LEAD = r"((ok|okay|okei|so|and|but|hmm|hm|um|hey|sorry|wait|no|ja|mut|mutta|hei|entas|anteeksi|siis|joo) )*"

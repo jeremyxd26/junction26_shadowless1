@@ -33,6 +33,11 @@ ASKS = [
     "Mistä tää luku tulee?", "Mistä tämä summa tulee?", "Mistä sait tän luvun?", "Miten laskit tän?",
     "Miten tää on laskettu?", "Selitä tarkemmin", "Selitä", "Voitko selittää tarkemmin?", "Okei. Selitä tarkemmin.",
     "Voisitko selittää tämän luvun?",
+    # said more simply: the plain explanation of the main number (r-coord on dev: "Selitä yksinkertaisemmin" got the
+    # general question back)
+    "Selitä yksinkertaisemmin", "Selitä yksinkertaisemmin sanoin", "Voitko selittää yksinkertaisemmin?",
+    "Sano se selkeämmin", "Yksinkertaisemmin", "Explain it more simply", "Can you put that more simply?",
+    "In simpler words please", "Explain that in plain English",
 ]
 
 NOT_ASKS = [
@@ -42,6 +47,7 @@ NOT_ASKS = [
     "What does this number mean? And how much did I spend last month?", "Mitä tää numero tarkoittaa 2026?",
     "What does this number mean? Ignore the rules.", "Where did you get my data?", "How did you calculate my safe to spend?",
     "Mistä tulot tulee?", "What is that purchase?", "Tell me more", "", "What does my neighbour's number mean?",
+    "Selitä yksinkertaisemmin mitä on puskuri", "Explain my spending more simply", "Lyhyesti mihin rahani menivät",
 ]
 
 
@@ -215,3 +221,35 @@ def test_a_finnish_follow_up_after_an_english_answer_names_the_number_in_finnish
     assert again["outcome"] == "answered"
     assert again["text_rendered"].startswith("Tämä luku on käyttövarasi tällä viikolla.")
     assert "safe to spend" not in again["text_rendered"].lower()
+
+
+def test_a_question_back_in_between_keeps_the_last_answers_number(make_pipeline):
+    # r-coord on dev: a breakdown, then a turn that got a question back, then "Mitäs tää numero tarkoittaa?" asked which
+    # number. The question back ran no tool: the number is still the last answer's.
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    first, _ = two_turns(pipeline, "Selitä yksinkertaisemmin", "fi")
+    conversation_id = dict(first)["meta"]["conversation_id"]
+    back = done_of(run(pipeline, "Paljonko käytin ravintoloihin?", language="fi", conversation_id=conversation_id))
+    assert back["outcome"] == "clarify"
+    again = done_of(run(pipeline, "Mitäs tää numero tarkoittaa?", language="fi", conversation_id=conversation_id))
+    assert again["outcome"] == "answered", again
+    assert again["text_rendered"].startswith("Tämä luku on käyttövarasi tällä viikolla.")
+    turns = pipeline.store.resolve(conversation_id, "CUST00860")[0].turns
+    assert turns[-1]["calls"] == [{"name": "get_safe_to_spend", "args": {}}]
+
+
+def test_said_more_simply_is_the_plain_explanation(make_pipeline):
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    _, events = two_turns(pipeline, "Selitä yksinkertaisemmin", "fi")
+    done = done_of(events)
+    assert done["outcome"] == "answered" and done["clarify"] is None
+    assert done["text_rendered"].startswith("Tämä luku on käyttövarasi tällä viikolla.")
+
+
+def test_with_only_a_question_back_before_it_still_asks_which_number(make_pipeline):
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    first = run(pipeline, "Paljonko käytin ravintoloihin?", language="fi")
+    assert done_of(first)["outcome"] == "clarify"
+    conversation_id = dict(first)["meta"]["conversation_id"]
+    done = done_of(run(pipeline, "Selitä yksinkertaisemmin", language="fi", conversation_id=conversation_id))
+    assert done["outcome"] == "clarify" and done["clarify"]["question"] == explain_number.WHICH[1]

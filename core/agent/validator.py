@@ -620,7 +620,9 @@ def setting_claim(text: str, labels: Iterable[str] = ()) -> str | None:
 # The stand's count without its noun (row 2): "cost {{n1}} across {{n2}}." The count follows across / over / in
 # / yhteensä and no noun follows it. A count whose noun comes first ("the number of transactions was {{n2}}",
 # "tapahtumien määrä oli {{n2}}") is fine (review of #437).
-_COUNT_BEFORE = re.compile(r"\b(?:across|over|in|yhteensä)\s+$", re.I)
+# "Summa muodostuu {{n2}}." (dev, Finnish restaurants answer): the count said with no noun after "muodostuu"
+_COUNT_BEFORE = re.compile(r"\b(?:across|over|in|yhteensä|muodostuu|koostuu|perustuu|consists\s+of|made\s+up\s+of"
+                           r"|based\s+on)\s+$", re.I)
 _COUNT_END = re.compile(r"\s*(?:[.,;:!?)]|$|(?:and|but|ja|mutta)\b)", re.I)
 _COUNT_NOUN_BEFORE = re.compile(
     r"\b(?:number\s+of|count\s+of|transactions?|purchases?|payments?|visits?|times|määrä\w*|lukumäärä\w*|oli"
