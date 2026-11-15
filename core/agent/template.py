@@ -270,6 +270,40 @@ CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more si
                  "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
 
 
+# "What did I ask? Remind me": the previous question and its topic, then whether to go on (Renat, via r-coord).
+RECALL_QUESTION = ("You asked: \u201c{question}\u201d.", "Kysyit: \u201d{question}\u201d.")
+RECALL_ABOUT = ("You asked about {topic}.", "Kysyit {topic}.")
+RECALL_ANY_TOPIC = ("your money", "raha-asioistasi")
+RECALL_TOPIC = ("We talked about {topic}.", "Puhuimme {topic}.")
+RECALL_GO_ON = ("Want to continue?", "Jatketaanko?")
+RECALL_NOTHING = ("We haven't talked about anything yet. What would you like to know?",
+                  "Emme ole vielä puhuneet mistään. Mitä haluaisit tietää?")
+
+
+def recall_text(turns: list[dict], language: str, is_meta) -> tuple[str, str | None]:
+    """The reply to "what did I ask?" and the chip that asks the question again: the latest question that was not
+    itself a meta message ("thanks", "what did I ask?"), quoted when it is short and has no digits (an answer text
+    names no number that is not a Number), and the topic of its answer by its first data tool; nothing talked about
+    yet: the question back. No tool and no model."""
+    for turn in reversed(turns):
+        question = " ".join(str(turn.get("question") or "").split())
+        if not question or is_meta(question):
+            continue
+        topic = next((CONTEXT_TOPICS[c["name"]] for c in turn.get("calls") or [] if c.get("name") in CONTEXT_TOPICS),
+                     None)
+        quotable = len(question) <= 90 and not re.search(r"\d", question)
+        parts = []
+        if quotable:
+            parts.append(pick(RECALL_QUESTION, language).format(question=question))
+            if topic:
+                parts.append(pick(RECALL_TOPIC, language).format(topic=pick(topic, language)))
+        else:   # a long question, or one with digits: its topic, or the money in general
+            parts.append(pick(RECALL_ABOUT, language).format(topic=pick(topic or RECALL_ANY_TOPIC, language)))
+        parts.append(pick(RECALL_GO_ON, language))
+        return " ".join(parts), question
+    return pick(RECALL_NOTHING, language), None
+
+
 def context_topic(turns: list[dict]) -> tuple[str, str] | None:
     """The latest answer's topic (en, fi) and its question, from the first data tool it called, or None."""
     for turn in reversed(turns):
