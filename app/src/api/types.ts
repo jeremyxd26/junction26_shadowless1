@@ -313,6 +313,8 @@ export interface AskRequest {
   /** At most 500 characters. */
   message: string
   language: Language | 'auto'
+  /** Voice mode sends `voice` (#875, the core's talk mode #873: words, no cards); left out it means `text`. */
+  channel?: 'text' | 'voice'
 }
 
 export type AskStage = 'understanding' | 'tool' | 'writing'

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ask } from '../api/ask.ts'
 import { readAskStream } from '../api/askStream.ts'
 import { ApiError } from '../api/errors.ts'
-import type { Language } from '../api/types.ts'
+import type { AskRequest, Language } from '../api/types.ts'
 import { EMPTY_ANSWER, applyAskEvent, stopped, type Answer, type AnswerError, type StopReason } from './answer.ts'
 import { findClientTurn, pushClientTurn, type ClientTurnRequest, type Turn } from './thread.ts'
 
@@ -20,13 +20,25 @@ export interface PushedClientTurn {
 export interface ChatSession {
   turns: Turn[]
   busy: boolean
-  send(question: string): void
+  /** `channel: 'voice'` from voice mode (#875): the core answers in words for listening. */
+  send(question: string, options?: { channel?: 'voice' }): void
   retry(turnId: number, question: string): void
   stop(): void
   /** Adds a client turn, or finds the one with the same `id`; null without a persona. */
   pushClientTurn(request: ClientTurnRequest): PushedClientTurn | null
   /** "New chat": stops a running answer, empties the thread (client turns and their progress too) and starts a new conversation. */
   clear(): void
+}
+
+/** The POST /api/ask body. Only voice mode names its channel; a typed question sends no field, as before (#875). */
+export function askRequest(owner: string, conversationId: string | null, message: string, language: Language, channel?: 'voice'): AskRequest {
+  return {
+    customer_id: owner,
+    conversation_id: conversationId,
+    message,
+    language,
+    ...(channel === 'voice' ? { channel } : {}),
+  }
 }
 
 /** The contract caps a question at 500 characters (section 7.1). */
@@ -87,7 +99,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
   const stop = useCallback(() => stopRunning('you'), [stopRunning])
 
   const run = useCallback(
-    async (owner: string, turnId: number, question: string) => {
+    async (owner: string, turnId: number, question: string, channel?: 'voice') => {
       // One answer streams at a time: a new question stops the running one, which says so.
       stopRunning('next_question')
       const controller = new AbortController()
@@ -95,7 +107,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
       if (conversation.current.owner !== owner) conversation.current = { owner, id: null }
       try {
         const stream = await ask(
-          { customer_id: owner, conversation_id: conversation.current.id, message: question, language: lang },
+          askRequest(owner, conversation.current.id, question, lang, channel),
           controller.signal,
         )
         for await (const event of readAskStream(stream)) {
@@ -116,7 +128,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
   )
 
   const send = useCallback(
-    (raw: string) => {
+    (raw: string, options?: { channel?: 'voice' }) => {
       const question = raw.trim().slice(0, MAX_QUESTION)
       if (!question || !customerId) return
       const id = nextId.current
@@ -125,7 +137,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
         owner: customerId,
         turns: [...(current.owner === customerId ? current.turns : []), { kind: 'ask', id, question, answer: EMPTY_ANSWER }],
       }))
-      void run(customerId, id, question)
+      void run(customerId, id, question, options?.channel)
     },
     [customerId, run],
   )

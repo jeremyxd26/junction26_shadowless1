@@ -57,9 +57,9 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   // Every question goes through here, so the opening can close its Undo toast (#315).
   const chatSend = chat.send
   const send = useCallback(
-    (question: string) => {
+    (question: string, options?: { channel?: 'voice' }) => {
       notifyAsked()
-      chatSend(question)
+      chatSend(question, options)
     },
     [chatSend],
   )
@@ -98,7 +98,8 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
       {
         customerId,
         lang,
-        ask: send,
+        // Voice mode's questions name their channel, so the core answers in words for listening (#875).
+        ask: (question) => send(question, { channel: 'voice' }),
         closed: (reason) => {
           setVoiceSession(null)
           if (reason) setVoiceToast(voiceEnded(reason))
