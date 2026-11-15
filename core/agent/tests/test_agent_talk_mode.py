@@ -299,7 +299,7 @@ def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(
     assert chips[:2] == [["Any more tips?"], ["Any more tips?"]] and chips[2] == ["How could I save more?"]
     talk = model.requests[-1].data[0]["talk"]
     assert talk["no_more_tips"] is True and talk["tip"] is None
-    assert [t["lever"] for t in talk["tips_ranked"]] == ["Restaurants", "small purchases", "Taxis"]
+    assert [t["lever"] for t in talk["tips_ranked"]] == ["restaurants", "small purchases", "taxis"]
 
 
 # ---- hard refusals and the normal path --------------------------------------------------------------------------------
