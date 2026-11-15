@@ -191,5 +191,9 @@ def words_only(message: str, turns: list[dict[str, Any]]) -> bool:
         return True
     if finlit_kb.question_kind(message) is not None or finlit_kb.overrides_rules(message):
         return True
-    last_words = bool(turns) and bool(turns[-1].get("talk") or turns[-1].get("words"))
-    return last_words and (talk_mode.follow_up(message) or talk_mode.why_follow_up(message))
+    # "anything else?", "why?" and the like get words after any answer: never a new card (Renat's live probes)
+    return talk_mode.follow_up(message) or talk_mode.why_follow_up(message) or bool(_BARE_WHY.fullmatch(
+        guard.fold(message).strip()))
+
+
+_BARE_WHY = re.compile(r"[\W_]*(?:and |but |so |ja |mutta )?(?:why|how come|miksi|miks|miten niin)[\W_]*", re.I)

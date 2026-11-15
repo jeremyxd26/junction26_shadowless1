@@ -625,3 +625,15 @@ def test_an_own_data_question_nobody_claims_may_show_its_card(tmp_path, switch):
     agent = AgentModel(script=card_script)
     events = ask(make(tmp_path, agent), OPEN["en"])
     assert _cards(events) == 1 and done(events)["cited"] == ["n1"]
+
+
+@pytest.mark.parametrize("second", ["Anything else?", "entä muuta?", "miksi?", "why?"])
+def test_an_open_follow_up_after_a_data_answer_gets_words_and_no_card(tmp_path, switch, second):
+    switch[0].touch()
+    agent = AgentModel(script=card_script)
+    pipeline = make(tmp_path, agent)
+    cid = dict(ask(pipeline, "How much did I spend on restaurants in August 2026?"))["meta"]["conversation_id"]
+    before = len(agent.turns)
+    events = ask(pipeline, second, cid)
+    assert _cards(events) == 0
+    assert all(not r.tools_on for r in agent.turns[before:])
