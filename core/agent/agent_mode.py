@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.agent import talk_checks
+from core.agent import guard, talk_checks, talk_mode
 
 ROOT = Path(__file__).resolve().parents[2]
 ON_SWITCH = ROOT / "var" / "agent-mode-on"
@@ -143,3 +143,16 @@ def clarify_problems(texts: list[str]) -> list[str]:
                 problems.append(text)
                 break
     return problems
+
+
+def question_stands_down(message: str, literacy: bool = False) -> bool:
+    """A question the planner's place keeps on the old path (the rules and the planner's declines): borrowing or
+    affordability (talk mode's template), a product, a brand, another topic or other people's money. A concept
+    question (literacy) may name interest ("What is compound interest?")."""
+    if talk_mode.template_only(message) or talk_mode.TOPIC_STANDS_DOWN.search(guard.fold(message)):
+        return True
+    checks = [talk_checks.GENERAL_BORROWING, talk_checks._GENERAL_BORROWING_CLASS, talk_checks._GENERAL_PRODUCT,
+              talk_checks._GENERAL_BRAND, talk_checks._GENERAL_OTHERS]
+    if not literacy:
+        checks.append(talk_checks._GENERAL_PRODUCT_CLASS)
+    return any(rx.search(message) for rx in checks)

@@ -1621,6 +1621,8 @@ class Pipeline:
         (the demo fast paths) and every refusal stays the rules'."""
         if re.search(RULE_HEALTH, guard.fold(message)) or talk_checks._GENERAL_HEALTH.search(message):
             return False
+        if agent_mode.question_stands_down(message, literacy=finlit_kb.question_kind(message) == "literacy"):
+            return False
         plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                             tools=self.registry.schemas(), history=history, guard_flags=[], round=1))
         if any(c.name == "decline" for c in plan.calls):
