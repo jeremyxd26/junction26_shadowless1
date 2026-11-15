@@ -92,9 +92,11 @@ def test_a_literacy_question_is_answered_from_the_fragments_with_the_source_line
     source = FakeSource()
     p = make(model, source)
     done = done_of(run(p, question, language=lang))
-    line = finlit_kb.SOURCE_LINE[1 if lang == "fi" else 0].format(publisher="InfoFinland.fi", url=OPEN.url)
     assert done["outcome"] == "answered" and done["cited"] == [] and done["refusal"] is None
-    assert done["text"] == f"{draft} {line}"
+    assert done["text"] == draft and "https://" not in done["text_rendered"]
+    assert done["sources"] == [
+        {"publisher": "InfoFinland.fi", "title": "Velkaneuvonta", "url": OPEN.url, "lang": lang},
+        {"publisher": "Marttaliitto", "title": "Talouden suunnittelu", "url": CARD.url, "lang": lang}]
     req = model.requests[0]
     assert req.literacy is True and req.data == []
     # text only from the open fragment; the card is a title and a publisher, never a link
@@ -113,7 +115,8 @@ def test_the_best_ranked_source_is_named_and_so_is_the_open_text_sent(make):
     model = Composer((GOOD_FI, "fi"))
     p = make(model, FakeSource(fragments=(CARD, OPEN, OPEN2)))
     done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
-    assert done["text"] == f"{GOOD_FI} Lähde: Marttaliitto, {CARD.url}; InfoFinland.fi, {OPEN.url}"
+    assert done["text"] == GOOD_FI
+    assert [s["url"] for s in done["sources"]] == [CARD.url, OPEN.url, OPEN2.url]
     # a third source's open text is not sent, because the line does not name it
     assert {"source": OPEN2.publisher, "title": "Edunvalvonta"} in model.requests[0].sources
     assert "Edunvalvonta tarkoittaa" not in json.dumps(model.requests[0].sources, ensure_ascii=False)
@@ -142,7 +145,7 @@ def test_a_bad_draft_is_retried_and_the_retry_gets_the_reasons(make, bad, reason
     model = Composer((bad, "fi"), (GOOD_FI, "fi"))
     p = make(model)
     done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
-    assert done["text"].startswith(GOOD_FI)
+    assert done["text"] == GOOD_FI and done["sources"]
     assert len(model.requests) == 2 and model.requests[1].validation_errors
 
 
@@ -152,7 +155,7 @@ def test_two_bad_drafts_leave_the_message_to_the_usual_path(make):
     done = done_of(run(p, "mikä on budjetti", language="fi"))
     # the glossary answers as before
     assert done["text"].startswith("Budjetti on suunnitelma siitä, paljonko käytät rahaa")
-    assert "Lähde:" not in done["text"] and not finlit_turns(audit(p))
+    assert "sources" not in done and not finlit_turns(audit(p))
 
 
 def test_nothing_retrieved_for_a_glossary_term_leaves_it_to_the_glossary(make):
@@ -166,7 +169,7 @@ def test_no_source_close_enough_gives_plain_words_with_no_source_line(make):
     model = Composer((GOOD_FI, "fi"))
     p = make(model, FakeSource(fragments=()))
     done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
-    assert done["outcome"] == "answered" and done["text"] == GOOD_FI
+    assert done["outcome"] == "answered" and done["text"] == GOOD_FI and "sources" not in done
     req = model.requests[0]
     assert req.literacy is True and req.sources is None
     assert finlit_turns(audit(p))[0]["finlit"] == "no_source"
@@ -193,6 +196,17 @@ def test_concept_and_judgement_questions_get_words_not_her_card(make, question, 
     ("How could I save more?", False), ("Where did my money go?", False), ("Give me tips to save", False)])
 def test_overrides_rules(question, expected):
     assert finlit_kb.overrides_rules(question) is expected
+
+
+def test_sources_field_dedupes_keeps_https_and_at_most_three():
+    dup = finlit_kb.Fragment("x", "InfoFinland.fi (footer)", "Other", OPEN.url, None, "source_card")
+    plain = finlit_kb.Fragment("y", "THL", "T", "http://thl.fi", None, "source_card")
+    out = finlit_kb.sources_field([OPEN, dup, plain, CARD, OPEN2], "fi")
+    assert [s["url"] for s in out] == [OPEN.url, CARD.url, OPEN2.url]
+    assert out[0] == {"publisher": "InfoFinland.fi", "title": "Velkaneuvonta", "url": OPEN.url, "lang": "fi"}
+    long = finlit_kb.Fragment("z", "Oikeuspalveluvirasto", "Find out your expenses; official EN title: Keep track",
+                              "https://o.fi/a", None, "source_card")
+    assert finlit_kb.sources_field([long], "en")[0]["title"] == "Find out your expenses"
 
 
 def test_the_default_floor_is_the_calibrated_one():
@@ -239,7 +253,7 @@ def test_why_and_tips_in_a_running_conversation_go_to_the_talk_mode_with_the_fra
     turns = _turns(p)
     talk = [t for t in turns if "talk" in t]
     assert talk and talk[0]["finlit"] == [OPEN.source_id, CARD.source_id]   # the talk mode's turn, not the route's
-    assert done["text"].endswith(f"Source: InfoFinland.fi, {OPEN.url}")
+    assert done["sources"][0]["url"] == OPEN.url and "https://" not in done["text"]
     request = model.requests[-1]
     assert request.literacy is False and request.data[0]["tool"] == "answer_in_words"
     assert {"source": OPEN.publisher, "title": "Velkaneuvonta", "text": OPEN.text} in request.sources
@@ -268,7 +282,7 @@ def test_a_talk_template_names_no_source(make):
     p = make(model)
     cid = _conversation(p, "Where did my money go?")
     done = done_of(run(p, "why does it matter?", language="en", conversation_id=cid))
-    assert "Source:" not in done["text"]
+    assert "sources" not in done
     assert not any("finlit" in t for t in _turns(p))
 
 
@@ -299,7 +313,7 @@ def test_why_save_gets_the_fixed_reasons_when_no_draft_passes(make):
     events = run(p, "Miksi mun pitäisi säästää rahaa?", language="fi")
     done = done_of(events)
     assert done["outcome"] == "answered" and done["text"] == finlit_kb.WHY_SAVE_TEXT[1]
-    assert not any(e == "card" for e, _ in events) and "Lähde" not in done["text"]
+    assert not any(e == "card" for e, _ in events) and "sources" not in done
     assert finlit_turns(audit(p))[0]["finlit"] == "fixed_reasons"
 
 
@@ -323,7 +337,7 @@ def test_no_route_without_a_source(make_pipeline):
     model = Composer()
     p = make_pipeline(model, reg=registry())
     done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
-    assert "Lähde:" not in done["text"] and all(r.sources is None for r in model.requests)
+    assert "sources" not in done and all(r.sources is None for r in model.requests)
 
 
 def test_the_compose_request_carries_the_blocks_only_when_set():

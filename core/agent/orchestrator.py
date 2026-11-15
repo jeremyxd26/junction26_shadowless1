@@ -373,6 +373,7 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    sources: list[dict[str, Any]] | None = None   # done.sources (#884, contract 0.3.19): the official sources used
     kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary or why (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
@@ -1083,7 +1084,8 @@ class Pipeline:
                            "actions": [tool_config.contact_bank_action(lang)]
                            if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
                            else payload.get("actions", []),
-                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
+                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None,
+                           **({"sources": a.sources} if a.sources else {})}
             emit(event, payload)
         return send
 
@@ -1765,8 +1767,9 @@ class Pipeline:
         a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {}),
                                 **({"talk_template": talk_template} if talk_template else {}),
                                 **({"finlit": [f.source_id for f in fragments]} if credited and from_model else {})})
-        line = f" {finlit_kb.source_line(credited, lang)}" if credited and from_model else ""
-        text = self._deliver(draft.text + line, numbers, emit)
+        if credited and from_model:   # the Sources row under the answer; the text carries no link (#884)
+            a.sources = finlit_kb.sources_field(fragments, lang) or None
+        text = self._deliver(draft.text, numbers, emit)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
@@ -1984,8 +1987,9 @@ class Pipeline:
                                 "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        line = f" {finlit_kb.source_line(credited, lang)}" if credited else ""
-        text = self._deliver(f"{body}{line}", {}, emit)
+        if credited:   # the Sources row under the answer; the text carries no link (#884)
+            a.sources = finlit_kb.sources_field(fragments, lang) or None
+        text = self._deliver(body, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
