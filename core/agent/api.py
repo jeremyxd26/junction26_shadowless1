@@ -54,6 +54,8 @@ class AskBody(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=64)
     message: str
     language: Literal["en", "fi", "auto"] = "auto"
+    # #873: "voice" prefers talk mode for open follow-ups; any other value is a 400 invalid_request (extra="forbid")
+    channel: Literal["text", "voice"] = "text"
 
 
 class PoolData:
@@ -317,7 +319,7 @@ async def ask(request: Request):
     # this route returns its own Response, and the overview has issued the cookie already.
     req = AskRequest(customer_id=body.customer_id, message=body.message, language=body.language,
                      conversation_id=body.conversation_id, model_allowed=decision == "model",
-                     viewer=known_viewer(request))
+                     viewer=known_viewer(request), channel=body.channel)
     if "text/event-stream" in request.headers.get("accept", ""):
         return StreamingResponse(_stream(agent.pipeline, req), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_ANSWER, type Answer } from './answer.ts'
 import type { Turn } from './thread.ts'
-import { LISTEN_MS, ONSET_MS, SILENCE_MS, endpointer, followAnswer, ringStep, waveBars } from './voiceMode.ts'
+import { LISTEN_MS, ONSET_MS, SILENCE_MS, bargeDetector, endpointer, followAnswer, ringStep, waveBars } from './voiceMode.ts'
 
 /** Feeds `level` every 50 ms from `from` to `to` (ms) and returns the last state. */
 function feed(ends: ReturnType<typeof endpointer>, level: number, from: number, to: number) {
@@ -64,11 +64,32 @@ describe('endpointer (#811)', () => {
     expect(talking.push(0.5, LISTEN_MS)).toBe('end')
   })
 
-  it('a steady hum between the two levels neither starts nor ends speech', () => {
+  it('in a noisy room the hum is the floor: speech over it counts, and back at the hum the round ends (#895)', () => {
     const ends = endpointer(0)
-    expect(feed(ends, 0.1, 0, 5000)).toBe('waiting')
+    expect(feed(ends, 0.1, 0, 5000)).toBe('waiting') // the hum alone is not speech
     feed(ends, 0.5, 5050, 5600)
-    expect(feed(ends, 0.1, 5650, 9000)).toBe('speech')
+    expect(ends.heard()).toBe(true)
+    expect(feed(ends, 0.1, 5650, 5650 + SILENCE_MS - 50)).toBe('speech')
+    expect(ends.push(0.1, 5650 + SILENCE_MS)).toBe('end') // 1.2 s back at the hum ends it
+  })
+
+  it('a round can start with speech already going (a barge-in)', () => {
+    const ends = endpointer(0, { heard: true })
+    expect(ends.heard()).toBe(true)
+    expect(feed(ends, 0.01, 0, SILENCE_MS)).toBe('end')
+  })
+
+  it('barge-in: sustained loud speech after the first moment of playback, not a short or quiet sound', () => {
+    const quiet = bargeDetector(0)
+    expect([0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600].some((t) => quiet.push(0.9, t))).toBe(false) // grace
+    const later = bargeDetector(0)
+    let fired = false
+    for (let t = 600; t <= 850; t += 50) fired = later.push(0.2, t) || fired // normal speech level: not enough
+    expect(fired).toBe(false)
+    for (let t = 900; t <= 1250; t += 50) fired = later.push(0.5, t) || fired
+    expect(fired).toBe(true)
+    const blip = bargeDetector(0)
+    expect([700, 750, 800].map((t) => blip.push(0.6, t)).some(Boolean)).toBe(false)
   })
 })
 

@@ -25,7 +25,16 @@ import {
   type SttFailure,
 } from './stt.ts'
 import type { Turn } from './thread.ts'
-import { LISTEN_MS, MAX_EMPTY_ROUNDS, endpointer, followAnswer, waveBars, type Endpointer } from './voiceMode.ts'
+import {
+  LISTEN_MS,
+  MAX_EMPTY_ROUNDS,
+  SILENT_CLOSE_MS,
+  bargeDetector,
+  endpointer,
+  followAnswer,
+  waveBars,
+  type Endpointer,
+} from './voiceMode.ts'
 
 export type VoicePhase = 'starting' | 'listening' | 'thinking' | 'speaking'
 
@@ -35,6 +44,10 @@ export interface VoiceSnapshot {
   missed: boolean
   /** The words of the question being answered, once they are known. */
   heard: string
+  /** The microphone is open (the overlay shows it); it stays open for the whole session. */
+  micOn: boolean
+  /** Speaking over Sentti interrupts it (the browser cancels its echo); else a tap on the wave does (#895). */
+  bargeIn: boolean
 }
 
 /** Why the session ended by itself; the chat shows it as a toast. An exit by the user has no reason. */
@@ -78,7 +91,7 @@ function stopTracks(stream: MediaStream) {
 }
 
 export class VoiceSession {
-  private snapshot: VoiceSnapshot = { phase: 'starting', missed: false, heard: '' }
+  private snapshot: VoiceSnapshot = { phase: 'starting', missed: false, heard: '', micOn: false, bargeIn: false }
   private readonly listeners = new Set<() => void>()
   private readonly deps: VoiceDeps
   private readonly context: AudioContext | null
@@ -96,6 +109,12 @@ export class VoiceSession {
   private readonly outFreq = new Uint8Array(64)
   private ended = false
   private releaseTimer = 0
+  /** When speech was last heard: a long silence closes the mode (no background listening). */
+  private lastHeardAt = Date.now()
+  /** While Sentti speaks: the meter watching for the user's voice (barge-in, #895). */
+  private barge = 0
+  /** The next round starts with speech already going (the user spoke over Sentti). */
+  private bargedIn = false
   private readonly unsubscribe: () => void
   private readonly onHidden = () => {
     if (document.hidden) this.end()
@@ -126,7 +145,9 @@ export class VoiceSession {
     document.addEventListener('visibilitychange', this.onHidden)
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // The browser's own echo cancellation, noise suppression and gain control: Sentti's voice from a speaker
+      // must not come back as the user's words (#895).
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
     } catch (error) {
       this.end({ kind: 'mic', failure: micFailure(error) })
       return
@@ -148,6 +169,10 @@ export class VoiceSession {
       }
     }
     this.mic = { stream, analyser, time: new Uint8Array(512), freq: new Uint8Array(256) }
+    // Barge-in needs the meter and the browser's echo cancellation; without them a tap on the wave interrupts.
+    const settings = stream.getAudioTracks?.()[0]?.getSettings?.()
+    this.lastHeardAt = Date.now()
+    this.set({ micOn: true, bargeIn: analyser !== null && settings?.echoCancellation !== false })
     this.listen()
   }
 
@@ -217,7 +242,18 @@ export class VoiceSession {
       return
     }
     const started = Date.now()
-    const round: Round = { recorder, chunks: [], ends: endpointer(started), started, ticker: 0, stopping: false, forced: false, cancelled: false }
+    const barged = this.bargedIn
+    this.bargedIn = false
+    const round: Round = {
+      recorder,
+      chunks: [],
+      ends: endpointer(started, { heard: barged }),
+      started,
+      ticker: 0,
+      stopping: false,
+      forced: false,
+      cancelled: false,
+    }
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) round.chunks.push(event.data)
     }
@@ -232,6 +268,27 @@ export class VoiceSession {
     round.ticker = window.setInterval(() => this.tick(round), TICK_MS)
     // A new round shows nothing of the turn before: the last question's words go at once.
     this.set({ phase: 'listening', heard: '' })
+    if (!barged) this.chime()
+  }
+
+  /** A short, soft tone as listening starts (no voice fillers), when the audio context runs. */
+  private chime() {
+    const ctx = this.context
+    if (!ctx || ctx.state !== 'running') return
+    try {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.frequency.value = 660
+      const now = ctx.currentTime
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.04, now + 0.02)
+      gain.gain.linearRampToValueAtTime(0, now + 0.12)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(now)
+      osc.stop(now + 0.13)
+    } catch {
+      // no tone, nothing else changes
+    }
   }
 
   private tick(round: Round) {
@@ -267,14 +324,22 @@ export class VoiceSession {
     if (round.cancelled || this.ended) return
     const heard = round.forced || !this.mic?.analyser || round.ends.heard()
     const clip = new Blob(round.chunks, { type })
-    if (!heard || clipTooShort(clip.size, Date.now() - round.started)) {
-      this.miss()
+    if (!heard) {
+      // Nobody spoke: nothing is sent and nothing is spent, so listening goes on, until a long silence.
+      if (Date.now() - this.lastHeardAt >= SILENT_CLOSE_MS) this.end({ kind: 'nothing' })
+      else this.listen()
+      return
+    }
+    this.lastHeardAt = Date.now()
+    if (clipTooShort(clip.size, Date.now() - round.started)) {
+      this.set({ missed: true })
+      this.listen()
       return
     }
     this.transcribe(clip)
   }
 
-  /** A round with no words: "Didn't catch that" and listen again, or end after MAX_EMPTY_ROUNDS in a row. */
+  /** A transcription with no words: "Didn't catch that" and listen again, or end after MAX_EMPTY_ROUNDS in a row. */
   private miss() {
     this.empty += 1
     if (this.empty >= MAX_EMPTY_ROUNDS) {
@@ -340,11 +405,34 @@ export class VoiceSession {
     }
     this.speaking = id
     this.set({ phase: 'speaking' })
+    this.watchForBargeIn()
+  }
+
+  /**
+   * While Sentti speaks the meter keeps reading the microphone: sustained speech above the barge-in level stops the
+   * voice at once (its fetch is aborted too) and a new round starts with that speech already going (#895).
+   */
+  private watchForBargeIn() {
+    const analyser = this.mic?.analyser
+    if (!analyser || !this.mic || !this.snapshot.bargeIn) return
+    const mic = this.mic
+    const detector = bargeDetector(Date.now())
+    window.clearInterval(this.barge)
+    this.barge = window.setInterval(() => {
+      if (this.ended || this.speaking === null) return
+      analyser.getByteTimeDomainData(mic.time)
+      if (!detector.push(levelOf(mic.time), Date.now())) return
+      window.clearInterval(this.barge)
+      this.bargedIn = true
+      this.lastHeardAt = Date.now()
+      stopSpeaking()
+    }, TICK_MS)
   }
 
   /** The voice ended or was interrupted: listen again. */
   private speechChanged() {
     if (this.ended || this.speaking === null || speakingNow() === this.speaking) return
+    window.clearInterval(this.barge)
     this.speaking = null
     this.listen()
   }
@@ -354,6 +442,7 @@ export class VoiceSession {
     this.ended = true
     window.clearTimeout(this.releaseTimer)
     window.clearTimeout(this.watchdog)
+    window.clearInterval(this.barge)
     document.removeEventListener('visibilitychange', this.onHidden)
     this.unsubscribe()
     const round = this.round
@@ -373,6 +462,7 @@ export class VoiceSession {
     this.speaking = null
     if (this.mic) stopTracks(this.mic.stream)
     this.mic = null
+    this.set({ micOn: false })
     void this.context?.close().catch(() => {})
     this.deps.closed(reason)
   }
