@@ -41,7 +41,6 @@ const en = {
   orType: 'Or type your answer',
   /** The bill reading's fact marker only; chat answers carry no source label (#685). */
   fact: 'From your transactions',
-  templateNote: 'Written from a standard template this time, without the AI model. The numbers are the same.',
   stopped: 'You stopped this answer.',
   stoppedForNext: 'Stopped for your next question.',
   askAgain: 'Ask again',
@@ -94,7 +93,6 @@ const fi: ChatStrings = {
   stagesLabel: 'Eteneminen',
   orType: 'Tai kirjoita vastauksesi',
   fact: 'Tilitapahtumistasi',
-  templateNote: 'Kirjoitettu tällä kertaa vakiopohjalla ilman tekoälymallia. Luvut ovat samat.',
   stopped: 'Pysäytit tämän vastauksen.',
   stoppedForNext: 'Keskeytetty seuraavan kysymyksesi vuoksi.',
   askAgain: 'Kysy uudelleen',
