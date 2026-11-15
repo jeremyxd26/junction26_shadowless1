@@ -118,8 +118,12 @@ _AFFORD = re.compile(r"\byou\s+(?:can|could|can['’]t|cannot)\s+(?:\w+\s+)?affo
 def data_text_problems(text: str) -> list[str]:
     """What a data answer of the agent must not contain, as retry reasons; [] when nothing."""
     problems = []
-    copies = talk_checks._general_copies(text)
+    copies = talk_checks._general_copies(text) + [guard.fold(text)]
     for rx, why in ((talk_checks.GENERAL_BORROWING, "borrowing: never mention a loan, credit or any borrowing"),
+                    (talk_mode._TALK_BORROWING, "borrowing: never suggest paying later, in parts, back, ahead of pay "
+                                                "or in the red"),
+                    (talk_mode._TALK_OWN_STATE, "the user's own money: state the figures, never say what the user's "
+                                                "money is, fits or allows"),
                     (talk_checks._GENERAL_BORROWING_CLASS, "borrowing: never suggest paying later, in parts, in the "
                                                            "red, with an advance or with someone else's money"),
                     (talk_checks._GENERAL_PRODUCT, "a product, bank or investment: name none"),
