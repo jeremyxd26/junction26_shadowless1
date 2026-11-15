@@ -1,0 +1,233 @@
+{
+ "source": {
+  "en": "Statistics Finland (CC BY 4.0)",
+  "fi": "Tilastokeskus (CC BY 4.0)"
+ },
+ "facts": {
+  "money-1": {
+   "18-24": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:17-24:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 17–24: €1,535 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 17–24-vuotias: 1 535 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "25-34": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:25-34:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 25–34: €2,209 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 25–34-vuotias: 2 209 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "35-44": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:35-44:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 35–44: €2,362 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 35–44-vuotias: 2 362 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "45-54": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:45-54:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 45–54: €2,657 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 45–54-vuotias: 2 657 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "55-64": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:55-64:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 55–64: €2,712 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 55–64-vuotias: 2 712 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "65-74": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:65-74:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 65–74: €2,347 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 65–74-vuotias: 2 347 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "75+": {
+    "id": "fact:statfin-ktutk-14q4:2022:0:75-84:kulukk_kt_hk_2_1",
+    "en": "Households headed by someone aged 75–84: €2,251 a month per consumption unit (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 75–84-vuotias: 2 251 € kuukaudessa kulutusyksikköä kohden (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   }
+  },
+  "money-2": {
+   "18-24": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:17-24:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 17–24: housing takes 35.2% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 17–24-vuotias: asuminen vie 35,2 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "25-34": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:25-34:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 25–34: housing takes 30.0% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 25–34-vuotias: asuminen vie 30,0 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "35-44": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:35-44:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 35–44: housing takes 30.2% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 35–44-vuotias: asuminen vie 30,2 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "45-54": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:45-54:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 45–54: housing takes 30.2% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 45–54-vuotias: asuminen vie 30,2 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "55-64": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:55-64:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 55–64: housing takes 32.2% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 55–64-vuotias: asuminen vie 32,2 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "65-74": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:65-74:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 65–74: housing takes 37.2% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 65–74-vuotias: asuminen vie 37,2 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   },
+   "75+": {
+    "id": "fact:statfin-ktutk-14q4:2022:04:75-84:kulu_pro_kt_hk_2_1",
+    "en": "Households headed by someone aged 75–84: housing takes 41.7% of spending (Statistics Finland, 2022)",
+    "fi": "Kotitaloudet, joiden viitehenkilö on 75–84-vuotias: asuminen vie 41,7 % kulutuksesta (Tilastokeskus, 2022)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/ktutk",
+     "fi": "https://stat.fi/tilasto/ktutk"
+    }
+   }
+  },
+  "saving-2": {
+   "18-24": {
+    "id": "fact:statfin-eot-13iu:18-29:expense_rpros:2024",
+    "en": "People aged 18–29 in Finland: 36.8% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "18–29-vuotiaat Suomessa: 36,8 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "25-34": {
+    "id": "fact:statfin-eot-13iu:18-29:expense_rpros:2024",
+    "en": "People aged 18–29 in Finland: 36.8% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "18–29-vuotiaat Suomessa: 36,8 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "35-44": {
+    "id": "fact:statfin-eot-13iu:30-49:expense_rpros:2024",
+    "en": "People aged 30–49 in Finland: 32.8% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "30–49-vuotiaat Suomessa: 32,8 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "45-54": {
+    "id": "fact:statfin-eot-13iu:30-49:expense_rpros:2024",
+    "en": "People aged 30–49 in Finland: 32.8% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "30–49-vuotiaat Suomessa: 32,8 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "55-64": {
+    "id": "fact:statfin-eot-13iu:50-64:expense_rpros:2024",
+    "en": "People aged 50–64 in Finland: 25.0% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "50–64-vuotiaat Suomessa: 25,0 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "65-74": {
+    "id": "fact:statfin-eot-13iu:65-74:expense_rpros:2024",
+    "en": "People aged 65–74 in Finland: 18.9% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "65–74-vuotiaat Suomessa: 18,9 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   },
+   "75+": {
+    "id": "fact:statfin-eot-13iu:75-:expense_rpros:2024",
+    "en": "People aged 75+ in Finland: 12.5% could not cover an unexpected expense (Statistics Finland, 2024)",
+    "fi": "Vähintään 75-vuotiaat Suomessa: 12,5 % ei pystyisi kattamaan yllättävää menoa (Tilastokeskus, 2024)",
+    "url": {
+     "en": "https://stat.fi/en/statistics/eot",
+     "fi": "https://stat.fi/tilasto/eot"
+    }
+   }
+  }
+ },
+ "more": {
+  "money": [
+   {
+    "title": {
+     "en": "Keep track of your expenses",
+     "fi": "Selvitä menosi"
+    },
+    "publisher": "Oikeuspalveluvirasto",
+    "url": {
+     "en": "https://www.oikeuspalveluvirasto.fi/en/financial-and-debt-counselling/managing-your-finances/plan-your-finances/keep-track-of-your-expenses/",
+     "fi": "https://www.oikeuspalveluvirasto.fi/talous-ja-velkaneuvonta/talous-haltuun/suunnittele-talouttasi/selvita-menosi/"
+    },
+    "licence_class": "not_stated"
+   }
+  ],
+  "saving": [
+   {
+    "title": {
+     "en": "Saving and a rainy-day buffer (in Finnish)",
+     "fi": "Säästäminen ja puskurirahasto"
+    },
+    "publisher": "Marttaliitto",
+    "url": {
+     "en": "https://www.martat.fi/omat-rahat/taloudenhallinnan-perustaidot/saastaminen/",
+     "fi": "https://www.martat.fi/omat-rahat/taloudenhallinnan-perustaidot/saastaminen/"
+    },
+    "licence_class": "not_stated"
+   }
+  ]
+ }
+}

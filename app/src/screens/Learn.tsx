@@ -128,7 +128,7 @@ function nextStep(topics: Topic[], done: string[], scores: Record<string, number
  * its lessons as a path (done ✓, next ●, not started ○, every step tappable) ending in its quiz. No
  * points or streaks. Client-side only; progress is the persona's entry in learnProgress.
  */
-export function Learn() {
+export function Learn({ ageBand = null }: { ageBand?: string | null } = {}) {
   const { lang, customerId } = useSettings()
   const s = learnStrings(lang)
   const opening = useOpening()
@@ -153,6 +153,7 @@ export function Learn() {
           startAt={view.lesson}
           onQuiz={quizLength(view.topic) > 0 ? () => setView({ kind: 'quiz', topic: view.topic }) : undefined}
           onBack={() => setView({ kind: 'topic', topic: view.topic })}
+          ageBand={ageBand}
         />
       </section>
     )
