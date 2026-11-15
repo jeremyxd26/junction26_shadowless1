@@ -637,3 +637,23 @@ def test_an_open_follow_up_after_a_data_answer_gets_words_and_no_card(tmp_path, 
     events = ask(pipeline, second, cid)
     assert _cards(events) == 0
     assert all(not r.tools_on for r in agent.turns[before:])
+
+
+def test_a_used_up_model_window_skips_the_loop_with_a_reason_and_answers_as_off(tmp_path, switch):
+    """The live check of #967: with /api/ask's model window used up, agent mode sends no request and says why; the
+    answer is the old path's, the same as with the switch off."""
+    def run(model, name):
+        events = []
+        pipeline = make(tmp_path, model, name)
+        pipeline.run(AskRequest(customer_id="CUST00860", message=OPEN["en"], model_allowed=False),
+                     lambda e, p: events.append((e, p)))
+        return pipeline, events
+
+    switch[0].touch()
+    agent = AgentModel()
+    pipeline, got = run(agent, "on")
+    assert agent.turns == [] and {"source": "agent", "skipped": "model_window"} in \
+        audit_records(pipeline)[-1]["planner_turns"]
+    switch[0].unlink()
+    _, old = run(PlainModel(), "old")
+    assert done(got)["text"] == done(old)["text"] and done(got)["warnings"] == done(old)["warnings"]

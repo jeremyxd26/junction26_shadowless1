@@ -1611,9 +1611,18 @@ class Pipeline:
         if not agent_mode.enabled() or a.flags:
             return False
         if not callable(getattr(self.model, "agent_turn", None)) or not callable(getattr(self.model, "judge", None)):
+            why = "no_loop_model"
+        else:
+            judge = self._role_unavailable("judge")
+            why = (self._model_unavailable(req) or self._role_unavailable("agent")
+                   or (f"judge_{judge}" if judge else None))
+        if why:
+            # why the loop sent no request (#937 live check): "model_window" is /api/ask's per-minute model window
+            # (ASK_RATE_LIMIT_*), which answers with the rules and llm_unavailable whether agent mode is on or off
+            log.info("agent mode on but skipped (%s); the old path answers", why)
+            a.planner_turns.append({"source": "agent", "skipped": why})
             return False
-        return (self._model_unavailable(req) is None and self._role_unavailable("agent") is None
-                and self._role_unavailable("judge") is None)
+        return True
 
     def _agent_takes(self, message: str, lang: str, history: list[dict[str, Any]]) -> bool:
         """The planner's place: the loop takes a question the rule planner does not recognise, with no decline, no
