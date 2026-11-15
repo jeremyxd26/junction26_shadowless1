@@ -278,6 +278,12 @@ def test_specific_investment_questions_keep_the_decline(make, question):
     assert all(r.sources is None for r in model.requests)
 
 
+def test_a_general_investing_draft_does_not_repeat_the_adviser_line():
+    raw = {"language": "fi", "text": "Aloita puskurista. En voi suositella tiettyjä sijoituskohteita.", "cited": [],
+           "lesson_key": None}
+    assert any("adviser" in e for e in finlit_kb.draft_problems(raw, "fi", investing=True)[1])
+
+
 @pytest.mark.parametrize("lang", ["en", "fi"])
 def test_the_fixed_investing_order_passes_its_checks(lang):
     text = finlit_kb.INVEST_TEXT[1 if lang == "fi" else 0]

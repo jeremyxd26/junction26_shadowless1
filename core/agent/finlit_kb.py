@@ -205,6 +205,8 @@ INVEST_FORBIDDEN = (
     (re.compile(r"bitcoin|crypto\w*|ethereum|\betfs?\b|index funds?|indeksirahast\w*|kryptovaluut\w*"
                 r"|osakesaastotil\w*|\brecommend\w*|suosittel\w*|\byou should (?:buy|sell)\b|kannattaa (?:ostaa|myyda)"),
      "it names or recommends a product; a general investing answer gives only the general order"),
+    (re.compile(r"\bi can'?t recommend|\bi cannot recommend|\ben voi suositella|\bneuvoja\b|\badviser\b|\badvisor\b"),
+     "it says what Sentti cannot recommend or names the adviser; the server adds that line"),
 )
 
 
