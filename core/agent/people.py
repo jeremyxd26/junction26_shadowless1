@@ -500,8 +500,14 @@ def _other_spender(clause: str, first: bool) -> list[str]:
     return out
 
 
+# Greetings and fillers in front of a question are never a person's name (Codex run, test 22: "Moi, what's my spending?"
+# read "Moi" as the owner of "what's").
+_LEADING_GREETING = re.compile(r"^\s*((moi|moikka|moro|hei|heippa|hi|hey|hello|terve|morjens|morjes|okei|ok|okay|joo|no|"
+                               r"siis|niin)\b[\s,.!]*)+", re.I)
+
+
 def classify(question: str, peer_question: bool = False) -> str | None:
-    question = _normalised(question)
+    question = _normalised(_LEADING_GREETING.sub("", question) or question)
     plain = re.sub(r"[?!,;:]", " ", _plain(question))
     plain = " ".join(plain.split())
     if JOINT_LIST.search(_plain(question)):

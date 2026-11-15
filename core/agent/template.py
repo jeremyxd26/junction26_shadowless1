@@ -270,6 +270,15 @@ CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more si
                  "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
 
 
+# Codex run: confusion (test 3) and light emotional lines (test 18).
+CONFUSED = ("What was unclear? Shall I explain the last answer more simply?",
+            "Mikä jäi epäselväksi? Selitänkö edellisen vastauksen yksinkertaisemmin?")
+CONFUSED_CHIP = ("Explain it more simply", "Selitä yksinkertaisemmin")
+FEELINGS = ("Sorry to hear that \u2014 days like that happen. Want to look at something light, like what's left to "
+            "spend this week?",
+            "Ikävä kuulla \u2014 tällaisia päiviä tulee. Haluatko, että katsotaan jotain kevyttä, vaikka paljonko "
+            "sinulla on käyttövaraa?")
+FEELINGS_CHIP = ("What's left to spend this week?", "Paljonko minulla on käyttövaraa tällä viikolla?")
 # Renat's FI transcript: garbled input, feedback on the length or the understanding, "answer my previous question".
 DIDNT_CATCH = ("Sorry, I didn't catch that \u2014 could you say it again?",
                "En ihan saanut kiinni \u2014 voitko sanoa uudelleen?")
