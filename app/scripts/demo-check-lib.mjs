@@ -164,3 +164,26 @@ export function rowProblems(questions, firstQuestion) {
   if (!questions.includes(firstQuestion)) problems.push(`no "${firstQuestion}" chip in the row`)
   return problems
 }
+
+/**
+ * An answer has settled (#928) when no card skeleton shows and its text has not changed for this long. After a
+ * live stream ends, the text still types in and the cards wait behind a skeleton until it has (#741).
+ */
+export const SETTLE_QUIET_MS = 500
+/** The longest the check waits for an answer to settle after its stream ends (#928). */
+export const SETTLE_MAX_MS = 8_000
+
+/**
+ * One step of the settle wait: `look` is one sample of the answer ({ text, skeleton }), `now` its time in ms.
+ * The answer is settled once no skeleton shows and the sample has stayed the same for `quietMs`.
+ */
+export function settleStep(state, look, now, quietMs = SETTLE_QUIET_MS) {
+  const changed = !state || state.text !== look.text || state.skeleton !== look.skeleton
+  const since = changed ? now : state.since
+  return { text: look.text, skeleton: look.skeleton, since, settled: !look.skeleton && now - since >= quietMs }
+}
+
+/** The answer's main sentence: its first paragraph (the takeaway), not a note further down or a card. */
+export function mainText(paragraphs) {
+  return paragraphs.map((text) => String(text ?? '').trim()).find(Boolean) ?? ''
+}
