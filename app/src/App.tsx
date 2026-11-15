@@ -61,6 +61,8 @@ export default function App() {
   const chat = useChat(customerId, lang)
   const ready = overview.status === 'ready' ? overview.data : null
   const overviewFailed = overview.status === 'error' || personas.status === 'error'
+  // The persona's age band (#877): Learn lessons show a Statistics Finland line for people that age (#885).
+  const ageBand = personas.status === 'ready' ? (personas.data.personas.find((p) => p.customer_id === customerId)?.age_band ?? null) : null
   // The first screen's two tabs: the thread stays mounted (hidden) while Learn shows, so the opening's
   // review state, the streaming answer and the scroll position live on.
   const tab = path !== '/cards' && path !== '/bill' && params.get('tab') === 'learn' ? 'learn' : 'chat'
@@ -112,7 +114,7 @@ export default function App() {
           ) : (
             <OpeningProvider overview={overview} pushClientTurn={chat.pushClientTurn}>
               <FirstHint show={tab === 'chat' && chat.turns.length === 0} />
-              {tab === 'learn' && <Learn />}
+              {tab === 'learn' && <Learn ageBand={ageBand} />}
               <div hidden={tab !== 'chat'}>
               <Chat
                 chat={chat}
