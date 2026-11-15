@@ -180,6 +180,14 @@ At the venue, every visitor on the shared Wi-Fi arrives from one client address.
 
 A commit without `app/package.json` (any commit before PR #75 merged the app) prints `this commit has no app/package.json: no app build …`. The deploy removes the app link, so the paths outside the core answer 404 as before.
 
+### Talk mode's model switch (`var/talk-model-off`, #873)
+
+Talk answers ("why does it matter?", "explain", "any tips?", "no numbers") are written by the composer model, behind the talk-mode output checks. While the file `var/talk-model-off` exists, talk mode writes only its templates: reasoned sentences with no number, the next lever of the ranking, and no model request for a talk answer. The file is read per answer, so no restart is needed. A talk question about borrowing or affordability always gets the template, whatever the file says.
+
+- Turn the model text off on the stand: `touch /var/lib/shadowless1/var/talk-model-off` (as root; the directory is the container's `/srv/var`).
+- Turn it back on: `rm /var/lib/shadowless1/var/talk-model-off`.
+- Check: the audit record's planner turn of a talk answer carries `"talk_template": "switch"` while the file exists. `var/model-off` turns every model request off, talk mode included.
+
 ## Service data (`var/`)
 
 The core writes its own data under `var/` at the repository root, which is `/srv/var` in the container: the audit log, the daily model-call counter (#85) and the response and tool caches (#86). The container's file system is read-only, and this one directory is a bind mount from the host:

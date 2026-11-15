@@ -211,13 +211,13 @@ def test_the_planner_is_never_asked_on_a_talk_turn(tmp_path):
 
 
 def test_a_shown_number_may_be_cited_once(tmp_path):
-    model = TalkModel(drafts=["That {{n1}} matters because restaurants are where the money moves. A steady change "
+    model = TalkModel(drafts=["Those {{n2}} visits matter because restaurants are where the money moves. A steady change "
                               "there adds up over the months."])
     pipeline = make(tmp_path, model)
     first = ask(pipeline, "How much did I spend on restaurants in August 2026?")
     events = ask(pipeline, "Why does it matter?", dict(first)["meta"]["conversation_id"])
     d = done(events)
-    assert d["cited"] == ["n1"] and "€147.64" in d["text_rendered"] and "llm_unavailable" not in d["warnings"]
+    assert d["cited"] == ["n2"] and "10 visits" in d["text_rendered"] and "llm_unavailable" not in d["warnings"]
     assert not [e for e, _ in events if e == "card"]
 
 
@@ -445,7 +445,7 @@ def test_the_switch_file_turns_the_model_text_off_per_answer(tmp_path, monkeypat
                                      "Any tips for getting a loan?", "What do you suggest, buy now pay later?",
                                      "Any advice on instalments?", "Onko minulla varaa tähän? En tajua",
                                      "Voinko ostaa uuden puhelimen? Vinkkejä", "Vinkkejä pikavippiin?",
-                                     "Mitä mun pitäis tehdä, ottaa laina?", "Selitä. Miksi luotolla on väliä?"])
+                                     "Mitä mun pitäis tehdä, ottaa laina?", "Miksi sillä on väliä, jos otan luottoa?"])
 def test_borrowing_and_affordability_never_reach_the_model(tmp_path, message):
     model = TalkModel()
     pipeline = make(tmp_path, model)
@@ -562,7 +562,7 @@ def test_renats_acceptance_probe_tips_then_something_new(tmp_path, first, more, 
     events = ask(pipeline, more, dict(events)["meta"]["conversation_id"], language=lang)
     d2 = done(events)
     assert d2["text_rendered"] != d["text_rendered"] and not [e for e, _ in events if e == "card"]
-    assert model.requests[-1].data[0]["talk"]["tip"]["lever"] == "small purchases"
+    assert model.requests[-1].data[0]["talk"]["tip"]["lever"] == ("pienet ostokset" if lang == "fi" else "small purchases")
 
 
 def test_why_should_i_save_after_a_talk_answer_gives_reasons_not_numbers(tmp_path):
@@ -572,3 +572,15 @@ def test_why_should_i_save_after_a_talk_answer_gives_reasons_not_numbers(tmp_pat
     assert any(t.get("talk") == "why" for t in audit_records(pipeline)[-1]["planner_turns"])
     assert not [e for e, _ in events if e == "card"] and not digits(done(events)["text_rendered"])
     assert talk_mode.trigger("Why should I save money?") is None   # fresh: the literacy route's, not talk mode
+
+
+def test_the_previous_answers_main_figure_again_is_a_repetition(tmp_path):
+    again = ("That {{n1}} matters because restaurants are where the money moves. A steady change there adds up over "
+             "the months.")
+    model = TalkModel(drafts=[again, again])
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, "How much did I spend on restaurants in August 2026?")
+    d = done(ask(pipeline, "Why does it matter?", dict(first)["meta"]["conversation_id"]))
+    assert d["cited"] == [] and not digits(d["text_rendered"])
+    attempts = audit_records(pipeline)[-1]["composer_attempts"]
+    assert attempts[0]["validation"][0].startswith("this repeats") and attempts[-1]["raw"] == "template"
