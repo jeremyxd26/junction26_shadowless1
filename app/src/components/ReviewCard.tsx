@@ -16,6 +16,8 @@ import { RetryButton } from './RetryButton.tsx'
 const SURFACE = 'rounded-xl bg-deep p-4 text-on-deep outline-none [&_:focus-visible]:outline-mint'
 /** Inside a chat answer (#696): the answer card's white frame, not the opening's deep green. */
 const ANSWER_SURFACE = 'rounded-lg border border-line bg-surface p-4 text-ink outline-none'
+/** The opening's light look (Renat's redesign): Sentti's first chat bubble, on the left. */
+const BUBBLE = 'mr-auto w-full max-w-[26rem] rounded-xl rounded-tl-sm border border-line bg-surface p-3 text-ink outline-none'
 
 /** Tokens the question may carry: `{{n1}}` is the card's amount, `{{date}}` its date. */
 const TOKEN = /\{\{(n1|date)\}\}/g
@@ -70,7 +72,18 @@ function factsOf(card: ReviewCardData, date: string): string {
  * amount gets the amount chip at its start: the amount is shown once, with no separate line.
  * `compact` (after the answer, as context): 16px text and the smaller inline chip.
  */
-function QuestionText({ card, compact = false, inAnswer = false }: { card: ReviewCardData; compact?: boolean; inAnswer?: boolean }) {
+function QuestionText({
+  card,
+  compact = false,
+  inAnswer = false,
+  bubble = false,
+}: {
+  card: ReviewCardData
+  compact?: boolean
+  inAnswer?: boolean
+  /** The opening's bubble: "Quick question:" before the API's question, at body size. */
+  bubble?: boolean
+}) {
   const { lang, t } = useSettings()
   const date = formatDate(card.date, lang)
   const purchase = purchaseOf(card, t.reviewSeePurchase)
@@ -109,6 +122,13 @@ function QuestionText({ card, compact = false, inAnswer = false }: { card: Revie
       : [<span key="amount">{amountChip}</span>, ' ', ...fill(question, { date: dateChip })]
   // A normal line height (about 1.3), relative to the text so that it grows with it (#725: 26px
   // overlapped at 200 %); the chip's line grows to fit it, and its ::after keeps the touch area at 44px.
+  if (bubble) {
+    return (
+      <p className={compact ? 'text-base leading-6 text-ink-2' : 'text-base leading-7 text-ink'}>
+        <span className="font-semibold">{t.reviewQuick}</span> {sentence}
+      </p>
+    )
+  }
   if (inAnswer) {
     return compact ? (
       <p className="mt-2 text-base leading-6 text-ink-2">{sentence}</p>
@@ -193,6 +213,8 @@ interface AskingProps {
   leaving: boolean
   /** Inside a chat answer: the answer card's look (#696); the behaviour is the same. */
   inAnswer?: boolean
+  /** The opening's chat bubble (Renat's light redesign); the behaviour is the same. */
+  bubble?: boolean
 }
 
 /**
@@ -200,7 +222,7 @@ interface AskingProps {
  * (#310 decision): the question with its amount chip and two answer buttons; `why` behind ⓘ.
  */
 export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function ReviewAsking(
-  { card, busy, error, onAnswer, onNotSure, onRetry, leaving, inAnswer = false },
+  { card, busy, error, onAnswer, onNotSure, onRetry, leaving, inAnswer = false, bubble = false },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -208,6 +230,78 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
   const [whyOpen, setWhyOpen] = useState(false)
   // While the server asked to wait (Retry-After), a second tap on an answer would be a retry too.
   const waiting = useCountdown(error?.until ?? null) > 0
+
+  const errorLine = error && (
+    // Only the message is the alert; the countdown sits outside it, so a screen reader does not
+    // announce every second of it.
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
+      <span role="alert" className="flex-1">
+        {error.message}
+      </span>
+      {error.retryable && (
+        <RetryButton onRetry={onRetry} until={error.until} className="min-h-11 font-semibold text-danger underline underline-offset-4" />
+      )}
+    </div>
+  )
+
+  if (bubble) {
+    // Sentti's first bubble: the question, the API's answers as outlined pills, then "Not sure" and the why.
+    // "Sentti asks" stays as the section's hidden heading for screen readers.
+    return (
+      <section
+        ref={ref}
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        aria-busy={busy !== null}
+        data-review-card={card.tx_ref}
+        data-opening-part="review"
+        className={`${BUBBLE} ${leaving ? 'card-leave' : 'card-enter'}`}
+      >
+        <h2 id={titleId} className="sr-only">
+          {t.reviewAsks}
+        </h2>
+        <QuestionText card={card} inAnswer bubble />
+        <div className="mt-3 flex flex-wrap gap-2">
+          {card.options.map((option) => (
+            <button
+              key={option.basket}
+              type="button"
+              onClick={() => onAnswer(option.basket)}
+              disabled={busy !== null || waiting}
+              className={`inline-flex min-h-11 min-w-0 items-center rounded-pill border-[1.5px] border-brand px-4 text-base font-semibold text-brand transition-transform duration-150 hover:bg-mint-tint active:scale-[.97] disabled:cursor-wait ${
+                busy === option.basket ? 'bg-mint-tint outline-3 outline-offset-2 outline-mint' : 'bg-surface'
+              }`}
+            >
+              <span lang={lang} className="min-w-0 break-words hyphens-auto">
+                {option.label[lang]}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-1 -mb-1 flex items-center gap-1">
+          {/* Client only: closes the bubble; the purchase keeps waiting for an answer. */}
+          <button
+            type="button"
+            onClick={onNotSure}
+            disabled={busy !== null}
+            className="min-h-11 px-1 text-sm text-muted underline underline-offset-4 hover:text-ink"
+          >
+            {t.reviewNotSure}
+          </button>
+          <button
+            type="button"
+            onClick={() => setWhyOpen(true)}
+            aria-label={t.reviewWhy}
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-pill text-muted hover:text-ink"
+          >
+            <InfoGlyph />
+          </button>
+        </div>
+        {errorLine}
+        {whyOpen && <WhySheet card={card} onClose={() => setWhyOpen(false)} />}
+      </section>
+    )
+  }
 
   return (
     <section
@@ -276,22 +370,7 @@ export const ReviewAsking = forwardRef<HTMLElement, AskingProps>(function Review
         })}
       </div>
 
-      {error && (
-        // Only the message is the alert; the countdown sits outside it, so a screen reader does not
-        // announce every second of it.
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-danger-tint px-3 py-2 text-sm text-ink">
-          <span role="alert" className="flex-1">
-            {error.message}
-          </span>
-          {error.retryable && (
-            <RetryButton
-              onRetry={onRetry}
-              until={error.until}
-              className="min-h-11 font-semibold text-danger underline underline-offset-4"
-            />
-          )}
-        </div>
-      )}
+      {errorLine}
 
       {whyOpen && <WhySheet card={card} onClose={() => setWhyOpen(false)} />}
     </section>
@@ -305,6 +384,8 @@ interface AnsweredProps {
   onUndo?: () => void
   /** Inside a chat answer: the answer card's look (#696). */
   inAnswer?: boolean
+  /** The opening's chat bubble (Renat's light redesign). */
+  bubble?: boolean
 }
 
 /**
@@ -312,13 +393,47 @@ interface AnsweredProps {
  * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
-  { card, basket, onUndo, inAnswer = false },
+  { card, basket, onUndo, inAnswer = false, bubble = false },
   ref,
 ) {
   const { lang, t } = useSettings()
   const titleId = useId()
   const option = card.options.find((candidate) => candidate.basket === basket)
   const look = BASKETS[basket]
+  if (bubble) {
+    return (
+      <section
+        ref={ref}
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        data-review-card={card.tx_ref}
+        data-opening-part="review"
+        className={`${BUBBLE} card-enter`}
+      >
+        <h2 id={titleId} className="sr-only">
+          {t.reviewAsks}
+        </h2>
+        <QuestionText card={card} compact inAnswer bubble />
+        <div className="mt-1 -mb-1 flex flex-wrap items-center justify-between gap-x-2">
+          <p className="flex items-center gap-2 text-base font-bold text-ink">
+            <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-pill bg-mint text-ink">
+              <Check className="size-4" />
+            </span>
+            {option?.label[lang]}
+          </p>
+          {onUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="min-h-11 min-w-11 px-1 text-sm font-semibold text-brand underline underline-offset-4 hover:text-ink"
+            >
+              {t.undo}
+            </button>
+          )}
+        </div>
+      </section>
+    )
+  }
   return (
     <section
       ref={ref}

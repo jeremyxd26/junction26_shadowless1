@@ -172,11 +172,11 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
 }
 
 /**
- * The opening's one big card (the #310 decision, one thought per screen): safe to spend as the
- * API's `display`, a caption chosen by `hero.status`, and a chevron. The whole card opens how the
- * number is made (its evidence: the hero components): the button's `::after` covers the card,
- * and the Estimate badge sits above it, in the flow of the caption row. After a review answer the
- * amount counts to the new value, with "↓ was …" beside it, on the same line, so nothing jumps.
+ * The opening's key line (Renat's light redesign): no card, safe to spend as the API's `display` in large light
+ * text, centred, with the caption chosen by `hero.status` and a chevron under it, and a small Estimate badge.
+ * The amount's button opens how the number is made (its evidence: the hero components); its `::after` covers the
+ * block, and the Estimate badge sits above it. After a review answer the amount counts to the new value, with
+ * "↓ was …" in a line of its own whose room is always kept, so nothing jumps during the count (the video scene).
  */
 export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
   const { t } = useSettings()
@@ -189,51 +189,46 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
   const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
   const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
   return (
-    <section data-opening-part="hero" className="relative rounded-xl bg-hero p-4 text-on-hero [&_:focus-visible]:outline-mint">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <button
-          type="button"
-          disabled={!ref}
-          onClick={() => ref && openEvidence(ref)}
-          aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
-          className="min-w-0 text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-mint"
-        >
-          {/* 40px at 375 px, down to 28px on a narrow screen or at 200 % zoom. */}
-          <span
-            key={count?.seq ?? 'static'}
-            className={`block text-[clamp(28px,11vw,40px)] font-bold leading-[1.1] tracking-tight tabular-nums ${count ? 'motion-fade' : ''}`}
-          >
-            {text}
-          </span>
-        </button>
-        {/* The hint's slot is always there, invisible until an answer, so the card never changes
-            height when "was …" comes or goes, even where it wraps under the amount. After a review
-            answer: never red, never grey on the green block (DESIGN.md, #35). */}
+    <section data-opening-part="hero" className="relative flex flex-col items-center pt-3 text-center">
+      <button
+        type="button"
+        disabled={!ref}
+        onClick={() => ref && openEvidence(ref)}
+        aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
+        className="min-w-0 outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-brand"
+      >
+        {/* 56px at 375 px, down to 40px on a narrow screen or at 200 % zoom. */}
         <span
-          aria-hidden={hint ? undefined : true}
-          className={`inline-flex items-center gap-1 text-sm font-semibold text-on-hero-muted ${hint ? 'motion-fade' : 'invisible'}`}
+          key={count?.seq ?? 'static'}
+          className={`block text-[clamp(40px,15vw,56px)] font-light leading-[1.05] tracking-tight text-ink tabular-nums ${count ? 'motion-fade' : ''}`}
         >
-          {was ? <Arrow down={was.value > primary.value} /> : <Check />}
-          {hint ?? t.was(primary.display)}
+          {text}
         </span>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span aria-hidden="true" className="inline-flex min-w-32 flex-1 items-center gap-1 text-sm font-semibold text-on-hero-muted">
-          {caption}
-          <Chevron />
-        </span>
-        {card.estimate && (
-          // Above the card's button; the badge keeps its 44px target without making the row taller.
-          <div className="relative z-10 -my-2.5 shrink-0">
-            <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />
-          </div>
-        )}
-      </div>
+      </button>
+      <span aria-hidden="true" className="mt-1 inline-flex items-center gap-0.5 text-base font-semibold text-brand">
+        {caption}
+        <Chevron />
+      </span>
+      {/* The hint's line is always there, invisible until an answer, so the block never changes height when
+          "was …" comes or goes. After a review answer: never red (DESIGN.md, #35). */}
+      <span
+        aria-hidden={hint ? undefined : true}
+        className={`mt-1 inline-flex items-center gap-1 text-sm font-semibold text-muted ${hint ? 'motion-fade' : 'invisible'}`}
+      >
+        {was ? <Arrow down={was.value > primary.value} /> : <Check />}
+        {hint ?? t.was(primary.display)}
+      </span>
+      {card.estimate && (
+        // Above the block's button; the badge keeps its 44px target.
+        <div className="relative z-10 -mt-1">
+          <EstimateBadge estimate={card.estimate} control={estimate.control} />
+        </div>
+      )}
       {/* What the figure has already taken out: the words of metrics.md section 3, no numbers. */}
-      <p className="mt-1 text-xs leading-4 text-on-hero-muted">{t.heroAfter}</p>
+      <p className="mt-0.5 text-xs leading-4 text-muted">{t.heroAfter}</p>
       {card.estimate && estimate.open && (
-        <div className="relative z-10">
-          <EstimateNote estimate={card.estimate} id={estimate.id} onHero />
+        <div className="relative z-10 mt-2 w-full text-left">
+          <EstimateNote estimate={card.estimate} id={estimate.id} />
         </div>
       )}
     </section>
