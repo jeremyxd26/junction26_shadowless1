@@ -92,6 +92,9 @@ METHODS = {
     "bills_due": "safe_to_spend.bills_due_eur@1",
     # get_peer_benchmark (metrics.md section 6, 06_peer_benchmark.sql): the customer's own value
     "peer_you": "peer_benchmark.you_month_eur@1",
+    # the customer's age band in the whole synthetic dataset (#883, 09_age_band_peer.sql): a band median, its size
+    "age_band_median": "peer.age_band_median@1",
+    "age_band_cohort": "peer.age_band_cohort_size@1",
     # Statistics Finland's household budget survey beside the peer comparison (#569): a cited table value
     "national_month": "national_context.monthly_eur@1",
     # get_balance_forecast (#257, metrics.md section 3.3)
@@ -507,6 +510,19 @@ PEER_MIN_N = "20"   # app.peer_min_n of 06: at least 20 other peers (metrics.md 
 # The profile writes `metric` evidence specs for 05 (#122 lets evidence re-run only listed files).
 METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({PROFILE_FILE})
 
+# The customer's age band in the whole synthetic dataset beside the peer comparison of total spending (#883):
+# 09_age_band_peer.sql over the marts, the band's median monthly baskets and ordinary spending. Context, never a
+# target. A band of fewer than AGE_BAND_MIN_N customers is not shown (app.band_min_n, pinned here).
+AGE_BAND_FILE = "09_age_band_peer.sql"
+AGE_BAND_MIN_N = "30"
+AGE_BANDS: tuple[tuple[str, int, int | None], ...] = (   # (band, first age, last age or None), as in the file
+    ("18-24", 18, 24), ("25-34", 25, 34), ("35-44", 35, 44), ("45-54", 45, 54), ("55-64", 55, 64), ("65+", 65, None),
+)
+AGE_BAND_MEASURES = ("regular_essentials", "unexpected_necessities", "everyday_spending", "ordinary_spending")
+# the peer metric whose answer carries the band's line, and the band's measure it shows: only total spending
+AGE_BAND_MEASURE_OF = {"spend_total": "ordinary_spending"}
+METRIC_EVIDENCE_FILES = METRIC_EVIDENCE_FILES | frozenset({AGE_BAND_FILE})
+
 PROFILE_KEYS = ("not_enough_income_data", "stretched", "big_ticket", "everyday_heavy", "saver", "steady")
 PROFILE_TRAITS = ("salary_moved_elsewhere", "went_below_zero", "regular_investor", "weekend_spender",
                   "frequent_small_purchases")
@@ -716,6 +732,11 @@ PEER_TEXT: dict[str, tuple[str, str]] = {
     # table's age group is named in the evidence and the data file, not here
     "national_label": ("Households of your age group, per consumption unit",
                        "Ikäryhmäsi kotitaloudet, kulutusyksikköä kohti"),
+    # #883: the labels of the age band Numbers; no digits either (the band is named in the evidence view)
+    "age_band_median": ("{what}: median of people your age in the synthetic dataset",
+                        "{what}: ikäryhmäsi mediaani synteettisessä aineistossa"),
+    "age_band_cohort": ("People your age in the synthetic dataset", "Ikäryhmäsi ihmiset synteettisessä aineistossa"),
+    "ordinary_spending": ("Ordinary spending", "Tavallinen kulutus"),
     "note": (
         "Only group statistics are shown, never another customer's transactions.",
         "Vain ryhmän tunnusluvut näytetään, ei koskaan toisen asiakkaan tapahtumia.",
