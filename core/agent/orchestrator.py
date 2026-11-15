@@ -52,6 +52,7 @@ from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
 from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
+from core.agent.rules import WHAT_IF_MORE_OPTIONS, WHAT_IF_WHICH_OPTIONS, what_if_which_question
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
@@ -568,6 +569,7 @@ class Pipeline:
                 # the model was asked and failed: with the model off or over budget the rules' clarifying
                 # question is the normal answer (#341).
                 a.offer_contact = getattr(plan, "offer_contact", False)   # #420: set by the rule planner only
+                clarify = self._what_if_chips(ctx, clarify, lang)   # #888: no chip leads to a dead end
                 return self._clarify(clarify, lang, emit, a, not_worked_out=model_failed)
 
             for call, exc in rejected:
@@ -1139,6 +1141,46 @@ class Pipeline:
             if not getattr(plan, "recognised", True) or any(c.name == "ask_clarifying_question" for c in plan.calls):
                 return False
         return True
+
+    def _what_if_chips(self, ctx: ToolContext, clarify: Any, lang: str) -> Any:
+        """The what-if question back's chips follow the customer's data (#888): a chip is offered only when the
+        what-if tool gives this customer an estimate for it (the tool's own check: enough purchases in the last six
+        complete months and a saving above zero), and the next candidate takes a dropped chip's place, so "What if
+        I took fewer taxis?" never leads to "too few transactions". The question's examples are the offered chips, so
+        its text never names a category the chips leave out. Any other question back, or any error, keeps its text and
+        chips as they are."""
+        i = 1 if lang == "fi" else 0
+        defaults = list(WHAT_IF_WHICH_OPTIONS[i])
+        if [plain_text(o) for o in getattr(clarify, "options", None) or []] != defaults:
+            return clarify
+        try:
+            with self.data.connection() as conn:
+                probe = dataclasses.replace(ctx, conn=conn, numbers=NumberRegistry())
+                keep: list[str] = []
+                for option in (*defaults, *WHAT_IF_MORE_OPTIONS[i]):
+                    if len(keep) == len(defaults):
+                        break
+                    if self._what_if_estimates(probe, option, lang):
+                        keep.append(option)
+        except Exception as exc:  # noqa: BLE001 - the chips as they were, never a failed answer
+            log.warning("what-if chips not checked (%s)", type(exc).__name__)
+            return clarify
+        return SimpleNamespace(question=what_if_which_question(keep, lang), options=keep)
+
+    def _what_if_estimates(self, probe: ToolContext, option: str, lang: str) -> bool:
+        """Whether the chip, sent with a cut, is a what-if the tool estimates for this customer."""
+        asked = option.rstrip("?") + (" 10 %?" if lang == "fi" else " by 10%?")
+        plan = self.fallback.plan(PlanInput(question=asked, language=lang, as_of=self.as_of.isoformat(),
+                                            tools=self.registry.schemas()))
+        call = next((c for c in plan.calls if c.name == "run_what_if"), None)
+        if call is None or "run_what_if" not in self.registry.tools:
+            return False
+        try:
+            _, args = self.registry.parse(call.name, call.args)
+            data = self.registry.tools[call.name].fn(probe, args).data
+        except (MissingData, ValueError, CallRejected):   # too few purchases, nothing to cut, a refused selection
+            return False
+        return data.status in ("estimate", "estimate_with_caveat") and Decimal(str(data.saving_per_month.value)) > 0
 
     def _rules_clarify(self, plan_in: PlanInput, lang: str) -> Any:
         """The rules' clarifying question for this message, or their general one."""
