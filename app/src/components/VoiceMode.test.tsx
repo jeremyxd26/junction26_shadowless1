@@ -126,7 +126,7 @@ describe('the cat in the voice mode (#893)', () => {
   /** The overlay over a stand-in session that stays in one phase. */
   async function renderPhase(phase: VoicePhase, lang: 'en' | 'fi' = 'en') {
     stub(true, true)
-    const { VoiceMode, MASCOT_STATE, WAVE_BARS } = await import('./VoiceMode.tsx')
+    const { VoiceMode, WAVE_BARS } = await import('./VoiceMode.tsx')
     const settings = await import('../lib/settings.ts')
     const snapshot = { phase, missed: false, heard: '', micOn: phase !== 'starting', bargeIn: false }
     const session = {
@@ -144,14 +144,13 @@ describe('the cat in the voice mode (#893)', () => {
     const markup = renderToStaticMarkup(
       createElement(settings.SettingsContext, { value: { lang, customerId: 'CUST00860', t: strings(lang) } }, createElement(VoiceMode, { session, turns: [] })),
     )
-    return { markup, state: MASCOT_STATE[phase], bars: WAVE_BARS }
+    return { markup, bars: WAVE_BARS }
   }
 
   it('maps each phase to the cat: starting rests, then listening, thinking and speaking', async () => {
     const expected: Record<VoicePhase, string> = { starting: 'idle', listening: 'listening', thinking: 'thinking', speaking: 'speaking' }
     for (const phase of ['starting', 'listening', 'thinking', 'speaking'] as const) {
-      const { markup, state } = await renderPhase(phase)
-      expect(state).toBe(expected[phase])
+      const { markup } = await renderPhase(phase)
       expect(markup.match(/data-state="[a-z]+"/g)).toEqual([`data-state="${expected[phase]}"`])
     }
   })

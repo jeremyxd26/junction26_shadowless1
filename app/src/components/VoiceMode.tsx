@@ -12,7 +12,7 @@ import type { MascotState } from './voice/mascotStrings.ts'
 export const WAVE_BARS = 21
 
 /** The cat's state in each phase (#893): it rests while the microphone opens. */
-export const MASCOT_STATE: Record<VoicePhase, MascotState> = {
+const MASCOT_STATE: Record<VoicePhase, MascotState> = {
   starting: 'idle',
   listening: 'listening',
   thinking: 'thinking',
