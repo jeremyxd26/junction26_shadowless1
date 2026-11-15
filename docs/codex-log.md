@@ -2,8 +2,8 @@
 
 Codex (the OpenAI coding agent, CLI) was a second pair of eyes while we built Sentti at Junction 2026. It reviewed and tested; every fix went through our usual issues, reviews and PRs. This file is the one place in the repository where an AI tool is named on purpose (a team decision of Sat 14.11 01:57). Commits and PRs carry no AI signatures.
 
-**Safety rules for every Codex run:**
-- Read-only (`--sandbox read-only`), on a clean copy made with `git archive` or a separate clone, never in a working folder that holds `.env`.
+**Safety rules for the Codex runs:**
+- On the code: read-only (`--sandbox read-only`), on a clean copy made with `git archive` or a separate clone, never in a working folder that holds `.env`.
 - No keys, no real personal data: Sentti runs on the synthetic S-Pankki dataset and four demo personas.
 - On the live stand, at most one question every 5 seconds, because the model has a daily budget.
 
@@ -37,4 +37,4 @@ Codex ran a scripted conversation of 30 checks against https://sentti.jeremyxd.d
 - The 30 checks are part of the acceptance probes for the agent mode (#937).
 
 ## What Codex did not do
-It made no commits, never saw `.env` or any key, and had no access to the shared database or the dev host.
+It made no commits, never saw `.env` or any key, and had no shell or database access: the conversation test used only the public site, like any visitor.
