@@ -15,7 +15,7 @@ from core.tools.context import ToolContext
 
 AS_OF = date(2026, 9, 30)
 D = Decimal
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 SAMPLE = ["CUST00001", "CUST00002", "CUST00006"]
 
 # metrics.md 3.1 and the contract examples card.safe_to_save* (as_of 2026-09-30, no labels):
@@ -60,7 +60,7 @@ def test_safe_to_save_columns_equal_the_worked_numbers(conn, customer_id):
 
 
 # the two reason branches are CUST00019 and CUST00002 (sample); every persona can save something
-@pytest.mark.parametrize("customer_id", cases(sorted(SAVE_WORKED) + ["CUST00349", "CUST00493"]))
+@pytest.mark.parametrize("customer_id", cases(sorted(SAVE_WORKED) + ["CUST00387", "CUST00493"]))
 def test_safe_to_save_rules(conn, customer_id):
     r = metric_sql.run_one(conn, "03_safe_to_spend.sql", customer_id, AS_OF, {"cushion_eur": "100"})
     # computed from unrounded terms, rounded once: within a cent of the displayed parts, never below 0

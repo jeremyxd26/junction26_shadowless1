@@ -13,7 +13,7 @@ from core.tools.context import ToolContext
 from core.tools.small_purchases import get_small_purchases
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ("CUST00860", "CUST00493", "CUST00349", "CUST00849")
+PERSONAS = ("CUST00860", "CUST00493", "CUST00387", "CUST00849")
 
 
 def number(n):
@@ -46,4 +46,4 @@ def test_the_persona_numbers_of_the_design_document(conn):
         d = get_small_purchases(ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn), {}).data
         got[customer_id] = (d.count.value, d.total.value, number(d.month_average), d.few)
     assert got == {"CUST00860": (4, 28.73, 9.58, True), "CUST00493": (31, 156.04, 52.01, False),
-                   "CUST00349": (13, 94.25, 31.42, False), "CUST00849": (1, 8.64, 2.88, True)}
+                   "CUST00387": (5, 30.63, 10.21, False), "CUST00849": (1, 8.64, 2.88, True)}

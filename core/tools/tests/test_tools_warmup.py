@@ -9,7 +9,7 @@ from core.tools.cache import ToolCache
 from core.tools.models import Args, ToolResult
 from core.tools.warmup import WarmCall
 
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +73,7 @@ def test_cli_lists_the_plan_without_a_database(capsys):
     text = capsys.readouterr().out
     for name in ("get_basket_breakdown", "get_recurring_bills", "get_safe_to_spend", "run_what_if"):
         assert name in text
-    assert "CUST00860,CUST00493,CUST00349,CUST00849" in text
+    assert "CUST00860,CUST00493,CUST00387,CUST00849" in text
 
 
 def test_cli_needs_the_disk_layer(monkeypatch, capsys):

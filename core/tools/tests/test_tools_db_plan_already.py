@@ -1,5 +1,6 @@
 """#560 on the database, the four personas (one customer per query): what already goes to savings beside the plan.
-Only CUST00349 has a recurring investment deposit; the other three have none. Skipped without DATABASE_URL."""
+Only the first Eetu (CUST00349, no persona since #882) had a recurring investment deposit, so its test is skipped; the
+four personas have none. Skipped without DATABASE_URL."""
 
 from datetime import date
 
@@ -11,13 +12,14 @@ from core.tools.context import ToolContext
 from core.tools.savings_plan import get_savings_plan
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 
 
 def ctx_for(conn, customer_id, language="en"):
     return ToolContext(customer_id=customer_id, as_of=AS_OF, conn=conn, language=language)
 
 
+@pytest.mark.skip(reason="the first Eetu, CUST00349, is no persona since #882: the database runs read the four personas only, and none of them has a regular investment deposit")
 def test_cust00349_already_sets_aside_its_investment_deposit(conn):
     data = get_savings_plan(ctx_for(conn, "CUST00349"), {}).data
     assert (data.saving_seen, data.already_saving.value, data.already_share.value) == (True, 242.95, 7.7)
@@ -32,14 +34,14 @@ def test_cust00349_already_sets_aside_its_investment_deposit(conn):
     assert share.reconciles and share.kind == "composite"
 
 
-@pytest.mark.parametrize("customer_id", ["CUST00860", "CUST00493", "CUST00849"])
+@pytest.mark.parametrize("customer_id", ["CUST00860", "CUST00493", "CUST00387", "CUST00849"])
 def test_a_persona_without_a_regular_transfer_gets_no_numbers(conn, customer_id):
     data = get_savings_plan(ctx_for(conn, customer_id), {}).data
     assert (data.saving_seen, data.already_saving, data.already_share) == (False, None, None)
 
 
 @pytest.mark.parametrize("customer_id, total, goal", [
-    ("CUST00860", 63.17, 360.0), ("CUST00493", 30.38, 420.0), ("CUST00349", 76.99, 600.0), ("CUST00849", 67.12, 190.0),
+    ("CUST00860", 63.17, 360.0), ("CUST00493", 30.38, 420.0), ("CUST00387", 54.18, 150.0), ("CUST00849", 67.12, 190.0),
 ])
 def test_the_plan_total_and_the_goal_are_as_before(conn, customer_id, total, goal):
     data = get_savings_plan(ctx_for(conn, customer_id), {}).data
