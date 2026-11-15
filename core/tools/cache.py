@@ -149,8 +149,18 @@ def args_json(args_model: type[BaseModel], args: Any) -> tuple[BaseModel, str]:
 # falls back to the customer's range (no group, "not shown"); such a result is served but never cached,
 # so a warm-up during a mart build cannot pin "not shown" until the next deploy. A rebuild of complete
 # marts with other data for the same as_of is a data reload, which the cache-reset runbook covers.
+def _peer_not_stored(result: ToolResult) -> bool:
+    """The range fallback (above), or a shown comparison of total spending without its age band (#883): the band's
+    query failed (a timeout under load), so a warm-up never pins the answer without the band until the next deploy."""
+    data = result.data
+    if getattr(data, "peer_source", "marts") != "marts":
+        return True
+    return getattr(data, "metric", None) == "spend_total" and bool(getattr(data, "shown", False)) \
+        and getattr(data, "age_band", None) is None
+
+
 DO_NOT_STORE: dict[str, Callable[[ToolResult], bool]] = {
-    "get_peer_benchmark": lambda result: getattr(result.data, "peer_source", "marts") != "marts",
+    "get_peer_benchmark": _peer_not_stored,
 }
 
 

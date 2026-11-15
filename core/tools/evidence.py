@@ -390,7 +390,10 @@ def resolve(conn: psycopg.Connection, ref: str, customer_id: str, *, limit: int 
             metric_sql.check_settings(source["settings"])
         except ValueError:
             raise EvidenceForbidden(ref) from None
-        row = metric_sql.run_one(conn, source["file"], customer_id, as_of, source["settings"])
+        settings = source["settings"]
+        if source["file"] == config.AGE_BAND_FILE:   # #883: the smallest band shown is pinned, never the spec's
+            settings = {"band_min_n": config.AGE_BAND_MIN_N}
+        row = metric_sql.run_one(conn, source["file"], customer_id, as_of, settings)
         column = row.get(source["column"]) if row else None
         recomputed = None if column is None else metric_sql.decimal(column)
         return Resolution(ref, "metric", spec["method"], value, reconciles=recomputed == value, spec=spec)
