@@ -2463,6 +2463,29 @@ def human_request(question: str) -> bool:
     return any(re.fullmatch(fold_pattern(rx), core) for rx in HUMAN_REQUEST)
 
 
+def off_topic_decline(request: PlanInput, result: PlanResult) -> bool:
+    """The rules' plan is only the generic off-topic decline (#834): one decline of kind out_of_scope, claimed by the
+    off-topic patterns (DECLINE_RULES' last entry, the Finnish weather), whose text is the generic off-topic one. A
+    rules-first wrapper asks the model's planner instead when the model may be used; the rule model's own plan never
+    changes. Never this: a health decline or the made-up-number refusal (their own texts), and a message with a guard
+    flag, a set-aside form, a health word or another person in it, since the rules read those only after the off-topic
+    patterns and a hard refusal must never become the model's."""
+    if request.round != 1 or request.responses or len(result.calls) != 1:
+        return False
+    call = result.calls[0]
+    if call.name != "decline" or call.args.get("kind") != "out_of_scope":
+        return False
+    question = request.question
+    q = fold(question)
+    if request.guard_flags or flags(question) or re.search(SET_ASIDE, q) or re.search(HEALTH, q):
+        return False
+    if template.refusal("out_of_scope", "en", question)[0] != template.pick(template.REFUSAL["out_of_scope"]["text"], "en"):
+        return False   # the health or the made-up-number text
+    if claim(request).rule != "decline":
+        return False   # a what-if or an intent that declines (health): kept
+    return people.classify(question, False) not in (people.DECLINE, people.UNCLAIMED)
+
+
 class RuleModel:
     model_id = "rules@1"
 
