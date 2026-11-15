@@ -1199,7 +1199,7 @@ LABEL_EFFECT_TEXT: dict[str, tuple[str, str]] = {
     # left to spend after the answer; the hero keeps "was …" for the before.
     "needed": ("Got it \u2014 counted as a must-have. You now have {after} left to spend this week.",
                "Selvä \u2014 merkitsin sen välttämättömäksi. Käyttövarasi tällä viikolla on nyt {after}."),
-    "choice": ("Got it \u2014 counted as your own choice. Your left to spend stays {after}.",
+    "choice": ("Got it \u2014 counted as your own choice. What you have left to spend stays {after}.",
                "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi pysyy {after}."),
     "choice_moved": ("Got it \u2014 counted as your own choice. You now have {after} left to spend this week.",
                      "Selvä \u2014 merkitsin sen omaksi valinnaksesi. Käyttövarasi tällä viikolla on nyt {after}."),

@@ -48,7 +48,7 @@ def test_needed_is_one_confirmation_with_only_the_new_left_to_spend():
 
 def test_my_choice_says_stays_when_nothing_moved_and_now_when_it_did():
     assert reply(side(138.79), side(138.79), "everyday_spending") == (
-        "Got it \u2014 counted as your own choice. Your left to spend stays {{safe_to_spend.after}}.")
+        "Got it \u2014 counted as your own choice. What you have left to spend stays {{safe_to_spend.after}}.")
     assert reply(side(97.46), side(138.79), "everyday_spending").endswith(
         "You now have {{safe_to_spend.after}} left to spend this week.")
     assert reply(side(138.79), side(138.79), "everyday_spending", language="fi") == (

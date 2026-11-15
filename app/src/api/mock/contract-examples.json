@@ -4547,8 +4547,8 @@
       "review_state": "answered",
       "changed": true,
       "message": {
-        "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
-        "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
+        "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
         "numbers": {
           "n2": {
             "id": "n2",
@@ -4773,8 +4773,8 @@
             }
           }
         ],
-        "text": "Got it — counted as your own choice. Your left to spend stays {{n2}}.",
-        "text_rendered": "Got it — counted as your own choice. Your left to spend stays €138.79.",
+        "text": "Got it — counted as your own choice. What you have left to spend stays {{n2}}.",
+        "text_rendered": "Got it — counted as your own choice. What you have left to spend stays €138.79.",
         "numbers": {
           "n2": {
             "id": "n2",
