@@ -212,7 +212,8 @@ def sources_field(fragments: list[Fragment], lang: str) -> list[dict[str, str]]:
         if not f.url.startswith("https://") or f.url in seen:
             continue
         seen.add(f.url)
-        out.append({"publisher": short_publisher(f.publisher), "title": f.title, "url": f.url, "lang": lang})
+        title = re.split(r";\s", f.title or "", maxsplit=1)[0].strip()   # "X; official EN title: Y" -> "X"
+        out.append({"publisher": short_publisher(f.publisher), "title": title, "url": f.url, "lang": lang})
         if len(out) == MAX_FRAGMENTS:
             break
     return out

@@ -204,6 +204,9 @@ def test_sources_field_dedupes_keeps_https_and_at_most_three():
     out = finlit_kb.sources_field([OPEN, dup, plain, CARD, OPEN2], "fi")
     assert [s["url"] for s in out] == [OPEN.url, CARD.url, OPEN2.url]
     assert out[0] == {"publisher": "InfoFinland.fi", "title": "Velkaneuvonta", "url": OPEN.url, "lang": "fi"}
+    long = finlit_kb.Fragment("z", "Oikeuspalveluvirasto", "Find out your expenses; official EN title: Keep track",
+                              "https://o.fi/a", None, "source_card")
+    assert finlit_kb.sources_field([long], "en")[0]["title"] == "Find out your expenses"
 
 
 def test_the_default_floor_is_the_calibrated_one():
