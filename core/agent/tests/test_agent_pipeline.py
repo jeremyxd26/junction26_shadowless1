@@ -433,6 +433,11 @@ def test_a_model_draft_repeating_a_period_is_retried(make_pipeline):
 
 # ---- #398: the stand's composer defects, as rejected model drafts ---------------------------------------------
 
+# The answer speaks the question's language (Renat, 15.11): a Finnish draft needs a Finnish question.
+FI_QUESTION = "Paljonko käytin ravintoloihin elokuussa 2026?"
+RESTAURANTS_EN = "How much did I spend on restaurants in August 2026?"
+
+
 @pytest.mark.parametrize("text, reason", [
     ("I am Sentti, your AI money coach. August 2026 cost {{n1}}.", "do not introduce yourself"),       # rows 2, 3
     ("August 2026 cost {{n1}} across {{n2}}.", "a count keeps its noun"),                               # row 2
@@ -449,7 +454,7 @@ def test_a_draft_with_a_stand_defect_is_retried_with_its_reason(make_pipeline, t
     good_text = "Elokuussa 2026 käytit {{n1}}." if lang == "fi" else "August 2026 cost {{n1}}."
     good = {"language": lang, "text": good_text, "cited": ["n1"], "lesson_key": None}
     pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
-    done = dict(run(pipe, language=lang))["done"]
+    done = dict(run(pipe, FI_QUESTION if lang == "fi" else RESTAURANTS_EN, language=lang))["done"]
     first = audit_records(pipe)[-1]["composer_attempts"][0]["validation"]
     assert first != "ok" and any(reason in e for e in first), first
     assert done["text"] == good_text
@@ -478,7 +483,7 @@ def test_a_draft_suggesting_borrowing_is_retried(make_pipeline, text):
     good_text = "Elokuussa 2026 käytit {{n1}}." if lang == "fi" else "August 2026 cost {{n1}}."
     good = {"language": lang, "text": good_text, "cited": ["n1"], "lesson_key": None}
     pipe = make_pipeline(ScriptedModel(plans=[SPEND], drafts=[bad, good]))
-    done = dict(run(pipe, language=lang))["done"]
+    done = dict(run(pipe, FI_QUESTION if lang == "fi" else RESTAURANTS_EN, language=lang))["done"]
     assert done["text"] == good_text
     assert any("never suggest borrowing" in e for e in audit_records(pipe)[-1]["composer_attempts"][0]["validation"])
 

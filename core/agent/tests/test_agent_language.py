@@ -63,14 +63,20 @@ def test_language_unsure_without_any_function_word():
     assert detect_language("42") is None
 
 
-def test_language_the_request_field_wins_over_detection(make_pipeline):
-    draft = {"language": "en", "text": "In August 2026 you spent {{n1}}.", "cited": ["n1"], "lesson_key": None}
+def test_language_the_question_wins_over_the_request_field(make_pipeline):
+    # Renat (15.11 night): the answer speaks the question's language, not the app setting; the request's
+    # language is only the fallback for a message the detector is unsure about.
+    draft = {"language": "fi", "text": "Elokuussa 2026 käytit {{n1}}.", "cited": ["n1"], "lesson_key": None}
     from agent_fakes import AS_OF  # noqa: F401 - the fixture's date
     from test_agent_pipeline import SPEND
 
     events = run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[draft])), "Paljonko kulutin viime kuussa?",
                  language="en")
-    assert dict(events)["meta"]["language"] == "en"
+    assert dict(events)["meta"]["language"] == "fi"
+    unsure = run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[{**draft, "language": "en",
+                                                                     "text": "In August 2026 you spent {{n1}}."}])),
+                 "42", language="en")
+    assert dict(unsure)["meta"]["language"] == "en"
     fi = run(make_pipeline(ScriptedModel(plans=[SPEND], drafts=[{**draft, "language": "fi",
                                                                  "text": "Elokuussa 2026 käytit {{n1}}."}])),
              "Paljonko kulutin viime kuussa?")

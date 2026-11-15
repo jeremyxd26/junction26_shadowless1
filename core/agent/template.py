@@ -59,7 +59,7 @@ REFUSAL: dict[str, dict[str, Any]] = {
 BRIEF_QUESTIONS = (
     ("Where did my money go?", "Mihin rahani menivät?"),
     ("What kind of spender am I?", "Millainen kuluttaja olen?"),
-    ("What can I safely spend this week?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?"),
+    ("What's left to spend this week?", "Paljonko minulla on käyttövaraa tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
 )
 
@@ -134,8 +134,8 @@ FI_MONTH_STEMS = ("tammi", "helmi", "maalis", "huhti", "touko", "kesä", "heinä
                   "joulu")
 CLARIFY_GENERAL = {
     "question": ("What would you like to know about your money?", "Mitä haluaisit tietää raha-asioistasi?"),
-    "options": (("Where did my money go?", "What can I safely spend this week?", "How could I save more?"),
-                ("Mihin rahani menivät?", "Paljonko minulla on turvallisesti käytettävissä tällä viikolla?",
+    "options": (("Where did my money go?", "What's left to spend this week?", "How could I save more?"),
+                ("Mihin rahani menivät?", "Paljonko minulla on käyttövaraa tällä viikolla?",
                  "Miten voisin säästää enemmän?")),
 }
 # "What was that €1,080?" (#341): the pending review's purchase, from the review card's data. {why} is
@@ -252,6 +252,32 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
 THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+# "Do you understand what we're talking about?": the previous answer's topic by its first tool, named in a sentence.
+CONTEXT_TOPICS = {
+    "get_basket_breakdown": ("where your money went", "siitä, mihin rahasi menivät"),
+    "get_spending": ("your spending", "kulutuksestasi"),
+    "get_safe_to_spend": ("what is left to spend this week", "käyttövarastasi"),
+    "get_safe_to_save": ("saving", "säästämisestä"),
+    "get_savings_plan": ("saving", "säästämisestä"),
+    "get_recurring_bills": ("your bills", "laskuistasi"),
+    "get_spender_profile": ("your spender profile", "kuluttajaprofiilistasi"),
+    "get_peer_benchmark": ("how you compare with people like you", "vertailusta kaltaisiisi"),
+    "run_what_if": ("a what-if", "entä jos -laskelmasta"),
+    "get_balance_forecast": ("whether your money lasts until payday", "rahojen riittämisestä palkkapäivään"),
+    "get_small_purchases": ("your small purchases", "pienistä ostoksistasi"),
+}
+CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more simply?",
+                 "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
+
+
+def context_topic(turns: list[dict]) -> tuple[str, str] | None:
+    """The latest answer's topic (en, fi) and its question, from the first data tool it called, or None."""
+    for turn in reversed(turns):
+        for call in turn.get("calls") or []:
+            topic = CONTEXT_TOPICS.get(call.get("name") or "")
+            if topic:
+                return topic, turn.get("question") or ""
+    return None
 # #352: the full introduction once per conversation; a later greeting, identity, capabilities or help
 # message gets one short sentence (no "Hi") and the chips.
 AGAIN = {

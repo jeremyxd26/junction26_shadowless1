@@ -958,7 +958,7 @@ SAFE = (r"safe(ly)? to spend|safely spend|spend safely|\bturvallisesti\b|"
         r"\bok(ay)? (if|to) (i )?spend\b|\ball right (if|to) (i )?spend\b|"
         r"\b(voin|voinko|saan|saanko|uskallanko) (turvallisesti )?(käyttää|kuluttaa|tuhlata)\b|"
         r"\bpaljon(ko)? (mä |minä )?voin\b(?!.*säästä)|"
-        r"\bkäytettävissä\b|\bjäljellä\b.*\b(tällä viikolla|käyttää|kuluttaa|tuhlata)\b|"
+        r"\bkäytettävissä\b|\bkäyttövar\w*|\bjäljellä\b.*\b(tällä viikolla|käyttää|kuluttaa|tuhlata)\b|"
         r"\b(tällä viikolla|käytettäväksi)\b.*\bjäljellä\b|\b(on|onko) (minulla |mulla )?varaa\b")
 NOT_SAFE = (r"\b(cards?|credit|overdraft|withdraw\w*|raise|increase|loans?|borrow\w*|lainaa?\w*|luoto\w*|"
             r"kortin|korttiraja\w*|nostoraja\w*)\b|"
@@ -1326,7 +1326,15 @@ META = [
                 r"are my data safe|do you share my data|who (can )?sees? my data|onko (minun )?(tietoni|dataani) turvassa|"
                 r"ovatko tietoni turvassa|jaatko tietojani)"),
     ("thanks", r"((ok|okay) )?(thanks|thank you|thank you so much|thank you very much|thanks a lot|thx|ty|"
-               r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"),
+               r"thanks that helps( a lot)?|thanks that helped|kiitos|kiitti|kiitos paljon|kiitos tosi paljon|спасибо)"
+               # a few words after the thanks are still thanks: "kiitos, hyvä tietää", "thanks, good to know"
+               r"( (good to know|nice to know|that's good to know|thats good to know|got it|understood|great|perfect|"
+               r"selva|hyva tietaa|hyva juttu|ymmarran|ok|okei))?"),
+    # "Do you understand what we're talking about?": the previous answer's topic (the orchestrator), else a greeting
+    ("context", r"(do you (understand|know|remember) what we('re| are| were) (talking|chatting) about( now)?|"
+                r"what (are|were) we talking about|do you remember what we talked about|"
+                r"ymmarratko( (sa|sina))? mista (me )?(keskustelemme|puhumme|puhutaan|puhuttiin|juteltiin)( nyt)?|"
+                r"muistatko mista (me )?(puhuttiin|puhuimme|keskustelimme))"),
     # #790: small talk gets a warm template line that turns to money; "how are you spending?" is no small talk
     ("how_are_you", rf"({_GREET} )?{_HOW_ARE_YOU}"),
     ("joke", rf"({_GREET} )?{_JOKE}"),

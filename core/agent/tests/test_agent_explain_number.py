@@ -199,5 +199,6 @@ def test_the_explanation_keeps_the_previous_data_for_a_follow_up(make_pipeline):
     turns = pipeline.store.resolve(conversation_id, "CUST00860")[0].turns
     assert turns[-1]["calls"] == turns[-2]["calls"] == [{"name": "get_safe_to_spend", "args": {}}]
     assert turns[-1]["explain"] == turns[-2]["explain"]
-    again = done_of(run(pipeline, "Selitä tarkemmin", language="en", conversation_id=conversation_id))
+    # An English follow-up: the answer speaks the question's language (#831), so "Selitä tarkemmin" would get Finnish.
+    again = done_of(run(pipeline, "Explain this number", language="en", conversation_id=conversation_id))
     assert again["outcome"] == "answered" and again["text_rendered"].startswith("That's safe to spend")

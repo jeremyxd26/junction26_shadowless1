@@ -90,6 +90,13 @@ ERRORS = {code: (api_texts.ERRORS[code], True) for code in ("data_unavailable", 
 
 Emit = Callable[[str, dict[str, Any]], None]
 CYRILLIC = re.compile(r"[\u0400-\u04FF]")  # a message in Russian gets the English introduction (#287)
+# A greeting or a thank-you too short for the detector, in Finnish ("moi", "kiitti"): the answer is Finnish.
+SHORT_FI = re.compile(r"(moi|moikka|moro|hei|heippa|terve|kiitos|kiitti|kiitoksia|selva|selv\u00E4|joo|okei|kylla|kyll\u00E4)\W*", re.I)
+
+
+def short_language(message: str) -> str | None:
+    """'fi' for a whole message that is a short Finnish greeting or thanks, else None (the detector is unsure)."""
+    return "fi" if SHORT_FI.fullmatch(message.strip()) else None
 # A what-if or a cut names an amount too, but it is not a question about one purchase (#341).
 WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bif i\b|\bcut\b|\breduc|\bjos\b|vähent|leikk", re.I)
 # The question must point at a purchase ("what was that €1,080?", "mikä se 1080 euron ostos oli?"), not
@@ -409,7 +416,16 @@ class Pipeline:
         message = guard.clean(req.message)
         a.question = message
         detected = guard.detect_language(message)
-        lang = req.language if req.language in ("en", "fi") else (detected or conv.language or "en")
+        # The answer speaks the question's language, not the app setting ("moi" with the UI in English gets
+        # Finnish), when that language is clear; a very short or unsure message keeps the previous turn's
+        # language, else the app's.
+        question_lang = short_language(message) or guard.confident_language(message)
+        if question_lang in ("en", "fi"):
+            lang = question_lang
+        elif conv.turns and conv.language in ("en", "fi"):
+            lang = conv.language
+        else:
+            lang = req.language if req.language in ("en", "fi") else (conv.language or "en")
         a.language = {"requested": req.language, "resolved": lang, "detector": detected}
         conv.language = lang
         a.answer_id = new_id("ans_")
@@ -426,6 +442,11 @@ class Pipeline:
         if meta == "greeting" and conv.turns and goodbye_greeting(message):
             meta = "thanks"   # "moi moi" after an answer is a goodbye: the closing line, never a new greeting (#630)
         foreign = bool(CYRILLIC.search(message))
+        if meta == "context":
+            found = template.context_topic(conv.turns)
+            if found is not None:
+                return self._context(found, lang, emit, a)
+            meta = "greeting"   # nothing talked about yet: the greeting-style reply
         if meta is not None:
             return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
         if foreign and not re.search(r"[A-Za-z]", message):   # #352: a language Sentti does not speak
@@ -1010,6 +1031,19 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
                       "follow_ups": template.meta_follow_ups(intent, lang), "lesson": None, "refusal": None,
                       "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _context(self, found: tuple[tuple[str, str], str], lang: str, emit: Emit, a: _Answer) -> str:
+        """"Do you understand what we're talking about?": "Yes — we talked about <topic>. Want me to explain it more
+        simply?", with the previous question as the chip. No plan, no tool, no number and no model request."""
+        (topic, question) = found
+        text = self._deliver(template.pick(template.CONTEXT_REPLY, lang).format(topic=template.pick(topic, lang)), {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": "context"})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": [question] if question else template.meta_follow_ups("greeting", lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 
