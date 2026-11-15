@@ -87,7 +87,8 @@ def test_the_feedback_kinds(message, kind):
 
 
 @pytest.mark.parametrize("message, noise", [
-    ("onks se sopuudlikaa", True), ("asdfgh qwerty", True), ("Onko mulla velkaa?", False),
+    ("onks se sopuudlikaa", True), ("asdfgh qwerty", False), ("Onko mulla velkaa?", False),
+    ("anything else?", False), ("really?", False), ("something else", False), ("anything more?", False),
     ("Onko kissanruoka kallista?", False), ("Kerro lisää", False), ("What about groceries?", False),
     ("Paljonko käytin ravintoloihin?", False), ("Ok", False), ("How much did I spend in August 2026?", False),
     ("Tell me something", False), ("Kerro jotain", False),
