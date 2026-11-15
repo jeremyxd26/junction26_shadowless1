@@ -249,7 +249,7 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "your money goes, what's safe to spend this week and how you could save more. Every number comes from your "
          "transactions — tap it to see them. Sometimes I'll ask you a question too.",
          "Hei, olen Sentti — tekoälyvalmentaja S-mobiilissa. Katson omia tilitapahtumiasi ja kerron, mihin rahasi "
-         "menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
+         "menevät, paljonko sinulla on käyttövaraa tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
 THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
 # "Do you understand what we're talking about?": the previous answer's topic by its first tool, named in a sentence.
@@ -268,6 +268,24 @@ CONTEXT_TOPICS = {
 }
 CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more simply?",
                  "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
+
+
+# Renat's FI transcript: garbled input, feedback on the length or the understanding, "answer my previous question".
+DIDNT_CATCH = ("Sorry, I didn't catch that \u2014 could you say it again?",
+               "En ihan saanut kiinni \u2014 voitko sanoa uudelleen?")
+BRIEF_ACK = ("Sorry! I'll keep it shorter.", "Anteeksi! Vastaan jatkossa lyhyemmin.")
+MISUNDERSTOOD = ("Sorry about that. What did you mean?", "Anteeksi. Mitä tarkoitit?")
+PREVIOUS_UNCLEAR = ("I couldn't make out your previous message. Could you ask it again?",
+                    "En saanut edellisestä viestistäsi selvää. Voitko kysyä sen uudelleen?")
+
+
+def previous_turn(turns: list[dict], skip) -> dict | None:
+    """The latest turn whose question was not itself a meta message or feedback (`skip`), or None."""
+    for turn in reversed(turns):
+        question = " ".join(str(turn.get("question") or "").split())
+        if question and not skip(question):
+            return turn
+    return None
 
 
 # "What did I ask? Remind me": the previous question and its topic, then whether to go on (Renat, via r-coord).
@@ -320,7 +338,7 @@ AGAIN = {
     "identity": ("I'm Sentti, an AI money coach that works with your own transactions.",
                  "Olen Sentti, tekoälyvalmentaja, joka käyttää omia tilitapahtumiasi."),
     "capabilities": ("I can show where your money goes, what's safe to spend this week and how you could save more.",
-                     "Voin näyttää, mihin rahasi menevät, paljonko voit turvallisesti käyttää tällä viikolla ja miten "
+                     "Voin näyttää, mihin rahasi menevät, paljonko sinulla on käyttövaraa tällä viikolla ja miten "
                      "voisit säästää enemmän."),
     "help": ("Here are some things you can ask me.", "Tässä muutama asia, jota voit kysyä minulta."),
 }
@@ -343,7 +361,7 @@ LANGUAGE = ("I answer in English or Finnish.", "Vastaan englanniksi tai suomeksi
 # fixed list of general money jokes, never about the customer's own data and never judging (#640); a later joke in
 # the same conversation is the next one in the list.
 HOW_ARE_YOU_REPLY = ("I'm good, thanks for asking! Want to see what you can safely spend this week?",
-                     "Hyvin menee, kiitos kysymästä! Katsotaanko, paljonko voit turvallisesti käyttää tällä viikolla?")
+                     "Hyvin menee, kiitos kysymästä! Katsotaanko, paljonko sinulla on käyttövaraa tällä viikolla?")
 JOKES = (
     ("The coin went to therapy because it was feeling a little sentimental.",
      "Kolikko meni terapiaan, koska se tunsi olonsa vähän sentimentaaliseksi."),

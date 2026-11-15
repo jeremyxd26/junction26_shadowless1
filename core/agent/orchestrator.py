@@ -55,6 +55,7 @@ from core.agent.registry import CONTROL, CallRejected, Registry
 from core.agent.rules import HEALTH as RULE_HEALTH
 from core.agent.rules import WHAT_IF_MORE_OPTIONS, WHAT_IF_WHICH_OPTIONS, what_if_which_question
 from core.agent.rules import RuleModel, goodbye_greeting, human_request, meta_intent, unknown_object
+from core.agent.rules import conversation_feedback, garbled_input
 from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, check_text, contents_claim, draft_problems,
                                   plain_text, render, repeated_period, unavailable_claim, validate)
 from core.answer_text import answer_kind, find_dates, length_problems, scan_numbers
@@ -181,6 +182,11 @@ def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
         if words:
             out.append(re.compile(r"\b" + r"(?:\W+(?:and|ja)\W+|\W+)".join(map(re.escape, words)) + r"\b", re.I))
     return out
+
+
+def _not_a_question(question: str) -> bool:
+    """A meta message or feedback, which "answer my previous question" skips."""
+    return meta_intent(question) is not None or conversation_feedback(question) is not None
 
 
 def _last_data_turn(turns: list[dict[str, Any]]) -> dict[str, Any]:
@@ -465,6 +471,28 @@ class Pipeline:
             return self._introduce(meta, "en" if foreign else lang, emit, a, foreign=foreign)
         if foreign and not re.search(r"[A-Za-z]", message):   # #352: a language Sentti does not speak
             return self._introduce("language", "en", emit, a)
+        # Feedback on the conversation (Renat's FI transcript): no plan, no tool and no model.
+        feedback = conversation_feedback(message)
+        if feedback == "brief":
+            conv.brief = True
+            return self._say(template.pick(template.BRIEF_ACK, lang), lang, emit, a, "brief",
+                             template.meta_follow_ups("greeting", lang))
+        if feedback in ("misunderstood", "previous"):
+            prev = template.previous_turn(conv.turns, _not_a_question)
+            if feedback == "misunderstood":
+                chips = [prev["question"]] if prev else template.meta_follow_ups("greeting", lang)
+                return self._say(template.pick(template.MISUNDERSTOOD, lang), lang, emit, a, "misunderstood", chips)
+            if prev is None:
+                return self._say(template.pick(template.RECALL_NOTHING, lang), lang, emit, a, "previous",
+                                 template.meta_follow_ups("greeting", lang))
+            if prev.get("unclear"):   # never an older, different topic in its place
+                return self._say(template.pick(template.PREVIOUS_UNCLEAR, lang), lang, emit, a, "previous",
+                                 template.meta_follow_ups("greeting", lang))
+            # "Answer my previous question": that question is answered again, as if asked now.
+            a.planner_turns.append({"round": 0, "source": "rules", "meta_intent": "previous"})
+            message = str(prev["question"])
+            a.flags = guard.flags(message, raw=message)
+            a.kind = answer_kind(message)
         if human_request(message):   # #352: a human or a hard topic: the refusal with the way to the bank (#420)
             a.planner_turns.append({"round": 1, "source": "rules", "human_request": True})
             return self._refuse("out_of_scope", lang, emit, a)
@@ -494,6 +522,11 @@ class Pipeline:
         # still follows the last data answer
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns
                    if not t.get("talk")]
+        if self._garbled(message, lang, history, a):   # "onks se sopuudlikaa": ask again, no card and no model
+            fi, en = guard.language_scores(message)
+            said = "fi" if fi >= 1 and en == 0 else "en" if en >= 1 and fi == 0 else lang
+            return self._say(template.pick(template.DIDNT_CATCH, said), said, emit, a, "garbled",
+                             template.brief_questions(said), unclear=True)
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
         views: list[dict[str, Any]] = []
@@ -684,6 +717,8 @@ class Pipeline:
             self._warn_llm_unavailable(a)
         elif a.model_unavailable == "no_model":
             self._warn_llm_unavailable(a)   # the rule model's template wrote the text: no model was used
+        if conv.brief:   # "you talk too much": the first sentence, and an estimate's caveat, if that still passes
+            draft = self._briefer(draft, lang, numbers, allowed)
         text = self._deliver(draft.text, numbers, emit)
         a.text, a.text_rendered = text, render(text, numbers)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
@@ -1060,6 +1095,46 @@ class Pipeline:
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
+
+    def _say(self, text: str, lang: str, emit: Emit, a: _Answer, intent: str, follow_ups: list[str],
+             unclear: bool = False) -> str:
+        """A fixed reply with no plan, no tool, no number and no model request (garbled input, feedback)."""
+        text = self._deliver(text, {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": intent})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": follow_ups, "lesson": None, "refusal": None, "clarify": None,
+                      "warnings": a.warnings})
+        turn = {"question": a.question, "calls": [], "views": [], "answer": text}
+        if unclear:
+            turn["unclear"] = True   # "answer my previous question" then asks for it again
+        self.store.add_turn(a.conversation, turn)
+        return lang
+
+    def _garbled(self, message: str, lang: str, history: list[dict[str, Any]], a: _Answer) -> bool:
+        """A short message that reads as noise and that the rules do not recognise (see rules.garbled_input)."""
+        if a.flags or not garbled_input(message):
+            return False
+        plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                            tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        data = [c for c in plan.calls if c.name not in ("ask_clarifying_question", "finish")]
+        return not getattr(plan, "recognised", False) and not data
+
+    @staticmethod
+    def _briefer(draft: Any, lang: str, numbers: dict[str, Any], allowed: Allowed) -> Any:
+        """The answer's first sentence, with a sentence that says it is an estimate, when that text passes the
+        validator; else the answer as it was."""
+        sentences = [s for s in re.split(r"(?<=[.!?])\s+", draft.text.strip()) if s]
+        if len(sentences) < 2:
+            return draft
+        keep = [sentences[0]] + [s for s in sentences[1:] if re.search(r"estimate|not a promise|arvio|ei lupaus", s, re.I)]
+        text = " ".join(keep)
+        if text == draft.text.strip():
+            return draft
+        short, errors = validate({"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))),
+                                  "lesson_key": getattr(draft, "lesson_key", None)},
+                                 language=lang, numbers=numbers, allowed=allowed)
+        return short if not errors and short is not None else draft
 
     def _recall(self, turns: list[dict[str, Any]], lang: str, emit: Emit, a: _Answer) -> str:
         """"What did I ask? Can you remind me?": the previous question and the topic of its answer, then "Want to
