@@ -81,6 +81,12 @@ const fakeContext = () =>
 
 const voice = { lang: 'en-GB', localService: true } as unknown as SpeechSynthesisVoice
 
+/** A microphone stream; `echoCancellation`: what the browser reports it applied. */
+function micStream(echoCancellation: boolean) {
+  const track = { stop: () => (tracks.stopped += 1), getSettings: () => ({ echoCancellation }) }
+  return { getTracks: () => [track], getAudioTracks: () => [track] }
+}
+
 function doneTurn(id: number, extra: Partial<Answer> = {}): Turn {
   return {
     kind: 'ask',
@@ -99,7 +105,7 @@ function doneTurn(id: number, extra: Partial<Answer> = {}): Turn {
 describe('VoiceSession (#811)', () => {
   let fetchCalls: string[]
   let sttReply: () => Promise<unknown>
-  let micReply: () => Promise<unknown>
+  let micReply: (constraints?: unknown) => Promise<unknown>
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -114,10 +120,10 @@ describe('VoiceSession (#811)', () => {
     speech.listeners.clear()
     fetchCalls = []
     sttReply = () => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve({ text: 'How much did I spend?' }) })
-    micReply = () => Promise.resolve({ getTracks: () => [{ stop: () => (tracks.stopped += 1) }] })
+    micReply = () => Promise.resolve(micStream(true))
     vi.stubGlobal('window', globalThis)
     vi.stubGlobal('document', { hidden: false, addEventListener: () => {}, removeEventListener: () => {} })
-    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: () => micReply() } })
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: (constraints: unknown) => micReply(constraints) } })
     vi.stubGlobal('MediaRecorder', FakeRecorder)
     vi.stubGlobal('fetch', (url: string) => {
       fetchCalls.push(url)
@@ -214,25 +220,72 @@ describe('VoiceSession (#811)', () => {
     expect(recorders.at(-1)?.state).toBe('inactive')
   })
 
-  it('a round with no speech sends nothing and says "Didn\'t catch that"; two in a row close the mode', async () => {
+  it('silence costs nothing: it keeps listening without a tap, sends nothing, and closes after a minute (#895)', async () => {
     const { session, closed } = await open()
     await vi.advanceTimersByTimeAsync(15_100)
     expect(fetchCalls).toHaveLength(0)
-    expect(session.getSnapshot()).toMatchObject({ phase: 'listening', missed: true })
-    await vi.advanceTimersByTimeAsync(15_100)
+    expect(session.getSnapshot()).toMatchObject({ phase: 'listening', missed: false, micOn: true })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(closed).toEqual([])
+    await vi.advanceTimersByTimeAsync(16_000)
     expect(fetchCalls).toHaveLength(0)
     expect(closed).toEqual([{ kind: 'nothing' }])
     expect(tracks.stopped).toBe(1)
+    expect(session.getSnapshot().micOn).toBe(false)
   })
 
-  it('an empty transcript counts as a round with no words', async () => {
+  it('an empty transcript says "Didn\'t catch that"; three in a row close the mode', async () => {
     sttReply = () => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve({ text: '', empty: true }) })
     const { session, asked, closed } = await open()
     await sayAQuestion()
     expect(asked).toEqual([])
     expect(session.getSnapshot()).toMatchObject({ phase: 'listening', missed: true })
     await sayAQuestion()
+    expect(closed).toEqual([])
+    await sayAQuestion()
     expect(closed).toEqual([{ kind: 'nothing' }])
+  })
+
+  it('opens the microphone with echo cancellation, noise suppression and gain control', async () => {
+    const asked: unknown[] = []
+    micReply = (constraints?: unknown) => {
+      asked.push(constraints)
+      return Promise.resolve(micStream(true))
+    }
+    const { session } = await open()
+    expect(asked).toEqual([{ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }])
+    expect(session.getSnapshot().bargeIn).toBe(true)
+  })
+
+  it('barge-in: speaking over Sentti stops the voice at once and the new turn counts, no tap (#895)', async () => {
+    const { session, asked } = await open()
+    await sayAQuestion()
+    session.setTurns([doneTurn(1)])
+    expect(session.getSnapshot().phase).toBe('speaking')
+    const rounds = recorders.length
+    await vi.advanceTimersByTimeAsync(700) // past the first moment of playback, Sentti still speaking
+    loud = true
+    await vi.advanceTimersByTimeAsync(400) // the user speaks over it
+    expect(speech.state.stops).toBe(1)
+    expect(session.getSnapshot().phase).toBe('listening')
+    expect(recorders).toHaveLength(rounds + 1)
+    loud = false
+    await vi.advanceTimersByTimeAsync(1400) // the new turn ends after its silence and is sent
+    expect(asked).toHaveLength(2)
+  })
+
+  it("no barge-in without echo cancellation: Sentti's own voice never becomes a turn; a tap interrupts", async () => {
+    micReply = () => Promise.resolve(micStream(false))
+    const { session } = await open()
+    expect(session.getSnapshot().bargeIn).toBe(false)
+    await sayAQuestion()
+    session.setTurns([doneTurn(1)])
+    await vi.advanceTimersByTimeAsync(700)
+    loud = true // its own voice leaking into the microphone
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(speech.state.stops).toBe(0)
+    expect(session.getSnapshot().phase).toBe('speaking')
+    loud = false
   })
 
   it('a tap while listening sends what was said at once', async () => {
@@ -249,7 +302,7 @@ describe('VoiceSession (#811)', () => {
     const denied = await open()
     expect(denied.closed).toEqual([{ kind: 'mic', failure: 'denied' }])
 
-    micReply = () => Promise.resolve({ getTracks: () => [{ stop: () => (tracks.stopped += 1) }] })
+    micReply = () => Promise.resolve(micStream(true))
     sttReply = () => Promise.resolve({ status: 429, ok: false, json: () => Promise.resolve({}) })
     const busy = await open()
     await sayAQuestion()

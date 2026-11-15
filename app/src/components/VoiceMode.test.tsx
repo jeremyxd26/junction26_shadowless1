@@ -83,7 +83,7 @@ describe('the voice-mode overlay (#811)', () => {
     return { markup, bars: WAVE_BARS }
   }
 
-  it('is a named modal dialog with a wave button, one status caption and a 56 px exit', async () => {
+  it('is a named modal dialog with a wave button, one status caption and a 56 px End button', async () => {
     const { markup, bars } = await renderOverlay('en')
     expect(markup).toContain('role="dialog"')
     expect(markup).toContain('aria-modal="true"')
@@ -94,8 +94,7 @@ describe('the voice-mode overlay (#811)', () => {
     expect(markup).toContain('Listening…')
     // Before the microphone is open, the wave cannot be tapped yet.
     expect(markup).toContain('aria-disabled="true"')
-    expect(markup).toContain('aria-label="Exit voice mode"')
-    expect(markup).toContain('size-[56px]')
+    expect(markup).toMatch(/min-h-\[56px\][^>]*>.*End voice mode<\/button>/)
     expect(markup.match(/origin-center rounded-full bg-brand/g)).toHaveLength(bars)
   })
 
@@ -114,7 +113,7 @@ describe('the voice-mode overlay (#811)', () => {
     expect(markup).not.toContain('animate-')
     expect(markup).toContain('>Puhetila</h2>')
     expect(markup).toContain('Kuuntelen…')
-    expect(markup).toContain('aria-label="Lopeta puhetila"')
+    expect(markup).toContain('Lopeta puhetila</button>')
   })
 })
 

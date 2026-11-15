@@ -15,6 +15,11 @@ interface VoiceModeStrings {
   speaking: string
   /** Under the caption after a round in which no words were heard. */
   missed: string
+  /** The End button, the open-microphone line, and how to interrupt while Sentti speaks (#895). */
+  end: string
+  micOn: string
+  speakToInterrupt: string
+  tapToInterrupt: string
   /** The toast when voice mode closes by itself. */
   nothing: string
   answerFailed: string
@@ -31,7 +36,11 @@ const STRINGS: Record<Language, VoiceModeStrings> = {
     thinking: 'Thinking…',
     speaking: 'Speaking…',
     missed: "Didn't catch that. Try again.",
-    nothing: "Voice mode closed: I didn't hear anything. You can type your question instead.",
+    end: 'End voice mode',
+    micOn: 'Microphone on',
+    speakToInterrupt: 'Speak to interrupt',
+    tapToInterrupt: 'Tap the wave to interrupt',
+    nothing: "Voice mode closed: I didn't hear anything for a while. You can type your question instead.",
     answerFailed: 'Something went wrong with the answer. You can type your question instead.',
   },
   fi: {
@@ -44,7 +53,11 @@ const STRINGS: Record<Language, VoiceModeStrings> = {
     thinking: 'Mietin…',
     speaking: 'Puhun…',
     missed: 'En saanut selvää. Yritä uudelleen.',
-    nothing: 'Puhetila suljettiin: en kuullut mitään. Voit kirjoittaa kysymyksesi.',
+    end: 'Lopeta puhetila',
+    micOn: 'Mikrofoni päällä',
+    speakToInterrupt: 'Puhu, niin keskeytän',
+    tapToInterrupt: 'Napauta aaltoa keskeyttääksesi',
+    nothing: 'Puhetila suljettiin: en kuullut mitään vähään aikaan. Voit kirjoittaa kysymyksesi.',
     answerFailed: 'Vastauksessa meni jokin vikaan. Voit kirjoittaa kysymyksesi.',
   },
 }
