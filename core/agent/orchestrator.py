@@ -46,7 +46,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import (explain_number, finlit_kb, glossary, guard, offers, sbank_kb, talk_checks, talk_mode, template,
+from core.agent import (agent_mode, explain_number, finlit_kb, glossary, guard, offers, sbank_kb, talk_checks, talk_mode, template,
                         validator, why_review)
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
@@ -544,6 +544,9 @@ class Pipeline:
             said = "fi" if fi >= 1 and en == 0 else "en" if en >= 1 and fi == 0 else lang
             return self._say(template.pick(template.DIDNT_CATCH, said), said, emit, a, "garbled",
                              template.brief_questions(said), unclear=True)
+        if self._agent_usable(req, a) and self._agent_takes(message, lang, history) \
+                and self._answer_agent(req, ctx, review, message, lang, emit, a, "planner"):
+            return lang   # agent mode (#937): the loop answers what the rules do not recognise
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
         views: list[dict[str, Any]] = []
@@ -1600,6 +1603,263 @@ class Pipeline:
                                              "explain": main, "shown": [numbers[i] for i in cited if i in numbers]})
         return True
 
+    # ---- agent mode (#937) ------------------------------------------------------------------------------------------
+
+    def _agent_usable(self, req: AskRequest, a: _Answer) -> bool:
+        """Whether this turn may go to agent mode's loop: the switch is on (read per answer), no guard flag, a model
+        with the loop and the judge, and the model, its agent role and the judge all available."""
+        if not agent_mode.enabled() or a.flags:
+            return False
+        if not callable(getattr(self.model, "agent_turn", None)) or not callable(getattr(self.model, "judge", None)):
+            return False
+        return (self._model_unavailable(req) is None and self._role_unavailable("agent") is None
+                and self._role_unavailable("judge") is None)
+
+    def _agent_takes(self, message: str, lang: str, history: list[dict[str, Any]]) -> bool:
+        """The planner's place: the loop takes a question the rule planner does not recognise, with no decline, no
+        designed template and no contact offer of the rules, and no health topic (R9). Every rule-claimed question
+        (the demo fast paths) and every refusal stays the rules'."""
+        if re.search(RULE_HEALTH, guard.fold(message)) or talk_checks._GENERAL_HEALTH.search(message):
+            return False
+        plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                            tools=self.registry.schemas(), history=history, guard_flags=[], round=1))
+        if any(c.name == "decline" for c in plan.calls):
+            return False
+        if getattr(plan, "template_answer", False) or getattr(plan, "offer_contact", False):
+            return False
+        return not getattr(plan, "recognised", True)
+
+    def _agent_profile(self, ctx: ToolContext) -> list[str]:
+        """The user's largest baskets as labels only, from the basket breakdown through the tool cache, with its own
+        registry so no number of it can be cited. [] when the tool is not registered or fails."""
+        spec = self.registry.tools.get("get_basket_breakdown")
+        if spec is None:
+            return []
+        try:
+            _, args = self.registry.parse(spec.name, {})
+            if TOOL_CACHE.enabled:
+                TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)
+            with self.data.connection() as conn:
+                own = dataclasses.replace(ctx, conn=conn, numbers=NumberRegistry())
+                view = TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, own, args).model_view
+            return list(dict.fromkeys(_labels_in(view)))[:agent_mode.PROFILE_LABELS]
+        except Exception as exc:  # noqa: BLE001 - the loop runs without the profile
+            log.warning("agent mode: profile not read (%s)", type(exc).__name__)
+            return []
+
+    def _agent_check(self, text: str | None, lang: str, numbers: dict[str, Any], allowed: Allowed, shown: set[str],
+                     views: list[dict[str, Any]], literacy: bool, a: _Answer) -> tuple[Any, list[str]]:
+        """The cheap layer on one draft: the validator (every figure a registered number of this conversation, no
+        digit outside a token), then the talk checks (words) or the composer's model-draft checks and the talk
+        checks that allow the user's own data (tools ran)."""
+        text = (text or "").strip()
+        raw = {"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))), "lesson_key": None}
+        if not views and literacy and not raw["cited"]:
+            return finlit_kb.draft_problems(raw, lang)
+        draft, errors = validate(raw, language=lang, numbers=numbers, allowed=allowed)
+        if errors or draft is None:
+            return draft, errors or ["no draft"]
+        if not views:
+            return draft, talk_mode.draft_problems(draft.text, numbers, shown, lang)
+        errors = length_problems(draft.text, len(set(TOKEN.findall(draft.text))), kind=a.kind)
+        errors += draft_problems(draft.text, numbers, has_data=True, labels=_labels_in(views), views=views)
+        joined = validator.amount_with_bank_product(draft.text, numbers)
+        if joined:
+            errors.append(f"'{joined}': never tell the user to put an amount into the bank's screen or product")
+        errors += agent_mode.data_text_problems(TOKEN.sub(" ", draft.text))
+        return draft, errors
+
+    def _agent_judge(self, message: str, text: str, lang: str, a: _Answer) -> str | None:
+        """The safety judge on one draft: None when it passes, else the reason. A failed, timed-out, blocked or
+        unreadable judge call is a hit."""
+        t = self.clock()
+        try:
+            verdict = self.model.judge(message, text, lang)
+        except Exception as exc:  # noqa: BLE001 - only the class name is kept
+            a.planner_turns.append({"source": "judge", "verdict": "error", "error": type(exc).__name__,
+                                    "latency_ms": self._ms(t)})
+            return "the safety check could not run: write a shorter, plainer answer"
+        usage = getattr(verdict, "usage", None)
+        a.planner_turns.append({"source": "judge", "verdict": "ok" if verdict.ok else "hit",
+                                "category": verdict.category, "latency_ms": self._ms(t),
+                                **({"tokens": a.add_usage(usage)} if usage is not None else {})})
+        if verdict.ok:
+            return None
+        return f"safety check ({verdict.category}): {verdict.reason or 'rewrite without it'}"
+
+    def _answer_agent(self, req: AskRequest, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
+                      a: _Answer, route: str) -> bool:
+        """Agent mode's turn (#937): one model loop with the conversation, the profile, finlit fragments and the
+        tool declarations. The model answers in words, asks back (the clarify mechanism) or calls tools through the
+        registry's checks, at most MAX_TOOL_ROUNDS rounds. Every draft passes the cheap layer and the judge; one
+        regenerate with the reasons, then agent_mode's natural fallback. False (the old path answers, as with the
+        switch off) when the loop's first call fails before any tool ran."""
+        conv = a.conversation
+        turns = conv.turns if conv is not None else []
+        self._start_compose_answer(object())   # this answer's own request count and deadline (#884)
+        shown: dict[str, Number] = {}
+        for number in [n for t in turns for n in (t.get("shown") or [])][-8:]:
+            registered = ctx.numbers.register(number)
+            shown[registered.id] = registered
+        prev = turns[-1] if turns else None
+        history = [{"question": t.get("question"), "answer": t.get("answer")}
+                   for t in turns[-agent_mode.HISTORY_TURNS:]]
+        fragments = (self.finlit_fragments(ctx.customer_id, message, lang) if route == "finlit"
+                     else self._talk_fragments(ctx, message, prev, lang))
+        credited = finlit_kb.named(fragments)
+        base = agent_mode.AgentInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                     tools=self.registry.schemas(), history=history, profile=self._agent_profile(ctx),
+                                     sources=[f.data(include_text=f in credited) for f in fragments],
+                                     shown=[model_number(n) for n in shown.values()])
+        literacy = finlit_kb.question_kind(message) == "literacy"
+        planner_history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in turns
+                           if not t.get("talk")]
+        rounds: list[tuple[Any, list[FunctionResponse]]] = []
+        views: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        data_calls = 0
+        text, raw_last = None, None
+        for rnd in range(1, agent_mode.MAX_TOOL_ROUNDS + 2):
+            t_round = self.clock()
+            request = dataclasses.replace(base, rounds=list(rounds), round=rnd,
+                                          tools_on=rnd <= agent_mode.MAX_TOOL_ROUNDS)
+            try:
+                result = self.model.agent_turn(request)
+            except Exception as exc:  # noqa: BLE001 - only the class name is kept
+                a.planner_turns.append({"round": rnd, "source": "agent", "error": type(exc).__name__,
+                                        "latency_ms": self._ms(t_round)})
+                if not a.calls:
+                    return False   # no tool ran yet, nothing was sent: the old path answers
+                break
+            turn: dict[str, Any] = {"round": rnd, "source": "agent", "route": route, "calls": [],
+                                    "latency_ms": self._ms(t_round),
+                                    **({"tokens": a.add_usage(result.usage)} if result.usage is not None else {})}
+            a.planner_turns.append(turn)
+            if not result.calls:
+                text, raw_last = result.text, result.raw
+                break
+            guarded = self._health_filter_guard(message, result.calls, "model", a)
+            calls = guarded if guarded is not result.calls else self._unknown_object_guard(message, result.calls)
+            parsed, rejected = [], []
+            for call in calls:
+                try:
+                    kind, args = self.registry.parse(call.name, call.args)
+                    parsed.append((call, kind, args))
+                except CallRejected as exc:
+                    rejected.append((call, exc))
+            controls = {call.name: args for call, kind, args in parsed if kind == "control"}
+            if any(_health_what_if(call) for call in calls):
+                self._refuse("out_of_scope", lang, emit, a)
+                return True
+            if "decline" in controls or "ask_clarifying_question" in controls:
+                turn["calls"] = [{"name": c.name, "args": c.args, "status": "ok" if k == "control" else "not_run"}
+                                 for c, k, _ in parsed]
+            if "decline" in controls:
+                self._refuse(controls["decline"].kind.value, lang, emit, a)
+                return True
+            if "ask_clarifying_question" in controls:
+                clarify = controls["ask_clarifying_question"]
+                plan_in = PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                    tools=self.registry.schemas(), history=planner_history, guard_flags=a.flags)
+                if agent_mode.clarify_problems([clarify.question, *clarify.options]) \
+                        or not self._options_work(clarify.options, lang, planner_history, message):
+                    a.planner_turns.append({"round": rnd, "source": "rules", "error": "agent clarify replaced"})
+                    clarify = self._rules_clarify(plan_in, lang)
+                clarify = self._what_if_chips(ctx, clarify, lang)
+                self._clarify(clarify, lang, emit, a)
+                return True
+            responses: list[FunctionResponse] = []
+            for call, exc in rejected:
+                responses.append(FunctionResponse(call.name, {"error": exc.code}, call.id))
+                turn["calls"].append({"name": call.name, "args": call.args, "status": f"rejected: {exc.code}"})
+            pending = []
+            for call, kind, args in parsed:
+                if kind == "control":
+                    turn["calls"].append({"name": call.name, "args": call.args, "status": "ok"})
+                elif data_calls >= MAX_DATA_CALLS:
+                    turn["calls"].append({"name": call.name, "args": call.args, "status": "not_run: call limit"})
+                else:
+                    data_calls += 1
+                    pending.append((call, args))
+            records = self._run_tools(ctx, pending, lang, emit, a)
+            for (call, args), record in zip(pending, records):
+                a.calls.append({"name": call.name, "args": call.args})
+                if "view" in record:
+                    a.ok_calls.append({"name": call.name, "args": call.args})
+                    views.append(record.pop("view"))
+                    responses.append(FunctionResponse(call.name, views[-1], call.id))
+                else:
+                    errors.append({"tool": call.name, "error": record["error"]})
+                    responses.append(FunctionResponse(call.name, {"error": record["error"]}, call.id))
+                turn["calls"].append(record)
+            rounds.append((result.raw, responses))
+
+        numbers = ctx.numbers.all()
+        allowed = allowed_from(numbers.values(), views, self.as_of)
+        draft = None
+        problems: list[str] = []
+        for attempt in range(2):   # the draft and one regenerate with the reasons
+            if attempt == 1:
+                if text is None:
+                    break
+                t_retry = self.clock()
+                try:
+                    result = self.model.agent_turn(dataclasses.replace(
+                        base, rounds=list(rounds), round=len(rounds) + 1, tools_on=False, retry_turn=raw_last,
+                        retry_errors=problems))
+                except Exception as exc:  # noqa: BLE001
+                    a.planner_turns.append({"round": len(rounds) + 1, "source": "agent", "retry": True,
+                                            "error": type(exc).__name__, "latency_ms": self._ms(t_retry)})
+                    break
+                a.planner_turns.append({"round": len(rounds) + 1, "source": "agent", "retry": True,
+                                        "latency_ms": self._ms(t_retry),
+                                        **({"tokens": a.add_usage(result.usage)} if result.usage is not None else {})})
+                if result.calls:
+                    break
+                text, raw_last = result.text, result.raw
+            if text is None:
+                break
+            candidate, problems = self._agent_check(text, lang, numbers, allowed, set(shown), views, literacy, a)
+            if not problems and candidate is not None:
+                reason = self._agent_judge(message, render(candidate.text, numbers), lang, a)
+                problems = [reason] if reason else []
+            a.composer_attempts.append({"raw": text, "source": "agent", "validation": "ok" if not problems else problems})
+            if not problems and candidate is not None:
+                draft = candidate
+                break
+        from_model = draft is not None
+        if draft is None:   # the natural fallback, never the old "could not work this out" text
+            draft = AnswerDraft(language=lang, text=agent_mode.fallback_text(lang), cited=[], lesson_key=None)
+            a.planner_turns.append({"source": "agent", "fallback": True})
+        if review is not None and route != "talk":   # the pending review's card, as on the old paths
+            self._attach_review(ctx, review, emit, a)
+        if conv is not None and conv.brief and from_model:
+            draft = self._briefer(draft, lang, numbers, allowed)
+        if credited and from_model:   # the Sources row under the answer; the text carries no link (#884)
+            a.sources = finlit_kb.sources_field(fragments, lang) or None
+        if any(e["error"] == "tool_failed" for e in errors):
+            a.warnings.append("tool_failed")
+        text = self._deliver(draft.text, numbers, emit)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        follow_ups = (template.follow_ups(message, lang, views=views) if from_model
+                      else template.brief_questions(lang))
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": follow_ups, "lesson": None, "refusal": None, "clarify": None,
+                      "warnings": a.warnings})
+        record: dict[str, Any] = {"question": message, "calls": a.calls, "views": views,
+                                  "answer": TOKEN.sub("[number]", text), "agent": True,
+                                  "shown": [numbers[i] for i in cited if i in numbers]}
+        if views:
+            record["explain"] = _main_number(numbers, cited)
+        else:   # an answer in words: the planner's history skips it, "explain it simpler" stays in words
+            record.update({"words": True, "talk": {"kind": "agent", "tips_given": 0, "practices_given": 0,
+                                                   "tip": None}})
+        self.store.add_turn(conv, record)
+        return True
+
     # ---- talk mode (#873) ------------------------------------------------------------------------------------------
 
     def _talk_stands_down(self, message: str, lang: str, a: _Answer) -> str | None:
@@ -1674,6 +1934,9 @@ class Pipeline:
         if why_not is not None:
             a.planner_turns.append({"round": 1, "source": "rules", "talk": f"stood down: {why_not}"})
             return False
+        if not talk_mode.template_only(message) and self._agent_usable(req, a) \
+                and self._answer_agent(req, ctx, None, message, lang, emit, a, "talk"):
+            return True   # agent mode (#937): the loop answers the talk question
         views_all = [v for t in turns for v in (t.get("views") or []) if isinstance(v, dict)]
         tools = [c.get("name") for c in (data_turn.get("calls") or []) if isinstance(c, dict)]
         # the numbers already shown in this conversation, latest last, re-registered for this answer
@@ -1966,6 +2229,8 @@ class Pipeline:
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
+        if self._agent_usable(req, a) and self._answer_agent(req, ctx, review, message, lang, emit, a, "finlit"):
+            return True   # agent mode (#937): the loop answers the literacy question
         fragments = self.finlit_fragments(ctx.customer_id, message, lang)
         if not fragments and term is not None:
             return False   # no source close enough: the glossary's own definition answers
