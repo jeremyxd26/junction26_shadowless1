@@ -7,17 +7,22 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from decimal import Decimal
 
 import pytest
+from agent_fakes import audit_records, registry, run
+from test_agent_safe_to_spend_why_warning import RulesPlanning
 
 from core import answer_text
 from core.agent import template
 from core.agent.model import PlanInput
+from core.agent.registry import ToolSpec
 from core.agent.rules import RuleModel, claim
 from core.agent.validator import allowed_from, validate
 from core.tools import savings_plan as sp
 from core.tools.context import ToolContext
-from core.tools.models import Unit
+from core.tools.formatting import display
+from core.tools.models import Args, Number, Period, ToolResult, Unit
 from core.tools.numbers import model_number
 from core.tools.tests.test_tools_savings_plan_pure import SANNA, fake, num  # noqa: F401 (fixture)
 
@@ -59,6 +64,8 @@ def test_a_step_request_plans_the_steps_and_the_template_writes(question, lang):
     ("Miten voisin säästää enemmän?", "fi", "save_more"),
     ("help me save", "en", "save_more"),
     ("How can I save money?", "en", "save_more"),
+    ("What can I do to save more?", "en", "save_more"),   # no step or plan asked
+
     ("What if I cut restaurants by 20%?", "en", "what_if"),
     ("How much did I spend on restaurants last month?", "en", "spending"),
     ("What does my phone plan cost me?", "en", "recurring_bills"),
@@ -151,3 +158,59 @@ def test_the_save_more_answer_is_unchanged(fake):  # noqa: F811
     text, _ = rendered(ctx, vs[:1], "en", "How could I save more?")
     assert text == ("These changes could add about €63.17 a month, about €758.04 a year: eating out a fifth less and "
                     "spending a tenth less on lifestyle. That is on top of the about €360.00 a month you set aside first.")
+
+
+# ---- through the pipeline: the rule planner's template answer, also as a second turn -------------------------------
+
+class SmallArgs(Args):
+    pass
+
+
+def fake_small_purchases(ctx, args: SmallArgs) -> ToolResult:
+    """The small purchases a month over the last three complete months (no database)."""
+    window = Period(start=date(2026, 7, 1), end=date(2026, 9, 30), label="1 Jul – 30 Sep 2026")
+    month = ctx.numbers.register(Number(value=9.58, unit=Unit.EUR_PER_MONTH, period=window,
+                                        method="small_purchases.month_avg_eur@1", evidence_ref="ev_small_month",
+                                        label="Small purchases a month",
+                                        display=display(Decimal("9.58"), Unit.EUR_PER_MONTH, ctx.language)))
+    view = {"tool": "get_small_purchases", "period": window.label, "period_preset": "last_3_months",
+            "per_month": model_number(month), "takeaway": {"kind": "summary"}, "notes": []}
+    return ToolResult(tool="get_small_purchases", data={}, card=None, evidence=[month.evidence_ref], model_view=view)
+
+
+SMALL = ToolSpec("get_small_purchases", "Small purchases.", SmallArgs, fake_small_purchases, ("Looking", "Katson"))
+
+
+def step_pipeline(make_pipeline):
+    from core.agent.toolset import default_registry
+
+    model = RulesPlanning()   # the model is on; its composer must never be asked
+    return model, make_pipeline(model, registry(default_registry().tools["get_savings_plan"], SMALL))
+
+
+def check_steps(model, pipe, done):
+    assert done["outcome"] == "answered" and model.composed == [] and "llm_unavailable" not in done["warnings"]
+    record = audit_records(pipe)[-1]
+    assert record["planner_turns"][-1]["designed"] == "rule_template"
+    assert len(done["cited"]) == 3
+    return record
+
+
+def test_the_pipeline_writes_the_steps(make_pipeline, fake):  # noqa: F811
+    model, pipe = step_pipeline(make_pipeline)
+    done = dict(run(pipe, "What should I do step by step to save money?", language="en"))["done"]
+    check_steps(model, pipe, done)
+    assert done["text_rendered"] == ("First, set aside your savings goal: €360.00 a month. Second, eat out a fifth "
+                                     "less, which could save about €45.91 a month. Third, check your small purchases: "
+                                     "they add up to about €9.58 a month.")
+
+
+def test_the_steps_as_a_second_turn_after_the_save_more_answer(make_pipeline, fake):  # noqa: F811
+    model, pipe = step_pipeline(make_pipeline)
+    first = run(pipe, "voitko auttaa mua säästää rahaa?", language="fi")
+    conversation = dict(first)["meta"]["conversation_id"]
+    events = run(pipe, "Voitko selkeästi selittää… mitä mun pitää tehdä askeleilla… säästää rahaa?", language="fi",
+                 conversation_id=conversation)
+    done = dict(events)["done"]
+    check_steps(model, pipe, done)
+    assert done["text"].startswith("Ensiksi laita säästötavoitteesi sivuun: ") and " Kolmanneksi " in done["text"]

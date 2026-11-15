@@ -1102,7 +1102,7 @@ def what_if_offer(views: list[dict[str, Any]], language: str) -> str:
 # "maksusuunnitelma") is no request to save; an investment, loan or borrowing word never gets the steps.
 STEP_PLAN_CUE = fold_pattern(
     r"\bstep[\s-]+by[\s-]+step\b|\bsteps?\b|\b(?:a|an|my|the|some)\s+(?:\w+\s+)?plan\b|\bplan\s+(?:to|for)\b|"
-    r"\bwhat\s+(?:should|do|must|can|could)\s+i\s+do\b|\bwhat\s+do\s+i\s+(?:need|have)\s+to\s+do\b|"
+    r"\bwhat\s+(?:should|do|must)\s+i\s+do\b|\bwhat\s+do\s+i\s+(?:need|have)\s+to\s+do\b|"
     r"\baskel\w*|\bvaihe\s+vaiheelta\b|\bvaiheittain\b|suunnitelm\w*|"
     r"\bmitä\s+(?:mun|minun|mä|minä)\s+(?:pitää|pitäis|pitäisi|täytyy|kannattaa|kannattais|kannattaisi|tulee|tulisi)"
     r"\s+tehdä\b")
