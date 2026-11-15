@@ -862,6 +862,7 @@ def test_every_explain_template_passes_the_checks_and_is_new(lang):
             gave = {"levers": lv, "practices": practices}
             text = talk_mode.explain_tips(gave, lang)
             assert talk_mode.draft_problems(text, {}, set(), lang) == [], text
+            assert talk_mode.explain_problems(text, gave, lang) == [], text
             tip = {"label": lv[0]["label"]} if lv else None
             tips_answer = (talk_mode.three_tips(tip, talk_mode.practices(start, lang), lang) if practices
                            else talk_mode._template_text("tips", tip, False, [], lang))
@@ -893,3 +894,18 @@ def test_why_after_tips_reuses_the_tips_sources_and_names_them(tmp_path):
     assert model.requests[-1].sources and model.requests[-1].sources[0]["source"] == "Test Authority"
     assert d["text_rendered"].endswith("Source: Test Authority, https://example.org/saving")
     assert _talk_turns(pipeline)[-1]["explain_tips"] == FIRST_KEYS
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_a_generic_why_draft_after_tips_ends_on_the_explain_template(tmp_path, lang):
+    model = TalkModel()   # writes its generic "it matters because..." paragraph on a talk request without a tip
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, FIRST_TIPS[lang], language=lang)
+    d = done(ask(pipeline, WHY_TIPS[lang][0], dict(first)["meta"]["conversation_id"], language=lang))
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, lang)
+    attempts = audit_records(pipeline)[-1]["composer_attempts"]
+    assert attempts[-1]["raw"] == "template" and len(attempts) == 3
+    generic = ("It matters because the biggest areas are where a change adds up. A steady habit there does more than "
+               "many small cuts elsewhere.")
+    assert talk_mode.explain_problems(generic, FIRST_GAVE, "en")
+    assert talk_mode.explain_problems(generic, {"levers": [], "practices": [2, 3]}, "en")

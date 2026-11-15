@@ -1736,13 +1736,17 @@ class Pipeline:
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
                 if draft is not None and not errors:
                     errors = talk_mode.draft_problems(draft.text, numbers, set(shown), lang)
+                if draft is not None and not errors and explain:   # it names the tips it explains (#919)
+                    errors = talk_mode.explain_problems(draft.text, gave_before, lang)
                 if draft is not None and not errors and prev is not None:
                     # the repetition guard (#889): never the previous answer again, nor its main figure
                     again = set(TOKEN.findall(draft.text)) & {i for i, n in numbers.items() if n.evidence_ref
                                                              and n.evidence_ref == prev_main}
                     if again or talk_mode.repeats(draft.text, prev.get("answer")):
-                        errors = ["this repeats the previous answer: say something new (another reason or the next "
-                                  "lever), and do not repeat its main number"]
+                        errors = (["this repeats the previous answer: explain why each of those tips helps, in new "
+                                   "words, and do not repeat its main number"] if explain else
+                                  ["this repeats the previous answer: say something new (another reason or the next "
+                                   "lever), and do not repeat its main number"])
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:

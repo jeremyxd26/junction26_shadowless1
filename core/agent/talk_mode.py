@@ -508,6 +508,34 @@ def tip_keys(gave: dict[str, Any]) -> list[str]:
             + [PRACTICE_KEYS[i] for i in gave.get("practices") or [] if isinstance(i, int) and 0 <= i < len(PRACTICES)])
 
 
+# Words a generic "why it matters" paragraph shares with the tips: they never count as naming a tip (#919)
+_NAME_GENERIC = frozenset("""spending starts before after right going money month months small steady change habit
+habits there elsewhere helps help every planned plan ennen alkaa kuluttaminen heti rahaa kuukausi pieni pienet pysyva
+pysyvä tapa muutos auttaa""".split())
+
+
+def _stems(text: str) -> set[str]:
+    return {w[:max(5, len(w) - 3)] for w in content_words(text) if w not in _NAME_GENERIC}
+
+
+def _names(text: str, tip: str) -> bool:
+    words = content_words(text)
+    return any(w.startswith(s) for w in words for s in _stems(tip))
+
+
+def explain_problems(text: str, gave: dict[str, Any], language: str) -> list[str]:
+    """Why a "why?"-after-tips draft does not explain the tips given (#919): it must name the lever when one was
+    given, else at least one of the practices (by word stem, so Finnish inflection passes); [] when it does."""
+    levers = [lower(str(lv.get("label") or "")) for lv in gave.get("levers") or [] if isinstance(lv, dict)]
+    practices = [_pick(PRACTICES[i], language) for i in gave.get("practices") or []
+                 if isinstance(i, int) and 0 <= i < len(PRACTICES)]
+    if levers and not all(_names(text, lever) for lever in levers):
+        return [f"explain the tips the previous answer gave: name {', '.join(levers)} and why each tip helps"]
+    if not levers and practices and not any(_names(text, p) for p in practices):
+        return ["explain the tips the previous answer gave: name each one and why it helps"]
+    return []
+
+
 def explain_tips(gave: dict[str, Any], language: str) -> str:
     """The template's "why?" after a tips answer (#919): each tip's fixed why, two to four sentences, no number."""
     sentences = [t["why"] for t in tips_to_explain(gave, language)][:4]
