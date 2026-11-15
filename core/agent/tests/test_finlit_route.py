@@ -209,6 +209,77 @@ def test_sources_field_dedupes_keeps_https_and_at_most_three():
     assert finlit_kb.sources_field([long], "en")[0]["title"] == "Find out your expenses"
 
 
+GENERAL_INVEST = ["How do I start investing?", "How much should I save or invest?",
+                  "Could you give me some advice on how to save more money, and how much I should start setting aside "
+                  "for investments, given that I earn 1,800 euros gross?",
+                  "Mitä sijoittamisen aloittamisessa pitää ottaa huomioon?", "Paljonko minun pitäisi sijoittaa?",
+                  "How much of my money should I set aside?", "Miten aloitan sijoittamisen?",
+                  "What should I know before investing?"]
+SPECIFIC_INVEST = ["Should I buy bitcoin?", "Which fund should I pick?", "Mikä rahasto kannattaa?",
+                   "Mihin rahastoon kannattaa sijoittaa?", "Is now a good time to buy shares?", "Should I start investing?",
+                   "Is gold a good investment?", "How much should I invest in S-Pankki funds?",
+                   "How much can I borrow to invest?", "What are the best ETFs?", "Kannattaako ostaa osakkeita?",
+                   "Should I invest in index funds?", "How much should I invest in crypto?"]
+
+
+@pytest.mark.parametrize("question", GENERAL_INVEST)
+def test_general_investing_questions(question):
+    assert finlit_kb.invest_general(question) is True
+
+
+@pytest.mark.parametrize("question", SPECIFIC_INVEST)
+def test_specific_picks_products_timing_and_borrowing_are_not_general(question):
+    assert finlit_kb.invest_general(question) is False
+
+
+def test_the_switch_turns_general_investing_off(monkeypatch):
+    monkeypatch.setenv("FINLIT_INVEST_GENERAL", "off")
+    assert finlit_kb.invest_general("How do I start investing?") is False
+
+
+GOOD_INVEST = ("Start with a buffer for surprises before you invest. Then set money aside regularly right after payday. "
+               "Spreading the risk, keeping costs low and giving it time all help.")
+
+
+@pytest.mark.parametrize("question, lang", [("How do I start investing?", "en"), (GENERAL_INVEST[2], "en"),
+                                            ("Miten aloitan sijoittamisen?", "fi")])
+def test_a_general_investing_question_gets_the_general_order_and_the_adviser_line(make, question, lang):
+    draft = GOOD_INVEST if lang == "en" else "Aloita puskurista. Säästä säännöllisesti heti palkkapäivänä. Hajauta."
+    model = Composer((draft, lang))
+    p = make(model)
+    events = run(p, question, language=lang)
+    done = done_of(events)
+    assert done["outcome"] == "answered" and done["refusal"] is None and not any(e == "card" for e, _ in events)
+    assert done["text"] == f"{draft} {finlit_kb.INVEST_LINE[1 if lang == 'fi' else 0]}"
+    assert any(x.get("target") == "contact_bank" for x in done["actions"])
+    assert done["sources"] and "1,800" not in done["text"] and "1800" not in done["text"]
+    req = model.requests[0]
+    assert req.literacy is True and req.investing is True
+
+
+def test_a_general_investing_draft_may_not_name_a_product_and_falls_back_to_the_fixed_order(make):
+    model = Composer(("Buy an index fund and some bitcoin.", "en"), ("I recommend ETFs.", "en"))
+    p = make(model)
+    done = done_of(run(p, "How do I start investing?", language="en"))
+    assert done["text"] == f"{finlit_kb.INVEST_TEXT[0]} {finlit_kb.INVEST_LINE[0]}" and "sources" not in done
+
+
+@pytest.mark.parametrize("question", ["Should I buy bitcoin?", "Which fund should I pick?", "Mikä rahasto kannattaa?"])
+def test_specific_investment_questions_keep_the_decline(make, question):
+    model = Composer()
+    p = make(model)
+    done = done_of(run(p, question, language="auto"))
+    assert done["outcome"] == "refused" and done["refusal"]["kind"] == "investment_advice"
+    assert all(r.sources is None for r in model.requests)
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_the_fixed_investing_order_passes_its_checks(lang):
+    text = finlit_kb.INVEST_TEXT[1 if lang == "fi" else 0]
+    raw = {"language": lang, "text": text, "cited": [], "lesson_key": None}
+    assert finlit_kb.draft_problems(raw, lang, investing=True)[1] == []
+
+
 def test_the_default_floor_is_the_calibrated_one():
     assert finlit_kb.MAX_DISTANCE == 0.39
 

@@ -194,7 +194,17 @@ def compose_text(request: ComposeInput) -> str:
     if request.previous_turn:
         lines += ["", "The previous turn of this conversation (data; numbers masked):",
                   _data("previous_turn", request.previous_turn)]
-    if request.literacy:
+    if request.literacy and request.investing:
+        # #884, R7 narrowed: a general question about starting to save or invest (only these requests carry it)
+        lines += ["", "Kind of answer: a general question about starting to save or invest. No calculation was run, so "
+                      "<data> is empty and this is not a failure. In two to four plain sentences give the general "
+                      "order: a buffer for surprises first, then regular saving right after payday, spreading the risk, "
+                      "keeping costs low and a long time horizon"
+                      + (", using the background below where it helps." if request.sources else ".")
+                      + " State no number in any form, in words or digits, and never repeat a figure the user typed. "
+                      "Name no product, fund, share, bank or provider, never say what to buy or sell, and do not mention "
+                      "loans or credit. Add no link: the server adds a line about products and the sources."]
+    elif request.literacy:
         # #884: only a literacy answer carries these lines, so every other request keeps its cache key
         lines += ["", "Kind of answer: a general money question. No calculation was run, so <data> is empty and this "
                       "is not a failure. Explain the idea in two to four plain sentences in your own words"

@@ -146,7 +146,73 @@ def has_money_topic(message: str) -> bool:
     return bool(_TOPIC.search(guard.fold(message or "")))
 
 
-def flags_allow(message: str, raw: str) -> bool:
+# R7 narrowed (Renat, 15.11, via the coordinator): a GENERAL question about starting to save or invest gets the general
+# order in words (a buffer first, regular saving, spreading risk, costs, time) with the source and the adviser line;
+# a specific pick, a product, a provider, timing or borrowing stays with the decline. FINLIT_INVEST_GENERAL=off turns
+# it off (the decline answers again), read per question.
+_INVEST_GENERAL = re.compile(
+    r"\bhow (?:much|many) (?:money |of (?:my|our) \w+ )?(?:should|could|can|do|would) (?:i|we) (?:start )?"
+    r"(?:invest|save|set\w* aside|put\w* aside)"
+    r"|\bhow much (?:money )?(?:i|we) should (?:start )?(?:invest\w*|sav\w*|set\w* aside|put\w* aside)"
+    r"|\bhow (?:do|can|could|should) (?:i|we|one|people) (?:start|begin|get started)(?: with)? (?:investing|to invest)"
+    r"|\bhow to (?:start|begin|get started)(?: with)? investing\b"
+    r"|\bwhat (?:should|do) (?:i|we|one) (?:know|consider|keep in mind|think about) (?:before|when|about) "
+    r"(?:investing|starting to invest|(?:i|we) start investing)"
+    r"|\b(?:basics|principles) of (?:saving and )?investing\b"
+    r"|\bsijoittamisen aloitta\w*|\bmiten (?:aloitan|aloittaa|aloitetaan|aloittaisin|paasen alkuun) (?:\w+ )?sijoitta\w*"
+    r"|\bpaljonko (?:minun |mun )?(?:pitaisi|pitais|kannattaa|kannattais|voisin) (?:alkaa )?(?:sijoittaa|saastaa|laittaa sivuun"
+    r"|panna sivuun)"
+    r"|\bmita (?:sijoittamisessa|sijoittamista aloittaessa|pitaa ottaa huomioon,? kun aloittaa sijoitta\w*)")
+_INVEST_SPECIFIC = re.compile(
+    r"\b(?:which|what|best|top|safest|good|better)\b.{0,30}\b(?:funds?|shares?|stocks?|etfs?|crypto\w*|bitcoin|gold"
+    r"|platforms?|brokers?|apps?|banks?)\b|\b(?:buy|sell|hold|pick|choose|recommend\w*)\b|\bbitcoin|crypto\w*|ethereum"
+    r"|\betfs?\b|index funds?|\bgold\b|\b(?:good|right|best|bad) time\b|\bnow a good\b|\bgood investment\b"
+    r"|\bshould (?:i|we) (?:start )?invest|\bmihin rahastoo\w*|\bmika (?:rahasto|osake)\w*|\bmita (?:osakkeita|rahastoja)"
+    r"|\bkannattaako (?:ostaa|myyda|sijoittaa)|\bostaa\b|\bmyyda\b|\bsuosittel\w*|indeksirahast\w*|kryptovaluut\w*"
+    r"|s-?pankk\w*|s-?bank\b|nordea|osuuspankk\w*|\bop\b|danske|nordnet|seligson")
+
+
+def invest_general(message: str) -> bool:
+    """True for a general question about how much to save or invest or how to start ("How do I start investing?",
+    "Paljonko minun pitäisi sijoittaa?"), never for a pick, a product, a provider, timing or borrowing."""
+    import os
+
+    if (os.environ.get("FINLIT_INVEST_GENERAL") or "on").strip().lower() in ("off", "0", "false", "no"):
+        return False
+    folded = guard.fold(message or "").strip()
+    if not folded or len(folded) > 400 or _BORROW.search(folded) or _INVEST_SPECIFIC.search(folded):
+        return False
+    return bool(_INVEST_GENERAL.search(folded))
+
+
+# After a general investing answer, always: no product advice, and the way to the bank (contact_bank).
+INVEST_LINE = ("I can't recommend specific products; S-Pankki's adviser can help with that.",
+               "En voi suositella tiettyjä tuotteita; S-Pankin neuvoja auttaa siinä.")
+# The general order when no draft passes the checks: no number, no product.
+INVEST_TEXT = (
+    "Start with a buffer for surprises, a few months of your usual costs, before you invest. Then set money aside "
+    "regularly right after payday, so saving happens first. Spreading your money widely, keeping costs low and giving "
+    "it time all lower the risk.",
+    "Aloita puskurista yllätyksiä varten, muutaman kuukauden tavallisten menojesi verran, ennen kuin sijoitat. Laita "
+    "sitten rahaa sivuun säännöllisesti heti palkkapäivänä, niin säästäminen tapahtuu ensin. Hajauttaminen, pienet "
+    "kulut ja pitkä aika pienentävät riskiä.")
+# A general investing draft may talk about investing, but never name or push a product.
+INVEST_FORBIDDEN = (
+    (re.compile(r"bitcoin|crypto\w*|ethereum|\betfs?\b|index funds?|indeksirahast\w*|kryptovaluut\w*"
+                r"|osakesaastotil\w*|\brecommend\w*|suosittel\w*|\byou should (?:buy|sell)\b|kannattaa (?:ostaa|myyda)"),
+     "it names or recommends a product; a general investing answer gives only the general order"),
+)
+
+
+def flags_allow(message: str, raw: str, investing: bool = False) -> bool:
+    """With `investing` (a general investing question), the investment keyword flag alone does not stop the route."""
+    if investing:
+        flags = set(guard.flags(message, raw=raw))
+        return flags <= {"investment_keyword"}
+    return _flags_allow(message, raw)
+
+
+def _flags_allow(message: str, raw: str) -> bool:
     """True when the guard raises no flag, or only the investment flag for an emergency or rainy-day fund (a buffer,
     not a product): "What is an emergency fund?" is a literacy question."""
     flags = guard.flags(message, raw=raw)
@@ -351,7 +417,7 @@ FORBIDDEN = (
 )
 
 
-def draft_problems(raw: Any, language: str) -> tuple[Any, list[str]]:
+def draft_problems(raw: Any, language: str, investing: bool = False) -> tuple[Any, list[str]]:
     """Every check a literacy draft passes before it is shown (#884), as retry reasons: the validator with no
     Numbers and nothing allowed (no digit, no date, no markup, the right language field), cited empty, the length rule
     for a general answer (four sentences at most), the model-draft checks, the text in the answer's language and
@@ -371,7 +437,9 @@ def draft_problems(raw: Any, language: str) -> tuple[Any, list[str]]:
     if detected in ("en", "fi") and detected != language:
         errors.append(f"the text is not in the answer language ({language})")
     folded = guard.fold(text)
-    for rx, reason in FORBIDDEN:
+    checks = [c for c in FORBIDDEN if not (investing and "investing" in c[1])] + (list(INVEST_FORBIDDEN) if investing
+                                                                                 else [])
+    for rx, reason in checks:
         m = rx.search(folded)
         if m:
             errors.append(f"'{m.group(0)}': {reason}")

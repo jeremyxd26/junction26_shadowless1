@@ -1938,15 +1938,16 @@ class Pipeline:
         literacy question (finlit_kb.question_kind), a guard flag is set, S-Bank's knowledge base or a glossary term
         other than budget and interest owns it, the rules claim it, the model may not write, nothing is retrieved, or
         no draft passes the checks. Tips asked in a running conversation are the talk mode's (#873)."""
-        if self.finlit is None or finlit_kb.question_kind(message) != "literacy":
+        investing = finlit_kb.invest_general(message)   # R7 narrowed: the general order, never a pick (#884)
+        if self.finlit is None or (not investing and finlit_kb.question_kind(message) != "literacy"):
             return False
         if re.search(RULE_HEALTH, guard.fold(message)):
             return False   # a health topic gets no tip and no comment (R9)
-        if not finlit_kb.flags_allow(message, req.message):
+        if not finlit_kb.flags_allow(message, req.message, investing=investing):
             return False
         conv = a.conversation
-        if talk_mode.trigger(message) is not None or (conv is not None and conv.turns
-                                                      and finlit_kb.TIPS.search(guard.fold(message))):
+        if not investing and (talk_mode.trigger(message) is not None or (conv is not None and conv.turns
+                                                                         and finlit_kb.TIPS.search(guard.fold(message)))):
             return False   # tips / explain / no numbers: the talk mode's, with the customer's levers and fragments (#873)
         term = glossary.match(message)
         if term is not None and term.key not in finlit_kb.GLOSSARY_TERMS:
@@ -1958,11 +1959,13 @@ class Pipeline:
                        for t in (conv.turns if conv is not None else [])]
             rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                                  tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-            why = finlit_kb.overrides_rules(message)   # why / concept / judgement: words, never a plan's figures
+            why = investing or finlit_kb.overrides_rules(message)   # words, never a plan's figures
             # borrowing never reaches here (finlit_kb's gate), so the rules' "I can't answer that one yet" with the
-            # contact offer does not stop a why question
-            if any(c.name == "decline" for c in rules.calls) or getattr(rules, "template_answer", False) \
-                    or (rules.recognised and not why):
+            # contact offer does not stop a why question. A general investing question passes the rules' investment
+            # decline only (R7 narrowed); every other decline (credit, health, another person) still wins
+            declined = [c for c in rules.calls if c.name == "decline"
+                        and not (investing and (c.args or {}).get("kind") == "investment_advice")]
+            if declined or getattr(rules, "template_answer", False) or (rules.recognised and not why):
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
@@ -1977,7 +1980,7 @@ class Pipeline:
         prev = conv.turns[-1] if conv is not None and conv.turns else None
         request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
                                previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
-                               sources=sources or None, literacy=True)
+                               sources=sources or None, literacy=True, investing=investing)
         self._start_compose_answer(request)
         body: str | None = None
         errors: list[str] = []
@@ -1989,7 +1992,7 @@ class Pipeline:
                 errors = [f"the model call failed ({type(exc).__name__})"]
                 a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                 continue
-            draft, errors = finlit_kb.draft_problems(result.text, lang)
+            draft, errors = finlit_kb.draft_problems(result.text, lang, investing=investing)
             a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                         "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
             if not errors and draft is not None:
@@ -1999,7 +2002,8 @@ class Pipeline:
         if body is None:
             # the attempts stay in the audit record (their tokens were spent). "Why should I save?" gets the fixed
             # reasons of ours (no source named, no card); any other question goes the usual path
-            body = finlit_kb.why_fallback(message, lang)
+            body = (template.pick(finlit_kb.INVEST_TEXT, lang) if investing
+                    else finlit_kb.why_fallback(message, lang))
             log.warning("finlit answer failed the checks (%d problems); %s", len(errors),
                         "the fixed reasons answer" if body else "the usual path answers")
             if body is None:
@@ -2013,6 +2017,10 @@ class Pipeline:
             self._attach_review(ctx, review, emit, a)
         if credited:   # the Sources row under the answer; the text carries no link (#884)
             a.sources = finlit_kb.sources_field(fragments, lang) or None
+        if investing:   # never a product: the fixed line and the way to the bank's adviser (R7 narrowed)
+            body = f"{body} {template.pick(finlit_kb.INVEST_LINE, lang)}"
+            a.offer_contact = True
+            a.planner_turns.append({"round": 1, "source": "rules", "invest_general": True})
         text = self._deliver(body, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
