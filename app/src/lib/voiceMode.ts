@@ -15,8 +15,13 @@ import type { Turn } from './thread.ts'
 export const SILENCE_MS = 1200
 /** A round ends by itself after this long, heard or not (the core takes 15 s clips at most). */
 export const LISTEN_MS = MAX_RECORD_MS
-/** Speech counts once it has been above SPEECH_LEVEL this long (a cough or a click does not). */
-export const ONSET_MS = 250
+/** Speech counts once the level has been above SPEECH_LEVEL this long in all, so a one-word answer ("Yes",
+ * "Ei") counts, dips inside the word included; a click does not. */
+export const ONSET_MS = 150
+/** Before speech counts, this long below QUIET_LEVEL forgets the loud bits heard so far (stray noises). */
+export const ONSET_RESET_MS = 600
+/** One reading never counts for more than this, so a late timer does not turn one loud reading into speech. */
+const MAX_STEP_MS = 100
 /** Levels on the scale of stt.ts levelOf (0 to 1): speech starts above SPEECH_LEVEL, silence is below QUIET_LEVEL. */
 export const SPEECH_LEVEL = 0.14
 export const QUIET_LEVEL = 0.07
@@ -39,11 +44,13 @@ export interface Endpointer {
 }
 
 /**
- * Decides when a listening round ends: after ONSET_MS above SPEECH_LEVEL the round has speech; after that,
- * SILENCE_MS below QUIET_LEVEL ends it. At LISTEN_MS it ends anyway: `end` with speech, `nothing` without.
+ * Decides when a listening round ends: after ONSET_MS above SPEECH_LEVEL in all the round has speech; after
+ * that, SILENCE_MS below QUIET_LEVEL ends it. At LISTEN_MS it ends anyway: `end` with speech, `nothing` without.
  */
 export function endpointer(start: number): Endpointer {
-  let loudSince: number | null = null
+  let last: number | null = null
+  let loudMs = 0
+  let calmSince: number | null = null
   let quietSince: number | null = null
   let heard = false
   let finished: RoundState | null = null
@@ -51,12 +58,16 @@ export function endpointer(start: number): Endpointer {
     heard: () => heard,
     push(level, now) {
       if (finished) return finished
+      const step = last === null ? 0 : Math.min(MAX_STEP_MS, Math.max(0, now - last))
+      last = now
       if (!heard) {
         if (level >= SPEECH_LEVEL) {
-          loudSince ??= now
-          if (now - loudSince >= ONSET_MS) heard = true
+          loudMs += step
+          calmSince = null
+          if (loudMs >= ONSET_MS) heard = true
         } else if (level < QUIET_LEVEL) {
-          loudSince = null
+          calmSince ??= now
+          if (now - calmSince >= ONSET_RESET_MS) loudMs = 0
         }
       } else if (level < QUIET_LEVEL) {
         quietSince ??= now
@@ -68,6 +79,11 @@ export function endpointer(start: number): Endpointer {
       return finished ?? (heard ? 'speech' : 'waiting')
     },
   }
+}
+
+/** The reduced-motion ring's width step, 0 to 3, for a level from 0 to 1: it steps with the voice, no motion. */
+export function ringStep(level: number): number {
+  return level < 0.15 ? 0 : level < 0.4 ? 1 : level < 0.7 ? 2 : 3
 }
 
 /** The answer to a question voice mode sent: still coming, done (with what to read aloud), failed or stopped. */

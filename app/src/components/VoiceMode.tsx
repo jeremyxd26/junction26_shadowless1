@@ -1,12 +1,16 @@
-import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { useSettings } from '../lib/settings.ts'
 import { useVoice } from '../lib/speech.ts'
 import type { Turn } from '../lib/thread.ts'
+import { ringStep } from '../lib/voiceMode.ts'
 import { voiceModeStrings } from '../lib/voiceModeStrings.ts'
 import type { VoicePhase, VoiceSession } from '../lib/voiceSession.ts'
 
 /** The wave's bars. */
 export const WAVE_BARS = 21
+
+/** The reduced-motion ring's widths by level step: it thickens with the voice in steps, without a transition. */
+const RING_WIDTH = ['border-[4px]', 'border-[9px]', 'border-[14px]', 'border-[20px]']
 
 /** The still ring under reduced motion: its colour says the phase. */
 const RING: Record<VoicePhase, string> = {
@@ -60,6 +64,14 @@ export function VoiceMode({ session, turns }: { session: VoiceSession; turns: Tu
     return () => cancelAnimationFrame(frame)
   }, [session])
 
+  // Under reduced motion the still ring shows the level in steps instead (a few readings a second, no transition).
+  const [step, setStep] = useState(0)
+  useEffect(() => {
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const timer = window.setInterval(() => setStep(ringStep(session.level())), 150)
+    return () => window.clearInterval(timer)
+  }, [session])
+
   const caption = phase === 'speaking' ? s.speaking : phase === 'thinking' ? s.thinking : s.listening
   const tappable = phase === 'listening' || phase === 'speaking'
   const label = phase === 'listening' ? s.sendNow : phase === 'speaking' ? s.interrupt : caption
@@ -108,7 +120,7 @@ export function VoiceMode({ session, turns }: { session: VoiceSession; turns: Tu
               />
             ))}
           </span>
-          <span aria-hidden="true" className={`hidden size-[56%] rounded-full border-[6px] motion-reduce:block ${RING[phase]}`} />
+          <span aria-hidden="true" className={`hidden size-[56%] rounded-full motion-reduce:block ${RING_WIDTH[step]} ${RING[phase]}`} />
         </button>
         {/* One status line: the caption, and "Didn't catch that" after a round with no words. */}
         <div role="status" className="flex min-h-[4.5rem] flex-col items-center gap-1 text-center">

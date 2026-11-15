@@ -200,6 +200,12 @@ export class VoiceSession {
     return null
   }
 
+  /** How loud the microphone (listening) or the Gemini voice (speaking) is now, 0 to 1; the reduced-motion ring. */
+  level(): number {
+    const bars = this.wave(9)
+    return bars ? Math.max(...bars) : 0
+  }
+
   private listen() {
     if (this.ended || !this.mic) return
     const type = pickType((candidate) => MediaRecorder.isTypeSupported(candidate))
