@@ -129,7 +129,7 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
         </div>
         {card.estimate && <EstimateBadge estimate={card.estimate} onHero control={estimate.control} />}
       </div>
-      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} onHero />}
+      {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} onHero result={card.primary} />}
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <NumberChip number={card.primary} size="hero" tone="hero" count={motion?.counts.safe_to_spend} />
@@ -234,7 +234,7 @@ export function HeroSummary({ card, motion, pending = false }: { card: MetricCar
       </span>
       {card.estimate && estimate.open && (
         <div className="relative z-10 mt-2 w-full text-left">
-          <EstimateNote estimate={card.estimate} id={estimate.id} />
+          <EstimateNote estimate={card.estimate} id={estimate.id} result={primary} />
         </div>
       )}
     </section>

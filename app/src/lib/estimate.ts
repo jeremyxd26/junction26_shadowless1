@@ -41,3 +41,31 @@ export function estimateParts(estimate: Estimate): EstimateParts {
   }
   return { observed, assumptions }
 }
+
+/** The safe-to-spend estimate's parts by method, in receipt order: the balance, then what is set aside. */
+const RECEIPT = [
+  ['safe_to_spend.balance_eur@1', 'balance'],
+  ['safe_to_spend.bills_due_eur@1', 'bills'],
+  ['safe_to_spend.essentials_reserve_eur@1', 'essentials'],
+  ['safe_to_spend.irregular_reserve_eur@1', 'reserve'],
+  ['safe_to_spend.cushion_eur@1', 'cushion'],
+] as const
+
+export type ReceiptKey = (typeof RECEIPT)[number][1]
+
+/**
+ * The hero's estimate as receipt lines (Renat's phone test): each part the API gives, found by its method among the
+ * observed Numbers and the assumptions' values, shown with the API's own display (no client maths). Null unless the
+ * balance and at least one part set aside are there, so any other estimate keeps the full note.
+ */
+export function estimateReceipt(estimate: Estimate): { key: ReceiptKey; number: Num }[] | null {
+  const numbers = [
+    ...(Array.isArray(estimate.observed) ? estimate.observed : []),
+    ...(Array.isArray(estimate.assumptions) ? estimate.assumptions.map((item) => item?.value) : []),
+  ].filter(isNum)
+  const lines = RECEIPT.flatMap(([method, key]) => {
+    const number = numbers.find((candidate) => candidate.method === method)
+    return number ? [{ key, number }] : []
+  })
+  return lines.length >= 2 && lines[0].key === 'balance' ? lines : null
+}
