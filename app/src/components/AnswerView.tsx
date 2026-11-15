@@ -67,7 +67,8 @@ function StageIcon({ state }: { state: 'done' | 'now' | 'todo' }) {
     )
   }
   if (state === 'now') {
-    return <span aria-hidden="true" className="size-6 shrink-0 animate-spin rounded-pill border-[3px] border-sunken border-t-brand" />
+    // Spins only when motion is welcome; under reduced motion the ring with its brand arc stands still (#881).
+    return <span aria-hidden="true" className="size-6 shrink-0 motion-safe:animate-spin rounded-pill border-[3px] border-sunken border-t-brand" />
   }
   return <span aria-hidden="true" className="size-6 shrink-0 rounded-pill border-2 border-line-strong/50" />
 }
