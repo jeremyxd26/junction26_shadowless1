@@ -30,7 +30,7 @@ export function VoiceMode({ session, turns }: { session: VoiceSession; turns: Tu
   const { lang } = useSettings()
   const s = voiceModeStrings(lang)
   const voice = useVoice(lang)
-  const { phase, missed, heard } = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot)
+  const { phase, missed, heard, micOn, bargeIn } = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot)
   const bars = useRef<(HTMLSpanElement | null)[]>([])
   const waveButton = useRef<HTMLButtonElement>(null)
   const exitButton = useRef<HTMLButtonElement>(null)
@@ -96,9 +96,18 @@ export function VoiceMode({ session, turns }: { session: VoiceSession; turns: Tu
       onKeyDown={keys}
       className="motion-fade fixed inset-0 z-50 flex touch-none flex-col items-center bg-page px-[16px] pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+24px)]"
     >
-      <h2 id="voice-mode-title" className="text-base font-bold text-ink">
-        {s.title}
-      </h2>
+      <div className="flex flex-col items-center gap-1">
+        <h2 id="voice-mode-title" className="text-base font-bold text-ink">
+          {s.title}
+        </h2>
+        {/* The microphone stays open for the whole session; this says so, and End closes it (#895). */}
+        {micOn && (
+          <p className="inline-flex items-center gap-1.5 text-sm text-ink-2">
+            <span aria-hidden="true" className="size-2 rounded-full bg-danger" />
+            {s.micOn}
+          </p>
+        )}
+      </div>
       <div className="flex w-full max-w-[448px] min-h-0 flex-1 flex-col items-center justify-center gap-8">
         <button
           ref={waveButton}
@@ -126,21 +135,23 @@ export function VoiceMode({ session, turns }: { session: VoiceSession; turns: Tu
         <div role="status" className="flex min-h-[4.5rem] flex-col items-center gap-1 text-center">
           <p className="text-xl font-bold text-ink">{caption}</p>
           {missed && phase === 'listening' && <p className="text-base text-muted">{s.missed}</p>}
+          {phase === 'speaking' && <p className="text-base text-muted">{bargeIn ? s.speakToInterrupt : s.tapToInterrupt}</p>}
         </div>
         {heard && phase !== 'listening' && (
           <p className="line-clamp-3 max-w-full text-center text-base break-words text-ink-2">“{heard}”</p>
         )}
       </div>
+      {/* End: stops the microphone and the voice; a clear, labelled button (#895). */}
       <button
         ref={exitButton}
         type="button"
-        aria-label={s.exit}
         onClick={() => session.exit()}
-        className="inline-flex size-[56px] shrink-0 items-center justify-center rounded-pill bg-sunken text-ink hover:bg-line focus-visible:outline-mint"
+        className="inline-flex min-h-[56px] shrink-0 items-center justify-center gap-2 rounded-pill bg-deep px-6 text-base font-semibold text-on-deep focus-visible:outline-mint"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[24px]" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round">
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[22px]" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />
         </svg>
+        {s.end}
       </button>
     </div>
   )
