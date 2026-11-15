@@ -9,7 +9,6 @@ import {
   applyAskEvent,
   splitTakeaway,
   withoutPartialToken,
-  writtenByTemplate,
   type Answer,
 } from './answer.ts'
 
@@ -139,22 +138,10 @@ describe('mock /api/ask', () => {
   })
 })
 
-describe('the template note (#282): warning llm_unavailable, whatever the outcome', () => {
+describe('a template-written answer (#282): the warning stays in the answer; the app shows no note (#941)', () => {
   const request = { customer_id: 'CUST00042', conversation_id: null, language: 'en' as const, message: 'Where did my money go?' }
   const withMock = (mock: string) => vi.stubGlobal('window', { location: { search: `?mock=${mock}` } })
   afterEach(() => vi.unstubAllGlobals())
-
-  const done = (outcome: string, warnings: string[]) =>
-    ({ ...(examples['ask.sse.done'] as object), outcome, warnings }) as Answer['done']
-
-  it('shows for llm_unavailable on any outcome, and never for fallback alone', () => {
-    expect(writtenByTemplate(done('answered', ['llm_unavailable']))).toBe(true)
-    expect(writtenByTemplate(done('clarify', ['llm_unavailable']))).toBe(true)
-    expect(writtenByTemplate(done('fallback', ['llm_unavailable']))).toBe(true)
-    expect(writtenByTemplate(done('fallback', []))).toBe(false)
-    expect(writtenByTemplate(done('answered', ['period_clamped', 'something_new']))).toBe(false)
-    expect(writtenByTemplate(null)).toBe(false)
-  })
 
   it('mock ?mock=template: answered by the template, with the warning and the card', async () => {
     withMock('template')
@@ -163,7 +150,6 @@ describe('the template note (#282): warning llm_unavailable, whatever the outcom
     expect(answer.done?.warnings).toEqual(['llm_unavailable'])
     expect(answer.text).toBe('Here is what I found for September.')
     expect(answer.cards.length).toBeGreaterThan(0)
-    expect(writtenByTemplate(answer.done)).toBe(true)
   }, 15000)
 
   it("mock ?mock=fallback: the core's fixed short text with the card, and no template note", async () => {
@@ -172,6 +158,6 @@ describe('the template note (#282): warning llm_unavailable, whatever the outcom
     expect(answer.done?.outcome).toBe('fallback')
     expect(answer.text).toBe('I could not find data for that question.')
     expect(answer.cards.length).toBeGreaterThan(0)
-    expect(writtenByTemplate(answer.done)).toBe(false)
+    expect(answer.done?.warnings ?? []).not.toContain('llm_unavailable')
   }, 15000)
 })

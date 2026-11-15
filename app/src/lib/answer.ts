@@ -111,15 +111,6 @@ export function splitTakeaway(text: string): { takeaway: string; rest: string } 
 }
 
 /**
- * The answer's text came from the question's template because the AI model was not used
- * (`warnings` has `llm_unavailable`, contract section 7.2), whatever the outcome. The numbers are
- * the same either way; the app shows a quiet note.
- */
-export function writtenByTemplate(done: AskDone | null): boolean {
-  return done?.warnings?.includes('llm_unavailable') ?? false
-}
-
-/**
  * The actions of `done` (contract 0.3.3): every refusal, the "not yet" answer and the fallback
  * carry `contact_bank`. Entries without a string `type` and `label` are dropped; the chip renders
  * only the types and targets it knows.

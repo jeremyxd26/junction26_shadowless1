@@ -4,7 +4,7 @@
 // no AI line and no source label; the AI disclosure is behind the header's ⓘ (#685).
 import { useState, type ReactNode } from 'react'
 import type { Action } from '../api/types.ts'
-import { STAGES, splitTakeaway, withoutPartialToken, writtenByTemplate, type Answer } from '../lib/answer.ts'
+import { STAGES, splitTakeaway, withoutPartialToken, type Answer } from '../lib/answer.ts'
 import { chatStrings, errorMessage } from '../lib/chatStrings.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { captionOf } from '../lib/answerFigures.ts'
@@ -298,14 +298,8 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry, firstAnswe
       {/* No AI line here: `done.ai_disclosure` is the overview's text, behind the header's ⓘ (#685). */}
       {streaming && <Stages answer={answer} s={s} />}
       {body}
-      {/* Written from the template without the AI model (warning `llm_unavailable`, #282):
-          a quiet note under the answer, whatever the outcome. */}
-      {writtenByTemplate(done) && (
-        <p className="flex gap-2 text-sm text-muted">
-          <InfoIcon />
-          {s.templateNote}
-        </p>
-      )}
+      {/* No note when the template wrote the text (warning `llm_unavailable`): Renat dropped it (#941); the warning
+          stays in the API and the audit. */}
 
       {/* Sources of a knowledge answer (#922): after the text has typed in, like the cards. */}
       {done?.sources && outcome !== 'refused' && outcome !== 'clarify' && !(live && reveal.revealing) && (
