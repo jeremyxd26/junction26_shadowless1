@@ -4,16 +4,25 @@ import { ComposerBillButton } from '../components/ComposerBillButton.tsx'
 import { OpeningFold } from '../components/OpeningFold.tsx'
 import { ComposerMicButton } from '../components/ComposerMicButton.tsx'
 import { ScrollToLatest } from '../components/ScrollToLatest.tsx'
+import { Toast } from '../components/Toast.tsx'
+import { VoiceMode } from '../components/VoiceMode.tsx'
 import { chatStrings } from '../lib/chatStrings.ts'
+import { micStrings } from '../lib/micStrings.ts'
 import { notifyAsked } from '../lib/threadEvents.ts'
 import { setParams } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
-import { stopSpeaking } from '../lib/speech.ts'
+import { stopSpeaking, unlockVoice } from '../lib/speech.ts'
 import { isClientTurn, lastAskId } from '../lib/thread.ts'
 import { landBelowHeader } from '../lib/threadScroll.ts'
 import { NEAR_LIMIT, fitPaste } from '../lib/questionLength.ts'
-import { withSpoken } from '../lib/stt.ts'
+import { audioContext, withSpoken } from '../lib/stt.ts'
 import { MAX_QUESTION, type ChatSession } from '../lib/useChat.ts'
+import { voiceModeAvailable } from '../lib/voiceMode.ts'
+import { voiceModeStrings } from '../lib/voiceModeStrings.ts'
+import { VoiceSession, type VoiceEnd } from '../lib/voiceSession.ts'
+
+/** How long the toast stays after voice mode closed by itself. */
+const VOICE_TOAST_MS = 6000
 
 interface Props {
   chat: ChatSession
@@ -56,8 +65,51 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
   const [voice, setVoice] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const composer = useRef<HTMLFormElement>(null)
+  const sendButton = useRef<HTMLButtonElement>(null)
   const left = MAX_QUESTION - draft.length
   const note = cut ? s.cut : left <= NEAR_LIMIT ? s.charactersLeft(left) : null
+
+  // Voice mode (#811): with an empty input the send button opens it (a live build with a microphone API).
+  const vs = voiceModeStrings(lang)
+  const [voiceSession, setVoiceSession] = useState<VoiceSession | null>(null)
+  const [voiceToast, setVoiceToast] = useState<string | null>(null)
+  const talk = voiceModeAvailable(customerId) && !draft.trim() && !busy
+
+  /** Why voice mode closed by itself, as the toast says it; the input is usable again. */
+  const voiceEnded = (reason: VoiceEnd) =>
+    reason.kind === 'nothing' ? vs.nothing : reason.kind === 'answer' ? vs.answerFailed : micStrings(lang).failures[reason.failure]
+
+  // Everything that needs the tap itself happens here: the audio contexts (iOS runs only those made in a
+  // gesture), the device voice's unlock and the microphone request.
+  const openVoice = () => {
+    if (!customerId) return
+    setVoiceToast(null)
+    stopSpeaking()
+    unlockVoice()
+    const session = new VoiceSession(
+      {
+        customerId,
+        lang,
+        ask: send,
+        closed: (reason) => {
+          setVoiceSession(null)
+          if (reason) setVoiceToast(voiceEnded(reason))
+          requestAnimationFrame(() => sendButton.current?.focus())
+        },
+      },
+      audioContext(),
+      turns,
+    )
+    setVoiceSession(session)
+    void session.start()
+  }
+
+  // The toast goes by itself after a while, and with the next question.
+  useEffect(() => {
+    if (!voiceToast) return
+    const timer = window.setTimeout(() => setVoiceToast(null), VOICE_TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [voiceToast])
 
   /** A paste that would go over 500 characters is cut to fit, at a word break when one is near. */
   const paste = (event: ClipboardEvent<HTMLInputElement>) => {
@@ -113,6 +165,7 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
     send(draft)
     setDraft('')
     setCut(false)
+    setVoiceToast(null)
     input.current?.blur()
   }
 
@@ -247,17 +300,44 @@ export function Chat({ chat, question, disclosure, suggestions, opening, starter
             <span aria-hidden="true" className="size-[16px] rounded-[3px] bg-on-deep" />
           </button>
         ) : (
+          // With an empty input (and voice mode available) the same round button opens voice mode: a wave
+          // in place of the arrow, the two icons cross-fading as text comes and goes (#811).
           <button
-            type="submit"
-            aria-label={s.send}
-            className="inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
+            ref={sendButton}
+            type={talk ? 'button' : 'submit'}
+            onClick={talk ? openVoice : undefined}
+            aria-label={talk ? vs.start : s.send}
+            className="relative inline-flex size-[48px] shrink-0 items-center justify-center rounded-pill bg-deep text-on-deep focus-visible:outline-mint"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[24px]" fill="none" stroke="currentColor" strokeWidth="2.25">
+            <SendIcon shown={!talk}>
               <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            </SendIcon>
+            <SendIcon shown={talk}>
+              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" strokeLinecap="round" />
+            </SendIcon>
           </button>
         )}
       </form>
+      {voiceSession && <VoiceMode session={voiceSession} turns={turns} />}
+      {voiceToast && !voiceSession && <Toast text={voiceToast} numbers={{}} onClose={() => setVoiceToast(null)} />}
     </div>
+  )
+}
+
+/** One of the send button's two icons, stacked; the hidden one fades and shrinks out (no motion when reduced). */
+function SendIcon({ shown, children }: { shown: boolean; children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      className={`absolute size-[24px] transition-[opacity,scale] duration-(--duration-fast) motion-reduce:transition-none ${
+        shown ? 'scale-100 opacity-100' : 'scale-50 opacity-0'
+      }`}
+    >
+      {children}
+    </svg>
   )
 }
