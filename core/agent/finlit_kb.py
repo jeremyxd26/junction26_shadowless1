@@ -61,7 +61,7 @@ _TOPIC = re.compile(
     r"|\btax(?:es)?\b|payslip|pay slip|financial literacy|money management|managing money|\bscams?\b|fraud|phishing"
     r"|cost of living|household (?:budget|finances|costs)|needs (?:and|vs\.?|versus) wants|impulse (?:buy|purchas)"
     r"|consumer rights|personal finance|\bfinances\b|\bmoney\b|\bbills?\b"
-    r"|budjet|puskur|hatavar|saasta|saasto|saastami|korkoa korolle|\bkorko|\bkoron\b|inflaatio|\bvelk|\bvelat"
+    r"|budjet|puskur|hatavar|hatarahast|saasta|saasto|saastami|korkoa korolle|\bkorko|\bkoron\b|inflaatio|\bvelk|\bvelat"
     r"|maksuhairi|perinta|perinnan|ulosott|verokort|\bvero\b|\bverot\b|palkkalaskelm|talousosaami|raha-asi|rahankay"
     r"|huijau|huijari|elinkustannu|kotitalou|heraeteost|heratteost|kuluttajan oikeu|\braha\b|\brahaa\b|\blasku")
 # The user's own figures (also "How do I compare with people my age?"): their data, never a general answer.
@@ -80,7 +80,7 @@ _BORROW = re.compile(
 _PRODUCT = re.compile(
     r"(?<!emergency )(?<!rainy day )(?<!rainy-day )\bfunds?\b|\bstocks?\b|\bshares\b|\binvest\w*|crypto\w*|bitcoin"
     r"|\betf\b|\binsurance\b|\bpension\w*|\bbrokers?\b|\baccounts?\b|\bbanks?\b|\bbanking\b|\bcards?\b|\bapps?\b"
-    r"|\w*rahasto\w*|\w*osake\w*|\bsijoit\w*|\w*vakuutu\w*|\belake\w*|\btili\w*|\w*pankki\w*|\w*pankin\b|\b(?!vero)\w*kortti\w*"
+    r"|\b(?!hata|puskuri|varmuus|turva)\w*rahasto\w*|\w*osake\w*|\bsijoit\w*|\w*vakuutu\w*|\belake\w*|\btili\w*|\w*pankki\w*|\w*pankin\b|\b(?!vero)\w*kortti\w*"
     r"|\w*kortin\b|\bsovellu\w*|s-?mobiili|s-?bank|\bbonus\w*|s-?etu\w*")
 
 
@@ -247,6 +247,25 @@ WHY_GENERAL = re.compile(r"^(?:so |and |ok )?(?:why (?:should|would|do|does) (?:
                          r"|why (?:is|are) (?:it|saving|a budget|a buffer|budgeting) (?:important|good|smart|wise|useful)"
                          r"|miksi (?:mun |minun |mina |ma |ihmisten |kannattaa|pitaisi|pitais|on tarkeaa))")
 
+# "Why should I save?" when no draft passes the checks: our fixed reasons, with no number, no product, no source.
+WHY_SAVE_TEXT = (
+    "Saving gives you a cushion for surprises, so an unexpected bill does not upset your month. It also lets you plan "
+    "for things you want later, without stress. Even small amounts set aside regularly build up that security over "
+    "time.",
+    "Säästäminen antaa puskurin yllätyksiin, joten odottamaton lasku ei sotke kuukauttasi. Se auttaa myös "
+    "suunnittelemaan asioita, joita haluat myöhemmin, ilman stressiä. Pienetkin säännöllisesti sivuun laitetut summat "
+    "kasvattavat turvaa ajan myötä.")
+_SAVE = re.compile(r"\bsav(?:e|es|ing|ings)\b|saast")
+
+
+def why_fallback(message: str, lang: str) -> str | None:
+    """The fixed reasons for a why-save question (WHY_GENERAL about saving), else None (the usual path answers)."""
+    folded = guard.fold(message or "")
+    if WHY_GENERAL.search(folded) and _SAVE.search(folded):
+        return WHY_SAVE_TEXT[1 if lang == "fi" else 0]
+    return None
+
+
 # Tips or advice asked in a running conversation are the talk mode's, from the customer's own data (#873).
 TIPS = re.compile(r"\btips\b|\badvice\b|\bideas\b|\bsuggest\w*|vinkk\w*|neuvo\w*|ehdot\w*|mita (?:mun|minun) pitais")
 
@@ -258,7 +277,7 @@ FORBIDDEN = (
                 r"|(?:ota|ottaa|otat|ottamalla|ottaminen|hae|hakea|hakemalla) (?:\w+ )?lainaa?\b"),
      "it suggests borrowing or a credit product; a literacy answer never does"),
     (re.compile(r"\binvest\w*|\bstocks?\b|\bshares\b|\betfs?\b|crypto\w*|bitcoin|(?<!emergency )\bfunds?\b"
-                r"|sijoit\w*|osake\w*|rahasto\w*"),
+                r"|sijoit\w*|osake\w*|(?<!hata)(?<!puskuri)(?<!varmuus)(?<!turva)rahasto\w*"),
      "it mentions investing or an investment product; a literacy answer never does"),
     (re.compile(r"\bnordea\b|osuuspankk\w*|\bop[- ]pohjola\b|danske|s-?pankk\w*|s-?bank\b|handelsbanken|\baktia\b"
                 r"|saastopankk\w*|pop pankk\w*|klarna|revolut|mobilepay|s-?mobiili"),
