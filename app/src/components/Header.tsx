@@ -98,8 +98,16 @@ export function Header({
           them. At normal size the header is 20rem or wider (320 px), so it stays one row.
           The two equal columns and the left padding need 11.5rem; below that (320 px with 200 % text)
           they would run past the screen, so the left column, which only ever holds one button, keeps
-          just its 2.75rem (#763). The title is on its own row there, so it stays centred. */}
-      <div className="grid min-h-13 grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center px-2 @max-[11.5rem]:grid-cols-[2.75rem_minmax(0,1fr)_5.5rem]">
+          just its 2.75rem (#763). The title is on its own row there, so it stays centred.
+          With the Chat / Learn tabs in that one row, between 19rem and 22.5rem (320 to 359 px at normal
+          size) the side columns keep only what they hold, so each tab fits "Keskustelu" (#878): one
+          button each in a plain browser (the tabs stay centred), and back on the left, New chat and the
+          menu on the right in a host app. With the tabs on their own row nothing changes. */}
+      <div
+        className={`grid min-h-13 grid-cols-[5.5rem_minmax(0,1fr)_5.5rem] items-center px-2 ${
+          onTab ? (showBack ? '@min-[19rem]:@max-[22.5rem]:grid-cols-[2.75rem_minmax(0,1fr)_5.5rem]' : '@min-[19rem]:@max-[22.5rem]:grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]') : ''
+        } @max-[11.5rem]:grid-cols-[2.75rem_minmax(0,1fr)_5.5rem]`}
+      >
         {showBack ? (
           <button
             type="button"

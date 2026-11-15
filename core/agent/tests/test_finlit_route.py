@@ -51,7 +51,7 @@ class Composer:
 
     def compose(self, request):
         self.requests.append(request)
-        if request.sources is None:
+        if request.sources is None and not request.literacy:
             return self.rules.compose(request)
         text, lang = self.drafts.pop(0) if self.drafts else (GOOD_EN, request.language)
         return ComposeResult(text=json.dumps({"language": lang, "text": text, "cited": [], "lesson_key": None}))
@@ -134,6 +134,7 @@ def test_the_glossary_definition_goes_with_the_fragments_for_budget(make):
     ("Budjetti on suunnitelma. S-Pankki auttaa tässä.", "brand"),
     ("Budjetti on suunnitelma. Lähde: Martat.", "source"),
     ("En pystynyt selvittämään tätä juuri nyt.", "non-answer"),
+    ("En löytänyt tietoja tähän kysymykseen.", "non-answer"),
     ("A budget is a plan for your money. It helps you see where it goes.", "language"),
     ("Budjetti on suunnitelma. Säästä kolmen kuukauden menot sivuun.", "number word"),
 ])
@@ -154,11 +155,25 @@ def test_two_bad_drafts_leave_the_message_to_the_usual_path(make):
     assert "Lähde:" not in done["text"] and not finlit_turns(audit(p))
 
 
-def test_nothing_retrieved_leaves_the_message_to_the_usual_path(make):
+def test_nothing_retrieved_for_a_glossary_term_leaves_it_to_the_glossary(make):
     model = Composer()
     p = make(model, FakeSource(fragments=()))
     done = done_of(run(p, "mikä on budjetti", language="fi"))
     assert done["text"].startswith("Budjetti on suunnitelma siitä") and not model.requests
+
+
+def test_no_source_close_enough_gives_plain_words_with_no_source_line(make):
+    model = Composer((GOOD_FI, "fi"))
+    p = make(model, FakeSource(fragments=()))
+    done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
+    assert done["outcome"] == "answered" and done["text"] == GOOD_FI
+    req = model.requests[0]
+    assert req.literacy is True and req.sources is None
+    assert finlit_turns(audit(p))[0]["finlit"] == "no_source"
+
+
+def test_the_default_floor_is_the_calibrated_one():
+    assert finlit_kb.MAX_DISTANCE == 0.39
 
 
 @pytest.mark.parametrize("question, lang", [
