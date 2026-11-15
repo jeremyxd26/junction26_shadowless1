@@ -239,7 +239,8 @@ export function HeroPending() {
   return (
     <section className={HERO_BLOCK}>
       <h2 className="text-sm font-semibold text-on-hero-muted">{t.heroPendingTitle}</h2>
-      <div aria-hidden="true" className="mt-3 h-12 w-44 animate-pulse rounded-pill bg-on-hero/15" />
+      {/* Pulses only when motion is welcome; under reduced motion the placeholder stands still (#881). */}
+      <div aria-hidden="true" className="mt-3 h-12 w-44 motion-safe:animate-pulse rounded-pill bg-on-hero/15" />
       <p className="mt-3 text-base text-on-hero">{t.heroPending}</p>
     </section>
   )
