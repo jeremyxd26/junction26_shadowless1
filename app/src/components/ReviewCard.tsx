@@ -386,6 +386,8 @@ interface AnsweredProps {
   inAnswer?: boolean
   /** The opening's chat bubble (Renat's light redesign). */
   bubble?: boolean
+  /** Undo is shown but off while an answer or an undo is on its way (#965), so the row never jumps. */
+  undoDisabled?: boolean
 }
 
 /**
@@ -393,7 +395,7 @@ interface AnsweredProps {
  * the answer does is Sentti's reply under the card (#317), never a line on the card.
  */
 export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function ReviewAnswered(
-  { card, basket, onUndo, inAnswer = false, bubble = false },
+  { card, basket, onUndo, inAnswer = false, bubble = false, undoDisabled = false },
   ref,
 ) {
   const { lang, t } = useSettings()
@@ -425,7 +427,8 @@ export const ReviewAnswered = forwardRef<HTMLElement, AnsweredProps>(function Re
             <button
               type="button"
               onClick={onUndo}
-              className="min-h-11 min-w-11 px-1 text-sm font-semibold text-brand underline underline-offset-4 hover:text-ink"
+              disabled={undoDisabled}
+              className="min-h-11 min-w-11 px-1 text-sm font-semibold text-brand underline underline-offset-4 hover:text-ink disabled:cursor-default disabled:opacity-60 disabled:hover:text-brand"
             >
               {t.undo}
             </button>
