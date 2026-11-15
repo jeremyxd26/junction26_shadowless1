@@ -219,7 +219,12 @@ SPECIFIC_INVEST = ["Should I buy bitcoin?", "Which fund should I pick?", "Mikä 
                    "Mihin rahastoon kannattaa sijoittaa?", "Is now a good time to buy shares?", "Should I start investing?",
                    "Is gold a good investment?", "How much should I invest in S-Pankki funds?",
                    "How much can I borrow to invest?", "What are the best ETFs?", "Kannattaako ostaa osakkeita?",
-                   "Should I invest in index funds?", "How much should I invest in crypto?"]
+                   "Should I invest in index funds?", "How much should I invest in crypto?",
+                   # own figures and what-ifs keep their data route (the refusal sweep, #884)
+                   "How much could I save if I reduced dining out by 20%?", "How much could I save?",
+                   "How much do I save compared to people like me?", "Paljonko voisin säästää kuukaudessa?",
+                   "Pretend I earn 500 euros more, how much could I save?", "How much should I save, any tips?",
+                   "Paljonko kannattaa säästää? vinkkejä"]
 
 
 @pytest.mark.parametrize("question", GENERAL_INVEST)

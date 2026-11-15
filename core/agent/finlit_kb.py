@@ -151,18 +151,21 @@ def has_money_topic(message: str) -> bool:
 # a specific pick, a product, a provider, timing or borrowing stays with the decline. FINLIT_INVEST_GENERAL=off turns
 # it off (the decline answers again), read per question.
 _INVEST_GENERAL = re.compile(
-    r"\bhow (?:much|many) (?:money |of (?:my|our) \w+ )?(?:should|could|can|do|would) (?:i|we) (?:start )?"
-    r"(?:invest|save|set\w* aside|put\w* aside)"
-    r"|\bhow much (?:money )?(?:i|we) should (?:start )?(?:invest\w*|sav\w*|set\w* aside|put\w* aside)"
+    r"\bhow much (?:money |of (?:my|our) \w+ )?should (?:i|we) (?:start )?(?:invest\w*|set\w* aside|put\w* aside"
+    r"|save or invest)"
+    r"|\bhow much (?:money )?(?:i|we) should (?:start )?(?:invest\w*|(?:set|put)\w* aside[^?.]*\binvest\w*)"
     r"|\bhow (?:do|can|could|should) (?:i|we|one|people) (?:start|begin|get started)(?: with)? (?:investing|to invest)"
     r"|\bhow to (?:start|begin|get started)(?: with)? investing\b"
     r"|\bwhat (?:should|do) (?:i|we|one) (?:know|consider|keep in mind|think about) (?:before|when|about) "
     r"(?:investing|starting to invest|(?:i|we) start investing)"
     r"|\b(?:basics|principles) of (?:saving and )?investing\b"
     r"|\bsijoittamisen aloitta\w*|\bmiten (?:aloitan|aloittaa|aloitetaan|aloittaisin|paasen alkuun) (?:\w+ )?sijoitta\w*"
-    r"|\bpaljonko (?:minun |mun )?(?:pitaisi|pitais|kannattaa|kannattais|voisin) (?:alkaa )?(?:sijoittaa|saastaa|laittaa sivuun"
+    r"|\bpaljonko (?:minun |mun )?(?:pitaisi|pitais|kannattaa|kannattais) (?:alkaa )?(?:sijoittaa|laittaa sivuun"
     r"|panna sivuun)"
     r"|\bmita (?:sijoittamisessa|sijoittamista aloittaessa|pitaa ottaa huomioon,? kun aloittaa sijoitta\w*)")
+# What-if and own-figure forms never take the general investing answer ("How much could I save if …?").
+_INVEST_NOT = re.compile(r"\bif\b|\bjos\b|%|\bpretend|\bcompared\b|verrattuna|\b(?:could|would|do) (?:i|we) save\b"
+                         r"|\bvoisin saastaa\b")
 _INVEST_SPECIFIC = re.compile(
     r"\b(?:which|what|best|top|safest|good|better)\b.{0,30}\b(?:funds?|shares?|stocks?|etfs?|crypto\w*|bitcoin|gold"
     r"|platforms?|brokers?|apps?|banks?)\b|\b(?:buy|sell|hold|pick|choose|recommend\w*)\b|\bbitcoin|crypto\w*|ethereum"
@@ -180,7 +183,8 @@ def invest_general(message: str) -> bool:
     if (os.environ.get("FINLIT_INVEST_GENERAL") or "on").strip().lower() in ("off", "0", "false", "no"):
         return False
     folded = guard.fold(message or "").strip()
-    if not folded or len(folded) > 400 or _BORROW.search(folded) or _INVEST_SPECIFIC.search(folded):
+    if (not folded or len(folded) > 400 or _BORROW.search(folded) or _INVEST_SPECIFIC.search(folded)
+            or _INVEST_NOT.search(folded)):
         return False
     return bool(_INVEST_GENERAL.search(folded))
 
