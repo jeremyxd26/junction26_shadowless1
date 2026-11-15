@@ -28,6 +28,7 @@ A failure inside the stream becomes one `error` event; exception text never leav
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import re
@@ -38,12 +39,14 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, NamedTuple, Protocol
 
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import glossary, guard, offers, sbank_kb, template, validator, why_review
+from core.agent import explain_number, glossary, guard, offers, sbank_kb, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -55,11 +58,16 @@ from core.agent.validator import (TOKEN, Allowed, AnswerDraft, allowed_from, che
 from core.answer_text import answer_kind, find_dates, length_problems, scan_numbers
 from core.app.api import texts as api_texts
 from core.tools import config as tool_config
+from core.tools import evidence as tool_evidence
+from core.tools import periods as tool_periods
 from core.tools.cache import TOOL_CACHE
 from core.tools.context import NumberRegistry, ToolContext
+from core.tools.formatting import display as format_display
 from core.tools.missing import MissingData
+from core.tools.models import Action, Card, Number, Period, Unit
 from core.tools.numbers import model_number
 from core.tools.periods import MONTHS_EN, PeriodOutOfRange
+from core.tools.selection import Selection
 
 log = logging.getLogger("uvicorn.error")
 
@@ -164,6 +172,12 @@ def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
         if words:
             out.append(re.compile(r"\b" + r"(?:\W+(?:and|ja)\W+|\W+)".join(map(re.escape, words)) + r"\b", re.I))
     return out
+
+
+def _main_number(numbers: dict[str, Number], cited: list[str]) -> Number | None:
+    """The answer's main number for "what does this number mean?" (#821): the first it cites with an evidence ref,
+    else the first registered (the card's headline)."""
+    return next((numbers[i] for i in [*cited, *numbers] if i in numbers and numbers[i].evidence_ref), None)
 
 
 class LockedNumberRegistry(NumberRegistry):
@@ -435,6 +449,8 @@ class Pipeline:
             return lang
         if self._answer_sbank_kb(ctx, review, message, lang, emit, a):   # "How do I block my card?" (#791)
             return lang
+        if self._answer_explain_number(ctx, message, lang, emit, a):   # "What does this number mean?" (#821)
+            return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
@@ -634,7 +650,7 @@ class Pipeline:
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
-                                   "answer": TOKEN.sub("[number]", text)})
+                                   "answer": TOKEN.sub("[number]", text), "explain": _main_number(numbers, cited)})
         return lang
 
     def _establish_labels(self, ctx: ToolContext, a: _Answer) -> Any:
@@ -1279,6 +1295,103 @@ class Pipeline:
         self.store.add_turn(a.conversation, {"question": message, "calls": calls, "views": views,
                                              "answer": TOKEN.sub("[number]", text)})
         return True
+
+    def _answer_explain_number(self, ctx: ToolContext, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """Answer "What does this number mean?" / "Mitä tää numero tarkoittaa?" right after an answer (#821): the
+        previous answer's main number (the first it cited) by template, with its label and period, the method's
+        summary as the evidence sheet shows it and the transactions it rests on, and a card whose action opens its
+        evidence. With no previous answer that cited a number: which number? No plan, no composer, no model request.
+        False (the normal path answers) unless explain_number matches the whole message, no guard flag is set and the
+        rule model neither declines the message nor answers it with a rule of its own."""
+        if a.flags or not explain_number.matches(message):
+            return False
+        turns = a.conversation.turns if a.conversation is not None else []
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in turns]
+        rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                             tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+        if any(c.name == "decline" for c in rules.calls) or getattr(rules, "recognised", False):
+            return False
+        prev = turns[-1] if turns else {}
+        main = prev.get("explain")
+        if not isinstance(main, Number) or not main.evidence_ref:
+            a.planner_turns.append({"round": 1, "source": "rules", "explain_number": "which"})
+            self._clarify(SimpleNamespace(question=template.pick(explain_number.WHICH, lang), options=[]), lang, emit, a)
+            return True
+        number = ctx.numbers.register(main.model_copy(update={"id": None}))
+        count = self._explain_count(ctx, number, lang)
+        numbers = ctx.numbers.all()
+        label = explain_number.label_text(number.label)
+        lead = template.pick(explain_number.LEAD, lang).format(label=label, period=number.period.label)
+        bare = template.pick(explain_number.LEAD_ONLY_LABEL, lang).format(label=label)   # the card names the period
+        info = api_texts.method_info(number.method)
+        summary = api_texts.pick(explain_number.SUMMARIES.get(number.method) or info.summary, lang).strip() \
+            if info.summary else ""
+        summary = summary if not summary or summary[-1] in ".!?" else summary + "."
+        rests = (template.pick(explain_number.COUNT, lang)[0 if count.value == 1 else 1].format(
+            count="{{" + count.id + "}}") if count is not None else "")
+        allowed = allowed_from(numbers.values(), [], self.as_of)
+        draft = None
+        variants = [(first, *rest) for first in (lead, bare) for rest in ((summary, rests), (rests,), (summary,), ())]
+        for text in dict.fromkeys(" ".join(p for p in parts if p) for parts in variants):
+            draft, errors = validate({"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))),
+                                      "lesson_key": None}, language=lang, numbers=numbers, allowed=allowed)
+            if not errors and draft is not None:
+                break
+            draft = None
+        if draft is None:
+            log.warning("explain-number answer failed the validator (%d problems)", len(errors))
+            return False
+        ref = number.evidence_ref
+        card = Card(card_id="card_" + hashlib.sha256(f"explain_number|{ref}".encode()).hexdigest()[:12], type="metric",
+                    title=number.label, subtitle=number.period.label, evidence_ref=ref,
+                    actions=[Action(type="open_evidence", label=template.pick(explain_number.ACTION, lang),
+                                    evidence_ref=ref)],
+                    status=None, primary=number, secondary=[count] if count is not None else [], comparison=None,
+                    components=[])
+        a.planner_turns.append({"round": 1, "source": "rules", "explain_number": number.method})
+        a.cards.append(card.card_id)
+        emit("card", {"card": card.model_dump(mode="json")})
+        text = self._deliver(draft.text, numbers, emit)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": template.follow_ups(message, lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        # the previous turn's calls and results stay the conversation's last data, so "and last month?" after the
+        # explanation still reads them (#300), and the same number can be explained again
+        self.store.add_turn(a.conversation, {"question": message, "calls": prev.get("calls") or [],
+                                             "views": prev.get("views") or [], "answer": TOKEN.sub("[number]", text),
+                                             "explain": main})
+        return True
+
+    def _explain_count(self, ctx: ToolContext, number: Number, lang: str) -> Number | None:
+        """The transactions a number rests on, as its evidence sheet counts them (core/app/api/evidence.py): the
+        row count of its selection, a Number with its own evidence ref. None for a number that is not a sum over
+        transactions (a composite such as safe to spend) or when the data cannot be read: the sentence is left out."""
+        try:
+            with self.data.connection() as conn:
+                res = tool_evidence.resolve(conn, number.evidence_ref, ctx.customer_id, limit=1, language=lang)
+                if res.kind != "transactions" or res.row_count is None:
+                    return None
+                spec = res.spec if res.spec is not None else tool_evidence.load(conn, res.ref)[1]
+                sel = spec["selection"]
+                value = Decimal(res.row_count)
+                rc_spec = tool_evidence.transactions_spec(ctx.customer_id, date.fromisoformat(spec["as_of"]),
+                                                          tool_config.METHODS["row_count"], Selection.from_spec(sel),
+                                                          value, label_set=spec.get("labels"))
+                rc_ref = tool_evidence.make_ref(rc_spec)
+                tool_evidence.write(conn, {rc_ref: rc_spec})
+            start, end = date.fromisoformat(sel["period"]["start"]), date.fromisoformat(sel["period"]["end"])
+        except Exception as exc:   # the explanation stands without the count
+            log.warning("explain-number count not read (%s)", type(exc).__name__)
+            return None
+        period = Period(start=start, end=end, label=tool_periods.period_label(start, end, lang))
+        return ctx.numbers.register(Number(value=int(value), unit=Unit.COUNT, period=period,
+                                           method=tool_config.METHODS["row_count"], evidence_ref=rc_ref,
+                                           label=api_texts.pick(api_texts.ROW_COUNT_LABEL, lang),
+                                           display=format_display(value, Unit.COUNT, lang)))
 
     def _answer_sbank_kb(self, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
         """Answer a question about S-Bank or S-mobiili from the knowledge base (#791): the entry's fixed text

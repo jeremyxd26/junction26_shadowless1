@@ -7,8 +7,10 @@ script is built from the answer's own audit record, deterministically, with no m
 - Each `{{nK}}` token of `text` becomes a spoken form of its Number (value, unit, method): whole euros,
   "about" when rounded ("about 63 euros a month", "noin 63 euroa kuukaudessa"); never "/", "kk" or "€".
 - At most MAX_SPOKEN different numbers are read, in the order they appear. A later number is left out with
-  its clause (from the comma or the number read before it, up to the next punctuation); a sentence that
-  would start with it is left out. The rest stays on the screen.
+  its clause (from the nearest , : or ; or the number read before it, up to the next punctuation); a
+  sentence that would start with it, or be left with one word, is left out. The rest stays on the screen.
+  The step plan (#822, three steps with one number each) keeps all three steps: the third is read without
+  its number ("Third, check your small purchases.", #827).
 - A leading period phrase ("During 1 Apr – 30 Sep 2026,", "Ajanjaksolla 1.4.–30.9.2026") is dropped, and
   one sentence at the end says where the numbers come from: "That's from your spending from April to
   September." / "Laskin tämän kulutuksestasi huhtikuusta syyskuuhun."
@@ -175,13 +177,17 @@ def _drop_extra(sentence: str, spoken: list[str]) -> str:
             break
         if extra is None:
             return sentence
-        comma = sentence.rfind(",", 0, extra.start())
-        start = max(comma, kept_end) if max(comma, kept_end) > 0 else 0
+        # The clause starts at the nearest , : or ; before the number ("Third, check your small purchases: they
+        # add up to {{n3}}." keeps "Third, check your small purchases."), or right after the number read before it.
+        boundary = max(sentence.rfind(mark, 0, extra.start()) for mark in ",:;")
+        start = max(boundary, kept_end) if max(boundary, kept_end) > 0 else 0
         tail = re.search(r"[,.;:!?]", sentence[extra.end():])
         end = extra.end() + tail.start() if tail else len(sentence)
         if start == 0:
             return ""   # the sentence starts with a number left out: the whole sentence goes
         sentence = sentence[:start] + sentence[end:]
+        if len(re.findall(r"\w+", TOKEN.sub("", sentence))) < 2:
+            return ""   # never a sentence of one word ("Third.")
 
 
 def _period(text: str, record: dict[str, Any], first_key: str | None) -> tuple[str, Any] | None:
