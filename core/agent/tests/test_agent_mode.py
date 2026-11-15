@@ -461,3 +461,36 @@ def test_the_gemini_agent_turn_sends_the_context_as_quoted_data(tmp_path):
     text = transport.requests[0]["contents"][0]["parts"][0]["text"]
     assert "Answer language: fi" in text and r"\u003c/user_message\u003e" in text and "Groceries" in text
     assert transport.requests[0]["config"]["system_instruction"].startswith("You are Sentti")
+
+
+# ---- the literacy route's place (a finlit source that retrieves nothing) ---------------------------------------------
+
+class NoFragments:
+    def fragments(self, question, lang, band, k=3):
+        return []
+
+
+def make_finlit(tmp_path, model, name="f"):
+    return Pipeline(make_registry(), model, FakeData(), as_of=AS_OF, audit=AuditLog(tmp_path / f"audit-{name}"),
+                    finlit=NoFragments())
+
+
+@pytest.mark.parametrize("message, lang", [("Why should I save money?", "en"), ("Mitä on korkoa korolle?", "fi"),
+                                           ("What is compound interest?", "en")])
+def test_on_a_literacy_question_goes_to_the_loop_in_the_literacy_routes_place(tmp_path, switch, message, lang):
+    switch[0].touch()
+    agent = AgentModel()
+    pipeline = make_finlit(tmp_path, agent)
+    d = done(ask(pipeline, message))
+    assert agent.turns and d["text"] == WORDS[lang]
+    assert any(t.get("route") == "finlit" for t in audit_records(pipeline)[-1]["planner_turns"])
+
+
+@pytest.mark.parametrize("message", ["How do I start investing?", "How much should I save or invest?"])
+def test_on_a_general_investing_question_keeps_its_designed_answer(tmp_path, switch, message):
+    switch[0].touch()
+    agent = AgentModel()
+    got = normal(ask(make_finlit(tmp_path, agent, "on"), message))
+    switch[0].unlink()
+    assert got == normal(ask(make_finlit(tmp_path, PlainModel(), "old"), message))
+    assert agent.turns == []
