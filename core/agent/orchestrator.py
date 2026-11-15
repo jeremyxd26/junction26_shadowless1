@@ -46,7 +46,8 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import explain_number, glossary, guard, offers, sbank_kb, template, validator, why_review
+from core.agent import (explain_number, glossary, guard, offers, sbank_kb, talk_checks, talk_mode, template, validator,
+                        why_review)
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -319,6 +320,8 @@ class AskRequest:
     # False when a model window of /api/ask is used up (#232): the rules plan and the template writes,
     # with the `llm_unavailable` warning, and no model request is made.
     model_allowed: bool = True
+    # "text" (default) or "voice" (#873): on voice an open follow-up after any data answer takes talk mode
+    channel: str = "text"
 
 
 @dataclass
@@ -478,6 +481,8 @@ class Pipeline:
         if self._answer_sbank_kb(ctx, review, message, lang, emit, a):   # "How do I block my card?" (#791)
             return lang
         if self._answer_explain_number(ctx, message, lang, emit, a):   # "What does this number mean?" (#821)
+            return lang
+        if self._answer_talk(ctx, req, message, lang, emit, a):   # "why does it matter?", "any tips?" (#873)
             return lang
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
         responses: list[FunctionResponse] = []
@@ -678,7 +683,8 @@ class Pipeline:
                       "lesson": template.lesson(draft.lesson_key, lang), "refusal": None, "clarify": None,
                       "warnings": a.warnings})
         self.store.add_turn(conv, {"question": message, "calls": a.calls, "views": views,
-                                   "answer": TOKEN.sub("[number]", text), "explain": _main_number(numbers, cited)})
+                                   "answer": TOKEN.sub("[number]", text), "explain": _main_number(numbers, cited),
+                                   "shown": [numbers[i] for i in cited if i in numbers]})   # talk mode may cite them (#873)
         return lang
 
     def _establish_labels(self, ctx: ToolContext, a: _Answer) -> Any:
@@ -1406,7 +1412,158 @@ class Pipeline:
         # explanation still reads them (#300), and the same number can be explained again
         self.store.add_turn(a.conversation, {"question": message, "calls": prev.get("calls") or [],
                                              "views": prev.get("views") or [], "answer": TOKEN.sub("[number]", text),
-                                             "explain": main})
+                                             "explain": main, "shown": [numbers[i] for i in cited if i in numbers]})
+        return True
+
+    # ---- talk mode (#873) ------------------------------------------------------------------------------------------
+
+    def _talk_stands_down(self, message: str, lang: str, a: _Answer) -> str | None:
+        """Why a talk question takes the normal path instead, or None: a guard flag, health, borrowing, a product or
+        a brand in the question, or a rules refusal or designed template answer ("what should I do about bitcoin?"
+        keeps the rules' decline; hard declines always win)."""
+        folded = guard.fold(message)
+        if a.flags:
+            return "guard"
+        if re.search(RULE_HEALTH, folded):
+            return "health"
+        if any(rx.search(message) or rx.search(folded) for rx in (talk_checks.GENERAL_BORROWING,
+                                                                  talk_checks._GENERAL_BORROWING_CLASS)):
+            return "borrowing"
+        if any(rx.search(message) for rx in (talk_checks._GENERAL_PRODUCT, talk_checks._GENERAL_PRODUCT_CLASS,
+                                             talk_checks._GENERAL_BRAND)):
+            return "product"
+        plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                            tools=self.registry.schemas(), guard_flags=a.flags, round=1))
+        if any(c.name == "decline" for c in plan.calls):
+            return "decline"
+        if getattr(plan, "template_answer", False) or getattr(plan, "offer_contact", False):
+            return "template"
+        return None
+
+    def _talk_levers(self, ctx: ToolContext) -> list[dict[str, Any]]:
+        """The savings plan's and the small purchases' model views for a tips question in a conversation that has
+        computed no lever yet, run without a card and with their own registry, so none of their numbers can be cited
+        (none was shown). [] when a tool is not registered or fails."""
+        views: list[dict[str, Any]] = []
+        for name in ("get_savings_plan", "get_small_purchases"):
+            spec = self.registry.tools.get(name)
+            if spec is None:
+                continue
+            try:
+                _, args = self.registry.parse(name, {})
+                if TOOL_CACHE.enabled:
+                    TOOL_CACHE.ensure_labels_key(ctx, self.data.connection)
+                with self.data.connection() as conn:
+                    own = dataclasses.replace(ctx, conn=conn, numbers=NumberRegistry())
+                    views.append(TOOL_CACHE.run(spec.name, spec.args_model, spec.fn, own, args).model_view)
+            except Exception as exc:  # noqa: BLE001 - the talk answer stands without the lever
+                log.warning("talk-mode lever %s not read (%s)", name, type(exc).__name__)
+        return views
+
+    def _answer_talk(self, ctx: ToolContext, req: AskRequest, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """Talk mode (#873, the answer_in_words route): 2 to 4 plain sentences from the composer that reason about the
+        previous answer, citing at most one number already shown in this conversation; no card, one next-step chip.
+        False (the normal path answers) unless talk_mode names the message, or it is an open follow-up after a talk
+        answer (after any data answer on the voice channel), and no guard, refusal rule or product question stands it
+        down. On a failed check, after one retry, the template reasons without a number."""
+        conv = a.conversation
+        turns = conv.turns if conv is not None else []
+        voice = getattr(req, "channel", "text") == "voice"
+        last_talk = next((t["talk"] for t in reversed(turns) if t.get("talk")), None)
+        prev_talk = bool(turns) and bool(turns[-1].get("talk"))
+        data_turn = _last_data_turn(turns)
+        kind = talk_mode.trigger(message)
+        if kind is None and talk_mode.explain_beside(message) and (data_turn or prev_talk):
+            kind = "explain"
+        if kind is None and (prev_talk or (voice and data_turn)) and talk_mode.follow_up(message):
+            kind = "follow_up"
+        if kind is None:
+            return False
+        why_not = self._talk_stands_down(message, lang, a)
+        if why_not is not None:
+            a.planner_turns.append({"round": 1, "source": "rules", "talk": f"stood down: {why_not}"})
+            return False
+        views_all = [v for t in turns for v in (t.get("views") or []) if isinstance(v, dict)]
+        tools = [c.get("name") for c in (data_turn.get("calls") or []) if isinstance(c, dict)]
+        # the numbers already shown in this conversation, latest last, re-registered for this answer
+        shown: dict[str, Number] = {}
+        for number in [n for t in turns for n in (t.get("shown") or [])][-8:]:
+            registered = ctx.numbers.register(number)
+            shown[registered.id] = registered
+        numbers = ctx.numbers.all()
+        given = (last_talk or {}).get("tips_given", 0)
+        ranking = talk_mode.rank_tips(views_all, lang)
+        tips_kind = kind in ("tips", "no_numbers")
+        more = prev_talk and talk_mode.wants_more_tips(message) and (tips_kind or kind == "follow_up")
+        if tips_kind and not ranking:
+            ranking = talk_mode.rank_tips(views_all + self._talk_levers(ctx), lang)
+        tip, exhausted = None, False
+        if tips_kind or more:
+            index = given if more else 0
+            tip = ranking[index] if index < len(ranking) else None
+            exhausted = tip is None and index > 0
+            given = index + 1 if tip is not None else given
+        previous_tip = (last_talk or {}).get("tip") if (tip is None and prev_talk) else None
+        prev = turns[-1] if turns else None
+        talk = {"kind": kind, "channel": "voice" if voice else "text",
+                "previous_question": prev["question"] if prev else None,
+                "previous_answer": prev["answer"] if prev else None,
+                "previous_tools": tools,
+                "shown_numbers": [model_number(n) for n in shown.values()],
+                "tip": {"rank": ranking.index(tip) + 1, "lever": tip["label"]} if tip else None,
+                "previous_tip": previous_tip,
+                "tips_ranked": [{"rank": i + 1, "lever": t["label"]} for i, t in enumerate(ranking)],
+                "no_more_tips": exhausted}
+        compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                  data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
+                                  previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
+        unavailable = self._model_unavailable(req) or self._role_unavailable("compose")
+        allowed = Allowed(dates=frozenset(), periods=frozenset())
+        draft = None
+        errors: list[str] = []
+        if unavailable is None:
+            for _ in range(2):   # the call and one retry with the reasons
+                t = self.clock()
+                try:
+                    result = self.model.compose(ComposeInput(**{**compose_in.__dict__, "validation_errors": errors}))
+                except Exception as exc:  # noqa: BLE001
+                    errors = [f"the model call failed ({type(exc).__name__})"]
+                    a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
+                    continue
+                draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
+                if draft is not None and not errors:
+                    errors = talk_mode.draft_problems(draft.text, numbers, set(shown), lang)
+                a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
+                                            "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
+                if not errors:
+                    break
+                draft = None
+        if draft is None:   # the template in the model's place reasons without a number
+            text = talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip)
+            draft, errors = validate({"language": lang, "text": text, "cited": [], "lesson_key": None},
+                                     language=lang, numbers=numbers, allowed=allowed)
+            a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
+            if draft is None:
+                draft = AnswerDraft(language=lang, text=text, cited=[], lesson_key=None)
+            a.model_unavailable = a.model_unavailable or unavailable or "error"
+            self._warn_llm_unavailable(a)
+        a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {})})
+        text = self._deliver(draft.text, numbers, emit)
+        cited = list(dict.fromkeys(TOKEN.findall(text)))
+        a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
+        a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
+                         "evidence_ref": numbers[i].evidence_ref} for i in cited}
+        chip = template.pick(talk_mode.CHIP_MORE if given < len(ranking) else talk_mode.CHIP_SAVE, lang)
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": cited, "follow_ups": [chip], "lesson": None, "refusal": None, "clarify": None,
+                      "warnings": a.warnings})
+        # no calls and no views: "what does this number mean?" and the planner's history still read the last data
+        # turn; the talk record keeps the ranking's place for "any more tips?"
+        self.store.add_turn(conv, {"question": message, "calls": [], "views": [],
+                                   "answer": TOKEN.sub("[number]", text),
+                                   "talk": {"kind": kind, "tips_given": given,
+                                            "tip": ({"lever": tip["label"]} if tip else previous_tip)},
+                                   "shown": [numbers[i] for i in cited if i in numbers]})
         return True
 
     def _explain_count(self, ctx: ToolContext, number: Number, lang: str) -> Number | None:
