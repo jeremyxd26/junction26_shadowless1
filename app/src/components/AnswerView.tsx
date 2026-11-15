@@ -17,6 +17,7 @@ import type { Turn } from '../lib/useChat.ts'
 import { AnswerCard } from './AnswerCard.tsx'
 import { ClientTurnView } from './ClientTurnView.tsx'
 import { TokenText } from './cards.tsx'
+import { AnswerSources } from './AnswerSources.tsx'
 import { SpeakButton } from './SpeakButton.tsx'
 import { ErrorBlock } from './States.tsx'
 
@@ -304,6 +305,11 @@ export function TurnView({ turn, latest, suggestions, onAsk, onRetry, firstAnswe
           <InfoIcon />
           {s.templateNote}
         </p>
+      )}
+
+      {/* Sources of a knowledge answer (#922): after the text has typed in, like the cards. */}
+      {done?.sources && outcome !== 'refused' && outcome !== 'clarify' && !(live && reveal.revealing) && (
+        <AnswerSources sources={done.sources} />
       )}
 
       {done?.lesson && (

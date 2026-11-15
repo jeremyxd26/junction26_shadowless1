@@ -21,6 +21,9 @@ const en = {
     'Where do my small purchases go?',
   ],
   moreQuestions: 'More questions',
+  /** Under a knowledge answer (#922): its sources as chips. */
+  sources: 'Sources',
+  sourceLabel: (publisher: string, title: string) => (title ? `Source: ${publisher} — ${title}` : `Source: ${publisher}`),
   placeholder: 'Ask about your money',
   inputLabel: 'Your question',
   send: 'Send',
@@ -74,6 +77,8 @@ const fi: ChatStrings = {
     'Mihin pienet ostokset menevät?',
   ],
   moreQuestions: 'Lisää kysymyksiä',
+  sources: 'Lähteet',
+  sourceLabel: (publisher: string, title: string) => (title ? `Lähde: ${publisher} — ${title}` : `Lähde: ${publisher}`),
   placeholder: 'Kysy raha-asioistasi',
   inputLabel: 'Kysymyksesi',
   send: 'Lähetä',

@@ -184,6 +184,11 @@ def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
     return out
 
 
+def _words_answer(turn: dict[str, Any]) -> bool:
+    """An answer in words (talk mode, the literacy answers, the bank's help), not a number answer."""
+    return bool(turn.get("talk") or turn.get("words"))
+
+
 def _not_a_question(question: str) -> bool:
     """A meta message or feedback, which "answer my previous question" skips."""
     return meta_intent(question) is not None or conversation_feedback(question) is not None
@@ -460,6 +465,15 @@ class Pipeline:
         if meta == "greeting" and conv.turns and goodbye_greeting(message):
             meta = "thanks"   # "moi moi" after an answer is a goodbye: the closing line, never a new greeting (#630)
         foreign = bool(CYRILLIC.search(message))
+        if meta == "confused" and template.previous_turn(conv.turns, _not_a_question) is not None:
+            # "wait what", "täh": what was unclear, with the simpler explanation of the last answer as the chip
+            return self._say(template.pick(template.CONFUSED, lang), lang, emit, a, "confused",
+                             [template.pick(template.CONFUSED_CHIP, lang)])
+        if meta == "confused":
+            meta = "greeting"   # nothing said yet: the greeting-style reply
+        if meta == "feelings":   # "I'm tired", "väsyttää": one kind line and a soft offer, never a refusal
+            return self._say(template.pick(template.FEELINGS, lang), lang, emit, a, "feelings",
+                             [template.pick(template.FEELINGS_CHIP, lang)])
         if meta == "recall":   # "What did I ask? Remind me": from the conversation, no tool and no model
             return self._recall(conv.turns, lang, emit, a)
         if meta == "context":
@@ -1496,6 +1510,8 @@ class Pipeline:
         if a.flags or not explain_number.matches(message):
             return False
         turns = a.conversation.turns if a.conversation is not None else []
+        if explain_number.asks_simpler(message) and turns and _words_answer(turns[-1]):
+            return False   # the last answer was words (talk, literacy, the bank's help): talk mode says it simpler
         history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in turns]
         rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                              tools=self.registry.schemas(), history=history, guard_flags=a.flags))
@@ -1626,6 +1642,8 @@ class Pipeline:
             kind = "why"   # "why should I save money?" after a talk answer: reasons, not numbers (#889)
         if kind is None and prev_talk and talk_mode.asks_why_tips(message):
             kind = "why"   # "miksi se auttaa?" after a talk answer (#919)
+        if kind is None and turns and _words_answer(turns[-1]) and explain_number.asks_simpler(message):
+            kind = "understand"   # "Selitä yksinkertaisemmin" after an answer in words: that answer, simpler (test 11)
         if kind is None:
             return False
         why_not = self._talk_stands_down(message, lang, a)
@@ -1674,7 +1692,8 @@ class Pipeline:
         # official sources for the reasoning (#884): only when the model may write the talk text
         # on "why?" after tips, the sources that tips answer named (kept on its turn), never a new search (#919)
         fragments = ([] if talk_mode.template_only(message) or talk_mode.model_switched_off()
-                     else list((prev or {}).get("finlit") or []) if explain
+                     else [finlit_kb.Fragment(**r) for r in (prev or {}).get("finlit") or [] if isinstance(r, dict)]
+                     if explain
                      else self._talk_fragments(ctx, message, prev, lang))
         # the closing is the template's unless finlit fragments give the composer something to write from (#907)
         designed_closing = closing and not fragments
@@ -1786,7 +1805,7 @@ class Pipeline:
                                             "gave": gave},
                                    "shown": [numbers[i] for i in cited if i in numbers],
                                    # the sources this answer named, for "why?" next (#919)
-                                   **({"finlit": fragments} if credited and from_model else {})})
+                                   **({"finlit": [f.record() for f in fragments]} if credited and from_model else {})})
         return True
 
     def _explain_count(self, ctx: ToolContext, number: Number, lang: str) -> Number | None:
@@ -1862,7 +1881,8 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
-        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text,
+                                             "words": True})
         return True
 
     def finlit_fragments(self, customer_id: str, message: str, lang: str) -> list[Any]:
@@ -1933,7 +1953,7 @@ class Pipeline:
                        for t in (conv.turns if conv is not None else [])]
             rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                                  tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-            why = finlit_kb.WHY_GENERAL.search(guard.fold(message)) is not None   # reasons, never a plan's figures
+            why = finlit_kb.overrides_rules(message)   # why / concept / judgement: words, never a plan's figures
             # borrowing never reaches here (finlit_kb's gate), so the rules' "I can't answer that one yet" with the
             # contact offer does not stop a why question
             if any(c.name == "decline" for c in rules.calls) or getattr(rules, "template_answer", False) \
@@ -1992,7 +2012,9 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
-        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text,
+                                             "words": True,
+                                             "finlit": [f.record() for f in fragments]})   # for a follow-up's reuse
         return True
 
     def _deliver(self, text: str, numbers: dict[str, Any], emit: Emit) -> str:

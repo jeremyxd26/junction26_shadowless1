@@ -356,6 +356,16 @@ export interface AskDone {
   clarify: { question: string; options: string[] } | null
   /** Known codes are `AskWarning`; unknown codes may arrive and are ignored. */
   warnings: (AskWarning | (string & {}))[]
+  /** Where a knowledge answer comes from (#922): 0–3 sources, https only; absent in older streams. */
+  sources?: AnswerSource[]
+}
+
+/** One source of an answer (#922), shown as a chip under it. */
+export interface AnswerSource {
+  publisher: string
+  title: string
+  url: string
+  lang: Language
 }
 
 /** One validated event of the /api/ask stream (contract section 7.2). */

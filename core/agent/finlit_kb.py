@@ -56,7 +56,9 @@ _FRAME = re.compile(
     r"^(?:so |and |ok |okay |hmm |no niin |entas |entä |entäs |ja )?"
     r"(?:what(?:'s| is| are| does| do)\b|whats\b|how (?:do|does|can|could|should|would) (?:i|you|one|people|we)\b"
     r"|how to\b|how does\b|why (?:is|are|should|do|does)\b|explain\b|tell me (?:about|what|how|why)\b"
-    r"|(?:any |some |give me |share )?(?:tips|advice|ideas)\b|is it (?:good|smart|wise|important)\b"
+    r"|(?:any |some |give me |share )?(?:tips|advice|ideas)\b"
+    r"|is it (?:bad|good|ok|okay|fine|wise|smart|worth|wrong|normal|important|a good idea|a bad idea)\b"
+    r"|onko (?:se |ok |okei )?(?:paha|pahasta|huono|hyva|jarkevaa|fiksua|ok|okei|normaalia|vaarin)\b"
     r"|mika on\b|mita on\b|mita (?:tarkoittaa|tarkoitetaan|ovat)\b|mitka ovat\b|miten\b|kuinka\b|miksi\b|selita\b"
     r"|kerro\b|anna (?:vinkkeja|neuvoja)\b|(?:onko )?vinkkeja\b|neuvoja\b|kannattaako\b)")
 _TOPIC = re.compile(
@@ -64,7 +66,8 @@ _TOPIC = re.compile(
     r"|inflation|\bdebts?\b|payment default|credit (?:rating|record|history)|debt collection|enforcement|tax card"
     r"|\btax(?:es)?\b|payslip|pay slip|financial literacy|money management|managing money|\bscams?\b|fraud|phishing"
     r"|cost of living|household (?:budget|finances|costs)|needs (?:and|vs\.?|versus) wants|impulse (?:buy|purchas)"
-    r"|consumer rights|personal finance|\bfinances\b|\bmoney\b|\bbills?\b"
+    r"|consumer rights|personal finance|\bfinances\b|\bmoney\b|\bbills?\b|\bspend(?:ing)?\b|hobb(?:y|ies)"
+    r"|\bshopping\b|\btravel\b|harrastu\w*|\bkulut\w*|tuhla\w*|ostoks\w*|matkustami\w*"
     r"|budjet|puskur|hatavar|hatarahast|saasta|saasto|saastami|korkoa korolle|\bkorko|\bkoron\b|inflaatio|\bvelk|\bvelat"
     r"|maksuhairi|perinta|perinnan|ulosott|verokort|\bvero\b|\bverot\b|palkkalaskelm|talousosaami|raha-asi|rahankay"
     r"|huijau|huijari|elinkustannu|kotitalou|heraeteost|heratteost|kuluttajan oikeu|\braha\b|\brahaa\b|\blasku")
@@ -88,6 +91,28 @@ _PRODUCT = re.compile(
     r"|\w*kortin\b|\bsovellu\w*|s-?mobiili|s-?bank|\bbonus\w*|s-?etu\w*")
 
 
+# A period ("last month", "in August", "viime kuussa", "elokuussa") asks about the user's own figures.
+_PERIOD = re.compile(
+    r"\b(?:last|this|next|past) (?:month|week|year|quarter)\b|\b(?:yesterday|today|tonight)\b"
+    r"|\bin (?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
+    r"|\bviime (?:kuu|viiko|vuo)\w*|\btalla viikolla\b|\btassa kuussa\b|\btana vuonna\b|\beilen\b|\btanaan\b"
+    r"|\b(?:tammi|helmi|maalis|huhti|touko|kesa|heina|elo|syys|loka|marras|joulu)kuu\w*")
+# A concept or judgement question ("what is budgeting?", "is it bad to spend on hobbies?", "mitä on budjetointi?",
+# "onko paha …?") asks about the idea, not the user's figures: the literacy route answers it even when a data rule
+# would claim the message (a rules decline still wins; the glossary keeps its own terms).
+CONCEPT = re.compile(
+    r"^(?:so |and |ok |okay |hmm )?(?:what(?:'s| is| are| does .* mean)\b|whats\b|explain\b"
+    r"|is it (?:bad|good|ok|okay|fine|wise|smart|worth|wrong|normal|important|a good idea|a bad idea)\b"
+    r"|mika on\b|mita on\b|mita (?:tarkoittaa|tarkoitetaan)\b|mitka ovat\b|selita\b"
+    r"|onko (?:se |ok |okei )?(?:paha|pahasta|huono|hyva|jarkevaa|fiksua|ok|okei|normaalia|vaarin)\b)")
+
+
+def overrides_rules(message: str) -> bool:
+    """True for a why-should, concept or judgement question: the literacy route answers it over a data rule."""
+    folded = guard.fold(message or "").strip()
+    return bool(WHY_GENERAL.search(folded) or CONCEPT.search(folded))
+
+
 def age_band(age: Any) -> str | None:
     """The app band of an age in years (core/knowledge/finlit/README.md), or None when the age is unknown."""
     try:
@@ -108,7 +133,7 @@ def question_kind(message: str) -> str | None:
     folded = guard.fold(message or "").strip()
     if not folded or re.search(r"\d", folded) or len(folded) > 200:
         return None
-    if _OWN.search(folded) or _BORROW.search(folded) or _PRODUCT.search(folded):
+    if _OWN.search(folded) or _BORROW.search(folded) or _PRODUCT.search(folded) or _PERIOD.search(folded):
         return None
     if not (_FRAME.search(folded) and _TOPIC.search(folded)):
         return None
@@ -142,6 +167,11 @@ class Fragment:
     text: str | None      # open_attribution page text with digits masked, else None (a link only)
     kind: str             # page_text | source_card
     distance: float | None = None   # cosine distance of the chunk to the question (0 = the same direction)
+
+    def record(self) -> dict[str, Any]:
+        """The fragment as the conversation turn keeps it (turn["finlit"]): ids, publisher, title, link, open text."""
+        return {"source_id": self.source_id, "publisher": self.publisher, "title": self.title, "url": self.url,
+                "text": self.text, "kind": self.kind}
 
     def data(self, include_text: bool = True) -> dict[str, Any]:
         """What the composer sees: never the link, never a digit; the text only when this source is named."""
