@@ -4,7 +4,7 @@ How to run, rehearse and record the Sentti demo. For the stage, use the **60-sec
 
 Status markers: **now** = on the dev environment today (checked live on 14 Nov 2026, last on dev 5602596, deployed at 14:51); **not on the stand** = skip it while recording; **in progress** = being built, the issue or PR is named.
 
-**Numbers** are Sanna's (`CUST00860`) on the dev environment with a fresh viewer: safe to spend is **€138.79** with **€360.00 a month** set aside first (pay yourself first, #426), and it goes **€138.79 → €97.46** after "Needed". The other personas' first screens: Marja **€78.86**, Eetu **€161.69** (his "Sentti asks" is about €378.22; after "Needed" **€147.23**), Aleksi **€123.15**.
+**Numbers** are Sanna's (`CUST00860`) on the dev environment with a fresh viewer: safe to spend is **€138.79** with **€360.00 a month** set aside first (pay yourself first, #426), and it goes **€138.79 → €97.46** after "Needed". The other personas' first screens: Marja **€78.86**, Eetu **€115.29** (CUST00387, 24, since #882; his "Sentti asks" is about €157.07 at a restaurant on 25 July; after "Needed" **€109.28**), Aleksi **€123.15**.
 
 ## Where to run it
 1. **The dev deployment (first choice):** `https://sentti.jeremyxd.dev/demo.html?lang=en&persona=CUST00860`, in Chrome or Safari, on a laptop (the phone is scaled to fit) or on a phone (1:1). The page is the demo frame ("Sentti in a host app (demo)"): a neutral host app around the module, with the persona, the language and **Start over** outside the phone, and the message log beside it. The module alone is at `https://sentti.jeremyxd.dev/?persona=CUST00860&lang=en` (no host frame, no message log, no Start over).
