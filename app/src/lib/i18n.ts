@@ -26,6 +26,8 @@ const en = {
   howCalculated: 'How it was calculated',
   madeOf: 'What it is made of',
   transactions: 'Transactions',
+  rowsHeader: (count: string, n: number) => (n === 1 ? `${count} transaction` : `${count} transactions`),
+  monthsSpan: (n: number) => `${n} months`,
   reconciles: 'These transactions add up to the number above.',
   method: 'Method',
   // Review card frame; the question and the answers come from the API (`question`, `options[].label`).
@@ -122,6 +124,8 @@ const fi: Strings = {
   howCalculated: 'Näin luku lasketaan',
   madeOf: 'Mistä luku koostuu',
   transactions: 'Tapahtumat',
+  rowsHeader: (count: string, n: number) => (n === 1 ? `${count} tapahtuma` : `${count} tapahtumaa`),
+  monthsSpan: (n: number) => `${n} kuukautta`,
   reconciles: 'Nämä tapahtumat täsmäävät yllä olevaan lukuun.',
   method: 'Menetelmä',
   reviewAsks: 'Sentti kysyy',

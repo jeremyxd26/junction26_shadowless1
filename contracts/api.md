@@ -1,8 +1,8 @@
 # Core API contract
 
-**Version:** 0.3.19 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872, #873, #884 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
+**Version:** 0.3.20 (draft) · **Issues:** #5, #32, #33, #44, #53, #134, #242, #243, #250, #267, #380, #382, #416, #417, #420, #421, #433, #511, #524, #554, #569, #699, #730, #733, #735, #751, #752, #759, #823, #872, #873, #884, #944 · **Design:** [docs/design/agent-core.md](../docs/design/agent-core.md)
 
-**Status:** draft 0.3.19. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
+**Status:** draft 0.3.20. The app owner raises changes through a new issue, and each change bumps the version in the changelog.
 
 This file is the interface between `core/` (the coach service) and `app/` (the mobile web app). The app can be built against the examples below before the core exists. Every example is tagged `<!-- example: <name> -->`, so a mock server can serve them by name.
 
@@ -3702,6 +3702,8 @@ A store switch is not a what-if scenario. It is shown in the `stores` card with 
 
 Shows how a number was built: the method and either the transactions behind it or the numbers it was computed from. Evidence is for the app and the user only. It is never sent to the AI model.
 
+`months` (0.3.20, #944): for a `transactions` list, every month of the whole list (all pages, not just the rows sent), newest first: `month` ("2026-09"), `label` ("September 2026"), `count`, `total` (a decimal string with the bank sign, like a row's `amount`) and `display`. Every other kind sends `[]`. Rows come newest first, so the app groups the rows it has under their month and shows the month's subtotal from `months`.
+
 **Request:** `GET /api/evidence/ev_r7t9v1x3z5b7?customer_id=CUST00042&lang=en&limit=50&cursor=<next_cursor>`
 
 - `customer_id` must be the customer the evidence belongs to; otherwise the response is 403 `evidence_forbidden`. A `customer_id` that is not served (section 1) gets 404 `customer_not_found` before the ref is looked up.
@@ -3782,7 +3784,10 @@ Transaction rows are source records, not coach numbers. Their `amount` is a **de
   "reconciles": true,
   "parts": [],
   "next_cursor": "cur_2",
-  "privacy_note": "Only you can see these transactions. They are never sent to the AI model."
+  "privacy_note": "Only you can see these transactions. They are never sent to the AI model.",
+  "months": [
+    { "month": "2026-09", "label": "September 2026", "count": 14, "total": "-312.80", "display": "-€312.80" }
+  ]
 }
 ```
 
@@ -3813,7 +3818,8 @@ A `metric` number (Sanna's budget limit for the next 7 days, from `core/metrics/
   "reconciles": true,
   "parts": [],
   "next_cursor": null,
-  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
 }
 ```
 
@@ -3865,7 +3871,8 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
       "label": "Similar people compared (same age group and postal area)", "display": "23" } }
   ],
   "next_cursor": null,
-  "privacy_note": "Only group statistics are shown here, never another customer's transactions."
+  "privacy_note": "Only group statistics are shown here, never another customer's transactions.",
+  "months": []
 }
 ```
 
@@ -3913,7 +3920,8 @@ A `peer_aggregate` number (the median of the `card.peer` example). Its parts are
     }
   ],
   "next_cursor": null,
-  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
 }
 ```
 
@@ -3945,7 +3953,8 @@ A value cited from a public statistic (since 0.3.10, #569): the national line's 
   "reconciles": null,
   "parts": [],
   "next_cursor": null,
-  "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+  "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+  "months": []
 }
 ```
 
@@ -5605,4 +5614,5 @@ When no speech was heard:
 | 0.3.16 | Wording only (#823), no new field and no change for the core. Voice mode (#811) sends the spoken words as a question and reads the answer aloud without a tap, once the user has opened it on purpose; the text said that nothing is sent until the user taps send and that nothing plays without a tap.<br>- Section 12: the intro and 12.4 name voice mode as the one case in which an answer is read aloud without a tap.<br>- Section 13: the intro, "What is sent where" and 13.4 name the exception. 13.4 gains a voice-mode bullet: how it opens and closes, when a round ends (about 1.2 seconds of silence, 15 seconds or a tap), that nothing is recorded while Sentti speaks, that two rounds with no words close it, that no audio is stored, and what goes to the model provider.<br>- No example changed. |
 | 0.3.17 | One new field (#872). Section 5: `GET /api/personas` gives each persona's `age`, the customer's age in years from the dataset (`customers.age`), next to `age_band`, so the persona picker can say who is who. The picker shows the name, the age and band, the profile label and the tagline, never the postal code or the `customer_id`. Example `personas.response` changed. |
 | 0.3.19 | One new optional response field (#884). Section 7: the `done` event of `/api/ask` (SSE and JSON) may carry `sources`, `[{publisher, title, url, lang}]`, at most three, for an answer drawn from official financial-literacy sources (`core/finlit`). The source line that 0.3.18 answers appended to the text ("Source: <publisher>, <url>") is gone, so the text carries no link. Absent on every other answer. |
+| 0.3.20 | One new response field (#944). Section 9: `months` on `GET /api/evidence/{ref}` for a `transactions` list, every month of the whole list with its count and total, newest first (`[]` for the other kinds), so the evidence sheet can group the rows by month with subtotals. Examples `evidence.response` (one month) and the other evidence examples (`[]`) changed. |
 | 0.3.18 | One new optional request field (#873). Section 7.1: `POST /api/ask` takes `channel`, `text` (default) or `voice`; any other value is a 400 `invalid_request`. Talk questions (why something matters, an explanation, tips, no numbers) get two to four sentences in words with at most one number already shown, no card and one chip; on `voice`, open follow-ups after any data answer do too. No response field and no example changed. |
