@@ -454,6 +454,8 @@ class Pipeline:
         if meta == "greeting" and conv.turns and goodbye_greeting(message):
             meta = "thanks"   # "moi moi" after an answer is a goodbye: the closing line, never a new greeting (#630)
         foreign = bool(CYRILLIC.search(message))
+        if meta == "recall":   # "What did I ask? Remind me": from the conversation, no tool and no model
+            return self._recall(conv.turns, lang, emit, a)
         if meta == "context":
             found = template.context_topic(conv.turns)
             if found is not None:
@@ -1056,6 +1058,20 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
                       "follow_ups": template.meta_follow_ups(intent, lang), "lesson": None, "refusal": None,
                       "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
+        return lang
+
+    def _recall(self, turns: list[dict[str, Any]], lang: str, emit: Emit, a: _Answer) -> str:
+        """"What did I ask? Can you remind me?": the previous question and the topic of its answer, then "Want to
+        continue?", with that question as the chip; with nothing asked yet, "We haven't talked about anything yet.
+        What would you like to know?" No plan, no tool, no number and no model request."""
+        text, question = template.recall_text(turns, lang, lambda q: meta_intent(q) is not None)
+        text = self._deliver(text, {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        a.planner_turns.append({"round": 1, "source": "rules", "meta_intent": "recall"})
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text, "cited": [],
+                      "follow_ups": [question] if question else template.meta_follow_ups("greeting", lang),
+                      "lesson": None, "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
 

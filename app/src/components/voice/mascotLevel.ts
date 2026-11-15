@@ -31,6 +31,45 @@ export function mouthRy(level: number): number {
 }
 
 /**
+ * The level the mouth follows this frame (#893): `getLevel()` when the parent gives one, polled every
+ * frame so the parent never re-renders for it (the voice mode passes `() => session.level()`); else the
+ * newest `level` prop.
+ */
+export function levelSource(getLevel: (() => number) | undefined, level: number): number {
+  return getLevel ? getLevel() : level
+}
+
+/** When the next frame runs: `requestAnimationFrame` in the browser, a hand-driven queue in tests. */
+export interface FrameClock {
+  request(step: () => void): number
+  cancel(frame: number): void
+}
+
+/**
+ * The speaking mouth's loop: each frame it reads the level, smooths it and sets the mouth's `ry` only
+ * when the shown value changes. Returns the stop, which cancels the next frame and shuts the mouth.
+ */
+export function runMouth(read: () => number, setRy: (ry: string) => void, clock: FrameClock): () => void {
+  let smoothed = 0
+  let shown = '0'
+  let frame = 0
+  const step = () => {
+    smoothed = smoothLevel(smoothed, read())
+    const ry = String(mouthRy(smoothed))
+    if (ry !== shown) {
+      setRy(ry)
+      shown = ry
+    }
+    frame = clock.request(step)
+  }
+  frame = clock.request(step)
+  return () => {
+    clock.cancel(frame)
+    setRy('0')
+  }
+}
+
+/**
  * How loud the sound through an AnalyserNode is now, 0 to 1: the RMS of one frame of
  * `getByteTimeDomainData` (128 is silence) times LEVEL_GAIN, clamped. `buf` is reused between
  * frames; give it the analyser's `fftSize` as its length.
