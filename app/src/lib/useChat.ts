@@ -8,6 +8,7 @@ import { ApiError } from '../api/errors.ts'
 import type { AskRequest, Language } from '../api/types.ts'
 import { EMPTY_ANSWER, applyAskEvent, stopped, type Answer, type AnswerError, type StopReason } from './answer.ts'
 import { findClientTurn, pushClientTurn, type ClientTurnRequest, type Turn } from './thread.ts'
+import { clearThreads, loadThread, saveThread } from './threadStore.ts'
 
 export type { Turn } from './thread.ts'
 
@@ -55,10 +56,29 @@ function toAnswerError(error: unknown): AnswerError {
 }
 
 export function useChat(customerId: string | null, lang: Language): ChatSession {
-  const [session, setSession] = useState<Session>({ owner: customerId, turns: [] })
-  const conversation = useRef<{ owner: string | null; id: string | null }>({ owner: customerId, id: null })
+  // The current dialog of this tab comes back after a reload (Renat: sessionStorage only, no history list); the
+  // core keeps the follow-up context per conversation id, so the id comes back too (an expired one starts fresh).
+  const [restored] = useState(() => loadThread(customerId))
+  const [session, setSession] = useState<Session>({ owner: customerId, turns: restored?.turns ?? [] })
+  const conversation = useRef<{ owner: string | null; id: string | null }>({
+    owner: customerId,
+    id: restored?.conversationId ?? null,
+  })
   const running = useRef<{ turnId: number; controller: AbortController } | null>(null)
-  const nextId = useRef(1)
+  const nextId = useRef(restored?.nextId ?? 1)
+
+  // A persona switch clears the stored dialogs; the new persona's chat starts empty (below, derived).
+  const storedFor = useRef(customerId)
+  useEffect(() => {
+    if (storedFor.current === customerId) return
+    storedFor.current = customerId
+    clearThreads()
+  }, [customerId])
+  // Every change of the shown thread is kept for a reload in this tab (the last turns, with the conversation id).
+  useEffect(() => {
+    if (session.owner !== customerId || storedFor.current !== customerId) return
+    saveThread(customerId, { conversationId: conversation.current.id, nextId: nextId.current, turns: session.turns })
+  }, [session, customerId])
 
   // A different persona means a different customer: its chat starts empty (derived, no effect).
   const turns = session.owner === customerId ? session.turns : []
@@ -174,6 +194,7 @@ export function useChat(customerId: string | null, lang: Language): ChatSession 
     running.current = null
     current?.controller.abort()
     conversation.current = { owner: customerId, id: null }
+    clearThreads()   // New chat: the stored dialog goes too
     setSession({ owner: customerId, turns: [] })
   }, [customerId])
 
