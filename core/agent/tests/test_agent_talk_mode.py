@@ -850,7 +850,7 @@ def test_why_after_a_data_answer_or_the_general_why_keeps_its_path(tmp_path):
 @pytest.mark.parametrize("lang", ["en", "fi"])
 def test_every_explain_template_passes_the_checks_and_is_new(lang):
     levers = [[], [{"key": "category:Restaurants", "label": "restaurants", "rank": 1}],
-              [{"key": "small_purchases", "label": "small purchases", "rank": 2}],
+              [{"key": "small_purchases", "label": "pienet ostokset" if lang == "fi" else "small purchases", "rank": 2}],
               [{"key": "category:Entertainment", "label": "entertainment", "rank": 2}],
               [{"key": "category:Travel", "label": "travel", "rank": 1}]]
     assert len(talk_mode.PRACTICE_KEYS) == len(talk_mode.PRACTICE_WHY) == len(talk_mode.PRACTICES)

@@ -511,7 +511,7 @@ def tip_keys(gave: dict[str, Any]) -> list[str]:
 # Words a generic "why it matters" paragraph shares with the tips: they never count as naming a tip (#919)
 _NAME_GENERIC = frozenset("""spending starts before after right going money month months small steady change habit
 habits there elsewhere helps help every planned plan ennen alkaa kuluttaminen heti rahaa kuukausi pieni pienet pysyva
-pysyvä tapa muutos auttaa""".split())
+pysyvä tapa muutos auttaa bigger biggest largest through then ones uses area areas cuts adds""".split())
 
 
 def _stems(text: str) -> set[str]:
