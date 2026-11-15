@@ -33,7 +33,7 @@ from core.agent.gemini_client import CallUsage, GeminiClient, GeminiError, Ledge
 from core.agent.model import (
     ComposeInput, ComposeResult, FunctionCall, FunctionResponse, ModelError, PlanInput, PlanResult, Usage,
 )
-from core.agent.rules import RuleModel
+from core.agent.rules import RuleModel, off_topic_decline
 from core.agent.validator import AnswerDraft
 
 log = logging.getLogger("core.agent.gemini")
@@ -510,7 +510,8 @@ class RulesFirstModel:
         if any(isinstance(turn, dict) for turn in request.model_turns):
             return self.model.plan(request)          # a later round of a Gemini-planned answer
         result = self.rules.plan(request)
-        if not_recognised(result):
+        if not_recognised(result) or off_topic_decline(request, result):
+            # #834: the generic off-topic decline is the model planner's too; every hard refusal stays the rules'
             return self.model.plan(request)
         return result
 
