@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
-import type { Estimate } from '../api/types.ts'
-import { estimateParts } from '../lib/estimate.ts'
+import type { Estimate, Num } from '../api/types.ts'
+import { estimateParts, estimateReceipt } from '../lib/estimate.ts'
 import { estimateStrings } from '../lib/estimateStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { NumberChip } from './NumberChip.tsx'
@@ -57,22 +57,32 @@ export function EstimateBadge({ estimate, onHero = false, control }: Props) {
  * each a chip that opens its evidence) and what it assumes ("We assume", each assumption's text
  * with its value). Without those fields (an older API) it shows only the text, as before (#504).
  */
-export function EstimateNote({ estimate, id, onHero = false }: { estimate: Estimate; id: string; onHero?: boolean }) {
+export function EstimateNote({
+  estimate,
+  id,
+  onHero = false,
+  result,
+}: {
+  estimate: Estimate
+  id: string
+  onHero?: boolean
+  /**
+   * The hero's own amount: with it, a safe-to-spend estimate is a short receipt (Renat's phone test): one plain
+   * line, the balance and what is set aside as plain right-aligned text, the result, and the method and assumptions
+   * folded under "How we estimate" (closed). Every value is the API's display.
+   */
+  result?: Num
+}) {
   const { lang } = useSettings()
   const s = estimateStrings(lang)
   const { observed, assumptions } = estimateParts(estimate)
+  const receipt = result ? estimateReceipt(estimate) : null
   const box = onHero ? 'bg-on-hero/10 text-on-hero' : 'bg-estimate-tint text-ink-2'
   const heading = `font-semibold ${onHero ? 'text-on-hero' : 'text-ink'}`
   const muted = onHero ? 'text-on-hero-muted' : ''
   const tone = onHero ? 'hero' : 'mint'
-  return (
-    <div id={id} className={`mt-2 rounded-md p-3 text-sm ${box}`}>
-      <p className={`font-semibold ${onHero ? 'text-on-hero' : 'text-estimate'}`}>
-        <span aria-hidden="true">≈ </span>
-        {estimate.label}
-      </p>
-      <p className={`mt-1 ${muted}`}>{estimate.text}</p>
-
+  const parts = (
+    <>
       {observed.length > 0 && (
         <section className="mt-3">
           <h4 className={heading}>{s.basedOn}</h4>
@@ -101,6 +111,52 @@ export function EstimateNote({ estimate, id, onHero = false }: { estimate: Estim
           </ul>
         </section>
       )}
+    </>
+  )
+  if (receipt && result) {
+    return (
+      <div id={id} className={`mt-2 rounded-md p-3 text-sm ${box}`}>
+        <p className={heading}>{s.plain}</p>
+        <dl className="mt-2 flex flex-col gap-1 tabular-nums">
+          {receipt.map(({ key, number }, index) => (
+            <div key={key} className="flex items-baseline justify-between gap-3">
+              <dt className={`min-w-0 break-words ${muted}`}>
+                {index > 0 ? '− ' : ''}
+                {s.receipt[key]}
+              </dt>
+              <dd className="shrink-0 text-right">{number.display}</dd>
+            </div>
+          ))}
+          <div className={`mt-1 flex items-baseline justify-between gap-3 border-t pt-2 ${onHero ? 'border-on-hero/30' : 'border-line'}`}>
+            <dt className={`min-w-0 break-words ${muted}`}>{s.spread}</dt>
+            <dd className={`shrink-0 text-right text-base ${heading}`}>{result.display}</dd>
+          </div>
+        </dl>
+        <details className="group mt-1">
+          <summary
+            className={`inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-semibold [&::-webkit-details-marker]:hidden ${
+              onHero ? 'text-on-hero' : 'text-brand'
+            }`}
+          >
+            {s.howWeEstimate}
+            <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+              ›
+            </span>
+          </summary>
+          <p className={muted}>{estimate.text}</p>
+          {parts}
+        </details>
+      </div>
+    )
+  }
+  return (
+    <div id={id} className={`mt-2 rounded-md p-3 text-sm ${box}`}>
+      <p className={`font-semibold ${onHero ? 'text-on-hero' : 'text-estimate'}`}>
+        <span aria-hidden="true">≈ </span>
+        {estimate.label}
+      </p>
+      <p className={`mt-1 ${muted}`}>{estimate.text}</p>
+      {parts}
     </div>
   )
 }

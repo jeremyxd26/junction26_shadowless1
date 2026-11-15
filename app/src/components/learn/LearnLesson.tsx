@@ -175,14 +175,14 @@ export function LearnLesson({
                   setIndex(index + 1)
                   setPicked(null)
                 }}
-                className="min-h-11 rounded-pill bg-deep px-5 text-base font-semibold text-on-deep"
+                className="min-h-11 rounded-pill bg-deep px-5 py-2 text-left text-base font-semibold text-on-deep"
               >
-                {s.nextLesson}
+                {s.nextTo(lessons[index + 1].title)} <span aria-hidden="true">›</span>
               </button>
             ) : (
               onQuiz && (
                 <button type="button" onClick={onQuiz} className="min-h-11 rounded-pill bg-deep px-5 text-base font-semibold text-on-deep">
-                  {s.takeQuiz}
+                  {s.takeQuiz} <span aria-hidden="true">›</span>
                 </button>
               )
             )}

@@ -59,7 +59,8 @@ const en = {
   nextTopic: 'Next topic',
   backToTopics: 'Back to topics',
   takeQuiz: 'Take the quiz',
-  nextLesson: 'Next lesson',
+  /** The button to the next lesson names it (Renat's phone test). */
+  nextTo: (title: string) => `Next: ${title}`,
   lessonOf: (n: number, total: number) => `Lesson ${n} of ${total}`,
   checkLabel: 'Check',
   takeawayLabel: 'Takeaway',
@@ -150,7 +151,7 @@ const fi: LearnStrings = {
   nextTopic: 'Seuraava aihe',
   backToTopics: 'Takaisin aiheisiin',
   takeQuiz: 'Tee testi',
-  nextLesson: 'Seuraava oppitunti',
+  nextTo: (title: string) => `Seuraavaksi: ${title}`,
   lessonOf: (n, total) => `Oppitunti ${n}/${total}`,
   checkLabel: 'Tarkistus',
   takeawayLabel: 'Muista',
