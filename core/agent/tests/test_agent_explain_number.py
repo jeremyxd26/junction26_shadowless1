@@ -148,7 +148,8 @@ def test_the_count_comes_from_the_evidence_selection_in_finnish(make_pipeline, m
     _, events = two_turns(pipeline, "Mitäs tää numero tarkoittaa? Voitko selittää mulle tarkasti", "fi")
     done = done_of(events)
     assert done["outcome"] == "answered"
-    assert done["text_rendered"] == "Luku on safe to spend. " + explain_number.SUMMARIES[
+    # #833: the label in the answer's language (the method table's Finnish name), never "safe to spend".
+    assert done["text_rendered"] == "Luku on turvallisesti käytettävissä. " + explain_number.SUMMARIES[
         "safe_to_spend.safe_to_spend_7d_eur@1"][1] + " Se perustuu 12 tapahtumaan.", done["text_rendered"]
     assert len(done["cited"]) == 1 and len(written) == 1
     card = card_of(events)
@@ -202,3 +203,15 @@ def test_the_explanation_keeps_the_previous_data_for_a_follow_up(make_pipeline):
     # An English follow-up: the answer speaks the question's language (#831), so "Selitä tarkemmin" would get Finnish.
     again = done_of(run(pipeline, "Explain this number", language="en", conversation_id=conversation_id))
     assert again["outcome"] == "answered" and again["text_rendered"].startswith("That's safe to spend")
+
+
+def test_a_finnish_follow_up_after_an_english_answer_names_the_number_in_finnish(make_pipeline):
+    # #833: the follow-up is answered in its own language (#831), and so is the number's name: never "safe to spend"
+    # inside a Finnish sentence. The period, from the English answer, is left to the card.
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    first, _ = two_turns(pipeline, "Explain this number", "en")
+    conversation_id = dict(first)["meta"]["conversation_id"]
+    again = done_of(run(pipeline, "Mitä tää numero tarkoittaa?", language="en", conversation_id=conversation_id))
+    assert again["outcome"] == "answered"
+    assert again["text_rendered"].startswith("Luku on turvallisesti käytettävissä.")
+    assert "safe to spend" not in again["text_rendered"].lower()

@@ -1354,8 +1354,10 @@ class Pipeline:
         number = ctx.numbers.register(main.model_copy(update={"id": None}))
         count = self._explain_count(ctx, number, lang)
         numbers = ctx.numbers.all()
-        label = explain_number.label_text(number.label)
-        lead = template.pick(explain_number.LEAD, lang).format(label=label, period=number.period.label)
+        name, translated = explain_number.label_for(number, lang)   # #833: a follow-up in the other language
+        label = explain_number.label_text(name)
+        lead = (template.pick(explain_number.LEAD_ONLY_LABEL, lang).format(label=label) if translated
+                else template.pick(explain_number.LEAD, lang).format(label=label, period=number.period.label))
         bare = template.pick(explain_number.LEAD_ONLY_LABEL, lang).format(label=label)   # the card names the period
         info = api_texts.method_info(number.method)
         summary = api_texts.pick(explain_number.SUMMARIES.get(number.method) or info.summary, lang).strip() \
