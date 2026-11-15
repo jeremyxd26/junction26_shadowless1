@@ -92,6 +92,11 @@ class ComposeInput:
     errors: list[dict[str, Any]] = field(default_factory=list)  # {"tool": name, "error": code}
     previous_turn: dict[str, Any] | None = None       # question and answer, numbers masked as [number]
     validation_errors: list[str] = field(default_factory=list)  # set on the retry
+    # #884: fragments from official sources (finlit_kb.Fragment.data: source, title, open text with digits masked),
+    # and whether the answer is a literacy answer in plain words with no data. Only a request that carries them gets
+    # their blocks, so every other composer request keeps its cache key.
+    sources: list[dict[str, Any]] | None = None
+    literacy: bool = False
 
 
 @dataclass(frozen=True)

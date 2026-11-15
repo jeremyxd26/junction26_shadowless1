@@ -1,0 +1,298 @@
+"""Financial-literacy answers grounded in official Finnish sources (#884), on Maxim's finlit retrieval (core/finlit).
+
+A general money question ("mikä on budjetti", "how do I build a buffer", "mitä on korkoa korolle") is answered in
+plain words by the composer, with 2-3 retrieved fragments in its data and one source line added by code
+("Source: <publisher>, <url>" / "Lähde: <publisher>, <url>"). The talk mode (#873) asks for the same fragments.
+
+Rules kept here, not in the prompt:
+- Fragments are in the question's language and the customer's age band (or "all"), as the Retriever filters.
+- Only sources of a public or non-profit tier are used: authority, public education, international organisation,
+  academic, non-profit. Banks, industry associations and "other" are left out (no products, no other bank).
+- A fragment's text reaches the composer only from licence_class open_attribution page text; every other source
+  is a title and a link. Digits in a fragment's text are masked, and the draft may state no number at all (the
+  validator with no Numbers), so no figure from a source reaches an answer.
+- `question_kind` claims only a literacy question: a question frame plus a money topic, never the user's own
+  figures, borrowing, a product or investment, S-Bank or S-mobiili (those keep their own routes).
+
+One new question costs one Gemini embedding request (the embedding model's own quota), cached on disk afterwards
+(core/finlit/embed.py). The request waits at most EMBED_WAIT_S in the answer; a slower one finishes in the
+background and fills the cache. Any failure leaves the message to the usual path.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from core.agent import guard
+
+log = logging.getLogger("uvicorn.error")
+
+EMBED_WAIT_S = 3.0
+MAX_FRAGMENTS = 3
+ALLOWED_TIERS = frozenset({"authority", "public_education", "international_org", "academic", "nonprofit"})
+APP_BANDS = ("0-12", "13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+")
+# The two glossary terms that are general ideas rather than Sentti's own figures: "What is a budget?" and "What is
+# interest?" get the grounded answer first and keep the glossary's definition as the fallback. Every other glossary
+# term (safe to spend, buffer, peer median, ...) stays with the glossary.
+GLOSSARY_TERMS = frozenset({"budget", "interest"})
+SOURCE_LINE = ("Source: {publisher}, {url}", "Lähde: {publisher}, {url}")
+
+# All patterns run on guard.fold(message): lower case, no diacritics.
+_FRAME = re.compile(
+    r"^(?:so |and |ok |okay |hmm |no niin |entas |entä |entäs |ja )?"
+    r"(?:what(?:'s| is| are| does| do)\b|whats\b|how (?:do|does|can|could|should|would) (?:i|you|one|people|we)\b"
+    r"|how to\b|how does\b|why (?:is|are|should|do|does)\b|explain\b|tell me (?:about|what|how|why)\b"
+    r"|(?:any |some |give me |share )?(?:tips|advice|ideas)\b|is it (?:good|smart|wise|important)\b"
+    r"|mika on\b|mita on\b|mita (?:tarkoittaa|tarkoitetaan|ovat)\b|mitka ovat\b|miten\b|kuinka\b|miksi\b|selita\b"
+    r"|kerro\b|anna (?:vinkkeja|neuvoja)\b|(?:onko )?vinkkeja\b|neuvoja\b|kannattaako\b)")
+_TOPIC = re.compile(
+    r"budget|buffer|emergency (?:fund|savings)|rainy[ -]day|\bsav(?:e|es|ing|ings)\b|compound interest|\binterest\b"
+    r"|inflation|\bdebts?\b|payment default|credit (?:rating|record|history)|debt collection|enforcement|tax card"
+    r"|\btax(?:es)?\b|payslip|pay slip|financial literacy|money management|managing money|\bscams?\b|fraud|phishing"
+    r"|cost of living|household (?:budget|finances|costs)|needs (?:and|vs\.?|versus) wants|impulse (?:buy|purchas)"
+    r"|consumer rights|personal finance|\bfinances\b|\bmoney\b|\bbills?\b"
+    r"|budjet|puskur|hatavar|saasta|saasto|saastami|korkoa korolle|\bkorko|\bkoron\b|inflaatio|\bvelk|\bvelat"
+    r"|maksuhairi|perinta|perinnan|ulosott|verokort|\bvero\b|\bverot\b|palkkalaskelm|talousosaami|raha-asi|rahankay"
+    r"|huijau|huijari|elinkustannu|kotitalou|heraeteost|heratteost|kuluttajan oikeu|\braha\b|\brahaa\b|\blasku")
+# The user's own figures (also "How do I compare with people my age?"): their data, never a general answer.
+_OWN = re.compile(
+    r"\bmy\b|\bmine\b|\b(?:i|we) (?:spent|paid|bought|earned|saved|owe)\b|\bam i\b|\bdid i\b|\bhave i\b"
+    r"|\bdo i have\b|\bhow much (?:do|did|have|can|could|will|should) (?:i|we) (?:spend|spent|have|save|pay|get)\b"
+    r"|\bminun\b|\bmun\b|\bminulla\b|\bmulla\b|\bolenko\b|\bkaytin\b|\bkulutin\b|\bmaksoin\b|\bostin\b|\bsaastin\b"
+    r"|\b(?:rahani|menoni|saastoni|tuloni|palkkani|kuluni|laskuni|tilini|saldoni|budjettini|puskurini|velkani)\b")
+# Asking to borrow, or naming a credit product: the planner's credit decline, never a literacy answer.
+_BORROW = re.compile(
+    r"\bloans?\b|\bborrow\w*|credit card|\bcredit\b(?! (?:rating|record|history))|overdraft|instal+ments?|financing"
+    r"|buy now|\bbnpl\b|\bmortgage|\blaina\w*|\blainaa\b|luotto\w*|pikavip\w*|vippi\w*|osamaks\w*|asuntolain\w*")
+# A product, an investment, a bank or S-Bank's own services: other routes (the planner's investment decline, the
+# S-Bank knowledge base), never a literacy answer.
+_PRODUCT = re.compile(
+    r"(?<!emergency )(?<!rainy day )(?<!rainy-day )\bfunds?\b|\bstocks?\b|\bshares\b|\binvest\w*|crypto\w*|bitcoin"
+    r"|\betf\b|\binsurance\b|\bpension\w*|\bbrokers?\b|\baccounts?\b|\bbanks?\b|\bbanking\b|\bcards?\b|\bapps?\b"
+    r"|\w*rahasto\w*|\w*osake\w*|\bsijoit\w*|\w*vakuutu\w*|\belake\w*|\btili\w*|\w*pankki\w*|\w*pankin\b|\b(?!vero)\w*kortti\w*"
+    r"|\w*kortin\b|\bsovellu\w*|s-?mobiili|s-?bank|\bbonus\w*|s-?etu\w*")
+
+
+def age_band(age: Any) -> str | None:
+    """The app band of an age in years (core/knowledge/finlit/README.md), or None when the age is unknown."""
+    try:
+        years = int(age)
+    except (TypeError, ValueError):
+        return None
+    if years < 0:
+        return None
+    for limit, band in ((12, "0-12"), (17, "13-17"), (24, "18-24"), (34, "25-34"), (44, "35-44"), (54, "45-54"),
+                        (64, "55-64"), (74, "65-74")):
+        if years <= limit:
+            return band
+    return "75+"
+
+
+def question_kind(message: str) -> str | None:
+    """"literacy" for a general financial-literacy question, else None (the usual path)."""
+    folded = guard.fold(message or "").strip()
+    if not folded or re.search(r"\d", folded) or len(folded) > 200:
+        return None
+    if _OWN.search(folded) or _BORROW.search(folded) or _PRODUCT.search(folded):
+        return None
+    if not (_FRAME.search(folded) and _TOPIC.search(folded)):
+        return None
+    return "literacy"
+
+
+def flags_allow(message: str, raw: str) -> bool:
+    """True when the guard raises no flag, or only the investment flag for an emergency or rainy-day fund (a buffer,
+    not a product): "What is an emergency fund?" is a literacy question."""
+    flags = guard.flags(message, raw=raw)
+    if not flags:
+        return True
+    if set(flags) != {"investment_keyword"}:
+        return False
+    swapped = re.sub(r"(?i)\b(emergency|rainy[ -]day)\s+funds?\b", r"\1 savings", message)
+    return not guard.flags(swapped, raw=swapped)
+
+
+@dataclass(frozen=True)
+class Fragment:
+    source_id: str
+    publisher: str
+    title: str
+    url: str
+    text: str | None      # open_attribution page text with digits masked, else None (a link only)
+    kind: str             # page_text | source_card
+
+    def data(self) -> dict[str, Any]:
+        """What the composer sees: never the link, never a digit."""
+        out: dict[str, Any] = {"source": self.publisher, "title": _mask(self.title)}
+        if self.text:
+            out["text"] = self.text
+        return out
+
+
+def _mask(text: str) -> str:
+    return re.sub(r"\d(?:[\d\s.,:]*\d)?(?:\s*(?:%|€))?", "[number]", text or "")
+
+
+def short_publisher(publisher: str) -> str:
+    """The publisher's name for the source line: up to the first ';', '.', ' with ', ' (' clause, at most 60 chars."""
+    name = re.split(r";|\. | with | yhdessä | \(| – | - ", publisher or "", maxsplit=1)[0].strip(" ,")
+    if len(name) > 60:
+        name = name[:60].rsplit(" ", 1)[0]
+    return name or (publisher or "").strip()[:60]
+
+
+def source_line(fragment: Fragment, lang: str) -> str:
+    return SOURCE_LINE[1 if lang == "fi" else 0].format(publisher=short_publisher(fragment.publisher),
+                                                         url=fragment.url)
+
+
+class FinlitSource:
+    """Fragments for a question from schema finlit. `connect` gives a database connection (the service's pool);
+    `embedder` is a core.finlit.embed.Embedder. Thread-safe: one embedding request at a time."""
+
+    def __init__(self, connect: Callable[[], AbstractContextManager[Any]], embedder: Any, model: str,
+                 wait_s: float = EMBED_WAIT_S) -> None:
+        self.connect = connect
+        self.embedder = embedder
+        self.model = model
+        self.wait_s = wait_s
+        self._lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="finlit-embed")
+        self.calls = 0   # fragments() calls that reached the database
+
+    def _embed(self, question: str) -> list[float]:
+        from core.finlit.embed import QUERY
+
+        with self._lock:
+            return self.embedder.embed([question], QUERY)[0]
+
+    def query_vector(self, question: str) -> list[float] | None:
+        future = self._pool.submit(self._embed, question)
+        try:
+            return future.result(timeout=self.wait_s)
+        except FutureTimeout:
+            log.warning("finlit: the embedding request took over %.1f s; the answer goes without it", self.wait_s)
+            return None
+
+    def fragments(self, question: str, lang: str, band: str | None, k: int = MAX_FRAGMENTS) -> list[Fragment]:
+        """Up to k fragments, best first, at most one per source; [] when anything fails."""
+        if lang not in ("en", "fi"):
+            return []
+        try:
+            vec = self.query_vector(question)
+            if vec is None:
+                return []
+            from core.finlit.retrieve import Retriever
+
+            with self.connect() as conn:
+                self.calls += 1
+                hits = Retriever(conn, None, self.model).search(question, lang, band if band in APP_BANDS else None,
+                                                                k_texts=12, k_facts=0, per_source=1,
+                                                                query_vec=vec).texts
+                meta = _sources(conn, [h.source_id for h in hits])
+        except Exception as exc:  # noqa: BLE001 - the class name only: a driver message can carry the URL
+            log.warning("finlit: retrieval failed (%s); the usual path answers", type(exc).__name__)
+            return []
+        out: list[Fragment] = []
+        for h in hits:
+            m = meta.get(h.source_id)
+            if m is None or m["tier"] not in ALLOWED_TIERS or not str(h.source_url).startswith("https://"):
+                continue
+            open_text = h.kind == "page_text" and m["licence_class"] == "open_attribution"
+            out.append(Fragment(h.source_id, m["publisher"], h.title, h.source_url,
+                                _mask(h.text) if open_text else None, h.kind))
+            if len(out) == k:
+                break
+        return out
+
+
+# Tips or advice asked in a running conversation are the talk mode's, from the customer's own data (#873).
+TIPS = re.compile(r"\btips\b|\badvice\b|\bideas\b|\bsuggest\w*|vinkk\w*|neuvo\w*|ehdot\w*|mita (?:mun|minun) pitais")
+
+# What a literacy draft may never say, on the folded text (no diacritics): borrowing, a product or investment, a bank
+# or brand by name, a statement about the user's own money (no data was read), a non-answer, a source or a link.
+FORBIDDEN = (
+    (re.compile(r"\b(?:take|taking|get|getting|apply for) (?:out )?(?:a |an |some )?(?:loan|credit)|\bborrow\w*"
+                r"|credit cards?|overdraft|buy now|pikavip\w*|\bvipp\w*|osamaks\w*|luottokort\w*"
+                r"|(?:ota|ottaa|otat|ottamalla|ottaminen|hae|hakea|hakemalla) (?:\w+ )?lainaa?\b"),
+     "it suggests borrowing or a credit product; a literacy answer never does"),
+    (re.compile(r"\binvest\w*|\bstocks?\b|\bshares\b|\betfs?\b|crypto\w*|bitcoin|(?<!emergency )\bfunds?\b"
+                r"|sijoit\w*|osake\w*|rahasto\w*"),
+     "it mentions investing or an investment product; a literacy answer never does"),
+    (re.compile(r"\bnordea\b|osuuspankk\w*|\bop[- ]pohjola\b|danske|s-?pankk\w*|s-?bank\b|handelsbanken|\baktia\b"
+                r"|saastopankk\w*|pop pankk\w*|klarna|revolut|mobilepay|s-?mobiili"),
+     "it names a bank, a brand or an app; a literacy answer names none"),
+    (re.compile(r"\byou (?:spent|paid|earned|saved|have spent|have saved)\b|\bkaytit\b|\bkulutit\b|\bmaksoit\b"
+                r"|\bsaastit\b"),
+     "it states what the user did with their money; no data was read for this answer"),
+    (re.compile(r"could not work|couldn't work|cannot work|can't work|could not calculate|en pystynyt|en voinut"
+                r"|ei voitu laskea"),
+     "it says something could not be worked out; a literacy answer explains the idea in plain words"),
+    (re.compile(r"\bsource:|\blahde:|https?:|www\.|\.fi\b|\.com\b"),
+     "it names a source or a link; the server adds the source line"),
+)
+
+
+def draft_problems(raw: Any, language: str) -> tuple[Any, list[str]]:
+    """Every check a literacy draft passes before it is shown (#884), as retry reasons: the validator with no
+    Numbers and nothing allowed (no digit, no date, no markup, the right language field), cited empty, the length rule
+    for a general answer (four sentences at most), the model-draft checks, the text in the answer's language and
+    FORBIDDEN. Returns the draft and the reasons."""
+    from core.agent.validator import Allowed, validate
+    from core.agent.validator import draft_problems as model_draft_problems
+    from core.answer_text import length_problems
+
+    draft, errors = validate(raw, language=language, numbers={}, allowed=Allowed(frozenset(), frozenset()))
+    if errors or draft is None:
+        return draft, errors or ["no draft"]
+    text = draft.text
+    errors = length_problems(text, 0, kind="general") + model_draft_problems(text, {}, has_data=True)
+    if draft.cited:
+        errors.append("cited must be empty: a literacy answer states no number")
+    detected = guard.confident_language(text)
+    if detected in ("en", "fi") and detected != language:
+        errors.append(f"the text is not in the answer language ({language})")
+    folded = guard.fold(text)
+    for rx, reason in FORBIDDEN:
+        m = rx.search(folded)
+        if m:
+            errors.append(f"'{m.group(0)}': {reason}")
+    return draft, errors
+
+
+def _sources(conn: Any, ids: list[str]) -> dict[str, dict[str, str]]:
+    if not ids:
+        return {}
+    rows = conn.execute("SELECT id, publisher, tier, licence_class FROM finlit.sources WHERE id = ANY(%s)",
+                        (ids,)).fetchall()
+    return {r[0]: {"publisher": r[1], "tier": r[2], "licence_class": r[3]} for r in rows}
+
+
+def from_settings(settings: Any, connect: Callable[[], AbstractContextManager[Any]]) -> FinlitSource | None:
+    """The service's source, or None (the route is off): no Gemini key, FINLIT_RAG=off, or the package missing."""
+    import os
+
+    if (os.environ.get("FINLIT_RAG") or "on").strip().lower() in ("off", "0", "false", "no"):
+        return None
+    key = getattr(settings, "gemini_api_key", None)
+    if not key:
+        return None
+    try:
+        from core.finlit.embed import Embedder
+        from core.finlit.settings import FinlitSettings
+        from google import genai
+
+        model = FinlitSettings().finlit_embed_model
+        # A 10 s client timeout: the API refuses a shorter server deadline; the answer waits EMBED_WAIT_S at most.
+        client = genai.Client(api_key=key.get_secret_value(), http_options={"timeout": 10_000})
+        return FinlitSource(connect, Embedder(client, model, max_retries=0), model)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("finlit: retrieval is off (%s)", type(exc).__name__)
+        return None

@@ -46,7 +46,7 @@ from typing import Any, NamedTuple, Protocol
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from core.agent import explain_number, glossary, guard, offers, sbank_kb, template, validator, why_review
+from core.agent import explain_number, finlit_kb, glossary, guard, offers, sbank_kb, template, validator, why_review
 from core.agent.audit import AuditLog
 from core.agent.conversation import Conversation, ConversationStore, new_id
 from core.agent.model import ComposeInput, FunctionCall, FunctionResponse, Model, PlanInput, PlanResult, Usage
@@ -379,8 +379,9 @@ class Pipeline:
     def __init__(self, registry: Registry, model: Model, data: DataAccess, *, as_of: date,
                  store: ConversationStore | None = None, audit: AuditLog | None = None,
                  fallback: Model | None = None, clock: Callable[[], float] = time.perf_counter,
-                 labels: LabelSteps | None = None) -> None:
+                 labels: LabelSteps | None = None, finlit: Any | None = None) -> None:
         self.registry = registry
+        self.finlit = finlit  # finlit_kb.FinlitSource, or None: no literacy route (tests, no key, FINLIT_RAG=off)
         self.labels = labels  # None: no label step (tests without a database)
         self.model = model
         self.data = data
@@ -472,6 +473,8 @@ class Pipeline:
         # "What was that €1,080?" (#341): the amount of the pending review's purchase is answered from the
         # review card, with no plan and no model request.
         if review is not None and self._answer_review_amount(ctx, review, message, lang, emit, a):
+            return lang
+        if self._answer_finlit(req, ctx, review, message, lang, emit, a):   # "Mitä on korkoa korolle?" (#884)
             return lang
         if self._answer_glossary(ctx, review, message, lang, emit, a):   # "What is a buffer?" (#568)
             return lang
@@ -1480,6 +1483,93 @@ class Pipeline:
         text = self._deliver(kb.text if kb.digits else f"{draft.text} {kb.source}".strip(), numbers, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
+                      "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
+                      "refusal": None, "clarify": None, "warnings": a.warnings})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})
+        return True
+
+    def finlit_fragments(self, customer_id: str, message: str, lang: str) -> list[Any]:
+        """Up to three finlit fragments for a message (#884), in its language and the customer's age band; [] when
+        the route is off or anything fails. The talk mode (#873) puts them in its compose request too."""
+        if self.finlit is None:
+            return []
+        band = None
+        try:
+            with self.data.connection() as conn:
+                row = conn.execute("SELECT age FROM customers WHERE customer_id = %s", (customer_id,)).fetchone()
+            band = finlit_kb.age_band(row[0]) if row else None
+        except Exception as exc:  # noqa: BLE001 - without the band, texts for every age; facts are not used
+            log.warning("finlit: age not read (%s)", type(exc).__name__)
+        return self.finlit.fragments(message, lang, band)
+
+    def _answer_finlit(self, req: AskRequest, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
+                       a: _Answer) -> bool:
+        """A general financial-literacy question in plain words, grounded in official sources (#884): the composer
+        writes two to four sentences with the retrieved fragments in its request, the code adds the source line.
+        No tool, no number, no card. False (the usual path answers) when the route is off, the message is not a
+        literacy question (finlit_kb.question_kind), a guard flag is set, S-Bank's knowledge base or a glossary term
+        other than budget and interest owns it, the rules claim it, the model may not write, nothing is retrieved, or
+        no draft passes the checks. Tips asked in a running conversation are the talk mode's (#873)."""
+        if self.finlit is None or finlit_kb.question_kind(message) != "literacy":
+            return False
+        if not finlit_kb.flags_allow(message, req.message):
+            return False
+        conv = a.conversation
+        if conv is not None and conv.turns and finlit_kb.TIPS.search(guard.fold(message)):
+            return False
+        term = glossary.match(message)
+        if term is not None and term.key not in finlit_kb.GLOSSARY_TERMS:
+            return False
+        if sbank_kb.answer_for(message, lang) is not None:
+            return False
+        if term is None:
+            history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]}
+                       for t in (conv.turns if conv is not None else [])]
+            rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
+                                                 tools=self.registry.schemas(), history=history, guard_flags=a.flags))
+            if rules.recognised or any(c.name == "decline" for c in rules.calls):
+                return False
+        if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
+            return False
+        fragments = self.finlit_fragments(ctx.customer_id, message, lang)
+        if not fragments:
+            return False
+        sources = [f.data() for f in fragments]
+        if term is not None:   # the glossary's definition keeps the grounded answer consistent with Sentti's words
+            sources.insert(0, {"source": "Sentti", "title": "definition", "text": template.pick(term.text, lang)})
+        prev = conv.turns[-1] if conv is not None and conv.turns else None
+        request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
+                               previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
+                               sources=sources, literacy=True)
+        body: str | None = None
+        errors: list[str] = []
+        for _ in range(2):  # the call and one retry with the reasons
+            t = self.clock()
+            try:
+                result = self.model.compose(ComposeInput(**{**request.__dict__, "validation_errors": errors}))
+            except Exception as exc:  # noqa: BLE001
+                errors = [f"the model call failed ({type(exc).__name__})"]
+                a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
+                continue
+            draft, errors = finlit_kb.draft_problems(result.text, lang)
+            a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
+                                        "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
+            if not errors and draft is not None:
+                body = draft.text
+                break
+        if body is None:
+            # the attempts stay in the audit record (their tokens were spent); the usual path answers
+            log.warning("finlit answer failed the checks (%d problems); the usual path answers", len(errors))
+            return False
+        cited = next((f for f in fragments if f.text), fragments[0])
+        a.kind = "general"
+        a.planner_turns.append({"round": 1, "source": "rules", "finlit": [f.source_id for f in fragments],
+                                "calls": []})
+        if review is not None:  # the pending review's card, as on the normal path
+            self._attach_review(ctx, review, emit, a)
+        text = self._deliver(f"{body} {finlit_kb.source_line(cited, lang)}", {}, emit)
+        a.outcome, a.text, a.text_rendered = "answered", text, text
+        emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})

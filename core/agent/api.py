@@ -29,7 +29,7 @@ from psycopg_pool import PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from core.agent import guard
+from core.agent import finlit_kb, guard
 from core.agent.audit import AuditLog
 from core.app.api import deps
 from core.app.api.errors import envelope
@@ -195,7 +195,8 @@ def build_agent(app) -> Agent:
     audit = AuditLog()
     model = make_agent_model(app.state.settings)  # rules first, then Gemini; the rule model without a key
     pipeline = Pipeline(default_registry(), model, data, as_of=app.state.settings.demo_today,
-                        store=ConversationStore(), audit=audit, labels=label_steps())
+                        store=ConversationStore(), audit=audit, labels=label_steps(),
+                        finlit=finlit_kb.from_settings(app.state.settings, data.connection))   # #884
     return Agent(pipeline=pipeline, data=data, audit=audit)
 
 
