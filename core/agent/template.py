@@ -251,7 +251,7 @@ INTRO = ("Hi, I'm Sentti — an AI money coach inside S-mobiili. I look at your 
          "Hei, olen Sentti — tekoälyvalmentaja S-mobiilissa. Katson omia tilitapahtumiasi ja kerron, mihin rahasi "
          "menevät, paljonko sinulla on käyttövaraa tällä viikolla ja miten voisit säästää enemmän. Jokainen luku "
          "tulee tilitapahtumistasi — napauta sitä, niin näet ne. Kysyn myös joskus sinulta jotain.")
-THANKS = ("You're welcome — ask me anything about your money.", "Ole hyvä — kysy minulta mitä tahansa raha-asioistasi.")
+THANKS = ("You're welcome! Tell me if you want to continue.", "Ole hyvä! Kerro, jos haluat jatkaa.")
 # "Do you understand what we're talking about?": the previous answer's topic by its first tool, named in a sentence.
 CONTEXT_TOPICS = {
     "get_basket_breakdown": ("where your money went", "siitä, mihin rahasi menivät"),

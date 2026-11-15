@@ -754,3 +754,161 @@ def test_every_closing_and_more_practices_text_passes_the_checks(lang):
 ])
 def test_a_no_further_tips_draft_is_rejected(text, lang):
     assert any("no more tips" in p for p in talk_mode.draft_problems(text, {}, set(), lang))
+
+
+# ---- #919: "why?" right after a tips answer explains those tips ---------------------------------------------------------
+
+WHY_TIPS = {"en": ["why?", "how come?", "why does that help?", "Why?"],
+            "fi": ["Miksi?", "miksi se auttaa?", "Miksi niin?"]}
+FIRST_TIPS = {"en": "Give me tips to save", "fi": "Anna vinkkejä säästämiseen"}
+FIRST_KEYS = ["category:Restaurants", "pay_yourself_first", "shopping_list"]
+FIRST_GAVE = {"levers": [{"key": "category:Restaurants", "label": "restaurants", "rank": 1}], "practices": [0, 1]}
+
+
+class ExplainModel(TalkModel):
+    """TalkModel that, on "why?" after tips, writes the explain_tips it is given: each tip's why."""
+
+    def compose(self, request):
+        talk = next((d["talk"] for d in request.data if d.get("tool") == "answer_in_words"), None)
+        if talk is not None and talk.get("explain_tips") and not self.drafts:
+            self.drafts.append(" ".join(t["why"] for t in talk["explain_tips"]))
+        return super().compose(request)
+
+
+def _talk_turns(pipeline):
+    return [t for r in audit_records(pipeline) for t in r["planner_turns"] if "talk" in t]
+
+
+@pytest.mark.parametrize("message", [m for ms in WHY_TIPS.values() for m in ms] + ["how does that help?",
+                                                                                 "miten se auttaa?", "And why?"])
+def test_the_why_after_tips_phrases_are_named(message):
+    assert talk_mode.asks_why_tips(message)
+
+
+@pytest.mark.parametrize("message", DEMO + ["Why should I save money?", "what else?", "kerro lisää", "any more tips?",
+                                            "What does this number mean?", "explain", "Selitä", "Why not?",
+                                            "Why is my safe to spend lower?", "why does it matter? explain",
+                                            "Should I buy bitcoin?", "Why did I spend 40 euros?",
+                                            "Mitäs tää numero tarkoittaa?"])
+def test_other_questions_are_no_why_after_tips(message):
+    assert not talk_mode.asks_why_tips(message)
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_why_after_tips_explains_the_same_tips_with_the_model(tmp_path, lang):
+    model = ExplainModel()
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, FIRST_TIPS[lang], language=lang)
+    tips_text = done(first)["text_rendered"]
+    events = ask(pipeline, WHY_TIPS[lang][0], dict(first)["meta"]["conversation_id"], language=lang)
+    d = done(events)
+    assert d["outcome"] == "answered" and not [e for e, _ in events if e == "card"]
+    assert not digits(d["text_rendered"]) and d["cited"] == [] and len(d["follow_ups"]) == 1
+    talk = model.requests[-1].data[0]["talk"]
+    assert talk["tip"] is None and talk["practices"] == []   # no new tip
+    assert [t["tip"] for t in talk["explain_tips"]] == ["restaurants", *talk_mode.practices(0, lang)]
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, lang)
+    assert d["text_rendered"] != tips_text and "restaurants" in d["text_rendered"]
+    turns = _talk_turns(pipeline)
+    assert turns[0]["tip"] == FIRST_KEYS[0] and turns[-1]["explain_tips"] == FIRST_KEYS
+    assert "tip" not in turns[-1] and audit_records(pipeline)[-1]["composer_attempts"][-1]["validation"] == "ok"
+    # the ranking's place is kept: "any more tips?" after the why still gives the second lever
+    ask(pipeline, "any more tips?" if lang == "en" else "lisää vinkkejä?", dict(events)["meta"]["conversation_id"],
+        language=lang)
+    assert model.requests[-1].data[0]["talk"]["tip"]["rank"] == 2
+    assert "explain_tips" not in model.requests[-1].data[0]["talk"]
+
+
+@pytest.mark.parametrize("lang, message", [(lang, m) for lang, ms in WHY_TIPS.items() for m in ms])
+def test_why_after_tips_on_the_template_with_the_switch_on(tmp_path, monkeypatch, lang, message):
+    monkeypatch.setattr(talk_mode, "MODEL_OFF_SWITCH", tmp_path / "talk-model-off")
+    (tmp_path / "talk-model-off").touch()
+    model = ExplainModel()
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, FIRST_TIPS[lang], language=lang)
+    events = ask(pipeline, message, dict(first)["meta"]["conversation_id"], language=lang)
+    d = done(events)
+    assert _talk_requests(model) == []
+    assert d["outcome"] == "answered" and not [e for e, _ in events if e == "card"] and not digits(d["text_rendered"])
+    turns = _talk_turns(pipeline)
+    assert turns[-1]["explain_tips"] == FIRST_KEYS and "tip" not in turns[-1]
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, lang)
+    assert talk_mode.draft_problems(d["text_rendered"], {}, set(), lang) == []
+
+
+def test_why_after_a_data_answer_or_the_general_why_keeps_its_path(tmp_path):
+    pipeline = make(tmp_path)
+    first = ask(pipeline, "How much did I spend on restaurants in August 2026?")
+    ask(pipeline, "why does it matter?", dict(first)["meta"]["conversation_id"])
+    assert "explain_tips" not in _talk_turns(pipeline)[-1]
+    # "why does it matter?" after tips stays the general why (Renat's sequence); only the short why explains
+    second = ask(pipeline, "Any tips?")
+    ask(pipeline, "why does it matter? explain", dict(second)["meta"]["conversation_id"])
+    assert "explain_tips" not in _talk_turns(pipeline)[-1]
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_every_explain_template_passes_the_checks_and_is_new(lang):
+    levers = [[], [{"key": "category:Restaurants", "label": "restaurants", "rank": 1}],
+              [{"key": "small_purchases", "label": "pienet ostokset" if lang == "fi" else "small purchases", "rank": 2}],
+              [{"key": "category:Entertainment", "label": "entertainment", "rank": 2}],
+              [{"key": "category:Travel", "label": "travel", "rank": 1}]]
+    assert len(talk_mode.PRACTICE_KEYS) == len(talk_mode.PRACTICE_WHY) == len(talk_mode.PRACTICES)
+    for lv in levers:
+        for start in (None, 0, 2, 4):
+            practices = [] if start is None else [start, start + 1]
+            if not lv and not practices:
+                continue
+            gave = {"levers": lv, "practices": practices}
+            text = talk_mode.explain_tips(gave, lang)
+            assert talk_mode.draft_problems(text, {}, set(), lang) == [], text
+            assert talk_mode.explain_problems(text, gave, lang) == [], text
+            tip = {"label": lv[0]["label"]} if lv else None
+            tips_answer = (talk_mode.three_tips(tip, talk_mode.practices(start, lang), lang) if practices
+                           else talk_mode._template_text("tips", tip, False, [], lang))
+            assert not talk_mode.repeats(text, tips_answer), (text, tips_answer)
+            assert len(talk_mode.tips_to_explain(gave, lang)) == len(talk_mode.tip_keys(gave))
+
+
+class FakeFinlit:
+    def __init__(self):
+        from core.agent.finlit_kb import Fragment
+        self.calls = []
+        self.fragment = Fragment("src_test_1", "Test Authority", "Saving basics", "https://example.org/saving",
+                                 "Set money aside regularly.", "page_text", 0.1)
+
+    def fragments(self, question, lang, band, k=3):
+        self.calls.append(question)
+        return [self.fragment]
+
+
+def test_why_after_tips_reuses_the_tips_sources_and_names_them(tmp_path):
+    model = ExplainModel()
+    pipeline = make(tmp_path, model)
+    pipeline.finlit = FakeFinlit()
+    first = ask(pipeline, FIRST_TIPS["en"])
+    field = [{"publisher": "Test Authority", "title": "Saving basics", "url": "https://example.org/saving", "lang": "en"}]
+    assert done(first)["sources"] == field
+    events = ask(pipeline, "why?", dict(first)["meta"]["conversation_id"])
+    d = done(events)
+    assert pipeline.finlit.calls == [FIRST_TIPS["en"]]   # the tips answer's sources again, no new search
+    assert model.requests[-1].sources and model.requests[-1].sources[0]["source"] == "Test Authority"
+    assert d["sources"] == field   # the structured Sources field (#933), no source line in the text
+    assert "Source:" not in d["text_rendered"] and "https://" not in d["text_rendered"]
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, "en")
+    assert _talk_turns(pipeline)[-1]["explain_tips"] == FIRST_KEYS
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_a_generic_why_draft_after_tips_ends_on_the_explain_template(tmp_path, lang):
+    model = TalkModel()   # writes its generic "it matters because..." paragraph on a talk request without a tip
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, FIRST_TIPS[lang], language=lang)
+    d = done(ask(pipeline, WHY_TIPS[lang][0], dict(first)["meta"]["conversation_id"], language=lang))
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, lang)
+    attempts = audit_records(pipeline)[-1]["composer_attempts"]
+    assert attempts[-1]["raw"] == "template" and len(attempts) == 3
+    generic = ("It matters because the biggest areas are where a change adds up. A steady habit there does more than "
+               "many small cuts elsewhere.")
+    assert talk_mode.explain_problems(generic, FIRST_GAVE, "en")
+    assert talk_mode.explain_problems(generic, {"levers": [], "practices": [2, 3]}, "en")

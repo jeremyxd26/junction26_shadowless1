@@ -97,6 +97,7 @@ class ComposeInput:
     # their blocks, so every other composer request keeps its cache key.
     sources: list[dict[str, Any]] | None = None
     literacy: bool = False
+    investing: bool = False   # a general question about starting to save or invest (R7 narrowed, #884)
 
 
 @dataclass(frozen=True)

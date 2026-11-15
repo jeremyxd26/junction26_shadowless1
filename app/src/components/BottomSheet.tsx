@@ -86,13 +86,15 @@ export function BottomSheet({ title, onClose, children, short = false }: Props) 
         // most of 46dvh, and the text below needs the room (#680). A tall sheet keeps its title in place.
         className={`sheet-panel relative flex ${short ? 'max-h-[46dvh] overflow-y-auto overscroll-contain' : 'max-h-[88dvh]'} w-full max-w-[480px] flex-col rounded-t-sheet bg-surface shadow-sheet outline-none`}
       >
-        {/* The grabber, centred on the sheet (Renat): 36 x 4 px in a 44 px tall strip that drags the sheet down;
-            the close button sits at the strip's right end, so the title gets the whole row below. */}
+        {/* The grabber, centred on the sheet (Renat): 36 x 4 px in a 56 px tall strip that drags the sheet down;
+            the close button sits at the strip's right end, so the title gets the whole row below. Its 44 px target is
+            inset 8 px from the top and 10 px from the right, and its visible 36 px circle (12 / 14 px in) stays inside
+            the sheet's rounded corner (Renat, #942). */}
         <div className="relative shrink-0">
           <div
             data-sheet-handle=""
             aria-hidden="true"
-            className="flex h-11 cursor-grab select-none items-center justify-center active:cursor-grabbing"
+            className="flex h-14 cursor-grab select-none items-center justify-center active:cursor-grabbing"
           >
             <div className="h-1 w-9 rounded-pill bg-line-strong/40" />
           </div>
@@ -100,11 +102,13 @@ export function BottomSheet({ title, onClose, children, short = false }: Props) 
             type="button"
             onClick={onClose}
             aria-label={t.close}
-            className="absolute top-0 right-2 inline-flex size-11 items-center justify-center rounded-pill text-ink hover:bg-sunken"
+            className="group absolute top-2 right-2.5 inline-flex size-11 items-center justify-center rounded-pill text-ink"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-            </svg>
+            <span aria-hidden="true" className="inline-flex size-9 items-center justify-center rounded-pill bg-sunken group-hover:bg-line">
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+              </svg>
+            </span>
           </button>
         </div>
         <h2 id={titleId} data-sheet-handle="" className="shrink-0 px-4 text-lg font-semibold text-ink">

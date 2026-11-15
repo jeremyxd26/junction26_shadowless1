@@ -16,6 +16,7 @@ import { onAsked } from '../lib/threadEvents.ts'
 import { prefersReducedMotion, token, tokenMs } from '../lib/motion.ts'
 import { useOpening, type ShownReview } from '../lib/openingContext.ts'
 import { useSettings } from '../lib/settings.ts'
+import { BasketBar } from '../components/BasketBar.tsx'
 import { OpeningChips } from '../components/OpeningChips.tsx'
 
 /** Where the review card is: asked, answered, closed by "Not sure", or gone for good. */
@@ -343,6 +344,8 @@ export function Overview({ overview, onRefresh }: { overview: OverviewResponse; 
           overview sheet, not here. */}
       <p className="pt-1 text-center text-base text-ink-2">{view.greeting}</p>
       {view.hero && <HeroSummary card={view.hero} motion={motion ?? undefined} />}
+      {/* The three baskets at a glance (Renat, #945): one slim bar under the key line, a tap asks where the money went. */}
+      {baskets && <BasketBar card={baskets} />}
 
       {card && phase.kind === 'asking' && (
         <ReviewAsking

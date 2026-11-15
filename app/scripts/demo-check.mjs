@@ -6,7 +6,7 @@
 // It writes nothing but this output. Never run it in a loop against the dev host: each run asks the
 // coach two questions.
 import { chromium } from 'playwright-core'
-import { CHIP_ROW, TEXT, USAGE, downOnly, findBrowser, line, parseAmount, parseArgs, rowProblems, rowQuestions } from './demo-check-lib.mjs'
+import { CHIP_ROW, SETTLE_MAX_MS, TEXT, USAGE, downOnly, findBrowser, line, mainText, parseAmount, parseArgs, rowProblems, rowQuestions, settleStep } from './demo-check-lib.mjs'
 
 // The greeting and the amounts are API texts: Finnish from a live core with lang=fi, English in a
 // mock build (its examples are English only), so either form is accepted.
@@ -111,7 +111,18 @@ async function ask(mod, question) {
     streamed = true
     await mod.waitForTimeout(100)
   }
-  return { article, how, streamed, seconds: ((Date.now() - started) / 1000).toFixed(1) }
+  const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  // The stream has ended, but a live answer still types in and keeps its cards behind a skeleton until it
+  // has (#741). Wait, at most SETTLE_MAX_MS, until no skeleton shows and the text has stopped changing (#928).
+  const settling = Date.now()
+  let state = null
+  while (Date.now() - settling < SETTLE_MAX_MS) {
+    const look = await article.evaluate((a) => ({ text: a.innerText, skeleton: a.querySelector('.shimmer') !== null }))
+    state = settleStep(state, look, Date.now())
+    if (state.settled) break
+    await mod.waitForTimeout(100)
+  }
+  return { article, how, streamed, seconds, settled: Boolean(state?.settled), settleSeconds: ((Date.now() - settling) / 1000).toFixed(1) }
 }
 
 let hasFrame = false
@@ -241,15 +252,17 @@ try {
       report(4, 'SKIP', 'the question chips of the opening turn are not in this build (#313)')
     } else {
       const answer = await ask(mod, question)
-      const texts = await answer.article.locator('p').evaluateAll((ps) => ps.filter((p) => !p.className.includes('ml-auto') && !p.className.includes('sr-only')).map((p) => p.innerText.trim()).filter(Boolean))
+      // The answer's own paragraphs (not the question bubble, a card or a note inside another block); its first
+      // is the main sentence (#928).
+      const texts = await answer.article.locator(':scope > p').evaluateAll((ps) => ps.filter((p) => !p.className.includes('ml-auto') && !p.className.includes('sr-only')).map((p) => p.innerText))
       const cards = await answer.article.locator('section').count()
-      const text = texts.sort((a, b) => b.length - a.length)[0] ?? ''
+      const text = mainText(texts)
       const problems = []
       if (!answer.streamed) problems.push('it did not stream')
       if (!text) problems.push('no text')
-      if (!cards) problems.push('no card')
+      if (!cards) problems.push(answer.settled ? 'no card' : `no card (the answer had not settled after ${answer.settleSeconds} s)`)
       const which = question === T.firstQuestion ? `"${question}"` : `the first chip "${short(question, 40)}" (no "${T.firstQuestion}" chip)`
-      const measured = `${which}: streamed in ${answer.seconds} s, text "${short(text, 50)}", ${cards} card${cards === 1 ? '' : 's'}`
+      const measured = `${which}: streamed in ${answer.seconds} s, settled ${answer.settleSeconds} s later, text "${short(text, 50)}", ${cards} card${cards === 1 ? '' : 's'}`
       report(4, problems.length ? 'FAIL' : 'PASS', problems.length ? `${problems.join('; ')} — ${measured}` : measured)
     }
   }

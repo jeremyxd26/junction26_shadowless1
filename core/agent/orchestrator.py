@@ -1928,6 +1928,8 @@ class Pipeline:
             kind = "follow_up"
         if kind is None and prev_talk and talk_mode.why_follow_up(message):
             kind = "why"   # "why should I save money?" after a talk answer: reasons, not numbers (#889)
+        if kind is None and prev_talk and talk_mode.asks_why_tips(message):
+            kind = "why"   # "miksi se auttaa?" after a talk answer (#919)
         if kind is None and turns and _words_answer(turns[-1]) and explain_number.asks_simpler(message):
             kind = "understand"   # "Selitä yksinkertaisemmin" after an answer in words: that answer, simpler (test 11)
         if kind is None:
@@ -1950,7 +1952,11 @@ class Pipeline:
         given = (last_talk or {}).get("tips_given", 0)
         ranking = talk_mode.rank_tips(views_all, lang)
         tips_kind = kind in ("tips", "no_numbers")
-        more = prev_talk and talk_mode.wants_more_tips(message) and (tips_kind or kind == "follow_up")
+        # "why?" right after a tips answer explains those tips (#919): the tips that answer gave, with their sources
+        gave_before = (turns[-1]["talk"].get("gave") or {}) if prev_talk else {}
+        explain = bool(talk_mode.tip_keys(gave_before)) and talk_mode.asks_why_tips(message)
+        more = (prev_talk and talk_mode.wants_more_tips(message) and (tips_kind or kind == "follow_up")
+                and not explain)
         if (tips_kind or more) and not any(v.get("tool") == "get_savings_plan" for v in views_all):
             # the plan's levers always enter the ranking (fetched again for "any more tips?": the same order)
             ranking = talk_mode.rank_tips(views_all + self._talk_levers(ctx), lang)
@@ -1966,6 +1972,7 @@ class Pipeline:
         used = (last_talk or {}).get("practices_given", 0)
         extra = (talk_mode.practices(used, lang)
                  if (tips_kind and not more) or (more and (kind == "follow_up" or tip is None)) else [])
+        first_practice = used
         used += len(extra)
         # no lever and no practice left: a warm closing, never "no further tips" (#907)
         closing = (tips_kind or more) and tip is None and not extra
@@ -1974,7 +1981,10 @@ class Pipeline:
         prev_main = getattr((prev or {}).get("explain"), "evidence_ref", None) or next(
             (getattr(n, "evidence_ref", None) for n in ((prev or {}).get("shown") or [])), None)
         # official sources for the reasoning (#884): only when the model may write the talk text
+        # on "why?" after tips, the sources that tips answer named (kept on its turn), never a new search (#919)
         fragments = ([] if talk_mode.template_only(message) or talk_mode.model_switched_off()
+                     else [finlit_kb.Fragment(**r) for r in (prev or {}).get("finlit") or [] if isinstance(r, dict)]
+                     if explain
                      else self._talk_fragments(ctx, message, prev, lang))
         # the closing is the template's unless finlit fragments give the composer something to write from (#907)
         designed_closing = closing and not fragments
@@ -1988,7 +1998,9 @@ class Pipeline:
                 "tips_ranked": [{"rank": i + 1, "lever": talk_mode.lower(t["label"])} for i, t in enumerate(ranking)],
                 "practices": extra,
                 # True only with nothing else to give (#907): with practices or fragments there are more tips
-                "no_more_tips": exhausted and not extra and not fragments}
+                "no_more_tips": exhausted and not extra and not fragments,
+                # only on "why?" after tips (#919), so every other talk request stays the same
+                **({"explain_tips": talk_mode.tips_to_explain(gave_before, lang)} if explain else {})}
         credited = finlit_kb.named(fragments)
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
@@ -2015,13 +2027,17 @@ class Pipeline:
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
                 if draft is not None and not errors:
                     errors = talk_mode.draft_problems(draft.text, numbers, set(shown), lang)
+                if draft is not None and not errors and explain:   # it names the tips it explains (#919)
+                    errors = talk_mode.explain_problems(draft.text, gave_before, lang)
                 if draft is not None and not errors and prev is not None:
                     # the repetition guard (#889): never the previous answer again, nor its main figure
                     again = set(TOKEN.findall(draft.text)) & {i for i, n in numbers.items() if n.evidence_ref
                                                              and n.evidence_ref == prev_main}
                     if again or talk_mode.repeats(draft.text, prev.get("answer")):
-                        errors = ["this repeats the previous answer: say something new (another reason or the next "
-                                  "lever), and do not repeat its main number"]
+                        errors = (["this repeats the previous answer: explain why each of those tips helps, in new "
+                                   "words, and do not repeat its main number"] if explain else
+                                  ["this repeats the previous answer: say something new (another reason or the next "
+                                   "lever), and do not repeat its main number"])
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
@@ -2029,12 +2045,14 @@ class Pipeline:
                 draft = None
         from_model = draft is not None
         if draft is None:   # the template in the model's place reasons without a number
-            if not forced and tip is None and not exhausted and errors and errors[0].startswith("this repeats"):
+            if (not forced and not explain and tip is None and not exhausted and errors
+                    and errors[0].startswith("this repeats")):
                 # the model repeated itself twice: the next lever of the ranking, in the template (#889)
                 index = given if given < len(ranking) else None
                 tip = ranking[index] if index is not None else None
                 given = index + 1 if tip is not None else given
             text = (template.pick(talk_mode.BORROWING, lang) if forced
+                    else talk_mode.explain_tips(gave_before, lang) if explain
                     else talk_mode.closing(lang, previous=(prev or {}).get("answer")) if closing and tip is None
                     else talk_mode.three_tips(tip, extra, lang, more=bool(more)) if extra
                     else talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip,
@@ -2054,6 +2072,7 @@ class Pipeline:
         talk_template = ("borrowing_or_afford" if forced else "switch" if switched_off
                          else "closing" if designed_closing else None)
         a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {}),
+                                **({"explain_tips": talk_mode.tip_keys(gave_before)} if explain else {}),
                                 **({"talk_template": talk_template} if talk_template else {}),
                                 **({"finlit": [f.source_id for f in fragments]} if credited and from_model else {})})
         if credited and from_model:   # the Sources row under the answer; the text carries no link (#884)
@@ -2069,13 +2088,20 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
                       "cited": cited, "follow_ups": [chip], "lesson": None, "refusal": None, "clarify": None,
                       "warnings": a.warnings})
+        # what this answer gave, for "why?" next (#919): the lever and the practices, unless a designed text answered
+        gave = ({} if forced or explain else
+                {"levers": [{"key": tip["key"], "label": talk_mode.lower(tip["label"]), "rank": ranking.index(tip) + 1}]
+                 if tip else [], "practices": list(range(first_practice, first_practice + len(extra)))})
         # no calls and no views: "what does this number mean?" and the planner's history still read the last data
         # turn; the talk record keeps the ranking's place for "any more tips?"
         self.store.add_turn(conv, {"question": message, "calls": [], "views": [],
                                    "answer": TOKEN.sub("[number]", text),
                                    "talk": {"kind": kind, "tips_given": given, "practices_given": used,
-                                            "tip": ({"lever": talk_mode.lower(tip["label"])} if tip else previous_tip)},
-                                   "shown": [numbers[i] for i in cited if i in numbers]})
+                                            "tip": ({"lever": talk_mode.lower(tip["label"])} if tip else previous_tip),
+                                            "gave": gave},
+                                   "shown": [numbers[i] for i in cited if i in numbers],
+                                   # the sources this answer named, for "why?" next (#919)
+                                   **({"finlit": [f.record() for f in fragments]} if credited and from_model else {})})
         return True
 
     def _explain_count(self, ctx: ToolContext, number: Number, lang: str) -> Number | None:
@@ -2203,15 +2229,16 @@ class Pipeline:
         literacy question (finlit_kb.question_kind), a guard flag is set, S-Bank's knowledge base or a glossary term
         other than budget and interest owns it, the rules claim it, the model may not write, nothing is retrieved, or
         no draft passes the checks. Tips asked in a running conversation are the talk mode's (#873)."""
-        if self.finlit is None or finlit_kb.question_kind(message) != "literacy":
+        investing = finlit_kb.invest_general(message)   # R7 narrowed: the general order, never a pick (#884)
+        if self.finlit is None or (not investing and finlit_kb.question_kind(message) != "literacy"):
             return False
         if re.search(RULE_HEALTH, guard.fold(message)):
             return False   # a health topic gets no tip and no comment (R9)
-        if not finlit_kb.flags_allow(message, req.message):
+        if not finlit_kb.flags_allow(message, req.message, investing=investing):
             return False
         conv = a.conversation
-        if talk_mode.trigger(message) is not None or (conv is not None and conv.turns
-                                                      and finlit_kb.TIPS.search(guard.fold(message))):
+        if not investing and (talk_mode.trigger(message) is not None or (conv is not None and conv.turns
+                                                                         and finlit_kb.TIPS.search(guard.fold(message)))):
             return False   # tips / explain / no numbers: the talk mode's, with the customer's levers and fragments (#873)
         term = glossary.match(message)
         if term is not None and term.key not in finlit_kb.GLOSSARY_TERMS:
@@ -2223,11 +2250,13 @@ class Pipeline:
                        for t in (conv.turns if conv is not None else [])]
             rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                                  tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-            why = finlit_kb.overrides_rules(message)   # why / concept / judgement: words, never a plan's figures
+            why = investing or finlit_kb.overrides_rules(message)   # words, never a plan's figures
             # borrowing never reaches here (finlit_kb's gate), so the rules' "I can't answer that one yet" with the
-            # contact offer does not stop a why question
-            if any(c.name == "decline" for c in rules.calls) or getattr(rules, "template_answer", False) \
-                    or (rules.recognised and not why):
+            # contact offer does not stop a why question. A general investing question passes the rules' investment
+            # decline only (R7 narrowed); every other decline (credit, health, another person) still wins
+            declined = [c for c in rules.calls if c.name == "decline"
+                        and not (investing and (c.args or {}).get("kind") == "investment_advice")]
+            if declined or getattr(rules, "template_answer", False) or (rules.recognised and not why):
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
@@ -2244,7 +2273,7 @@ class Pipeline:
         prev = conv.turns[-1] if conv is not None and conv.turns else None
         request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
                                previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
-                               sources=sources or None, literacy=True)
+                               sources=sources or None, literacy=True, investing=investing)
         self._start_compose_answer(request)
         body: str | None = None
         errors: list[str] = []
@@ -2256,7 +2285,7 @@ class Pipeline:
                 errors = [f"the model call failed ({type(exc).__name__})"]
                 a.composer_attempts.append({"raw": None, "validation": errors, "latency_ms": self._ms(t)})
                 continue
-            draft, errors = finlit_kb.draft_problems(result.text, lang)
+            draft, errors = finlit_kb.draft_problems(result.text, lang, investing=investing)
             a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                         "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
             if not errors and draft is not None:
@@ -2266,7 +2295,8 @@ class Pipeline:
         if body is None:
             # the attempts stay in the audit record (their tokens were spent). "Why should I save?" gets the fixed
             # reasons of ours (no source named, no card); any other question goes the usual path
-            body = finlit_kb.why_fallback(message, lang)
+            body = (template.pick(finlit_kb.INVEST_TEXT, lang) if investing
+                    else finlit_kb.why_fallback(message, lang))
             log.warning("finlit answer failed the checks (%d problems); %s", len(errors),
                         "the fixed reasons answer" if body else "the usual path answers")
             if body is None:
@@ -2280,6 +2310,10 @@ class Pipeline:
             self._attach_review(ctx, review, emit, a)
         if credited:   # the Sources row under the answer; the text carries no link (#884)
             a.sources = finlit_kb.sources_field(fragments, lang) or None
+        if investing:   # never a product: the fixed line and the way to the bank's adviser (R7 narrowed)
+            body = f"{body} {template.pick(finlit_kb.INVEST_LINE, lang)}"
+            a.offer_contact = True
+            a.planner_turns.append({"round": 1, "source": "rules", "invest_general": True})
         text = self._deliver(body, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,

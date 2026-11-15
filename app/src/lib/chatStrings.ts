@@ -21,6 +21,8 @@ const en = {
     'Where do my small purchases go?',
   ],
   moreQuestions: 'More questions',
+  /** The opening's three-basket bar (#945): its accessible summary starts with this. */
+  basketBarLabel: 'Where your money went',
   /** Under a knowledge answer (#922): its sources as chips. */
   sources: 'Sources',
   sourceLabel: (publisher: string, title: string) => (title ? `Source: ${publisher} — ${title}` : `Source: ${publisher}`),
@@ -41,7 +43,6 @@ const en = {
   orType: 'Or type your answer',
   /** The bill reading's fact marker only; chat answers carry no source label (#685). */
   fact: 'From your transactions',
-  templateNote: 'Written from a standard template this time, without the AI model. The numbers are the same.',
   stopped: 'You stopped this answer.',
   stoppedForNext: 'Stopped for your next question.',
   askAgain: 'Ask again',
@@ -77,6 +78,7 @@ const fi: ChatStrings = {
     'Mihin pienet ostokset menevät?',
   ],
   moreQuestions: 'Lisää kysymyksiä',
+  basketBarLabel: 'Mihin rahasi menivät',
   sources: 'Lähteet',
   sourceLabel: (publisher: string, title: string) => (title ? `Lähde: ${publisher} — ${title}` : `Lähde: ${publisher}`),
   placeholder: 'Kysy raha-asioistasi',
@@ -94,7 +96,6 @@ const fi: ChatStrings = {
   stagesLabel: 'Eteneminen',
   orType: 'Tai kirjoita vastauksesi',
   fact: 'Tilitapahtumistasi',
-  templateNote: 'Kirjoitettu tällä kertaa vakiopohjalla ilman tekoälymallia. Luvut ovat samat.',
   stopped: 'Pysäytit tämän vastauksen.',
   stoppedForNext: 'Keskeytetty seuraavan kysymyksesi vuoksi.',
   askAgain: 'Kysy uudelleen',
