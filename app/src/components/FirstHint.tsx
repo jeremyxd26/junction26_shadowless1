@@ -21,7 +21,7 @@ export function FirstHint({ show }: { show: boolean }) {
           dismissFirstHint()
           rerender((n) => n + 1)
         }}
-        className="min-h-11 shrink-0 px-1 text-sm font-semibold text-brand underline underline-offset-4"
+        className="min-h-11 min-w-11 shrink-0 px-1 text-sm font-semibold text-brand underline underline-offset-4"
       >
         {t.gotIt}
       </button>
