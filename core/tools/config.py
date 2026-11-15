@@ -1274,7 +1274,7 @@ SMALL_PURCHASES_TEXT: dict[str, tuple[str, str]] = {
     "title": ("Small purchases", "Pienet ostokset"),
     "count": ("Small purchases", "Pieniä ostoksia"),
     "total": ("Small purchases in total", "Pienet ostokset yhteensä"),
-    "average": ("Average small purchase", "Pienen ostoksen keskihinta"),
+    "average": ("Average small purchase", "Keskimääräinen pieni ostos"),
     "month_average": ("Small purchases a month", "Pieniä ostoksia kuukaudessa"),
     "share": ("Share of everyday spending", "Osuus arjen kulutuksesta"),
     "flexible": ("Everyday spending", "Arjen kulutus"),
