@@ -84,6 +84,7 @@ const BILL_EXAMPLES = [examples['bill.response'], examples['bill.response_unknow
 const SANNA: Persona = {
   customer_id: 'CUST00860',
   display_name: 'Sanna',
+  age: 35,
   age_band: '35-44',
   postal_area: { code: '00590', label: 'Helsinki 00590' },
   profile: { key: 'big_ticket', label: 'Big ticket' },
