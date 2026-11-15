@@ -1485,6 +1485,10 @@ def garbled_input(question: str) -> bool:
         return content(word) or bool(FI_WEAK.fullmatch(fold(word)))
     if any(content(w) for w in words):
         return False
+    # Only a Finnish-sounding fragment ("onks se …"): an English follow-up the small lists do not know ("anything
+    # else?", "really?") is never noise (r-coord's live check after #913).
+    if not any(FI_WEAK.fullmatch(fold(w)) for w in words):
+        return False
     return any(len(w) >= 6 and not known(w) for w in words)
 
 
