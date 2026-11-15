@@ -1652,14 +1652,23 @@ class Pipeline:
             exhausted = tip is None and index > 0
             given = index + 1 if tip is not None else given
         # a first tips answer, or "anything else?", carries the next two general practices beside the lever (#889);
-        # "any more tips?" stays one lever per turn
+        # "any more tips?" stays one lever per turn, and once no further lever passes the bar it gives the next two
+        # practices not given yet in this conversation (#907)
         used = (last_talk or {}).get("practices_given", 0)
-        extra = talk_mode.practices(used, lang) if (tips_kind and not more) or (more and kind == "follow_up") else []
+        extra = (talk_mode.practices(used, lang)
+                 if (tips_kind and not more) or (more and (kind == "follow_up" or tip is None)) else [])
         used += len(extra)
+        # no lever and no practice left: a warm closing, never "no further tips" (#907)
+        closing = (tips_kind or more) and tip is None and not extra
         previous_tip = (last_talk or {}).get("tip") if (tip is None and prev_talk) else None
         prev = turns[-1] if turns else None
         prev_main = getattr((prev or {}).get("explain"), "evidence_ref", None) or next(
             (getattr(n, "evidence_ref", None) for n in ((prev or {}).get("shown") or [])), None)
+        # official sources for the reasoning (#884): only when the model may write the talk text
+        fragments = ([] if talk_mode.template_only(message) or talk_mode.model_switched_off()
+                     else self._talk_fragments(ctx, message, prev, lang))
+        # the closing is the template's unless finlit fragments give the composer something to write from (#907)
+        designed_closing = closing and not fragments
         talk = {"kind": kind, "channel": "voice" if voice else "text",
                 "previous_question": prev["question"] if prev else None,
                 "previous_answer": prev["answer"] if prev else None,
@@ -1669,10 +1678,8 @@ class Pipeline:
                 "previous_tip": previous_tip,
                 "tips_ranked": [{"rank": i + 1, "lever": talk_mode.lower(t["label"])} for i, t in enumerate(ranking)],
                 "practices": extra,
-                "no_more_tips": exhausted}
-        # official sources for the reasoning (#884): only when the model may write the talk text
-        fragments = ([] if talk_mode.template_only(message) or talk_mode.model_switched_off()
-                     else self._talk_fragments(ctx, message, prev, lang))
+                # True only with nothing else to give (#907): with practices or fragments there are more tips
+                "no_more_tips": exhausted and not extra and not fragments}
         credited = finlit_kb.named(fragments)
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
@@ -1687,7 +1694,7 @@ class Pipeline:
         draft = None
         errors: list[str] = []
         self._start_compose_answer(compose_in)   # no planner ran in this answer: start its deadline (#884)
-        if unavailable is None and not forced and not switched_off:
+        if unavailable is None and not forced and not switched_off and not designed_closing:
             for _ in range(2):   # the call and one retry with the reasons
                 t = self.clock()
                 try:
@@ -1719,7 +1726,8 @@ class Pipeline:
                 tip = ranking[index] if index is not None else None
                 given = index + 1 if tip is not None else given
             text = (template.pick(talk_mode.BORROWING, lang) if forced
-                    else talk_mode.three_tips(tip, extra, lang) if extra
+                    else talk_mode.closing(lang, previous=(prev or {}).get("answer")) if closing and tip is None
+                    else talk_mode.three_tips(tip, extra, lang, more=bool(more)) if extra
                     else talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip,
                                                  previous=(prev or {}).get("answer")))
             draft, errors = validate({"language": lang, "text": text, "cited": [], "lesson_key": None},
@@ -1729,12 +1737,15 @@ class Pipeline:
                 draft = AnswerDraft(language=lang, text=text, cited=[], lesson_key=None)
             if forced:
                 a.offer_contact = True   # a designed template: the way to the bank, and no llm_unavailable warning
+            elif designed_closing:
+                pass   # the designed closing (#907): no model was asked for it, so no llm_unavailable warning
             else:
                 a.model_unavailable = a.model_unavailable or unavailable or ("talk_model_off" if switched_off else "error")
                 self._warn_llm_unavailable(a)
+        talk_template = ("borrowing_or_afford" if forced else "switch" if switched_off
+                         else "closing" if designed_closing else None)
         a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {}),
-                                **({"talk_template": "borrowing_or_afford" if forced else "switch"}
-                                   if (forced or switched_off) else {}),
+                                **({"talk_template": talk_template} if talk_template else {}),
                                 **({"finlit": [f.source_id for f in fragments]} if credited and from_model else {})})
         line = f" {finlit_kb.source_line(credited, lang)}" if credited and from_model else ""
         text = self._deliver(draft.text + line, numbers, emit)
@@ -1742,7 +1753,9 @@ class Pipeline:
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
                          "evidence_ref": numbers[i].evidence_ref} for i in cited}
-        chip = template.pick(talk_mode.CHIP_MORE if given < len(ranking) else talk_mode.CHIP_SAVE, lang)
+        # "Any more tips?" while a lever, or after a tips answer a practice, is left; else the saving question (#907)
+        more_left = given < len(ranking) or ((tips_kind or more) and used < len(talk_mode.PRACTICES))
+        chip = template.pick(talk_mode.CHIP_MORE if more_left else talk_mode.CHIP_SAVE, lang)
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": a.text_rendered,
                       "cited": cited, "follow_ups": [chip], "lesson": None, "refusal": None, "clarify": None,
                       "warnings": a.warnings})

@@ -275,6 +275,14 @@ _TALK_OWN_STATE = re.compile(
     re.I)
 
 
+# "There are no further tips" (#907): talk mode always gives the next lever, practice or a closing instead
+_NO_FURTHER = re.compile(
+    r"\b(?:no|not\s+any|nothing)\s+(?:further|more|other|additional|new)\s+(?:\w+\s+){0,3}?"
+    r"(?:tips?|suggestions?|advice|ideas?|recommendations?)\b"
+    r"|\bthere\s+(?:are|is)\s+no\s+(?:further|more|other)\b"
+    r"|\bei\s+(?:ole\s+)?(?:enaa\s+|muita\s+|lisaa\s+|uusia\s+)+(?:\w+\s+){0,2}?(?:vinkk\w*|neuvo\w*|ehdotu\w*)")
+
+
 def _sentences(text: str) -> int:
     return len([s for s in SENTENCE_BREAK.split(text.strip()) if s.strip()])
 
@@ -316,6 +324,9 @@ def draft_problems(text: str, numbers: dict[str, Any], shown: set[str], language
     m = talk_checks.GENERAL_NON_ANSWER.search(clean)
     if m:
         problems.append(f"'{m.group(0)}': answer in words; do not say the question could not be worked out")
+    m = _NO_FURTHER.search(fold(clean).lower())
+    if m:
+        problems.append(f"'{m.group(0)}': never say there are no more tips; give the practices in the data in words")
     return problems
 
 
@@ -386,6 +397,19 @@ PRACTICES = (
      "Pidä pieni puskuri yllätyksiä varten, jotta rikkoutunut tavara ei sotke kuukautta."),
 )
 TIP_FIRST = ("The change with the most money behind it is {lever}.", "Eniten rahaa liikkuu kohdassa {lever}.")
+# "Any more tips?" once no further lever passes the bar (#907): the next practices, after this lead
+MORE_FIRST = ("A few more everyday habits help as well.", "Myös muutama muu arkinen tapa auttaa.")
+# When the levers and the practices are both used up (#907): a short warm closing, never "no further tips"; the
+# answer's chip is the saving question (CHIP_SAVE). Two texts, so a second "any more tips?" never gets the same one.
+CLOSING = (
+    ("That is a good set of habits to work with. Picking one of them and keeping it going for a month is the best "
+     "next step.",
+     "Siinä on hyvä joukko tapoja, joista aloittaa. Paras seuraava askel on valita niistä yksi ja pitää siitä kiinni "
+     "kuukauden ajan."),
+    ("Small steady steps like these add up over time. Trying them one at a time makes each of them easier to keep.",
+     "Tällaiset pienet pysyvät askeleet kertyvät ajan myötä. Kun niitä kokeilee yksi kerrallaan, kustakin on helpompi "
+     "pitää kiinni."),
+)
 
 
 def practices(start: int, language: str, count: int = 2) -> list[str]:
@@ -393,10 +417,20 @@ def practices(start: int, language: str, count: int = 2) -> list[str]:
     return [_pick(p, language) for p in PRACTICES[start:start + count]]
 
 
-def three_tips(tip: dict[str, Any] | None, extra: list[str], language: str) -> str:
-    """The first tips answer without the model: the lever first, then the general practices (3 to 4 sentences)."""
-    lead = _pick(TIP_FIRST, language).format(lever=lower(tip["label"])) if tip else _pick(NO_TIP, language)
+def three_tips(tip: dict[str, Any] | None, extra: list[str], language: str, more: bool = False) -> str:
+    """The first tips answer without the model: the lever first, then the general practices (3 to 4 sentences).
+    On "any more tips?" with no lever left (`more`), the practices follow MORE_FIRST instead (#907)."""
+    if tip:
+        lead = _pick(TIP_FIRST, language).format(lever=lower(tip["label"]))
+    else:
+        lead = _pick(MORE_FIRST if more else NO_TIP, language)
     return " ".join([lead, *extra])
+
+
+def closing(language: str, previous: str | None = None) -> str:
+    """The warm closing once the levers and the practices are used up (#907), never the previous answer again."""
+    texts = [_pick(pair, language) for pair in CLOSING]
+    return next((t for t in texts if t != previous and not repeats(t, previous)), texts[0])
 
 
 CHIP_MORE = ("Any more tips?", "Lisää vinkkejä?")
