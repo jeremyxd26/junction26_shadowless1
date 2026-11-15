@@ -454,6 +454,8 @@ class Pipeline:
         # Finnish), when that language is clear; a very short or unsure message keeps the previous turn's
         # language, else the app's.
         question_lang = short_language(message) or guard.confident_language(message)
+        if question_lang is None and (meta_intent(message) or conversation_feedback(message)):
+            question_lang = guard.meta_language(message)   # "wait what", "I'm tired today.": this message's own words
         if question_lang in ("en", "fi"):
             lang = question_lang
         elif conv.turns and conv.language in ("en", "fi"):
