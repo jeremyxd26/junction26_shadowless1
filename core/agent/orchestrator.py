@@ -1912,7 +1912,7 @@ class Pipeline:
                        for t in (conv.turns if conv is not None else [])]
             rules = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                                  tools=self.registry.schemas(), history=history, guard_flags=a.flags))
-            why = finlit_kb.WHY_GENERAL.search(guard.fold(message)) is not None   # reasons, never a plan's figures
+            why = finlit_kb.overrides_rules(message)   # why / concept / judgement: words, never a plan's figures
             # borrowing never reaches here (finlit_kb's gate), so the rules' "I can't answer that one yet" with the
             # contact offer does not stop a why question
             if any(c.name == "decline" for c in rules.calls) or getattr(rules, "template_answer", False) \
@@ -1971,7 +1971,8 @@ class Pipeline:
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
-        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text})
+        self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text,
+                                             "finlit": [f.record() for f in fragments]})   # for a follow-up's reuse
         return True
 
     def _deliver(self, text: str, numbers: dict[str, Any], emit: Emit) -> str:
