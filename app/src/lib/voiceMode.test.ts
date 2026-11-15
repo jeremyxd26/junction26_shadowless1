@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_ANSWER, type Answer } from './answer.ts'
 import type { Turn } from './thread.ts'
-import { LISTEN_MS, ONSET_MS, SILENCE_MS, endpointer, followAnswer, waveBars } from './voiceMode.ts'
+import { LISTEN_MS, ONSET_MS, SILENCE_MS, endpointer, followAnswer, ringStep, waveBars } from './voiceMode.ts'
 
 /** Feeds `level` every 50 ms from `from` to `to` (ms) and returns the last state. */
 function feed(ends: ReturnType<typeof endpointer>, level: number, from: number, to: number) {
@@ -15,8 +15,9 @@ describe('endpointer (#811)', () => {
   it('waits in silence, hears speech after the onset time, and ends 1.2 s after it stops', () => {
     const ends = endpointer(0)
     expect(feed(ends, 0.01, 0, 1000)).toBe('waiting')
-    expect(feed(ends, 0.5, 1050, 1050 + ONSET_MS - 50)).toBe('waiting') // not long enough yet
-    expect(feed(ends, 0.5, 1050 + ONSET_MS, 3000)).toBe('speech')
+    // Each loud reading counts the 50 ms since the one before.
+    expect(feed(ends, 0.5, 1050, 1050 + ONSET_MS - 100)).toBe('waiting') // not long enough yet
+    expect(feed(ends, 0.5, 1050 + ONSET_MS - 50, 3000)).toBe('speech')
     expect(ends.heard()).toBe(true)
     expect(feed(ends, 0.01, 3050, 3050 + SILENCE_MS - 50)).toBe('speech') // a pause shorter than 1.2 s
     expect(ends.push(0.01, 3050 + SILENCE_MS)).toBe('end')
@@ -31,11 +32,27 @@ describe('endpointer (#811)', () => {
     expect(feed(ends, 0.02, 2050, 2050 + SILENCE_MS - 50)).toBe('speech')
   })
 
-  it('a click or a cough shorter than the onset time is not speech', () => {
+  it('a click shorter than the onset time is not speech, and stray noises far apart do not add up', () => {
     const ends = endpointer(0)
-    feed(ends, 0.9, 0, 100)
-    expect(feed(ends, 0.01, 150, 2000)).toBe('waiting')
+    feed(ends, 0.01, 0, 50)
+    feed(ends, 0.9, 100, 150) // 100 ms loud
+    expect(feed(ends, 0.01, 200, 1500)).toBe('waiting')
+    feed(ends, 0.9, 1550, 1600) // another 100 ms, after more than 0.6 s of quiet
+    expect(feed(ends, 0.01, 1650, 3000)).toBe('waiting')
     expect(ends.heard()).toBe(false)
+  })
+
+  it('a one-word answer counts, a quiet dip inside the word included', () => {
+    const ends = endpointer(0)
+    feed(ends, 0.01, 0, 500)
+    feed(ends, 0.5, 550, 600) // "Y-"
+    feed(ends, 0.03, 650, 700) // a dip below the quiet level
+    expect(feed(ends, 0.4, 750, 800)).toBe('speech') // "-es": 200 ms loud in all
+    expect(feed(ends, 0.01, 850, 850 + SILENCE_MS)).toBe('end')
+  })
+
+  it('the reduced-motion ring steps with the level', () => {
+    expect([0, 0.2, 0.5, 0.9].map(ringStep)).toEqual([0, 1, 2, 3])
   })
 
   it('at 15 s it ends: "end" with speech, "nothing" without', () => {
