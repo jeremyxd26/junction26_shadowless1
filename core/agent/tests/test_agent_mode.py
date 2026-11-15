@@ -38,6 +38,7 @@ RENAT = [("Why should I save money?", "en"), ("Any tips?", "en"), ("Anything els
          ("What is compound interest?", "en"), ("Remind me what I asked", "en"), ("You talk too much", "en"),
          ("Miksi minun pitäisi säästää?", "fi"), ("Vinkkejä?", "fi"), ("Entä muuta?", "fi"),
          ("Mitä on korkoa korolle?", "fi"), ("Muistuta mitä kysyin", "fi"), ("Puhut liikaa", "fi")]
+OPEN = {"en": "Tell me something useful about my eating out", "fi": "Kerro jotain hyödyllistä ulkona syömisestäni"}
 WORDS = {"en": "Saving gives you room to breathe when something unexpected comes up. Setting a little aside right after "
                "payday makes it happen without much effort.",
          "fi": "Säästäminen antaa liikkumavaraa, kun jotain odottamatonta tapahtuu. Kun rahaa siirtää sivuun heti "
@@ -221,7 +222,7 @@ def test_on_a_talk_question_goes_to_the_loop_and_the_judge(tmp_path, switch):
     switch[0].touch()
     agent = AgentModel()
     pipeline = make(tmp_path, agent)
-    d = done(ask(pipeline, "Any tips?"))
+    d = done(ask(pipeline, OPEN["en"]))
     assert d["text"] == WORDS["en"] and d["outcome"] == "answered"
     assert len(agent.turns) == 1 and len(agent.judged) == 1
     turns = audit_records(pipeline)[-1]["planner_turns"]
@@ -255,7 +256,6 @@ def test_renats_conversation_en_and_fi(tmp_path, switch):
             d = done(events)
             assert d["outcome"] in ("answered", "clarify"), (message, d)
             assert dict(events)["meta"]["language"] == lang, message
-    assert agent.turns   # some of them went through the loop
 
 
 @pytest.mark.parametrize("text, lang", LEAKS)
@@ -263,7 +263,7 @@ def test_every_leak_row_in_words_is_caught_by_the_cheap_layer(tmp_path, switch, 
     switch[0].touch()
     two = text if text.count(". ") else text + (" Pieni muutos auttaa." if lang == "fi" else " A small change helps.")
     agent = AgentModel(script=lambda r: AgentResult(calls=[], text=two))
-    d = done(ask(make(tmp_path, agent), "Any tips?" if lang == "en" else "Vinkkejä?"))
+    d = done(ask(make(tmp_path, agent), OPEN[lang]))
     assert d["text"] == agent_mode.fallback_text(lang)
     assert agent.judged == []   # the regex layer caught both drafts before the judge
 
@@ -294,7 +294,7 @@ def test_every_leak_row_after_a_tool_is_caught_by_the_regex_or_the_judge(tmp_pat
 def test_a_figure_not_from_a_tool_is_never_shown(tmp_path, switch):
     switch[0].touch()
     agent = AgentModel(script=lambda r: AgentResult(calls=[], text="You could save 150 euros a month. Start small."))
-    d = done(ask(make(tmp_path, agent), "Any tips?"))
+    d = done(ask(make(tmp_path, agent), OPEN["en"]))
     assert "150" not in d["text"] and d["text"] == agent_mode.fallback_text("en")
     assert len(agent.turns) == 2   # the draft and one regenerate
 
@@ -324,7 +324,7 @@ def test_a_judge_hit_regenerates_once_then_the_second_draft_stands(tmp_path, swi
     verdicts = iter([JudgeResult(ok=False, category="shaming", reason="judging"), JudgeResult(ok=True)])
     agent = AgentModel(script=lambda r: AgentResult(calls=[], text=next(texts)),
                        verdicts=lambda q, d, lang: next(verdicts))
-    d = done(ask(make(tmp_path, agent), "Any tips?"))
+    d = done(ask(make(tmp_path, agent), OPEN["en"]))
     assert d["text"].startswith("Cooking at home")
     assert agent.turns[1].retry_errors and "shaming" in agent.turns[1].retry_errors[0]
 
@@ -333,7 +333,7 @@ def test_a_judge_hit_regenerates_once_then_the_second_draft_stands(tmp_path, swi
 def test_a_failing_or_hitting_judge_twice_gives_the_natural_fallback(tmp_path, switch, verdict):
     switch[0].touch()
     agent = AgentModel(verdicts=lambda q, d, lang: verdict)
-    d = done(ask(make(tmp_path, agent), "Vinkkejä?"))
+    d = done(ask(make(tmp_path, agent), OPEN["fi"]))
     assert d["text"] == agent_mode.fallback_text("fi") and d["outcome"] == "answered"
     assert len(agent.judged) == 2
 
@@ -344,8 +344,8 @@ def test_a_failed_first_loop_call_leaves_the_old_path(tmp_path, switch):
     def script(request):
         raise RuntimeError("deadline")
 
-    old = done(ask(make(tmp_path, PlainModel(), "old"), "Any tips?"))
-    d = done(ask(make(tmp_path, AgentModel(script=script)), "Any tips?"))
+    old = done(ask(make(tmp_path, PlainModel(), "old"), OPEN["en"]))
+    d = done(ask(make(tmp_path, AgentModel(script=script)), OPEN["en"]))
     assert d["text"] == old["text"]
 
 
@@ -368,19 +368,19 @@ def test_the_model_can_ask_back_and_decline(tmp_path, switch):
 def test_natural_answers_pass(tmp_path, switch, text, lang):
     switch[0].touch()
     agent = AgentModel(script=lambda r: AgentResult(calls=[], text=text))
-    d = done(ask(make(tmp_path, agent), "Any tips?" if lang == "en" else "Vinkkejä?"))
+    d = done(ask(make(tmp_path, agent), OPEN[lang]))
     assert d["text"] == text
 
 
 def test_the_switch_file_turns_the_loop_on_and_off_per_answer(tmp_path, switch):
     agent = AgentModel()
     pipeline = make(tmp_path, agent)
-    old = done(ask(pipeline, "Any tips?"))["text"]
+    old = done(ask(pipeline, OPEN["en"]))["text"]
     assert agent.turns == []
     switch[0].touch()
-    assert done(ask(pipeline, "Any tips?"))["text"] == WORDS["en"] and len(agent.turns) == 1
+    assert done(ask(pipeline, OPEN["en"]))["text"] == WORDS["en"] and len(agent.turns) == 1
     switch[1].touch()   # the off file wins, no restart
-    assert done(ask(pipeline, "Any tips?"))["text"] == old and len(agent.turns) == 1
+    assert done(ask(pipeline, OPEN["en"]))["text"] == old and len(agent.turns) == 1
 
 
 # ---- the client and the Gemini model: request shapes, with a fake transport -----------------------------------------
@@ -477,13 +477,13 @@ def make_finlit(tmp_path, model, name="f"):
 
 @pytest.mark.parametrize("message, lang", [("Why should I save money?", "en"), ("Mitä on korkoa korolle?", "fi"),
                                            ("What is compound interest?", "en")])
-def test_on_a_literacy_question_goes_to_the_loop_in_the_literacy_routes_place(tmp_path, switch, message, lang):
+def test_on_a_literacy_question_keeps_the_literacy_route(tmp_path, switch, message, lang):
     switch[0].touch()
     agent = AgentModel()
-    pipeline = make_finlit(tmp_path, agent)
-    d = done(ask(pipeline, message))
-    assert agent.turns and d["text"] == WORDS[lang]
-    assert any(t.get("route") == "finlit" for t in audit_records(pipeline)[-1]["planner_turns"])
+    got = normal(ask(make_finlit(tmp_path, agent, "on"), message))
+    switch[0].unlink()
+    assert got == normal(ask(make_finlit(tmp_path, PlainModel(), "old"), message))
+    assert agent.turns == []
 
 
 @pytest.mark.parametrize("message", ["How do I start investing?", "How much should I save or invest?"])
@@ -494,17 +494,6 @@ def test_on_a_general_investing_question_keeps_its_designed_answer(tmp_path, swi
     switch[0].unlink()
     assert got == normal(ask(make_finlit(tmp_path, PlainModel(), "old"), message))
     assert agent.turns == []
-
-
-@pytest.mark.parametrize("text, lang", LEAKS)
-def test_every_leak_row_on_a_literacy_question_is_caught_by_the_cheap_layer(tmp_path, switch, text, lang):
-    switch[0].touch()
-    two = text if text.count(". ") else text + (" Pieni muutos auttaa." if lang == "fi" else " A small change helps.")
-    agent = AgentModel(script=lambda r: AgentResult(calls=[], text=two))
-    d = done(ask(make_finlit(tmp_path, agent), "What is compound interest?" if lang == "en"
-                 else "Mitä on korkoa korolle?"))
-    assert agent.turns and d["text"] == agent_mode.fallback_text(lang)
-    assert agent.judged == []
 
 
 @pytest.mark.parametrize("lang", ["en", "fi"])
@@ -523,7 +512,7 @@ def test_renats_six_in_order_take_the_loop_where_they_should(tmp_path, switch, l
         assert d["outcome"] == "answered" and d["text"] != agent_mode.fallback_text(lang), (message, d["text"])
         assert dict(events)["meta"]["language"] == lang
         loop[message] = len(agent.turns) > before
-    assert [loop[m] for m in rows] == [True, True, True, True, False, False], loop
+    assert not any(loop.values()), loop   # talk triggers, literacy and meta keep their own routes
 
 
 @pytest.mark.parametrize("second", ["anything else?", "why?", "any more tips?"])
@@ -538,21 +527,101 @@ def test_a_failing_loop_after_a_loop_answer_leaves_the_old_talk_path_working(tmp
         return AgentResult(calls=[], text=WORDS["en"])
 
     pipeline = make(tmp_path, AgentModel(script=script))
-    cid = dict(ask(pipeline, "Any tips?"))["meta"]["conversation_id"]
+    cid = dict(ask(pipeline, OPEN["en"]))["meta"]["conversation_id"]
+    assert calls["n"] == 1
     events = ask(pipeline, second, cid)
     d = done(events)
     assert d["outcome"] == "answered" and "error" not in dict(events)
     assert d["text"] != agent_mode.fallback_text("en")
 
 
-@pytest.mark.parametrize("text, lang", [
-    ("Compound interest means that what you earn is added to your savings, so the next round grows on a larger "
-     "amount. Over time the growth speeds up, which is why starting early helps.", "en"),
-    ("Korkoa korolle tarkoittaa, että tuotto lisätään säästöihin ja seuraava tuotto lasketaan suuremmasta summasta. "
-     "Ajan mittaan kasvu nopeutuu, joten aikainen aloittaminen auttaa.", "fi")])
-def test_a_natural_literacy_answer_passes(tmp_path, switch, text, lang):
+
+# ---- Renat's live probes of #955: a loop that always calls a tool and writes its figure into the tips ---------------
+
+CARD_SCRIPT_TEXT = "Set aside a fixed amount {{n1}} each month. Small steps add up over time."
+
+
+def card_script(request):
+    """The live failure: every turn calls a tool with a card, then writes its figure into the answer."""
+    if request.round == 1 and request.tools_on:
+        return AgentResult(calls=[FunctionCall("fake_spending", {})], raw={"role": "model", "parts": [
+            {"function_call": {"name": "fake_spending", "args": {}}}]})
+    return AgentResult(calls=[], text=CARD_SCRIPT_TEXT)
+
+
+def _cards(events):
+    return [e for e, _ in events].count("card")
+
+
+RENAT_LIVE = {"en": [("Where did my money go?", None), ("I don't need numbers, I just want suggestions based on my numbers", 0),
+                     ("why does it matter? explain", 0), ("any more tips?", 0)],
+              "fi": [("Mihin rahani menivät?", None), ("En tarvitse numeroita, haluan vain ehdotuksia numeroideni perusteella", 0),
+                     ("miksi sillä on väliä? selitä", 0), ("lisää vinkkejä?", 0)]}
+TIPS_LIVE = {"en": ["Give me tips to save", "anything else?"], "fi": ["Anna vinkkejä säästämiseen", "entä muuta?"]}
+
+
+def _run(pipeline, messages):
+    cid, out = None, []
+    for message in messages:
+        events = ask(pipeline, message, cid)
+        cid = dict(events)["meta"]["conversation_id"]
+        out.append(events)
+    return out
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_renats_live_sequence_gets_no_cards_and_answers_as_off(tmp_path, switch, lang):
     switch[0].touch()
-    agent = AgentModel(script=lambda r: AgentResult(calls=[], text=text))
-    d = done(ask(make_finlit(tmp_path, agent), "What is compound interest?" if lang == "en"
-                 else "Mitä on korkoa korolle?"))
-    assert d["text"] == text
+    agent = AgentModel(script=card_script)
+    messages = [m for m, _ in RENAT_LIVE[lang]]
+    got = _run(make_finlit(tmp_path, agent, "on"), messages)
+    for (message, cards), events in zip(RENAT_LIVE[lang], got):
+        if cards is not None:
+            assert _cards(events) == cards, message
+            assert not re.search(r"\d", done(events)["text_rendered"]) or done(events)["cited"] == [], message
+    switch[0].unlink()
+    old = _run(make_finlit(tmp_path, PlainModel(), "old"), messages)
+    assert [normal(e) for e in got] == [normal(e) for e in old]
+    assert agent.turns == []
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_tips_then_anything_else_continue_with_new_tips(tmp_path, switch, lang):
+    switch[0].touch()
+    agent = AgentModel(script=card_script)
+    got = _run(make_finlit(tmp_path, agent, "on"), TIPS_LIVE[lang])
+    for events in got:
+        d = done(events)
+        assert _cards(events) == 0 and d["outcome"] == "answered"
+        assert "didn't catch" not in d["text"] and "saanut kiinni" not in d["text"]
+        assert not TOKEN.findall(d["text"]) and not re.search(r"\d", d["text_rendered"])
+    assert done(got[0])["text"] != done(got[1])["text"]
+    switch[0].unlink()
+    old = _run(make_finlit(tmp_path, PlainModel(), "old"), TIPS_LIVE[lang])
+    assert [normal(e) for e in got] == [normal(e) for e in old]
+    assert agent.turns == []
+
+
+@pytest.mark.parametrize("message, lang", [("Why should I save money?", "en"), ("Miksi minun pitäisi säästää?", "fi")])
+def test_why_save_gets_words_and_no_card(tmp_path, switch, message, lang):
+    switch[0].touch()
+    agent = AgentModel(script=card_script)
+    events = ask(make_finlit(tmp_path, agent), message)
+    assert _cards(events) == 0 and agent.turns == []
+
+
+def test_a_words_question_the_loop_takes_never_runs_a_tool(tmp_path, switch):
+    switch[0].touch()
+    agent = AgentModel(script=card_script)
+    pipeline = make(tmp_path, agent)
+    cid = dict(ask(pipeline, OPEN["en"]))["meta"]["conversation_id"]   # an own-data question: the tool and its card
+    events = ask(pipeline, "Is that a good idea, honestly?", cid)
+    assert _cards(events) == 0
+    assert all(not r.tools_on for r in agent.turns[2:])
+
+
+def test_an_own_data_question_nobody_claims_may_show_its_card(tmp_path, switch):
+    switch[0].touch()
+    agent = AgentModel(script=card_script)
+    events = ask(make(tmp_path, agent), OPEN["en"])
+    assert _cards(events) == 1 and done(events)["cited"] == ["n1"]
