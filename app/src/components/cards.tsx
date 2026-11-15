@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Action, Insight, MetricCard, Num, SafeToSpendStatus } from '../api/types.ts'
-import { tokenMs, useCountedText, type Count } from '../lib/motion.ts'
+import { useCountedText, type Count } from '../lib/motion.ts'
 import { hostScreenTarget, openHostScreen } from '../lib/hostActions.ts'
 import { askInThread, openEvidence, openWhatIf } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
@@ -181,7 +181,8 @@ export function HeroCard({ card, motion }: { card: MetricCard; motion?: NumberMo
 export function HeroSummary({ card, motion }: { card: MetricCard; motion?: NumberMotion }) {
   const { t } = useSettings()
   const primary = card.primary
-  const text = useCountedText(primary, motion?.counts.safe_to_spend, tokenMs('--duration-money', 900))
+  // A short, calm count after a review answer (Renat, #958: 400 ms); instant under reduced motion.
+  const text = useCountedText(primary, motion?.counts.safe_to_spend, 400)
   const count = motion?.counts.safe_to_spend
   const was = motion?.was.safe_to_spend
   const estimate = useEstimateToggle()
