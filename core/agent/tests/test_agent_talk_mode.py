@@ -887,12 +887,15 @@ def test_why_after_tips_reuses_the_tips_sources_and_names_them(tmp_path):
     pipeline = make(tmp_path, model)
     pipeline.finlit = FakeFinlit()
     first = ask(pipeline, FIRST_TIPS["en"])
-    assert "Source: Test Authority, https://example.org/saving" in done(first)["text_rendered"]
+    field = [{"publisher": "Test Authority", "title": "Saving basics", "url": "https://example.org/saving", "lang": "en"}]
+    assert done(first)["sources"] == field
     events = ask(pipeline, "why?", dict(first)["meta"]["conversation_id"])
     d = done(events)
     assert pipeline.finlit.calls == [FIRST_TIPS["en"]]   # the tips answer's sources again, no new search
     assert model.requests[-1].sources and model.requests[-1].sources[0]["source"] == "Test Authority"
-    assert d["text_rendered"].endswith("Source: Test Authority, https://example.org/saving")
+    assert d["sources"] == field   # the structured Sources field (#933), no source line in the text
+    assert "Source:" not in d["text_rendered"] and "https://" not in d["text_rendered"]
+    assert d["text_rendered"] == talk_mode.explain_tips(FIRST_GAVE, "en")
     assert _talk_turns(pipeline)[-1]["explain_tips"] == FIRST_KEYS
 
 
