@@ -53,7 +53,7 @@ const en = {
   heroHowMade: 'Show how it is made',
   aboutSentti: 'How Sentti works',
   /** The accessible name of the header title ("Sentti" with its AI tag). */
-  titleLabel: 'Sentti, AI',
+  titleLabel: 'Sentti — how Sentti works',
   reviewWhy: 'Why Sentti asks',
   questionsLabel: 'Questions to ask',
   /** The overview sheet's title and the header button's name (#321, #322). */
@@ -138,7 +138,7 @@ const fi: Strings = {
   movedTo: 'Siirretty:',
   heroHowMade: 'Näytä, miten se lasketaan',
   aboutSentti: 'Näin Sentti toimii',
-  titleLabel: 'Sentti, tekoäly',
+  titleLabel: 'Sentti — näin Sentti toimii',
   reviewWhy: 'Miksi Sentti kysyy',
   questionsLabel: 'Kysymyksiä',
   overview: 'Yleiskatsaus',
