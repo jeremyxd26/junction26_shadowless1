@@ -1,7 +1,7 @@
 // Voice mode (#811): the send button turns into the voice-mode button with an empty input, and the overlay.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { strings } from '../lib/i18n.ts'
 import type { ChatSession } from '../lib/useChat.ts'
 import type { VoicePhase, VoiceSession } from '../lib/voiceSession.ts'
@@ -16,12 +16,31 @@ const chat: ChatSession = {
   clear: () => {},
 }
 
-function stub(live: boolean, recorder: boolean) {
-  vi.stubEnv('VITE_API_MODE', live ? 'live' : 'mock')
-  vi.resetModules()
+function stubGlobals(recorder: boolean) {
   vi.stubGlobal('window', recorder ? { MediaRecorder: class {} } : {})
   vi.stubGlobal('navigator', recorder ? { mediaDevices: { getUserMedia: () => Promise.reject(new Error('x')) } } : {})
 }
+
+function stub(live: boolean, recorder: boolean) {
+  vi.stubEnv('VITE_API_MODE', live ? 'live' : 'mock')
+  vi.resetModules()
+  stubGlobals(recorder)
+}
+
+/**
+ * The first import of the chat screen transforms its whole module graph (the screen, the voice mode,
+ * the voice session, the strings). On a loaded machine that takes seconds and timed the first test out
+ * at the default 5 s (#880). It is paid once here, under an explicit budget; after `vi.resetModules()`
+ * the tests only re-run the already transformed modules, which takes milliseconds.
+ */
+const COLD_IMPORT_MS = 60_000
+
+beforeAll(async () => {
+  stub(true, true)
+  await import('../screens/Chat.tsx')
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+}, COLD_IMPORT_MS)
 
 async function renderChat(live: boolean, recorder: boolean, lang: 'en' | 'fi' = 'en', busy = false) {
   stub(live, recorder)
@@ -118,6 +137,14 @@ describe('the voice-mode overlay (#811)', () => {
 })
 
 describe('the cat in the voice mode (#893)', () => {
+  // The phase lives in the stand-in session, so the modules are imported once for the whole block
+  // instead of being reset for every render (#880).
+  let modules: { VoiceMode: typeof import('./VoiceMode.tsx').VoiceMode; WAVE_BARS: number; settings: typeof import('../lib/settings.ts') }
+  beforeAll(async () => {
+    stub(true, true)
+    const [voice, settings] = await Promise.all([import('./VoiceMode.tsx'), import('../lib/settings.ts')])
+    modules = { VoiceMode: voice.VoiceMode, WAVE_BARS: voice.WAVE_BARS, settings }
+  }, COLD_IMPORT_MS)
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
@@ -125,9 +152,8 @@ describe('the cat in the voice mode (#893)', () => {
 
   /** The overlay over a stand-in session that stays in one phase. */
   async function renderPhase(phase: VoicePhase, lang: 'en' | 'fi' = 'en') {
-    stub(true, true)
-    const { VoiceMode, WAVE_BARS } = await import('./VoiceMode.tsx')
-    const settings = await import('../lib/settings.ts')
+    stubGlobals(true)
+    const { VoiceMode, WAVE_BARS, settings } = modules
     const snapshot = { phase, missed: false, heard: '', micOn: phase !== 'starting', bargeIn: false }
     const session = {
       subscribe: () => () => {},
