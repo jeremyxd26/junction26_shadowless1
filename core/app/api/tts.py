@@ -1,8 +1,10 @@
 """POST /api/tts (#730): one of our own answers read aloud with a Gemini TTS voice, as a WAV file.
 
-- The body names an answer by its id, never a text: the text is the answer's `text_rendered` (the numbers
-  filled in, as the user saw it) from the answer's audit record (core/agent/audit.py), which the pipeline
-  writes for every answer. Its language is the answer's resolved language.
+- The body names an answer by its id, never a text: what is read is built from the answer's audit record
+  (core/agent/audit.py), which the pipeline writes for every answer. Its language is the answer's resolved
+  language. Since #811 that is a spoken script of the answer (core/agent/spoken.py: numbers in words, at
+  most two of them, no links, one sentence on where the numbers come from), not the screen text; a record
+  the script cannot read falls back to `text_rendered` (the numbers filled in, as the user saw it).
 - The same checks as /api/ask: the persona allowlist first, with no database (`deps.require_served`); then
   the record must belong to the body's customer. An unknown id, an id of another customer's answer and an
   answer without text are one answer: 404 `not_found`. The audit record holds no viewer key by design
@@ -24,6 +26,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import ConfigDict, Field
 
+from core.agent.spoken import spoken_script
 from core.agent.tts import TtsError, TtsService, make_tts_service
 from core.app.ratelimit import SlidingWindowLimiter
 
@@ -95,8 +98,9 @@ def post_tts(request: Request, body: TtsRequest) -> Response | JSONResponse:
         return envelope("not_found", body.language)
     language = ((record.get("language") or {}).get("resolved")) or body.language
     language = language if language in ("en", "fi") else "en"
+    script = spoken_script(record) or text
     try:
-        audio, cached = tts_service(request.app).speak(text, language)
+        audio, cached = tts_service(request.app).speak(script, language)
     except TtsError as exc:
         log.info("tts %s: %s", body.answer_id, exc.code)
         if exc.code in ("budget", "busy"):
