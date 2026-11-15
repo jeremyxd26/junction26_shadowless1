@@ -22,6 +22,14 @@ function Icon({ name }: { name: LessonIcon }) {
     auto: <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />,
     payday: <path d="M4 6h16v12H4zM4 10h16M8 15h3" />,
     buffer: <path d="M3 12a9 9 0 0 1 18 0zM12 12v6a2 2 0 0 0 4 0" />,
+    median: <path d="M5 20V12M9 20V8M12 20V4M15 20V9M19 20v-6M3 20h18" />,
+    link: (
+      <>
+        <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />
+        <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+      </>
+    ),
+    transfer: <path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4" />,
   }
   return (
     <span aria-hidden="true" className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-mint-tint text-brand">
@@ -99,6 +107,7 @@ export function LearnLesson({
               </div>
             ))}
           </dl>
+          {lesson.source && <p className="text-xs leading-4 text-muted">{lesson.source}</p>}
         </section>
       )}
 

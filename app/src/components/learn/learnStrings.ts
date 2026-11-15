@@ -70,6 +70,7 @@ const en = {
     money: 'Where the money goes',
     bills: 'Your bills',
     saving: 'Saving and a buffer',
+    compare: 'Compare wisely',
   } as Record<string, string>,
   lessons: {
     'money-1': 'Left to spend this week',
@@ -80,6 +81,9 @@ const en = {
     'bills-3': 'E-invoice and direct payment',
     'saving-1': 'Pay yourself first',
     'saving-2': 'A buffer for surprises',
+    'compare-1': 'Median, not average',
+    'compare-2': 'A link is not a cause',
+    'compare-3': 'Spending or moving money',
   } as Record<string, string>,
 }
 
@@ -153,6 +157,7 @@ const fi: LearnStrings = {
     money: 'Mihin raha menee',
     bills: 'Laskusi',
     saving: 'Säästäminen ja puskuri',
+    compare: 'Vertaa viisaasti',
   },
   lessons: {
     'money-1': 'Käyttövara tällä viikolla',
@@ -163,6 +168,9 @@ const fi: LearnStrings = {
     'bills-3': 'E-lasku ja suoramaksu',
     'saving-1': 'Maksa ensin itsellesi',
     'saving-2': 'Puskuri yllätyksiä varten',
+    'compare-1': 'Mediaani, ei keskiarvo',
+    'compare-2': 'Yhteys ei ole syy',
+    'compare-3': 'Kulutus vai rahan siirto',
   },
 }
 

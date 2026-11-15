@@ -212,6 +212,72 @@ const TESTS: Record<string, Bilingual> = {
       },
     ],
   },
+  compare: {
+    en: [
+      {
+        question: 'Why does Sentti compare you with the median of a group, not the average?',
+        options: [
+          { key: 'skew', text: 'A few huge purchases skew the average' },
+          { key: 'higher', text: 'The median is always higher' },
+          { key: 'secret', text: 'The average is kept secret' },
+        ],
+        right: 'skew',
+        explain: 'The median is the person in the middle, so a few very big purchases hardly move it.',
+      },
+      {
+        question: 'Older customers in the dataset tend to have more money coming in. This shows…',
+        options: [
+          { key: 'link', text: 'A link, not a cause' },
+          { key: 'cause', text: 'That age raises income' },
+          { key: 'rule', text: 'A rule for everyone' },
+        ],
+        right: 'link',
+        explain: 'Things like work, family and housing can explain both; the data only shows they go together.',
+      },
+      {
+        question: 'Which of these is spending?',
+        options: [
+          { key: 'groceries', text: 'Groceries' },
+          { key: 'invest', text: 'A transfer to your investments' },
+          { key: 'sweep', text: 'Moving part of your salary to savings' },
+        ],
+        right: 'groceries',
+        explain: 'Transfers to your own investments or savings stay yours; Sentti keeps them apart from spending.',
+      },
+    ],
+    fi: [
+      {
+        question: 'Miksi Sentti vertaa sinua ryhmän mediaaniin eikä keskiarvoon?',
+        options: [
+          { key: 'skew', text: 'Muutama valtava ostos vääristää keskiarvoa' },
+          { key: 'higher', text: 'Mediaani on aina suurempi' },
+          { key: 'secret', text: 'Keskiarvo on salainen' },
+        ],
+        right: 'skew',
+        explain: 'Mediaani on keskimmäinen ihminen, joten muutama hyvin suuri ostos tuskin liikuttaa sitä.',
+      },
+      {
+        question: 'Aineiston vanhemmilla asiakkailla tulee yleensä enemmän rahaa. Tämä osoittaa…',
+        options: [
+          { key: 'link', text: 'Yhteyden, ei syytä' },
+          { key: 'cause', text: 'Että ikä nostaa tuloja' },
+          { key: 'rule', text: 'Säännön kaikille' },
+        ],
+        right: 'link',
+        explain: 'Esimerkiksi työ, perhe ja asuminen voivat selittää molemmat; aineisto näyttää vain, että ne kulkevat yhdessä.',
+      },
+      {
+        question: 'Mikä näistä on kulutusta?',
+        options: [
+          { key: 'groceries', text: 'Ruokaostokset' },
+          { key: 'invest', text: 'Siirto sijoituksiisi' },
+          { key: 'sweep', text: 'Osan palkasta siirtäminen säästöön' },
+        ],
+        right: 'groceries',
+        explain: 'Siirrot omiin sijoituksiin tai säästöön ovat yhä sinun; Sentti pitää ne erillään kulutuksesta.',
+      },
+    ],
+  },
 }
 
 export function miniTest(topic: string, lang: Language): TestQuestion[] {
