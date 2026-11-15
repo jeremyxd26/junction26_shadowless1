@@ -106,6 +106,9 @@ SUMMARIES = {
     "safe_to_spend.usual_week_eur@1": (
         "Usual everyday spending in a typical month of the last six, per week.",
         "Tavallinen arkikulutus kuuden viime kuukauden tavallisessa kuukaudessa viikkoa kohden."),
+    "small_purchases.count@1": (
+        "Purchases in restaurants, entertainment and lifestyle of at most the small amount, in the period.",
+        "Ravintola-, viihde- ja elämäntapaostokset, enintään pienen summan suuruiset, jakson aikana."),
     **{f"peer_benchmark.{m}@1": _PEER for m in ("peer_median_month_eur", "peer_p25_month_eur", "peer_p75_month_eur",
                                                  "percentile", "vs_median_pct", "peer_n")},
 }

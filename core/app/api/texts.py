@@ -6,6 +6,7 @@ one place in config when they are needed.
 
 from __future__ import annotations
 
+from core.tools import config as tool_config
 from core.tools.models import Unit
 
 Pair = tuple[str, str]
@@ -447,10 +448,12 @@ for _id, _unit, _name, _summary in [
     METHODS[_id] = MethodInfo(_unit, _name, _summary, BILL_DOC)
 # Small purchases (#256): the output columns of 08_small_purchases.sql, metrics.md section 12.
 SMALL_DOC = METRICS_DOC + "#12-small-purchases-256"
+# The limit in the method line, from the tool's own default (r-talk: "of at most the small amount" said nothing)
+_SMALL_MAX = int(float(tool_config.SMALL_PURCHASE_MAX_EUR))
 for _id, _unit, _name, _summary in [
     ("count", Unit.COUNT, ("Small purchases", "Pieniä ostoksia"),
-     ("Purchases in restaurants, entertainment and lifestyle of at most the small amount, in the period.",
-      "Ravintola-, viihde- ja elämäntapaostokset, enintään pienen summan suuruiset, jakson aikana.")),
+     (f"Purchases in restaurants, entertainment and lifestyle of at most \u20ac{_SMALL_MAX} each, in the period.",
+      f"Ravintola-, viihde- ja elämäntapaostokset, kukin enintään {_SMALL_MAX} \u20ac, jakson aikana.")),
     ("total_eur", Unit.EUR, ("Small purchases in total", "Pienet ostokset yhteensä"),
      ("The sum of those small purchases.", "Näiden pienten ostosten summa.")),
     ("avg_eur", Unit.EUR, ("Average small purchase", "Keskimääräinen pieni ostos"),

@@ -10,7 +10,7 @@ The Number shown at the top is rebuilt from it:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -159,6 +159,15 @@ def _rows(rows: list[dict[str, Any]], language: str) -> list[dict[str, Any]]:
     return [{**r, "display": display(Decimal(r["amount"]), Unit.EUR, language)} for r in rows]
 
 
+def _month(m: dict[str, Any], language: str) -> dict[str, Any]:
+    """One month of the list with its label and the total formatted like the rows (contract 0.3.18)."""
+    year, month = (int(p) for p in m["month"].split("-"))
+    first = date(year, month, 1)
+    last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+    return {"month": m["month"], "label": periods.period_label(first, last, language), "count": m["count"],
+            "total": m["total"], "display": display(Decimal(m["total"]), Unit.EUR, language)}
+
+
 def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> EvidenceResponse:
     def load(ref: str) -> dict[str, Any]:
         return evidence.load(conn, ref)[1]
@@ -186,6 +195,7 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         body["rows"] = _rows(res.rows, language)
         body["reconciles"] = res.reconciles
         body["next_cursor"] = res.next_cursor
+        body["months"] = [_month(m, language) for m in res.months]
         # row_count is a Number with its own ref (contract section 9): a count over the same selection,
         # under the same label set as the number it counts (#68, R2), so it reconciles too.
         rc_value = Decimal(res.row_count or 0)

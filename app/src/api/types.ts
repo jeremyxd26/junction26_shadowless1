@@ -256,6 +256,18 @@ export interface EvidenceResponse {
   parts: { role: string; number: Num }[]
   next_cursor: string | null
   privacy_note: string
+  /** A transaction list's selection; its period is the list's (contract section 9). */
+  query?: { period: { start: string; end: string; label: string } } | null
+  /** Every month of a transaction list, all pages, newest first (contract 0.3.20, #944). */
+  months?: EvidenceMonth[]
+}
+
+export interface EvidenceMonth {
+  month: string
+  label: string
+  count: number
+  total: string
+  display: string
 }
 
 export interface ErrorEnvelope {

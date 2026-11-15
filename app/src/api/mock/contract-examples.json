@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.3.18",
+  "contract_version": "0.3.20",
   "examples": {
     "action.open_host_screen": {
       "type": "open_host_screen",
@@ -4014,7 +4014,16 @@
       "reconciles": true,
       "parts": [],
       "next_cursor": "cur_2",
-      "privacy_note": "Only you can see these transactions. They are never sent to the AI model."
+      "privacy_note": "Only you can see these transactions. They are never sent to the AI model.",
+      "months": [
+        {
+          "month": "2026-09",
+          "label": "September 2026",
+          "count": 14,
+          "total": "-312.80",
+          "display": "-€312.80"
+        }
+      ]
     },
     "evidence.response_composite": {
       "evidence_ref": "ev_m3o5q7s9u1w3",
@@ -4079,7 +4088,8 @@
         }
       ],
       "next_cursor": null,
-      "privacy_note": "Only you can see this. Transactions are never sent to the AI model."
+      "privacy_note": "Only you can see this. Transactions are never sent to the AI model.",
+      "months": []
     },
     "evidence.error": {
       "error": {

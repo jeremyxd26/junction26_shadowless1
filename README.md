@@ -1,10 +1,16 @@
-# shadowless1 — Junction 2026
+# Sentti — Junction 2026, team shadowless1
 
-[![CI](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jeremyxd26/junction26_shadowless1/actions/workflows/ci.yml)
+Sentti is a money coach for S-mobiili, built at Junction 2026 for S-Pankki's "Personal Economic Trainer" challenge. You chat with your own (synthetic) transactions in English or Finnish. Every number comes from a SQL tool over the data; the AI model only explains the results.
 
-Work in progress.
+**Try it:** <https://sentti.jeremyxd.dev>. Open it on a phone or in a narrow browser window; the profile menu switches between four demo personas.
 
-How S-mobiili embeds Sentti, an embeddable web module (WebView): [docs/integration.md](docs/integration.md).
+**Run it locally in one command**, with no keys and no database (the app on the API contract's example data; Node 20.19+ or 22.12+):
+
+```
+cd app && npm ci && npm run dev      # then open http://localhost:5173
+```
+
+The full stack (the core service, the dataset in PostgreSQL and a Gemini key) is described under [Run](#run) and [Data](#data). How S-mobiili embeds Sentti, an embeddable web module (WebView): [docs/integration.md](docs/integration.md). Licences: [Data & licences](#data--licences).
 
 ## Run
 
@@ -244,6 +250,10 @@ Each declared Number object must also match an expected value: same unit, value 
 - **A source that does not report its tool calls or keys** fails those checks as "unverified". The summary counts them per tag.
 - **Known limits**, not checked: numbers written as words ("twice", "kolme"), ordinals ("51st"), numerals in other scripts that NFKC does not map to digits, and wrong wording around a correct number ("per year" next to a monthly value, "rose" for a fall). A correct tool number with the wrong meaning for the question (the yearly saving where the monthly one is asked) is caught when the case requires the right one, as "missing". If the answer states both, the words around them are not checked. In the pipeline, the unit and sign of the declared Number object guard the second.
 
-## License
+## Data & licences
 
-MIT
+- **Code, texts and drawings:** MIT, see [`LICENSE`](LICENSE) (copyright (c) 2026 team shadowless1).
+- **Data:** the synthetic S-Pankki dataset of the Junction 2026 challenge, which is not stored here and is not under MIT (see [Data](#data)). Statistics Finland figures under CC BY 4.0, "Source: Statistics Finland". The financial-literacy corpus stores text only from openly licensed sources, with their attribution. S-Bank's public help pages are summarised in our own words, with links.
+- **Models and services:** the Gemini API, NVIDIA Nemotron 3.5 Super VL on Verda, Aiven for PostgreSQL and a Verda instance, each under its provider's terms.
+- **Third-party code, the font, the icons, the dependencies and every source with its licence:** [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- Sentti is a hackathon concept, not an S-Bank product. It uses no S-Bank or S-Group logos or brand assets.
