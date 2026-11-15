@@ -9,13 +9,11 @@ const examples = contract.examples as unknown as Record<string, { ai_disclosure:
 const DISCLOSURE = examples['overview.response'].ai_disclosure
 
 describe('the AI disclosure behind the header badge (#685)', () => {
-  it('the badge stays visible, with an ⓘ, in one real button with an accessible name', () => {
+  it('the title alone is the button that opens How Sentti works, with an accessible name', () => {
     const html = renderToStaticMarkup(<AboutButton onOpen={() => {}} />)
-    expect(html).toMatch(/^<button type="button" aria-haspopup="dialog" aria-label="Sentti, AI\. How Sentti works" class="[^"]*min-h-11/)
-    expect(html).toContain('<span>AI</span>')
-    expect(html).toContain('data-icon="info"')
-    // The ⓘ is drawn, not read: the button's name already says what it opens.
-    expect(html).toMatch(/<svg data-icon="info" aria-hidden="true"/)
+    expect(html).toMatch(/^<button type="button" aria-haspopup="dialog" aria-label="Sentti — how Sentti works" class="[^"]*min-h-11/)
+    expect(html).not.toContain('>AI<')
+    expect(html).not.toContain('data-icon="info"')
   })
 
   it('the accessible name follows the language', () => {
@@ -25,7 +23,7 @@ describe('the AI disclosure behind the header badge (#685)', () => {
         <AboutButton onOpen={() => {}} />
       </SettingsContext.Provider>,
     )
-    expect(html).toContain('aria-label="Sentti, tekoäly. Näin Sentti toimii"')
+    expect(html).toContain('aria-label="Sentti — näin Sentti toimii"')
   })
 
   it("the sheet it opens is a labelled dialog with the ready response's ai_disclosure", () => {

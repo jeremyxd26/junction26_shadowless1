@@ -1318,7 +1318,8 @@ META = [
                  r"kuka teki sinut|kuka sinut teki|кто ты|ты кто|ты бот)"),
     ("capabilities", rf"({_GREET} )?(what can you do|what else can you do|what do you do|how do you work|"
                      r"what can i ask( you)?|what can you help( me)? with|how can you help( me)?|"
-                     r"what are you able to do|what are you good at|"
+                     r"what are you able to do|what are you good at|how you can help( me)?|help me|"
+                     r"what can you help me with|miten (sa |sina )?voit auttaa( (mua|minua|mua nyt))?|auta (mua|minua)|"
                      r"mita osaat( tehda)?|mita sina osaat( tehda)?|mita sa osaat( tehda)?|mita voit tehda|miten toimit|"
                      r"mita (sa|sina) voit tehda|mihin (sa |sina )?pystyt|missa (sa |sina )?voit auttaa|"
                      r"что ты умеешь|что умеешь)"),

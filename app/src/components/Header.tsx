@@ -230,18 +230,12 @@ export function AboutButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       aria-haspopup="dialog"
-      aria-label={`${t.titleLabel}. ${t.aboutSentti}`}
-      className="inline-flex min-h-11 items-center gap-1.5 rounded-pill px-2 text-lg font-semibold text-ink hover:bg-sunken"
+      aria-label={t.titleLabel}
+      className="inline-flex min-h-11 items-center rounded-pill px-3 text-lg font-semibold text-ink hover:bg-sunken"
     >
+      {/* Just "Sentti" (Renat): the title itself opens "How Sentti works"; the first answer's "Sentti AI" label and the
+          introduction keep saying it is an AI. */}
       Sentti
-      {/* One element (Renat's review): the AI tag and the ⓘ in a single outlined pill, named "How Sentti works". */}
-      <span className="inline-flex items-center gap-0.5 rounded-sm border border-brand py-px pr-0.5 pl-1 text-xs font-bold leading-4 text-brand">
-        <span>AI</span>
-        <svg data-icon="info" aria-hidden="true" viewBox="0 0 24 24" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.25">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
-        </svg>
-      </span>
     </button>
   )
 }
