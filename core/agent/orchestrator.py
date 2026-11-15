@@ -1424,8 +1424,10 @@ class Pipeline:
         folded = guard.fold(message)
         if a.flags:
             return "guard"
-        if re.search(RULE_HEALTH, folded):
+        if re.search(RULE_HEALTH, folded) or talk_checks._GENERAL_HEALTH.search(message):
             return "health"
+        if talk_mode.TOPIC_STANDS_DOWN.search(folded) or talk_checks._GENERAL_OTHERS.search(message):
+            return "topic"
         if any(rx.search(message) or rx.search(folded) for rx in (talk_checks.GENERAL_BORROWING,
                                                                   talk_checks._GENERAL_BORROWING_CLASS)):
             return "borrowing"

@@ -82,6 +82,15 @@ _OPEN = re.compile(
     r"|ja sitten|mita sitten|siis|niin|mita tarkoitat|mita meinaat|onko muuta|muuta)"
     r"( (please|then|sitten|kiitos|again|more|viela))*")
 _MAX_CHARS = 300
+# The question side of the stand-down (orchestrator `_talk_stands_down`): a talk question about a bank, a product, an
+# investment, gambling, someone else's money or health keeps the normal path, where the rules decline or ask back as
+# they do today. Broad on purpose: a miss here would only send the question to dev's route.
+TOPIC_STANDS_DOWN = re.compile(
+    r"\b(banks?|banking|pankki\w*|pankin|accounts?|tili\w*|cards?|kortti\w*|kortin|funds?|rahasto\w*|stocks?|shares?"
+    r"|osake\w*|osakkeiden|invest\w*|sijoit\w*|crypto\w*|krypto\w*|bitcoin\w*|ethereum|insurance|vakuut\w*|apps?"
+    r"|sovellu\w*|broker\w*|nordea|nordnet|op|danske|s-pankki|s-mobiili|tesla|etf|gold|kulta\w*|gambl\w*|casino\w*"
+    r"|kasino\w*|betting|bets?|vedonly\w*|uhkapel\w*|veikkau\w*|lotter\w*|lotto\w*|tax|taxes|taxation|verot|verotus"
+    r"|veroja|partner\w*|wife|husband|spouse|puoliso\w*|vaimo\w*|miehe\w*|ystava\w*|friend\w*)\b")
 
 
 def _words(part: str) -> str:
