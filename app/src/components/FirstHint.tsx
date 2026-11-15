@@ -11,7 +11,9 @@ export function FirstHint({ show }: { show: boolean }) {
   const [, rerender] = useState(0)
   if (!show || firstHintDismissed()) return null
   return (
-    <div role="note" className="card-enter mb-3 flex items-start gap-3 rounded-lg border border-line bg-mint-tint px-3 py-2">
+    // The button goes under the text when the text's longest word and the button don't fit side by side
+    // (FI "Selvä" with 200 % text, #879): `flex-1` gives the text a 0 basis, so its longest word decides.
+    <div role="note" className="card-enter mb-3 flex flex-wrap items-start gap-x-3 rounded-lg border border-line bg-mint-tint px-3 py-2">
       <p className="flex-1 text-sm text-ink">{t.firstHint}</p>
       <button
         type="button"
