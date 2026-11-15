@@ -322,9 +322,27 @@ JOKE_OFFER = ("Now, want to see where your money went?", "Katsotaanko nyt, mihin
 SMALL_TALK_CHIP = {"how_are_you": BRIEF_QUESTIONS[2], "joke": BRIEF_QUESTIONS[0]}
 
 
+# "What can you do?" / "Mitä sä osaat?": one line of introduction and a short list of what Sentti does, every time.
+CAPABILITIES = (
+    "I'm Sentti, an AI coach that reads your own transactions. I can show where your money went and its three "
+    "baskets, what's left to spend this week, your bills until payday, a what-if, read a bill with you, teach short "
+    "lessons in the Learn tab and answer S-Bank help questions.",
+    "Olen Sentti, tekoälyvalmentaja, joka lukee omia tilitapahtumiasi. Näytän, mihin rahasi menivät ja niiden kolme "
+    "koria, käyttövarasi tällä viikolla ja laskusi palkkapäivään asti, teen entä jos -laskelmia, luen laskun kanssasi, "
+    "opetan lyhyitä oppitunteja Opi-välilehdellä ja vastaan S-Pankin ohjekysymyksiin.",
+)
+CAPABILITY_CHIPS = (
+    ("Where did my money go?", "Mihin rahani menivät?"),
+    ("Will my money last until payday?", "Riittävätkö rahat palkkapäivään?"),
+    ("What if I spent 20% less on restaurants?", "Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?"),
+)
+
+
 def meta_text(intent: str, language: str, introduced: bool = False, turn: int = 0) -> str:
     """The text of a meta answer; `introduced`: the full introduction was given earlier in the conversation;
     `turn`: the number of earlier turns in the conversation, which picks the joke."""
+    if intent == "capabilities":
+        return pick(CAPABILITIES, language)
     if intent == "how_are_you":
         return pick(HOW_ARE_YOU_REPLY, language)
     if intent == "joke":
@@ -345,6 +363,8 @@ def brief_questions(language: str) -> list[str]:
 
 def meta_follow_ups(intent: str, language: str) -> list[str]:
     """The chips of a meta answer: small talk turns to money with one question (#790), the rest offer all four."""
+    if intent == "capabilities":
+        return [pick(q, language) for q in CAPABILITY_CHIPS]
     return [pick(SMALL_TALK_CHIP[intent], language)] if intent in SMALL_TALK_CHIP else brief_questions(language)
 
 
