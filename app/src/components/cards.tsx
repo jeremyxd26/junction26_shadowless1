@@ -189,12 +189,12 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
   const caption = t.heroCaption[card.status ?? 'ok'] ?? t.heroCaption.ok
   const hint = was ? t.was(was.display) : motion?.steady ? t.staysSame : null
   return (
-    <section data-opening-part="hero" className="relative flex flex-col items-center pt-3 text-center">
+    <section data-opening-part="hero" className="relative flex flex-col items-center pt-1 text-center">
       <button
         type="button"
         disabled={!ref}
         onClick={() => ref && openEvidence(ref)}
-        aria-label={[`${caption}: ${primary.display}`, hint, t.heroHowMade].filter(Boolean).join('. ')}
+        aria-label={[`${caption}: ${primary.display}`, hint, t.heroAfter, t.heroHowMade].filter(Boolean).join('. ')}
         className="min-w-0 outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-offset-2 focus-visible:after:outline-brand"
       >
         {/* 56px at 375 px, down to 40px on a narrow screen or at 200 % zoom. */}
@@ -220,12 +220,10 @@ export function HeroSummary({ card, motion }: { card: MetricCard; motion?: Numbe
       </span>
       {card.estimate && (
         // Above the block's button; the badge keeps its 44px target.
-        <div className="relative z-10 -mt-1">
+        <div className="relative z-10 -mt-1.5">
           <EstimateBadge estimate={card.estimate} control={estimate.control} />
         </div>
       )}
-      {/* What the figure has already taken out: the words of metrics.md section 3, no numbers. */}
-      <p className="mt-0.5 text-xs leading-4 text-muted">{t.heroAfter}</p>
       {card.estimate && estimate.open && (
         <div className="relative z-10 mt-2 w-full text-left">
           <EstimateNote estimate={card.estimate} id={estimate.id} />

@@ -20,12 +20,6 @@ const en = {
     'Will my money last until payday?',
     'Where do my small purchases go?',
   ],
-  /** The opening's three entry cards (Renat's review): each sends its question, one of the chips. */
-  entryCards: [
-    { key: 'money', title: 'Where my money goes', line: 'Spending by category and what changed', question: 'Where did my money go?' },
-    { key: 'bills', title: 'Bills until payday', line: 'What is due, and whether your money lasts', question: 'Will my money last until payday?' },
-    { key: 'whatif', title: 'Try a what-if', line: 'What if you spent 20% less on restaurants?', question: 'What if I spent 20% less on restaurants?' },
-  ],
   moreQuestions: 'More questions',
   placeholder: 'Ask about your money',
   inputLabel: 'Your question',
@@ -78,16 +72,6 @@ const fi: ChatStrings = {
     'Mitkä ovat säännölliset kuukausilaskuni?',
     'Riittävätkö rahat palkkapäivään?',
     'Mihin pienet ostokset menevät?',
-  ],
-  entryCards: [
-    { key: 'money', title: 'Mihin rahani menevät', line: 'Kulutus luokittain ja mikä muuttui', question: 'Mihin rahani menivät?' },
-    { key: 'bills', title: 'Laskut palkkapäivään', line: 'Mitä erääntyy ja riittävätkö rahat', question: 'Riittävätkö rahat palkkapäivään?' },
-    {
-      key: 'whatif',
-      title: 'Kokeile entä jos',
-      line: 'Entä jos käyttäisit 20 % vähemmän ulkona syömiseen?',
-      question: 'Paljonko säästäisin, jos vähentäisin ulkona syömistä 20 %?',
-    },
   ],
   moreQuestions: 'Lisää kysymyksiä',
   placeholder: 'Kysy raha-asioistasi',

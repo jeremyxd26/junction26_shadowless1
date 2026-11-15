@@ -7,26 +7,65 @@ import { askInThread } from '../lib/url.ts'
 import { BottomSheet } from './BottomSheet.tsx'
 import { clientTurnRequest, clientTurns, openingChips, prefetchClientTurns } from './clientTurns.tsx'
 
-const ICONS: Record<string, ReactNode> = {
-  money: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 3v9h9" />
-    </>
-  ),
-  bills: (
-    <>
-      <path d="M7 3h7l4 4v14H7z" />
-      <path d="M14 3v4h4M10 12h5M10 16h5" />
-    </>
-  ),
-  whatif: <path d="M4 17l5-5 4 4 7-7M15 9h5v5" />,
+/** Small line icons for the chips, in the order of the questions: `openingFirst` then `openingMore`. */
+const QUESTION_ICONS: ReactNode[] = [
+  // Where did my money go?
+  <>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 4v8h8" />
+  </>,
+  // How could I save more?
+  <>
+    <path d="M5 12a7 7 0 0 1 12.5-4.3M19 12a7 7 0 0 1-12.5 4.3" />
+    <path d="M17.5 4v3.7h-3.7M6.5 20v-3.7h3.7" />
+  </>,
+  // What kind of spender am I?
+  <>
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 20c1.2-3.5 3.8-5 7-5s5.8 1.5 7 5" />
+  </>,
+  // How do I compare with people like me?
+  <>
+    <circle cx="9" cy="9" r="3" />
+    <circle cx="16.5" cy="10" r="2.5" />
+    <path d="M3.5 19c.9-2.8 3-4 5.5-4s4.6 1.2 5.5 4M15 15.2c2.6-.3 4.6.9 5.5 3.8" />
+  </>,
+  // What if I spent 20% less on restaurants?
+  <path d="M4 17l5-5 4 4 7-7M15 9h5v5" />,
+  // What are my regular monthly bills?
+  <>
+    <path d="M7 3h7l4 4v14H7z" />
+    <path d="M14 3v4h4M10 12h5M10 16h5" />
+  </>,
+  // Will my money last until payday?
+  <>
+    <rect x="4" y="5" width="16" height="15" rx="2" />
+    <path d="M4 10h16M9 3v4M15 3v4" />
+  </>,
+  // Where do my small purchases go?
+  <>
+    <path d="M6 8h12l-1 12H7z" />
+    <path d="M9 8a3 3 0 0 1 6 0" />
+  </>,
+]
+/** The client chips' icon (#319: "Show Sentti a bill"): a paperclip, like the composer's. */
+const CLIENT_ICON = <path d="M16.5 7.5l-7 7a2 2 0 0 0 2.8 2.8l7.2-7.2a4 4 0 0 0-5.7-5.7l-7.4 7.4a6 6 0 0 0 8.5 8.5l6.6-6.6" />
+
+/** Chips in the first row; the rest go in the second. */
+const FIRST_ROW = 5
+
+interface Item {
+  id: string
+  text: string
+  icon: ReactNode
+  act: () => void
 }
 
 /**
- * The opening's ways in (Renat's review): three full-width entry cards (icon, title, one line), each
- * sending its existing question, then "More questions ›", which opens a sheet with every question and
- * the client chips (#319: "Show Sentti a bill"). Nothing is cut off at 375 px.
+ * The opening's ways in (Renat's light redesign): small pill chips with line icons in two rows that scroll
+ * sideways, with soft fades at both edges so no chip looks cut off, then a centred "More questions" pill that
+ * opens the sheet with every question and the client chips (#319: "Show Sentti a bill"). Each chip sends its
+ * question as it is; 44px targets at any text size.
  */
 export function OpeningChips() {
   // The client turns' code loads at idle once the opening shows, ahead of the first tap (#728).
@@ -36,15 +75,21 @@ export function OpeningChips() {
   const [more, setMore] = useState(false)
   if (!opening) return null
   const s = chatStrings(lang)
-  const cards = s.entryCards
-  const client = openingChips
+  const client: Item[] = openingChips
     .filter((key) => clientTurns[key]?.visible())
     .map((key) => {
       const request = clientTurnRequest(key, lang)
-      return { id: `c:${key}`, text: request.question, act: () => opening.pushClientTurn(request) }
+      return { id: `c:${key}`, text: request.question, icon: CLIENT_ICON, act: () => opening.pushClientTurn(request) }
     })
-  const ask = (question: string) => ({ id: `q:${question}`, text: question, act: () => askInThread(question) })
+  const questions = [...s.openingFirst, ...s.openingMore]
+  const ask = (question: string): Item => ({
+    id: `q:${question}`,
+    text: question,
+    icon: QUESTION_ICONS[questions.indexOf(question)] ?? QUESTION_ICONS[0],
+    act: () => askInThread(question),
+  })
   const items = [...s.openingFirst.map(ask), ...client, ...s.openingMore.map(ask)]
+  const rows = [items.slice(0, FIRST_ROW), items.slice(FIRST_ROW)].filter((row) => row.length > 0)
 
   const sheet = (
     <BottomSheet title={t.questionsLabel} onClose={() => setMore(false)}>
@@ -68,36 +113,35 @@ export function OpeningChips() {
   )
 
   return (
-    <div data-opening-part="client-chips" className="flex flex-col gap-2">
-      <ul aria-label={t.questionsLabel} className="flex flex-col gap-2">
-        {cards.map((card) => (
-          <li key={card.key}>
-            <button
-              type="button"
-              onClick={() => askInThread(card.question)}
-              className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-line bg-surface p-3 text-left hover:bg-sunken"
-            >
-              <span aria-hidden="true" className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-mint-tint text-brand">
-                <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  {ICONS[card.key]}
+    <div data-opening-part="client-chips" className="flex flex-col gap-2 pt-1">
+      {rows.map((row, index) => (
+        // Edge to edge (out of the page's 16px gutters), scrolling sideways without a bar, faded at both edges.
+        <ul
+          key={index}
+          aria-label={index === 0 ? t.questionsLabel : undefined}
+          className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] [mask-image:linear-gradient(to_right,transparent,#000_16px,#000_calc(100%-16px),transparent)] [&::-webkit-scrollbar]:hidden"
+        >
+          {row.map((item) => (
+            <li key={item.id} className="shrink-0">
+              <button
+                type="button"
+                onClick={item.act}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-sm whitespace-nowrap text-ink hover:bg-sunken"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  {item.icon}
                 </svg>
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-base font-semibold text-ink">{card.title}</span>
-                <span className="text-sm text-ink-2">{card.line}</span>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </li>
-        ))}
-      </ul>
+                {item.text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ))}
       <button
         type="button"
         onClick={() => setMore(true)}
         aria-haspopup="dialog"
-        className="inline-flex min-h-11 items-center gap-1 self-start rounded-pill px-3 text-base font-semibold text-brand hover:bg-sunken"
+        className="mt-1 inline-flex min-h-11 items-center gap-1 self-center rounded-pill border border-line-strong bg-surface px-4 text-sm font-semibold text-ink hover:bg-sunken"
       >
         {s.moreQuestions}
         <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.25">

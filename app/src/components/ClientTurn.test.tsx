@@ -74,11 +74,15 @@ describe('the opening\'s client-turn chips (#319)', () => {
     openingChips.splice(0, openingChips.length, ...registered)
   })
 
-  it('shows three entry cards and "More questions"; the sheet lists "Show Sentti a bill" (#332) after the first two questions', () => {
+  it('shows every question as a chip in two rows and "More questions"; "Show Sentti a bill" (#332) after the first two questions', () => {
     expect(openingChips).toEqual(['bill'])
     const html = chips()
     expect(html).toContain('data-opening-part="client-chips"')
-    for (const title of ['Where my money goes', 'Bills until payday', 'Try a what-if', 'More questions']) expect(html).toContain(title)
+    expect(html.match(/<ul/g)).toHaveLength(2)
+    for (const text of [...chipTexts('en'), 'More questions']) expect(html).toContain(text)
+    // Small pills with a line icon, 44px targets, faded at the row's edges so nothing looks cut off.
+    expect(html.match(/min-h-11 items-center gap-1\.5 rounded-pill/g)).toHaveLength(9)
+    expect(html).toContain('mask-image:linear-gradient')
     const texts = chipTexts('en')
     expect(texts).toHaveLength(9)
     expect(texts.indexOf('Show Sentti a bill')).toBe(2)
