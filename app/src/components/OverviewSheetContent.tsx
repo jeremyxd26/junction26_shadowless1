@@ -3,6 +3,7 @@ import type { OverviewResponse } from '../api/types.ts'
 import { isBasketsCard } from '../lib/changes.ts'
 import { useSettings } from '../lib/settings.ts'
 import { openWhatIf } from '../lib/url.ts'
+import { BasketDonut } from './BasketDonut.tsx'
 import { BasketStrip } from './BasketStrip.tsx'
 import { BillsCards } from './BillsCard.tsx'
 import { HeroCard, InsightCard } from './cards.tsx'
@@ -41,6 +42,13 @@ export function OverviewSheetContent({ overview }: { overview: OverviewResponse 
     <div className="flex flex-col gap-3">
       {/* One main answer on top, then compact sections (Renat's review). */}
       {overview.hero && <HeroCard card={overview.hero} />}
+      {/* The three baskets as a donut, open at the top (Renat, #953); the details stay in the section below. */}
+      {baskets && (
+        <section aria-label={t.overviewSections.money} className="rounded-lg border border-line bg-surface p-4">
+          <h2 className="text-base font-semibold text-ink">{t.overviewSections.money}</h2>
+          <BasketDonut card={baskets} />
+        </section>
+      )}
       {(baskets || overview.insights.length > 0) && (
         <Section title={t.overviewSections.money}>
           {baskets && <BasketStrip card={baskets} />}

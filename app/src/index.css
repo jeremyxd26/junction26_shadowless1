@@ -391,6 +391,16 @@ select {
   }
 }
 
+/* The baskets donut's segments sweep in once (500 ms, ease-out, 80 ms apart, #953); none under reduced motion. */
+@keyframes donut-sweep {
+  from {
+    stroke-dasharray: 0 999;
+  }
+}
+.donut-sweep {
+  animation: donut-sweep 500ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

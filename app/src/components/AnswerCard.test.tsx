@@ -145,26 +145,29 @@ describe('AnswerCard: profile, peer and bills', () => {
   const basketsOf = (name: string) =>
     (examples[name] as { cards: Card[] }).cards.find(
       (card) => card.type === 'breakdown' && (card as unknown as { items: { key: string }[] }).items.some((item) => item.key === 'regular_essentials'),
-    ) as Card & { total: { display: string }; items: { label: string }[]; comparison: unknown }
+    ) as Card & { total: { display: string }; items: { label: string; amount: { display: string }; share: { value: number } | null }[]; comparison: unknown }
 
-  it('baskets breakdown (#696): the total large, every basket as a row, no green pills', () => {
+  it('baskets breakdown (#696, #953): a donut with the total in the centre, every basket in its legend, the comparison row kept', () => {
     const baskets = basketsOf('overview.response')
     const html = render(baskets)
-    expect(html).toContain('data-answer-main')
+    expect(html).toContain('data-basket-donut')
+    expect(html).not.toContain('data-answer-main')
     expect(html).toContain(baskets.total.display)
-    const rows = html.split('data-figure-row').slice(1)
-    expect(rows.length).toBe(baskets.items.length + (baskets.comparison ? 1 : 0))
-    baskets.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
-    expect(html).not.toContain('bg-mint')
+    for (const item of baskets.items.filter((i) => i.share && i.share.value > 0)) {
+      expect(html).toContain(escape(item.label))
+      expect(html).toContain(item.amount.display)
+    }
+    expect(html.split('data-figure-row').length - 1).toBe(baskets.comparison ? 1 : 0)
+    expect(html).toMatch(/role="img" aria-label="Where your money went: /)
     expect(html).not.toContain(`<h3`)
   })
 
   it('baskets with a review pending (#696 ruling): all four parts of the total, "Waiting for your answer" included', () => {
     const pending = basketsOf('overview.response_pending')
     expect(pending.items.length).toBe(4)
-    const rows = render(pending).split('data-figure-row').slice(1)
-    expect(rows.length).toBeGreaterThanOrEqual(4)
-    pending.items.forEach((item, index) => expect(rows[index]).toContain(escape(item.label)))
+    const html = render(pending)
+    // Every part with a share is in the donut's legend, "Waiting for your answer" included (#953).
+    for (const item of pending.items.filter((i) => i.share && i.share.value > 0)) expect(html).toContain(escape(item.label))
   })
 
   it('bills (#696): the total due before payday large, every bill as a row (no part of the total is cut)', () => {
