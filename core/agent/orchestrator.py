@@ -1833,8 +1833,9 @@ class Pipeline:
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
         fragments = self.finlit_fragments(ctx.customer_id, message, lang)
-        if not fragments:
-            return False
+        if not fragments and term is not None:
+            return False   # no source close enough: the glossary's own definition answers
+        # with no source close enough (the relevance floor), the answer is plain words with no source line
         credited = finlit_kb.named(fragments)
         sources = [f.data(include_text=f in credited) for f in fragments]
         if term is not None:   # the glossary's definition keeps the grounded answer consistent with Sentti's words
@@ -1842,7 +1843,7 @@ class Pipeline:
         prev = conv.turns[-1] if conv is not None and conv.turns else None
         request = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=[], errors=[],
                                previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
-                               sources=sources, literacy=True)
+                               sources=sources or None, literacy=True)
         self._start_compose_answer(request)
         body: str | None = None
         errors: list[str] = []
@@ -1872,7 +1873,8 @@ class Pipeline:
             fixed, credited = True, []
         a.kind = "general"
         a.planner_turns.append({"round": 1, "source": "rules",
-                                "finlit": "fixed_reasons" if fixed else [f.source_id for f in fragments], "calls": []})
+                                "finlit": "fixed_reasons" if fixed else ([f.source_id for f in fragments] or "no_source"),
+                                "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
         line = f" {finlit_kb.source_line(credited, lang)}" if credited else ""

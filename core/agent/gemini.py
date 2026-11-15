@@ -197,8 +197,9 @@ def compose_text(request: ComposeInput) -> str:
     if request.literacy:
         # #884: only a literacy answer carries these lines, so every other request keeps its cache key
         lines += ["", "Kind of answer: a general money question. No calculation was run, so <data> is empty and this "
-                      "is not a failure. Explain the idea in two to four plain sentences in your own words, using the "
-                      "background below where it helps. State no number in any form, in words or digits. Name no "
+                      "is not a failure. Explain the idea in two to four plain sentences in your own words"
+                      + (", using the background below where it helps." if request.sources else
+                         ", from general knowledge.") + " State no number in any form, in words or digits. Name no "
                       "product, bank or source and add no link: the server adds the source line. Do not mention loans, "
                       "credit, investing or funds, not even as a contrast. In Finnish, call money set aside "
                       "'säästöt' or 'puskuri', never 'rahasto'."]
