@@ -9,9 +9,11 @@ import {
   readOutput,
   speakAnswer,
   speakingNow,
+  setPlaybackGate,
   stopSpeaking,
   subscribeSpeaking,
   voiceBudgetLow,
+  voiceLog,
 } from './speech.ts'
 import {
   AUDIO_BITS_PER_SECOND,
@@ -28,8 +30,10 @@ import type { Turn } from './thread.ts'
 import {
   LISTEN_MS,
   MAX_EMPTY_ROUNDS,
+  QUIET_BEFORE_VOICE_MS,
   SILENT_CLOSE_MS,
   bargeDetector,
+  speechMeter,
   endpointer,
   followAnswer,
   waveBars,
@@ -115,6 +119,9 @@ export class VoiceSession {
   private barge = 0
   /** The next round starts with speech already going (the user spoke over Sentti). */
   private bargedIn = false
+  /** Reads the microphone all session long: the playback gate asks it whether the user spoke just now (#898). */
+  private readonly meter = speechMeter()
+  private meterTicker = 0
   private readonly unsubscribe: () => void
   private readonly onHidden = () => {
     if (document.hidden) this.end()
@@ -136,8 +143,15 @@ export class VoiceSession {
   readonly getSnapshot = () => this.snapshot
 
   private set(change: Partial<VoiceSnapshot>) {
+    if (change.phase && change.phase !== this.snapshot.phase) voiceLog(`phase ${this.snapshot.phase} -> ${change.phase}`)
     this.snapshot = { ...this.snapshot, ...change }
     for (const listener of this.listeners) listener()
+  }
+
+  /** The user is quiet: nothing heard for QUIET_BEFORE_VOICE_MS (no meter: always quiet). */
+  private quietNow(): boolean {
+    const last = this.meter.lastSpeech()
+    return last === null || Date.now() - last >= QUIET_BEFORE_VOICE_MS
   }
 
   /** Opens the microphone (call it in the tap) and starts the first round. */
@@ -173,6 +187,16 @@ export class VoiceSession {
     const settings = stream.getAudioTracks?.()[0]?.getSettings?.()
     this.lastHeardAt = Date.now()
     this.set({ micOn: true, bargeIn: analyser !== null && settings?.echoCancellation !== false })
+    voiceLog('microphone open', { echoCancellation: settings?.echoCancellation, bargeIn: this.snapshot.bargeIn })
+    if (analyser) {
+      const mic = this.mic
+      this.meterTicker = window.setInterval(() => {
+        analyser.getByteTimeDomainData(mic.time)
+        this.meter.push(levelOf(mic.time), Date.now())
+      }, TICK_MS)
+    }
+    // No voice starts while the user speaks or within a second after (#898).
+    setPlaybackGate(() => this.quietNow())
     this.listen()
   }
 
@@ -303,7 +327,10 @@ export class VoiceSession {
       // No meter: the round runs to the time limit or a tap.
       state = now - round.started >= LISTEN_MS ? 'end' : 'waiting'
     }
-    if (state === 'end' || state === 'nothing') this.stopRound(round)
+    if (state === 'end' || state === 'nothing') {
+      voiceLog(`round ends: ${state}`, { ms: now - round.started })
+      this.stopRound(round)
+    }
   }
 
   private stopRound(round: Round) {
@@ -362,6 +389,7 @@ export class VoiceSession {
         this.empty = 0
         this.askedAfter = this.turns.reduce((last, turn) => Math.max(last, turn.id), 0)
         this.set({ heard: text })
+        voiceLog('question sent', text)
         window.clearTimeout(this.watchdog)
         this.watchdog = window.setTimeout(() => this.end({ kind: 'answer' }), ANSWER_MS)
         this.deps.ask(text)
@@ -396,6 +424,7 @@ export class VoiceSession {
       return
     }
     const id = String(turnId)
+    voiceLog('answer done, voice requested', { turn: id, remote: Boolean(remote) })
     // Fetched "ahead" first, so the speaker button's own prefetch of the latest answer finds it: one request.
     if (remote) prefetchVoice(remote)
     speakAnswer(id, text, voice, remote)
@@ -425,6 +454,7 @@ export class VoiceSession {
       window.clearInterval(this.barge)
       this.bargedIn = true
       this.lastHeardAt = Date.now()
+      voiceLog('barge-in: the user speaks over Sentti, voice stopped')
       stopSpeaking()
     }, TICK_MS)
   }
@@ -434,6 +464,7 @@ export class VoiceSession {
     if (this.ended || this.speaking === null || speakingNow() === this.speaking) return
     window.clearInterval(this.barge)
     this.speaking = null
+    voiceLog('voice ended')
     this.listen()
   }
 
@@ -443,6 +474,9 @@ export class VoiceSession {
     window.clearTimeout(this.releaseTimer)
     window.clearTimeout(this.watchdog)
     window.clearInterval(this.barge)
+    window.clearInterval(this.meterTicker)
+    setPlaybackGate(null)
+    voiceLog('voice mode ends', reason ?? 'exit')
     document.removeEventListener('visibilitychange', this.onHidden)
     this.unsubscribe()
     const round = this.round

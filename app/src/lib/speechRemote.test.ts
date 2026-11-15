@@ -117,6 +117,39 @@ describe('speakAnswer in a live build', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('voice-mode gate (#898): no voice starts while the user speaks; it starts when quiet; a stop drops it', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('console', { ...console, info: () => {} })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) }))
+    let quiet = false
+    speech.setPlaybackGate(() => quiet)
+    speech.speakAnswer('7', 'Text.', voice, remote)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sources).toHaveLength(0) // fetched and decoded, but the user is speaking
+    quiet = true
+    await vi.advanceTimersByTimeAsync(150)
+    expect(sources).toHaveLength(1)
+    expect(sources[0].started).toBe(1)
+    // A second answer at a closed gate, then stopped (a barge-in): it never starts.
+    quiet = false
+    speech.speakAnswer('8', 'Text.', voice, { ...remote, answerId: 'ans_bbbb2222' })
+    await vi.advanceTimersByTimeAsync(300)
+    speech.stopSpeaking()
+    quiet = true
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sources).toHaveLength(1)
+    // The device voice waits at the gate too.
+    quiet = false
+    speech.speak('9', 'Device text.', voice)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(spoken).toHaveLength(0)
+    quiet = true
+    await vi.advanceTimersByTimeAsync(150)
+    expect(spoken.map((u) => u.text)).toEqual(['Device text.'])
+    speech.setPlaybackGate(null)
+    vi.useRealTimers()
+  })
+
   it('falls back to the device voice on an error answer', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
     speech.speakAnswer('7', 'Groceries were 412.30 EUR.', voice, remote)

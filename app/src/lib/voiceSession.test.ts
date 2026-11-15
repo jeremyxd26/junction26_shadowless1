@@ -12,6 +12,7 @@ const speech = vi.hoisted(() => {
     calls: [] as { id: string; text: string; remote: unknown; voice: unknown }[],
     prefetched: [] as unknown[],
     stops: 0,
+    gate: null as (() => boolean) | null,
   }
   const notify = () => listeners.forEach((listener) => listener())
   return { listeners, state, notify }
@@ -37,6 +38,8 @@ vi.mock('./speech.ts', () => ({
     return () => speech.listeners.delete(listener)
   },
   voiceBudgetLow: () => speech.state.budgetLow,
+  setPlaybackGate: (gate: (() => boolean) | null) => (speech.state.gate = gate),
+  voiceLog: () => {},
 }))
 
 let loud = false
@@ -244,6 +247,22 @@ describe('VoiceSession (#811)', () => {
     expect(closed).toEqual([])
     await sayAQuestion()
     expect(closed).toEqual([{ kind: 'nothing' }])
+  })
+
+  it('the playback gate (#898) is closed while the user speaks and for a second after, and removed on exit', async () => {
+    const { session } = await open()
+    const gate = () => speech.state.gate?.() ?? true
+    expect(gate()).toBe(true) // nothing heard yet
+    loud = true
+    await vi.advanceTimersByTimeAsync(300)
+    expect(gate()).toBe(false) // speaking now
+    loud = false
+    await vi.advanceTimersByTimeAsync(600)
+    expect(gate()).toBe(false) // just stopped
+    await vi.advanceTimersByTimeAsync(600)
+    expect(gate()).toBe(true) // quiet for over a second
+    session.exit()
+    expect(speech.state.gate).toBeNull()
   })
 
   it('opens the microphone with echo cancellation, noise suppression and gain control', async () => {

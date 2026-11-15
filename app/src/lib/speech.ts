@@ -96,6 +96,50 @@ export function useSpeakingId(): string | null {
   return useSyncExternalStore(subscribeSpeaking, speakingNow, speakingNow)
 }
 
+// Voice mode's hard gate (#898): no voice STARTS while the user is speaking or just stopped. Checked at the moment
+// playback would begin (after the fetch and the decoding too), so a late answer never talks over the user.
+let gate: (() => boolean) | null = null
+const GATE_POLL_MS = 100
+/** After this long at a closed gate the voice starts anyway (a room that never goes quiet must not silence Sentti). */
+const GATE_MAX_MS = 6000
+
+/** Voice mode sets the gate (true: the user is quiet, a voice may start); null removes it. */
+export function setPlaybackGate(next: (() => boolean) | null) {
+  gate = next
+}
+
+/** A voice-mode log line with a timestamp, so a state sequence can be read in the console (#898). */
+export function voiceLog(event: string, detail?: unknown) {
+  if (typeof console === 'undefined') return
+  const at = new Date().toISOString().slice(11, 23)
+  if (detail === undefined) console.info(`[sentti voice ${at}] ${event}`)
+  else console.info(`[sentti voice ${at}] ${event}`, detail)
+}
+
+/** Runs `start` once the gate allows it; drops it when `alive` turns false first (stopped, interrupted). */
+function afterGate(alive: () => boolean, start: () => void, what: string) {
+  if (!alive()) return
+  if (!gate || gate()) {
+    start()
+    return
+  }
+  voiceLog(`${what}: waiting, the user is speaking`)
+  const since = Date.now()
+  const timer = setInterval(() => {
+    if (!alive()) {
+      clearInterval(timer)
+      voiceLog(`${what}: dropped before it started`)
+      return
+    }
+    const late = Date.now() - since >= GATE_MAX_MS
+    if (!gate || gate() || late) {
+      clearInterval(timer)
+      if (late) voiceLog(`${what}: starting after ${GATE_MAX_MS} ms at the gate`)
+      start()
+    }
+  }, GATE_POLL_MS)
+}
+
 /** Speaks `text` for the answer `id`, stopping whatever was speaking. */
 export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
   const s = synth()
@@ -117,7 +161,14 @@ export function speak(id: string, text: string, voice: SpeechSynthesisVoice) {
   utterance.onerror = finish
   current = utterance
   setSpeaking(id)
-  s.speak(utterance)
+  afterGate(
+    () => current === utterance,
+    () => {
+      voiceLog('device voice starts', id)
+      s.speak(utterance)
+    },
+    'device voice',
+  )
 }
 
 /** Stops speech; with `id`, only when that answer is the one speaking. */
@@ -306,18 +357,25 @@ export function speakAnswer(id: string, text: string, voice: SpeechSynthesisVoic
     .then((buffer) => {
       clearTimeout(timer)
       if (pending !== controller) return
-      pending = null
-      setPreparing(null)
-      const node = ctx.createBufferSource()
-      node.buffer = buffer
-      node.connect(outputNode(ctx))
-      node.onended = () => {
-        if (source !== node) return
-        source = null
-        setSpeaking(null)
-      }
-      source = node
-      node.start()
+      afterGate(
+        () => pending === controller,
+        () => {
+          pending = null
+          setPreparing(null)
+          const node = ctx.createBufferSource()
+          node.buffer = buffer
+          node.connect(outputNode(ctx))
+          node.onended = () => {
+            if (source !== node) return
+            source = null
+            setSpeaking(null)
+          }
+          source = node
+          voiceLog('Gemini voice starts', id)
+          node.start()
+        },
+        'Gemini voice',
+      )
     })
     .catch(() => {
       clearTimeout(timer)

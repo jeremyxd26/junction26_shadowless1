@@ -38,7 +38,7 @@ const QUIET_OVER_FLOOR = 1.6
 /** Barge-in: while Sentti speaks, the user's voice must be this loud (higher than normal speech, so Sentti's own
  * voice leaking into the microphone does not count), for this long, and not in the first moment of playback. */
 export const BARGE_LEVEL = 0.32
-export const BARGE_MS = 300
+export const BARGE_MS = 200
 export const BARGE_GRACE_MS = 600
 
 /** Whether this build and browser can offer voice mode: a live build with a microphone API and a persona. */
@@ -116,6 +116,30 @@ export function bargeDetector(start: number): { push(level: number, now: number)
       if (level >= BARGE_LEVEL) loudMs += step
       else if (level < BARGE_LEVEL / 2) loudMs = 0
       return loudMs >= BARGE_MS
+    },
+  }
+}
+
+/** No voice starts until this long after the user's last speech (#898). */
+export const QUIET_BEFORE_VOICE_MS = 1000
+
+/**
+ * The session's speech meter (#898), read all the time the microphone is open: whether the user is speaking now,
+ * against the room's noise floor like the endpointer, and when speech was last heard.
+ */
+export function speechMeter(): { push(level: number, now: number): boolean; lastSpeech(): number | null } {
+  let floor: number | null = null
+  let lastSpeech: number | null = null
+  return {
+    lastSpeech: () => lastSpeech,
+    push(level, now) {
+      const speech = Math.max(SPEECH_LEVEL, (floor ?? 0) * SPEECH_OVER_FLOOR)
+      if (level >= speech) {
+        lastSpeech = now
+        return true
+      }
+      floor = floor === null ? level : floor * 0.95 + level * 0.05
+      return false
     },
   }
 }
