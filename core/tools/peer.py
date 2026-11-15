@@ -78,6 +78,23 @@ class NationalContext(BaseModel):
     what_short: str         # the same, short, when the long form would break the length rule
 
 
+class AgeBandMedians(BaseModel):
+    """#883: the band's median monthly figures, each a Number of peer.age_band_median@1."""
+    regular_essentials: Number
+    unexpected_necessities: Number
+    everyday_spending: Number
+    ordinary_spending: Number    # the spend flow: all outgoing spending except Invest Deposit and Salary Sweep
+
+
+class AgeBand(BaseModel):
+    """#883: the customer's age band in the whole synthetic dataset (09_age_band_peer.sql): context, not a target."""
+    band: str                    # "35-44", "65+"
+    cohort_size: Number          # everyone of the band in the dataset, peer.age_band_cohort_size@1
+    period: Period               # the window of the comparison, the last 6 complete months
+    dataset: Literal["synthetic"] = "synthetic"
+    medians: AgeBandMedians
+
+
 class PeerBenchmarkData(BaseModel):
     metric: str
     metric_label: str
@@ -93,6 +110,7 @@ class PeerBenchmarkData(BaseModel):
     peer_group: PeerGroup
     peer_source: Literal["marts", "range"]
     national: NationalContext | None = None   # #569: only for a kept category, a shown card and a table age group
+    age_band: AgeBand | None = None           # #883: only for total spending, a shown card and a band of 30 or more
 
 
 # ---- pure logic --------------------------------------------------------------------------------------
@@ -118,6 +136,20 @@ def group_label(level: str, group: str, language: str) -> str:
             else _t("group_city_other", language, code=area)
         return _t("group_age_band+city", language, age=age, city=city)
     return _t("group_age_band", language, age=age)
+
+
+def age_band_for(age: int | None) -> str | None:
+    """#883: the band of an age (18-24 / 25-34 / 35-44 / 45-54 / 55-64 / 65+), as 09_age_band_peer.sql maps it;
+    None without an age or under 18."""
+    if age is None:
+        return None
+    return next((band for band, first, last in config.AGE_BANDS if age >= first and (last is None or age <= last)),
+                None)
+
+
+def band_shown(cohort_size: int, min_n: int | None = None) -> bool:
+    """#883: a band's medians are shown only for at least AGE_BAND_MIN_N customers (09's `shown`)."""
+    return cohort_size >= (int(config.AGE_BAND_MIN_N) if min_n is None else min_n)
 
 
 def metric_label(metric: str, language: str) -> str:
@@ -207,6 +239,8 @@ def get_peer_benchmark(ctx: ToolContext, args: GetPeerBenchmarkArgs | dict) -> T
     )
     # #569: registered after every Number of the comparison, so their ids and refs do not change
     data.national = _national(nb, reg, metric, level, row["peer_group"], lang) if shown else None
+    # #883: registered last, after the national line, so every earlier id and ref stays as it was
+    data.age_band = _age_band(nb, reg, ctx, lang) if shown and metric in config.AGE_BAND_MEASURE_OF else None
     evidence.write(ctx.conn, nb.specs)
     estimate = {"label": _t("estimate_label", lang), "text": _t(f"estimate_{level}", lang)} if shown else None
     # the offer is decided once, for the card's action and the answer's sentence alike (#418, #379 part B)
@@ -237,6 +271,46 @@ def _national(nb: NumberBuilder, reg, metric: str, level: str, peer_group: str, 
     return NationalContext(amount=reg(amount), age_group=fig.age_group, survey_year=fig.survey_year,
                            source=fig.source[lang].split(",")[0], what=config.label(config.NATIONAL_WHAT[metric], lang),
                            what_short=config.label(config.NATIONAL_WHAT_SHORT[metric], lang))
+
+
+def _age_band(nb: NumberBuilder, reg, ctx: ToolContext, lang: str) -> AgeBand | None:
+    """#883: the customer's age band in the whole synthetic dataset, from 09_age_band_peer.sql (the marts; one run
+    for this customer, its band's row). None when the marts are not built for as_of, the customer has no band or
+    the band has fewer than AGE_BAND_MIN_N customers. Any failure only drops the band, never the comparison."""
+    settings = {"band_min_n": config.AGE_BAND_MIN_N}   # pinned, so a session setting can never leak in
+    try:
+        row = metric_sql.run_one(ctx.conn, config.AGE_BAND_FILE, ctx.customer_id, ctx.as_of, settings)
+    except Exception as exc:  # noqa: BLE001 - the class name is logged; the card goes out without the band
+        log.warning("age band query failed (%s); the comparison goes without it", type(exc).__name__)
+        return None
+    if row is None or not row.get("age_band"):
+        return None
+    cohort = int(row["cohort_size"])
+    if band_shown(cohort) != bool(row["shown"]):
+        log.warning("age band status rule in this module and 09_age_band_peer.sql differ")
+    if not (band_shown(cohort) and row["shown"]):
+        return None
+    start, end = row["period_start"], row["period_end"]
+    period = Period(start=start, end=end, label=periods.period_label(start, end, lang))
+    # the evidence view names the band, its size and the measure from params (no digits in any label)
+    params = {"period": evidence.period_param(period), "band": row["age_band"], "cohort_size": str(cohort)}
+
+    def number(method: str, column: str, value: Decimal, unit: Unit, label: str, **extra: str) -> Number:
+        spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.AGE_BAND_FILE, column, settings,
+                                    value, params["period"])
+        spec["params"] = {**params, **extra}
+        return reg(nb.number(value, unit, period, method, spec, label))
+
+    size = number(config.METHODS["age_band_cohort"], "cohort_size", Decimal(cohort), Unit.COUNT,
+                  _t("age_band_cohort", lang))
+    medians = {}
+    for measure in config.AGE_BAND_MEASURES:
+        what = _t("ordinary_spending", lang) if measure == "ordinary_spending" \
+            else config.label(config.BASKET_LABELS[measure], lang)
+        medians[measure] = number(config.METHODS["age_band_median"], f"median_{measure}_month_eur",
+                                  metric_sql.decimal(row[f"median_{measure}_month_eur"]), Unit.EUR_PER_MONTH,
+                                  _t("age_band_median", lang, what=what), measure=measure)
+    return AgeBand(band=row["age_band"], cohort_size=size, period=period, medians=AgeBandMedians(**medians))
 
 
 def what_if_offered(ctx: ToolContext, metric: str, rows: list | None = None) -> bool:
@@ -336,4 +410,14 @@ def _model_view(data: PeerBenchmarkData, estimate: dict[str, str] | None, notes:
                          "source": data.national.source, "what": data.national.what,
                          "what_short": data.national.what_short, "context_only": True}}
            if data.national else {}),
+        # #883: only with a band, so every other peer view stays as it was; no band digits (the digit rule): the
+        # band is named on the evidence view; the median of the measure this metric is, beside the band's size
+        **({"age_band": _age_band_view(data)} if data.age_band else {}),
     }
+
+
+def _age_band_view(data: PeerBenchmarkData) -> dict[str, Any]:
+    band = data.age_band
+    measure = config.AGE_BAND_MEASURE_OF.get(data.metric, "ordinary_spending")
+    return {"cohort_size": model_number(band.cohort_size), "median": model_number(getattr(band.medians, measure)),
+            "measure": measure, "period": band.period.label, "dataset": band.dataset, "context_only": True}

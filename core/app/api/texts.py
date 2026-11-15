@@ -354,8 +354,29 @@ METHODS["national_context.monthly_eur@1"] = MethodInfo(
      "jaettuna 12:lla; liikenteestä on jätetty pois ajoneuvojen osto. Julkinen tilasto, ei laskettu "
      "tapahtumistasi."),
     "README.md#national-context")
+# The customer's age band in the whole synthetic dataset beside the peer comparison (#883, 09_age_band_peer.sql):
+# a median over the band's customers and the band's size, context and not a target. No digits in the summaries.
+METHODS["peer.age_band_median@1"] = MethodInfo(
+    Unit.EUR_PER_MONTH, ("Median of people your age", "Ikäryhmäsi mediaani"),
+    ("Each customer's monthly average over the last complete months with history, then the middle value across "
+     "everyone of your age band in this synthetic dataset. Ordinary spending leaves out investment deposits and "
+     "salary sweeps. Context, not a target.",
+     "Jokaisen asiakkaan kuukausikeskiarvo viimeisiltä täysiltä kuukausilta, joilta on tietoja, ja siitä keskimmäinen "
+     "arvo kaikista ikäryhmäsi ihmisistä tässä synteettisessä aineistossa. Tavallisesta kulutuksesta on jätetty pois "
+     "sijoitustalletukset ja palkan siirrot. Taustatietoa, ei tavoite."),
+    METRICS_DOC + "#6-peer-benchmark")
+METHODS["peer.age_band_cohort_size@1"] = MethodInfo(
+    Unit.COUNT, ("People your age in the dataset", "Ikäryhmäsi ihmiset aineistossa"),
+    ("Everyone of your age band in this synthetic dataset; a band with too few people is not shown.",
+     "Kaikki ikäryhmäsi ihmiset tässä synteettisessä aineistossa; liian pientä ryhmää ei näytetä."),
+    METRICS_DOC + "#6-peer-benchmark")
+# their label in the opened evidence view: the band and the measure (no answer text: digits fine)
+AGE_BAND_LABEL = ("People aged {band} in the synthetic dataset: {what}, median",
+                  "{band}-vuotiaat synteettisessä aineistossa: {what}, mediaani")
+AGE_BAND_COHORT_LABEL = ("People aged {band} in the synthetic dataset", "{band}-vuotiaat synteettisessä aineistossa")
+AGE_BAND_COHORT_PART = ("People in the band", "Ihmisiä ikäryhmässä")
 # its label in the opened evidence view: the table's age band and the survey's category (no answer text: digits fine)
-NATIONAL_LABEL = ("Households with a reference person aged {band}: {what}, per consumption unit",
+NATIONAL_LABEL =("Households with a reference person aged {band}: {what}, per consumption unit",
                   "Kotitaloudet, joiden viitehenkilö on {band}-vuotias: {what}, kulutusyksikköä kohti")
 
 # S-Bonus what-if estimate (#158): composites of the grocery month average and the rules file.

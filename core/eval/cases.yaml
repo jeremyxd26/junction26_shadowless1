@@ -150,7 +150,10 @@ cases:
   - {name: peer_percentile_spend, value: 51.0, unit: percentile, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: percentile}}
   - {name: peer_median_spend_month, value: 2975.65, unit: eur_per_month, tolerance: 0.005, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_median_month_eur}}
   - {name: peer_group_size, value: 118, unit: count, tolerance: 0, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: peer_n}}
-  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  # #883: the answer gives the personal figure first, then the age band's median in the synthetic dataset; the
+  # gap to the peer group's median stays on the card
+  - {name: peer_gap_pct, value: 1.2, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: you_month_spend, value: 3010.59, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: you_month_eur}}
 
 - id: marja-peer-comparison
   persona: CUST00493
@@ -160,7 +163,8 @@ cases:
   expected_tools: [get_peer_benchmark]
   tags: [peers, below_median]
   numbers:
-  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: peer_gap_pct, value: -40.5, unit: percent, tolerance: 0.01, required: false, source: {metric: peer_benchmark, where: {metric: spend_total}, column: vs_median_pct}}
+  - {name: you_month_spend, value: 2124.09, unit: eur_per_month, tolerance: 0.005, source: {metric: peer_benchmark, where: {metric: spend_total}, column: you_month_eur}}
   forbid_text:
   - {name: change_invitation, pattern: 'savings\s+plan|where\s+to\s+start|what-if|what\s+if|\bcut\w*|\btrim\w*|\breduc\w*|säästösuunnitelm\w*|mistä\s+aloittaa|laskelm\w*|vähentä\w*|vähennä\w*|leikk\w*|leikat\w*'}
 

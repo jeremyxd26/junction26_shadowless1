@@ -53,6 +53,16 @@ def _label_of(spec: dict[str, Any], language: str, merchant_label: str | None = 
         return texts.pick(texts.NATIONAL_LABEL, language).format(
             band=str(params.get("age_group", "")).replace("-", "\u2013"),
             what=config.label(config.NATIONAL_WHAT[params["category"]], language))
+    if spec["method"] in (config.METHODS["age_band_median"], config.METHODS["age_band_cohort"]) and params.get("band"):
+        # #883: the band ("35–44") and, for a median, the measure
+        band = str(params["band"]).replace("-", "–")
+        if spec["method"] == config.METHODS["age_band_cohort"]:
+            return texts.pick(texts.AGE_BAND_COHORT_LABEL, language).format(band=band)
+        measure = params.get("measure")
+        what = config.label(config.PEER_TEXT["ordinary_spending"], language) if measure == "ordinary_spending" \
+            else config.label(config.BASKET_LABELS[measure], language) if measure in config.BASKET_LABELS \
+            else texts.pick(info.name, language)
+        return texts.pick(texts.AGE_BAND_LABEL, language).format(band=band, what=what.lower())
     if spec["kind"] != "transactions":
         return texts.pick(info.name, language)
     sel = spec["selection"]
@@ -120,7 +130,7 @@ METRIC_SECTIONS = {  # core/metrics/<file> -> section of metrics.md that defines
     "01_recurring.sql": "#2-recurring-bills", "02_baskets.sql": "#1-three-baskets",
     "03_safe_to_spend.sql": "#3-safe-to-spend", "04_what_if.sql": "#4-what-if-savings",
     "05_spender_profile.sql": "#5-spender-profile", "06_peer_benchmark.sql": "#6-peer-benchmark",
-    "07_store_price_index.sql": "#7-grocery-store-price-index",
+    "07_store_price_index.sql": "#7-grocery-store-price-index", "09_age_band_peer.sql": "#6-peer-benchmark",
 }
 
 
@@ -212,7 +222,24 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
         body["reconciles"] = res.reconciles
         body["rows"] = _rows(res.rows, language)
         body["privacy_note"] = texts.pick(texts.PRIVACY_COMPOSITE, language)
+        if res.method == config.METHODS["age_band_median"]:
+            # #883: the band's size beside its median (group statistics only, never a row of another customer)
+            body["parts"] = _age_band_parts(spec, number["period"], language)
+            body["privacy_note"] = texts.pick(texts.PRIVACY_PEER, language)
     return EvidenceResponse.model_validate(body)
+
+
+def _age_band_parts(spec: dict[str, Any], period: dict[str, Any], language: str) -> list[dict[str, Any]]:
+    """The band's size as a part with no ref, from the spec's params (as the peer group's size, #69)."""
+    size = (spec.get("params") or {}).get("cohort_size")
+    if size is None or not str(size).isdigit():
+        return []
+    method = config.METHODS["age_band_cohort"]
+    value = Decimal(str(size))
+    return [{"role": "cohort_size", "number": {
+        "value": json_value(value, Unit.COUNT), "unit": Unit.COUNT.value, "period": period, "method": method,
+        "evidence_ref": None, "label": texts.pick(texts.AGE_BAND_COHORT_PART, language),
+        "display": display(value, Unit.COUNT, language, method)}}]
 
 
 @router.get("/api/evidence/{ref}", response_model=EvidenceResponse)

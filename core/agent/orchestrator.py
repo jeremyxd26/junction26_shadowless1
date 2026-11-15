@@ -625,8 +625,8 @@ class Pipeline:
         prev = conv.turns[-1] if conv.turns else None
         if len(views) > 1:
             # the national context line only beside a peer comparison alone; with another tool, the answer as on dev
-            views = [{k: v for k, v in view.items() if k != "national"} if isinstance(view, dict) else view
-                     for view in views]
+            views = [{k: v for k, v in view.items() if k not in ("national", "age_band")} if isinstance(view, dict)
+                     else view for view in views]   # and the age band's line likewise (#883)
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(), data=views,
                                   errors=errors, previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         # Designed template answers, one rule for all (the coordinator's decision): the rule planner's own template
@@ -637,10 +637,14 @@ class Pipeline:
         # it did not fail: no llm_unavailable warning, in any model state.
         national = len(views) == 1 and isinstance(views[0], dict) and views[0].get("tool") == "get_peer_benchmark" \
             and bool(views[0].get("national"))
+        # #883: the age band's line beside a comparison of total spending, the same rule as the national line
+        age_band = len(views) == 1 and isinstance(views[0], dict) and views[0].get("tool") == "get_peer_benchmark" \
+            and bool(views[0].get("age_band"))
         dropped = a.health_dropped is not None
         health_total = any(_health_spending(c) for c in a.calls)
         designed = ("rule_template" if template_answer else "health_filter_dropped" if dropped
                     else "health" if health_total else "national_context" if national
+                    else "age_band_context" if age_band
                     else "bonus_received" if bonus_received else None)
         unavailable = planner_fallback or a.composer_unavailable is not None
         lead = (template.unknown_lead(a.health_dropped, lang) if dropped
