@@ -584,3 +584,38 @@ def test_the_previous_answers_main_figure_again_is_a_repetition(tmp_path):
     assert d["cited"] == [] and not digits(d["text_rendered"])
     attempts = audit_records(pipeline)[-1]["composer_attempts"]
     assert attempts[0]["validation"][0].startswith("this repeats") and attempts[-1]["raw"] == "template"
+
+
+@pytest.mark.parametrize("first, more, lang", [("Give me tips to save", "anything else?", "en"),
+                                               ("Anna vinkkejä säästämiseen", "entä muuta?", "fi")])
+def test_a_first_tips_answer_gives_three_tips_and_anything_else_the_next_ones(tmp_path, monkeypatch, first, more, lang):
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    events = ask(pipeline, first, language=lang)
+    talk = model.requests[-1].data[0]["talk"]
+    assert talk["tip"]["rank"] == 1 and talk["practices"] == talk_mode.practices(0, lang)
+    events = ask(pipeline, more, dict(events)["meta"]["conversation_id"], language=lang)
+    talk = model.requests[-1].data[0]["talk"]
+    assert talk["tip"]["rank"] == 2 and talk["practices"] == talk_mode.practices(2, lang)
+    events = ask(pipeline, "any more tips?" if lang == "en" else "lisää vinkkejä?",
+                 dict(events)["meta"]["conversation_id"], language=lang)
+    assert model.requests[-1].data[0]["talk"]["practices"] == []   # one lever per "any more tips?"
+    # the template, with the switch on: three tips in three or four sentences, no number, no card, no product
+    monkeypatch.setattr(talk_mode, "MODEL_OFF_SWITCH", tmp_path / "talk-model-off")
+    (tmp_path / "talk-model-off").touch()
+    events = ask(make(tmp_path / "switched", TalkModel()), first, language=lang)
+    texts = [done(events)["text_rendered"]]
+    assert not [e for e, _ in events if e == "card"] and not digits(texts[0])
+    text = texts[0]
+    assert talk_mode.practices(0, lang)[0] in text and talk_mode.practices(0, lang)[1] in text
+    assert ("restaurants" in text) and talk_mode.draft_problems(text, {}, set(), lang) == []
+    assert 3 <= len([x for x in re.split(r"(?<=[.!?])\s+", text) if x]) <= 4
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_every_practice_and_three_tip_text_passes_the_checks(lang):
+    for start in range(0, len(talk_mode.PRACTICES), 2):
+        extra = talk_mode.practices(start, lang)
+        for tip in ({"label": "Restaurants"}, None):
+            text = talk_mode.three_tips(tip, extra, lang)
+            assert talk_mode.draft_problems(text, {}, set(), lang) == [], text

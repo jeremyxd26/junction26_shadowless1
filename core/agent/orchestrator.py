@@ -1557,6 +1557,11 @@ class Pipeline:
             tip = ranking[index] if index < len(ranking) else None
             exhausted = tip is None and index > 0
             given = index + 1 if tip is not None else given
+        # a first tips answer, or "anything else?", carries the next two general practices beside the lever (#889);
+        # "any more tips?" stays one lever per turn
+        used = (last_talk or {}).get("practices_given", 0)
+        extra = talk_mode.practices(used, lang) if (tips_kind and not more) or (more and kind == "follow_up") else []
+        used += len(extra)
         previous_tip = (last_talk or {}).get("tip") if (tip is None and prev_talk) else None
         prev = turns[-1] if turns else None
         prev_main = getattr((prev or {}).get("explain"), "evidence_ref", None) or next(
@@ -1569,6 +1574,7 @@ class Pipeline:
                 "tip": {"rank": ranking.index(tip) + 1, "lever": talk_mode.lower(tip["label"])} if tip else None,
                 "previous_tip": previous_tip,
                 "tips_ranked": [{"rank": i + 1, "lever": talk_mode.lower(t["label"])} for i, t in enumerate(ranking)],
+                "practices": extra,
                 "no_more_tips": exhausted}
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
@@ -1612,6 +1618,7 @@ class Pipeline:
                 tip = ranking[index] if index is not None else None
                 given = index + 1 if tip is not None else given
             text = (template.pick(talk_mode.BORROWING, lang) if forced
+                    else talk_mode.three_tips(tip, extra, lang) if extra
                     else talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip,
                                                  previous=(prev or {}).get("answer")))
             draft, errors = validate({"language": lang, "text": text, "cited": [], "lesson_key": None},
@@ -1640,7 +1647,7 @@ class Pipeline:
         # turn; the talk record keeps the ranking's place for "any more tips?"
         self.store.add_turn(conv, {"question": message, "calls": [], "views": [],
                                    "answer": TOKEN.sub("[number]", text),
-                                   "talk": {"kind": kind, "tips_given": given,
+                                   "talk": {"kind": kind, "tips_given": given, "practices_given": used,
                                             "tip": ({"lever": talk_mode.lower(tip["label"])} if tip else previous_tip)},
                                    "shown": [numbers[i] for i in cited if i in numbers]})
         return True

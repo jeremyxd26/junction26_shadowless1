@@ -369,6 +369,36 @@ BORROWING = ("That decision belongs with the bank, so this answer stays with the
              "in the biggest spending area does more over a month than many small cuts elsewhere.",
              "Se päätös kuuluu pankille, joten tämä vastaus pysyy jo näytetyissä luvuissa. Pysyvä tapa suurimmassa "
              "menoerässä vaikuttaa kuukaudessa enemmän kuin monet pienet leikkaukset muualla.")
+# General saving practices beside the lever in a first tips answer (#889: three tips in one answer, the lever first);
+# r-rag's literacy fragments supply this side once wired. In order; each answer takes the next two.
+PRACTICES = (
+    ("Move a set amount to savings right after payday, before the spending starts.",
+     "Siirrä sovittu summa säästöön heti palkkapäivänä, ennen kuin kuluttaminen alkaa."),
+    ("Make a shopping list before going to the shop, and stick to it.",
+     "Tee kauppalista ennen kauppaan lähtöä ja pysy siinä."),
+    ("Wait a day before any bigger purchase that was not planned.",
+     "Odota päivä ennen isompaa ostosta, jota ei ollut suunniteltu."),
+    ("Go through the regular payments now and then, and stop the ones nobody uses.",
+     "Käy säännölliset maksut läpi silloin tällöin ja lopeta turhat."),
+    ("Plan meals ahead, so fewer last-minute takeaways slip in.",
+     "Suunnittele ateriat etukäteen, niin viime hetken noutoruoat vähenevät."),
+    ("Keep a small buffer for surprises, so a broken item does not upset the month.",
+     "Pidä pieni puskuri yllätyksiä varten, jotta rikkoutunut tavara ei sotke kuukautta."),
+)
+TIP_FIRST = ("The change with the most money behind it is {lever}.", "Eniten rahaa liikkuu kohdassa {lever}.")
+
+
+def practices(start: int, language: str, count: int = 2) -> list[str]:
+    """The next `count` general practices from `start`, in the answer's language; [] when they are used up."""
+    return [_pick(p, language) for p in PRACTICES[start:start + count]]
+
+
+def three_tips(tip: dict[str, Any] | None, extra: list[str], language: str) -> str:
+    """The first tips answer without the model: the lever first, then the general practices (3 to 4 sentences)."""
+    lead = _pick(TIP_FIRST, language).format(lever=lower(tip["label"])) if tip else _pick(NO_TIP, language)
+    return " ".join([lead, *extra])
+
+
 CHIP_MORE = ("Any more tips?", "Lisää vinkkejä?")
 CHIP_SAVE = ("How could I save more?", "Miten voisin säästää enemmän?")
 

@@ -91,6 +91,7 @@ When an entry in <tool_errors> has a `reason`, name what is missing in the user'
 # Talk mode (answer_in_words)
 When <data> holds an item with "tool": "answer_in_words", the user asked why something matters, for an explanation, for tips or for no numbers. Its "talk" key holds the previous question and answer, the numbers already shown ("shown_numbers"), the tip to give ("tip") and the tips in order of money impact ("tips_ranked"); the order is fixed, never choose another.
 - Write two to four plain sentences that reason about what the previous answer means and why it matters. With a "tip", give that lever in words and why it matters; never another lever, and never one that is not in "tips_ranked".
+- With "practices", give three tips in three or four sentences: the "tip" lever first, then each practice in words.
 - Cite at most one number, and only one from "shown_numbers", by its id. No other number in any form, and no number words.
 - Speak about the numbers, not about the user: never say how the user is doing or what they can afford ("you are", "your buffer is", "you have"). No bank, brand, shop, app, product or name, and no borrowing of any kind.
 - lesson_key is null.
