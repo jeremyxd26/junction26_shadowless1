@@ -9,7 +9,7 @@ export interface Topic {
   lessons: string[]
 }
 
-const TOPICS = ['money', 'bills', 'saving']
+const TOPICS = ['money', 'bills', 'saving', 'compare']
 
 /** A topic's lessons. */
 export function lessonsOf(topic: string, overview: OverviewResponse | null, lang: Language): TeachLesson[] {

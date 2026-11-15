@@ -51,6 +51,13 @@ function TopicIcon({ topic }: { topic: string }) {
         <path d="M12 12v6a2 2 0 0 0 4 0" />
       </>
     ),
+    // Compare wisely: a balance.
+    compare: (
+      <>
+        <path d="M12 4v16M8 20h8M5 8h14" />
+        <path d="M5 8l-3 6a3 3 0 0 0 6 0zM19 8l-3 6a3 3 0 0 0 6 0z" />
+      </>
+    ),
   }
   return (
     <span aria-hidden="true" className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-mint-tint text-brand">

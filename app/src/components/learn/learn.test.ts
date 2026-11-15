@@ -6,7 +6,7 @@ import { topicsFor } from './topics.ts'
 
 describe('the Learn tab content (#764)', () => {
   it('every topic has a three-question mini-test in EN and FI, each right answer among its options', () => {
-    for (const topic of ['money', 'bills', 'saving']) {
+    for (const topic of ['money', 'bills', 'saving', 'compare']) {
       for (const lang of ['en', 'fi'] as const) {
         const test = miniTest(topic, lang)
         expect(test).toHaveLength(3)
@@ -20,7 +20,7 @@ describe('the Learn tab content (#764)', () => {
   })
 
   it('without an overview: every topic, no numbers cards, no "In your numbers" lines', () => {
-    expect(topicsFor(null).map((topic) => topic.id)).toEqual(['money', 'bills', 'saving'])
+    expect(topicsFor(null).map((topic) => topic.id)).toEqual(['money', 'bills', 'saving', 'compare'])
     expect(['money', 'saving'].flatMap((topic) => teachLessons(topic, null, 'en')).every((lesson) => lesson.numbers.length === 0)).toBe(true)
     expect(glossary(null, 'en')).toHaveLength(12)
     expect(glossary(null, 'fi').every((entry) => entry.figure === null)).toBe(true)
@@ -38,7 +38,7 @@ describe('the Learn tab content (#764)', () => {
   })
 
   it('every lesson teaches in four steps, EN and FI alike, its check answer among the options, and says left to spend', () => {
-    for (const topic of ['money', 'bills', 'saving']) {
+    for (const topic of ['money', 'bills', 'saving', 'compare']) {
       const en = teachLessons(topic, null, 'en')
       const fi = teachLessons(topic, null, 'fi')
       expect(fi.map((lesson) => lesson.key)).toEqual(en.map((lesson) => lesson.key))

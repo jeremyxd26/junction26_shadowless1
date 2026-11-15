@@ -6,7 +6,7 @@ import { lessonTwo } from '../lesson/lessons.ts'
 // options are words, not mixed amounts), and a takeaway. Our own short texts, EN and FI; no products,
 // funds, shares or loans. The bills lessons show a sample bill's fields (synthetic data), marked as such.
 
-export type LessonIcon = 'pie' | 'baskets' | 'save' | 'reference' | 'account' | 'auto' | 'payday' | 'buffer'
+export type LessonIcon = 'pie' | 'baskets' | 'save' | 'reference' | 'account' | 'auto' | 'payday' | 'buffer' | 'median' | 'link' | 'transfer'
 
 export interface TeachLesson {
   key: string
@@ -18,6 +18,8 @@ export interface TeachLesson {
   numbersTitle: string
   /** The figures: our own label and the API's display (or a sample field); empty: no numbers card. */
   numbers: { label: string; display: string }[]
+  /** Where figures that are not the customer's come from, under the numbers card. */
+  source?: string
   check: { question: string; options: { key: string; text: string }[]; right: string; explain: string }
   takeaway: string
 }
@@ -167,6 +169,122 @@ export function teachLessons(topic: string, overview: OverviewResponse | null, l
           explain: t('Paying late adds fees, and cutting food hurts; a buffer is there for exactly this.', 'Myöhästyminen tuo kuluja ja ruoasta tinkiminen on raskasta; puskuri on juuri tätä varten.'),
         },
         takeaway: t('Many start with about a month of essential costs as a buffer and build from there.', 'Moni aloittaa noin kuukauden välttämättömistä menoista ja kasvattaa puskuria siitä.'),
+      },
+    ]
+  }
+
+  if (topic === 'compare') {
+    // Lessons from the organisers' synthetic dataset (Renat's request): the figures are the dataset's, in our own
+    // words, with the source under them; none is the customer's.
+    const data = t('In the dataset', 'Aineistossa')
+    const source = t(
+      'Source: Junction S-Pankki synthetic dataset, 5,100 customers, Oct 2024 – Sep 2026.',
+      'Lähde: Junctionin S-Pankki-aineisto (synteettinen), 5 100 asiakasta, lokakuu 2024 – syyskuu 2026.',
+    )
+    return [
+      {
+        key: 'compare-1',
+        icon: 'median',
+        title: t('Median, not average', 'Mediaani, ei keskiarvo'),
+        teach: t(
+          'When Sentti compares your spending with people like you, it uses the median: the person right in the middle of the group. A few very large purchases can pull an average far up, but they hardly move the middle, so the median shows what is typical.',
+          'Kun Sentti vertaa kulutustasi kaltaisiisi, se käyttää mediaania eli ryhmän keskimmäistä ihmistä. Muutama hyvin suuri ostos voi nostaa keskiarvoa paljon, mutta keskikohtaa ne tuskin liikuttavat, joten mediaani kertoo, mikä on tavallista.',
+        ),
+        numbersTitle: data,
+        numbers: [
+          { label: t('Customers', 'Asiakkaita'), display: t('5,100', '5 100') },
+          { label: t('Middle everyday spending, ages 35–44', 'Arjen kulutuksen mediaani, 35–44-vuotiaat'), display: t('€1,295 a month', '1 295 € / kk') },
+        ],
+        source,
+        check: {
+          question: t(
+            'One very big purchase lands in a group\'s month. Which figure still shows what is typical?',
+            'Ryhmän kuukauteen osuu yksi hyvin suuri ostos. Mikä luku kertoo yhä, mikä on tavallista?',
+          ),
+          options: [
+            { key: 'median', text: t('The median, the middle one', 'Mediaani eli keskimmäinen') },
+            { key: 'average', text: t('The average', 'Keskiarvo') },
+            { key: 'largest', text: t('The largest purchase', 'Suurin ostos') },
+          ],
+          right: 'median',
+          explain: t(
+            'The big purchase pulls the average up; the person in the middle stays where they were.',
+            'Suuri ostos nostaa keskiarvoa; keskimmäinen ihminen pysyy paikallaan.',
+          ),
+        },
+        takeaway: t(
+          'When you compare yourself with others, look for the median, and treat it as a guide, not a target.',
+          'Kun vertaat itseäsi muihin, katso mediaania ja pidä sitä suuntana, ei tavoitteena.',
+        ),
+      },
+      {
+        key: 'compare-2',
+        icon: 'link',
+        title: t('A link is not a cause', 'Yhteys ei ole syy'),
+        teach: t(
+          'In this synthetic dataset, older customers tend to have more money coming in each month: the link is moderate. That does not mean age causes it; income, work, family and housing all play a part.',
+          'Tässä synteettisessä aineistossa vanhemmilla asiakkailla tulee usein enemmän rahaa kuukaudessa: yhteys on kohtalainen. Se ei tarkoita, että ikä aiheuttaisi sen; myös tulot, työ, perhe ja asuminen vaikuttavat.',
+        ),
+        numbersTitle: data,
+        numbers: [
+          { label: t('Age and money coming in', 'Ikä ja tuleva raha'), display: t('ρ ≈ 0.47, moderate', 'ρ ≈ 0,47, kohtalainen') },
+          { label: t('Age and how often people pay', 'Ikä ja maksujen määrä'), display: t('ρ ≈ 0.03, almost none', 'ρ ≈ 0,03, lähes olematon') },
+        ],
+        source,
+        check: {
+          question: t(
+            'Older customers in the dataset have more money coming in. What can you say?',
+            'Aineiston vanhemmilla asiakkailla tulee enemmän rahaa. Mitä siitä voi sanoa?',
+          ),
+          options: [
+            { key: 'link', text: t('The two go together, but age is not shown to be the cause', 'Ne kulkevat yhdessä, mutta iän ei ole osoitettu olevan syy') },
+            { key: 'cause', text: t('Getting older raises your income', 'Vanheneminen nostaa tulojasi') },
+            { key: 'young', text: t('Young people spend too much', 'Nuoret kuluttavat liikaa') },
+          ],
+          right: 'link',
+          explain: t(
+            'A link only says that two things move together; other things, like work and family, can explain both.',
+            'Yhteys kertoo vain, että kaksi asiaa kulkee yhdessä; muut asiat, kuten työ ja perhe, voivat selittää molemmat.',
+          ),
+        },
+        takeaway: t(
+          'When two things move together, ask what else could explain it before you draw a conclusion.',
+          'Kun kaksi asiaa kulkee yhdessä, kysy, mikä muu voisi selittää sen, ennen kuin teet johtopäätöksen.',
+        ),
+      },
+      {
+        key: 'compare-3',
+        icon: 'transfer',
+        title: t('Spending or moving money', 'Kulutus vai rahan siirto'),
+        teach: t(
+          'Not every euro that leaves your account is spending. Money you move to your investments or to savings is still yours, so Sentti keeps these transfers apart from what you spend.',
+          'Kaikki tililtä lähtevä raha ei ole kulutusta. Sijoituksiin tai säästöön siirtämäsi raha on yhä sinun, joten Sentti pitää nämä siirrot erillään kulutuksesta.',
+        ),
+        numbersTitle: data,
+        numbers: [
+          {
+            label: t('Moves to investments and savings, all customers', 'Siirrot sijoituksiin ja säästöön, kaikki asiakkaat'),
+            display: t('about €36 million', 'noin 36 milj. €'),
+          },
+        ],
+        source,
+        check: {
+          question: t('You move money from your account to your savings. Is it spending?', 'Siirrät rahaa tililtäsi säästöön. Onko se kulutusta?'),
+          options: [
+            { key: 'no', text: t('No, the money is still yours', 'Ei, raha on yhä sinun') },
+            { key: 'yes', text: t('Yes, it left the account', 'Kyllä, se lähti tililtä') },
+            { key: 'month', text: t('Only at the end of the month', 'Vain kuun lopussa') },
+          ],
+          right: 'no',
+          explain: t(
+            'Moving money between your own pots is not spending; Sentti counts what you buy and pay.',
+            'Rahan siirtäminen omien varojesi välillä ei ole kulutusta; Sentti laskee sen, mitä ostat ja maksat.',
+          ),
+        },
+        takeaway: t(
+          'Look at your spending without your own transfers, and your picture of the month stays true.',
+          'Katso kulutustasi ilman omia siirtojasi, niin kuva kuukaudesta pysyy oikeana.',
+        ),
       },
     ]
   }
