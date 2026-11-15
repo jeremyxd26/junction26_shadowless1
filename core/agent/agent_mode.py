@@ -171,3 +171,29 @@ def question_stands_down(message: str, literacy: bool = False) -> bool:
     if not literacy:
         checks.append(talk_checks._GENERAL_PRODUCT_CLASS)
     return any(rx.search(message) for rx in checks)
+
+
+_TIPS = re.compile(r"\btips?\b|\badvice\b|\bsuggest\w*|\bideas?\b|\bhow (?:can|could|do|should) i (?:save|cut|spend less)"
+                   r"|\bvinkk\w*|\bneuvo\w*|\behdot\w*|\bideoi\w*|\bmiten (?:voisin|voin|saisin) saast\w*", re.I)
+
+
+def asks_tips(message: str) -> bool:
+    """A request for tips or ideas: talk mode's rule, no number in the answer."""
+    return bool(_TIPS.search(guard.fold(message))) or talk_mode.trigger(message) in ("tips", "no_numbers")
+
+
+def words_only(message: str, turns: list[dict[str, Any]]) -> bool:
+    """A question about reasons, tips, ideas or a concept, or an open follow-up after an answer in words: the loop
+    answers in words, with no tool and no card (Renat's live probes of #955)."""
+    from core.agent import finlit_kb
+
+    if talk_mode.trigger(message) is not None or asks_tips(message):
+        return True
+    if finlit_kb.question_kind(message) is not None or finlit_kb.overrides_rules(message):
+        return True
+    # "anything else?", "why?" and the like get words after any answer: never a new card (Renat's live probes)
+    return talk_mode.follow_up(message) or talk_mode.why_follow_up(message) or bool(_BARE_WHY.fullmatch(
+        guard.fold(message).strip()))
+
+
+_BARE_WHY = re.compile(r"[\W_]*(?:and |but |so |ja |mutta )?(?:why|how come|miksi|miks|miten niin)[\W_]*", re.I)

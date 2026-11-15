@@ -1623,6 +1623,11 @@ class Pipeline:
             return False
         if agent_mode.question_stands_down(message, literacy=finlit_kb.question_kind(message) == "literacy"):
             return False
+        # talk triggers and literacy questions keep their own routes (Renat's live probes of #955): the loop takes only
+        # what nobody else claims
+        if talk_mode.trigger(message) is not None or finlit_kb.question_kind(message) is not None \
+                or finlit_kb.invest_general(message):
+            return False
         plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                             tools=self.registry.schemas(), history=history, guard_flags=[], round=1))
         if any(c.name == "decline" for c in plan.calls):
@@ -1714,6 +1719,11 @@ class Pipeline:
                                      sources=[f.data(include_text=f in credited) for f in fragments],
                                      shown=[model_number(n) for n in shown.values()])
         literacy = finlit_kb.question_kind(message) == "literacy"
+        words_only = agent_mode.words_only(message, turns)
+        if words_only:
+            base = dataclasses.replace(base, shown=[] if agent_mode.asks_tips(message) else base.shown)
+            if agent_mode.asks_tips(message):
+                shown = {}
         planner_history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in turns
                            if not t.get("talk")]
         rounds: list[tuple[Any, list[FunctionResponse]]] = []
@@ -1725,7 +1735,7 @@ class Pipeline:
         for rnd in range(1, agent_mode.MAX_TOOL_ROUNDS + 2):
             t_round = self.clock()
             request = dataclasses.replace(base, rounds=list(rounds), round=rnd,
-                                          tools_on=rnd <= agent_mode.MAX_TOOL_ROUNDS)
+                                          tools_on=rnd <= agent_mode.MAX_TOOL_ROUNDS and not words_only)
             try:
                 result = self.model.agent_turn(request)
             except Exception as exc:  # noqa: BLE001 - only the class name is kept
@@ -1741,6 +1751,11 @@ class Pipeline:
             if not result.calls:
                 text, raw_last = result.text, result.raw
                 break
+            if words_only and any(c.name not in ("decline", "ask_clarifying_question") for c in result.calls):
+                # a words question never runs a tool (no card, no figure): the old path answers instead
+                turn["calls"] = [{"name": c.name, "args": c.args, "status": "not_run: words only"}
+                                 for c in result.calls]
+                return False
             guarded = self._health_filter_guard(message, result.calls, "model", a)
             calls = guarded if guarded is not result.calls else self._unknown_object_guard(message, result.calls)
             parsed, rejected = [], []
@@ -1939,9 +1954,6 @@ class Pipeline:
         if why_not is not None:
             a.planner_turns.append({"round": 1, "source": "rules", "talk": f"stood down: {why_not}"})
             return False
-        if not talk_mode.template_only(message) and self._agent_usable(req, a) \
-                and self._answer_agent(req, ctx, None, message, lang, emit, a, "talk"):
-            return True   # agent mode (#937): the loop answers the talk question
         views_all = [v for t in turns for v in (t.get("views") or []) if isinstance(v, dict)]
         tools = [c.get("name") for c in (data_turn.get("calls") or []) if isinstance(c, dict)]
         # the numbers already shown in this conversation, latest last, re-registered for this answer
@@ -2261,9 +2273,6 @@ class Pipeline:
                 return False
         if self._model_unavailable(req) is not None or self._role_unavailable("compose") is not None:
             return False
-        if not investing and self._agent_usable(req, a) and self._answer_agent(req, ctx, review, message, lang, emit,
-                                                                               a, "finlit"):
-            return True   # agent mode (#937): the loop answers the literacy question; investing keeps its own (R7)
         fragments = self.finlit_fragments(ctx.customer_id, message, lang)
         if not fragments and term is not None:
             return False   # no source close enough: the glossary's own definition answers
