@@ -93,7 +93,9 @@ type LearnStrings = typeof en
 
 const fi: LearnStrings = {
   tabs: 'Sentti',
-  tabChat: 'Keskustelu',
+  // A soft hyphen: with large text on a narrow phone the tab breaks as "Keskus-" / "telu" instead of
+  // running out of its half of the header (#878). Screen readers and copy ignore it.
+  tabChat: 'Keskus­telu',
   tabLearn: 'Opi',
   title: 'Opi',
   intro: 'Lyhyitä oppitunteja omista luvuistasi. Kukin vie noin minuutin.',
