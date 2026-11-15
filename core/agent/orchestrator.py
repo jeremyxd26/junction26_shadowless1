@@ -181,6 +181,13 @@ def _own_names(card: dict[str, Any]) -> list[re.Pattern]:
     return out
 
 
+def _last_data_turn(turns: list[dict[str, Any]]) -> dict[str, Any]:
+    """The conversation's last turn with data: a question back, a greeting or a refusal in between ran no tool and
+    gave no number, so "Mitä tää numero tarkoittaa?" after "Selitä yksinkertaisemmin" got its general question back
+    still means the last answer's number. {} when no turn ran a tool."""
+    return next((t for t in reversed(turns) if t.get("calls") or t.get("views") or t.get("explain")), {})
+
+
 def _main_number(numbers: dict[str, Number], cited: list[str]) -> Number | None:
     """The answer's main number for "what does this number mean?" (#821): the first it cites with an evidence ref,
     else the first registered (the card's headline)."""
@@ -1345,7 +1352,7 @@ class Pipeline:
                                              tools=self.registry.schemas(), history=history, guard_flags=a.flags))
         if any(c.name == "decline" for c in rules.calls) or getattr(rules, "recognised", False):
             return False
-        prev = turns[-1] if turns else {}
+        prev = _last_data_turn(turns)
         main = prev.get("explain")
         if not isinstance(main, Number) or not main.evidence_ref:
             a.planner_turns.append({"round": 1, "source": "rules", "explain_number": "which"})

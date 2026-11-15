@@ -80,6 +80,8 @@ def test_a_statement_about_essentials_is_not_a_cut_suggestion(text):
     "August 2026 cost {{n1}} across {{n2}}.",                                        # the stand's row 2
     "You spent {{n1}} over {{n2}}, more than usual.",
     "Elokuussa 2026 käytit {{n1}} yhteensä {{n2}}.",
+    "Käytit ravintoloihin {{n1}} elokuussa 2026. Summa muodostuu {{n2}}.",      # dev: the noun (ostoksesta) left out
+    "The total is made up of {{n2}}.",
 ])
 def test_a_count_after_across_or_over_with_no_noun_is_rejected(text):
     assert has(text, "a count keeps its noun"), problems(text)
@@ -91,6 +93,8 @@ def test_a_count_after_across_or_over_with_no_noun_is_rejected(text):
     "Elokuussa 2026 käytit {{n1}}, ja tapahtumien määrä oli {{n2}}.",
     "August 2026 cost {{n1}} over {{n2}} visits, more than usual.",
     "You made {{n2}} purchases in August 2026.",
+    "Käytit ravintoloihin {{n1}} elokuussa 2026. Summa muodostuu {{n2}} ostoksesta.",
+    "Summa perustuu {{n2}} tapahtumaan.",
 ])
 def test_a_count_with_its_noun_before_or_after_passes(text):
     assert not has(text, "a count keeps its noun"), problems(text)
