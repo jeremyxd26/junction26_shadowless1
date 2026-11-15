@@ -270,6 +270,8 @@ CONTEXT_REPLY = ("Yes — we talked about {topic}. Want me to explain it more si
                  "Kyllä — puhuimme {topic}. Haluatko, että selitän sen yksinkertaisemmin?")
 
 
+# "Explain it more simply" after an S-Bank help answer: the entry's first sentence (r-coord's live check of #921).
+KB_SIMPLER = ("In short: {first}", "Lyhyesti: {first}")
 # Codex run: confusion (test 3) and light emotional lines (test 18).
 CONFUSED = ("What was unclear? Shall I explain the last answer more simply?",
             "Mikä jäi epäselväksi? Selitänkö edellisen vastauksen yksinkertaisemmin?")

@@ -531,6 +531,8 @@ class Pipeline:
             return lang
         if self._answer_explain_number(ctx, message, lang, emit, a):   # "What does this number mean?" (#821)
             return lang
+        if self._answer_kb_simpler(message, lang, emit, a):   # "Explain it more simply" after an S-Bank help answer
+            return lang
         if self._answer_talk(ctx, req, message, lang, emit, a):   # "why does it matter?", "any tips?" (#873)
             return lang
         # a talk answer (#873) ran no tool: the planner's history is the data turns, so "and last month?" after it
@@ -1111,6 +1113,28 @@ class Pipeline:
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
+
+    def _answer_kb_simpler(self, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """"Explain it more simply" right after an S-Bank help answer (r-coord's live check of #921): that entry in
+        short, its first sentence after "In short:", with its source line, and the full question as the chip. No
+        model. False unless the last turn was a help answer from an entry."""
+        turns = a.conversation.turns if a.conversation is not None else []
+        entry_id = turns[-1].get("kb") if turns else None
+        if not entry_id or a.flags or not explain_number.asks_simpler(message):
+            return False
+        entry = next((e for e in sbank_kb.ENTRIES if e.id == entry_id), None)
+        if entry is None:
+            return False
+        i = 1 if lang == "fi" else 0
+        body = entry.answer(lang)
+        first = (re.split(r"(?<=[.!?])\s+", body.strip()) or [body])[0]
+        text = f"{template.pick(template.KB_SIMPLER, lang).format(first=first)} " \
+               f"{sbank_kb.SOURCE_LINE[i].format(url=entry.source_url)}"
+        question = str(turns[-1].get("question") or "")
+        self._say(text, lang, emit, a, "kb_simpler", [question] if question else [])
+        # the short answer is a help answer too: "simpler" again gets the same entry
+        a.conversation.turns[-1].update({"words": True, "kb": entry_id})
+        return True
 
     def _say(self, text: str, lang: str, emit: Emit, a: _Answer, intent: str, follow_ups: list[str],
              unclear: bool = False) -> str:
@@ -1863,7 +1887,7 @@ class Pipeline:
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text,
-                                             "words": True})
+                                             "words": True, "kb": kb.entry_id})
         return True
 
     def finlit_fragments(self, customer_id: str, message: str, lang: str) -> list[Any]:

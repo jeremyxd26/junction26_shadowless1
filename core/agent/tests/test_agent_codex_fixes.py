@@ -46,14 +46,29 @@ def test_confusion_with_nothing_said_yet_is_a_greeting(make_pipeline):
     assert d["outcome"] == "answered" and d["text_rendered"] != template.CONFUSED[0]
 
 
-def test_simpler_after_an_answer_in_words_is_talk_mode_not_the_number(make_pipeline):
+def test_simpler_after_a_talk_answer_is_talk_mode_not_the_number(make_pipeline):
     pipeline = make_pipeline(RuleModel(), glossary_registry())
-    kb, simpler = conversation(pipeline, ["How do I block my card?", "Explain it more simply"], language="en")
-    assert done_of(kb)["outcome"] == "answered"
+    conversation(pipeline, ["How much is safe to spend?", "Why does it matter?", "Explain it more simply"], language="en")
     turns = audit_records(pipeline)[-1]["planner_turns"]
     assert any(t.get("talk") == "understand" for t in turns), turns
     assert not any("explain_number" in t for t in turns)
-    assert done_of(simpler)["outcome"] == "answered"
+
+
+@pytest.mark.parametrize("question, simpler, lang, short", [
+    ("How do I contact S-Bank?", "Explain it more simply", "en",
+     "In short: S-Bank's customer service page lists a chat with Aulis"),
+    ("How do I block my card?", "Can you put that more simply?", "en",
+     "In short: S-Bank's help pages say to close the card at once"),
+])
+def test_simpler_after_an_sbank_help_answer_is_that_entry_in_short(make_pipeline, question, simpler, lang, short):
+    """r-coord's live check of #921: "Explain it more simply" after the help answer got a general talk line."""
+    pipeline = make_pipeline(RuleModel(), glossary_registry())
+    help_answer, again = conversation(pipeline, [question, simpler], language=lang)
+    d = done_of(again)
+    assert d["outcome"] == "answered" and d["text_rendered"].startswith(short), d["text_rendered"]
+    assert "https://www.s-pankki.fi/" in d["text_rendered"] and d["follow_ups"] == [question]
+    assert len(d["text_rendered"]) < len(done_of(help_answer)["text_rendered"])
+    assert audit_records(pipeline)[-1]["planner_turns"] == [{"round": 1, "source": "rules", "meta_intent": "kb_simpler"}]
 
 
 def test_simpler_after_a_number_answer_stays_the_number(make_pipeline):
