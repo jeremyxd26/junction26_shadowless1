@@ -1,0 +1,221 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "sentti-rag/source.schema.json",
+ "title": "Source",
+ "description": "One deduplicated source: a course, material, curriculum or dataset. A pointer record: page text lives in chunks only when licence_class is open_attribution.",
+ "type": "object",
+ "required": [
+  "id",
+  "kind",
+  "name",
+  "publisher",
+  "tier",
+  "official",
+  "priority",
+  "age_bands",
+  "topics",
+  "topic",
+  "source_url",
+  "licence",
+  "licence_class",
+  "text_stored",
+  "verified_at"
+ ],
+ "properties": {
+  "id": {
+   "type": "string",
+   "description": "Stable id from the canonical URL (courses) or the dataset/table id (datasets), e.g. statfin-ktutk-14q4"
+  },
+  "kind": {
+   "type": "string",
+   "enum": [
+    "course",
+    "dataset"
+   ]
+  },
+  "name": {
+   "type": "string"
+  },
+  "name_en": {
+   "type": "string"
+  },
+  "publisher": {
+   "type": "string"
+  },
+  "tier": {
+   "type": "string",
+   "enum": [
+    "authority",
+    "public_education",
+    "nonprofit",
+    "industry_association",
+    "bank",
+    "academic",
+    "international_org",
+    "other"
+   ]
+  },
+  "official": {
+   "type": "boolean",
+   "description": "tier is authority or public_education"
+  },
+  "confidence": {
+   "type": "string",
+   "enum": [
+    "high",
+    "medium",
+    "low"
+   ]
+  },
+  "priority": {
+   "type": "number",
+   "minimum": 0,
+   "maximum": 1,
+   "description": "Ranking prior: tier weight x verification confidence (README)"
+  },
+  "type": {
+   "type": [
+    "string",
+    "null"
+   ],
+   "description": "course type (curriculum, guide_pages, ...) or dataset kind (statistic_table, api, ...)"
+  },
+  "age_bands": {
+   "type": "array",
+   "items": {
+    "type": "string",
+    "enum": [
+     "0-12",
+     "13-17",
+     "18-24",
+     "25-34",
+     "35-44",
+     "45-54",
+     "55-64",
+     "65-74",
+     "75+",
+     "all"
+    ]
+   },
+   "minItems": 1
+  },
+  "age_bands_native": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "age_breakdown": {
+   "type": "string"
+  },
+  "topics": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "topic": {
+   "type": "string"
+  },
+  "lesson_keys": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "special_audiences": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "languages": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "format": {
+   "type": "string"
+  },
+  "access": {
+   "type": "string"
+  },
+  "source_url": {
+   "type": "string",
+   "minLength": 8
+  },
+  "canonical_url": {
+   "type": "string"
+  },
+  "api_url": {
+   "type": "string"
+  },
+  "api_notes": {
+   "type": "string"
+  },
+  "dataset_ids": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "what_it_measures": {
+   "type": "string"
+  },
+  "years": {
+   "type": "string"
+  },
+  "licence": {
+   "type": "string",
+   "description": "Verbatim licence or terms the verifier recorded"
+  },
+  "licence_url": {
+   "type": "string"
+  },
+  "licence_class": {
+   "type": "string",
+   "enum": [
+    "open_attribution",
+    "open_share_alike",
+    "noncommercial_only",
+    "terms_allow_reuse",
+    "registration_required",
+    "all_rights_reserved",
+    "not_stated"
+   ]
+  },
+  "text_stored": {
+   "type": "boolean"
+  },
+  "already_used": {
+   "type": "boolean"
+  },
+  "has_facts": {
+   "type": "boolean"
+  },
+  "evidence_quote": {
+   "type": "string",
+   "description": "Max 20 words from the opened page"
+  },
+  "lesson_ideas": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "verified_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+  },
+  "found_by": {
+   "type": "string"
+  },
+  "research_rids": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ }
+}
