@@ -1377,6 +1377,19 @@ META = [
                # a few words after the thanks are still thanks: "kiitos, hyvä tietää", "thanks, good to know"
                r"( (good to know|nice to know|that's good to know|thats good to know|got it|understood|great|perfect|"
                r"selva|hyva tietaa|hyva juttu|ymmarran|ok|okei))?"),
+    # Confusion (Codex run, test 3): "wait what", "huh", "täh", "mitä?": what was unclear, and the simpler explanation
+    ("confused", r"((wait|sorry|anteeks|anteeksi|ai|siis|no|hmm|eh|ok|okei) )*(what|wait what|huh|eh|pardon|come again|"
+                 r"sorry what|tah|hah|ha|mita|mitah|mitas|mita ihmetta|hetkinen|hetki)( (now|again|nyt))?"),
+    # Light emotional lines (Codex run, test 18): one kind line and a soft offer, never the off-topic refusal
+    ("feelings", rf"({_GREET} )?((i'm|im|i am|i feel|feeling) (so |really |very |a bit |kind of |pretty )?(tired|stressed|"
+                 r"exhausted|sad|down|anxious|worried|overwhelmed|upset|low)( (today|right now|now|lately|out))?|"
+                 r"(a |such a |having a |i'm having a |im having a |i am having a )?(bad|rough|long|hard|tough) day"
+                 r"( today)?|"
+                 r"((mua|minua|mul|mulla|minulla) )?(vasyttaa|stressaa|ahdistaa|harmittaa|masentaa)( (ihan |tosi |niin |"
+                 r"vahan |hirveesti |paljon )?(tanaan|nyt)?)?|"
+                 r"(ma |mina )?olen (tosi |niin |vahan |ihan )?(vasynyt|surullinen|stressaantunut|ahdistunut|alla paein|"
+                 r"poikki)( (tanaan|nyt))?|"
+                 r"(huono|rankka|raskas) paiva( (tanaan|tanaan))?|(on ollut|oli) (huono|rankka|raskas) paiva)"),
     # "What did I ask? Can you remind me?" (Renat): the previous question and its topic (the orchestrator), from the
     # conversation, never a tool; "Okei, mitä se siis mitä mä kysyin? Voitko muistuttaa mulle?" in one message
     ("recall", rf"{_RECALL_LEAD}({_RECALL})( ({_RECALL_LEAD})?({_RECALL}))*( (please|pls|kiitos|pliis))?"),
