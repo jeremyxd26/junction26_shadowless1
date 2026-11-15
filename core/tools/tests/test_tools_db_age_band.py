@@ -91,7 +91,12 @@ def test_the_band_numbers_reconcile_and_open_with_method_band_size_and_period(tx
         assert dash_band in body.title and aged in body.title and body.title.endswith(body.number.period.label)
         assert body.method.id == "peer.age_band_median@1" and body.method.summary
         assert body.number.period.start == band.period.start and body.number.period.end == band.period.end
-        assert [p.role for p in body.parts] == ["cohort_size"] and body.parts[0].number.value == band.cohort_size.value
+        assert [p.role for p in body.parts] == ["cohort_size", *config.AGE_BAND_MEASURES[:3]]
+        assert body.parts[0].number.value == band.cohort_size.value
+        for part in body.parts[1:]:   # the band's basket medians, each opening its own evidence
+            own = getattr(band.medians, part.role)
+            assert part.number.evidence_ref == own.evidence_ref and part.number.value == own.value
+            assert evidence.resolve(tx, part.number.evidence_ref, customer).reconciles is True
         assert body.rows == [] and body.reconciles is True
 
 

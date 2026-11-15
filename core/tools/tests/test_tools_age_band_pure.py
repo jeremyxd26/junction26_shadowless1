@@ -130,6 +130,24 @@ def test_the_evidence_view_names_the_band_the_measure_and_the_period(language, t
     assert parts[0]["number"]["evidence_ref"] is None and parts[0]["number"]["unit"] == "count"
 
 
+def test_the_ordinary_spending_median_lists_the_band_basket_medians_with_their_own_refs():
+    s = spec(config.METHODS["age_band_median"])
+    s["params"]["basket_medians"] = [
+        {"measure": "regular_essentials", "value": "1887.40", "ref": "ev_aaaaaaaaaaa1"},
+        {"measure": "unexpected_necessities", "value": "250.45", "ref": "ev_aaaaaaaaaaa2"},
+        {"measure": "everyday_spending", "value": "614.29", "ref": "ev_aaaaaaaaaaa3"},
+        {"measure": "Health", "value": "1.00", "ref": "ev_aaaaaaaaaaa4"},            # not a basket: left out
+        {"measure": "everyday_spending", "value": "x", "ref": "ev_aaaaaaaaaaa5"},    # not a value: left out
+    ]
+    period = {"start": date(2026, 4, 1), "end": date(2026, 9, 30), "label": "1 Apr – 30 Sep 2026"}
+    parts = evidence_api._age_band_parts(s, period, "en")
+    assert [p["role"] for p in parts] == ["cohort_size", "regular_essentials", "unexpected_necessities",
+                                          "everyday_spending"]
+    assert [p["number"]["evidence_ref"] for p in parts[1:]] == ["ev_aaaaaaaaaaa1", "ev_aaaaaaaaaaa2", "ev_aaaaaaaaaaa3"]
+    assert parts[1]["number"]["label"] == "Regular essentials, median" and parts[1]["number"]["value"] == 1887.4
+    assert parts[1]["number"]["display"] == "€1,887.40 a month"
+
+
 def test_the_evidence_view_of_the_band_size_names_the_band():
     number = evidence_api.number_from_spec("ev_x", spec(config.METHODS["age_band_cohort"], None), "en", lambda r: {})
     assert number["label"] == "People aged 35–44 in the synthetic dataset" and number["unit"] == "count"

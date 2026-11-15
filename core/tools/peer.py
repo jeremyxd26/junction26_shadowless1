@@ -295,21 +295,27 @@ def _age_band(nb: NumberBuilder, reg, ctx: ToolContext, lang: str) -> AgeBand | 
     # the evidence view names the band, its size and the measure from params (no digits in any label)
     params = {"period": evidence.period_param(period), "band": row["age_band"], "cohort_size": str(cohort)}
 
-    def number(method: str, column: str, value: Decimal, unit: Unit, label: str, **extra: str) -> Number:
+    def number(method: str, column: str, value: Decimal, unit: Unit, label: str, extra: dict | None = None) -> Number:
         spec = evidence.metric_spec(ctx.customer_id, ctx.as_of, method, config.AGE_BAND_FILE, column, settings,
                                     value, params["period"])
-        spec["params"] = {**params, **extra}
+        spec["params"] = {**params, **(extra or {})}
         return reg(nb.number(value, unit, period, method, spec, label))
 
     size = number(config.METHODS["age_band_cohort"], "cohort_size", Decimal(cohort), Unit.COUNT,
                   _t("age_band_cohort", lang))
-    medians = {}
-    for measure in config.AGE_BAND_MEASURES:
+    medians: dict[str, Number] = {}
+    for measure in config.AGE_BAND_MEASURES:   # the three baskets first, ordinary spending last
         what = _t("ordinary_spending", lang) if measure == "ordinary_spending" \
             else config.label(config.BASKET_LABELS[measure], lang)
+        extra: dict = {"measure": measure}
+        if measure == "ordinary_spending":
+            # the evidence view of the answer's median lists the band's basket medians, each opening its own evidence
+            extra["basket_medians"] = [{"measure": m, "value": str(metric_sql.decimal(row[f"median_{m}_month_eur"])),
+                                        "ref": medians[m].evidence_ref}
+                                       for m in config.AGE_BAND_MEASURES if m in medians]
         medians[measure] = number(config.METHODS["age_band_median"], f"median_{measure}_month_eur",
                                   metric_sql.decimal(row[f"median_{measure}_month_eur"]), Unit.EUR_PER_MONTH,
-                                  _t("age_band_median", lang, what=what), measure=measure)
+                                  _t("age_band_median", lang, what=what), extra)
     return AgeBand(band=row["age_band"], cohort_size=size, period=period, medians=AgeBandMedians(**medians))
 
 

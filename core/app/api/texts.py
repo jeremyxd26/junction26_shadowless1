@@ -375,6 +375,7 @@ AGE_BAND_LABEL = ("People aged {band} in the synthetic dataset: {what}, median",
                   "{band}-vuotiaat synteettisessä aineistossa: {what}, mediaani")
 AGE_BAND_COHORT_LABEL = ("People aged {band} in the synthetic dataset", "{band}-vuotiaat synteettisessä aineistossa")
 AGE_BAND_COHORT_PART = ("People in the band", "Ihmisiä ikäryhmässä")
+AGE_BAND_BASKET_PART = ("{what}, median", "{what}, mediaani")
 # its label in the opened evidence view: the table's age band and the survey's category (no answer text: digits fine)
 NATIONAL_LABEL =("Households with a reference person aged {band}: {what}, per consumption unit",
                   "Kotitaloudet, joiden viitehenkilö on {band}-vuotias: {what}, kulutusyksikköä kohti")

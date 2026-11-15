@@ -230,16 +230,34 @@ def build(conn, res: evidence.Resolution, customer_id: str, language: str) -> Ev
 
 
 def _age_band_parts(spec: dict[str, Any], period: dict[str, Any], language: str) -> list[dict[str, Any]]:
-    """The band's size as a part with no ref, from the spec's params (as the peer group's size, #69)."""
-    size = (spec.get("params") or {}).get("cohort_size")
+    """The band's size as a part with no ref, from the spec's params (as the peer group's size, #69); for the median
+    of ordinary spending also the band's three basket medians, each with its own evidence ref (#883)."""
+    params = spec.get("params") or {}
+    size = params.get("cohort_size")
     if size is None or not str(size).isdigit():
         return []
     method = config.METHODS["age_band_cohort"]
     value = Decimal(str(size))
-    return [{"role": "cohort_size", "number": {
+    parts = [{"role": "cohort_size", "number": {
         "value": json_value(value, Unit.COUNT), "unit": Unit.COUNT.value, "period": period, "method": method,
         "evidence_ref": None, "label": texts.pick(texts.AGE_BAND_COHORT_PART, language),
         "display": display(value, Unit.COUNT, language, method)}}]
+    median = config.METHODS["age_band_median"]
+    for item in params.get("basket_medians") or []:
+        measure, ref = item.get("measure"), item.get("ref")
+        if measure not in config.BASKET_LABELS or not isinstance(ref, str) or not ref.startswith("ev_"):
+            continue
+        try:
+            amount = Decimal(str(item.get("value")))
+        except ArithmeticError:
+            continue
+        label = texts.pick(texts.AGE_BAND_BASKET_PART, language).format(
+            what=config.label(config.BASKET_LABELS[measure], language))
+        parts.append({"role": measure, "number": {
+            "value": json_value(amount, Unit.EUR_PER_MONTH), "unit": Unit.EUR_PER_MONTH.value, "period": period,
+            "method": median, "evidence_ref": ref, "label": label,
+            "display": display(amount, Unit.EUR_PER_MONTH, language, median)}})
+    return parts
 
 
 @router.get("/api/evidence/{ref}", response_model=EvidenceResponse)
