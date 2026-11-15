@@ -87,8 +87,8 @@ async function ask(mod, question) {
   if (await chip.count()) await chip.last().click()
   else {
     how = 'composer'
-    await mod.locator('form input').fill(question)
-    await mod.locator('form input').press('Enter')
+    await mod.locator('#chat-input').fill(question)
+    await mod.locator('#chat-input').press('Enter')
   }
   const article = mod.locator('article[data-turn]').nth(before)
   await article.waitFor({ timeout: MODULE_MS })
