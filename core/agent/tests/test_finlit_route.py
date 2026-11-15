@@ -172,6 +172,29 @@ def test_no_source_close_enough_gives_plain_words_with_no_source_line(make):
     assert finlit_turns(audit(p))[0]["finlit"] == "no_source"
 
 
+@pytest.mark.parametrize("question, lang, draft", [
+    ("Mitä on budjetointi?", "fi", GOOD_FI),            # the rules would answer with her safe to spend card
+    ("Is it bad to spend on hobbies?", "en", GOOD_EN),  # the rules would answer with her Lifestyle card
+])
+def test_concept_and_judgement_questions_get_words_not_her_card(make, question, lang, draft):
+    model = Composer((draft, lang))
+    p = make(model)
+    events = run(p, question, language=lang)
+    done = done_of(events)
+    assert done["outcome"] == "answered" and done["text"].startswith(draft) and done["cited"] == []
+    assert not any(e == "card" for e, _ in events)
+    turn = p.store.resolve(next(pl for e, pl in events if e == "meta")["conversation_id"], "CUST00860")[0].turns[-1]
+    assert turn["finlit"][0]["source_id"] == OPEN.source_id and turn["finlit"][0]["url"] == OPEN.url
+
+
+@pytest.mark.parametrize("question, expected", [
+    ("What is budgeting?", True), ("Is it bad to spend on hobbies?", True), ("Mitä on budjetointi?", True),
+    ("Onko paha käyttää rahaa harrastuksiin?", True), ("Why should I save money?", True),
+    ("How could I save more?", False), ("Where did my money go?", False), ("Give me tips to save", False)])
+def test_overrides_rules(question, expected):
+    assert finlit_kb.overrides_rules(question) is expected
+
+
 def test_the_default_floor_is_the_calibrated_one():
     assert finlit_kb.MAX_DISTANCE == 0.39
 
@@ -424,7 +447,9 @@ def test_fragments_are_empty_when_the_embedding_times_out_or_the_database_fails(
     "mikä on budjetti", "how do I build a buffer", "mitä on korkoa korolle", "What is compound interest?",
     "What is a payment default?", "Mikä on maksuhäiriö?", "Miten tunnistan huijauksen?", "What is inflation?",
     "Mikä on verokortti?", "Tips for saving money?", "What is an emergency fund?", "Mikä on hätävara?",
-    "Why should I save money?", "Miksi mun pitäisi säästää rahaa?"])
+    "Why should I save money?", "Miksi mun pitäisi säästää rahaa?", "Is it bad to spend on hobbies?",
+    "Mitä on budjetointi?", "Onko paha käyttää rahaa harrastuksiin?", "Is it ok to spend money on travel?",
+    "What is budgeting?"])
 def test_literacy_questions(question):
     assert finlit_kb.question_kind(question) == "literacy"
 
@@ -433,6 +458,7 @@ def test_literacy_questions(question):
     "What is my budget?", "How much did I spend?", "Should I take a loan?", "Should I buy bitcoin?",
     "Which savings account should I open?", "Mikä on S-Pankin korko?", "Paljonko käytin ruokaan?", "Mikä on luottokortti?",
     "What if I spent 20% less on restaurants?", "any more tips?", "why does it matter? explain", "hello",
-    "Miksi mun rahat menee ruokaan?", "Paljonko minun säästöni ovat?"])
+    "Miksi mun rahat menee ruokaan?", "Paljonko minun säästöni ovat?", "Is it bad to spend on hobbies last month?",
+    "Mitä on budjetointi elokuussa?", "What is my spending in August?", "Onko minun kulutukseni paha?"])
 def test_not_literacy_questions(question):
     assert finlit_kb.question_kind(question) is None
