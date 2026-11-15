@@ -1512,6 +1512,8 @@ class Pipeline:
         no draft passes the checks. Tips asked in a running conversation are the talk mode's (#873)."""
         if self.finlit is None or finlit_kb.question_kind(message) != "literacy":
             return False
+        if re.search(RULE_HEALTH, guard.fold(message)):
+            return False   # a health topic gets no tip and no comment (R9)
         if not finlit_kb.flags_allow(message, req.message):
             return False
         conv = a.conversation
@@ -1534,7 +1536,8 @@ class Pipeline:
         fragments = self.finlit_fragments(ctx.customer_id, message, lang)
         if not fragments:
             return False
-        sources = [f.data() for f in fragments]
+        credited = finlit_kb.named(fragments)
+        sources = [f.data(include_text=f in credited) for f in fragments]
         if term is not None:   # the glossary's definition keeps the grounded answer consistent with Sentti's words
             sources.insert(0, {"source": "Sentti", "title": "definition", "text": template.pick(term.text, lang)})
         prev = conv.turns[-1] if conv is not None and conv.turns else None
@@ -1561,13 +1564,12 @@ class Pipeline:
             # the attempts stay in the audit record (their tokens were spent); the usual path answers
             log.warning("finlit answer failed the checks (%d problems); the usual path answers", len(errors))
             return False
-        cited = fragments[0]   # the best-ranked source is the one named
         a.kind = "general"
         a.planner_turns.append({"round": 1, "source": "rules", "finlit": [f.source_id for f in fragments],
                                 "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        text = self._deliver(f"{body} {finlit_kb.source_line(cited, lang)}", {}, emit)
+        text = self._deliver(f"{body} {finlit_kb.source_line(credited, lang)}", {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,

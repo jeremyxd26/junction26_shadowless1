@@ -103,10 +103,18 @@ def test_a_literacy_question_is_answered_from_the_fragments_with_the_source_line
     assert finlit_turns(audit(p))[0]["finlit"] == [OPEN.source_id, CARD.source_id]
 
 
-def test_the_best_ranked_source_is_named_even_when_it_is_a_card(make):
-    p = make(Composer((GOOD_FI, "fi")), FakeSource(fragments=(CARD, OPEN)))
+OPEN2 = finlit_kb.Fragment("suomi-edunvalvonta-8a93fe", "Digi- ja väestötietovirasto (DVV) on Suomi.fi", "Edunvalvonta",
+                           "https://www.suomi.fi/edunvalvonta", "Edunvalvonta tarkoittaa ...", "page_text")
+
+
+def test_the_best_ranked_source_is_named_and_so_is_the_open_text_sent(make):
+    model = Composer((GOOD_FI, "fi"))
+    p = make(model, FakeSource(fragments=(CARD, OPEN, OPEN2)))
     done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
-    assert done["text"] == f"{GOOD_FI} Lähde: Marttaliitto, {CARD.url}"
+    assert done["text"] == f"{GOOD_FI} Lähde: Marttaliitto, {CARD.url}; InfoFinland.fi, {OPEN.url}"
+    # a third source's open text is not sent, because the line does not name it
+    assert {"source": OPEN2.publisher, "title": "Edunvalvonta"} in model.requests[0].sources
+    assert "Edunvalvonta tarkoittaa" not in json.dumps(model.requests[0].sources, ensure_ascii=False)
 
 
 def test_the_glossary_definition_goes_with_the_fragments_for_budget(make):
@@ -125,6 +133,7 @@ def test_the_glossary_definition_goes_with_the_fragments_for_budget(make):
     ("Budjetti on suunnitelma. Lähde: Martat.", "source"),
     ("En pystynyt selvittämään tätä juuri nyt.", "non-answer"),
     ("A budget is a plan for your money. It helps you see where it goes.", "language"),
+    ("Budjetti on suunnitelma. Säästä kolmen kuukauden menot sivuun.", "number word"),
 ])
 def test_a_bad_draft_is_retried_and_the_retry_gets_the_reasons(make, bad, reason):
     model = Composer((bad, "fi"), (GOOD_FI, "fi"))
@@ -162,7 +171,7 @@ def test_nothing_retrieved_leaves_the_message_to_the_usual_path(make):
     ("How do I block my card?", "en"), ("Miten tilaan e-laskun?", "fi"),           # S-Bank's knowledge base
     ("Should I take a loan?", "en"), ("Kannattaako ottaa pikavippi?", "fi"),       # borrowing
     ("Should I invest in funds?", "en"), ("What is a buffer?", "en"),               # a product; Sentti's own term
-    ("What is the capital of Finland?", "en"),
+    ("What is the capital of Finland?", "en"), ("How do I save on healthcare costs?", "en"),   # health (R9)
 ])
 def test_demo_s_bank_borrowing_products_and_own_terms_keep_their_route(make, question, lang):
     model = Composer()
@@ -213,11 +222,13 @@ def test_age_band(age, band):
 class _Hit:
     def __init__(self, sid, kind, text="body 12 text", url="https://a.fi/x"):
         self.source_id, self.kind, self.title, self.text, self.source_url = sid, kind, "T", text, url
+        self.chunk_id = f"{sid}:chunk"
 
 
 class _Conn:
-    def __init__(self, meta):
+    def __init__(self, meta, dist=None):
         self.meta = meta
+        self.dist = dist or {}
 
     def execute(self, sql, params=None):
         class R:
@@ -226,6 +237,8 @@ class _Conn:
 
             def fetchall(self):
                 return self.rows
+        if "chunk_embeddings" in sql:
+            return R([(f"{k}:chunk", self.dist.get(k, 0.2)) for k in self.meta])
         return R([(k, *v) for k, v in self.meta.items()])
 
 
@@ -263,6 +276,32 @@ def test_fragments_keep_public_tiers_and_open_text_only_and_no_datasets(monkeypa
     out = src.fragments("q", "fi", "25-34")
     assert [f.source_id for f in out] == ["closed", "open", "card"]
     assert out[0].text is None and out[1].text == "body [number] text" and out[2].text is None
+    assert out[0].distance == 0.2
+
+
+def test_a_fragment_beyond_the_distance_floor_is_left_out(monkeypatch):
+    hits = [_Hit("far", "source_card"), _Hit("near", "source_card")]
+    meta = {"far": ("Kela", "authority", "not_stated", "course"), "near": ("THL", "authority", "not_stated", "course")}
+
+    class FakeRetriever:
+        def __init__(self, conn, embedder, model):
+            pass
+
+        def search(self, question, lang, band, **kw):
+            return type("R", (), {"texts": hits})()
+
+    import core.finlit.retrieve as retrieve
+    monkeypatch.setattr(retrieve, "Retriever", FakeRetriever)
+    monkeypatch.setattr(finlit_kb, "MAX_DISTANCE", 0.4)
+    from contextlib import contextmanager
+
+    @contextmanager
+    def connect():
+        yield _Conn(meta, dist={"far": 0.6, "near": 0.3})
+
+    src = finlit_kb.FinlitSource(connect, embedder=None, model="m")
+    monkeypatch.setattr(src, "query_vector", lambda q: [0.0])
+    assert [f.source_id for f in src.fragments("q", "fi", None)] == ["near"]
 
 
 def test_fragments_are_empty_when_the_embedding_times_out_or_the_database_fails(monkeypatch):

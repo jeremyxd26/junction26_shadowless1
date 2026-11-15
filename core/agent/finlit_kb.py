@@ -37,6 +37,8 @@ log = logging.getLogger("uvicorn.error")
 
 EMBED_WAIT_S = 3.0
 MAX_FRAGMENTS = 3
+# A fragment farther than this cosine distance from the question is not used (None: no floor).
+MAX_DISTANCE: float | None = None
 ALLOWED_TIERS = frozenset({"authority", "public_education", "international_org", "academic", "nonprofit"})
 APP_BANDS = ("0-12", "13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+")
 # The two glossary terms that are general ideas rather than Sentti's own figures: "What is a budget?" and "What is
@@ -128,11 +130,12 @@ class Fragment:
     url: str
     text: str | None      # open_attribution page text with digits masked, else None (a link only)
     kind: str             # page_text | source_card
+    distance: float | None = None   # cosine distance of the chunk to the question (0 = the same direction)
 
-    def data(self) -> dict[str, Any]:
-        """What the composer sees: never the link, never a digit."""
+    def data(self, include_text: bool = True) -> dict[str, Any]:
+        """What the composer sees: never the link, never a digit; the text only when this source is named."""
         out: dict[str, Any] = {"source": self.publisher, "title": _mask(self.title)}
-        if self.text:
+        if self.text and include_text:
             out["text"] = self.text
         return out
 
@@ -149,9 +152,20 @@ def short_publisher(publisher: str) -> str:
     return name or (publisher or "").strip()[:60]
 
 
-def source_line(fragment: Fragment, lang: str) -> str:
-    return SOURCE_LINE[1 if lang == "fi" else 0].format(publisher=short_publisher(fragment.publisher),
-                                                         url=fragment.url)
+def named(fragments: list[Fragment]) -> list[Fragment]:
+    """The sources an answer names: the best-ranked one, and the best one whose open text was sent when that is
+    another (CC BY text is always credited). Only these send their text to the composer."""
+    if not fragments:
+        return []
+    top = fragments[0]
+    text = next((f for f in fragments if f.text), None)
+    return [top] if text is None or text is top else [top, text]
+
+
+def source_line(fragments: list[Fragment], lang: str) -> str:
+    """'Source: <publisher>, <url>' (or 'Lähde: ...'); two sources are joined with '; '."""
+    head = SOURCE_LINE[1 if lang == "fi" else 0].split(" {")[0]   # "Source:" / "Lähde:"
+    return head + " " + "; ".join(f"{short_publisher(f.publisher)}, {f.url}" for f in fragments)
 
 
 class FinlitSource:
@@ -198,6 +212,7 @@ class FinlitSource:
                                                                 k_texts=12, k_facts=0, per_source=1,
                                                                 query_vec=vec).texts
                 meta = _sources(conn, [h.source_id for h in hits])
+                dist = _distances(conn, self.model, vec, [h.chunk_id for h in hits])
         except Exception as exc:  # noqa: BLE001 - the class name only: a driver message can carry the URL
             log.warning("finlit: retrieval failed (%s); the usual path answers", type(exc).__name__)
             return []
@@ -209,8 +224,11 @@ class FinlitSource:
                     or "/api/" in url.lower()):
                 continue   # a dataset is for numbers (facts), and an API endpoint is no page to send a person to
             open_text = h.kind == "page_text" and m["licence_class"] == "open_attribution"
+            d = dist.get(h.chunk_id)
+            if MAX_DISTANCE is not None and d is not None and d > MAX_DISTANCE:
+                continue   # too far from the question to be named as its source
             out.append(Fragment(h.source_id, m["publisher"], h.title, h.source_url,
-                                _mask(h.text) if open_text else None, h.kind))
+                                _mask(h.text) if open_text else None, h.kind, d))
             if len(out) == k:
                 break
         return out
@@ -240,6 +258,13 @@ FORBIDDEN = (
      "it says something could not be worked out; a literacy answer explains the idea in plain words"),
     (re.compile(r"\bsource:|\blahde:|https?:|www\.|\.fi\b|\.com\b"),
      "it names a source or a link; the server adds the source line"),
+    (re.compile(r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty"
+                r"|hundreds?|thousands?|millions?|billions?|half|halves|twice|double|triple|quarters?|thirds?|dozens?"
+                r"|percent|per cent)\b"
+                r"|\b(?:kaksi|kahden|kahdeksan\w*|kolme|kolmen|kolmas\w*|kolmannes\w*|nelja\w*|viisi|viiden|kuusi"
+                r"|kuuden|seitseman\w*|yhdeksan\w*|kymmen\w*|sata|sadan|satoja|tuhat|tuhannen|tuhansi\w*|miljoon\w*"
+                r"|puolet|puolikas\w*|kaksinkertai\w*|prosent\w*)\b"),
+     "it states a number in words; a literacy answer states no number in any form"),
 )
 
 
@@ -268,6 +293,16 @@ def draft_problems(raw: Any, language: str) -> tuple[Any, list[str]]:
         if m:
             errors.append(f"'{m.group(0)}': {reason}")
     return draft, errors
+
+
+def _distances(conn: Any, model: str, vec: list[float], chunk_ids: list[str]) -> dict[str, float]:
+    from core.finlit.store import vector_literal
+
+    if not chunk_ids:
+        return {}
+    rows = conn.execute("SELECT chunk_id, embedding <=> %s::vector FROM finlit.chunk_embeddings "
+                        "WHERE model = %s AND chunk_id = ANY(%s)", (vector_literal(vec), model, chunk_ids)).fetchall()
+    return {r[0]: float(r[1]) for r in rows}
 
 
 def _sources(conn: Any, ids: list[str]) -> dict[str, dict[str, str]]:
