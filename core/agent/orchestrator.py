@@ -1657,7 +1657,8 @@ class Pipeline:
         text = (text or "").strip()
         raw = {"language": lang, "text": text, "cited": list(dict.fromkeys(TOKEN.findall(text))), "lesson_key": None}
         if not views and literacy and not raw["cited"]:
-            return finlit_kb.draft_problems(raw, lang)
+            draft, errors = finlit_kb.draft_problems(raw, lang)
+            return draft, errors + agent_mode.data_text_problems(text)
         draft, errors = validate(raw, language=lang, numbers=numbers, allowed=allowed)
         if errors or draft is None:
             return draft, errors or ["no draft"]
@@ -1698,7 +1699,6 @@ class Pipeline:
         switch off) when the loop's first call fails before any tool ran."""
         conv = a.conversation
         turns = conv.turns if conv is not None else []
-        self._start_compose_answer(object())   # this answer's own request count and deadline (#884)
         shown: dict[str, Number] = {}
         for number in [n for t in turns for n in (t.get("shown") or [])][-8:]:
             registered = ctx.numbers.register(number)
@@ -1721,6 +1721,7 @@ class Pipeline:
         errors: list[dict[str, Any]] = []
         data_calls = 0
         text, raw_last = None, None
+        self._start_compose_answer(object())   # this answer's own request count and deadline (#884), after retrieval
         for rnd in range(1, agent_mode.MAX_TOOL_ROUNDS + 2):
             t_round = self.clock()
             request = dataclasses.replace(base, rounds=list(rounds), round=rnd,
@@ -1833,7 +1834,7 @@ class Pipeline:
         if draft is None:   # the natural fallback, never the old "could not work this out" text
             draft = AnswerDraft(language=lang, text=agent_mode.fallback_text(lang), cited=[], lesson_key=None)
             a.planner_turns.append({"source": "agent", "fallback": True})
-        if review is not None and route != "talk":   # the pending review's card, as on the old paths
+        if review is not None and views:   # cards only when tools ran on the user's own data in this turn
             self._attach_review(ctx, review, emit, a)
         if conv is not None and conv.brief and from_model:
             draft = self._briefer(draft, lang, numbers, allowed)

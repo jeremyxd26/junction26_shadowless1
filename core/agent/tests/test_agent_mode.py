@@ -494,3 +494,52 @@ def test_on_a_general_investing_question_keeps_its_designed_answer(tmp_path, swi
     switch[0].unlink()
     assert got == normal(ask(make_finlit(tmp_path, PlainModel(), "old"), message))
     assert agent.turns == []
+
+
+@pytest.mark.parametrize("text, lang", LEAKS)
+def test_every_leak_row_on_a_literacy_question_is_caught_by_the_cheap_layer(tmp_path, switch, text, lang):
+    switch[0].touch()
+    two = text if text.count(". ") else text + (" Pieni muutos auttaa." if lang == "fi" else " A small change helps.")
+    agent = AgentModel(script=lambda r: AgentResult(calls=[], text=two))
+    d = done(ask(make_finlit(tmp_path, agent), "What is compound interest?" if lang == "en"
+                 else "Mitä on korkoa korolle?"))
+    assert agent.turns and d["text"] == agent_mode.fallback_text(lang)
+    assert agent.judged == []
+
+
+@pytest.mark.parametrize("lang", ["en", "fi"])
+def test_renats_six_in_order_take_the_loop_where_they_should(tmp_path, switch, lang):
+    switch[0].touch()
+    agent = AgentModel()
+    pipeline = make_finlit(tmp_path, agent)
+    rows = [m for m, msg_lang in RENAT if msg_lang == lang]
+    loop = {}
+    cid = None
+    for message in rows:
+        before = len(agent.turns)
+        events = ask(pipeline, message, cid)
+        cid = dict(events)["meta"]["conversation_id"]
+        d = done(events)
+        assert d["outcome"] == "answered" and d["text"] != agent_mode.fallback_text(lang), (message, d["text"])
+        assert dict(events)["meta"]["language"] == lang
+        loop[message] = len(agent.turns) > before
+    assert [loop[m] for m in rows] == [True, True, True, True, False, False], loop
+
+
+@pytest.mark.parametrize("second", ["anything else?", "why?", "any more tips?"])
+def test_a_failing_loop_after_a_loop_answer_leaves_the_old_talk_path_working(tmp_path, switch, second):
+    switch[0].touch()
+    calls = {"n": 0}
+
+    def script(request):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("deadline")
+        return AgentResult(calls=[], text=WORDS["en"])
+
+    pipeline = make(tmp_path, AgentModel(script=script))
+    cid = dict(ask(pipeline, "Any tips?"))["meta"]["conversation_id"]
+    events = ask(pipeline, second, cid)
+    d = done(events)
+    assert d["outcome"] == "answered" and "error" not in dict(events)
+    assert d["text"] != agent_mode.fallback_text("en")
