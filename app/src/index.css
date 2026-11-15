@@ -235,6 +235,29 @@ select {
   background: repeating-linear-gradient(45deg, var(--color-waiting) 0 3px, var(--color-line-strong) 3px 6px);
 }
 
+/* The opening's chip rows drift slowly sideways (Renat's light redesign): the track holds the chips twice and
+   moves by half its width, so the loop is seamless. It waits 1.5 s, so the first chip is fully on screen at load,
+   and stops while a finger or the pointer is on it, or a chip has focus. Never under reduced motion. */
+@keyframes chip-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.chip-drift {
+  animation: chip-drift var(--drift-duration, 45s) linear 1.5s infinite;
+}
+.chip-drift-reverse {
+  animation-direction: reverse;
+}
+.chip-drift:hover,
+.chip-drift:focus-within,
+.chip-drift[data-paused] {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -247,7 +270,8 @@ select {
     animation-duration: var(--duration-fast) !important;
   }
   .dot-bounce,
-  .shimmer {
+  .shimmer,
+  .chip-drift {
     animation: none !important;
   }
   :where(button:not(:disabled)):active {

@@ -16,6 +16,8 @@ const ANSWER_MS = 60_000 // a live answer from the model can take a while
 const MODULE_MS = 30_000
 const NEEDED_MS = 8_000 // the label answer, then the count, on a slow host
 const STEPS = 6
+// A drifting row holds its chips twice; the second copy is aria-hidden and not counted.
+const CHIP_BUTTONS = 'button:not([aria-hidden="true"] *)'
 
 const args = parseArgs(process.argv.slice(2))
 if (args.error) {
@@ -85,7 +87,16 @@ async function ask(mod, question) {
   // A chip outside the folded opening: after the first answer the opening's chips are inert (out of reach).
   const chip = mod.getByRole('button', { name: question, exact: true }).and(mod.locator('button:not([inert] *)'))
   let how = 'chip'
-  if (await chip.count()) await chip.last().click()
+  if (await chip.count()) {
+    // The opening's chip rows drift: a touch on the row stops it (as a finger does), so the chip holds still
+    // for the click. The row is brought to the middle first: in the demo frame it may sit under the composer.
+    const row = chip.last().locator('xpath=ancestor::*[@data-chip-row][1]')
+    if (await row.count()) {
+      await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+      await row.dispatchEvent('pointerdown')
+    }
+    await chip.last().click()
+  }
   else {
     how = 'composer'
     await mod.locator('#chat-input').fill(question)
@@ -138,7 +149,7 @@ try {
     const review = mod.locator('[data-opening-part="review"]')
     const asks = (await review.count()) > 0 && (await review.first().innerText()).includes(T.asks)
     // The opening's chips are one scrollable row since #784; its question chips are checked here.
-    const chips = rowQuestions(await mod.locator(CHIP_ROW).locator('button').allInnerTexts())
+    const chips = rowQuestions(await mod.locator(CHIP_ROW).locator(CHIP_BUTTONS).allInnerTexts())
     // The fit at 375 × 768, on the module itself: the row's first chip is above the composer and on screen.
     const fitPage = await context.newPage()
     await fitPage.setViewportSize({ width: 375, height: 768 })
@@ -224,7 +235,7 @@ try {
   // 4. The chip "Where did my money go?": an answer streams in and ends with text and a card.
   {
     // The question chips of the opening's row (#784).
-    const chipNames = rowQuestions(await mod.locator(CHIP_ROW).locator('button').allInnerTexts())
+    const chipNames = rowQuestions(await mod.locator(CHIP_ROW).locator(CHIP_BUTTONS).allInnerTexts())
     const question = chipNames.includes(T.firstQuestion) ? T.firstQuestion : chipNames[0]
     if (!hasOpening || !question) {
       report(4, 'SKIP', 'the question chips of the opening turn are not in this build (#313)')
