@@ -175,9 +175,11 @@ def test_an_answer_to_save_more_offers_the_peer_comparison_then_the_s_bonus_ques
     assert "25.15" not in r.text and "25,15" not in r.text
 
 
-def test_without_a_tool_question_the_follow_ups_are_the_brief_questions():
-    assert template.follow_ups("How could I save more?", "en", views=[{"tool": "get_spending"}]) == \
-        template.follow_ups("How could I save more?", "en")
+def test_without_a_tool_question_the_follow_ups_are_the_period_chip_and_the_brief_questions():
+    # Renat: after a data answer one chip asks about another period, then the brief questions as before
+    with_data = template.follow_ups("How could I save more?", "en", views=[{"tool": "get_spending"}])
+    assert with_data[0] == template.PERIOD_CHIPS["last_month"][0]
+    assert with_data[1:] == template.follow_ups("How could I save more?", "en")[:2]
 
 
 def test_a_goal_of_zero_leaves_the_second_sentence_out(fake, monkeypatch):  # noqa: F811

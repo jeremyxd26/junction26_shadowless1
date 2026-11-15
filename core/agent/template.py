@@ -431,14 +431,36 @@ def meta_follow_ups(intent: str, language: str) -> list[str]:
     return [pick(SMALL_TALK_CHIP[intent], language)] if intent in SMALL_TALK_CHIP else brief_questions(language)
 
 
+# Renat: other periods come up in the conversation, not only the overview's six months. After a data answer one chip
+# asks about another period, in words the rules answer at once: last month after the six months or this month, this
+# month compared with last month after last month.
+PERIOD_CHIPS = {
+    "last_month": ("What did I spend last month?", "Paljonko käytin viime kuussa?"),
+    "compare": ("How did this month compare with last month?", "Miten tämä kuu vertautuu viime kuuhun?"),
+}
+_ASKED_LAST_MONTH = re.compile(r"\b(last month|previous month|august|viime kuu\w*|edellis\w* kuu\w*|elokuu\w*)\b")
+_ASKED_COMPARE = re.compile(r"\b(compare\w*|compared|vs|versus|vertaa\w*|vertautu\w*|verrattuna)\b")
+
+
+def period_chip(question: str, language: str) -> str | None:
+    """The other-period chip for an answer to `question` (see PERIOD_CHIPS), or None after a comparison."""
+    q = fold(question or "")
+    if _ASKED_COMPARE.search(q):
+        return None
+    return pick(PERIOD_CHIPS["compare" if _ASKED_LAST_MONTH.search(q) else "last_month"], language)
+
+
 def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
     """The partner's four questions minus the one just asked (agent-core.md section 7.6). A tool may offer one
     question of its own in its view (`follow_up`, no digits), which comes first: the savings plan offers the
-    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411)."""
+    S-Bonus question, so the S-Bonus is answered on its own and never next to the plan's total (#411). After a data
+    answer, one chip asks about another period (PERIOD_CHIPS)."""
     asked = question.strip().lower()
     offered = [v["follow_up"] for v in views or [] if isinstance(v, dict) and isinstance(v.get("follow_up"), str)
                and v["follow_up"] and not re.search(r"\d", v["follow_up"])]
-    out = [q for q in dict.fromkeys(offered + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
+    data = any(isinstance(v, dict) and v.get("tool") for v in views or [])
+    period = [chip] if data and not refused and (chip := period_chip(question, language)) else []
+    out = [q for q in dict.fromkeys(offered + period + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
     return out[:2] if refused else out[:3]
 
 
