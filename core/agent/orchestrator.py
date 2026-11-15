@@ -484,7 +484,10 @@ class Pipeline:
             return lang
         if self._answer_talk(ctx, req, message, lang, emit, a):   # "why does it matter?", "any tips?" (#873)
             return lang
-        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns]
+        # a talk answer (#873) ran no tool: the planner's history is the data turns, so "and last month?" after it
+        # still follows the last data answer
+        history = [{"question": t["question"], "calls": t["calls"], "results": t["views"]} for t in conv.turns
+                   if not t.get("talk")]
         responses: list[FunctionResponse] = []
         model_turns: list[Any] = []
         views: list[dict[str, Any]] = []
@@ -1497,7 +1500,8 @@ class Pipeline:
         ranking = talk_mode.rank_tips(views_all, lang)
         tips_kind = kind in ("tips", "no_numbers")
         more = prev_talk and talk_mode.wants_more_tips(message) and (tips_kind or kind == "follow_up")
-        if tips_kind and not ranking:
+        if (tips_kind or more) and not any(v.get("tool") == "get_savings_plan" for v in views_all):
+            # the plan's levers always enter the ranking (fetched again for "any more tips?": the same order)
             ranking = talk_mode.rank_tips(views_all + self._talk_levers(ctx), lang)
         tip, exhausted = None, False
         if tips_kind or more:
@@ -1512,9 +1516,9 @@ class Pipeline:
                 "previous_answer": prev["answer"] if prev else None,
                 "previous_tools": tools,
                 "shown_numbers": [model_number(n) for n in shown.values()],
-                "tip": {"rank": ranking.index(tip) + 1, "lever": tip["label"]} if tip else None,
+                "tip": {"rank": ranking.index(tip) + 1, "lever": talk_mode.lower(tip["label"])} if tip else None,
                 "previous_tip": previous_tip,
-                "tips_ranked": [{"rank": i + 1, "lever": t["label"]} for i, t in enumerate(ranking)],
+                "tips_ranked": [{"rank": i + 1, "lever": talk_mode.lower(t["label"])} for i, t in enumerate(ranking)],
                 "no_more_tips": exhausted}
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
@@ -1564,7 +1568,7 @@ class Pipeline:
         self.store.add_turn(conv, {"question": message, "calls": [], "views": [],
                                    "answer": TOKEN.sub("[number]", text),
                                    "talk": {"kind": kind, "tips_given": given,
-                                            "tip": ({"lever": tip["label"]} if tip else previous_tip)},
+                                            "tip": ({"lever": talk_mode.lower(tip["label"])} if tip else previous_tip)},
                                    "shown": [numbers[i] for i in cited if i in numbers]})
         return True
 

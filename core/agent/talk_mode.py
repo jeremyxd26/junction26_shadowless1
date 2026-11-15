@@ -229,7 +229,8 @@ def draft_problems(text: str, numbers: dict[str, Any], shown: set[str], language
 
 # ---- the template ---------------------------------------------------------------------------------------------------
 
-def _lower(label: str) -> str:
+def lower(label: str) -> str:
+    """A lever's label inside a sentence, lower case (the name check rejects a capital inside a sentence)."""
     return label[:1].lower() + label[1:] if len(label) > 1 and label[1:2].islower() else label.lower()
 
 
@@ -291,11 +292,11 @@ def template_text(kind: str, tip: dict[str, Any] | None, exhausted: bool, tools:
     """The answer in words without the model, and without a number: the next lever when tips were asked, why the last
     lever matters after a tip, else what the previous answer's tool means."""
     if tip is not None:
-        return _pick(TIP, language).format(lever=_lower(tip["label"]))
+        return _pick(TIP, language).format(lever=lower(tip["label"]))
     if kind in ("tips", "no_numbers"):
         return _pick(NO_MORE if exhausted else NO_TIP, language)
     if previous_tip and previous_tip.get("lever"):
-        return _pick(TIP_WHY, language).format(lever=_lower(previous_tip["lever"]))
+        return _pick(TIP_WHY, language).format(lever=lower(previous_tip["lever"]))
     for tool in tools:
         if tool in WHY:
             return _pick(WHY[tool], language)

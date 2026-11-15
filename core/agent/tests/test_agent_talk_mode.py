@@ -369,3 +369,56 @@ def test_any_other_channel_is_a_400_invalid_request(client, channel):
 def test_the_talk_checks_module_keeps_618s_patterns():
     assert talk_checks.GENERAL_BORROWING.search("Pikalaina auttaa palkkaan asti.")
     assert talk_checks.general_problems("Your buffer is fine.")
+
+
+# ---- after the review: the lever fetch, the planner history, the adapter ----------------------------------------------
+
+def test_tips_then_what_else_gives_the_next_lever(tmp_path):
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, "Any tips?")
+    events = ask(pipeline, "What else?", dict(first)["meta"]["conversation_id"])
+    assert "small purchases" in done(events)["text_rendered"]
+    assert model.requests[-1].data[0]["talk"]["tip"] == {"rank": 2, "lever": "small purchases"}
+
+
+def test_after_a_data_answer_the_plans_levers_enter_the_ranking(tmp_path):
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, "How much did I spend on restaurants in August 2026?")
+    ask(pipeline, "Any tips?", dict(first)["meta"]["conversation_id"])
+    talk = model.requests[-1].data[0]["talk"]
+    assert [t["lever"] for t in talk["tips_ranked"]] == ["restaurants", "small purchases", "taxis"]
+    assert talk["shown_numbers"] and talk["previous_tools"] == ["fake_spending"]
+
+
+def test_the_planner_history_after_a_talk_turn_is_the_data_turns(tmp_path):
+    model = TalkModel()
+    seen = []
+    plan = model.plan
+    model.plan = lambda request: seen.append(request.history) or plan(request)
+    pipeline = make(tmp_path, model)
+    conversation = dict(ask(pipeline, "How much did I spend on restaurants in August 2026?"))["meta"]["conversation_id"]
+    ask(pipeline, "Why does it matter?", conversation)
+    ask(pipeline, "And last month?", conversation)
+    assert [h["question"] for h in seen[-1]] == ["How much did I spend on restaurants in August 2026?"]
+
+
+def test_the_talk_compose_request_reaches_the_gemini_adapter_as_data():
+    from core.agent import gemini
+    from core.agent.model import ComposeInput
+
+    talk = {"kind": "tips", "tip": {"rank": 1, "lever": "restaurants"}, "tips_ranked": [{"rank": 1, "lever": "restaurants"}],
+            "shown_numbers": [], "previous_answer": "You spent [number] in August 2026."}
+    text = gemini.compose_text(ComposeInput(question="Any tips?", language="en", as_of="2026-09-30",
+                                            data=[{"tool": "answer_in_words", "talk": talk}]))
+    assert '"tool": "answer_in_words"' in text and '"lever": "restaurants"' in text and "<data>" in text
+
+
+@pytest.mark.parametrize("chip", ["Where do my small purchases go?", "What are my regular monthly bills?",
+                                  "Will my money last until payday?", "How do I compare with people like me?",
+                                  "Mihin pienet ostokset menevät?", "Riittävätkö rahat palkkapäivään?",
+                                  "Mitkä ovat säännölliset kuukausilaskuni?", "This month", "Last month",
+                                  "The last three months", "What's left to spend this week?"])
+def test_no_app_chip_or_clarify_option_is_a_talk_question(chip):
+    assert talk_mode.trigger(chip) is None and not talk_mode.follow_up(chip)
