@@ -21,9 +21,10 @@ interface Props {
  * A speaker next to Sentti's answer (#252). A tap reads the answer aloud with the device's voice
  * for its language, a second tap stops; another answer, a new question (the chat stops speech for
  * every question, #438), leaving the screen or a persona switch (the turn unmounts) stops it too.
- * Nothing plays without a tap. In a live build with an answer id the Gemini voice reads it (#730),
- * with the device voice as the fallback, so the button shows even without a local voice. Otherwise,
- * without speech support or without a local voice for the language, nothing is rendered.
+ * The button plays nothing without a tap; voice mode reads answers by itself (voiceSession.ts, #811).
+ * In a live build with an answer id the Gemini voice reads it (#730), with the device voice as the
+ * fallback, so the button shows even without a local voice. Otherwise, without speech support or
+ * without a local voice for the language, nothing is rendered.
  */
 export function SpeakButton({ id, text, language, answerId, prefetch = false }: Props) {
   const { lang, customerId } = useSettings()

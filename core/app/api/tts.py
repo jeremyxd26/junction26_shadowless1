@@ -74,7 +74,8 @@ def answer_record(app: Any, answer_id: str) -> dict[str, Any] | None:
 
 
 # Fewer voice requests than this left in the 24 hours: the answer carries `X-Tts-Budget: low`, and the app
-# stops fetching ahead (it reads an answer only on a tap); with the budget used up the device voice reads.
+# stops fetching ahead (it asks for a voice only to read an answer: on a tap, or in voice mode, which then
+# prefers the device voice); with the budget used up the device voice reads.
 LOW_TTS_LEFT = 50
 
 

@@ -1,11 +1,13 @@
 // Speaking a question (#735). What is sent, and when:
-// - Only on a tap of the mic: MediaRecorder records at most 15 s of audio (stop sends it sooner, cancel drops it).
+// - Only on a tap of the mic (or in voice mode, below): MediaRecorder records at most 15 s of audio (stop sends it
+//   sooner, cancel drops it).
 // - That clip goes to the core (POST /api/stt, contracts/api.md section 13), and from the core to the model
 //   provider (Gemini) for transcription. The core sends back the words as text.
 // - No audio is stored: the clip stays in memory for the one request (no file, no blob: URL, no storage),
 //   and the core stores neither the audio nor the text. The recording bar's waveform reads only the level.
-// - The text lands in the composer. Nothing is sent to the coach until the user taps send. (Voice mode, which
-//   the user opens on purpose, sends the words as a question without that tap: see voiceMode.ts, #811.)
+// - The text lands in the composer. Nothing is sent to the coach until the user taps send, except in voice mode:
+//   after the one tap that opens it, it records round after round (never while Sentti speaks) and sends the
+//   words as a question without that tap (voiceMode.ts, #811).
 // - In the demo frame the iframe needs allow="microphone" (app/src/demo/main.ts).
 // A live build only: a mock build has no core to send the clip to, so it shows no mic button.
 import type { Language } from '../api/types.ts'
