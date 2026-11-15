@@ -165,6 +165,28 @@ def why_follow_up(message: str) -> bool:
     return bool(_WHY_FOLLOW_UP.match(flat)) and not _FIGURE.search(flat)
 
 
+# Right after a tips answer, "why?", "how come?", "why does that help?", "miksi se auttaa?" ask why those tips help
+# (#919). "Why should I save money?" stays a general why, and "what does this number mean?" stays #821's.
+_WHY_TIPS = re.compile(
+    r"((and|so|but|ok|okay|hmm|well|right|ja|no|okei|joo|mut|mutta|eli) )*"
+    r"(why|why so|how come|how so|miksi|miks|miksi niin|miten niin|kuinka niin"
+    r"|(why|how) (does|do|would|will|is|are|should|could) (it|that|this|these|those|they|them)"
+    r"( (really|even|actually))? (help|helps|work|works)"
+    r"|(miksi|miks|miten|kuinka) (se|tama|tuo|toi|taa|ne|nama|noi|nuo|naa)( (oikein|sitten))?"
+    r" (auttaa|auttais|auttaisi|auttavat|toimii|toimis|toimisi|toimivat))"
+    r"( (please|then|sitten|kiitos|again|exactly|really|oikein))*")
+
+
+def asks_why_tips(message: str) -> bool:
+    """A short "why?" of the explaining kind ("why?", "miksi?", "how come?", "why does that help?", "miksi se
+    auttaa?"), which after a tips answer explains those tips (#919)."""
+    if not isinstance(message, str) or len(message) > 80 or re.search(r"\d", message):
+        return False
+    parts = [_words(p) for p in re.split(r"[.?!;:\n]+", fold(message))]
+    parts = [p for p in parts if p]
+    return bool(parts) and all(_WHY_TIPS.fullmatch(p) for p in parts)
+
+
 # ---- repetition guard -----------------------------------------------------------------------------------------------
 _STOP = frozenset("""the and that this with from have will would could should your you they them their there then than
 what when where which while about into over more most some such only also just very much many each every other these those
@@ -396,6 +418,43 @@ PRACTICES = (
     ("Keep a small buffer for surprises, so a broken item does not upset the month.",
      "Pidä pieni puskuri yllätyksiä varten, jotta rikkoutunut tavara ei sotke kuukautta."),
 )
+# Each practice's key and why (#919), in PRACTICES' order: "why?" right after a tips answer explains these
+PRACTICE_KEYS = ("pay_yourself_first", "shopping_list", "wait_a_day", "regular_payments", "meal_plan", "buffer")
+PRACTICE_WHY = (
+    ("Moving money to savings on payday helps because what is set aside first is not spent by accident later.",
+     "Säästöön siirtäminen palkkapäivänä auttaa, koska heti sivuun laitettu raha ei kulu vahingossa myöhemmin."),
+    ("A shopping list helps because it keeps the visit to what was planned, so fewer extras end up in the basket.",
+     "Kauppalista auttaa, koska ostokset pysyvät suunnitelmassa ja koriin päätyy vähemmän ylimääräistä."),
+    ("Waiting a day helps because the urge to buy often fades, and only what still feels needed gets bought.",
+     "Päivän odotus auttaa, koska ostohalu usein laantuu ja vain yhä tarpeelliselta tuntuva tulee ostettua."),
+    ("Checking the regular payments helps because a forgotten one keeps going out every month unnoticed.",
+     "Säännöllisten maksujen läpikäynti auttaa, koska unohtunut maksu lähtee joka kuukausi huomaamatta."),
+    ("Planning meals helps because a plan at home makes a last-minute takeaway less tempting on a busy evening.",
+     "Aterioiden suunnittelu auttaa, koska valmis suunnitelma tekee viime hetken noutoruoasta vähemmän houkuttelevan."),
+    ("A small buffer helps because a surprise cost then comes from money set aside for it, not from the month's plan.",
+     "Pieni puskuri auttaa, koska yllättävä kulu maksetaan silloin sitä varten säästetystä rahasta eikä kuukauden "
+     "suunnitelmasta."),
+)
+# A lever's why (#919): by its key, else the first lever's (the most money behind it), else the default
+LEVER_WHY = {
+    "small_purchases": ("Small purchases matter because each one feels harmless, but together they add up over a month.",
+                        "Pienet ostokset kannattaa huomata, koska yksittäin ne tuntuvat vähäisiltä mutta kertyvät "
+                        "kuukaudessa."),
+    "category:Restaurants": ("A change in {lever} helps because eating out repeats week after week, so even a small "
+                             "steady change there adds up.",
+                             "Muutos kohdassa {lever} auttaa, koska ulkona syöminen toistuu viikosta toiseen ja pienikin "
+                             "pysyvä muutos kertyy."),
+}
+LEVER_WHY_FIRST = ("A change in {lever} comes first because the most money moves there, so a steady habit adds up faster "
+                   "than small cuts elsewhere.",
+                   "Muutos kohdassa {lever} on ensimmäisenä, koska siellä liikkuu eniten rahaa ja pysyvä tapa kertyy "
+                   "nopeammin kuin pienet leikkaukset muualla.")
+LEVER_WHY_DEFAULT = ("A change in {lever} helps because a steady habit there repeats every month, so it adds up more "
+                     "than a one-off cut.",
+                     "Muutos kohdassa {lever} auttaa, koska pysyvä tapa toistuu siellä joka kuukausi ja kertyy enemmän "
+                     "kuin kertaluonteinen leikkaus.")
+ONE_AT_A_TIME = ("Changing one habit at a time also makes it easier to keep.",
+                 "Yhden tavan muuttaminen kerrallaan on myös helpompi pitää.")
 TIP_FIRST = ("The change with the most money behind it is {lever}.", "Eniten rahaa liikkuu kohdassa {lever}.")
 # "Any more tips?" once no further lever passes the bar (#907): the next practices, after this lead
 MORE_FIRST = ("A few more everyday habits help as well.", "Myös muutama muu arkinen tapa auttaa.")
@@ -425,6 +484,64 @@ def three_tips(tip: dict[str, Any] | None, extra: list[str], language: str, more
     else:
         lead = _pick(MORE_FIRST if more else NO_TIP, language)
     return " ".join([lead, *extra])
+
+
+def lever_why(lever: dict[str, Any], language: str) -> str:
+    """Why one given lever helps (#919), without a number."""
+    pair = LEVER_WHY.get(str(lever.get("key"))) or (LEVER_WHY_FIRST if lever.get("rank") == 1 else LEVER_WHY_DEFAULT)
+    return _pick(pair, language).format(lever=lower(str(lever.get("label") or "")))
+
+
+def tips_to_explain(gave: dict[str, Any], language: str) -> list[dict[str, str]]:
+    """The tips the previous talk answer gave (its `gave` record: levers with key, label and rank; practice
+    indices), each in words with its fixed why: the composer explains these and no other (#919)."""
+    out = [{"tip": lower(str(lv.get("label") or "")), "why": lever_why(lv, language)}
+           for lv in gave.get("levers") or [] if isinstance(lv, dict)]
+    out += [{"tip": _pick(PRACTICES[i], language), "why": _pick(PRACTICE_WHY[i], language)}
+            for i in gave.get("practices") or [] if isinstance(i, int) and 0 <= i < len(PRACTICES)]
+    return out
+
+
+def tip_keys(gave: dict[str, Any]) -> list[str]:
+    """The keys of the tips a `gave` record holds: the levers' keys, then the practices' (#919)."""
+    return ([str(lv.get("key")) for lv in gave.get("levers") or [] if isinstance(lv, dict)]
+            + [PRACTICE_KEYS[i] for i in gave.get("practices") or [] if isinstance(i, int) and 0 <= i < len(PRACTICES)])
+
+
+# Words a generic "why it matters" paragraph shares with the tips: they never count as naming a tip (#919)
+_NAME_GENERIC = frozenset("""spending starts before after right going money month months small steady change habit
+habits there elsewhere helps help every planned plan ennen alkaa kuluttaminen heti rahaa kuukausi pieni pienet pysyva
+pysyvä tapa muutos auttaa bigger biggest largest through then ones uses area areas cuts adds""".split())
+
+
+def _stems(text: str) -> set[str]:
+    return {w[:max(5, len(w) - 3)] for w in content_words(text) if w not in _NAME_GENERIC}
+
+
+def _names(text: str, tip: str) -> bool:
+    words = content_words(text)
+    return any(w.startswith(s) for w in words for s in _stems(tip))
+
+
+def explain_problems(text: str, gave: dict[str, Any], language: str) -> list[str]:
+    """Why a "why?"-after-tips draft does not explain the tips given (#919): it must name the lever when one was
+    given, else at least one of the practices (by word stem, so Finnish inflection passes); [] when it does."""
+    levers = [lower(str(lv.get("label") or "")) for lv in gave.get("levers") or [] if isinstance(lv, dict)]
+    practices = [_pick(PRACTICES[i], language) for i in gave.get("practices") or []
+                 if isinstance(i, int) and 0 <= i < len(PRACTICES)]
+    if levers and not all(_names(text, lever) for lever in levers):
+        return [f"explain the tips the previous answer gave: name {', '.join(levers)} and why each tip helps"]
+    if not levers and practices and not any(_names(text, p) for p in practices):
+        return ["explain the tips the previous answer gave: name each one and why it helps"]
+    return []
+
+
+def explain_tips(gave: dict[str, Any], language: str) -> str:
+    """The template's "why?" after a tips answer (#919): each tip's fixed why, two to four sentences, no number."""
+    sentences = [t["why"] for t in tips_to_explain(gave, language)][:4]
+    if len(sentences) < 2:
+        sentences.append(_pick(ONE_AT_A_TIME, language))
+    return " ".join(sentences)
 
 
 def closing(language: str, previous: str | None = None) -> str:
