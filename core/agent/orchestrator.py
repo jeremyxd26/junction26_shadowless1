@@ -1324,7 +1324,8 @@ class Pipeline:
         lead = template.pick(explain_number.LEAD, lang).format(label=label, period=number.period.label)
         bare = template.pick(explain_number.LEAD_ONLY_LABEL, lang).format(label=label)   # the card names the period
         info = api_texts.method_info(number.method)
-        summary = api_texts.pick(info.summary, lang).strip() if info.summary else ""
+        summary = api_texts.pick(explain_number.SUMMARIES.get(number.method) or info.summary, lang).strip() \
+            if info.summary else ""
         summary = summary if not summary or summary[-1] in ".!?" else summary + "."
         rests = (template.pick(explain_number.COUNT, lang)[0 if count.value == 1 else 1].format(
             count="{{" + count.id + "}}") if count is not None else "")

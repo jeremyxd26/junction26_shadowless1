@@ -68,6 +68,32 @@ LEAD_ONLY_LABEL = ("That's {label}.", "Luku on {label}.")   # a period label the
 COUNT = (("It rests on {count} transaction.", "It rests on {count} transactions."),
          ("Se perustuu {count} tapahtumaan.", "Se perustuu {count} tapahtumaan."))
 WHICH = ("Which number would you like explained?", "Minkä luvun haluaisit selitettävän?")
+_PEER = ("A figure of a group of similar customers, compared with your own monthly average; no one's own data is shown.",
+         "Samankaltaisten asiakkaiden ryhmän tunnusluku verrattuna omaan kuukausikeskiarvoosi; kenenkään omia tietoja "
+         "ei näytetä.")
+# The evidence sheet's method summary (core/app/api/texts.py METHODS) with its digits ("the next 7 days", "x 7 /
+# 30.4375", "at least 20") put in words: an answer text names no number that is not a Number (the validator).
+SUMMARIES = {
+    "safe_to_spend.safe_to_spend_7d_eur@1": (
+        "The smaller of what your balance allows and what your monthly budget allows for the coming week, after your "
+        "savings goal.",
+        "Pienempi niistä summista, jotka saldosi ja kuukausibudjettisi sallivat tulevalle viikolle, kun säästötavoite on "
+        "ensin laitettu sivuun."),
+    "safe_to_spend.balance_limit_7d_eur@1": (
+        "What is free until payday, spread evenly over the days to payday, for the coming week.",
+        "Palkkapäivään asti vapaana oleva summa jaettuna tasan palkkapäivään jäljellä oleville päiville, tulevalle "
+        "viikolle."),
+    "safe_to_spend.budget_limit_7d_eur@1": (
+        "What a typical month leaves free, minus your savings goal, scaled to a week.",
+        "Tavallisesta kuukaudesta vapaaksi jäävä summa miinus säästötavoite, muunnettuna viikolle."),
+    "safe_to_save.week_eur@1": ("What a typical month leaves, per week.", "Mitä tavallisesta kuukaudesta jää, viikkoa kohden."),
+    "safe_to_save.day_eur@1": ("What a typical month leaves, per day.", "Mitä tavallisesta kuukaudesta jää, päivää kohden."),
+    "safe_to_spend.usual_week_eur@1": (
+        "Usual everyday spending in a typical month of the last six, per week.",
+        "Tavallinen arkikulutus kuuden viime kuukauden tavallisessa kuukaudessa viikkoa kohden."),
+    **{f"peer_benchmark.{m}@1": _PEER for m in ("peer_median_month_eur", "peer_p25_month_eur", "peer_p75_month_eur",
+                                                 "percentile", "vs_median_pct", "peer_n")},
+}
 ACTION = ("Show the calculation", "Näytä laskelma")
 
 
