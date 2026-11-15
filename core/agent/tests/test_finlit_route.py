@@ -183,14 +183,55 @@ def test_demo_s_bank_borrowing_products_and_own_terms_keep_their_route(make, que
     assert all(r.sources is None for r in model.requests)
 
 
-def test_tips_in_a_running_conversation_are_left_to_the_talk_mode(make):
+def _conversation(p, first, lang="en"):
+    events = run(p, first, language=lang)
+    return next(pl for e, pl in events if e == "meta")["conversation_id"]
+
+
+def _turns(p):
+    return audit(p)[-1]["planner_turns"]
+
+
+def test_why_and_tips_in_a_running_conversation_go_to_the_talk_mode_with_the_fragments(make):
     model = Composer((GOOD_EN, "en"), (GOOD_EN, "en"))
+    source = FakeSource()
+    p = make(model, source)
+    cid = _conversation(p, "Where did my money go?")
+    done = done_of(run(p, "Tips for saving money?", language="en", conversation_id=cid))
+    turns = _turns(p)
+    talk = [t for t in turns if "talk" in t]
+    assert talk and talk[0]["finlit"] == [OPEN.source_id, CARD.source_id]   # the talk mode's turn, not the route's
+    assert done["text"].endswith(f"Source: InfoFinland.fi, {OPEN.url}")
+    request = model.requests[-1]
+    assert request.literacy is False and request.data[0]["tool"] == "answer_in_words"
+    assert {"source": OPEN.publisher, "title": "Velkaneuvonta", "text": OPEN.text} in request.sources
+
+
+def test_a_bare_why_searches_with_the_previous_question(make):
+    model = Composer((GOOD_EN, "en"))
+    source = FakeSource()
+    p = make(model, source)
+    cid = _conversation(p, "Where did my money go?")
+    run(p, "why does it matter?", language="en", conversation_id=cid)
+    assert source.asked[-1][0] == "Where did my money go? why does it matter?"
+
+
+def test_no_money_topic_in_the_message_or_the_previous_question_means_no_search(make):
+    model = Composer((GOOD_EN, "en"))
+    source = FakeSource()
+    p = make(model, source)
+    cid = _conversation(p, "What kind of spender am I?")
+    run(p, "why does it matter?", language="en", conversation_id=cid)
+    assert source.asked == [] and all(r.sources is None for r in model.requests)
+
+
+def test_a_talk_template_names_no_source(make):
+    model = Composer(("Noin 300 euroa.", "en"), ("Ota lainaa.", "en"))   # both drafts fail the talk checks
     p = make(model)
-    first = done_of(run(p, "how do I build a buffer", language="en"))
-    assert "Source:" in first["text"]
-    events = run(p, "Tips for saving money?", language="en", conversation_id=next(
-        pl for e, pl in run(p, "Where did my money go?", language="en") if e == "meta")["conversation_id"])
-    assert "Source:" not in done_of(events)["text"]
+    cid = _conversation(p, "Where did my money go?")
+    done = done_of(run(p, "why does it matter?", language="en", conversation_id=cid))
+    assert "Source:" not in done["text"]
+    assert not any("finlit" in t for t in _turns(p))
 
 
 def test_no_route_without_a_source(make_pipeline):

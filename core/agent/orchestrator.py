@@ -1579,9 +1579,14 @@ class Pipeline:
                 "tips_ranked": [{"rank": i + 1, "lever": talk_mode.lower(t["label"])} for i, t in enumerate(ranking)],
                 "practices": extra,
                 "no_more_tips": exhausted}
+        # official sources for the reasoning (#884): only when the model may write the talk text
+        fragments = ([] if talk_mode.template_only(message) or talk_mode.model_switched_off()
+                     else self._talk_fragments(ctx, message, prev, lang))
+        credited = finlit_kb.named(fragments)
         compose_in = ComposeInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
-                                  previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
+                                  previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None,
+                                  sources=[f.data(include_text=f in credited) for f in fragments] or None)
         unavailable = self._model_unavailable(req) or self._role_unavailable("compose")
         # Renat's decision for #889: borrowing and affordability always get the template, whatever the switch; the
         # switch file (talk_mode.MODEL_OFF_SWITCH, read per answer) turns the model's talk text off
@@ -1614,6 +1619,7 @@ class Pipeline:
                 if not errors:
                     break
                 draft = None
+        from_model = draft is not None
         if draft is None:   # the template in the model's place reasons without a number
             if not forced and tip is None and not exhausted and errors and errors[0].startswith("this repeats"):
                 # the model repeated itself twice: the next lever of the ranking, in the template (#889)
@@ -1636,8 +1642,10 @@ class Pipeline:
                 self._warn_llm_unavailable(a)
         a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {}),
                                 **({"talk_template": "borrowing_or_afford" if forced else "switch"}
-                                   if (forced or switched_off) else {})})
-        text = self._deliver(draft.text, numbers, emit)
+                                   if (forced or switched_off) else {}),
+                                **({"finlit": [f.source_id for f in fragments]} if credited and from_model else {})})
+        line = f" {finlit_kb.source_line(credited, lang)}" if credited and from_model else ""
+        text = self._deliver(draft.text + line, numbers, emit)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
@@ -1745,6 +1753,20 @@ class Pipeline:
             log.warning("finlit: age not read (%s)", type(exc).__name__)
         return self.finlit.fragments(message, lang, band)
 
+    def _talk_fragments(self, ctx: ToolContext, message: str, prev: dict[str, Any] | None, lang: str) -> list[Any]:
+        """Finlit fragments for a talk answer (#884): searched with the message when it names a money topic, else with
+        the previous question and the message ("Where did my money go? why does it matter?"); none when neither names
+        one (a bare "why?" would only retrieve noise and cost an embedding request)."""
+        if self.finlit is None:
+            return []
+        if finlit_kb.has_money_topic(message):
+            query = message
+        elif prev and finlit_kb.has_money_topic(prev.get("question") or ""):
+            query = f"{prev['question']} {message}"
+        else:
+            return []
+        return self.finlit_fragments(ctx.customer_id, query, lang)
+
     def _answer_finlit(self, req: AskRequest, ctx: ToolContext, review: Any, message: str, lang: str, emit: Emit,
                        a: _Answer) -> bool:
         """A general financial-literacy question in plain words, grounded in official sources (#884): the composer
@@ -1760,8 +1782,9 @@ class Pipeline:
         if not finlit_kb.flags_allow(message, req.message):
             return False
         conv = a.conversation
-        if conv is not None and conv.turns and finlit_kb.TIPS.search(guard.fold(message)):
-            return False
+        if talk_mode.trigger(message) is not None or (conv is not None and conv.turns
+                                                      and finlit_kb.TIPS.search(guard.fold(message))):
+            return False   # tips / explain / no numbers: the talk mode's, with the customer's levers and fragments (#873)
         term = glossary.match(message)
         if term is not None and term.key not in finlit_kb.GLOSSARY_TERMS:
             return False
