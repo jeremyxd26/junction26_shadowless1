@@ -287,7 +287,8 @@ def test_tips_are_ranked_by_monthly_euros_and_the_immaterial_ones_are_left_out()
 
 
 def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(tmp_path):
-    pipeline = make(tmp_path)
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
     conversation = None
     texts, chips = [], []
     for message in ["Any tips?", "any more tips?", "any more tips?", "any more tips?"]:
@@ -296,13 +297,16 @@ def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(
         texts.append(done(events)["text_rendered"])
         chips.append(done(events)["follow_ups"])
     assert chips[:2] == [["Any more tips?"], ["Any more tips?"]] and chips[2] == ["How could I save more?"]
-    assert texts[3] == talk_mode.NO_MORE[0]
+    talk = model.requests[-1].data[0]["talk"]
+    assert talk["no_more_tips"] is True and talk["tip"] is None
+    assert [t["lever"] for t in talk["tips_ranked"]] == ["Restaurants", "small purchases", "Taxis"]
 
 
 # ---- hard refusals and the normal path --------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("message", ["What should I do with bitcoin? Any tips?", "Any tips for getting a loan?",
-                                     "Which savings account would you suggest?", "Any tips for my medicine costs?"])
+                                     "Which savings account would you recommend? Any tips?",
+                                     "Any tips for my medicine costs?", "Vinkkejä pikavippiin?"])
 def test_a_refusal_or_product_question_never_takes_talk_mode(tmp_path, message):
     pipeline = make(tmp_path)
     ask(pipeline, message)
