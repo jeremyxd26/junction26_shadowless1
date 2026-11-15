@@ -1,7 +1,7 @@
 // Reading an answer aloud (#252, #730). What is sent, and when:
-// - A live build, on a tap: the app sends the answer's id, never its text, to the core
-//   (POST /api/tts). The core has the model provider (Gemini) synthesize the answer's
-//   `text_rendered`, unless that audio is already in the core's cache, which keeps it. The app
+// - A live build, on a tap, or in voice mode without one (voiceMode.ts, #811): the app sends the answer's id,
+//   never its text, to the core (POST /api/tts). The core has the model provider (Gemini) synthesize the
+//   answer's `text_rendered`, unless that audio is already in the core's cache, which keeps it. The app
 //   stores nothing.
 // - The fallback, and the only voice of a mock build: the browser's speechSynthesis, with voices
 //   that run on the device only, so the text is not sent anywhere. A voice with
@@ -165,7 +165,8 @@ export function usePreparingId(): string | null {
 
 // The latest answer's voice, fetched ahead once and kept in memory only (one answer), so a tap plays at
 // once. The core says `X-Tts-Budget: low` when fewer than 50 voice requests are left (or the budget is
-// used up): from then on nothing is fetched ahead, an answer is read only on a tap.
+// used up): from then on nothing is fetched ahead; a voice is fetched only to read an answer, on a tap or in voice
+// mode (which then uses the device voice when there is one).
 let ahead: { answerId: string; data: Promise<ArrayBuffer> } | null = null
 let budgetLow = false
 
