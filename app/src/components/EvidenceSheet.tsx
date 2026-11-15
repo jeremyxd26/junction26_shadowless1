@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react'
 import { api } from '../api/client.ts'
 import { ApiError } from '../api/errors.ts'
-import type { EvidenceResponse, EvidenceRow } from '../api/types.ts'
+import type { EvidenceMonth, EvidenceResponse, EvidenceRow } from '../api/types.ts'
 import { formatDate } from '../lib/i18n.ts'
+import { monthsBetween, rowsByMonth } from '../lib/evidenceMonths.ts'
 import { useLoad } from '../lib/useLoad.ts'
 import { closeEvidence } from '../lib/url.ts'
 import { useSettings } from '../lib/settings.ts'
 import { BottomSheet } from './BottomSheet.tsx'
-import { NumberChip } from './NumberChip.tsx'
 import { ErrorBlock, LoadingBlock } from './States.tsx'
 
 /** The evidence for one number, opened with `?evidence=<ref>` over the current screen. */
@@ -68,11 +68,17 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
   // "Add up" is only true of the full list: every page loaded and the API says it reconciles.
   const allRows = pages.cursor === null && (evidence.row_count === null || pages.rows.length >= evidence.row_count.value)
   const showReconciles = evidence.reconciles === true && allRows
+  // The period written out, with its length in months when it spans several (#944: "1 Apr – 30 Sep 2026 · 6 months")
+  const span = evidence.query?.period ?? number.period
+  const months = monthsBetween(span.start, span.end)
+  const periodText = months > 1 ? `${span.label} · ${t.monthsSpan(months)}` : span.label
+  const monthTotals = new Map<string, EvidenceMonth>((evidence.months ?? []).map((m) => [m.month, m]))
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <NumberChip number={{ ...number, evidence_ref: null }} />
-        <span className="text-sm text-muted">{number.period.label}</span>
+      {/* Inside the evidence every number is plain text, never another tappable pill (#944). */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-2xl font-semibold tabular-nums text-ink">{number.display}</span>
+        <span className="text-sm text-muted">{periodText}</span>
       </div>
 
       <section aria-labelledby="ev-how">
@@ -84,32 +90,35 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
 
       {pages.rows.length > 0 && (
         <section aria-labelledby="ev-rows">
-          <div className="flex items-baseline justify-between gap-2">
-            <h3 id="ev-rows" className="text-sm font-semibold text-ink">
-              {t.transactions}
-            </h3>
-            {evidence.row_count && (
-              <span className="text-sm text-muted">
-                {evidence.row_count.label} <NumberChip number={evidence.row_count} size="inline" tone="neutral" />
-              </span>
-            )}
+          {/* The count once, with the list's period ("31 transactions · 1 Jul – 30 Sep 2026") */}
+          <h3 id="ev-rows" className="text-sm font-semibold text-ink">
+            {evidence.row_count
+              ? `${t.rowsHeader(evidence.row_count.display, evidence.row_count.value)} · ${span.label}`
+              : t.transactions}
+          </h3>
+          {/* Newest first, by month: each month's header carries its count and subtotal over the whole list. */}
+          <div className="mt-2 flex flex-col gap-3">
+            {rowsByMonth(pages.rows).map((group) => {
+              const total = monthTotals.get(group.month)
+              return (
+                <section key={group.month} aria-label={total?.label ?? group.month}>
+                  {total && (
+                    <div className="flex items-baseline justify-between gap-2 px-1 pb-1 text-sm">
+                      <span className="font-semibold text-ink-2">
+                        {total.label} · {t.rowsHeader(String(total.count), total.count)}
+                      </span>
+                      <span className="shrink-0 font-semibold tabular-nums text-ink-2">{total.display}</span>
+                    </div>
+                  )}
+                  <ul className="divide-y divide-line rounded-lg border border-line">
+                    {group.rows.map((row) => (
+                      <EvidenceRowItem key={row.tx_id} row={row} lang={lang} />
+                    ))}
+                  </ul>
+                </section>
+              )
+            })}
           </div>
-          <ul className="mt-2 divide-y divide-line rounded-lg border border-line">
-            {pages.rows.map((row) => (
-              <li key={row.tx_id} className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-base text-ink">{row.merchant?.label ?? row.category}</p>
-                  <p className="text-sm text-muted">
-                    {formatDate(row.date, lang)}
-                    {row.time ? ` · ${row.time}` : ''} · {row.category}
-                  </p>
-                </div>
-                <span className="shrink-0 font-semibold tabular-nums text-ink">
-                  {row.display}
-                </span>
-              </li>
-            ))}
-          </ul>
           {pages.cursor && (
             <button
               type="button"
@@ -139,7 +148,7 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
             {evidence.parts.map((part) => (
               <li key={`${part.role}-${part.number.evidence_ref}`} className="flex min-h-14 items-center justify-between gap-3 px-3 py-1.5">
                 <span className="min-w-0 text-base text-ink">{part.number.label}</span>
-                <NumberChip number={part.number} />
+                <span className="shrink-0 font-semibold tabular-nums text-ink">{part.number.display}</span>
               </li>
             ))}
           </ul>
@@ -151,6 +160,21 @@ function EvidenceBody({ evidence }: { evidence: EvidenceResponse }) {
         <p>{evidence.privacy_note}</p>
       </div>
     </div>
+  )
+}
+
+function EvidenceRowItem({ row, lang }: { row: EvidenceRow; lang: 'en' | 'fi' }) {
+  return (
+    <li className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate text-base text-ink">{row.merchant?.label ?? row.category}</p>
+        <p className="text-sm text-muted">
+          {formatDate(row.date, lang)}
+          {row.time ? ` · ${row.time}` : ''} · {row.category}
+        </p>
+      </div>
+      <span className="shrink-0 font-semibold tabular-nums text-ink">{row.display}</span>
+    </li>
   )
 }
 
