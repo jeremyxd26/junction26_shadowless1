@@ -68,8 +68,20 @@ def test_with_nothing_asked_yet_it_asks_what_to_talk_about(make_pipeline):
 
 def test_a_question_with_digits_is_named_by_its_topic_not_quoted():
     turns = [{"question": "How much did I spend in August 2026?", "calls": [{"name": "get_spending", "args": {}}],
-              "views": [], "answer": "x"}]
+              "views": [], "answer": "You spent [number] in August."}]
     text, chip = template.recall_text(turns, "en", lambda q: meta_intent(q) is not None)
     assert text == "You asked about your spending. Want to continue?" and chip == "How much did I spend in August 2026?"
     turns[0]["calls"] = []
     assert template.recall_text(turns, "fi", lambda q: False)[0] == "Kysyit raha-asioistasi. Jatketaanko?"
+
+
+def test_an_answer_in_words_gets_its_first_sentence_as_the_gist():
+    """Codex re-run, test 35: "What did I ask?" named the question but not what the answer said."""
+    turns = [{"question": "Miksi mun pitäisi säästää?", "calls": [], "views": [], "words": True,
+              "answer": "Säästäminen antaa puskurin yllätyksiin. Lisäksi se tuo rauhaa."}]
+    text, chip = template.recall_text(turns, "en", lambda q: meta_intent(q) is not None)
+    assert text == ("You asked: \u201cMiksi mun pitäisi säästää?\u201d. In short, I said: \u201cSäästäminen antaa "
+                    "puskurin yllätyksiin.\u201d Want to continue?"), text
+    assert chip == "Miksi mun pitäisi säästää?"
+    turns[0]["answer"] = "You keep [number] for surprises."
+    assert "In short" not in template.recall_text(turns, "en", lambda q: False)[0]   # hidden numbers: no gist

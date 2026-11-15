@@ -305,6 +305,17 @@ RECALL_ABOUT = ("You asked about {topic}.", "Kysyit {topic}.")
 RECALL_ANY_TOPIC = ("your money", "raha-asioistasi")
 RECALL_TOPIC = ("We talked about {topic}.", "Puhuimme {topic}.")
 RECALL_GO_ON = ("Want to continue?", "Jatketaanko?")
+# An answer in words has no data topic: its first sentence, quoted, is the gist (Codex re-run, test 35)
+RECALL_GIST = ("In short, I said: \u201c{gist}\u201d", "Sanoin lyhyesti: \u201d{gist}\u201d")
+
+
+def _gist(answer: Any) -> str | None:
+    """The first sentence of a stored answer, as the recall quotes it; None when it carried hidden numbers."""
+    text = " ".join(str(answer or "").split())
+    first = re.split(r"(?<=[.!?])\s+", text)[0] if text else ""
+    if not first or "[number]" in first:
+        return None
+    return first if len(first) <= 140 else first[:137].rsplit(" ", 1)[0] + "\u2026"
 RECALL_NOTHING = ("We haven't talked about anything yet. What would you like to know?",
                   "Emme ole vielä puhuneet mistään. Mitä haluaisit tietää?")
 
@@ -322,12 +333,15 @@ def recall_text(turns: list[dict], language: str, is_meta) -> tuple[str, str | N
                      None)
         quotable = len(question) <= 90 and not re.search(r"\d", question)
         parts = []
+        gist = None if topic else _gist(turn.get("answer"))
         if quotable:
             parts.append(pick(RECALL_QUESTION, language).format(question=question))
             if topic:
                 parts.append(pick(RECALL_TOPIC, language).format(topic=pick(topic, language)))
         else:   # a long question, or one with digits: its topic, or the money in general
             parts.append(pick(RECALL_ABOUT, language).format(topic=pick(topic or RECALL_ANY_TOPIC, language)))
+        if gist:   # an answer in words: what it said, in short
+            parts.append(pick(RECALL_GIST, language).format(gist=gist))
         parts.append(pick(RECALL_GO_ON, language))
         return " ".join(parts), question
     return pick(RECALL_NOTHING, language), None
@@ -448,6 +462,20 @@ def period_chip(question: str, language: str) -> str | None:
     if _ASKED_COMPARE.search(q):
         return None
     return pick(PERIOD_CHIPS["compare" if _ASKED_LAST_MONTH.search(q) else "last_month"], language)
+
+
+# The same question again (Renat): the answer says so and the chips turn to a new angle.
+REPEAT_LEAD = ("Those are the same numbers as a moment ago \u2014 want some tips in words instead?",
+               "Luvut ovat samat kuin hetki sitten \u2014 haluatko vinkkejä sanoin?")
+REPEAT_TIPS = ("Give me tips to save", "Anna vinkkejä säästämiseen")
+
+
+def repeat_follow_ups(question: str, language: str) -> list[str]:
+    """The chips after a repeated question: another period, more tips, then a brief question not just asked."""
+    asked = question.strip().lower()
+    chips = [c for c in (pick(REPEAT_TIPS, language), period_chip(question, language)) if c]   # the tips first
+    out = [q for q in dict.fromkeys(chips + [pick(q, language) for q in BRIEF_QUESTIONS]) if q.lower() != asked]
+    return out[:3]
 
 
 def follow_ups(question: str, language: str, refused: bool = False, views: list | None = None) -> list[str]:
