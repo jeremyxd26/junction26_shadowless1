@@ -3,7 +3,7 @@
 Usage:
     python core/config/select_personas.py                                  # the scan as it was run
     python core/config/select_personas.py --from CUST00000 --to CUST01000
-    python core/config/select_personas.py --answers CUST00860,CUST00493,CUST00349,CUST00849 --out answers.json
+    python core/config/select_personas.py --answers CUST00860,CUST00493,CUST00387,CUST00849 --out answers.json
 
 Method: docs/design/personas.md. The metric numbers come from the unchanged files in core/metrics/
 (docs/design/metrics.md); this script only runs them and compares their output with the checks.

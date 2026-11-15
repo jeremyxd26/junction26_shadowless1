@@ -62,26 +62,27 @@ personas:
       payment 1,209.05 a month), with restaurant spending in every month from March to September.
     peer_group: {level: age_band+area3, age_band: "45-54", area3: "001", comparable_others: 121}
 
-  - customer_id: CUST00349
+  - customer_id: CUST00387
     lead: false
     display_name: Eetu
-    age: 32
-    age_band: "25-34"
+    age: 24
+    age_band: "18-24"
     postal_area:
-      code: "02140"
-      label: Espoo 02140
+      code: "00970"
+      label: Helsinki 00970
     profile:
       key: everyday_heavy
       label: Everyday spender
-    tagline: Almost a third of spending is everyday purchases, with restaurants the largest part.
-    tagline_fi: Lähes kolmannes kulutuksesta on arjen ostoksia, ja niistä suurin osuus menee ravintoloihin.
+    tagline: Over two-fifths of spending is everyday purchases, restaurants the largest part; the balance has dipped below zero.
+    tagline_fi: Yli kaksi viidesosaa kulutuksesta on arjen ostoksia, ja niistä suurin osuus menee ravintoloihin; saldo on käynyt miinuksella.
     default_language: en
     demo_role: young_everyday
     why: >-
-      The highest everyday-spending share among the passing under-35s with status ok (30.1%,
-      736.87 a month, Restaurants on top), so the dining-out what-if gives the largest saving of
-      the four (58.95 a month).
-    peer_group: {level: age_band+area3, age_band: "25-34", area3: "021", comparable_others: 24}
+      Renat's swap (#882): the four personas cover four age bands. Same role as the first Eetu
+      (CUST00349, 32, 25-34): an everyday spender aged 24 (42.6% of spending, Restaurants on top,
+      dining out in 5 of the 6 months), so the dining-out what-if saves 42.19 a month; salary
+      1,384.36 and housing 524.37 recurring, no salary sweep, safe to spend 115.29 this week.
+    peer_group: {level: age_band+area3, age_band: "18-24", area3: "009", comparable_others: 29}
 
   - customer_id: CUST00849
     lead: false

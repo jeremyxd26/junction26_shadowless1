@@ -14,7 +14,7 @@ import yaml
 from core.tools import national
 
 ROOT = Path(__file__).resolve().parents[3]
-PERSONA_BANDS = {"CUST00860": "35-44", "CUST00493": "45-54", "CUST00349": "25-34", "CUST00849": "25-34"}
+PERSONA_BANDS = {"CUST00860": "35-44", "CUST00493": "45-54", "CUST00387": "18-24", "CUST00849": "25-34"}
 
 
 def test_the_file_parses_and_says_where_it_comes_from():
@@ -38,7 +38,8 @@ def test_the_kept_categories_are_groceries_and_transportation_and_never_health_o
 @pytest.mark.parametrize("category", ["Groceries", "Transportation"])
 def test_every_kept_category_has_the_age_group_of_every_persona(customer, band, category):
     f = national.figure(category, band)
-    assert f is not None and f.age_group == band and f.survey_year == 2022 and f.monthly > 0
+    # 18-24 lies inside the table's own 17-24 (national_context.yaml), the other bands are the table's
+    assert f is not None and f.age_group == {"18-24": "17-24"}.get(band, band) and f.survey_year == 2022 and f.monthly > 0
     assert f.monthly == (Decimal(f.yearly) / 12).quantize(Decimal("0.01"))
 
 

@@ -9,9 +9,9 @@ Issue #22. Four customers from the synthetic dataset for the persona picker (`GE
 
 | | Sanna (lead) | Marja | Eetu | Aleksi |
 |---|---|---|---|---|
-| `customer_id` | CUST00860 | CUST00493 | CUST00349 | CUST00849 |
-| Age, band | 35, 35-44 | 52, 45-54 | 32, 25-34 | 25, 25-34 |
-| Postal area | Helsinki 00590 | Helsinki 00100 | Espoo 02140 | Espoo 02250 |
+| `customer_id` | CUST00860 | CUST00493 | CUST00387 | CUST00849 |
+| Age, band | 35, 35-44 | 52, 45-54 | 24, 18-24 | 25, 25-34 |
+| Postal area | Helsinki 00590 | Helsinki 00100 | Helsinki 00970 | Espoo 02250 |
 | Role in the demo | clear unexpected necessity in the last 30 days | mid-life, heavy regular essentials | high everyday spending | young adult, tight budget |
 | Profile (05) | `big_ticket` | `steady` | `everyday_heavy` | `steady` |
 | Basket shares: regular / unexpected / everyday | 62.7% / **17.3%** / 19.9% | **77.4%** / 6.8% / 15.7% | 58.5% / 11.3% / **30.1%** | 65.4% / 6.6% / 28.0% |
@@ -234,3 +234,7 @@ python core/config/select_personas.py --answers CUST00860,CUST00493,CUST00349,CU
 ```
 
 `--today` changes `DEMO_TODAY`, and `--out file.json` writes every value. The reference answers change if the data is reloaded or a metric definition changes. Rerun `--answers` and update this document in that case.
+
+## Swap of Eetu (#882)
+
+Renat's decision: Eetu is CUST00387 (24, 18-24) since 15 November, so the four personas cover four age bands; the first Eetu, CUST00349 (32, 25-34), shared 25-34 with Aleksi. Same role: an everyday spender (42.6 % of spending, Restaurants on top, dining out in 5 of the 6 months; dining out -20 % saves 42.19 a month), salary 1,384.36 and housing 524.37 recurring, no salary sweep, peer cell 18-24 / 009 with 29 others, safe to spend 115.29. He took no taxi in the data, so the asked-back "fewer taxis" what-if says there are too few transactions for him. The sections below keep the first selection's numbers for CUST00349 as a record; the current values are in `core/config/personas.yaml`, `core/eval/cases.yaml` and the persona tests.
