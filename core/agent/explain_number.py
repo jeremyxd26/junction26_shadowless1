@@ -113,6 +113,20 @@ def matches(message: str) -> bool:
     return found
 
 
+def label_for(number, lang: str) -> tuple[str, bool]:
+    """The number's label in the answer's language, and whether it was put into it (#833). After an answer in the other
+    language the Number keeps that answer's label ("Safe to spend" before "Mitä tää numero tarkoittaa?"); when the label
+    is its method's name in the other language, the method table gives it in this one. True: translated, so the period,
+    still in the earlier answer's language, is left to the card."""
+    from core.app.api import texts as api_texts   # the method table, as the evidence sheet names the number
+
+    name = api_texts.method_info(number.method).name
+    mine, other = (name[1], name[0]) if lang == "fi" else (name[0], name[1])
+    if number.label == other and other != mine:
+        return mine, True
+    return number.label, False
+
+
 def label_text(label: str) -> str:
     """The Number's label inside a sentence: lower case first letter unless it is an abbreviation ("S-Bonus")."""
     return label[:1].lower() + label[1:] if len(label) > 1 and label[1:2].islower() else label
