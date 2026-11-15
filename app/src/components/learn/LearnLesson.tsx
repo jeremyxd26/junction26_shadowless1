@@ -3,6 +3,7 @@ import { markDone } from '../../lib/learnProgress.ts'
 import { useSettings } from '../../lib/settings.ts'
 import { learnStrings } from './learnStrings.ts'
 import type { LessonIcon, TeachLesson } from './teachLessons.ts'
+import { learnMore, peopleLine } from './peopleLikeYou.ts'
 
 const OPTION = 'min-h-11 rounded-md border-2 px-4 py-2 text-left text-base font-semibold text-ink'
 
@@ -51,11 +52,14 @@ export function LearnLesson({
   startAt,
   onQuiz,
   onBack,
+  ageBand = null,
 }: {
   lessons: TeachLesson[]
   startAt: string
   onQuiz?: () => void
   onBack: () => void
+  /** The persona's age band ("35-44", from /api/personas): a Statistics Finland line for people that age (#885). */
+  ageBand?: string | null
 }) {
   const { lang, customerId } = useSettings()
   const s = learnStrings(lang)
@@ -63,6 +67,8 @@ export function LearnLesson({
   const [picked, setPicked] = useState<string | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const lesson = lessons[index]
+  const people = lesson ? peopleLine(lesson.key, ageBand, lang) : null
+  const more = lesson ? learnMore(lesson.key, ageBand, lang) : []
 
   // Each new lesson takes the focus at its title and starts at the top.
   useEffect(() => {
@@ -108,6 +114,8 @@ export function LearnLesson({
             ))}
           </dl>
           {lesson.source && <p className="text-xs leading-4 text-muted">{lesson.source}</p>}
+          {/* People the customer's age in Finland (#885): the sentence as built from the fact record. */}
+          {people && <p className="border-t border-mint-line pt-2 text-sm leading-5 text-ink-2">{people.text}</p>}
         </section>
       )}
 
@@ -184,6 +192,23 @@ export function LearnLesson({
               {s.backToTopic}
             </button>
           </div>
+          {more.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-line pt-3">
+              <p className="text-sm font-semibold text-muted">{s.learnMore}</p>
+              {more.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 flex-wrap items-center gap-x-1.5 text-base font-semibold text-brand underline underline-offset-4"
+                >
+                  {link.title}
+                  <span className="text-sm font-normal text-muted no-underline">· {link.publisher}</span>
+                </a>
+              ))}
+            </div>
+          )}
         </section>
       )}
     </article>
