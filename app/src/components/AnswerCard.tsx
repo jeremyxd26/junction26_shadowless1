@@ -5,11 +5,13 @@
 // by card type; the baskets breakdown and the bills too (#696). The review keeps its own card. Card `actions`
 // are not drawn here: the answer shows at most one next step under the text.
 import { Component, type ReactNode } from 'react'
-import type { Card, Comparison, Num, ReviewCard } from '../api/types.ts'
+import type { BreakdownCard, Card, Comparison, Num, ReviewCard } from '../api/types.ts'
 import { answerFigures, asLaterCard, type AnswerFigures, type FigureRow } from '../lib/answerFigures.ts'
+import { isBasketsCard } from '../lib/changes.ts'
 import { chatStrings } from '../lib/chatStrings.ts'
 import { useSettings } from '../lib/settings.ts'
 import { useEstimateToggle } from '../lib/useEstimateToggle.ts'
+import { BasketDonut } from './BasketDonut.tsx'
 import { CARD_TITLE, CardShell } from './cards.tsx'
 import { EstimateBadge, EstimateNote } from './EstimateBadge.tsx'
 import { NumberChip } from './NumberChip.tsx'
@@ -71,6 +73,9 @@ function Row({ row }: { row: FigureRow }) {
 function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) {
   const estimate = useEstimateToggle()
   const { caption, title, tags, main, rows, note, caveats } = figures
+  const donut = isBasketsCard(card)
+  // With the donut the baskets are in its legend; the rows keep only what is not a basket (the comparison).
+  const shownRows = donut ? rows.filter((row) => !(card as BreakdownCard).items.some((item) => item.key === row.key)) : rows
   return (
     <CardShell>
       {(caption || card.estimate) && (
@@ -86,7 +91,9 @@ function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) 
       {card.estimate && estimate.open && <EstimateNote estimate={card.estimate} id={estimate.id} />}
       {title && <p className="mt-2 text-lg leading-7 text-ink">{title}</p>}
       {tags.length > 0 && <p className="mt-0.5 text-sm text-muted">{tags.join(' · ')}</p>}
-      {main && (
+      {/* The baskets breakdown as a donut with its legend, in place of the main number and the rows (Renat, #953). */}
+      {donut && <BasketDonut card={card as BreakdownCard} />}
+      {!donut && main && (
         <div data-answer-main="" className="mt-2 flex flex-col items-start">
           <span className="text-base text-ink-2">{main.label}</span>
           <span className="max-w-full text-ink">
@@ -94,9 +101,9 @@ function AnswerFrame({ card, figures }: { card: Card; figures: AnswerFigures }) 
           </span>
         </div>
       )}
-      {rows.length > 0 && (
+      {shownRows.length > 0 && (
         <ul className="mt-2 flex flex-col">
-          {rows.map((row) => (
+          {shownRows.map((row) => (
             <Row key={row.key} row={row} />
           ))}
         </ul>
