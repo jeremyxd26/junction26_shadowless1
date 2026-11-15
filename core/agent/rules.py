@@ -1411,6 +1411,70 @@ def goodbye_greeting(question: str) -> bool:
     return bool(re.fullmatch(GOODBYE_GREETING, " ".join(re.sub(r"\bsentti\b", " ", core).split())))
 
 
+# Feedback on the conversation (Renat's FI transcript): "you talk too much" / "sä puhut liikaa" (brief), "that's not
+# what I asked" / "et ymmärtänyt mua" (misunderstood), "answer my previous question" / "vastaa kysymykseen, jonka mä
+# äsken kysyin" (previous). Searched in a short message, so "Nyt sä et ymmärtänyt mitä mä sanoin, että sä puhut
+# liikaa" is the brief kind (it says what was not understood).
+_FB_PREVIOUS = (r"\b(answer (to )?(my|the) (previous|last|earlier) question|answer the question i (just )?asked|"
+                r"vastaa?(ta)?( (siihen|mun|minun))? (edelliseen |aiempaan |viimeiseen )?kysymykseen,? (jonka|mita)|"
+                r"vastaa?(ta)? (mun|minun) (edelliseen|aiempaan|viimeiseen) kysymykseen)")
+_FB_BRIEF = (r"\b(talk(ing)? too much|too much text|(be|keep it) (more )?(brief|short(er)?)|shorter please|"
+             r"puhut (liian )?(liikaa|paljon)|liikaa tekstia|(vastaa|puhu|kirjoita) lyhyemmin)\b")
+# "too long" / "liian pitkä" only as a short remark of its own ("Is my rent too long term?" asks about the rent)
+_FB_TOO_LONG = r"\b(too long|way too long|liian pitk\w*)\b"
+_FB_MISUNDERSTOOD = (r"\b(you (didn'?t|did not|don'?t|do not) understand( me)?|(that'?s|that is|thats) not what i "
+                     r"(asked|meant)|not what i asked|et (ymmartanyt|ymmarra|tajunnut|tajua)|ymmarsit vaarin|"
+                     r"en kysynyt (sita|tata)|ei ollut (sita|se) mita kysyin)\b")
+
+
+def conversation_feedback(question: str) -> str | None:
+    """"previous", "brief", "misunderstood" or None, for a message of at most 20 words that no refusal rule takes."""
+    q = fold(question)
+    if len(q.split()) > 20 or any(_declines(rx, q) for _, rx in DECLINE_RULES):
+        return None
+    for kind, rx in (("previous", _FB_PREVIOUS), ("brief", _FB_BRIEF), ("misunderstood", _FB_MISUNDERSTOOD)):
+        if re.search(rx, q):
+            return kind
+    if len(q.split()) <= 4 and re.search(_FB_TOO_LONG, q) and not re.search(_MONEY_WORDS, q):
+        return "brief"
+    return None
+
+
+# Garbled input (an STT fragment such as "onks se sopuudlikaa"): a few words, no digit, no money or category word, no
+# word the Finnish or English lists know beyond small function words ("se", "ja"), and a long word neither list knows.
+# "Tell me something" and "Kerro jotain" have a known word, so they go on. The orchestrator also asks the rules: a
+# message they recognise is never garbled.
+_MONEY_WORDS = (r"raha|euro|\beur\b|€|paljon|kulu|kayt|saast|budjet|\btili|saldo|lasku|palkk|tulo|meno|osto|ostin|maks|"
+                r"hinta|hinnat|pankk|kortti|laina|sijoit|velka|velkaa|luotto|korko|vakuut|vuokr|asun|vero|osake|rahasto|"
+                r"bonus|kallis|kallii|halpa|halvem|edullin|mobilepay|s-pankki|s-mobiili|"
+                r"money|spend|spent|save|saving|budget|bill|balance|salary|income|cost|\bpay|price|bank|card|loan|"
+                r"invest|cash|afford|debt|credit|interest|rent|insur|tax|fund|stock|mortgage|account|transfer|"
+                r"transaction|expensive|cheap")
+
+
+def garbled_input(question: str) -> bool:
+    """Whether a short message reads as noise: see above. Conservative: a known word, a money word or a category is
+    enough to send the message on."""
+    from core.agent.guard import EN_WORDS, FI_STRONG, FI_WEAK
+
+    if re.search(r"\d", question):
+        return False
+    words = re.findall(r"[^\W\d_]+", question.lower())
+    q = fold(question)
+    if not words or len(words) > 4 or re.search(_MONEY_WORDS, q) or _categories(q):
+        return False
+
+    def content(word: str) -> bool:   # a word the lists know that carries meaning (not "se", "ja", "ei")
+        plain = fold(word)
+        return bool(re.search(r"[äöå]", word) or FI_STRONG.fullmatch(plain) or EN_WORDS.fullmatch(plain))
+
+    def known(word: str) -> bool:
+        return content(word) or bool(FI_WEAK.fullmatch(fold(word)))
+    if any(content(w) for w in words):
+        return False
+    return any(len(w) >= 6 and not known(w) for w in words)
+
+
 def meta_intent(question: str) -> str | None:
     """The meta intent of a message that is nothing more than it, else None (never past a refusal rule)."""
     q = fold(question)
