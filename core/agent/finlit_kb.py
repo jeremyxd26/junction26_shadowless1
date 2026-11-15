@@ -110,6 +110,12 @@ def question_kind(message: str) -> str | None:
     return "literacy"
 
 
+def has_money_topic(message: str) -> bool:
+    """True when the message names a money topic ("why does a buffer matter?"); a bare "why does it matter?" does not,
+    so the talk mode (#873) asks for fragments only when they can be about something."""
+    return bool(_TOPIC.search(guard.fold(message or "")))
+
+
 def flags_allow(message: str, raw: str) -> bool:
     """True when the guard raises no flag, or only the investment flag for an emergency or rainy-day fund (a buffer,
     not a product): "What is an emergency fund?" is a literacy question."""
