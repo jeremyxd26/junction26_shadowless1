@@ -19,6 +19,7 @@ MIN_TIP_EUR a month, or under MIN_TIP_SHARE of the monthly spending when that is
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 from core.agent import talk_checks
@@ -28,6 +29,17 @@ from core.answer_text import SENTENCE_BREAK, length_problems, scan_numbers
 
 MIN_TIP_EUR = 20.0
 MIN_TIP_SHARE = 0.01
+# While this file exists, talk mode writes only its templates, never the model (Renat's decision for #889). Read per
+# answer, like var/model-off, so `touch` / `rm` on the stand needs no restart (docs/deploy.md).
+MODEL_OFF_SWITCH = Path(__file__).resolve().parents[2] / "var" / "talk-model-off"
+
+
+def model_switched_off() -> bool:
+    """True while the talk-model switch file exists (read per answer)."""
+    try:
+        return MODEL_OFF_SWITCH.exists()
+    except OSError:
+        return True
 
 # ---- triggers -------------------------------------------------------------------------------------------------------
 
@@ -75,13 +87,25 @@ _FIGURE = re.compile(r"\bhow (much|many)\b|\bwhat (is|s|was|are|were) my\b|\bpal
                      r"|\bmontako\b|\bpaljon (mina|ma) \w+|\bwhat if\b|\bjos (mina|ma|vahentaisin)\b|\bwhat does (this|that|it)"
                      r" (number|figure)\b|\bmita (tama|taa|toi|tuo) (numero|luku)\b")
 _OPEN = re.compile(
-    r"((and|so|ok|okay|but|hmm|well|right|ja|no|okei|joo|mut|mutta|entas|eli) )*"
+    r"((and|so|ok|okay|but|hmm|well|right|ja|no|okei|joo|mut|mutta|entas|enta|eli) )*"
     r"(why|why not|why so|how|how so|how come|what else|anything else|and then|then what|what now|what next|go on"
     r"|tell me more|more|like what|such as|for example|for instance|really|meaning|and|in what way|what do you mean"
     r"|miksi|miksi niin|miten|miten niin|mita muuta|kerro lisaa|kerro viela|jatka|esimerkiksi|kuten|entas sitten"
     r"|ja sitten|mita sitten|siis|niin|mita tarkoitat|mita meinaat|onko muuta|muuta)"
     r"( (please|then|sitten|kiitos|again|more|viela))*")
 _MAX_CHARS = 300
+# Borrowing and affordability in a talk question (Renat's decision for #889): always the template, never the model,
+# whatever the switch; hard declines still come first (orchestrator `_talk_stands_down`)
+_TEMPLATE_ONLY = re.compile(
+    r"\b(loans?|lainat?\w*|\w*laina\w*|credit\w*|luoto\w*|luotto\w*|\w*luotto\w*|borrow\w*|lend\w*|instal+ments?"
+    r"|osamaks\w*|erissa|erittain maksu|financ\w*|rahoitu\w*|mortgage\w*|overdraft\w*|overdrawn|tilinylity\w*"
+    r"|bnpl|buy now,? pay later|pay later|maksa myohemmin|klarna|pikavip\w*|vippi\w*|velka\w*|debt\w*"
+    r"|afford\w*|voinko (ostaa|maksaa)|onko (minulla|mulla|mul) varaa|onks (mulla|mul) varaa|varaa (ostaa|tahan))\b")
+
+
+def template_only(message: str) -> bool:
+    """A talk question about borrowing or affordability: the template answers, never the model."""
+    return bool(_TEMPLATE_ONLY.search(_words(fold(message or ""))))
 # The question side of the stand-down (orchestrator `_talk_stands_down`): a talk question about a bank, a product, an
 # investment, gambling, someone else's money or health keeps the normal path, where the rules decline or ask back as
 # they do today. Broad on purpose: a miss here would only send the question to dev's route.
@@ -125,6 +149,42 @@ def follow_up(message: str) -> bool:
     parts = [_words(p) for p in re.split(r"[.?!;:\n]+", fold(message))]
     parts = [p for p in parts if p]
     return bool(parts) and all(_OPEN.fullmatch(p) for p in parts)
+
+
+# In a talk thread, "why should I save money?" asks for reasons, not numbers (in a fresh conversation it is the
+# literacy route's)
+_WHY_FOLLOW_UP = re.compile(r"((and|so|but|ok|ja|mutta|no) )*(why|miksi) (should|would|do|does|is|must|pitaisi|pitais"
+                            r"|kannattaa|kannattaisi|kannattais|on|olisi)\b")
+
+
+def why_follow_up(message: str) -> bool:
+    """A "why should I…" question with no figure in it, which keeps talk mode after a talk answer."""
+    if not isinstance(message, str) or len(message) > 120 or re.search(r"\d", message):
+        return False
+    flat = _words(fold(message))
+    return bool(_WHY_FOLLOW_UP.match(flat)) and not _FIGURE.search(flat)
+
+
+# ---- repetition guard -----------------------------------------------------------------------------------------------
+_STOP = frozenset("""the and that this with from have will would could should your you they them their there then than
+what when where which while about into over more most some such only also just very much many each every other these those
+been being were was are is it its for not but can may might must our out off all any one ones like make makes made does
+done doing more less same still even well here how why who whom whose ja on ei se että kun jos tai joka jotka mutta myös
+niin kuin sitä siitä tämä tuo nyt jo vain sen ovat olla oli ole voi voit""".split())
+
+
+def content_words(text: str) -> set[str]:
+    """The answer's content words: lower case, four letters or more, without the small words and the number tokens."""
+    words = re.findall(r"[^\W\d_]{4,}", TOKEN.sub(" ", (text or "").replace("[number]", " ")).lower())
+    return {w for w in words if w not in _STOP}
+
+
+def repeats(draft: str, previous: str | None, threshold: float = 0.6) -> bool:
+    """More than `threshold` of the draft's content words were already in the previous answer (#889)."""
+    mine = content_words(draft)
+    if not previous or not mine:
+        return False
+    return len(mine & content_words(previous)) / len(mine) > threshold
 
 
 def wants_more_tips(message: str) -> bool:
@@ -190,6 +250,31 @@ def rank_tips(views: list[dict[str, Any]], language: str) -> list[dict[str, Any]
 
 # ---- the output check -----------------------------------------------------------------------------------------------
 
+# The fresh leak rows of #889's measurement (Renat's decision): borrowing by paraphrase and statements about the
+# user's own money that #618's patterns let through, as classes of their own
+_TALK_BORROWING = re.compile(
+    r"\bspread\w*\s+(?:the\s+|a\s+)?(?:cost|costs|payment|payments|price|bill|purchase)\w*(?:\s+\w+){0,2}\s+over\b"
+    r"|\b(?:go|goes|going|run|runs|dip|dips|slip)\w*\s+(?:into\s+(?:the\s+)?)?(?:negative|minus|below\s+zero)\b"
+    r"|\bsettl\w*\s+(?:up\b|it\s+later|later|after\b|at\s+the\s+end\b)"
+    r"|\b(?:wages?|salary|salaries|pay|paycheck|palk\w*)\s+(?:\w+\s+)?(?:ahead\s+of|early|before)\s+(?:payday|it\s+is\s+due)"
+    r"|\brelease\w*\s+(?:\w+\s+)?(?:wages?|salary|pay)\b"
+    r"|\bfront\w*\s+(?:you\s+|them\s+|the\s+|some\s+)?(?:money|cash|cost|sum)\b"
+    r"|\b(?:paid|pay|paying|pays)\s+(?:it\s+|them\s+|the\s+\w+\s+)?back\b|\brepa(?:y|id|ying)\w*"
+    r"|\bmaks\w*\s+(?:\w+\s+)?takaisin\b|\btakaisinmaks\w*|\bpyyta\w*\s+(?:\w+\s+){0,2}apua\b"
+    r"|\b(?:running\s+)?tab\b|\bafter\s+it\s+arrives\b", re.I)
+_TALK_OWN_STATE = re.compile(
+    r"\b(?:shouldn['’]?t|should\s+not|won['’]?t|will\s+not|wouldn['’]?t|would\s+not)\s+(?:cause|be|make)\s+(?:any\s+|a\s+)?"
+    r"(?:trouble|problem|issue|difference|dent)\w*"
+    r"|\broom\s+in\s+the\s+budget\b|\bno\s+need\s+to\s+hold\s+back\b|\bthere['’]?s\s+(?:clearly\s+|plenty\s+of\s+)?room\b"
+    r"|\b(?:money|cash)\s+(?:has\s+been\s+|is\s+|keeps\s+)?(?:leak\w*|tight|short|fine)\b|\bobviously\s+where\b"
+    r"|\bfits?\s+(?:comfortably\s+|easily\s+|well\s+|nicely\s+)?(?:within|into|in)\b"
+    r"|\b(?:is|are)\s+going\s+to\s+sting\b"
+    r"|\b(?:costs?|spending|bills?|expenses|purchases)\s+(?:look|looks|seem|seems|are|is)\s+(?:perfectly\s+|quite\s+|very\s+"
+    r"|rather\s+|pretty\s+)?(?:reasonable|fine|ok|okay|normal|high|low|healthy|modest)\b"
+    r"|\bpuskuri\w*\s+riitt\w*|\briitt\w*\s+hyvin\b|\bkuluu\s+(?:\w+\s+)?(?:liikaa|liian|paljon)\b|\bselvasti\s+liikaa\b",
+    re.I)
+
+
 def _sentences(text: str) -> int:
     return len([s for s in SENTENCE_BREAK.split(text.strip()) if s.strip()])
 
@@ -220,6 +305,13 @@ def draft_problems(text: str, numbers: dict[str, Any], shown: set[str], language
     problems += length_problems(text, len(used), kind="general")
     clean = re.sub(r"\s+", " ", stripped).strip()
     problems += talk_checks.general_problems(clean)
+    copies = talk_checks._general_copies(clean) + [fold(clean)]
+    for rx, why in ((_TALK_BORROWING, "borrowing: never suggest paying later, in parts, back, ahead of pay or in the red"),
+                    (_TALK_OWN_STATE, "the user's own money: speak about the numbers, never say what the user's money "
+                                      "is, fits or allows")):
+        m = next((found for found in (rx.search(c) for c in copies) if found), None)
+        if m:
+            problems.append(f"'{m.group(0)}': {why}")
     problems += talk_checks.general_language_problems(clean, language)
     m = talk_checks.GENERAL_NON_ANSWER.search(clean)
     if m:
@@ -273,6 +365,10 @@ WHY_DEFAULT = (
     "steady change there adds up over the months, more than cutting many little things.",
     "Yllä olevat luvut näyttävät, mihin raha menee, ja suurimmissa kohdissa muutoksella on eniten väliä. Pieni "
     "pysyvä muutos siellä kertyy kuukausien mittaan enemmän kuin monen pienen asian karsiminen.")
+BORROWING = ("That decision belongs with the bank, so this answer stays with the numbers already shown. A steady habit "
+             "in the biggest spending area does more over a month than many small cuts elsewhere.",
+             "Se päätös kuuluu pankille, joten tämä vastaus pysyy jo näytetyissä luvuissa. Pysyvä tapa suurimmassa "
+             "menoerässä vaikuttaa kuukaudessa enemmän kuin monet pienet leikkaukset muualla.")
 CHIP_MORE = ("Any more tips?", "Lisää vinkkejä?")
 CHIP_SAVE = ("How could I save more?", "Miten voisin säästää enemmän?")
 
@@ -288,7 +384,19 @@ TIP_WHY = ("It matters because the most money moves in {lever}, so a steady habi
 
 
 def template_text(kind: str, tip: dict[str, Any] | None, exhausted: bool, tools: list[str], language: str,
-                  previous_tip: dict[str, Any] | None = None) -> str:
+                  previous_tip: dict[str, Any] | None = None, previous: str | None = None) -> str:
+    """The template answer, never the previous answer again (#889): when it would repeat it, another reasoned text."""
+    text = _template_text(kind, tip, exhausted, tools, language, previous_tip)
+    if previous is not None and (text == previous or repeats(text, previous)):
+        for other in (NO_TIP, WHY_DEFAULT, NO_MORE):
+            alternative = _pick(other, language)
+            if alternative != previous and not repeats(alternative, previous):
+                return alternative
+    return text
+
+
+def _template_text(kind: str, tip: dict[str, Any] | None, exhausted: bool, tools: list[str], language: str,
+                   previous_tip: dict[str, Any] | None = None) -> str:
     """The answer in words without the model, and without a number: the next lever when tips were asked, why the last
     lever matters after a tip, else what the previous answer's tool means."""
     if tip is not None:

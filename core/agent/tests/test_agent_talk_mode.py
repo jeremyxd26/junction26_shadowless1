@@ -304,9 +304,9 @@ def test_after_the_last_lever_the_answer_says_so_and_offers_the_saving_question(
 
 # ---- hard refusals and the normal path --------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("message", ["What should I do with bitcoin? Any tips?", "Any tips for getting a loan?",
+@pytest.mark.parametrize("message", ["What should I do with bitcoin? Any tips?",
                                      "Which savings account would you recommend? Any tips?",
-                                     "Any tips for my medicine costs?", "Vinkkejä pikavippiin?"])
+                                     "Any tips for my medicine costs?"])
 def test_a_refusal_or_product_question_never_takes_talk_mode(tmp_path, message):
     pipeline = make(tmp_path)
     ask(pipeline, message)
@@ -422,3 +422,153 @@ def test_the_talk_compose_request_reaches_the_gemini_adapter_as_data():
                                   "The last three months", "What's left to spend this week?"])
 def test_no_app_chip_or_clarify_option_is_a_talk_question(chip):
     assert talk_mode.trigger(chip) is None and not talk_mode.follow_up(chip)
+
+
+# ---- Renat's conditions for #889: the switch, borrowing and affordability on the template, the fresh leak rows ---------
+
+def test_the_switch_file_turns_the_model_text_off_per_answer(tmp_path, monkeypatch):
+    switch = tmp_path / "talk-model-off"
+    monkeypatch.setattr(talk_mode, "MODEL_OFF_SWITCH", switch)
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    switch.touch()
+    d = done(ask(pipeline, "Any tips?"))
+    assert model.requests == [] and d["text_rendered"] == talk_mode.TIP[0].format(lever="restaurants")
+    assert "llm_unavailable" in d["warnings"]
+    assert audit_records(pipeline)[-1]["planner_turns"][-1]["talk_template"] == "switch"
+    switch.unlink()   # read per answer: no restart
+    d = done(ask(pipeline, "Any tips?"))
+    assert len(model.requests) == 1 and "llm_unavailable" not in d["warnings"]
+
+
+@pytest.mark.parametrize("message", ["Any tips, can I afford a trip?", "I don't understand, can I afford it?",
+                                     "Any tips for getting a loan?", "What do you suggest, buy now pay later?",
+                                     "Any advice on instalments?", "Onko minulla varaa tähän? En tajua",
+                                     "Voinko ostaa uuden puhelimen? Vinkkejä", "Vinkkejä pikavippiin?",
+                                     "Mitä mun pitäis tehdä, ottaa laina?", "Selitä. Miksi luotolla on väliä?"])
+def test_borrowing_and_affordability_never_reach_the_model(tmp_path, message):
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    d = done(ask(pipeline, message))
+    assert not [r for r in model.requests if any(x.get("tool") == "answer_in_words" for x in r.data)]
+    turns = audit_records(pipeline)[-1]["planner_turns"]
+    talk = [t for t in turns if "talk" in t]
+    assert talk, turns
+    if not str(talk[-1]["talk"]).startswith("stood down"):   # a hard decline comes first; else the template
+        assert talk[-1]["talk_template"] == "borrowing_or_afford"
+        assert d["text_rendered"] in talk_mode.BORROWING and d["actions"]
+
+
+FRESH_BORROWING = [
+    ("If the purchase can't wait, spreading the cost out over time is a way to soften the hit.", "en"),
+    ("Letting the balance go negative for a short stretch can bridge an awkward gap.", "en"),
+    ("Plenty of online stores let a purchase be settled after it arrives, which keeps cash free for now.", "en"),
+    ("An employer can sometimes release wages ahead of payday when a bill lands at an awkward time.", "en"),
+    ("For something that lasts, financing it and repaying gradually can be a sensible move.", "en"),
+    ("A friend who offers to front the money can make this easier, as long as it gets paid back promptly.", "en"),
+    ("Settling up with the neighbourhood shop at the end of the month instead of paying at the till can ease a tight "
+     "stretch.", "en"),
+    ("Ostoksen voi maksaa pienemmissä osissa, jolloin hinta jakautuu pidemmälle ajalle.", "fi"),
+    ("Hetkellisen rahapulan voi paikata pyytämällä läheiseltä apua, kunhan summa maksetaan takaisin sovitusti.", "fi"),
+    ("Ostoksen voi usein maksaa vasta myöhemmin, mikä antaa hengähdystauon.", "fi"),
+]
+FRESH_OWN_MONEY = [
+    ("With the cushion already in place, this purchase shouldn't cause any trouble.", "en"),
+    ("There's clearly room in the budget for this, so there's no need to hold back.", "en"),
+    ("Eating out is obviously where the money has been leaking lately.", "en"),
+    ("That trip fits comfortably within what comes in each month.", "en"),
+    ("You're already saving more consistently than you realise.", "en"),
+    ("Money is tight right now, so even small extras are going to sting.", "en"),
+    ("Grocery costs look perfectly reasonable here, so cutting there wouldn't change much.", "en"),
+    ("Puskuri riittää hyvin tällaiseen ostokseen, joten huolta ei tarvitse kantaa.", "fi"),
+    ("Sinulla on varaa tähän matkaan ilman, että säästöt kärsivät.", "fi"),
+    ("Ravintoloihin kuluu selvästi liikaa rahaa, joten siitä kannattaa aloittaa.", "fi"),
+]
+FRESH_NATURAL = [
+    ("Small recurring purchases are easy to overlook because each purchase feels harmless on its own. Over time they "
+     "quietly add up, so trimming them tends to free up more money than expected.", "en"),
+    ("Cooking at home more often usually lowers food costs without feeling like a big sacrifice. It also makes meals "
+     "easier to plan, which cuts down on last-minute takeaway.", "en"),
+    ("A pause before buying something non-essential gives the initial excitement time to settle. If the item still "
+     "feels worth it later, the decision is probably sound.", "en"),
+    ("Setting money aside right after payday makes saving feel automatic rather than optional. Whatever remains can "
+     "then be spent with less guilt.", "en"),
+    ("Subscriptions often keep running long after they stop being useful. Reviewing them from time to time is an easy "
+     "way to stop paying for things nobody uses anymore.", "en"),
+    ("Clear goals make saving feel more meaningful, because each choice connects to something concrete. A specific "
+     "target also makes it easier to say no to impulse purchases.", "en"),
+    ("Shopping with a list helps avoid picking up extras that were never planned. It sounds simple, but it is a "
+     "reliable way to keep grocery costs steady.", "en"),
+    ("Pienet toistuvat ostokset jäävät helposti huomaamatta, koska ne tuntuvat vähäpätöisiltä. Ajan mittaan ne "
+     "kuitenkin kertyvät, joten niiden karsiminen voi vapauttaa yllättävän paljon rahaa.", "fi"),
+    ("Kotona kokkaaminen tulee yleensä edullisemmaksi kuin ulkona syöminen. Lisäksi ruokien suunnittelu etukäteen "
+     "vähentää heräteostoksia.", "fi"),
+    ("Kun rahaa siirtää sivuun heti palkkapäivänä, säästäminen tapahtuu lähes huomaamatta. Jäljelle jäävän summan voi "
+     "sitten käyttää ilman huonoa omaatuntoa.", "fi"),
+]
+
+
+def _two(text, lang):
+    return text if text.count(". ") else text + (" Pieni muutos auttaa." if lang == "fi" else " A small change helps.")
+
+
+@pytest.mark.parametrize("text, lang", FRESH_BORROWING + FRESH_OWN_MONEY)
+def test_every_fresh_borrowing_and_own_money_row_is_rejected(text, lang):
+    assert talk_mode.draft_problems(_two(text, lang), {}, set(), lang)
+
+
+@pytest.mark.parametrize("text, lang", FRESH_NATURAL)
+def test_the_fresh_natural_answers_still_pass(text, lang):
+    assert talk_mode.draft_problems(text, {}, set(), lang) == []
+
+
+# ---- the repetition guard and Renat's acceptance probes (#889) --------------------------------------------------------
+
+def test_a_draft_that_repeats_the_previous_answer_is_retried_then_the_next_lever(tmp_path):
+    same = "Start with restaurants, where the most money moves. A small, steady change there adds up over the months."
+    model = TalkModel(drafts=[same, same, same])
+    pipeline = make(tmp_path, model)
+    first = ask(pipeline, "Any tips?")
+    assert done(first)["text_rendered"] == same
+    events = ask(pipeline, "What else?", dict(first)["meta"]["conversation_id"])
+    d = done(events)
+    assert d["text_rendered"] != same and "small purchases" in d["text_rendered"]
+    attempts = audit_records(pipeline)[-1]["composer_attempts"]
+    assert attempts[0]["validation"][0].startswith("this repeats") and attempts[-1]["raw"] == "template"
+
+
+def test_the_template_never_gives_the_previous_answer_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(talk_mode, "MODEL_OFF_SWITCH", tmp_path / "talk-model-off")
+    (tmp_path / "talk-model-off").touch()
+    pipeline = make(tmp_path)
+    conversation, texts = None, []
+    for message in ["Any tips?", "any more tips?", "any more tips?", "any more tips?", "anything else?", "entä muuta?"]:
+        events = ask(pipeline, message, conversation)
+        conversation = dict(events)["meta"]["conversation_id"]
+        texts.append(done(events)["text_rendered"])
+    assert all(a != b for a, b in zip(texts, texts[1:])), texts
+
+
+@pytest.mark.parametrize("first, more, lang", [("Give me tips to save", "anything else?", "en"),
+                                               ("Anna vinkkejä säästämiseen", "entä muuta?", "fi")])
+def test_renats_acceptance_probe_tips_then_something_new(tmp_path, first, more, lang):
+    model = TalkModel()
+    pipeline = make(tmp_path, model)
+    events = ask(pipeline, first, language=lang)
+    d = done(events)
+    assert not [e for e, _ in events if e == "card"] and not digits(d["text_rendered"])
+    assert model.requests[-1].data[0]["talk"]["tip"]["lever"] == "restaurants"   # the most material lever
+    assert talk_checks.general_problems(d["text_rendered"]) == []   # no product, bank or brand
+    events = ask(pipeline, more, dict(events)["meta"]["conversation_id"], language=lang)
+    d2 = done(events)
+    assert d2["text_rendered"] != d["text_rendered"] and not [e for e, _ in events if e == "card"]
+    assert model.requests[-1].data[0]["talk"]["tip"]["lever"] == "small purchases"
+
+
+def test_why_should_i_save_after_a_talk_answer_gives_reasons_not_numbers(tmp_path):
+    pipeline = make(tmp_path)
+    first = ask(pipeline, "Give me tips to save")
+    events = ask(pipeline, "Why should I save money?", dict(first)["meta"]["conversation_id"])
+    assert any(t.get("talk") == "why" for t in audit_records(pipeline)[-1]["planner_turns"])
+    assert not [e for e, _ in events if e == "card"] and not digits(done(events)["text_rendered"])
+    assert talk_mode.trigger("Why should I save money?") is None   # fresh: the literacy route's, not talk mode

@@ -1421,28 +1421,28 @@ class Pipeline:
     # ---- talk mode (#873) ------------------------------------------------------------------------------------------
 
     def _talk_stands_down(self, message: str, lang: str, a: _Answer) -> str | None:
-        """Why a talk question takes the normal path instead, or None: a guard flag, health, borrowing, a product or
-        a brand in the question, or a rules refusal or designed template answer ("what should I do about bitcoin?"
-        keeps the rules' decline; hard declines always win)."""
+        """Why a talk question takes the normal path instead, or None: a guard flag, health, a rules refusal or
+        designed template answer ("what should I do about bitcoin?" keeps the rules' decline; hard declines always
+        win), then a product, a brand or another topic in the question. A borrowing or affordability question that
+        no hard decline took stays in talk mode, on the template only (talk_mode.template_only)."""
         folded = guard.fold(message)
         if a.flags:
             return "guard"
         if re.search(RULE_HEALTH, folded) or talk_checks._GENERAL_HEALTH.search(message):
             return "health"
-        if talk_mode.TOPIC_STANDS_DOWN.search(folded) or talk_checks._GENERAL_OTHERS.search(message):
-            return "topic"
-        if any(rx.search(message) or rx.search(folded) for rx in (talk_checks.GENERAL_BORROWING,
-                                                                  talk_checks._GENERAL_BORROWING_CLASS)):
-            return "borrowing"
-        if any(rx.search(message) for rx in (talk_checks._GENERAL_PRODUCT, talk_checks._GENERAL_PRODUCT_CLASS,
-                                             talk_checks._GENERAL_BRAND)):
-            return "product"
         plan = self.fallback.plan(PlanInput(question=message, language=lang, as_of=self.as_of.isoformat(),
                                             tools=self.registry.schemas(), guard_flags=a.flags, round=1))
         if any(c.name == "decline" for c in plan.calls):
             return "decline"
         if getattr(plan, "template_answer", False) or getattr(plan, "offer_contact", False):
             return "template"
+        if talk_mode.template_only(message):
+            return None
+        if talk_mode.TOPIC_STANDS_DOWN.search(folded) or talk_checks._GENERAL_OTHERS.search(message):
+            return "topic"
+        if any(rx.search(message) for rx in (talk_checks._GENERAL_PRODUCT, talk_checks._GENERAL_PRODUCT_CLASS,
+                                             talk_checks._GENERAL_BRAND)):
+            return "product"
         return None
 
     def _talk_levers(self, ctx: ToolContext) -> list[dict[str, Any]]:
@@ -1482,6 +1482,8 @@ class Pipeline:
             kind = "explain"
         if kind is None and (prev_talk or (voice and data_turn)) and talk_mode.follow_up(message):
             kind = "follow_up"
+        if kind is None and prev_talk and talk_mode.why_follow_up(message):
+            kind = "why"   # "why should I save money?" after a talk answer: reasons, not numbers (#889)
         if kind is None:
             return False
         why_not = self._talk_stands_down(message, lang, a)
@@ -1511,6 +1513,8 @@ class Pipeline:
             given = index + 1 if tip is not None else given
         previous_tip = (last_talk or {}).get("tip") if (tip is None and prev_talk) else None
         prev = turns[-1] if turns else None
+        prev_main = getattr((prev or {}).get("explain"), "evidence_ref", None) or next(
+            (getattr(n, "evidence_ref", None) for n in ((prev or {}).get("shown") or [])), None)
         talk = {"kind": kind, "channel": "voice" if voice else "text",
                 "previous_question": prev["question"] if prev else None,
                 "previous_answer": prev["answer"] if prev else None,
@@ -1524,10 +1528,14 @@ class Pipeline:
                                   data=[{"tool": "answer_in_words", "talk": talk}], errors=[],
                                   previous_turn={"question": prev["question"], "answer": prev["answer"]} if prev else None)
         unavailable = self._model_unavailable(req) or self._role_unavailable("compose")
+        # Renat's decision for #889: borrowing and affordability always get the template, whatever the switch; the
+        # switch file (talk_mode.MODEL_OFF_SWITCH, read per answer) turns the model's talk text off
+        forced = talk_mode.template_only(message)
+        switched_off = talk_mode.model_switched_off()
         allowed = Allowed(dates=frozenset(), periods=frozenset())
         draft = None
         errors: list[str] = []
-        if unavailable is None:
+        if unavailable is None and not forced and not switched_off:
             for _ in range(2):   # the call and one retry with the reasons
                 t = self.clock()
                 try:
@@ -1539,21 +1547,40 @@ class Pipeline:
                 draft, errors = validate(result.text, language=lang, numbers=numbers, allowed=allowed)
                 if draft is not None and not errors:
                     errors = talk_mode.draft_problems(draft.text, numbers, set(shown), lang)
+                if draft is not None and not errors and prev is not None:
+                    # the repetition guard (#889): never the previous answer again, nor its main figure
+                    again = set(TOKEN.findall(draft.text)) & {i for i, n in numbers.items() if n.evidence_ref
+                                                             and n.evidence_ref == prev_main}
+                    if again or talk_mode.repeats(draft.text, prev.get("answer")):
+                        errors = ["this repeats the previous answer: say something new (another reason or the next "
+                                  "lever), and do not repeat its main number"]
                 a.composer_attempts.append({"raw": result.text, "validation": "ok" if not errors else errors,
                                             "latency_ms": self._ms(t), "tokens": a.add_usage(result.usage)})
                 if not errors:
                     break
                 draft = None
         if draft is None:   # the template in the model's place reasons without a number
-            text = talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip)
+            if not forced and tip is None and not exhausted and errors and errors[0].startswith("this repeats"):
+                # the model repeated itself twice: the next lever of the ranking, in the template (#889)
+                index = given if given < len(ranking) else None
+                tip = ranking[index] if index is not None else None
+                given = index + 1 if tip is not None else given
+            text = (template.pick(talk_mode.BORROWING, lang) if forced
+                    else talk_mode.template_text(kind, tip, exhausted, tools, lang, previous_tip=previous_tip,
+                                                 previous=(prev or {}).get("answer")))
             draft, errors = validate({"language": lang, "text": text, "cited": [], "lesson_key": None},
                                      language=lang, numbers=numbers, allowed=allowed)
             a.composer_attempts.append({"raw": "template", "validation": "ok" if not errors else errors})
             if draft is None:
                 draft = AnswerDraft(language=lang, text=text, cited=[], lesson_key=None)
-            a.model_unavailable = a.model_unavailable or unavailable or "error"
-            self._warn_llm_unavailable(a)
-        a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {})})
+            if forced:
+                a.offer_contact = True   # a designed template: the way to the bank, and no llm_unavailable warning
+            else:
+                a.model_unavailable = a.model_unavailable or unavailable or ("talk_model_off" if switched_off else "error")
+                self._warn_llm_unavailable(a)
+        a.planner_turns.append({"round": 1, "source": "rules", "talk": kind, **({"tip": tip["key"]} if tip else {}),
+                                **({"talk_template": "borrowing_or_afford" if forced else "switch"}
+                                   if (forced or switched_off) else {})})
         text = self._deliver(draft.text, numbers, emit)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
