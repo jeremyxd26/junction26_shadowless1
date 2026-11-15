@@ -14,7 +14,7 @@ from core.tools.context import ToolContext
 from core.tools.safe_to_save import get_safe_to_save
 
 AS_OF = date(2026, 9, 30)
-PERSONAS = ["CUST00860", "CUST00493", "CUST00349", "CUST00849"]
+PERSONAS = ["CUST00860", "CUST00493", "CUST00387", "CUST00849"]
 
 
 def cents(x: Decimal) -> Decimal:
