@@ -41,8 +41,9 @@ AI_DISCLOSURE: Pair = (
     "Explanations are written by AI. The numbers are calculated from your transactions.",
     "Selitykset kirjoittaa tekoäly. Luvut lasketaan tilitapahtumistasi.",
 )
-GREETING: Pair = ("Hi {name}", "Hei {name}")
-GREETING_NO_NAME: Pair = ("Hi", "Hei")
+# The opening's greeting says who is talking (Renat): "Hi Sanna, I'm Sentti".
+GREETING: Pair = ("Hi {name}, I'm Sentti", "Hei {name}, olen Sentti")
+GREETING_NO_NAME: Pair = ("Hi, I'm Sentti", "Hei, olen Sentti")
 SUGGESTED_QUESTIONS: list[Pair] = [  # the partner's four questions; the app shows the first three (#662)
     ("What can I safely spend this week?", "Paljonko voin turvallisesti käyttää tällä viikolla?"),
     ("How could I save more?", "Miten voisin säästää enemmän?"),
