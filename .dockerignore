@@ -10,6 +10,8 @@
 !core/agent/
 !core/bills/
 !core/answer_text.py
+# the finlit retriever (#884): its modules only; the corpus is read from the database
+!core/finlit/*.py
 !core/metrics/*.sql
 !core/config/*.yaml
 !core/knowledge/*.yaml

@@ -1,0 +1,174 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "sentti-rag/fact.schema.json",
+ "title": "Fact",
+ "description": "One number from Statistics Finland (PxWeb, CC BY 4.0), re-fetchable with `query` at `api_url`.",
+ "type": "object",
+ "required": [
+  "id",
+  "source_id",
+  "table",
+  "period",
+  "measure",
+  "dims",
+  "value",
+  "unit",
+  "age_bands",
+  "topics",
+  "text_en",
+  "text_fi",
+  "api_url",
+  "query",
+  "licence_class",
+  "attribution",
+  "retrieved_at"
+ ],
+ "properties": {
+  "id": {
+   "type": "string"
+  },
+  "source_id": {
+   "type": "string"
+  },
+  "table": {
+   "type": "string"
+  },
+  "table_title_en": {
+   "type": "string"
+  },
+  "table_title_fi": {
+   "type": "string"
+  },
+  "period": {
+   "type": "string",
+   "minLength": 4
+  },
+  "measure": {
+   "type": "object",
+   "required": [
+    "code",
+    "label_en",
+    "label_fi"
+   ],
+   "properties": {
+    "code": {
+     "type": "string"
+    },
+    "label_en": {
+     "type": "string"
+    },
+    "label_fi": {
+     "type": "string"
+    }
+   }
+  },
+  "dims": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "code",
+     "value",
+     "label_en",
+     "label_fi"
+    ],
+    "properties": {
+     "code": {
+      "type": "string"
+     },
+     "value": {
+      "type": "string"
+     },
+     "name_en": {
+      "type": "string"
+     },
+     "name_fi": {
+      "type": "string"
+     },
+     "label_en": {
+      "type": "string"
+     },
+     "label_fi": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "value": {
+   "type": "number"
+  },
+  "unit": {
+   "type": "string"
+  },
+  "decimals": {
+   "type": "integer"
+  },
+  "age_native": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "age_bands": {
+   "type": "array",
+   "items": {
+    "type": "string",
+    "enum": [
+     "0-12",
+     "13-17",
+     "18-24",
+     "25-34",
+     "35-44",
+     "45-54",
+     "55-64",
+     "65-74",
+     "75+",
+     "all"
+    ]
+   },
+   "minItems": 1
+  },
+  "topics": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1
+  },
+  "text_en": {
+   "type": "string"
+  },
+  "text_fi": {
+   "type": "string"
+  },
+  "api_url": {
+   "type": "string"
+  },
+  "query": {
+   "type": "object",
+   "required": [
+    "query",
+    "response"
+   ]
+  },
+  "source_url": {
+   "type": "string"
+  },
+  "licence": {
+   "type": "string"
+  },
+  "licence_class": {
+   "type": "string",
+   "enum": [
+    "open_attribution"
+   ]
+  },
+  "attribution": {
+   "type": "string"
+  },
+  "retrieved_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+  }
+ }
+}
