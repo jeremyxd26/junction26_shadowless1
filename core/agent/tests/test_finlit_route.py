@@ -103,6 +103,12 @@ def test_a_literacy_question_is_answered_from_the_fragments_with_the_source_line
     assert finlit_turns(audit(p))[0]["finlit"] == [OPEN.source_id, CARD.source_id]
 
 
+def test_the_best_ranked_source_is_named_even_when_it_is_a_card(make):
+    p = make(Composer((GOOD_FI, "fi")), FakeSource(fragments=(CARD, OPEN)))
+    done = done_of(run(p, "mitä on korkoa korolle", language="fi"))
+    assert done["text"] == f"{GOOD_FI} Lähde: Marttaliitto, {CARD.url}"
+
+
 def test_the_glossary_definition_goes_with_the_fragments_for_budget(make):
     model = Composer((GOOD_FI, "fi"))
     p = make(model)
@@ -223,12 +229,18 @@ class _Conn:
         return R([(k, *v) for k, v in self.meta.items()])
 
 
-def test_fragments_keep_public_tiers_and_open_text_only(monkeypatch):
+def test_fragments_keep_public_tiers_and_open_text_only_and_no_datasets(monkeypatch):
     hits = [_Hit("bank1", "source_card"), _Hit("closed", "page_text"), _Hit("open", "page_text"),
+            _Hit("data", "source_card"), _Hit("api", "source_card", url="https://e.fi/service/api/external/1"),
             _Hit("card", "source_card"), _Hit("http", "source_card", url="http://a.fi"), _Hit("ngo", "source_card")]
-    meta = {"bank1": ("Nordea", "bank", "all_rights_reserved"), "closed": ("KKV", "authority", "terms_allow_reuse"),
-            "open": ("InfoFinland", "authority", "open_attribution"), "card": ("Kela", "authority", "not_stated"),
-            "http": ("THL", "authority", "open_attribution"), "ngo": ("Martat", "nonprofit", "not_stated")}
+    meta = {"bank1": ("Nordea", "bank", "all_rights_reserved", "course"),
+            "closed": ("KKV", "authority", "terms_allow_reuse", "course"),
+            "open": ("InfoFinland", "authority", "open_attribution", "course"),
+            "data": ("Tilastokeskus", "authority", "open_attribution", "dataset"),
+            "api": ("Opetushallitus", "public_education", "not_stated", "course"),
+            "card": ("Kela", "authority", "not_stated", "course"),
+            "http": ("THL", "authority", "open_attribution", "course"),
+            "ngo": ("Martat", "nonprofit", "not_stated", "course")}
 
     class FakeRetriever:
         def __init__(self, conn, embedder, model):

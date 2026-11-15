@@ -7,7 +7,8 @@ plain words by the composer, with 2-3 retrieved fragments in its data and one so
 Rules kept here, not in the prompt:
 - Fragments are in the question's language and the customer's age band (or "all"), as the Retriever filters.
 - Only sources of a public or non-profit tier are used: authority, public education, international organisation,
-  academic, non-profit. Banks, industry associations and "other" are left out (no products, no other bank).
+  academic, non-profit. Banks, industry associations and "other" are left out (no products, no other bank), and so
+  are datasets (their numbers are facts, not an explanation's source).
 - A fragment's text reaches the composer only from licence_class open_attribution page text; every other source
   is a title and a link. Digits in a fragment's text are masked, and the draft may state no number at all (the
   validator with no Numbers), so no figure from a source reaches an answer.
@@ -203,8 +204,10 @@ class FinlitSource:
         out: list[Fragment] = []
         for h in hits:
             m = meta.get(h.source_id)
-            if m is None or m["tier"] not in ALLOWED_TIERS or not str(h.source_url).startswith("https://"):
-                continue
+            url = str(h.source_url)
+            if (m is None or m["tier"] not in ALLOWED_TIERS or m["kind"] == "dataset" or not url.startswith("https://")
+                    or "/api/" in url.lower()):
+                continue   # a dataset is for numbers (facts), and an API endpoint is no page to send a person to
             open_text = h.kind == "page_text" and m["licence_class"] == "open_attribution"
             out.append(Fragment(h.source_id, m["publisher"], h.title, h.source_url,
                                 _mask(h.text) if open_text else None, h.kind))
@@ -270,9 +273,9 @@ def draft_problems(raw: Any, language: str) -> tuple[Any, list[str]]:
 def _sources(conn: Any, ids: list[str]) -> dict[str, dict[str, str]]:
     if not ids:
         return {}
-    rows = conn.execute("SELECT id, publisher, tier, licence_class FROM finlit.sources WHERE id = ANY(%s)",
+    rows = conn.execute("SELECT id, publisher, tier, licence_class, kind FROM finlit.sources WHERE id = ANY(%s)",
                         (ids,)).fetchall()
-    return {r[0]: {"publisher": r[1], "tier": r[2], "licence_class": r[3]} for r in rows}
+    return {r[0]: {"publisher": r[1], "tier": r[2], "licence_class": r[3], "kind": r[4]} for r in rows}
 
 
 def from_settings(settings: Any, connect: Callable[[], AbstractContextManager[Any]]) -> FinlitSource | None:

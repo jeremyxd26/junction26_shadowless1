@@ -1561,7 +1561,7 @@ class Pipeline:
             # the attempts stay in the audit record (their tokens were spent); the usual path answers
             log.warning("finlit answer failed the checks (%d problems); the usual path answers", len(errors))
             return False
-        cited = next((f for f in fragments if f.text), fragments[0])
+        cited = fragments[0]   # the best-ranked source is the one named
         a.kind = "general"
         a.planner_turns.append({"round": 1, "source": "rules", "finlit": [f.source_id for f in fragments],
                                 "calls": []})
