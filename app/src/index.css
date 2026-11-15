@@ -54,6 +54,15 @@
   --shadow-float: var(--shadow-float);
 }
 
+/* No visible scrollbars anywhere (Renat): the module sits inside a bank app, and a system scrollbar breaks that look.
+   Scrolling stays as it was: wheel, touch, keyboard; sheets keep overscroll-behavior: contain. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;

@@ -373,6 +373,7 @@ class _Answer:
     planner_unavailable: str | None = None
     composer_unavailable: str | None = None
     template_failed: bool = False        # the template's text failed the validator: the fixed "nothing" text went out
+    sources: list[dict[str, Any]] | None = None   # done.sources (#884, contract 0.3.19): the official sources used
     kind: str = "ordinary"               # the length rule's kind (answer_text.answer_kind): ordinary or why (#572)
     # #598: the model planned a Health total ("the gym" mapped to Health); the call was dropped before it ran and the
     # thing is answered as an unknown one. The user's word, "" when there is none to quote.
@@ -529,6 +530,8 @@ class Pipeline:
         if self._answer_sbank_kb(ctx, review, message, lang, emit, a):   # "How do I block my card?" (#791)
             return lang
         if self._answer_explain_number(ctx, message, lang, emit, a):   # "What does this number mean?" (#821)
+            return lang
+        if self._answer_kb_simpler(message, lang, emit, a):   # "Explain it more simply" after an S-Bank help answer
             return lang
         if self._answer_talk(ctx, req, message, lang, emit, a):   # "why does it matter?", "any tips?" (#873)
             return lang
@@ -1083,7 +1086,8 @@ class Pipeline:
                            "actions": [tool_config.contact_bank_action(lang)]
                            if payload.get("outcome") in ("refused", "fallback") or a.offer_contact
                            else payload.get("actions", []),
-                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None}
+                           "ai_disclosure": template.pick(api_texts.AI_DISCLOSURE, lang) if disclose else None,
+                           **({"sources": a.sources} if a.sources else {})}
             emit(event, payload)
         return send
 
@@ -1109,6 +1113,28 @@ class Pipeline:
                       "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": a.question, "calls": [], "views": [], "answer": text})
         return lang
+
+    def _answer_kb_simpler(self, message: str, lang: str, emit: Emit, a: _Answer) -> bool:
+        """"Explain it more simply" right after an S-Bank help answer (r-coord's live check of #921): that entry in
+        short, its first sentence after "In short:", with its source line, and the full question as the chip. No
+        model. False unless the last turn was a help answer from an entry."""
+        turns = a.conversation.turns if a.conversation is not None else []
+        entry_id = turns[-1].get("kb") if turns else None
+        if not entry_id or a.flags or not explain_number.asks_simpler(message):
+            return False
+        entry = next((e for e in sbank_kb.ENTRIES if e.id == entry_id), None)
+        if entry is None:
+            return False
+        i = 1 if lang == "fi" else 0
+        body = entry.answer(lang)
+        first = (re.split(r"(?<=[.!?])\s+", body.strip()) or [body])[0]
+        text = f"{template.pick(template.KB_SIMPLER, lang).format(first=first)} " \
+               f"{sbank_kb.SOURCE_LINE[i].format(url=entry.source_url)}"
+        question = str(turns[-1].get("question") or "")
+        self._say(text, lang, emit, a, "kb_simpler", [question] if question else [])
+        # the short answer is a help answer too: "simpler" again gets the same entry
+        a.conversation.turns[-1].update({"words": True, "kb": entry_id})
+        return True
 
     def _say(self, text: str, lang: str, emit: Emit, a: _Answer, intent: str, follow_ups: list[str],
              unclear: bool = False) -> str:
@@ -1784,8 +1810,9 @@ class Pipeline:
                                 **({"explain_tips": talk_mode.tip_keys(gave_before)} if explain else {}),
                                 **({"talk_template": talk_template} if talk_template else {}),
                                 **({"finlit": [f.source_id for f in fragments]} if credited and from_model else {})})
-        line = f" {finlit_kb.source_line(credited, lang)}" if credited and from_model else ""
-        text = self._deliver(draft.text + line, numbers, emit)
+        if credited and from_model:   # the Sources row under the answer; the text carries no link (#884)
+            a.sources = finlit_kb.sources_field(fragments, lang) or None
+        text = self._deliver(draft.text, numbers, emit)
         cited = list(dict.fromkeys(TOKEN.findall(text)))
         a.outcome, a.text, a.text_rendered = "answered", text, render(text, numbers)
         a.numbers = {i: {"value": numbers[i].value, "unit": numbers[i].unit.value, "method": numbers[i].method,
@@ -1886,7 +1913,7 @@ class Pipeline:
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
                       "refusal": None, "clarify": None, "warnings": a.warnings})
         self.store.add_turn(a.conversation, {"question": message, "calls": [], "views": [], "answer": text,
-                                             "words": True})
+                                             "words": True, "kb": kb.entry_id})
         return True
 
     def finlit_fragments(self, customer_id: str, message: str, lang: str) -> list[Any]:
@@ -2010,8 +2037,9 @@ class Pipeline:
                                 "calls": []})
         if review is not None:  # the pending review's card, as on the normal path
             self._attach_review(ctx, review, emit, a)
-        line = f" {finlit_kb.source_line(credited, lang)}" if credited else ""
-        text = self._deliver(f"{body}{line}", {}, emit)
+        if credited:   # the Sources row under the answer; the text carries no link (#884)
+            a.sources = finlit_kb.sources_field(fragments, lang) or None
+        text = self._deliver(body, {}, emit)
         a.outcome, a.text, a.text_rendered = "answered", text, text
         emit("done", {"answer_id": a.answer_id, "outcome": "answered", "text": text, "text_rendered": text,
                       "cited": [], "follow_ups": template.follow_ups(message, lang), "lesson": None,
